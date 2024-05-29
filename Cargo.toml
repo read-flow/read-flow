@@ -1,0 +1,10 @@
+[package]
+name = "archive-organizer"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0.86"
+clap = { version = "4.5.4", features = ["derive"] }
+thiserror = "1.0.61"
