@@ -5,7 +5,9 @@ use std::{
 
 use thiserror::Error;
 
-use super::{DirectoryError, DirectoryModule, DIRECTORY_MODULES};
+use super::{
+    DirectoryError, DirectoryModule, FileError, FileModule, DIRECTORY_MODULES, FILE_MODULES,
+};
 
 #[derive(Debug, Error)]
 enum ScanError {
@@ -13,7 +15,16 @@ enum ScanError {
     NotADirectory(PathBuf),
 }
 
+fn is_not_hidden(file: &Path) -> bool {
+    file.file_name()
+        .and_then(|f| f.to_str())
+        .map(|f| !f.starts_with('.'))
+        .unwrap_or(false)
+}
+
 pub fn scan(directory: &Path) -> anyhow::Result<()> {
+    dbg!(&directory);
+
     if !directory.is_dir() {
         Err(ScanError::NotADirectory(directory.to_path_buf()))?;
     }
@@ -22,13 +33,28 @@ pub fn scan(directory: &Path) -> anyhow::Result<()> {
         .get()
         .expect("Should be initialized by now");
 
-    directory_modules
-        .iter()
-        .filter(|m| m.matches(directory))
-        .map(|m| m.handle(directory))
-        .collect::<Result<Vec<()>, _>>()?;
+    let directory_module = directory_modules.iter().find(|m| m.matches(directory));
 
-    directory_modules.iter().for_each(|m| m.finalize().unwrap());
+    match directory_module {
+        Some(directory_module) => {
+            directory_module.handle(directory)?;
+        }
+        None => {
+            let (directories, files): (Vec<PathBuf>, Vec<PathBuf>) = std::fs::read_dir(directory)?
+                .map(|f| f.unwrap().path())
+                .partition(|f| f.is_dir());
+
+            for dir in directories {
+                if is_not_hidden(&dir) {
+                    scan(&dir)?;
+                }
+            }
+
+            for file in files {
+                scan_file(&file)?;
+            }
+        }
+    }
 
     Ok(())
 }
@@ -63,6 +89,46 @@ impl DirectoryModule for GitProjects {
     }
 }
 
-pub fn scan_file(_file: &Path) -> anyhow::Result<()> {
+pub fn scan_file(file: &Path) -> anyhow::Result<()> {
+    dbg!(&file);
+
+    let file_modules = FILE_MODULES.get().expect("Should be initialized by now");
+
+    let file_module = file_modules.iter().find(|m| m.matches(file));
+
+    if let Some(file_module) = file_module {
+        file_module.handle(file)?;
+    }
+
     Ok(())
+}
+
+pub struct PdfFiles {
+    files: Mutex<Vec<PathBuf>>,
+}
+
+impl Default for PdfFiles {
+    fn default() -> Self {
+        Self {
+            files: vec![].into(),
+        }
+    }
+}
+
+impl FileModule for PdfFiles {
+    fn matches(&self, file: &Path) -> bool {
+        file.extension().eq(&Some(std::ffi::OsStr::new("pdf")))
+    }
+
+    fn handle(&self, file: &Path) -> Result<(), FileError> {
+        let mut files = self.files.lock().unwrap();
+        files.push(file.to_owned());
+        Ok(())
+    }
+
+    fn finalize(&self) -> Result<(), FileError> {
+        let files = self.files.lock().unwrap();
+        println!("PDF files found: {files:?}");
+        Ok(())
+    }
 }

@@ -23,6 +23,13 @@ fn main() -> Result<()> {
     commands::init();
 
     match cli.command {
-        Commands::Scan { directory } => commands::scan::scan(&directory),
+        Commands::Scan { directory } => {
+            let directory = directory.canonicalize()?;
+            commands::scan::scan(&directory)?
+        }
     }
+
+    commands::finalize();
+
+    Ok(())
 }
