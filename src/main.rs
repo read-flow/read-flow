@@ -9,20 +9,20 @@ use archive_organizer::commands;
 #[command(version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Commands
+    command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    Scan {
-	directory: PathBuf,
-    },
+    Scan { directory: PathBuf },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    commands::init();
+
     match cli.command {
-	Commands::Scan { directory } => commands::scan::scan(directory)
+        Commands::Scan { directory } => commands::scan::scan(&directory),
     }
 }
