@@ -1,34 +1,7 @@
 pub mod scan;
 
-use once_cell::sync::OnceCell;
 use std::path::Path;
 use thiserror::Error;
-
-use scan::{GitProjects, PdfFiles};
-
-pub static DIRECTORY_MODULES: OnceCell<Vec<Box<dyn DirectoryModule + Send + Sync>>> =
-    OnceCell::new();
-
-pub fn init() {
-    DIRECTORY_MODULES.get_or_init(|| vec![Box::<GitProjects>::default()]);
-    FILE_MODULES.get_or_init(|| vec![Box::<PdfFiles>::default()]);
-}
-
-pub fn finalize() {
-    DIRECTORY_MODULES
-        .get()
-        .expect("Should be initialized by now")
-        .iter()
-        .for_each(|m| m.finalize().unwrap());
-
-    FILE_MODULES
-        .get()
-        .expect("Should be initialized by now")
-        .iter()
-        .for_each(|m| m.finalize().unwrap());
-}
-
-pub static FILE_MODULES: OnceCell<Vec<Box<dyn FileModule + Send + Sync>>> = OnceCell::new();
 
 #[derive(Debug, Error)]
 pub enum DirectoryError {}

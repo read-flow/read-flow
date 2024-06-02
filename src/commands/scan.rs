@@ -3,61 +3,7 @@ use std::{
     sync::Mutex,
 };
 
-use thiserror::Error;
-
-use super::{
-    DirectoryError, DirectoryModule, FileError, FileModule, DIRECTORY_MODULES, FILE_MODULES,
-};
-
-#[derive(Debug, Error)]
-enum ScanError {
-    #[error("Supplied path `{0}` is not a directory")]
-    NotADirectory(PathBuf),
-}
-
-fn is_not_hidden(file: &Path) -> bool {
-    file.file_name()
-        .and_then(|f| f.to_str())
-        .map(|f| !f.starts_with('.'))
-        .unwrap_or(false)
-}
-
-pub fn scan(directory: &Path) -> anyhow::Result<()> {
-    dbg!(&directory);
-
-    if !directory.is_dir() {
-        Err(ScanError::NotADirectory(directory.to_path_buf()))?;
-    }
-
-    let directory_modules = DIRECTORY_MODULES
-        .get()
-        .expect("Should be initialized by now");
-
-    let directory_module = directory_modules.iter().find(|m| m.matches(directory));
-
-    match directory_module {
-        Some(directory_module) => {
-            directory_module.handle(directory)?;
-        }
-        None => {
-            let (directories, files): (Vec<PathBuf>, Vec<PathBuf>) = std::fs::read_dir(directory)?
-                .map(|f| f.unwrap().path())
-                .partition(|f| f.is_dir());
-
-            for dir in directories {
-                if is_not_hidden(&dir) {
-                    scan(&dir)?;
-                }
-            }
-
-            for file in files {
-                scan_file(&file)?;
-            }
-        }
-    }
-
-    Ok(())
-}
+use super::{DirectoryError, DirectoryModule, FileError, FileModule};
 
 pub struct GitProjects {
     projects: Mutex<Vec<PathBuf>>,
@@ -89,35 +35,24 @@ impl DirectoryModule for GitProjects {
     }
 }
 
-pub fn scan_file(file: &Path) -> anyhow::Result<()> {
-    dbg!(&file);
-
-    let file_modules = FILE_MODULES.get().expect("Should be initialized by now");
-
-    let file_module = file_modules.iter().find(|m| m.matches(file));
-
-    if let Some(file_module) = file_module {
-        file_module.handle(file)?;
-    }
-
-    Ok(())
-}
-
-pub struct PdfFiles {
+pub struct FileExtensionFinder {
+    extension: String,
     files: Mutex<Vec<PathBuf>>,
 }
 
-impl Default for PdfFiles {
-    fn default() -> Self {
+impl FileExtensionFinder {
+    pub fn new(extension: String) -> Self {
         Self {
+            extension,
             files: vec![].into(),
         }
     }
 }
 
-impl FileModule for PdfFiles {
+impl FileModule for FileExtensionFinder {
     fn matches(&self, file: &Path) -> bool {
-        file.extension().eq(&Some(std::ffi::OsStr::new("pdf")))
+        file.extension()
+            .eq(&Some(std::ffi::OsStr::new(&self.extension)))
     }
 
     fn handle(&self, file: &Path) -> Result<(), FileError> {
@@ -128,7 +63,9 @@ impl FileModule for PdfFiles {
 
     fn finalize(&self) -> Result<(), FileError> {
         let files = self.files.lock().unwrap();
-        println!("PDF files found: {files:?}");
+        let extension = self.extension.to_ascii_uppercase();
+
+        println!("{extension} files found: {files:?}");
         Ok(())
     }
 }
