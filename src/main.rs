@@ -4,8 +4,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 use archive_organizer::{
-    commands::scan::{FileExtensionFinder, GitProjects},
     file_system_visitor::FileSystemVisitor,
+    modules::{file_extension_finder::FileExtensionFinder, git::GitProjects},
 };
 
 #[derive(Parser)]

@@ -1,6 +1,8 @@
-pub mod scan;
+pub mod file_extension_finder;
+pub mod git;
 
 use std::path::Path;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::commands::{DirectoryModule, FileModule};
+use crate::modules::{FileModule, DirectoryModule};
 
 fn is_not_hidden(file: &Path) -> bool {
     file.file_name()
