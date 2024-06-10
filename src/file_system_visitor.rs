@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use crate::modules::{FileModule, DirectoryModule};
+use rayon::prelude::*;
+
+use crate::modules::{DirectoryModule, FileModule};
 
 fn is_not_hidden(file: &Path) -> bool {
     file.file_name()
@@ -26,10 +28,12 @@ impl FileSystemVisitor {
     }
 
     pub fn finalize(self) {
-        self.file_modules.iter().for_each(|m| m.finalize().unwrap());
+        self.file_modules
+            .par_iter()
+            .for_each(|m| m.finalize().unwrap());
 
         self.directory_modules
-            .iter()
+            .par_iter()
             .for_each(|m| m.finalize().unwrap());
     }
 
@@ -51,11 +55,15 @@ impl FileSystemVisitor {
                 directory_module.handle(directory)?;
             }
             None => {
-                for path in std::fs::read_dir(directory)?.map(|f| f.unwrap().path()) {
-                    if is_not_hidden(&path) {
-                        self.visit(&path)?
-                    }
-                }
+                std::fs::read_dir(directory)?
+                    .par_bridge()
+                    .map(|f| f.unwrap().path())
+                    .filter(|path| is_not_hidden(path))
+                    .for_each(|path| {
+                        if let Err(error) = self.visit(&path) {
+                            eprintln!("{error:?}");
+                        }
+                    });
             }
         }
 
