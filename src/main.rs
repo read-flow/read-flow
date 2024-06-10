@@ -25,7 +25,11 @@ fn main() -> Result<()> {
 
     let visitor = FileSystemVisitor::new(
         vec![Box::<GitProjects>::default()],
-        vec![Box::new(FileExtensionFinder::new("pdf".into()))],
+        vec![
+            Box::new(FileExtensionFinder::new("pdf".into())),
+            Box::new(FileExtensionFinder::new("epub".into())),
+            Box::new(FileExtensionFinder::new("mobi".into())),
+        ],
     );
 
     match cli.command {
