@@ -1,0 +1,37 @@
+// @generated automatically by Diesel CLI.
+
+diesel::table! {
+    directories (id) {
+        id -> Integer,
+        path -> Text,
+        #[sql_name = "type"]
+        type_ -> Text,
+    }
+}
+
+diesel::table! {
+    directory_tags (directory_id, tag) {
+        directory_id -> Integer,
+        tag -> Text,
+    }
+}
+
+diesel::table! {
+    file_tags (file_id, tag) {
+        file_id -> Integer,
+        tag -> Text,
+    }
+}
+
+diesel::table! {
+    files (id) {
+        id -> Integer,
+        path -> Text,
+        #[sql_name = "type"]
+        type_ -> Text,
+        size -> Integer,
+        sha256sum -> Text,
+    }
+}
+
+diesel::allow_tables_to_appear_in_same_query!(directories, directory_tags, file_tags, files,);
