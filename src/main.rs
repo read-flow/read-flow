@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 
 use archive_organizer::{
     file_system_visitor::FileSystemVisitor,
+    get_connection_pool,
     modules::{file_extension_finder::FileExtensionFinder, git::GitProjects},
 };
 
@@ -23,12 +24,20 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    let connection_manager = get_connection_pool();
+
     let visitor = FileSystemVisitor::new(
         vec![Box::<GitProjects>::default()],
         vec![
-            Box::new(FileExtensionFinder::new("pdf".into())),
-            Box::new(FileExtensionFinder::new("epub".into())),
-            Box::new(FileExtensionFinder::new("mobi".into())),
+            Box::new(FileExtensionFinder::new(
+                "pdf".into(),
+                connection_manager.clone(),
+            )),
+            Box::new(FileExtensionFinder::new(
+                "epub".into(),
+                connection_manager.clone(),
+            )),
+            Box::new(FileExtensionFinder::new("mobi".into(), connection_manager)),
         ],
     );
 

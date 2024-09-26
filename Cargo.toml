@@ -7,11 +7,12 @@ license = "MIT"
 [dependencies]
 anyhow = "1.0.86"
 clap = { version = "4.5.4", features = ["derive"] }
-diesel = { version = "2.2.0", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
+diesel = { version = "2.2.0", features = ["sqlite", "r2d2", "returning_clauses_for_sqlite_3_35"] }
 # build libsqlite3 as part of the build process
 # uncomment this line if you run into setup issues
 # libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 dotenvy = "0.15"
 once_cell = "1.19.0"
+r2d2 = "0.8.10"
 rayon = "1.10.0"
 thiserror = "1.0.61"

@@ -3,9 +3,7 @@ pub mod git;
 
 use std::path::Path;
 
-use thiserror::Error;
-
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum DirectoryError {}
 
 pub trait DirectoryModule {
@@ -22,8 +20,13 @@ pub trait DirectoryModule {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum FileError {}
+#[derive(Debug, thiserror::Error)]
+pub enum FileError {
+    #[error("error while obtaining a db connection from the connection pool")]
+    ConnectionPool(#[from] r2d2::Error),
+    #[error("error while executing database query")]
+    Database(#[from] diesel::result::Error),
+}
 
 pub trait FileModule {
     fn matches(&self, _file: &Path) -> bool {

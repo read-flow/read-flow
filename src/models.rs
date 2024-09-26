@@ -11,7 +11,17 @@ pub struct File {
     pub sha256sum: String,
 }
 
-#[derive(Queryable, Selectable)]
+#[derive(Insertable)]
+#[diesel(table_name = crate::schema::files)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewFile {
+    pub path: String,
+    pub type_: String,
+    pub size: i32,
+    pub sha256sum: String,
+}
+
+#[derive(Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::file_tags)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct FileTag {
@@ -28,7 +38,15 @@ pub struct Directory {
     pub type_: String,
 }
 
-#[derive(Queryable, Selectable)]
+#[derive(Insertable)]
+#[diesel(table_name = crate::schema::directories)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NewDirectory {
+    pub path: String,
+    pub type_: String,
+}
+
+#[derive(Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::directory_tags)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct DirectoryTag {
