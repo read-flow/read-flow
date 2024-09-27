@@ -1,10 +1,15 @@
 pub mod file_extension_finder;
-pub mod git;
+pub mod scm_project_finder;
 
 use std::path::Path;
 
 #[derive(Debug, thiserror::Error)]
-pub enum DirectoryError {}
+pub enum DirectoryError {
+    #[error("error while obtaining a db connection from the connection pool")]
+    ConnectionPool(#[from] r2d2::Error),
+    #[error("error while executing database query")]
+    Database(#[from] diesel::result::Error),
+}
 
 pub trait DirectoryModule {
     fn matches(&self, _directory: &Path) -> bool {

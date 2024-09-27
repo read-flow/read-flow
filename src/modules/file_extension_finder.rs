@@ -53,8 +53,6 @@ impl FileModule for FileExtensionFinder {
         let extension = self.extension.to_ascii_uppercase();
         println!("{extension} files found: {path_bufs:?}");
 
-        let mut connection = self.connection_pool.get()?;
-
         let entities: Vec<_> = path_bufs
             .par_iter()
             .map(|file| {
@@ -78,6 +76,8 @@ impl FileModule for FileExtensionFinder {
                 }
             })
             .collect();
+
+        let mut connection = self.connection_pool.get()?;
 
         diesel::insert_into(files::table)
             .values(entities)
