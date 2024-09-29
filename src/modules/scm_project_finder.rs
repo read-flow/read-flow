@@ -48,7 +48,7 @@ impl DirectoryModule for ScmProjectFinder {
         let projects = self.projects.lock().unwrap();
         // the following assumes that the directory is hidden, and removes the '.'
         let directory = &self.directory.to_ascii_uppercase()[1..].to_string();
-        println!("{directory} projects found: {projects:?}");
+        tracing::debug!("{directory} projects found: {projects:?}");
 
         let entities: Vec<_> = projects
             .par_iter()
@@ -64,7 +64,7 @@ impl DirectoryModule for ScmProjectFinder {
             .values(entities)
             .execute(&mut connection)?;
 
-        println!("directories added to the database");
+        tracing::debug!("directories added to the database");
 
         Ok(())
     }

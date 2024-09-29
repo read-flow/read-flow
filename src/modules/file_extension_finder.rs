@@ -51,7 +51,7 @@ impl FileModule for FileExtensionFinder {
     fn finalize(&self) -> Result<(), FileError> {
         let path_bufs = self.files.lock().unwrap();
         let extension = self.extension.to_ascii_uppercase();
-        println!("{extension} files found: {path_bufs:?}");
+        tracing::debug!("{extension} files found: {path_bufs:?}");
 
         let entities: Vec<_> = path_bufs
             .par_iter()
@@ -83,7 +83,7 @@ impl FileModule for FileExtensionFinder {
             .values(entities)
             .execute(&mut connection)?;
 
-        println!("files added to the database");
+        tracing::debug!("files added to the database");
 
         Ok(())
     }

@@ -46,7 +46,7 @@ impl FileSystemVisitor {
     }
 
     fn visit_directory(&self, directory: &Path) -> anyhow::Result<()> {
-        dbg!(&directory);
+        tracing::debug!("visiting directory: {directory:?}");
 
         let directory_module = self.directory_modules.iter().find(|m| m.matches(directory));
 
@@ -61,7 +61,7 @@ impl FileSystemVisitor {
                     .filter(|path| is_not_hidden(path))
                     .for_each(|path| {
                         if let Err(error) = self.visit(&path) {
-                            eprintln!("{error:?}");
+                            tracing::error!("error while visiting {path:?}: {error:?}");
                         }
                     });
             }
@@ -71,7 +71,7 @@ impl FileSystemVisitor {
     }
 
     fn visit_file(&self, file: &Path) -> anyhow::Result<()> {
-        dbg!(&file);
+        tracing::debug!("visiting file: {file:?}");
 
         let file_module = self.file_modules.iter().find(|m| m.matches(file));
 

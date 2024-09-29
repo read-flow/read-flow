@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 
 use archive_organizer::{
     file_system_visitor::FileSystemVisitor,
@@ -22,6 +23,11 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::from_default_env())
+        .init();
+
     let cli = Cli::parse();
 
     let connection_pool = get_connection_pool();
