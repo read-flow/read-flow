@@ -30,6 +30,14 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
+    match cli.command {
+        Commands::Scan { path } => scan(path)?,
+    };
+
+    Ok(())
+}
+
+fn scan(path: PathBuf) -> Result<()> {
     let connection_pool = get_connection_pool();
 
     let visitor = FileSystemVisitor::new(
@@ -53,12 +61,8 @@ fn main() -> Result<()> {
         ],
     );
 
-    match cli.command {
-        Commands::Scan { path } => {
-            let path = path.canonicalize()?;
-            visitor.visit(&path)?
-        }
-    }
+    let path = path.canonicalize()?;
+    visitor.visit(&path)?;
 
     visitor.finalize();
 
