@@ -5,29 +5,24 @@ use std::{
     sync::Mutex,
 };
 
-use diesel::{
-    prelude::*,
-    r2d2::{ConnectionManager, Pool},
-};
+use diesel::prelude::*;
 use rayon::prelude::*;
 
 use crate::{
     models::NewFile,
     modules::{FileError, FileModule},
     schema::files,
+    ConnectionPool,
 };
 
 pub struct FileExtensionFinder {
     extension: String,
     files: Mutex<Vec<PathBuf>>,
-    connection_pool: Pool<ConnectionManager<SqliteConnection>>,
+    connection_pool: ConnectionPool,
 }
 
 impl FileExtensionFinder {
-    pub fn new(
-        extension: String,
-        connection_pool: Pool<ConnectionManager<SqliteConnection>>,
-    ) -> Self {
+    pub fn new(extension: String, connection_pool: ConnectionPool) -> Self {
         Self {
             extension,
             files: vec![].into(),

@@ -3,13 +3,10 @@ use std::{
     sync::Mutex,
 };
 
-use diesel::{
-    prelude::*,
-    r2d2::{ConnectionManager, Pool},
-};
+use diesel::prelude::*;
 use rayon::prelude::*;
 
-use crate::{models::NewDirectory, schema::directories};
+use crate::{models::NewDirectory, schema::directories, ConnectionPool};
 
 use super::{DirectoryError, DirectoryModule};
 
@@ -17,14 +14,11 @@ pub struct ScmProjectFinder {
     /// The hidden SCM directory, e.g. `.git`, `.hg`
     directory: String,
     projects: Mutex<Vec<PathBuf>>,
-    connection_pool: Pool<ConnectionManager<SqliteConnection>>,
+    connection_pool: ConnectionPool,
 }
 
 impl ScmProjectFinder {
-    pub fn new(
-        directory: String,
-        connection_pool: Pool<ConnectionManager<SqliteConnection>>,
-    ) -> Self {
+    pub fn new(directory: String, connection_pool: ConnectionPool) -> Self {
         Self {
             directory,
             projects: vec![].into(),
