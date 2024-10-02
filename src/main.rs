@@ -7,6 +7,7 @@ use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 use archive_organizer::{
     file_system_visitor::FileSystemVisitor,
     get_connection_pool,
+    gui::gui,
     modules::{file_extension_finder::FileExtensionFinder, scm_project_finder::ScmProjectFinder},
 };
 
@@ -20,6 +21,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Scan { path: PathBuf },
+    Gui,
 }
 
 fn main() -> Result<()> {
@@ -32,6 +34,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Scan { path } => scan(path)?,
+        Commands::Gui => gui()?,
     };
 
     Ok(())
