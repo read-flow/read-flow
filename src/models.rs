@@ -2,7 +2,7 @@ use diesel::{prelude::*, sqlite::Sqlite};
 
 use crate::schema::{directories, directory_tags, file_tags, files};
 
-#[derive(Queryable, Identifiable, Selectable)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Selectable)]
 #[diesel(table_name = files)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct File {
@@ -23,7 +23,7 @@ pub struct NewFile {
     pub sha256sum: String,
 }
 
-#[derive(Queryable, Selectable, Insertable, Associations)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable, Associations)]
 #[diesel(belongs_to(File))]
 #[diesel(table_name = file_tags)]
 #[diesel(check_for_backend(Sqlite))]
@@ -32,7 +32,7 @@ pub struct FileTag {
     pub tag: String,
 }
 
-#[derive(Queryable, Identifiable, Selectable)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Selectable)]
 #[diesel(table_name = directories)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct Directory {
@@ -49,7 +49,7 @@ pub struct NewDirectory {
     pub type_: String,
 }
 
-#[derive(Queryable, Selectable, Insertable, Associations)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable, Associations)]
 #[diesel(belongs_to(Directory))]
 #[diesel(table_name = directory_tags)]
 #[diesel(check_for_backend(Sqlite))]

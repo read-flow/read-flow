@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use diesel::prelude::*;
 use iced::{
     widget::{
@@ -5,7 +7,7 @@ use iced::{
         scrollable::{Direction, Scrollbar},
         stack, text, text_input,
     },
-    Color, Element,
+    Color, Element, Task,
 };
 use iced_aw::{grid_row, Grid};
 
@@ -45,9 +47,32 @@ impl Dialog {
 #[derive(Default)]
 struct Files {
     shorten_path: bool,
+    ordering: OrderFilesBy,
     connection_pool: Option<ConnectionPool>,
     files: Vec<File>,
     dialog: Option<Dialog>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+enum OrderFilesBy {
+    #[default]
+    Id,
+    Type,
+    Path,
+    Size,
+    Fingerprint,
+}
+
+#[derive(Debug, Clone, thiserror::Error)]
+enum Error {
+    #[error("database error: {0}")]
+    DbError(#[source] Arc<diesel::result::Error>),
+}
+
+impl From<diesel::result::Error> for Error {
+    fn from(value: diesel::result::Error) -> Self {
+        Self::DbError(Arc::new(value))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -57,14 +82,29 @@ enum Message {
     CloseDialog,
     OpenDialog(Dialog),
     TagChanged(String),
-    OrderById,
-    OrderByType,
-    OrderByPath,
-    OrderBySize,
-    OrderByFingerprint,
+    TagApplied(Result<FileTag, Error>),
+    FilesLoaded(Result<Vec<File>, Error>),
+    OrderBy(OrderFilesBy),
+}
+
+pub fn gui() -> iced::Result {
+    iced::application("ArchiveOrganizer - Files", Files::update, Files::view).run_with(Files::new)
 }
 
 impl Files {
+    fn new() -> (Self, Task<Message>) {
+        let mut this: Self = Default::default();
+        let ordering = this.ordering;
+        let connection_pool = this.connection_pool();
+        (
+            this,
+            Task::batch([Task::perform(
+                query_files(connection_pool, ordering),
+                Message::FilesLoaded,
+            )]),
+        )
+    }
+
     fn connection_pool(&mut self) -> ConnectionPool {
         if self.connection_pool.is_none() {
             self.connection_pool = Some(get_connection_pool());
@@ -73,36 +113,37 @@ impl Files {
         self.connection_pool.as_ref().unwrap().clone()
     }
 
-    fn update(&mut self, message: Message) {
+    fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Update => {
-                self.files = files::dsl::files
-                    .load(&mut self.connection_pool().get().unwrap())
-                    .unwrap();
-            }
+            Message::Update => Task::perform(
+                query_files(self.connection_pool(), self.ordering),
+                Message::FilesLoaded,
+            ),
             Message::ToggleShortenPath => {
                 self.shorten_path = !self.shorten_path;
+                Task::none()
             }
-            Message::CloseDialog => {
-                if let Some(Dialog::FileTag {
+            Message::CloseDialog => match self.dialog.take() {
+                Some(Dialog::FileTag {
                     file_id,
                     tag: Some(tag),
-                }) = &self.dialog
-                {
-                    let file_tag = FileTag {
-                        file_id: *file_id,
-                        tag: tag.clone(),
-                    };
-                    diesel::insert_into(file_tags::table)
-                        .values(&file_tag)
-                        .returning(FileTag::as_returning())
-                        .get_result(&mut self.connection_pool().get().unwrap())
-                        .unwrap();
-                }
-                self.dialog = None;
+                }) => Task::perform(
+                    add_file_tag(self.connection_pool(), FileTag { file_id, tag }),
+                    Message::TagApplied,
+                ),
+                _ => Task::none(),
+            },
+            Message::TagApplied(Ok(file_tag)) => {
+                tracing::debug!("Added file_tag: {file_tag:?}");
+                Task::done(Message::Update)
+            }
+            Message::TagApplied(Err(error)) => {
+                tracing::error!("Could not add file_tag: {error}");
+                Task::none()
             }
             Message::OpenDialog(dialog) => {
                 self.dialog = Some(dialog);
+                Task::none()
             }
             Message::TagChanged(tag) => {
                 if let Some(Dialog::FileTag { file_id, .. }) = &self.dialog {
@@ -111,36 +152,19 @@ impl Files {
                         tag: Some(tag),
                     })
                 }
+                Task::none()
             }
-            Message::OrderById => {
-                self.files = files::dsl::files
-                    .order_by(files::columns::id)
-                    .load(&mut self.connection_pool().get().unwrap())
-                    .unwrap();
+            Message::FilesLoaded(Ok(files)) => {
+                self.files = files;
+                Task::none()
             }
-            Message::OrderByType => {
-                self.files = files::dsl::files
-                    .order_by(files::columns::type_)
-                    .load(&mut self.connection_pool().get().unwrap())
-                    .unwrap();
+            Message::FilesLoaded(Err(error)) => {
+                tracing::error!("error while loading files from database: {error}");
+                Task::none()
             }
-            Message::OrderByPath => {
-                self.files = files::dsl::files
-                    .order_by(files::columns::path)
-                    .load(&mut self.connection_pool().get().unwrap())
-                    .unwrap();
-            }
-            Message::OrderBySize => {
-                self.files = files::dsl::files
-                    .order_by(files::columns::size)
-                    .load(&mut self.connection_pool().get().unwrap())
-                    .unwrap();
-            }
-            Message::OrderByFingerprint => {
-                self.files = files::dsl::files
-                    .order_by(files::columns::sha256sum)
-                    .load(&mut self.connection_pool().get().unwrap())
-                    .unwrap();
+            Message::OrderBy(ordering) => {
+                self.ordering = ordering;
+                Task::done(Message::Update)
             }
         }
     }
@@ -157,11 +181,11 @@ impl Files {
         let mut grid = Grid::new()
             .push(grid_row![
                 text("actions"),
-                button("id").on_press(Message::OrderById),
-                button("type").on_press(Message::OrderByType),
-                button("size").on_press(Message::OrderBySize),
-                button("fingerprint").on_press(Message::OrderByFingerprint),
-                button("path").on_press(Message::OrderByPath),
+                button("id").on_press(Message::OrderBy(OrderFilesBy::Id)),
+                button("type").on_press(Message::OrderBy(OrderFilesBy::Type)),
+                button("size").on_press(Message::OrderBy(OrderFilesBy::Size)),
+                button("fingerprint").on_press(Message::OrderBy(OrderFilesBy::Fingerprint)),
+                button("path").on_press(Message::OrderBy(OrderFilesBy::Path)),
             ])
             .column_spacing(10);
 
@@ -196,10 +220,6 @@ impl Files {
     }
 }
 
-pub fn gui() -> iced::Result {
-    iced::run("ArchiveOrganizer Files", Files::update, Files::view)
-}
-
 fn modal<'a, Message>(
     base: impl Into<Element<'a, Message>>,
     content: impl Into<Element<'a, Message>>,
@@ -227,4 +247,39 @@ where
         )
     ]
     .into()
+}
+
+async fn query_files(
+    connection_pool: ConnectionPool,
+    order_by: OrderFilesBy,
+) -> Result<Vec<File>, Error> {
+    let files = match order_by {
+        OrderFilesBy::Id => files::dsl::files
+            .order_by(files::columns::id)
+            .load(&mut connection_pool.get().unwrap())?,
+        OrderFilesBy::Type => files::dsl::files
+            .order_by(files::columns::type_)
+            .load(&mut connection_pool.get().unwrap())?,
+        OrderFilesBy::Path => files::dsl::files
+            .order_by(files::columns::path)
+            .load(&mut connection_pool.get().unwrap())?,
+        OrderFilesBy::Size => files::dsl::files
+            .order_by(files::columns::size)
+            .load(&mut connection_pool.get().unwrap())?,
+        OrderFilesBy::Fingerprint => files::dsl::files
+            .order_by(files::columns::sha256sum)
+            .load(&mut connection_pool.get().unwrap())?,
+    };
+    Ok(files)
+}
+
+async fn add_file_tag(
+    connection_pool: ConnectionPool,
+    file_tag: FileTag,
+) -> Result<FileTag, Error> {
+    let file_tag = diesel::insert_into(file_tags::table)
+        .values(&file_tag)
+        .returning(FileTag::as_returning())
+        .get_result(&mut connection_pool.get().unwrap())?;
+    Ok(file_tag)
 }
