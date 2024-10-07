@@ -3,11 +3,8 @@ use std::sync::Arc;
 use diesel::prelude::*;
 use iced::{
     border,
-    widget::{
-        button, center, column, container, mouse_area, opaque, row, scrollable, stack, text,
-        text_input,
-    },
-    Color, Element, Task, Theme,
+    widget::{self, button, column, container, row, scrollable, text, text_input},
+    Element, Task, Theme,
 };
 use iced_aw::{grid_row, Grid};
 use indexmap::IndexMap;
@@ -198,9 +195,8 @@ impl Files {
     }
 
     fn view(&self) -> Element<Message> {
-        let action_bar = container(
-            row![button("Toggle Short Path").on_press(Message::ToggleShortenPath)].spacing(10),
-        );
+        let action_bar =
+            row![button("Toggle Short Path").on_press(Message::ToggleShortenPath)].spacing(10);
 
         let mut grid = Grid::new()
             .push(grid_row![
@@ -246,18 +242,12 @@ impl Files {
             ]);
         }
 
-        let table = scrollable(grid).direction(scrollable::Direction::Both {
-            vertical: scrollable::Scrollbar::new(),
-            horizontal: scrollable::Scrollbar::new(),
-        });
+        let content = match &self.dialog {
+            Some(dialog) => dialog.to_element(),
+            None => grid.into(),
+        };
 
-        // container(column![action_bar, table,]).into()
-        let content = container(column![action_bar, table,]);
-
-        match &self.dialog {
-            Some(dialog) => modal(content, dialog.to_element(), Message::Update),
-            None => content.into(),
-        }
+        layout(action_bar, column![], column![content]).into()
     }
 }
 
@@ -268,33 +258,45 @@ fn tag_button(tag: String) -> button::Button<'static, Message> {
     })
 }
 
-fn modal<'a, Message>(
-    base: impl Into<Element<'a, Message>>,
-    content: impl Into<Element<'a, Message>>,
-    on_blur: Message,
-) -> Element<'a, Message>
-where
-    Message: Clone + 'a,
-{
-    stack![
-        base.into(),
-        opaque(
-            mouse_area(center(opaque(content)).style(|_theme| {
-                container::Style {
-                    background: Some(
-                        Color {
-                            a: 0.8,
-                            ..Color::BLACK
-                        }
-                        .into(),
-                    ),
-                    ..container::Style::default()
-                }
-            }))
-            .on_press(on_blur)
-        )
-    ]
-    .into()
+fn layout<'a>(
+    head: widget::Row<'a, Message>,
+    bar: widget::Column<'a, Message>,
+    main: widget::Column<'a, Message>,
+) -> widget::Column<'a, Message> {
+    column![header(head), row![sidebar(bar), content(main)]]
+}
+
+fn header(row: widget::Row<Message>) -> widget::Container<'_, Message> {
+    container(row.padding(10).align_y(iced::Center)).style(|theme| {
+        let palette = theme.extended_palette();
+
+        container::Style::default().border(border::color(palette.background.strong.color).width(1))
+    })
+}
+
+fn sidebar(column: widget::Column<Message>) -> widget::Container<'_, Message> {
+    container(
+        column
+            .spacing(40)
+            .padding(10)
+            .width(200)
+            .align_x(iced::Center),
+    )
+    .style(container::rounded_box)
+    .center_y(iced::Fill)
+}
+
+fn content(column: widget::Column<Message>) -> widget::Container<'_, Message> {
+    container(
+        scrollable(column.spacing(40).align_x(iced::Left))
+            .direction(scrollable::Direction::Both {
+                vertical: scrollable::Scrollbar::new(),
+                horizontal: scrollable::Scrollbar::new(),
+            })
+            .width(iced::Fill)
+            .height(iced::Fill),
+    )
+    .padding(10)
 }
 
 async fn query_files_by_tags(
