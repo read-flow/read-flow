@@ -4,6 +4,7 @@ pub mod models;
 pub mod modules;
 pub mod scan;
 pub mod schema;
+pub mod serve;
 
 use std::{env, time::Duration};
 
