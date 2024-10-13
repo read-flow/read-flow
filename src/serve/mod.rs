@@ -1,12 +1,11 @@
 use std::path::Path;
 
-use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use rocket::{fs::NamedFile, get, http::ContentType, routes, serde::json::Json, State};
 
 use crate::db::{
+    dao::{FileDao, FileTagDao},
     get_connection_pool,
     models::{File, FileTag},
-    schema::{file_tags, files},
     ConnectionPool,
 };
 
@@ -31,38 +30,25 @@ pub fn serve() -> _ {
 
 #[get("/files")]
 fn list_files(connection_pool: &State<ConnectionPool>) -> Json<Vec<File>> {
-    let mut connection = connection_pool.get().unwrap();
-    let files = files::table.load(&mut connection).unwrap();
+    let files = connection_pool.select_all_files().unwrap();
     Json(files)
 }
 
 #[get("/files/tags")]
 fn list_files_tags(connection_pool: &State<ConnectionPool>) -> Json<Vec<FileTag>> {
-    let mut connection = connection_pool.get().unwrap();
-    let file_tags = file_tags::table.load(&mut connection).unwrap();
+    let file_tags = connection_pool.select_all_file_tags().unwrap();
     Json(file_tags)
 }
 
 #[get("/files/<id>")]
 fn list_file(connection_pool: &State<ConnectionPool>, id: i32) -> Option<Json<File>> {
-    let mut connection = connection_pool.get().unwrap();
-    let file = files::table
-        .find(id)
-        .select(File::as_select())
-        .first(&mut connection)
-        .optional()
-        .unwrap();
+    let file = connection_pool.select_file_by_id(id).unwrap();
     file.map(Json)
 }
 
 #[get("/files/<id>/tags")]
 fn list_file_tags(connection_pool: &State<ConnectionPool>, id: i32) -> Json<Vec<FileTag>> {
-    let mut connection = connection_pool.get().unwrap();
-    let file_tags = file_tags::table
-        .filter(file_tags::file_id.eq(id))
-        .select(FileTag::as_select())
-        .load(&mut connection)
-        .unwrap();
+    let file_tags = connection_pool.select_file_tags_by_file_id(id).unwrap();
     Json(file_tags)
 }
 
@@ -72,13 +58,7 @@ async fn download_file(
     id: i32,
     file_name: &str,
 ) -> Option<(ContentType, NamedFile)> {
-    let mut connection = connection_pool.get().unwrap();
-    let file: Option<File> = files::table
-        .find(id)
-        .select(File::as_select())
-        .first(&mut connection)
-        .optional()
-        .unwrap();
+    let file = connection_pool.select_file_by_id(id).unwrap();
 
     match file {
         None => None,

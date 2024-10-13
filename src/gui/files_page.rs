@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use diesel::prelude::*;
 use iced::{
     widget::{button, column, container, row, text, text_input},
     Element, Task,
@@ -10,9 +7,9 @@ use indexmap::IndexMap;
 
 use crate::{
     db::{
+        dao::{self, FileDao, FileTagDao},
         get_connection_pool,
         models::{File, FileTag},
-        schema::{file_tags, files},
         ConnectionPool,
     },
     gui,
@@ -78,13 +75,7 @@ pub(super) enum OrderFilesBy {
 #[derive(Debug, Clone, thiserror::Error)]
 pub(super) enum Error {
     #[error("database error: {0}")]
-    DbError(#[source] Arc<diesel::result::Error>),
-}
-
-impl From<diesel::result::Error> for Error {
-    fn from(value: diesel::result::Error) -> Self {
-        Self::DbError(Arc::new(value))
-    }
+    DbError(#[from] dao::Error),
 }
 
 #[derive(Debug, Clone)]
@@ -280,22 +271,15 @@ async fn query_files_by_tags(
     order_by: OrderFilesBy,
     tags: Vec<String>,
 ) -> Result<Vec<(File, Vec<FileTag>)>, Error> {
-    let mut connection = connection_pool.get().unwrap();
-
-    let files = files::table;
     let files: Vec<File> = match order_by {
-        OrderFilesBy::Id => files.order_by(files::columns::id).load(&mut connection)?,
-        OrderFilesBy::Type => files
-            .order_by(files::columns::type_)
-            .load(&mut connection)?,
-        OrderFilesBy::Path => files.order_by(files::columns::path).load(&mut connection)?,
-        OrderFilesBy::Size => files.order_by(files::columns::size).load(&mut connection)?,
-        OrderFilesBy::Fingerprint => files
-            .order_by(files::columns::sha256sum)
-            .load(&mut connection)?,
+        OrderFilesBy::Id => connection_pool.select_all_files_order_by_id()?,
+        OrderFilesBy::Type => connection_pool.select_all_files_order_by_type()?,
+        OrderFilesBy::Path => connection_pool.select_all_files_order_by_path()?,
+        OrderFilesBy::Size => connection_pool.select_all_files_order_by_size()?,
+        OrderFilesBy::Fingerprint => connection_pool.select_all_files_order_by_sha256sum()?,
     };
 
-    let file_tags: Vec<FileTag> = file_tags::table.load(&mut connection)?;
+    let file_tags: Vec<FileTag> = connection_pool.select_all_file_tags()?;
 
     let mut result: IndexMap<i32, (File, Vec<FileTag>)> = files
         .into_iter()
@@ -321,9 +305,6 @@ async fn add_file_tag(
     connection_pool: ConnectionPool,
     file_tag: FileTag,
 ) -> Result<FileTag, Error> {
-    let file_tag = diesel::insert_into(file_tags::table)
-        .values(&file_tag)
-        .returning(FileTag::as_returning())
-        .get_result(&mut connection_pool.get().unwrap())?;
+    let file_tag = connection_pool.insert_file_tag(file_tag)?;
     Ok(file_tag)
 }
