@@ -4,12 +4,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 
-use archive_organizer::{
-    file_system_visitor::FileSystemVisitor,
-    get_connection_pool,
-    gui::gui,
-    modules::{file_extension_finder::FileExtensionFinder, scm_project_finder::ScmProjectFinder},
-};
+use archive_organizer::{gui::gui, scan::scan};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -36,38 +31,6 @@ fn main() -> Result<()> {
         Commands::Scan { path } => scan(path)?,
         Commands::Gui => gui()?,
     };
-
-    Ok(())
-}
-
-fn scan(path: PathBuf) -> Result<()> {
-    let connection_pool = get_connection_pool();
-
-    let visitor = FileSystemVisitor::new(
-        vec![
-            Box::new(ScmProjectFinder::new(
-                ".git".into(),
-                connection_pool.clone(),
-            )),
-            Box::new(ScmProjectFinder::new(".hg".into(), connection_pool.clone())),
-        ],
-        vec![
-            Box::new(FileExtensionFinder::new(
-                "pdf".into(),
-                connection_pool.clone(),
-            )),
-            Box::new(FileExtensionFinder::new(
-                "epub".into(),
-                connection_pool.clone(),
-            )),
-            Box::new(FileExtensionFinder::new("mobi".into(), connection_pool)),
-        ],
-    );
-
-    let path = path.canonicalize()?;
-    visitor.visit(&path)?;
-
-    visitor.finalize();
 
     Ok(())
 }

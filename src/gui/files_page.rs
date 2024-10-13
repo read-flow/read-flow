@@ -46,7 +46,7 @@ impl Dialog {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub(super) struct Page {
     shorten_path: bool,
     ordering: OrderFilesBy,
@@ -54,6 +54,12 @@ pub(super) struct Page {
     files: Vec<(File, Vec<FileTag>)>,
     dialog: Option<Dialog>,
     selected_tags: Vec<String>,
+}
+
+impl From<Page> for gui::Pages {
+    fn from(source: Page) -> Self {
+        gui::Pages::Files(source)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -98,19 +104,32 @@ impl From<Message> for gui::Message {
     }
 }
 
+impl TryFrom<gui::Message> for Message {
+    type Error = gui::InvalidMessage;
+    fn try_from(message: gui::Message) -> Result<Self, Self::Error> {
+        if let gui::Message::Files(message) = message {
+            Ok(message)
+        } else {
+            Err(gui::InvalidMessage(message))
+        }
+    }
+}
+
 impl Page {
     pub fn new() -> (Self, Task<gui::Message>) {
         let mut this: Self = Default::default();
-        let ordering = this.ordering;
-        let connection_pool = this.connection_pool();
-        let selected_tags = this.selected_tags.clone();
-        (
-            this,
-            Task::batch([Task::perform(
-                query_files_by_tags(connection_pool, ordering, selected_tags),
-                |result| Message::FilesLoaded(result).into(),
-            )]),
-        )
+        let task = this.init();
+        (this, task)
+    }
+
+    pub fn init(&mut self) -> Task<gui::Message> {
+        let ordering = self.ordering;
+        let connection_pool = self.connection_pool();
+        let selected_tags = self.selected_tags.clone();
+        Task::batch([Task::perform(
+            query_files_by_tags(connection_pool, ordering, selected_tags),
+            |result| Message::FilesLoaded(result).into(),
+        )])
     }
 
     fn connection_pool(&mut self) -> ConnectionPool {
@@ -120,18 +139,8 @@ impl Page {
         // unwrap is safe because of previous code
         self.connection_pool.as_ref().unwrap().clone()
     }
-}
 
-impl gui::Page for Page {
-    fn update(&mut self, message: gui::Message) -> Task<gui::Message> {
-        let message = match message {
-            gui::Message::Files(message) => message,
-            message => {
-                tracing::error!("expected Files message, got {message:?}");
-                return Task::none();
-            }
-        };
-
+    pub fn update(&mut self, message: Message) -> Task<gui::Message> {
         match message {
             Message::Update => Task::perform(
                 query_files_by_tags(
@@ -205,7 +214,7 @@ impl gui::Page for Page {
         }
     }
 
-    fn view(&self) -> Element<gui::Message> {
+    pub fn view(&self) -> Element<gui::Message> {
         let action_bar =
             row![button("Toggle Short Path").on_press(Message::ToggleShortenPath.into())]
                 .spacing(10);

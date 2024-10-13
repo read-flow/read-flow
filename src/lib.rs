@@ -2,6 +2,7 @@ pub mod file_system_visitor;
 pub mod gui;
 pub mod models;
 pub mod modules;
+pub mod scan;
 pub mod schema;
 
 use std::{env, time::Duration};
