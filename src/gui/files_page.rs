@@ -9,10 +9,13 @@ use iced_aw::{grid_row, Grid};
 use indexmap::IndexMap;
 
 use crate::{
-    get_connection_pool, gui,
-    models::{File, FileTag},
-    schema::{file_tags, files},
-    ConnectionPool,
+    db::{
+        get_connection_pool,
+        models::{File, FileTag},
+        schema::{file_tags, files},
+        ConnectionPool,
+    },
+    gui,
 };
 
 use super::tag_button;

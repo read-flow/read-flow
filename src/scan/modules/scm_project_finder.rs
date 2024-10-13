@@ -6,7 +6,7 @@ use std::{
 use diesel::prelude::*;
 use rayon::prelude::*;
 
-use crate::{models::NewDirectory, schema::directories, ConnectionPool};
+use crate::db::{models::NewDirectory, schema::directories, ConnectionPool};
 
 use super::{DirectoryError, DirectoryModule};
 

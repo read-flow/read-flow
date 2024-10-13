@@ -1,12 +1,14 @@
+pub mod file_system_visitor;
+pub mod modules;
+
 use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::{
-    file_system_visitor::FileSystemVisitor,
-    get_connection_pool,
-    modules::{file_extension_finder::FileExtensionFinder, scm_project_finder::ScmProjectFinder},
-};
+use crate::db::get_connection_pool;
+
+use file_system_visitor::FileSystemVisitor;
+use modules::{file_extension_finder::FileExtensionFinder, scm_project_finder::ScmProjectFinder};
 
 pub fn scan(path: PathBuf) -> Result<()> {
     let connection_pool = get_connection_pool();

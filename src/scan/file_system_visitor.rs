@@ -2,7 +2,7 @@ use std::path::Path;
 
 use rayon::prelude::*;
 
-use crate::modules::{DirectoryModule, FileModule};
+use super::modules::{DirectoryModule, FileModule};
 
 fn is_not_hidden(file: &Path) -> bool {
     file.file_name()

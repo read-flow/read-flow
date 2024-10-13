@@ -8,12 +8,9 @@ use std::{
 use diesel::prelude::*;
 use rayon::prelude::*;
 
-use crate::{
-    models::NewFile,
-    modules::{FileError, FileModule},
-    schema::files,
-    ConnectionPool,
-};
+use crate::db::{models::NewFile, schema::files, ConnectionPool};
+
+use super::{FileError, FileModule};
 
 pub struct FileExtensionFinder {
     extension: String,

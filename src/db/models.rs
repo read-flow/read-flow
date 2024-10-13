@@ -1,7 +1,7 @@
 use diesel::{prelude::*, sqlite::Sqlite};
 use serde::{Deserialize, Serialize}; // TODO: extract into a separate web API crate
 
-use crate::schema::{directories, directory_tags, file_tags, files};
+use crate::db::schema::{directories, directory_tags, file_tags, files};
 
 #[derive(
     Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Selectable, Serialize, Deserialize,

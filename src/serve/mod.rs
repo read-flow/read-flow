@@ -3,7 +3,7 @@ use std::path::Path;
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
 use rocket::{fs::NamedFile, get, http::ContentType, routes, serde::json::Json, State};
 
-use crate::{
+use crate::db::{
     get_connection_pool,
     models::{File, FileTag},
     schema::{file_tags, files},
