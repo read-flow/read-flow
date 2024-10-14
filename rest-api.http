@@ -1,15 +1,26 @@
 # get all files
 GET http://localhost:8000/files
 
-# get all tags for all files
+# get all file tags
 GET http://localhost:8000/files/tags
 
 # get one file
 GET http://localhost:8000/files/1
 
-# get all tags for a single file
+# get tags of file
 GET http://localhost:8000/files/1/tags
 
-# get all tags for a single file
+# add tags to file
+POST http://localhost:8000/files/1/tags
+ContentType: application/json
+Accept: application/json
+
+["magick","horses"]
+
+# download the contents of a file
 GET http://localhost:8000/files/2/download-as/the_law_of_one_book_4.pdf
+Accept: application/json
+
+# download the contents of a file, failing
+GET http://localhost:8000/files/2/download-as/horses.epub
 Accept: application/json

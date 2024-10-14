@@ -1,13 +1,17 @@
+mod models;
+
 use std::path::Path;
 
-use rocket::{fs::NamedFile, get, http::ContentType, routes, serde::json::Json, State};
+use indexmap::IndexMap;
+use rocket::{fs::NamedFile, get, http::ContentType, post, routes, serde::json::Json, State};
 
 use crate::db::{
+    self,
     dao::{FileDao, FileTagDao},
-    get_connection_pool,
-    models::{File, FileTag},
-    ConnectionPool,
+    get_connection_pool, ConnectionPool,
 };
+
+use models::File;
 
 #[rocket::launch]
 pub fn serve() -> _ {
@@ -18,10 +22,11 @@ pub fn serve() -> _ {
         .mount(
             "/",
             routes![
-                list_files,
-                list_files_tags,
-                list_file,
-                list_file_tags,
+                get_file,
+                get_file_tags,
+                post_file_tags,
+                get_files,
+                get_files_tags,
                 download_file
             ],
         )
@@ -29,27 +34,77 @@ pub fn serve() -> _ {
 }
 
 #[get("/files")]
-fn list_files(connection_pool: &State<ConnectionPool>) -> Json<Vec<File>> {
+fn get_files(connection_pool: &State<ConnectionPool>) -> Json<Vec<File>> {
     let files = connection_pool.select_all_files().unwrap();
-    Json(files)
+    let file_tags = connection_pool.select_all_file_tags().unwrap();
+
+    let mut file_tags_map: IndexMap<_, Vec<_>> = IndexMap::new();
+
+    for file_tag in file_tags {
+        match file_tags_map.get_mut(&file_tag.file_id) {
+            Some(tags) => {
+                tags.push(file_tag);
+            }
+            None => {
+                file_tags_map.insert(file_tag.file_id, vec![file_tag]);
+            }
+        };
+    }
+
+    let models: Vec<File> = files
+        .into_iter()
+        .map(|f| {
+            let tags = file_tags_map.get(&f.id).cloned().unwrap_or(vec![]);
+            (f, tags).into()
+        })
+        .collect();
+
+    Json(models)
 }
 
 #[get("/files/tags")]
-fn list_files_tags(connection_pool: &State<ConnectionPool>) -> Json<Vec<FileTag>> {
-    let file_tags = connection_pool.select_all_file_tags().unwrap();
-    Json(file_tags)
+fn get_files_tags(connection_pool: &State<ConnectionPool>) -> Json<Vec<String>> {
+    let tags = connection_pool.select_all_tags().unwrap();
+    Json(tags)
 }
 
 #[get("/files/<id>")]
-fn list_file(connection_pool: &State<ConnectionPool>, id: i32) -> Option<Json<File>> {
-    let file = connection_pool.select_file_by_id(id).unwrap();
+fn get_file(connection_pool: &State<ConnectionPool>, id: i32) -> Option<Json<File>> {
+    let file: Option<File> = connection_pool.select_file_by_id(id).unwrap().map(|file| {
+        let tags = connection_pool
+            .select_file_tags_by_file_id(file.id)
+            .unwrap();
+        (file, tags).into()
+    });
+
     file.map(Json)
 }
 
 #[get("/files/<id>/tags")]
-fn list_file_tags(connection_pool: &State<ConnectionPool>, id: i32) -> Json<Vec<FileTag>> {
-    let file_tags = connection_pool.select_file_tags_by_file_id(id).unwrap();
-    Json(file_tags)
+fn get_file_tags(connection_pool: &State<ConnectionPool>, id: i32) -> Json<Vec<String>> {
+    let tags = connection_pool
+        .select_file_tags_by_file_id(id)
+        .unwrap()
+        .into_iter()
+        .map(|tag| tag.tag)
+        .collect();
+    Json(tags)
+}
+
+#[post("/files/<id>/tags", data = "<tags>")]
+fn post_file_tags(
+    connection_pool: &State<ConnectionPool>,
+    id: i32,
+    tags: Json<Vec<String>>,
+) -> Json<Vec<String>> {
+    let file_tags = tags
+        .into_inner()
+        .into_iter()
+        .map(|tag| db::models::FileTag { file_id: id, tag })
+        .collect();
+    connection_pool.upsert_file_tags(file_tags).unwrap();
+
+    get_file_tags(connection_pool, id)
 }
 
 #[get("/files/<id>/download-as/<file_name>")]

@@ -24,6 +24,10 @@ pub trait FileDao {
 pub trait FileTagDao {
     type Error;
     fn insert_file_tag(&self, file_tag: FileTag) -> Result<FileTag, Self::Error>;
+    fn upsert_file_tag(&self, file_tag: FileTag) -> Result<(), Self::Error>;
+    fn insert_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error>;
+    fn upsert_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error>;
+    fn select_all_tags(&self) -> Result<Vec<String>, Self::Error>;
     fn select_all_file_tags(&self) -> Result<Vec<FileTag>, Self::Error>;
     fn select_file_tags_by_file_id(&self, file_id: i32) -> Result<Vec<FileTag>, Self::Error>;
     fn select_file_tags_by_tag(&self, tag: &str) -> Result<Vec<FileTag>, Self::Error>;
@@ -142,6 +146,40 @@ impl FileTagDao for ConnectionPool {
             .returning(FileTag::as_returning())
             .get_result(&mut connection)?;
         Ok(file_tag)
+    }
+
+    fn upsert_file_tag(&self, file_tag: FileTag) -> Result<(), Self::Error> {
+        let mut connection = self.get()?;
+        diesel::insert_into(file_tags::table)
+            .values(&file_tag)
+            .on_conflict_do_nothing()
+            .execute(&mut connection)?;
+        Ok(())
+    }
+
+    fn insert_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error> {
+        for file_tag in file_tags {
+            tracing::debug!("inserting tag: {file_tag:?}");
+            self.insert_file_tag(file_tag)?;
+        }
+        Ok(())
+    }
+
+    fn upsert_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error> {
+        for file_tag in file_tags {
+            tracing::debug!("upserting tag: {file_tag:?}");
+            self.upsert_file_tag(file_tag)?;
+        }
+        Ok(())
+    }
+
+    fn select_all_tags(&self) -> Result<Vec<String>, Self::Error> {
+        let mut connection = self.get()?;
+        let tags = file_tags::table
+            .select(file_tags::columns::tag)
+            .distinct()
+            .load(&mut connection)?;
+        Ok(tags)
     }
 
     fn select_all_file_tags(&self) -> Result<Vec<FileTag>, Self::Error> {
