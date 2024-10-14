@@ -3,8 +3,8 @@ use std::sync::Arc;
 use diesel::prelude::*;
 
 use crate::db::{
-    models::{File, FileTag, NewFile},
-    schema::{file_tags, files},
+    models::{Directory, File, FileTag, NewDirectory, NewFile},
+    schema::{directories, file_tags, files},
     ConnectionPool,
 };
 
@@ -27,6 +27,12 @@ pub trait FileTagDao {
     fn select_all_file_tags(&self) -> Result<Vec<FileTag>, Self::Error>;
     fn select_file_tags_by_file_id(&self, file_id: i32) -> Result<Vec<FileTag>, Self::Error>;
     fn select_file_tags_by_tag(&self, tag: &str) -> Result<Vec<FileTag>, Self::Error>;
+}
+
+pub trait DirectoryDao {
+    type Error;
+    fn insert_directory(&self, directory: NewDirectory) -> Result<(), Self::Error>;
+    fn insert_many_directories(&self, directories: Vec<NewDirectory>) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -160,5 +166,26 @@ impl FileTagDao for ConnectionPool {
             .select(FileTag::as_select())
             .load(&mut connection)?;
         Ok(file_tags)
+    }
+}
+
+impl DirectoryDao for ConnectionPool {
+    type Error = Error;
+
+    fn insert_directory(&self, directory: NewDirectory) -> Result<(), Self::Error> {
+        let mut connection = self.get()?;
+        diesel::insert_into(directories::table)
+            .values(&directory)
+            .returning(Directory::as_returning())
+            .on_conflict_do_nothing()
+            .execute(&mut connection)?;
+        Ok(())
+    }
+
+    fn insert_many_directories(&self, directories: Vec<NewDirectory>) -> Result<(), Self::Error> {
+        for directory in directories {
+            self.insert_directory(directory)?;
+        }
+        Ok(())
     }
 }

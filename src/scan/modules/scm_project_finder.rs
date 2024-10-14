@@ -3,10 +3,9 @@ use std::{
     sync::Mutex,
 };
 
-use diesel::prelude::*;
 use rayon::prelude::*;
 
-use crate::db::{models::NewDirectory, schema::directories, ConnectionPool};
+use crate::db::{dao::DirectoryDao, models::NewDirectory, ConnectionPool};
 
 use super::{DirectoryError, DirectoryModule};
 
@@ -52,11 +51,7 @@ impl DirectoryModule for ScmProjectFinder {
             })
             .collect();
 
-        let mut connection = self.connection_pool.get()?;
-
-        diesel::insert_into(directories::table)
-            .values(entities)
-            .execute(&mut connection)?;
+        self.connection_pool.insert_many_directories(entities)?;
 
         tracing::debug!("directories added to the database");
 
