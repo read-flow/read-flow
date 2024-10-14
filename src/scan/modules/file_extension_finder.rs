@@ -5,10 +5,9 @@ use std::{
     sync::Mutex,
 };
 
-use diesel::prelude::*;
 use rayon::prelude::*;
 
-use crate::db::{models::NewFile, schema::files, ConnectionPool};
+use crate::db::{dao::FileDao, models::NewFile, ConnectionPool};
 
 use super::{FileError, FileModule};
 
@@ -69,11 +68,7 @@ impl FileModule for FileExtensionFinder {
             })
             .collect();
 
-        let mut connection = self.connection_pool.get()?;
-
-        diesel::insert_into(files::table)
-            .values(entities)
-            .execute(&mut connection)?;
+        self.connection_pool.insert_many_files(entities)?;
 
         tracing::debug!("files added to the database");
 

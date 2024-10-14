@@ -3,13 +3,15 @@ use std::sync::Arc;
 use diesel::prelude::*;
 
 use crate::db::{
-    models::{File, FileTag},
+    models::{File, FileTag, NewFile},
     schema::{file_tags, files},
     ConnectionPool,
 };
 
 pub trait FileDao {
     type Error;
+    fn insert_file(&self, file: NewFile) -> Result<(), Self::Error>;
+    fn insert_many_files(&self, files: Vec<NewFile>) -> Result<(), Self::Error>;
     fn select_all_files(&self) -> Result<Vec<File>, Self::Error>;
     fn select_all_files_order_by_id(&self) -> Result<Vec<File>, Self::Error>;
     fn select_all_files_order_by_type(&self) -> Result<Vec<File>, Self::Error>;
@@ -49,6 +51,23 @@ impl From<r2d2::Error> for Error {
 
 impl FileDao for ConnectionPool {
     type Error = Error;
+
+    fn insert_file(&self, file: NewFile) -> Result<(), Self::Error> {
+        let mut connection = self.get()?;
+        diesel::insert_into(files::table)
+            .values(&file)
+            .returning(File::as_returning())
+            .on_conflict_do_nothing()
+            .execute(&mut connection)?;
+        Ok(())
+    }
+
+    fn insert_many_files(&self, files: Vec<NewFile>) -> Result<(), Self::Error> {
+        for file in files {
+            self.insert_file(file)?;
+        }
+        Ok(())
+    }
 
     fn select_all_files(&self) -> Result<Vec<File>, Self::Error> {
         let mut connection = self.get()?;

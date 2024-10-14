@@ -3,6 +3,8 @@ pub mod scm_project_finder;
 
 use std::path::Path;
 
+use crate::db::dao;
+
 #[derive(Debug, thiserror::Error)]
 pub enum DirectoryError {
     #[error("error while obtaining a db connection from the connection pool")]
@@ -27,10 +29,8 @@ pub trait DirectoryModule {
 
 #[derive(Debug, thiserror::Error)]
 pub enum FileError {
-    #[error("error while obtaining a db connection from the connection pool")]
-    ConnectionPool(#[from] r2d2::Error),
     #[error("error while executing database query")]
-    Database(#[from] diesel::result::Error),
+    Storage(#[from] dao::Error),
 }
 
 pub trait FileModule {
