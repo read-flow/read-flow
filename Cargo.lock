@@ -183,6 +183,7 @@ dependencies = [
  "iced",
  "iced_aw",
  "indexmap",
+ "itertools",
  "once_cell",
  "r2d2",
  "rayon",

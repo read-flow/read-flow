@@ -46,7 +46,8 @@ pub fn get_connection_pool() -> ConnectionPool {
     let manager = ConnectionManager::<SqliteConnection>::new(database_url);
 
     Pool::builder()
-        .max_size(16)
+        // .max_size(16) // SQLite only supports a single connection otherwise the logs will be cluttered with: ERROR r2d2: database is locked
+        .max_size(1)
         .connection_customizer(Box::new(ConnectionOptions {
             enable_wal: true,
             enable_foreign_keys: true,

@@ -1,3 +1,4 @@
+mod authn;
 mod models;
 
 use std::path::Path;
@@ -11,6 +12,7 @@ use crate::db::{
     get_connection_pool, ConnectionPool,
 };
 
+use authn::AuthorizedUser;
 use models::File;
 
 #[rocket::launch]
@@ -34,7 +36,7 @@ pub fn serve() -> _ {
 }
 
 #[get("/files")]
-fn get_files(connection_pool: &State<ConnectionPool>) -> Json<Vec<File>> {
+fn get_files(connection_pool: &State<ConnectionPool>, _user: AuthorizedUser) -> Json<Vec<File>> {
     let files = connection_pool.select_all_files().unwrap();
     let file_tags = connection_pool.select_all_file_tags().unwrap();
 
@@ -63,13 +65,20 @@ fn get_files(connection_pool: &State<ConnectionPool>) -> Json<Vec<File>> {
 }
 
 #[get("/files/tags")]
-fn get_files_tags(connection_pool: &State<ConnectionPool>) -> Json<Vec<String>> {
+fn get_files_tags(
+    connection_pool: &State<ConnectionPool>,
+    _user: AuthorizedUser,
+) -> Json<Vec<String>> {
     let tags = connection_pool.select_all_tags().unwrap();
     Json(tags)
 }
 
 #[get("/files/<id>")]
-fn get_file(connection_pool: &State<ConnectionPool>, id: i32) -> Option<Json<File>> {
+fn get_file(
+    connection_pool: &State<ConnectionPool>,
+    id: i32,
+    _user: AuthorizedUser,
+) -> Option<Json<File>> {
     let file: Option<File> = connection_pool.select_file_by_id(id).unwrap().map(|file| {
         let tags = connection_pool
             .select_file_tags_by_file_id(file.id)
@@ -81,7 +90,11 @@ fn get_file(connection_pool: &State<ConnectionPool>, id: i32) -> Option<Json<Fil
 }
 
 #[get("/files/<id>/tags")]
-fn get_file_tags(connection_pool: &State<ConnectionPool>, id: i32) -> Json<Vec<String>> {
+fn get_file_tags(
+    connection_pool: &State<ConnectionPool>,
+    id: i32,
+    _user: AuthorizedUser,
+) -> Json<Vec<String>> {
     let tags = connection_pool
         .select_file_tags_by_file_id(id)
         .unwrap()
@@ -96,6 +109,7 @@ fn post_file_tags(
     connection_pool: &State<ConnectionPool>,
     id: i32,
     tags: Json<Vec<String>>,
+    user: AuthorizedUser,
 ) -> Json<Vec<String>> {
     let file_tags = tags
         .into_inner()
@@ -104,7 +118,7 @@ fn post_file_tags(
         .collect();
     connection_pool.upsert_file_tags(file_tags).unwrap();
 
-    get_file_tags(connection_pool, id)
+    get_file_tags(connection_pool, id, user)
 }
 
 #[get("/files/<id>/download-as/<file_name>")]
@@ -112,6 +126,7 @@ async fn download_file(
     connection_pool: &State<ConnectionPool>,
     id: i32,
     file_name: &str,
+    _user: AuthorizedUser,
 ) -> Option<(ContentType, NamedFile)> {
     let file = connection_pool.select_file_by_id(id).unwrap();
 
