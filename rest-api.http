@@ -22,7 +22,7 @@ Authorization: bearer secret
 
 # add tags to file
 POST http://localhost:8000/files/1/tags
-ContentType: application/json
+Content-Type: application/json
 Accept: application/json
 Authorization: bearer secret
 
@@ -30,10 +30,22 @@ Authorization: bearer secret
 
 # download the contents of a file
 GET http://localhost:8000/files/2/download-as/the_law_of_one_book_4.pdf
-Accept: application/json
 Authorization: bearer secret
 
 # download the contents of a file, failing
 GET http://localhost:8000/files/2/download-as/horses.epub
 Accept: application/json
 Authorization: bearer secret
+
+# upload the contents of a file
+POST http://localhost:8000/files
+Content-Type: application/x-www-form-urlencoded
+Content-Type: multipart/form-data; boundary=MyBountary
+Accept: application/json
+Authorization: bearer secret
+
+--MyBoundary
+Content-Disposition: form-data; name="form"; filename="notes.txt";
+Content-Type: text/plain
+
+Sticky Notes

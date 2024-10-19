@@ -1,0 +1,2 @@
+[default]
+download_folder = "/tmp/" # MUST end with a '/'
