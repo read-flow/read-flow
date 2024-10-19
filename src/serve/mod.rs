@@ -1,7 +1,10 @@
 mod authn;
 pub mod models;
 
-use std::path::{Path, PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 
 use indexmap::IndexMap;
 use rocket::{
@@ -12,13 +15,13 @@ use rocket::{
     http::ContentType,
     post, routes,
     serde::{json::Json, Deserialize},
-    FromForm, State,
+    FromForm, Responder, State,
 };
 
 use crate::{
     db::{
         self,
-        dao::{FileDao, FileTagDao},
+        dao::{self, FileDao, FileTagDao},
         get_connection_pool, ConnectionPool,
     },
     extension_of, to_unique_file,
@@ -32,6 +35,31 @@ use models::File;
 struct Settings {
     download_folder: PathBuf,
 }
+
+#[derive(Debug, thiserror::Error, Responder)]
+enum Error {
+    #[error("database error: {0}")]
+    #[response(status = 500)]
+    Dao(String),
+    #[error("filename without extension")]
+    #[response(status = 400)]
+    FilenameWithoutExtension(String),
+    #[error("filesystem error: {0}")]
+    #[response(status = 500)]
+    Io(#[from] io::Error),
+    #[error("extension {0} is not supported")]
+    #[response(status = 400)]
+    UnsupportedExtension(String),
+}
+
+impl From<dao::Error> for Error {
+    fn from(error: dao::Error) -> Self {
+        tracing::error!("database error: {error}");
+        Error::Dao(error.to_string())
+    }
+}
+
+type Result<T> = std::result::Result<T, Error>;
 
 #[rocket::launch]
 pub fn serve() -> _ {
@@ -56,9 +84,12 @@ pub fn serve() -> _ {
 }
 
 #[get("/files")]
-fn get_files(connection_pool: &State<ConnectionPool>, _user: AuthorizedUser) -> Json<Vec<File>> {
-    let files = connection_pool.select_all_files().unwrap();
-    let file_tags = connection_pool.select_all_file_tags().unwrap();
+fn get_files(
+    connection_pool: &State<ConnectionPool>,
+    _user: AuthorizedUser,
+) -> Result<Json<Vec<File>>> {
+    let files = connection_pool.select_all_files()?;
+    let file_tags = connection_pool.select_all_file_tags()?;
 
     let mut file_tags_map: IndexMap<_, Vec<_>> = IndexMap::new();
 
@@ -81,16 +112,16 @@ fn get_files(connection_pool: &State<ConnectionPool>, _user: AuthorizedUser) -> 
         })
         .collect();
 
-    Json(models)
+    Ok(Json(models))
 }
 
 #[get("/files/tags")]
 fn get_files_tags(
     connection_pool: &State<ConnectionPool>,
     _user: AuthorizedUser,
-) -> Json<Vec<String>> {
-    let tags = connection_pool.select_all_tags().unwrap();
-    Json(tags)
+) -> Result<Json<Vec<String>>> {
+    let tags = connection_pool.select_all_tags()?;
+    Ok(Json(tags))
 }
 
 #[get("/files/<id>")]
@@ -98,15 +129,13 @@ fn get_file(
     id: i32,
     connection_pool: &State<ConnectionPool>,
     _user: AuthorizedUser,
-) -> Option<Json<File>> {
-    let file: Option<File> = connection_pool.select_file_by_id(id).unwrap().map(|file| {
-        let tags = connection_pool
-            .select_file_tags_by_file_id(file.id)
-            .unwrap();
-        (file, tags).into()
-    });
+) -> Result<Option<Json<File>>> {
+    let tags = connection_pool.select_file_tags_by_file_id(id)?;
+    let file = connection_pool
+        .select_file_by_id(id)?
+        .map(|file| (file, tags).into());
 
-    file.map(Json)
+    Ok(file.map(Json))
 }
 
 #[get("/files/<id>/tags")]
@@ -114,14 +143,13 @@ fn get_file_tags(
     id: i32,
     connection_pool: &State<ConnectionPool>,
     _user: AuthorizedUser,
-) -> Json<Vec<String>> {
+) -> Result<Json<Vec<String>>> {
     let tags = connection_pool
-        .select_file_tags_by_file_id(id)
-        .unwrap()
+        .select_file_tags_by_file_id(id)?
         .into_iter()
         .map(|tag| tag.tag)
         .collect();
-    Json(tags)
+    Ok(Json(tags))
 }
 
 #[post("/files/<id>/tags", data = "<tags>")]
@@ -130,13 +158,13 @@ fn post_file_tags(
     tags: Json<Vec<String>>,
     connection_pool: &State<ConnectionPool>,
     user: AuthorizedUser,
-) -> Json<Vec<String>> {
+) -> Result<Json<Vec<String>>> {
     let file_tags = tags
         .into_inner()
         .into_iter()
         .map(|tag| db::models::FileTag { file_id: id, tag })
         .collect();
-    connection_pool.upsert_file_tags(file_tags).unwrap();
+    connection_pool.upsert_file_tags(file_tags)?;
 
     get_file_tags(id, connection_pool, user)
 }
@@ -147,24 +175,24 @@ async fn download_file(
     file_name: &str,
     connection_pool: &State<ConnectionPool>,
     _user: AuthorizedUser,
-) -> Option<(ContentType, NamedFile)> {
-    let file = connection_pool.select_file_by_id(id).unwrap();
+) -> Result<Option<(ContentType, NamedFile)>> {
+    let file = connection_pool.select_file_by_id(id)?;
 
     match file {
-        None => None,
+        None => Ok(None),
         Some(file) => {
             if !file_name.ends_with(&file.type_.to_lowercase()) {
                 tracing::error!(
                     "Incorrect file extension on `{file_name}`, expected `{}`",
                     file.type_
                 );
-                return None;
+                return Ok(None);
             }
 
             let path = Path::new(&file.path);
             if !path.exists() {
                 tracing::error!("Database out of sync, file not found: {path:?}");
-                return None;
+                return Ok(None);
             }
 
             let content_type =
@@ -178,10 +206,10 @@ async fn download_file(
                     }
                 });
 
-            NamedFile::open(path)
+            Ok(NamedFile::open(path)
                 .await
                 .ok()
-                .map(|file| (content_type, file))
+                .map(|file| (content_type, file)))
         }
     }
 }
@@ -198,16 +226,23 @@ async fn upload_file(
     connection_pool: &State<ConnectionPool>,
     settings: &State<Settings>,
     _user: AuthorizedUser,
-) -> Json<File> {
+) -> Result<Json<File>> {
     let mut target_file = settings.download_folder.join(&form.filename);
 
-    let extension = extension_of(&form.filename).unwrap().to_owned();
+    let extension = extension_of(&form.filename)
+        .ok_or(Error::FilenameWithoutExtension(form.filename.to_string()))?
+        .to_owned();
     to_unique_file(&mut target_file, &extension);
 
-    form.file.persist_to(target_file.clone()).await.unwrap();
+    // TODO: check whether extension is supported by `scan` module
+    if !matches!(extension.to_lowercase().as_str(), "pdf" | "epub" | "mobi") {
+        return Err(Error::UnsupportedExtension(extension));
+    }
+
+    form.file.persist_to(target_file.clone()).await?;
 
     let new_file =
         crate::scan::modules::file_extension_finder::to_new_file(&target_file, &extension);
-    let result = connection_pool.insert_file(new_file).unwrap();
-    Json((result, vec![]).into())
+    let result = connection_pool.insert_file(new_file)?;
+    Ok(Json((result, vec![]).into()))
 }
