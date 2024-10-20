@@ -5,14 +5,12 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::db::get_connection_pool;
+use crate::db::ConnectionPool;
 
 use file_system_visitor::FileSystemVisitor;
 use modules::{file_extension_finder::FileExtensionFinder, scm_project_finder::ScmProjectFinder};
 
-pub fn scan(path: PathBuf) -> Result<()> {
-    let connection_pool = get_connection_pool();
-
+pub fn scan(path: PathBuf, connection_pool: ConnectionPool) -> Result<()> {
     let visitor = FileSystemVisitor::new(
         vec![
             Box::new(ScmProjectFinder::new(

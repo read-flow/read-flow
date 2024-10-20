@@ -8,7 +8,6 @@ use indexmap::IndexMap;
 use crate::{
     db::{
         dao::{self, FileDao, FileTagDao},
-        get_connection_pool,
         models::{File, FileTag},
         ConnectionPool,
     },
@@ -46,11 +45,11 @@ impl Dialog {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub(super) struct Page {
     shorten_path: bool,
     ordering: OrderFilesBy,
-    connection_pool: Option<ConnectionPool>,
+    connection_pool: ConnectionPool,
     files: Vec<(File, Vec<FileTag>)>,
     dialog: Option<Dialog>,
     selected_tags: Vec<String>,
@@ -110,35 +109,31 @@ impl TryFrom<gui::Message> for Message {
 }
 
 impl Page {
-    pub fn new() -> (Self, Task<gui::Message>) {
-        let mut this: Self = Default::default();
-        let task = this.init();
-        (this, task)
+    pub fn new(connection_pool: ConnectionPool) -> Self {
+        Self {
+            shorten_path: Default::default(),
+            ordering: Default::default(),
+            connection_pool,
+            files: Default::default(),
+            dialog: Default::default(),
+            selected_tags: Default::default(),
+        }
     }
 
     pub fn init(&mut self) -> Task<gui::Message> {
         let ordering = self.ordering;
-        let connection_pool = self.connection_pool();
         let selected_tags = self.selected_tags.clone();
         Task::batch([Task::perform(
-            query_files_by_tags(connection_pool, ordering, selected_tags),
+            query_files_by_tags(self.connection_pool.clone(), ordering, selected_tags),
             |result| Message::FilesLoaded(result).into(),
         )])
-    }
-
-    fn connection_pool(&mut self) -> ConnectionPool {
-        if self.connection_pool.is_none() {
-            self.connection_pool = Some(get_connection_pool());
-        }
-        // unwrap is safe because of previous code
-        self.connection_pool.as_ref().unwrap().clone()
     }
 
     pub fn update(&mut self, message: Message) -> Task<gui::Message> {
         match message {
             Message::Update => Task::perform(
                 query_files_by_tags(
-                    self.connection_pool(),
+                    self.connection_pool.clone(),
                     self.ordering,
                     self.selected_tags.clone(),
                 ),
@@ -154,7 +149,7 @@ impl Page {
                     tag: Some(tag),
                 }) if !tag.trim().is_empty() => Task::perform(
                     add_file_tag(
-                        self.connection_pool(),
+                        self.connection_pool.clone(),
                         FileTag {
                             file_id,
                             tag: tag.trim().to_string(),

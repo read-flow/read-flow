@@ -7,6 +7,8 @@ use iced::{
     Element, Task, Theme,
 };
 
+use crate::db::ConnectionPool;
+
 #[derive(Debug, thiserror::Error)]
 #[error("invalid message")]
 struct InvalidMessage(Message);
@@ -36,12 +38,20 @@ impl Pages {
 
 struct App {
     page: Pages,
+    connection_pool: ConnectionPool,
 }
 
 impl App {
-    fn new() -> (Self, Task<Message>) {
-        let (page, task) = welcome_page::Page::new();
-        (App { page: page.into() }, task)
+    fn new(connection_pool: ConnectionPool) -> (Self, Task<Message>) {
+        let page = welcome_page::Page::new(connection_pool.clone());
+        let task = page.init();
+        (
+            App {
+                page: page.into(),
+                connection_pool,
+            },
+            task,
+        )
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -76,14 +86,18 @@ impl App {
             } else {
                 row![button("Welcome")
                     .width(iced::Fill)
-                    .on_press(Message::SwitchPage(welcome_page::Page::default().into()))]
+                    .on_press(Message::SwitchPage(
+                        welcome_page::Page::new(self.connection_pool.clone()).into()
+                    ))]
             },
             if matches!(self.page, Pages::Files(_)) {
                 row![button("Files").width(iced::Fill)]
             } else {
                 row![button("Files")
                     .width(iced::Fill)
-                    .on_press(Message::SwitchPage(files_page::Page::default().into()))]
+                    .on_press(Message::SwitchPage(
+                        files_page::Page::new(self.connection_pool.clone()).into()
+                    ))]
             }
         ];
         let page_content = match &self.page {
@@ -94,10 +108,10 @@ impl App {
     }
 }
 
-pub fn gui() -> iced::Result {
+pub fn gui(connection_pool: ConnectionPool) -> iced::Result {
     iced::application("ArchiveOrganizer - Files", App::update, App::view)
         .theme(|_| Theme::Nord)
-        .run_with(App::new)
+        .run_with(|| App::new(connection_pool))
 }
 
 fn tag_button(tag: String) -> button::Button<'static, Message> {
