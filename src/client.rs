@@ -1,9 +1,8 @@
 use std::{convert::Infallible, io, path::PathBuf};
 
 use futures::StreamExt;
-use reqwest::{header, multipart, Body, Client, Url};
+use reqwest::{header, Client, Url};
 use tokio::fs;
-use tokio_util::codec::{BytesCodec, FramedRead};
 
 use crate::{extension_of, serve::models::File, to_unique_file};
 
@@ -109,21 +108,12 @@ impl FilesClient {
             return Err(Error::SourceDoesntExist(filename));
         }
 
-        let file = fs::File::open(&filename).await?;
-        let stream = FramedRead::new(file, BytesCodec::new());
-        let part = multipart::Part::stream(Body::wrap_stream(stream));
-
-        let filename_clone = filename.clone();
+        let file_name = format!("{}", filename.display());
 
         let form = reqwest::multipart::Form::new()
-            .text(
-                "filename",
-                filename
-                    .into_os_string()
-                    .into_string()
-                    .map_err(|_| Error::InvalidFile(filename_clone))?,
-            )
-            .part("file", part);
+            .text("filename", file_name.clone())
+            .file("file", file_name)
+            .await?;
 
         let response = self
             .client

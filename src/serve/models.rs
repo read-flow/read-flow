@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize}; // TODO: extract into a separate web API crate
+use serde::{Deserialize, Serialize};
 
 use crate::db::models::{File as DbFile, FileTag as DbTag};
 

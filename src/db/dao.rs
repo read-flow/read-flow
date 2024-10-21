@@ -11,7 +11,9 @@ use crate::db::{
 pub trait FileDao {
     type Error;
     fn insert_file(&self, file: NewFile) -> Result<File, Self::Error>;
+    fn upsert_file(&self, file: NewFile) -> Result<(), Self::Error>;
     fn insert_many_files(&self, files: Vec<NewFile>) -> Result<(), Self::Error>;
+    fn upsert_many_files(&self, files: Vec<NewFile>) -> Result<(), Self::Error>;
     fn select_all_files(&self) -> Result<Vec<File>, Self::Error>;
     fn select_all_files_order_by_id(&self) -> Result<Vec<File>, Self::Error>;
     fn select_all_files_order_by_type(&self) -> Result<Vec<File>, Self::Error>;
@@ -19,6 +21,7 @@ pub trait FileDao {
     fn select_all_files_order_by_size(&self) -> Result<Vec<File>, Self::Error>;
     fn select_all_files_order_by_sha256sum(&self) -> Result<Vec<File>, Self::Error>;
     fn select_file_by_id(&self, id: i32) -> Result<Option<File>, Self::Error>;
+    fn select_file_by_path(&self, path: &str) -> Result<Option<File>, Self::Error>;
 }
 
 pub trait FileTagDao {
@@ -35,8 +38,10 @@ pub trait FileTagDao {
 
 pub trait DirectoryDao {
     type Error;
-    fn insert_directory(&self, directory: NewDirectory) -> Result<(), Self::Error>;
+    fn insert_directory(&self, directory: NewDirectory) -> Result<Directory, Self::Error>;
+    fn upsert_directory(&self, directory: NewDirectory) -> Result<(), Self::Error>;
     fn insert_many_directories(&self, directories: Vec<NewDirectory>) -> Result<(), Self::Error>;
+    fn upsert_many_directories(&self, directories: Vec<NewDirectory>) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -67,14 +72,29 @@ impl FileDao for ConnectionPool {
         let file = diesel::insert_into(files::table)
             .values(&file)
             .returning(File::as_returning())
-            .on_conflict_do_nothing()
             .get_result(&mut connection)?;
         Ok(file)
+    }
+
+    fn upsert_file(&self, file: NewFile) -> Result<(), Self::Error> {
+        let mut connection = self.get()?;
+        diesel::insert_into(files::table)
+            .values(&file)
+            .on_conflict_do_nothing()
+            .execute(&mut connection)?;
+        Ok(())
     }
 
     fn insert_many_files(&self, files: Vec<NewFile>) -> Result<(), Self::Error> {
         for file in files {
             self.insert_file(file)?;
+        }
+        Ok(())
+    }
+
+    fn upsert_many_files(&self, files: Vec<NewFile>) -> Result<(), Self::Error> {
+        for file in files {
+            self.upsert_file(file)?;
         }
         Ok(())
     }
@@ -129,6 +149,16 @@ impl FileDao for ConnectionPool {
         let mut connection = self.get()?;
         let file = files::table
             .find(id)
+            .select(File::as_select())
+            .first(&mut connection)
+            .optional()?;
+        Ok(file)
+    }
+
+    fn select_file_by_path(&self, path: &str) -> Result<Option<File>, Self::Error> {
+        let mut connection = self.get()?;
+        let file = files::table
+            .filter(files::path.eq(path))
             .select(File::as_select())
             .first(&mut connection)
             .optional()?;
@@ -210,11 +240,19 @@ impl FileTagDao for ConnectionPool {
 impl DirectoryDao for ConnectionPool {
     type Error = Error;
 
-    fn insert_directory(&self, directory: NewDirectory) -> Result<(), Self::Error> {
+    fn insert_directory(&self, directory: NewDirectory) -> Result<Directory, Self::Error> {
+        let mut connection = self.get()?;
+        let result = diesel::insert_into(directories::table)
+            .values(&directory)
+            .returning(Directory::as_returning())
+            .get_result(&mut connection)?;
+        Ok(result)
+    }
+
+    fn upsert_directory(&self, directory: NewDirectory) -> Result<(), Self::Error> {
         let mut connection = self.get()?;
         diesel::insert_into(directories::table)
             .values(&directory)
-            .returning(Directory::as_returning())
             .on_conflict_do_nothing()
             .execute(&mut connection)?;
         Ok(())
@@ -223,6 +261,13 @@ impl DirectoryDao for ConnectionPool {
     fn insert_many_directories(&self, directories: Vec<NewDirectory>) -> Result<(), Self::Error> {
         for directory in directories {
             self.insert_directory(directory)?;
+        }
+        Ok(())
+    }
+
+    fn upsert_many_directories(&self, directories: Vec<NewDirectory>) -> Result<(), Self::Error> {
+        for directory in directories {
+            self.upsert_directory(directory)?;
         }
         Ok(())
     }

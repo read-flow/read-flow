@@ -19,10 +19,6 @@ pub trait DirectoryModule {
     fn handle(&self, _directory: &Path) -> Result<(), DirectoryError> {
         Ok(())
     }
-
-    fn finalize(&self) -> Result<(), DirectoryError> {
-        Ok(())
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -37,10 +33,6 @@ pub trait FileModule {
     }
 
     fn handle(&self, _file: &Path) -> Result<(), FileError> {
-        Ok(())
-    }
-
-    fn finalize(&self) -> Result<(), FileError> {
         Ok(())
     }
 }

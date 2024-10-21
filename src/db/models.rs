@@ -1,11 +1,8 @@
 use diesel::{prelude::*, sqlite::Sqlite};
-use serde::{Deserialize, Serialize}; // TODO: extract into a separate web API crate
 
 use crate::db::schema::{directories, directory_tags, file_tags, files};
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Selectable, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Selectable)]
 #[diesel(table_name = files)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct File {
@@ -26,18 +23,7 @@ pub struct NewFile {
     pub sha256sum: String,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Queryable,
-    Selectable,
-    Insertable,
-    Associations,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable, Associations)]
 #[diesel(belongs_to(File))]
 #[diesel(table_name = file_tags)]
 #[diesel(check_for_backend(Sqlite))]

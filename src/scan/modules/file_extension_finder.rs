@@ -1,11 +1,4 @@
-use std::{
-    os::unix::fs::MetadataExt,
-    path::{Path, PathBuf},
-    process::Command,
-    sync::Mutex,
-};
-
-use rayon::prelude::*;
+use std::{os::unix::fs::MetadataExt, path::Path, process::Command};
 
 use crate::db::{dao::FileDao, models::NewFile, ConnectionPool};
 
@@ -13,7 +6,6 @@ use super::{FileError, FileModule};
 
 pub struct FileExtensionFinder {
     extension: String,
-    files: Mutex<Vec<PathBuf>>,
     connection_pool: ConnectionPool,
 }
 
@@ -21,7 +13,6 @@ impl FileExtensionFinder {
     pub fn new(extension: String, connection_pool: ConnectionPool) -> Self {
         Self {
             extension,
-            files: vec![].into(),
             connection_pool,
         }
     }
@@ -34,30 +25,15 @@ impl FileModule for FileExtensionFinder {
     }
 
     fn handle(&self, file: &Path) -> Result<(), FileError> {
-        let mut files = self.files.lock().unwrap();
-        files.push(file.to_owned());
-        Ok(())
-    }
-
-    fn finalize(&self) -> Result<(), FileError> {
-        let path_bufs = self.files.lock().unwrap();
         let extension = self.extension.to_ascii_uppercase();
-        tracing::debug!("{extension} files found: {path_bufs:?}");
-
-        let entities: Vec<_> = path_bufs
-            .par_iter()
-            .map(|file| to_new_file(file, &extension))
-            .collect();
-
-        self.connection_pool.insert_many_files(entities)?;
-
-        tracing::debug!("files added to the database");
-
+        let new_file = to_new_file(file, &extension);
+        tracing::debug!("inserting file: {}", file.display());
+        self.connection_pool.upsert_file(new_file)?;
         Ok(())
     }
 }
 
-pub fn to_new_file(file: &PathBuf, extension: &str) -> NewFile {
+pub fn to_new_file(file: &Path, extension: &str) -> NewFile {
     let size = file
         .metadata()
         .expect("failed to get file metadata")

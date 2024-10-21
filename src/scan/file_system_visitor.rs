@@ -1,8 +1,8 @@
-use std::path::Path;
+use std::{io, path::Path};
 
 use rayon::prelude::*;
 
-use super::modules::{DirectoryModule, FileModule};
+use super::modules::{DirectoryError, DirectoryModule, FileError, FileModule};
 
 fn is_not_hidden(file: &Path) -> bool {
     file.file_name()
@@ -10,6 +10,18 @@ fn is_not_hidden(file: &Path) -> bool {
         .map(|f| !f.starts_with('.'))
         .unwrap_or(false)
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("file module error: {0}")]
+    FileModule(#[from] FileError),
+    #[error("directory module error: {0}")]
+    Directory(#[from] DirectoryError),
+    #[error("file system error: {0}")]
+    IO(#[from] io::Error),
+}
+
+type Result<T> = std::result::Result<T, Error>;
 
 pub struct FileSystemVisitor {
     directory_modules: Vec<Box<dyn DirectoryModule + Send + Sync>>,
@@ -27,17 +39,7 @@ impl FileSystemVisitor {
         }
     }
 
-    pub fn finalize(self) {
-        self.file_modules
-            .par_iter()
-            .for_each(|m| m.finalize().unwrap());
-
-        self.directory_modules
-            .par_iter()
-            .for_each(|m| m.finalize().unwrap());
-    }
-
-    pub fn visit(&self, path: &Path) -> anyhow::Result<()> {
+    pub fn visit(&self, path: &Path) -> Result<()> {
         if path.is_dir() {
             self.visit_directory(path)
         } else {
@@ -45,7 +47,7 @@ impl FileSystemVisitor {
         }
     }
 
-    fn visit_directory(&self, directory: &Path) -> anyhow::Result<()> {
+    fn visit_directory(&self, directory: &Path) -> Result<()> {
         tracing::debug!("visiting directory: {directory:?}");
 
         let directory_module = self.directory_modules.iter().find(|m| m.matches(directory));
@@ -70,10 +72,21 @@ impl FileSystemVisitor {
         Ok(())
     }
 
-    fn visit_file(&self, file: &Path) -> anyhow::Result<()> {
+    pub fn is_file_supported(&self, file: &Path) -> bool {
+        self.find_module_for_file(file).is_some()
+    }
+
+    fn find_module_for_file(&self, file: &Path) -> Option<&(dyn FileModule + Send + Sync)> {
+        self.file_modules
+            .iter()
+            .find(|m| m.matches(file))
+            .map(|m| &**m)
+    }
+
+    fn visit_file(&self, file: &Path) -> Result<()> {
         tracing::debug!("visiting file: {file:?}");
 
-        let file_module = self.file_modules.iter().find(|m| m.matches(file));
+        let file_module = self.find_module_for_file(file);
 
         if let Some(file_module) = file_module {
             file_module.handle(file)?;

@@ -7,11 +7,11 @@ use anyhow::Result;
 
 use crate::db::ConnectionPool;
 
-use file_system_visitor::FileSystemVisitor;
+pub use file_system_visitor::{Error, FileSystemVisitor};
 use modules::{file_extension_finder::FileExtensionFinder, scm_project_finder::ScmProjectFinder};
 
-pub fn scan(path: PathBuf, connection_pool: ConnectionPool) -> Result<()> {
-    let visitor = FileSystemVisitor::new(
+pub fn create_visitor(connection_pool: ConnectionPool) -> FileSystemVisitor {
+    FileSystemVisitor::new(
         vec![
             Box::new(ScmProjectFinder::new(
                 ".git".into(),
@@ -30,12 +30,13 @@ pub fn scan(path: PathBuf, connection_pool: ConnectionPool) -> Result<()> {
             )),
             Box::new(FileExtensionFinder::new("mobi".into(), connection_pool)),
         ],
-    );
+    )
+}
 
+pub fn scan(path: PathBuf, connection_pool: ConnectionPool) -> Result<()> {
+    let visitor = create_visitor(connection_pool);
     let path = path.canonicalize()?;
     visitor.visit(&path)?;
-
-    visitor.finalize();
 
     Ok(())
 }

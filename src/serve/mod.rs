@@ -24,7 +24,7 @@ use crate::{
         dao::{self, FileDao, FileTagDao},
         get_connection_pool, ConnectionPool,
     },
-    extension_of, to_unique_file,
+    extension_of, scan, to_unique_file,
 };
 
 use authn::AuthorizedUser;
@@ -50,6 +50,9 @@ enum Error {
     #[error("extension {0} is not supported")]
     #[response(status = 400)]
     UnsupportedExtension(String),
+    #[error("could not import file: {0}")]
+    #[response(status = 500)]
+    Scan(String),
 }
 
 impl From<dao::Error> for Error {
@@ -234,15 +237,19 @@ async fn upload_file(
         .to_owned();
     to_unique_file(&mut target_file, &extension);
 
-    // TODO: check whether extension is supported by `scan` module
     if !matches!(extension.to_lowercase().as_str(), "pdf" | "epub" | "mobi") {
         return Err(Error::UnsupportedExtension(extension));
     }
 
     form.file.persist_to(target_file.clone()).await?;
 
-    let new_file =
-        crate::scan::modules::file_extension_finder::to_new_file(&target_file, &extension);
-    let result = connection_pool.insert_file(new_file)?;
+    let visitor = scan::create_visitor(connection_pool.inner().clone());
+    visitor
+        .visit(&target_file)
+        .map_err(|error| Error::Scan(format!("{error}")))?;
+
+    let result = connection_pool
+        .select_file_by_path(&format!("{}", target_file.display()))?
+        .unwrap();
     Ok(Json((result, vec![]).into()))
 }
