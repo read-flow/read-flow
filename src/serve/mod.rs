@@ -40,7 +40,12 @@ struct Settings {
 enum Error {
     #[error("database error: {0}")]
     #[response(status = 500)]
-    Dao(String),
+    Dao(
+        String,
+        #[response(ignore)]
+        #[source]
+        dao::Error,
+    ),
     #[error("filename without extension")]
     #[response(status = 400)]
     FilenameWithoutExtension(String),
@@ -52,13 +57,25 @@ enum Error {
     UnsupportedExtension(String),
     #[error("could not import file: {0}")]
     #[response(status = 500)]
-    Scan(String),
+    Scan(
+        String,
+        #[response(ignore)]
+        #[source]
+        scan::Error,
+    ),
 }
 
 impl From<dao::Error> for Error {
     fn from(error: dao::Error) -> Self {
         tracing::error!("database error: {error}");
-        Error::Dao(error.to_string())
+        Error::Dao(error.to_string(), error)
+    }
+}
+
+impl From<scan::Error> for Error {
+    fn from(error: scan::Error) -> Self {
+        tracing::error!("could not import file: {error}");
+        Error::Scan(error.to_string(), error)
     }
 }
 
@@ -230,7 +247,11 @@ async fn upload_file(
     settings: &State<Settings>,
     _user: AuthorizedUser,
 ) -> Result<Json<File>> {
-    let mut target_file = settings.download_folder.join(&form.filename);
+    // We're only interested in the actual filename, remove any prefixed directories.
+    // This also takes care of relative paths, and thus prevents from storing the file outside the download folder.
+    let filename = form.filename.split('/').last().unwrap();
+
+    let mut target_file = settings.download_folder.join(filename);
 
     let extension = extension_of(&form.filename)
         .ok_or(Error::FilenameWithoutExtension(form.filename.to_string()))?
@@ -244,9 +265,7 @@ async fn upload_file(
     form.file.persist_to(target_file.clone()).await?;
 
     let visitor = scan::create_visitor(connection_pool.inner().clone());
-    visitor
-        .visit(&target_file)
-        .map_err(|error| Error::Scan(format!("{error}")))?;
+    visitor.visit(&target_file)?;
 
     let result = connection_pool
         .select_file_by_path(&format!("{}", target_file.display()))?
