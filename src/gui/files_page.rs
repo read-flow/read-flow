@@ -11,7 +11,7 @@ use crate::{
         models::{File, FileTag},
         ConnectionPool,
     },
-    gui,
+    gui, to_buckets,
 };
 
 use super::tag_button;
@@ -53,6 +53,7 @@ pub(super) struct Page {
     files: Vec<(File, Vec<FileTag>)>,
     dialog: Option<Dialog>,
     selected_tags: Vec<String>,
+    duplicates: bool,
 }
 
 impl From<Page> for gui::Pages {
@@ -81,6 +82,7 @@ pub(super) enum Error {
 pub(super) enum Message {
     Update,
     ToggleShortenPath,
+    ToggleDuplicates,
     CloseDialog,
     OpenDialog(Dialog),
     TagChanged(String),
@@ -117,6 +119,7 @@ impl Page {
             files: Default::default(),
             dialog: Default::default(),
             selected_tags: Default::default(),
+            duplicates: Default::default(),
         }
     }
 
@@ -141,6 +144,10 @@ impl Page {
             ),
             Message::ToggleShortenPath => {
                 self.shorten_path = !self.shorten_path;
+                Task::none()
+            }
+            Message::ToggleDuplicates => {
+                self.duplicates = !self.duplicates;
                 Task::none()
             }
             Message::CloseDialog => match self.dialog.take() {
@@ -204,9 +211,11 @@ impl Page {
     }
 
     pub fn view(&self) -> Element<gui::Message> {
-        let action_bar =
-            row![button("Toggle Short Path").on_press(Message::ToggleShortenPath.into())]
-                .spacing(10);
+        let action_bar = row![
+            button("Toggle Short Path").on_press(Message::ToggleShortenPath.into()),
+            button("Toggle Duplicates").on_press(Message::ToggleDuplicates.into()),
+        ]
+        .spacing(10);
 
         let mut grid = Grid::new()
             .push(grid_row![
@@ -225,7 +234,19 @@ impl Page {
             ])
             .column_spacing(10);
 
-        for (file, tags) in self.files.iter() {
+        let files: Vec<_> = if self.duplicates {
+            let buckets: IndexMap<String, Vec<&(File, Vec<FileTag>)>> =
+                to_buckets(self.files.iter(), |(file, _)| file.sha256sum.clone());
+            buckets
+                .into_iter()
+                .filter(|(_, values)| values.len() > 1)
+                .flat_map(|(_, values)| values)
+                .collect()
+        } else {
+            self.files.iter().collect()
+        };
+
+        for (file, tags) in files.iter() {
             let path = if self.shorten_path {
                 file.path.clone().split('/').last().unwrap().to_string()
             } else {
