@@ -1,5 +1,4 @@
 mod authn;
-pub mod models;
 
 use std::{
     io,
@@ -19,6 +18,7 @@ use rocket::{
 };
 
 use crate::{
+    api::File,
     db::{
         self,
         dao::{self, FileDao, FileTagDao},
@@ -28,7 +28,6 @@ use crate::{
 };
 
 use authn::AuthorizedUser;
-use models::File;
 
 #[derive(Debug, Deserialize)]
 #[serde(crate = "rocket::serde")]

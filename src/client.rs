@@ -4,7 +4,7 @@ use futures::StreamExt;
 use reqwest::{header, Client, Url};
 use tokio::fs;
 
-use crate::{extension_of, serve::models::File, to_unique_file};
+use crate::{api::File, extension_of, to_unique_file};
 
 pub struct FilesClient {
     base_url: Url,
@@ -118,6 +118,7 @@ impl FilesClient {
         let response = self
             .client
             .post(self.base_url.join("/files")?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
             .header(header::AUTHORIZATION, "bearer secret")
             .multipart(form)
             .send()
