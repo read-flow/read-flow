@@ -7,7 +7,7 @@ use iced::{
     Element, Task, Theme,
 };
 
-use crate::db::ConnectionPool;
+use crate::db::{datasource::DbClient, ConnectionPool};
 
 #[derive(Debug, thiserror::Error)]
 #[error("invalid message")]
@@ -21,18 +21,33 @@ enum Message {
     InvalidMessage(Box<Message>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum Pages {
-    Files(files_page::Page),
+    LocalFiles(files_page::Page<DbClient>),
     Welcome(welcome_page::Page),
+}
+
+impl std::fmt::Debug for Pages {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Pages::LocalFiles(_) => f.write_str("Pages::LocalFiles"),
+            Pages::Welcome(_) => f.write_str("Pages::Welcome"),
+        }
+    }
 }
 
 impl Pages {
     fn init(&mut self) -> Task<Message> {
         match self {
-            Pages::Files(ref mut page) => page.init(),
+            Pages::LocalFiles(ref mut page) => page.init(),
             Pages::Welcome(ref mut page) => page.init(),
         }
+    }
+}
+
+impl From<files_page::Page<DbClient>> for Pages {
+    fn from(source: files_page::Page<DbClient>) -> Self {
+        Pages::LocalFiles(source)
     }
 }
 
@@ -63,7 +78,7 @@ impl App {
             return self.page.init();
         };
         match &mut self.page {
-            Pages::Files(ref mut page) => match files_page::Message::try_from(message) {
+            Pages::LocalFiles(ref mut page) => match files_page::Message::try_from(message) {
                 Ok(message) => page.update(message),
                 Err(InvalidMessage(message)) => {
                     Task::done(Message::InvalidMessage(Box::new(message)))
@@ -90,18 +105,18 @@ impl App {
                         welcome_page::Page::new(self.connection_pool.clone()).into()
                     ))]
             },
-            if matches!(self.page, Pages::Files(_)) {
+            if matches!(self.page, Pages::LocalFiles(_)) {
                 row![button("Files").width(iced::Fill)]
             } else {
                 row![button("Files")
                     .width(iced::Fill)
                     .on_press(Message::SwitchPage(
-                        files_page::Page::new(self.connection_pool.clone()).into()
+                        files_page::Page::new(DbClient::new(self.connection_pool.clone())).into()
                     ))]
             }
         ];
         let page_content = match &self.page {
-            Pages::Files(page) => page.view(),
+            Pages::LocalFiles(page) => page.view(),
             Pages::Welcome(page) => page.view(),
         };
         layout(header_bar, side_bar, column![page_content]).into()

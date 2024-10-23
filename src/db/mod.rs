@@ -1,4 +1,5 @@
 pub mod dao;
+pub mod datasource;
 pub mod models;
 pub mod schema;
 

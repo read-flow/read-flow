@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use iced::{
     widget::{button, column, container, row, text, text_input},
     Element, Task,
@@ -6,11 +8,7 @@ use iced_aw::{grid_row, Grid};
 use indexmap::IndexMap;
 
 use crate::{
-    db::{
-        dao::{self, FileDao, FileTagDao},
-        models::{File, FileTag},
-        ConnectionPool,
-    },
+    api::{File, FileDataSource},
     gui, to_buckets,
 };
 
@@ -46,20 +44,14 @@ impl Dialog {
 }
 
 #[derive(Debug, Clone)]
-pub(super) struct Page {
+pub(super) struct Page<FDS> {
     shorten_path: bool,
     ordering: OrderFilesBy,
-    connection_pool: ConnectionPool,
-    files: Vec<(File, Vec<FileTag>)>,
+    file_data_source: Arc<FDS>,
+    files: Vec<File>,
     dialog: Option<Dialog>,
     selected_tags: Vec<String>,
     duplicates: bool,
-}
-
-impl From<Page> for gui::Pages {
-    fn from(source: Page) -> Self {
-        gui::Pages::Files(source)
-    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -75,7 +67,7 @@ pub(super) enum OrderFilesBy {
 #[derive(Debug, Clone, thiserror::Error)]
 pub(super) enum Error {
     #[error("database error: {0}")]
-    DbError(#[from] dao::Error),
+    DataSourceError(String),
 }
 
 #[derive(Debug, Clone)]
@@ -86,8 +78,8 @@ pub(super) enum Message {
     CloseDialog,
     OpenDialog(Dialog),
     TagChanged(String),
-    TagApplied(Result<FileTag, Error>),
-    FilesLoaded(Result<Vec<(File, Vec<FileTag>)>, Error>),
+    TagApplied(Result<Vec<String>, Error>),
+    FilesLoaded(Result<Vec<File>, Error>),
     OrderBy(OrderFilesBy),
     AddTagFilter(String),
     RemoveTagFilter(String),
@@ -110,12 +102,15 @@ impl TryFrom<gui::Message> for Message {
     }
 }
 
-impl Page {
-    pub fn new(connection_pool: ConnectionPool) -> Self {
+impl<FDS> Page<FDS>
+where
+    FDS: FileDataSource + Send + Sync + 'static,
+{
+    pub fn new(file_data_source: FDS) -> Self {
         Self {
             shorten_path: Default::default(),
             ordering: Default::default(),
-            connection_pool,
+            file_data_source: file_data_source.into(),
             files: Default::default(),
             dialog: Default::default(),
             selected_tags: Default::default(),
@@ -127,7 +122,7 @@ impl Page {
         let ordering = self.ordering;
         let selected_tags = self.selected_tags.clone();
         Task::batch([Task::perform(
-            query_files_by_tags(self.connection_pool.clone(), ordering, selected_tags),
+            query_files_by_tags(self.file_data_source.clone(), ordering, selected_tags),
             |result| Message::FilesLoaded(result).into(),
         )])
     }
@@ -136,7 +131,7 @@ impl Page {
         match message {
             Message::Update => Task::perform(
                 query_files_by_tags(
-                    self.connection_pool.clone(),
+                    self.file_data_source.clone(),
                     self.ordering,
                     self.selected_tags.clone(),
                 ),
@@ -156,11 +151,9 @@ impl Page {
                     tag: Some(tag),
                 }) if !tag.trim().is_empty() => Task::perform(
                     add_file_tag(
-                        self.connection_pool.clone(),
-                        FileTag {
-                            file_id,
-                            tag: tag.trim().to_string(),
-                        },
+                        self.file_data_source.clone(),
+                        file_id,
+                        tag.trim().to_string(),
                     ),
                     |result| Message::TagApplied(result).into(),
                 ),
@@ -235,8 +228,8 @@ impl Page {
             .column_spacing(10);
 
         let files: Vec<_> = if self.duplicates {
-            let buckets: IndexMap<String, Vec<&(File, Vec<FileTag>)>> =
-                to_buckets(self.files.iter(), |(file, _)| file.sha256sum.clone());
+            let buckets: IndexMap<String, Vec<&File>> =
+                to_buckets(self.files.iter(), |file| file.sha256sum.clone());
             buckets
                 .into_iter()
                 .filter(|(_, values)| values.len() > 1)
@@ -246,7 +239,7 @@ impl Page {
             self.files.iter().collect()
         };
 
-        for (file, tags) in files.iter() {
+        for file in files.iter() {
             let path = if self.shorten_path {
                 file.path.clone().split('/').last().unwrap().to_string()
             } else {
@@ -262,12 +255,12 @@ impl Page {
                     text(file.size),
                     text(format!("{}...", &file.sha256sum[..9])),
                     row![text(path)]
-                        .extend(tags.iter().map(|tag| {
-                            if self.selected_tags.contains(&tag.tag) {
-                                tag_button(tag.tag.clone()).into()
+                        .extend(file.tags.iter().map(|tag| {
+                            if self.selected_tags.contains(tag) {
+                                tag_button(tag.clone()).into()
                             } else {
-                                tag_button(tag.tag.clone())
-                                    .on_press(Message::AddTagFilter(tag.tag.clone()).into())
+                                tag_button(tag.clone())
+                                    .on_press(Message::AddTagFilter(tag.clone()).into())
                                     .into()
                             }
                         }))
@@ -282,45 +275,47 @@ impl Page {
     }
 }
 
-async fn query_files_by_tags(
-    connection_pool: ConnectionPool,
+async fn query_files_by_tags<FDS>(
+    file_data_source: Arc<FDS>,
     order_by: OrderFilesBy,
     tags: Vec<String>,
-) -> Result<Vec<(File, Vec<FileTag>)>, Error> {
-    let files: Vec<File> = match order_by {
-        OrderFilesBy::Id => connection_pool.select_all_files_order_by_id()?,
-        OrderFilesBy::Type => connection_pool.select_all_files_order_by_type()?,
-        OrderFilesBy::Path => connection_pool.select_all_files_order_by_path()?,
-        OrderFilesBy::Size => connection_pool.select_all_files_order_by_size()?,
-        OrderFilesBy::Fingerprint => connection_pool.select_all_files_order_by_sha256sum()?,
+) -> Result<Vec<File>, Error>
+where
+    FDS: FileDataSource,
+    <FDS as FileDataSource>::Error: 'static,
+{
+    let mut files = file_data_source
+        .get_files()
+        .await
+        .map_err(|error| Error::DataSourceError(format!("{error}")))?;
+
+    match order_by {
+        OrderFilesBy::Id => files.sort_by_key(|file| file.id),
+        OrderFilesBy::Type => files.sort_by_key(|file| file.type_.clone()),
+        OrderFilesBy::Path => files.sort_by_key(|file| file.path.clone()),
+        OrderFilesBy::Size => files.sort_by_key(|file| file.size),
+        OrderFilesBy::Fingerprint => files.sort_by_key(|file| file.sha256sum.clone()),
     };
 
-    let file_tags: Vec<FileTag> = connection_pool.select_all_file_tags()?;
-
-    let mut result: IndexMap<i32, (File, Vec<FileTag>)> = files
+    Ok(files
         .into_iter()
-        .map(|file| (file.id, (file, Vec::new())))
-        .collect();
-
-    for tag in file_tags {
-        if let Some((_file, tags)) = result.get_mut(&tag.file_id) {
-            tags.push(tag);
-        }
-    }
-
-    Ok(result
-        .into_values()
-        .filter(|(_file, file_tags)| {
-            let file_tags = file_tags.iter().map(|t| t.tag.clone()).collect::<Vec<_>>();
-            tags.iter().all(|tag| file_tags.contains(tag))
-        })
+        .filter(|file| tags.iter().all(|tag| file.tags.contains(tag)))
         .collect())
 }
 
-async fn add_file_tag(
-    connection_pool: ConnectionPool,
-    file_tag: FileTag,
-) -> Result<FileTag, Error> {
-    let file_tag = connection_pool.insert_file_tag(file_tag)?;
-    Ok(file_tag)
+async fn add_file_tag<FDS>(
+    file_data_source: Arc<FDS>,
+    file_id: i32,
+    tag: String,
+) -> Result<Vec<String>, Error>
+where
+    FDS: FileDataSource,
+    <FDS as FileDataSource>::Error: 'static,
+{
+    let tags = file_data_source
+        .add_file_tags(file_id, vec![tag])
+        .await
+        .map_err(|error| Error::DataSourceError(format!("{error}")))?;
+
+    Ok(tags)
 }

@@ -1,15 +1,17 @@
+use std::result::Result;
+
 use serde::{Deserialize, Serialize};
 
 use crate::db::models::{File as DbFile, FileTag as DbTag};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct File {
-    pub(super) id: i32,
-    pub(super) path: String,
-    pub(super) type_: String,
-    pub(super) size: i32,
-    pub(super) sha256sum: String,
-    pub(super) tags: Vec<String>,
+    pub id: i32,
+    pub path: String,
+    pub type_: String,
+    pub size: i32,
+    pub sha256sum: String,
+    pub tags: Vec<String>,
 }
 
 impl From<(DbFile, Vec<DbTag>)> for File {
@@ -57,4 +59,19 @@ impl From<File> for (DbFile, Vec<DbTag>) {
         };
         (file, tags)
     }
+}
+
+#[async_trait::async_trait]
+pub trait FileDataSource {
+    type Error: std::error::Error;
+
+    async fn get_files(&self) -> Result<Vec<File>, Self::Error>;
+
+    async fn get_files_tags(&self) -> Result<Vec<String>, Self::Error>;
+
+    async fn get_file(&self, id: i32) -> Result<Option<File>, Self::Error>;
+
+    async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Self::Error>;
+
+    async fn add_file_tags(&self, id: i32, tags: Vec<String>) -> Result<Vec<String>, Self::Error>;
 }

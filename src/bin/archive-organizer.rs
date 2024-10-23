@@ -70,7 +70,7 @@ fn main() -> Result<()> {
 
                 client.download_file(4, "horse-power.pdf").await.unwrap();
 
-                let result = client.upload_file(PathBuf::from("horse-power.pdf")).await;
+                let result = client.upload_file(&PathBuf::from("horse-power.pdf")).await;
 
                 tracing::info!("Uploaded as: {result:?}");
             });

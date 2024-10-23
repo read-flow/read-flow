@@ -1,10 +1,17 @@
-use std::{convert::Infallible, io, path::PathBuf};
+use std::{
+    convert::Infallible,
+    io,
+    path::{Path, PathBuf},
+};
 
 use futures::StreamExt;
 use reqwest::{header, Client, Url};
 use tokio::fs;
 
-use crate::{api::File, extension_of, to_unique_file};
+use crate::{
+    api::{File, FileDataSource},
+    extension_of, to_unique_file,
+};
 
 pub struct FilesClient {
     base_url: Url,
@@ -55,22 +62,6 @@ impl FilesClient {
         Ok(result)
     }
 
-    pub async fn get_files(&self) -> Result<Vec<File>, Error> {
-        self.get_json("files").await
-    }
-
-    pub async fn get_files_tags(&self) -> Result<Vec<String>, Error> {
-        self.get_json("files/tags").await
-    }
-
-    pub async fn get_file(&self, id: i32) -> Result<File, Error> {
-        self.get_json(&format!("files/{id}")).await
-    }
-
-    pub async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Error> {
-        self.get_json(&format!("files/{id}/tags")).await
-    }
-
     fn get_target_file(filename: &str) -> Result<PathBuf, Error> {
         let mut file_path: PathBuf = filename.parse().map_err(Error::Unexpected)?;
 
@@ -87,6 +78,7 @@ impl FilesClient {
                 self.base_url
                     .join(&format!("files/{id}/download-as/{filename}"))?,
             )
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
             .header(header::AUTHORIZATION, "bearer secret")
             .send()
             .await?;
@@ -103,9 +95,9 @@ impl FilesClient {
         Ok(())
     }
 
-    pub async fn upload_file(&self, filename: PathBuf) -> Result<File, Error> {
+    pub async fn upload_file(&self, filename: &Path) -> Result<File, Error> {
         if !filename.exists() {
-            return Err(Error::SourceDoesntExist(filename));
+            return Err(Error::SourceDoesntExist(filename.to_path_buf()));
         }
 
         let file_name = format!("{}", filename.display());
@@ -121,6 +113,42 @@ impl FilesClient {
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
             .header(header::AUTHORIZATION, "bearer secret")
             .multipart(form)
+            .send()
+            .await?;
+
+        let result = response.json().await?;
+
+        Ok(result)
+    }
+}
+
+#[async_trait::async_trait]
+impl FileDataSource for FilesClient {
+    type Error = Error;
+
+    async fn get_files(&self) -> Result<Vec<File>, Error> {
+        self.get_json("files").await
+    }
+
+    async fn get_files_tags(&self) -> Result<Vec<String>, Error> {
+        self.get_json("files/tags").await
+    }
+
+    async fn get_file(&self, id: i32) -> Result<Option<File>, Error> {
+        self.get_json(&format!("files/{id}")).await
+    }
+
+    async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Error> {
+        self.get_json(&format!("files/{id}/tags")).await
+    }
+
+    async fn add_file_tags(&self, id: i32, tags: Vec<String>) -> Result<Vec<String>, Error> {
+        let response = self
+            .client
+            .post(self.base_url.join(&format!("/files/{id}/tags"))?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, "bearer secret")
+            .json(&tags)
             .send()
             .await?;
 
