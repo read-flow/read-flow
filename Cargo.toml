@@ -5,6 +5,7 @@ edition = "2021"
 license = "MIT"
 
 [features]
+default = ["gui", "server"]
 gui = ["dep:iced", "dep:iced_aw", "dep:rfd"]
 server = ["dep:rocket"]
 
