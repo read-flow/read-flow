@@ -4,6 +4,7 @@ pub mod db;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod scan;
+#[cfg(feature = "server")]
 pub mod serve;
 
 use std::{hash::Hash, path::PathBuf};

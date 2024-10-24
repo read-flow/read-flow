@@ -9,11 +9,12 @@ use url::Url;
 
 #[cfg(feature = "gui")]
 use archive_organizer::gui::gui;
+#[cfg(feature = "server")]
+use archive_organizer::serve;
 use archive_organizer::{
     client,
     db::{get_connection_pool, ConnectionPool},
     scan::scan,
-    serve,
 };
 
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
@@ -43,6 +44,7 @@ enum Commands {
     },
     #[cfg(feature = "gui")]
     Gui,
+    #[cfg(feature = "server")]
     Serve,
     Client,
 }
@@ -62,6 +64,7 @@ fn main() -> Result<()> {
         Commands::Scan { path } => scan(path, get_connection_pool())?,
         #[cfg(feature = "gui")]
         Commands::Gui => gui(get_connection_pool())?,
+        #[cfg(feature = "server")]
         Commands::Serve => serve::main(),
         Commands::Client => {
             // Create the runtime
