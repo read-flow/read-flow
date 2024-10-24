@@ -10,7 +10,7 @@ use url::Url;
 #[cfg(feature = "gui")]
 use archive_organizer::gui::gui;
 #[cfg(feature = "server")]
-use archive_organizer::serve;
+use archive_organizer::server;
 use archive_organizer::{
     client,
     db::{get_connection_pool, ConnectionPool},
@@ -65,7 +65,7 @@ fn main() -> Result<()> {
         #[cfg(feature = "gui")]
         Commands::Gui => gui(get_connection_pool())?,
         #[cfg(feature = "server")]
-        Commands::Serve => serve::main(),
+        Commands::Serve => server::main(),
         Commands::Client => {
             // Create the runtime
             let rt = Runtime::new().unwrap();
