@@ -13,6 +13,7 @@ use crate::{
     extension_of, to_unique_file,
 };
 
+#[derive(Clone)]
 pub struct FilesClient {
     base_url: Url,
     client: Client,
