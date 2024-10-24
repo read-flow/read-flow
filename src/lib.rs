@@ -1,6 +1,7 @@
 pub mod api;
 pub mod client;
 pub mod db;
+#[cfg(feature = "gui")]
 pub mod gui;
 pub mod scan;
 pub mod serve;
@@ -25,7 +26,7 @@ fn extension_of(filename: &str) -> Option<&str> {
     filename.split(".").last()
 }
 
-fn to_buckets<K, V, F>(iterator: impl Iterator<Item = V>, to_key: F) -> IndexMap<K, Vec<V>>
+pub fn to_buckets<K, V, F>(iterator: impl Iterator<Item = V>, to_key: F) -> IndexMap<K, Vec<V>>
 where
     K: Hash + Eq,
     F: Fn(&V) -> K,

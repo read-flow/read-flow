@@ -7,10 +7,11 @@ use tokio::runtime::Runtime;
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 use url::Url;
 
+#[cfg(feature = "gui")]
+use archive_organizer::gui::gui;
 use archive_organizer::{
     client,
     db::{get_connection_pool, ConnectionPool},
-    gui::gui,
     scan::scan,
     serve,
 };
@@ -37,7 +38,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Scan { path: PathBuf },
+    Scan {
+        path: PathBuf,
+    },
+    #[cfg(feature = "gui")]
     Gui,
     Serve,
     Client,
@@ -56,6 +60,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Scan { path } => scan(path, get_connection_pool())?,
+        #[cfg(feature = "gui")]
         Commands::Gui => gui(get_connection_pool())?,
         Commands::Serve => serve::main(),
         Commands::Client => {
