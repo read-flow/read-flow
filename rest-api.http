@@ -45,7 +45,7 @@ Accept: application/json
 Authorization: bearer secret
 
 --MyBoundary
-Content-Disposition: form-data; name="form"; filename="notes.txt";
+Content-Disposition: form-data; name="file"; filename="notes.txt";
 Content-Type: text/plain
 
 Sticky Notes

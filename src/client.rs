@@ -101,11 +101,8 @@ impl FilesClient {
             return Err(Error::SourceDoesntExist(filename.to_path_buf()));
         }
 
-        let file_name = format!("{}", filename.display());
-
         let form = reqwest::multipart::Form::new()
-            .text("filename", file_name.clone())
-            .file("file", file_name)
+            .file("file", filename)
             .await?;
 
         let response = self

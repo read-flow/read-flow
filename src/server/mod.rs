@@ -14,7 +14,7 @@ use rocket::{
     http::ContentType,
     post, routes,
     serde::{json::Json, Deserialize},
-    FromForm, Responder, State,
+    Responder, State,
 };
 
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
         dao::{self, FileDao, FileTagDao},
         get_connection_pool, ConnectionPool,
     },
-    extension_of, scan, to_unique_file,
+    scan, to_unique_file,
 };
 
 use authn::AuthorizedUser;
@@ -46,15 +46,15 @@ enum Error {
         #[source]
         dao::Error,
     ),
-    #[error("filename without extension")]
-    #[response(status = 400)]
-    FilenameWithoutExtension(String),
     #[error("filesystem error: {0}")]
     #[response(status = 500)]
     Io(#[from] io::Error),
     #[error("extension {0} is not supported")]
     #[response(status = 400)]
     UnsupportedExtension(String),
+    #[error("content-type {0} is not supported")]
+    #[response(status = 400)]
+    UnsupportedContentType(String),
     #[error("could not import file: {0}")]
     #[response(status = 500)]
     Scan(
@@ -215,16 +215,7 @@ async fn download_file(
                 return Ok(None);
             }
 
-            let content_type =
-                ContentType::from_extension(&file.type_).unwrap_or_else(|| {
-                    match file.type_.to_lowercase().as_str() {
-                        "mobi" | "prc" => ContentType::new("application", "x-mobipocket-ebook"),
-                        &_ => {
-                            tracing::error!("Unsupported file type: {}", file.type_);
-                            panic!("Unsupported file type")
-                        }
-                    }
-                });
+            let content_type = extension_to_content_type(&file.type_)?;
 
             Ok(NamedFile::open(path)
                 .await
@@ -234,35 +225,31 @@ async fn download_file(
     }
 }
 
-#[derive(Debug, FromForm)]
-struct UploadFile<'r> {
-    filename: String,
-    file: TempFile<'r>,
-}
-
-#[post("/files", data = "<form>")]
+#[post("/files", data = "<file>")]
 async fn upload_file(
-    mut form: Form<UploadFile<'_>>,
+    mut file: Form<TempFile<'_>>,
     connection_pool: &State<ConnectionPool>,
     settings: &State<Settings>,
     _user: AuthorizedUser,
 ) -> Result<Json<File>> {
-    // We're only interested in the actual filename, remove any prefixed directories.
-    // This also takes care of relative paths, and thus prevents from storing the file outside the download folder.
-    let filename = form.filename.split('/').last().unwrap();
-
-    let mut target_file = settings.download_folder.join(filename);
-
-    let extension = extension_of(&form.filename)
-        .ok_or(Error::FilenameWithoutExtension(form.filename.to_string()))?
-        .to_owned();
-    to_unique_file(&mut target_file, &extension);
+    let extension = file
+        .content_type()
+        .map(content_type_to_extension)
+        .transpose()?
+        .unwrap();
 
     if !matches!(extension.to_lowercase().as_str(), "pdf" | "epub" | "mobi") {
         return Err(Error::UnsupportedExtension(extension));
     }
 
-    form.file.persist_to(target_file.clone()).await?;
+    let filename = file.name().unwrap(); // sanitized filename, safe to use
+    let mut target_file = settings
+        .download_folder
+        .join(format!("{filename}.{extension}"));
+
+    to_unique_file(&mut target_file, &extension);
+
+    file.persist_to(target_file.clone()).await?;
 
     let visitor = scan::create_visitor(connection_pool.inner().clone());
     visitor.visit(&target_file)?;
@@ -271,4 +258,24 @@ async fn upload_file(
         .select_file_by_path(&format!("{}", target_file.display()))?
         .unwrap();
     Ok(Json((result, vec![]).into()))
+}
+
+fn extension_to_content_type(extension: &str) -> Result<ContentType> {
+    ContentType::from_extension(extension)
+        .or_else(|| match extension.to_lowercase().as_str() {
+            "mobi" | "prc" => ContentType::new("application", "x-mobipocket-ebook").into(),
+            &_ => None,
+        })
+        .ok_or(Error::UnsupportedExtension(extension.to_string()))
+}
+
+fn content_type_to_extension(content_type: &ContentType) -> Result<String> {
+    content_type
+        .extension()
+        .map(|ext| ext.as_str().to_owned())
+        .or_else(|| {
+            (content_type.top() == "application" && content_type.sub() == "x-mobipocket-ebook")
+                .then(|| "mobi".to_owned())
+        })
+        .ok_or(Error::UnsupportedContentType(content_type.to_string()))
 }
