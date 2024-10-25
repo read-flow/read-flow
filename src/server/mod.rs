@@ -33,6 +33,7 @@ use authn::AuthorizedUser;
 #[serde(crate = "rocket::serde")]
 struct Settings {
     download_folder: PathBuf,
+    authorization_tokens: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error, Responder)]
