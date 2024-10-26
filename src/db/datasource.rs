@@ -1,7 +1,8 @@
+use diesel::RunQueryDsl;
 use indexmap::IndexMap;
 
 use crate::{
-    api::{File, FileDataSource},
+    api::{File, FileDataSource, Status},
     db::models::{File as DbFile, FileTag as DbFileTag},
 };
 
@@ -22,6 +23,12 @@ impl DbClient {
 #[async_trait::async_trait]
 impl FileDataSource for DbClient {
     type Error = Error;
+
+    async fn status(&self) -> Result<Status, Self::Error> {
+        let mut connection = self.connection_pool.get()?;
+        let _: usize = diesel::sql_query("SELECT 1").execute(&mut connection)?;
+        Ok(Status {})
+    }
 
     async fn get_files(&self) -> Result<Vec<File>, Self::Error> {
         let files = self.connection_pool.select_all_files()?;

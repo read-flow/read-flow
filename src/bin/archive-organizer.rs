@@ -12,6 +12,7 @@ use archive_organizer::gui::gui;
 #[cfg(feature = "server")]
 use archive_organizer::server;
 use archive_organizer::{
+    api::FileDataSource,
     client,
     db::{get_connection_pool, ConnectionPool},
     scan::scan,
@@ -76,10 +77,13 @@ fn main() -> Result<()> {
                     client::FilesClient::new("http://localhost:8000/".parse::<Url>().unwrap())
                         .unwrap();
 
-                client.download_file(4, "horse-power.pdf").await.unwrap();
+                let result = client.status().await;
+                tracing::info!("status result: {result:?}");
+
+                let result = client.download_file(4, "horse-power.pdf").await;
+                tracing::info!("download result: {result:?}");
 
                 let result = client.upload_file(&PathBuf::from("horse-power.pdf")).await;
-
                 tracing::info!("Uploaded as: {result:?}");
             });
         }

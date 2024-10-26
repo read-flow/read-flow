@@ -121,10 +121,10 @@ where
     pub fn init(&mut self) -> Task<gui::Message> {
         let ordering = self.ordering;
         let selected_tags = self.selected_tags.clone();
-        Task::batch([Task::perform(
+        Task::perform(
             query_files_by_tags(self.file_data_source.clone(), ordering, selected_tags),
             |result| Message::FilesLoaded(result).into(),
-        )])
+        )
     }
 
     pub fn update(&mut self, message: Message) -> Task<gui::Message> {

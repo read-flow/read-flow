@@ -1,6 +1,6 @@
 use diesel::{prelude::*, sqlite::Sqlite};
 
-use crate::db::schema::{directories, directory_tags, file_tags, files};
+use crate::db::schema::{directories, directory_tags, file_tags, files, remotes};
 
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Selectable)]
 #[diesel(table_name = files)]
@@ -56,4 +56,19 @@ pub struct NewDirectory {
 pub struct DirectoryTag {
     pub directory_id: i32,
     pub tag: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Selectable)]
+#[diesel(table_name = remotes)]
+#[diesel(check_for_backend(Sqlite))]
+pub struct Remote {
+    pub id: i32,
+    pub base_url: String,
+}
+
+#[derive(Insertable)]
+#[diesel(table_name = remotes)]
+#[diesel(check_for_backend(Sqlite))]
+pub struct NewRemote {
+    pub base_url: String,
 }

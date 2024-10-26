@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::models::{File as DbFile, FileTag as DbTag};
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Status {}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct File {
     pub id: i32,
@@ -64,6 +67,8 @@ impl From<File> for (DbFile, Vec<DbTag>) {
 #[async_trait::async_trait]
 pub trait FileDataSource {
     type Error: std::error::Error;
+
+    async fn status(&self) -> Result<Status, Self::Error>;
 
     async fn get_files(&self) -> Result<Vec<File>, Self::Error>;
 

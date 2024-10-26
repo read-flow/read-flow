@@ -1,5 +1,10 @@
 # -*- eval: (restclient-mode) -*-
 
+# status
+GET http://localhost:8000/status
+Accept: application/json
+Authorization: bearer secret
+
 # get all files
 GET http://localhost:8000/files
 Accept: application/json

@@ -18,10 +18,11 @@ use rocket::{
 };
 
 use crate::{
-    api::File,
+    api::{File, FileDataSource, Status},
     db::{
         self,
         dao::{self, FileDao, FileTagDao},
+        datasource::DbClient,
         get_connection_pool, ConnectionPool,
     },
     scan, to_unique_file,
@@ -90,6 +91,7 @@ pub fn serve() -> _ {
         .mount(
             "/",
             routes![
+                status,
                 get_file,
                 get_file_tags,
                 post_file_tags,
@@ -101,6 +103,17 @@ pub fn serve() -> _ {
         )
         .attach(AdHoc::config::<Settings>())
         .manage(connection_pool)
+}
+
+#[get("/status")]
+async fn status(
+    connection_pool: &State<ConnectionPool>,
+    _user: AuthorizedUser,
+) -> Result<Json<Status>> {
+    let status = DbClient::new(connection_pool.inner().clone())
+        .status()
+        .await?;
+    Ok(Json(status))
 }
 
 #[get("/files")]

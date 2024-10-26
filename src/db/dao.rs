@@ -3,8 +3,8 @@ use std::sync::Arc;
 use diesel::prelude::*;
 
 use crate::db::{
-    models::{Directory, File, FileTag, NewDirectory, NewFile},
-    schema::{directories, file_tags, files},
+    models::{Directory, File, FileTag, NewDirectory, NewFile, NewRemote, Remote},
+    schema::{directories, file_tags, files, remotes},
     ConnectionPool,
 };
 
@@ -42,6 +42,12 @@ pub trait DirectoryDao {
     fn upsert_directory(&self, directory: NewDirectory) -> Result<(), Self::Error>;
     fn insert_many_directories(&self, directories: Vec<NewDirectory>) -> Result<(), Self::Error>;
     fn upsert_many_directories(&self, directories: Vec<NewDirectory>) -> Result<(), Self::Error>;
+}
+
+pub trait RemoteDao {
+    type Error;
+    fn insert_remote(&self, remote: NewRemote) -> Result<Remote, Self::Error>;
+    fn select_all_remotes(&self) -> Result<Vec<Remote>, Self::Error>;
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -270,5 +276,24 @@ impl DirectoryDao for ConnectionPool {
             self.upsert_directory(directory)?;
         }
         Ok(())
+    }
+}
+
+impl RemoteDao for ConnectionPool {
+    type Error = Error;
+
+    fn insert_remote(&self, remote: NewRemote) -> Result<Remote, Self::Error> {
+        let mut connection = self.get()?;
+        let result = diesel::insert_into(remotes::table)
+            .values(&remote)
+            .returning(Remote::as_returning())
+            .get_result(&mut connection)?;
+        Ok(result)
+    }
+
+    fn select_all_remotes(&self) -> Result<Vec<Remote>, Self::Error> {
+        let mut connection = self.get()?;
+        let remotes = remotes::table.load(&mut connection)?;
+        Ok(remotes)
     }
 }

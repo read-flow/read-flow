@@ -9,8 +9,14 @@ use iced::{
 use url::Url;
 
 use crate::{
-    client::FilesClient,
-    db::{datasource::DbClient, ConnectionPool},
+    api::FileDataSource,
+    client::{self, FilesClient},
+    db::{
+        dao::{self, RemoteDao},
+        datasource::DbClient,
+        models::{NewRemote, Remote},
+        ConnectionPool,
+    },
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -24,6 +30,9 @@ enum Message {
     SwitchPage(Pages),
     EditNewRemoteUrl(String),
     AddNewRemoteUrl,
+    RemoteUrlAdded(Result<Remote, dao::Error>),
+    RemoteUrlVerified(Result<String, client::Error>),
+    RemoteUrlsListed(Result<Vec<Remote>, dao::Error>),
 }
 
 #[derive(Clone)]
@@ -73,11 +82,14 @@ impl App {
         (
             App {
                 page: page.into(),
-                connection_pool,
+                connection_pool: connection_pool.clone(),
                 remote_connections: Default::default(),
                 new_remote_url: Default::default(),
             },
-            task,
+            Task::batch([
+                task,
+                Task::perform(list_remote_urls(connection_pool), Message::RemoteUrlsListed),
+            ]),
         )
     }
 
@@ -92,9 +104,39 @@ impl App {
                 Task::none()
             }
             Message::AddNewRemoteUrl => {
-                let remote_url = self.new_remote_url.parse().unwrap();
+                let mut new_remote_url = Default::default();
+                std::mem::swap(&mut new_remote_url, &mut self.new_remote_url);
+                Task::perform(test_remote_url(new_remote_url.clone()), move |result| {
+                    Message::RemoteUrlVerified(result.map(|_| new_remote_url.clone()))
+                })
+            }
+            Message::RemoteUrlAdded(Ok(remote)) => {
+                let remote_url = remote.base_url.parse().unwrap();
                 self.remote_connections.push(remote_url);
-                self.new_remote_url = Default::default();
+                Task::none()
+            }
+            Message::RemoteUrlVerified(Ok(new_remote_url)) => Task::perform(
+                add_remote_url(self.connection_pool.clone(), new_remote_url),
+                Message::RemoteUrlAdded,
+            ),
+            Message::RemoteUrlVerified(Err(error)) => {
+                tracing::error!("error while verifying remote: {error}");
+                Task::none()
+            }
+            Message::RemoteUrlAdded(Err(error)) => {
+                tracing::error!("error while adding remote: {error}");
+                Task::none()
+            }
+            Message::RemoteUrlsListed(Ok(urls)) => {
+                let urls = urls
+                    .into_iter()
+                    .map(|url| url.base_url.parse().unwrap())
+                    .collect();
+                self.remote_connections = urls;
+                Task::none()
+            }
+            Message::RemoteUrlsListed(Err(error)) => {
+                tracing::error!("error while getting remote urls: {error}");
                 Task::none()
             }
             Message::Welcome(welcome_message) => {
@@ -227,4 +269,21 @@ fn content(column: widget::Column<Message>) -> widget::Container<'_, Message> {
             .height(iced::Fill),
     )
     .padding(10)
+}
+
+async fn test_remote_url(base_url: String) -> Result<(), client::Error> {
+    let client = FilesClient::new(base_url.parse::<Url>().unwrap()).unwrap();
+    client.status().await?;
+    Ok(())
+}
+
+async fn add_remote_url(
+    connection_pool: ConnectionPool,
+    base_url: String,
+) -> Result<Remote, dao::Error> {
+    connection_pool.insert_remote(NewRemote { base_url })
+}
+
+async fn list_remote_urls(connection_pool: ConnectionPool) -> Result<Vec<Remote>, dao::Error> {
+    connection_pool.select_all_remotes()
 }

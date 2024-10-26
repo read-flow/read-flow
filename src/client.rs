@@ -2,6 +2,7 @@ use std::{
     convert::Infallible,
     io,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use futures::StreamExt;
@@ -9,7 +10,7 @@ use reqwest::{header, Client, Url};
 use tokio::fs;
 
 use crate::{
-    api::{File, FileDataSource},
+    api::{File, FileDataSource, Status},
     extension_of, to_unique_file,
 };
 
@@ -19,14 +20,14 @@ pub struct FilesClient {
     client: Client,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum Error {
     #[error("invalid URL: {0}")]
     Url(#[from] url::ParseError),
     #[error("HTTP request failed: {0}")]
-    Http(#[from] reqwest::Error),
+    Http(#[source] Arc<reqwest::Error>),
     #[error("file system error: {0}")]
-    IO(#[from] io::Error),
+    IO(#[source] Arc<io::Error>),
     #[error("file name is missing extension: {0}")]
     MissingExtension(String),
     #[error("the source file doesn't exist: {0}")]
@@ -35,6 +36,18 @@ pub enum Error {
     Unexpected(Infallible),
     #[error("invalid path: {0}")]
     InvalidFile(PathBuf),
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(error: reqwest::Error) -> Self {
+        Error::Http(error.into())
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(error: io::Error) -> Self {
+        Error::IO(Arc::new(error))
+    }
 }
 
 impl FilesClient {
@@ -123,6 +136,10 @@ impl FilesClient {
 #[async_trait::async_trait]
 impl FileDataSource for FilesClient {
     type Error = Error;
+
+    async fn status(&self) -> Result<Status, Error> {
+        self.get_json("status").await
+    }
 
     async fn get_files(&self) -> Result<Vec<File>, Error> {
         self.get_json("files").await
