@@ -25,7 +25,7 @@ impl DirectoryModule for ScmProjectFinder {
     }
 
     fn handle(&self, directory: &Path) -> Result<(), DirectoryError> {
-        let type_ = &self.directory.to_ascii_uppercase()[1..];
+        let type_ = &self.directory.to_ascii_lowercase()[1..];
         let new_directory = NewDirectory {
             path: format!("{}", directory.display()),
             type_: type_.to_owned(),

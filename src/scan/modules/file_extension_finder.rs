@@ -25,7 +25,7 @@ impl FileModule for FileExtensionFinder {
     }
 
     fn handle(&self, file: &Path) -> Result<(), FileError> {
-        let extension = self.extension.to_ascii_uppercase();
+        let extension = self.extension.to_ascii_lowercase();
         let new_file = to_new_file(file, &extension);
         tracing::debug!("inserting file: {}", file.display());
         self.connection_pool.upsert_file(new_file)?;
