@@ -1,0 +1,32 @@
+* Archive Organizer
+
+This is a tool to help discover and organize files locally and on remote servers.
+
+* TODO: Implement the following items [10/21]
+
+- [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
+- [ ] Make database URL configurable (using ~figment~)
+- [ ] Store configuration in default location like =$HOME/.config/archive-organizer=
+- [X] Add functions to convert between mime-types and extensions
+- [X] Use filename from part in multipart form and remove explicit form field
+- [X] Store all pages separately in gui, so that they don't need to be reinitialized when switching pages
+- [X] Add command to find duplicate entries
+- [ ] Add unit/integration tests
+- [X] Add configuration/database for remote servers to synchronize with
+- [ ] Implement 2-way TLS (including configuration/database)
+- [X] Introduce common interface/trait around database and HTTP client
+- [ ] HTTP response code & error handling in ~client~ module
+- [ ] Make file download folder for HTTP ~client~ configurable
+- [X] Add cargo features for rocket server and gui
+- [X] Make authorization tokens configurable
+- [ ] Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
+- [ ] Proper HTTP error handling in ~server~ module, including tests
+- [ ] Create page to view/edit file/book/project details
+- [ ] Make it possible to correlate `books` of different file types
+- [ ] Recognize duplicates accross local/remote repositories
+- [X] Add health endpoint, to check whether remote repository is up
+- [ ] Separate file discovery in multiple main categories:
+  - documents(.doc, .docx, .pdf, .epub, .mobi, etc.)
+  - images(.jpg, .png, .webp, etc.)
+  - videos(.mpeg, .mov, mp4, etc.)
+  - audio(.ogg, .mp3, .wav, etc.)
