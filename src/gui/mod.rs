@@ -219,11 +219,13 @@ pub fn gui(connection_pool: ConnectionPool) -> iced::Result {
         .run_with(|| App::new(connection_pool))
 }
 
-fn tag_button(tag: String) -> button::Button<'static, Message> {
-    button(text(tag).size(10)).style(|theme, status| button::Style {
-        border: border::rounded(8),
-        ..button::primary(theme, status)
-    })
+fn tag_button(tag: String) -> widget::Button<'static, Message> {
+    button(text(tag).size(11))
+        .padding(4)
+        .style(|theme, status| button::Style {
+            border: border::rounded(8),
+            ..button::secondary(theme, status)
+        })
 }
 
 fn layout<'a>(

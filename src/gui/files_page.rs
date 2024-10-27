@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use iced::{
+    alignment::{Horizontal, Vertical},
     widget::{button, column, container, row, text, text_input},
     Element, Task,
 };
@@ -265,12 +266,18 @@ where
                 row![button("path")
                     .on_press(Message::OrderBy(self.tab(), OrderFilesBy::Path).into())]
                 .extend(self.selected_tags.iter().map(|t| {
-                    tag_button(t.clone())
-                        .on_press(Message::RemoveTagFilter(self.tab(), t.clone()).into())
-                        .into()
+                    container(
+                        tag_button(t.clone())
+                            .on_press(Message::RemoveTagFilter(self.tab(), t.clone()).into()),
+                    )
+                    .padding(4)
+                    .into()
                 }))
                 .spacing(5),
             ])
+            .vertical_alignment(Vertical::Center)
+            .horizontal_alignment(Horizontal::Left)
+            .row_spacing(5)
             .column_spacing(10);
 
         let files: Vec<_> = if self.duplicates {
@@ -316,7 +323,7 @@ where
 
         match &self.dialog {
             Some(dialog) => dialog.to_element(),
-            None => column![action_bar, grid].into(),
+            None => column![action_bar, grid].spacing(10).into(),
         }
     }
 }
