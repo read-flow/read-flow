@@ -215,7 +215,7 @@ impl App {
 
 pub fn gui(connection_pool: ConnectionPool) -> iced::Result {
     iced::application("ArchiveOrganizer - Files", App::update, App::view)
-        .theme(|_| Theme::Nord)
+        .theme(|_| Theme::TokyoNight)
         .run_with(|| App::new(connection_pool))
 }
 
