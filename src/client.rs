@@ -59,6 +59,10 @@ impl FilesClient {
         Ok(result)
     }
 
+    pub fn base_url(&self) -> &Url {
+        &self.base_url
+    }
+
     async fn get_json<T>(&self, relative_url: &str) -> Result<T, Error>
     where
         T: for<'a> serde::Deserialize<'a>,

@@ -9,30 +9,40 @@ use indexmap::IndexMap;
 
 use crate::{
     api::{File, FileDataSource},
-    gui, to_buckets,
+    client::FilesClient,
+    gui::{self, CurrentTab, IdentifyTab},
+    to_buckets,
 };
 
 use super::tag_button;
 
 #[derive(Debug, Clone)]
 pub(super) enum Dialog {
-    FileTag { file_id: i32, tag: Option<String> },
+    FileTag {
+        tab: CurrentTab,
+        file_id: i32,
+        tag: Option<String>,
+    },
 }
 
 impl Dialog {
-    fn file_tag(file_id: i32) -> Self {
-        Dialog::FileTag { file_id, tag: None }
+    fn file_tag(tab: CurrentTab, file_id: i32) -> Self {
+        Dialog::FileTag {
+            tab,
+            file_id,
+            tag: None,
+        }
     }
 
     fn to_element(&self) -> Element<gui::Message> {
         match self {
-            Dialog::FileTag { tag, .. } => container(
+            Dialog::FileTag { tab, tag, .. } => container(
                 column![
                     row![text("Add tag")],
                     row![text_input("tag", &tag.clone().unwrap_or("".to_string()))
                         .width(250)
-                        .on_input(|result| Message::TagChanged(result).into())],
-                    row![button("close").on_press(Message::CloseDialog.into())],
+                        .on_input(|result| Message::TagChanged(tab.clone(), result).into())],
+                    row![button("close").on_press(Message::CloseDialog(tab.clone()).into())],
                 ]
                 .spacing(10),
             )
@@ -54,6 +64,18 @@ pub(super) struct Page<FDS> {
     duplicates: bool,
 }
 
+impl IdentifyTab for Page<gui::DbClient> {
+    fn tab(&self) -> CurrentTab {
+        CurrentTab::LocalFiles
+    }
+}
+
+impl IdentifyTab for Page<FilesClient> {
+    fn tab(&self) -> CurrentTab {
+        CurrentTab::RemoteFiles(self.file_data_source.base_url().clone())
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(super) enum OrderFilesBy {
     #[default]
@@ -72,17 +94,35 @@ pub(super) enum Error {
 
 #[derive(Debug, Clone)]
 pub(super) enum Message {
-    Update,
-    ToggleShortenPath,
-    ToggleDuplicates,
-    CloseDialog,
-    OpenDialog(Dialog),
-    TagChanged(String),
-    TagApplied(Result<Vec<String>, Error>),
-    FilesLoaded(Result<Vec<File>, Error>),
-    OrderBy(OrderFilesBy),
-    AddTagFilter(String),
-    RemoveTagFilter(String),
+    Update(CurrentTab),
+    ToggleShortenPath(CurrentTab),
+    ToggleDuplicates(CurrentTab),
+    CloseDialog(CurrentTab),
+    OpenDialog(CurrentTab, Dialog),
+    TagChanged(CurrentTab, String),
+    TagApplied(CurrentTab, Result<Vec<String>, Error>),
+    FilesLoaded(CurrentTab, Result<Vec<File>, Error>),
+    OrderBy(CurrentTab, OrderFilesBy),
+    AddTagFilter(CurrentTab, String),
+    RemoveTagFilter(CurrentTab, String),
+}
+
+impl IdentifyTab for Message {
+    fn tab(&self) -> CurrentTab {
+        match self {
+            Message::Update(tab) => tab.clone(),
+            Message::ToggleShortenPath(tab) => tab.clone(),
+            Message::ToggleDuplicates(tab) => tab.clone(),
+            Message::CloseDialog(tab) => tab.clone(),
+            Message::OpenDialog(tab, ..) => tab.clone(),
+            Message::TagChanged(tab, ..) => tab.clone(),
+            Message::TagApplied(tab, ..) => tab.clone(),
+            Message::FilesLoaded(tab, ..) => tab.clone(),
+            Message::OrderBy(tab, ..) => tab.clone(),
+            Message::AddTagFilter(tab, ..) => tab.clone(),
+            Message::RemoveTagFilter(tab, ..) => tab.clone(),
+        }
+    }
 }
 
 impl From<Message> for gui::Message {
@@ -105,6 +145,7 @@ impl TryFrom<gui::Message> for Message {
 impl<FDS> Page<FDS>
 where
     FDS: FileDataSource + Send + Sync + 'static,
+    Self: IdentifyTab,
 {
     pub fn new(file_data_source: FDS) -> Self {
         Self {
@@ -118,35 +159,37 @@ where
         }
     }
 
-    pub fn init(&mut self) -> Task<gui::Message> {
+    pub fn init(&self) -> Task<gui::Message> {
         let ordering = self.ordering;
         let selected_tags = self.selected_tags.clone();
+        let tab = self.tab();
         Task::perform(
             query_files_by_tags(self.file_data_source.clone(), ordering, selected_tags),
-            |result| Message::FilesLoaded(result).into(),
+            move |result| Message::FilesLoaded(tab.clone(), result).into(),
         )
     }
 
     pub fn update(&mut self, message: Message) -> Task<gui::Message> {
         match message {
-            Message::Update => Task::perform(
+            Message::Update(tab) => Task::perform(
                 query_files_by_tags(
                     self.file_data_source.clone(),
                     self.ordering,
                     self.selected_tags.clone(),
                 ),
-                |result| Message::FilesLoaded(result).into(),
+                move |result| Message::FilesLoaded(tab.clone(), result).into(),
             ),
-            Message::ToggleShortenPath => {
+            Message::ToggleShortenPath(_) => {
                 self.shorten_path = !self.shorten_path;
                 Task::none()
             }
-            Message::ToggleDuplicates => {
+            Message::ToggleDuplicates(_) => {
                 self.duplicates = !self.duplicates;
                 Task::none()
             }
-            Message::CloseDialog => match self.dialog.take() {
+            Message::CloseDialog(_) => match self.dialog.take() {
                 Some(Dialog::FileTag {
+                    tab,
                     file_id,
                     tag: Some(tag),
                 }) if !tag.trim().is_empty() => Task::perform(
@@ -155,75 +198,78 @@ where
                         file_id,
                         tag.trim().to_string(),
                     ),
-                    |result| Message::TagApplied(result).into(),
+                    move |result| Message::TagApplied(tab.clone(), result).into(),
                 ),
                 _ => Task::none(),
             },
-            Message::TagApplied(Ok(file_tag)) => {
+            Message::TagApplied(tab, Ok(file_tag)) => {
                 tracing::debug!("Added file_tag: {file_tag:?}");
-                Task::done(Message::Update.into())
+                Task::done(Message::Update(tab).into())
             }
-            Message::TagApplied(Err(error)) => {
+            Message::TagApplied(_, Err(error)) => {
                 tracing::error!("Could not add file_tag: {error}");
                 Task::none()
             }
-            Message::OpenDialog(dialog) => {
+            Message::OpenDialog(_, dialog) => {
                 self.dialog = Some(dialog);
                 Task::none()
             }
-            Message::TagChanged(tag) => {
+            Message::TagChanged(tab, tag) => {
                 if let Some(Dialog::FileTag { file_id, .. }) = &self.dialog {
                     self.dialog = Some(Dialog::FileTag {
+                        tab,
                         file_id: *file_id,
                         tag: Some(tag),
                     })
                 }
                 Task::none()
             }
-            Message::FilesLoaded(Ok(files)) => {
+            Message::FilesLoaded(_, Ok(files)) => {
                 self.files = files;
                 Task::none()
             }
-            Message::FilesLoaded(Err(error)) => {
+            Message::FilesLoaded(_, Err(error)) => {
                 tracing::error!("error while loading files from database: {error}");
                 Task::none()
             }
-            Message::OrderBy(ordering) => {
+            Message::OrderBy(tab, ordering) => {
                 self.ordering = ordering;
-                Task::done(Message::Update.into())
+                Task::done(Message::Update(tab).into())
             }
-            Message::AddTagFilter(tag) => {
+            Message::AddTagFilter(tab, tag) => {
                 self.selected_tags.push(tag);
-                Task::done(Message::Update.into())
+                Task::done(Message::Update(tab).into())
             }
-            Message::RemoveTagFilter(tag) => {
+            Message::RemoveTagFilter(tab, tag) => {
                 self.selected_tags.retain(|t| t != &tag);
-                Task::done(Message::Update.into())
+                Task::done(Message::Update(tab).into())
             }
         }
     }
 
     pub fn view(&self) -> Element<gui::Message> {
         let action_bar = row![
-            button("Toggle Short Path").on_press(Message::ToggleShortenPath.into()),
-            button("Toggle Duplicates").on_press(Message::ToggleDuplicates.into()),
+            button("Toggle Short Path").on_press(Message::ToggleShortenPath(self.tab()).into()),
+            button("Toggle Duplicates").on_press(Message::ToggleDuplicates(self.tab()).into()),
         ]
         .spacing(10);
 
         let mut grid = Grid::new()
             .push(grid_row![
                 text("actions"),
-                button("id").on_press(Message::OrderBy(OrderFilesBy::Id).into()),
-                button("type").on_press(Message::OrderBy(OrderFilesBy::Type).into()),
-                button("size").on_press(Message::OrderBy(OrderFilesBy::Size).into()),
-                button("fingerprint").on_press(Message::OrderBy(OrderFilesBy::Fingerprint).into()),
-                row![button("path").on_press(Message::OrderBy(OrderFilesBy::Path).into())]
-                    .extend(self.selected_tags.iter().map(|t| {
-                        tag_button(t.clone())
-                            .on_press(Message::RemoveTagFilter(t.clone()).into())
-                            .into()
-                    }))
-                    .spacing(5),
+                button("id").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Id).into()),
+                button("type").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Type).into()),
+                button("size").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Size).into()),
+                button("fingerprint")
+                    .on_press(Message::OrderBy(self.tab(), OrderFilesBy::Fingerprint).into()),
+                row![button("path")
+                    .on_press(Message::OrderBy(self.tab(), OrderFilesBy::Path).into())]
+                .extend(self.selected_tags.iter().map(|t| {
+                    tag_button(t.clone())
+                        .on_press(Message::RemoveTagFilter(self.tab(), t.clone()).into())
+                        .into()
+                }))
+                .spacing(5),
             ])
             .column_spacing(10);
 
@@ -246,26 +292,26 @@ where
                 file.path.clone()
             };
 
-            grid =
-                grid.push(grid_row![
-                    row![button("tag")
-                        .on_press(Message::OpenDialog(Dialog::file_tag(file.id)).into()),],
-                    text(file.id),
-                    text(file.type_.clone()),
-                    text(file.size),
-                    text(format!("{}...", &file.sha256sum[..9])),
-                    row![text(path)]
-                        .extend(file.tags.iter().map(|tag| {
-                            if self.selected_tags.contains(tag) {
-                                tag_button(tag.clone()).into()
-                            } else {
-                                tag_button(tag.clone())
-                                    .on_press(Message::AddTagFilter(tag.clone()).into())
-                                    .into()
-                            }
-                        }))
-                        .spacing(5),
-                ]);
+            grid = grid.push(grid_row![
+                row![button("tag").on_press(
+                    Message::OpenDialog(self.tab(), Dialog::file_tag(self.tab(), file.id)).into()
+                ),],
+                text(file.id),
+                text(file.type_.clone()),
+                text(file.size),
+                text(format!("{}...", &file.sha256sum[..9])),
+                row![text(path)]
+                    .extend(file.tags.iter().map(|tag| {
+                        if self.selected_tags.contains(tag) {
+                            tag_button(tag.clone()).into()
+                        } else {
+                            tag_button(tag.clone())
+                                .on_press(Message::AddTagFilter(self.tab(), tag.clone()).into())
+                                .into()
+                        }
+                    }))
+                    .spacing(5),
+            ]);
         }
 
         match &self.dialog {
