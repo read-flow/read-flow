@@ -107,12 +107,6 @@ impl Page {
     }
 }
 
-impl From<Page> for gui::Pages {
-    fn from(value: Page) -> Self {
-        gui::Pages::Welcome(value)
-    }
-}
-
 async fn select_path() -> Option<FileHandle> {
     AsyncFileDialog::new().pick_folder().await
 }

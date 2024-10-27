@@ -27,7 +27,7 @@ struct InvalidMessage(Message);
 enum Message {
     Files(files_page::Message),
     Welcome(welcome_page::Message),
-    SwitchPage(Pages),
+    SwitchTab(TabPage),
     EditNewRemoteUrl(String),
     AddNewRemoteUrl,
     RemoteUrlAdded(Result<Remote, dao::Error>),
@@ -36,40 +36,46 @@ enum Message {
 }
 
 #[derive(Clone)]
-enum Pages {
+enum TabPage {
     Welcome(welcome_page::Page),
     LocalFiles(files_page::Page<DbClient>),
     RemoteFiles(files_page::Page<FilesClient>, Url),
 }
 
-impl std::fmt::Debug for Pages {
+impl std::fmt::Debug for TabPage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Pages::Welcome(_) => f.write_str("Pages::Welcome"),
-            Pages::LocalFiles(_) => f.write_str("Pages::LocalFiles"),
-            Pages::RemoteFiles(..) => f.write_str("Pages::RemoteFiles"),
+            TabPage::Welcome(_) => f.write_str("Pages::Welcome"),
+            TabPage::LocalFiles(_) => f.write_str("Pages::LocalFiles"),
+            TabPage::RemoteFiles(..) => f.write_str("Pages::RemoteFiles"),
         }
     }
 }
 
-impl Pages {
+impl TabPage {
     fn init(&mut self) -> Task<Message> {
         match self {
-            Pages::Welcome(ref mut page) => page.init(),
-            Pages::LocalFiles(ref mut page) => page.init(),
-            Pages::RemoteFiles(ref mut page, _) => page.init(),
+            TabPage::Welcome(ref mut page) => page.init(),
+            TabPage::LocalFiles(ref mut page) => page.init(),
+            TabPage::RemoteFiles(ref mut page, _) => page.init(),
         }
     }
 }
 
-impl From<files_page::Page<DbClient>> for Pages {
+impl From<welcome_page::Page> for TabPage {
+    fn from(value: welcome_page::Page) -> Self {
+        TabPage::Welcome(value)
+    }
+}
+
+impl From<files_page::Page<DbClient>> for TabPage {
     fn from(source: files_page::Page<DbClient>) -> Self {
-        Pages::LocalFiles(source)
+        TabPage::LocalFiles(source)
     }
 }
 
 struct App {
-    page: Pages,
+    current_tab: TabPage,
     connection_pool: ConnectionPool,
     remote_connections: Vec<Url>,
     new_remote_url: String,
@@ -77,17 +83,17 @@ struct App {
 
 impl App {
     fn new(connection_pool: ConnectionPool) -> (Self, Task<Message>) {
-        let page = welcome_page::Page::new(connection_pool.clone());
-        let task = page.init();
+        let initial_tab = welcome_page::Page::new(connection_pool.clone());
+        let initialize_tab = initial_tab.init();
         (
             App {
-                page: page.into(),
+                current_tab: initial_tab.into(),
                 connection_pool: connection_pool.clone(),
                 remote_connections: Default::default(),
                 new_remote_url: Default::default(),
             },
             Task::batch([
-                task,
+                initialize_tab,
                 Task::perform(list_remote_urls(connection_pool), Message::RemoteUrlsListed),
             ]),
         )
@@ -95,9 +101,9 @@ impl App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::SwitchPage(ref page) => {
-                self.page = page.clone();
-                self.page.init()
+            Message::SwitchTab(ref tab_page) => {
+                self.current_tab = tab_page.clone();
+                self.current_tab.init()
             }
             Message::EditNewRemoteUrl(url) => {
                 self.new_remote_url = url;
@@ -140,17 +146,17 @@ impl App {
                 Task::none()
             }
             Message::Welcome(welcome_message) => {
-                if let Pages::Welcome(ref mut page) = self.page {
-                    page.update(welcome_message)
+                if let TabPage::Welcome(ref mut current_tab) = self.current_tab {
+                    current_tab.update(welcome_message)
                 } else {
                     panic!("TODO return some error like 'page <TYPE> does not accept <MSG_TYPE> message");
                 }
             }
             Message::Files(files_message) => {
-                if let Pages::LocalFiles(ref mut page) = self.page {
-                    page.update(files_message)
-                } else if let Pages::RemoteFiles(ref mut page, _) = self.page {
-                    page.update(files_message)
+                if let TabPage::LocalFiles(ref mut current_tab) = self.current_tab {
+                    current_tab.update(files_message)
+                } else if let TabPage::RemoteFiles(ref mut current_tab, _) = self.current_tab {
+                    current_tab.update(files_message)
                 } else {
                     panic!("TODO return some error like 'page <TYPE> does not accept <MSG_TYPE> message");
                 }
@@ -161,27 +167,27 @@ impl App {
     fn view(&self) -> Element<Message> {
         let header_bar = row![container(text("ArchiveOrganizer"))];
         let mut side_bar = column![
-            if matches!(self.page, Pages::Welcome(_)) {
+            if matches!(self.current_tab, TabPage::Welcome(_)) {
                 row![button("Welcome").width(iced::Fill)]
             } else {
                 row![button("Welcome")
                     .width(iced::Fill)
-                    .on_press(Message::SwitchPage(
+                    .on_press(Message::SwitchTab(
                         welcome_page::Page::new(self.connection_pool.clone()).into()
                     ))]
             },
-            if matches!(self.page, Pages::LocalFiles(_)) {
+            if matches!(self.current_tab, TabPage::LocalFiles(_)) {
                 row![button("Local Files").width(iced::Fill)]
             } else {
                 row![button("Local Files")
                     .width(iced::Fill)
-                    .on_press(Message::SwitchPage(
+                    .on_press(Message::SwitchTab(
                         files_page::Page::new(DbClient::new(self.connection_pool.clone())).into()
                     ))]
             }
         ];
         for remote_connection in self.remote_connections.iter() {
-            let row = if matches!(&self.page, Pages::RemoteFiles(_, url) if url == remote_connection)
+            let row = if matches!(&self.current_tab, TabPage::RemoteFiles(_, url) if url == remote_connection)
             {
                 row![
                     button(text(format!("Remote Files\n({})", remote_connection)))
@@ -191,7 +197,7 @@ impl App {
                 row![
                     button(text(format!("Remote Files\n({})", remote_connection)))
                         .width(iced::Fill)
-                        .on_press(Message::SwitchPage(Pages::RemoteFiles(
+                        .on_press(Message::SwitchTab(TabPage::RemoteFiles(
                             files_page::Page::new(
                                 FilesClient::new(remote_connection.clone()).unwrap()
                             ),
@@ -206,12 +212,12 @@ impl App {
             button("Add remote").on_press(Message::AddNewRemoteUrl)
         ]]);
 
-        let page_content = match &self.page {
-            Pages::Welcome(page) => page.view(),
-            Pages::LocalFiles(page) => page.view(),
-            Pages::RemoteFiles(page, _) => page.view(),
+        let pane_content = match &self.current_tab {
+            TabPage::Welcome(tab) => tab.view(),
+            TabPage::LocalFiles(tab) => tab.view(),
+            TabPage::RemoteFiles(tab, _) => tab.view(),
         };
-        layout(header_bar, side_bar, column![page_content]).into()
+        layout(header_bar, side_bar, column![pane_content]).into()
     }
 }
 
