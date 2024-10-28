@@ -10,7 +10,7 @@ pub struct File {
     pub path: String,
     pub type_: String,
     pub size: i32,
-    pub sha256sum: String,
+    pub fingerprint: String,
 }
 
 #[derive(Insertable)]
@@ -20,7 +20,7 @@ pub struct NewFile {
     pub path: String,
     pub type_: String,
     pub size: i32,
-    pub sha256sum: String,
+    pub fingerprint: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable, Associations)]

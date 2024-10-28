@@ -30,7 +30,7 @@ diesel::table! {
         #[sql_name = "type"]
         type_ -> Text,
         size -> Integer,
-        sha256sum -> Text,
+        fingerprint -> Text,
     }
 }
 

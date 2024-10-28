@@ -43,13 +43,13 @@ pub fn to_new_file(file: &Path, extension: &str) -> NewFile {
     let output = Command::new("sha256sum")
         .arg(file)
         .output()
-        .expect("failed to calculate the sha256sum");
+        .expect("failed to calculate the fingerprint");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let sha256sum = stdout.split(' ').next().expect("expected sha256sum");
+    let fingerprint = stdout.split(' ').next().expect("expected fingerprint");
     NewFile {
         path: format!("{}", file.display()),
         type_: extension.to_owned(),
         size,
-        sha256sum: sha256sum.to_string(),
+        fingerprint: fingerprint.to_string(),
     }
 }

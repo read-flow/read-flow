@@ -4,12 +4,12 @@ CREATE TABLE files (
        path VARCHAR NOT NULL,
        type VARCHAR NOT NULL,
        size INTEGER NOT NULL,
-       sha256sum VARCHAR NOT NULL
+       fingerprint VARCHAR NOT NULL
 );
 
 CREATE UNIQUE INDEX uq_file_path ON files (path);
 
-CREATE INDEX idx_file_size_hash ON files (size, sha256sum);
+CREATE INDEX idx_file_size_hash ON files (size, fingerprint);
 
 CREATE INDEX idx_file_type ON files (type);
 

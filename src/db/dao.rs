@@ -19,7 +19,7 @@ pub trait FileDao {
     fn select_all_files_order_by_type(&self) -> Result<Vec<File>, Self::Error>;
     fn select_all_files_order_by_path(&self) -> Result<Vec<File>, Self::Error>;
     fn select_all_files_order_by_size(&self) -> Result<Vec<File>, Self::Error>;
-    fn select_all_files_order_by_sha256sum(&self) -> Result<Vec<File>, Self::Error>;
+    fn select_all_files_order_by_fingerprint(&self) -> Result<Vec<File>, Self::Error>;
     fn select_file_by_id(&self, id: i32) -> Result<Option<File>, Self::Error>;
     fn select_file_by_path(&self, path: &str) -> Result<Option<File>, Self::Error>;
 }
@@ -143,10 +143,10 @@ impl FileDao for ConnectionPool {
         Ok(files)
     }
 
-    fn select_all_files_order_by_sha256sum(&self) -> Result<Vec<File>, Self::Error> {
+    fn select_all_files_order_by_fingerprint(&self) -> Result<Vec<File>, Self::Error> {
         let mut connection = self.get()?;
         let files = files::table
-            .order_by(files::columns::sha256sum)
+            .order_by(files::columns::fingerprint)
             .load(&mut connection)?;
         Ok(files)
     }

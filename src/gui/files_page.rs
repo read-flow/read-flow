@@ -282,7 +282,7 @@ where
 
         let files: Vec<_> = if self.duplicates {
             let buckets: IndexMap<String, Vec<&File>> =
-                to_buckets(self.files.iter(), |file| file.sha256sum.clone());
+                to_buckets(self.files.iter(), |file| file.fingerprint.clone());
             buckets
                 .into_iter()
                 .filter(|(_, values)| values.len() > 1)
@@ -306,7 +306,7 @@ where
                 text(file.id),
                 text(file.type_.clone()),
                 text(file.size),
-                text(format!("{}...", &file.sha256sum[..9])),
+                text(format!("{}...", &file.fingerprint[..9])),
                 row![text(path)]
                     .extend(file.tags.iter().map(|tag| {
                         if self.selected_tags.contains(tag) {
@@ -347,7 +347,7 @@ where
         OrderFilesBy::Type => files.sort_by_key(|file| file.type_.clone()),
         OrderFilesBy::Path => files.sort_by_key(|file| file.path.clone()),
         OrderFilesBy::Size => files.sort_by_key(|file| file.size),
-        OrderFilesBy::Fingerprint => files.sort_by_key(|file| file.sha256sum.clone()),
+        OrderFilesBy::Fingerprint => files.sort_by_key(|file| file.fingerprint.clone()),
     };
 
     Ok(files

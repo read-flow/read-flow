@@ -13,7 +13,7 @@ pub struct File {
     pub path: String,
     pub type_: String,
     pub size: i32,
-    pub sha256sum: String,
+    pub fingerprint: String,
     pub tags: Vec<String>,
 }
 
@@ -25,14 +25,14 @@ impl From<(DbFile, Vec<DbTag>)> for File {
             path,
             type_,
             size,
-            sha256sum,
+            fingerprint,
         } = file;
         Self {
             id,
             path,
             type_,
             size,
-            sha256sum,
+            fingerprint,
             tags,
         }
     }
@@ -45,7 +45,7 @@ impl From<File> for (DbFile, Vec<DbTag>) {
             path,
             type_,
             size,
-            sha256sum,
+            fingerprint,
             tags,
         }: File,
     ) -> Self {
@@ -58,7 +58,7 @@ impl From<File> for (DbFile, Vec<DbTag>) {
             path,
             type_,
             size,
-            sha256sum,
+            fingerprint,
         };
         (file, tags)
     }
