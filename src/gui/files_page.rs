@@ -9,7 +9,7 @@ use iced_aw::{grid_row, Grid};
 use indexmap::IndexMap;
 
 use crate::{
-    api::{File, FileDataSource},
+    api::{self, File, FileDataSource},
     client::FilesClient,
     gui::{self, CurrentTab, IdentifyTab},
     to_buckets,
@@ -18,39 +18,84 @@ use crate::{
 use super::tag_button;
 
 #[derive(Debug, Clone)]
-pub(super) enum Dialog {
-    FileTag {
-        tab: CurrentTab,
-        file_id: i32,
-        tag: Option<String>,
-    },
+pub(crate) struct FileTag {
+    tab: CurrentTab,
+    file_id: i32,
+    tag: Option<String>,
 }
 
-impl Dialog {
-    fn file_tag(tab: CurrentTab, file_id: i32) -> Self {
-        Dialog::FileTag {
+impl FileTag {
+    fn new(tab: CurrentTab, file_id: i32) -> Self {
+        Self {
             tab,
             file_id,
             tag: None,
         }
     }
 
-    fn to_element(&self) -> Element<gui::Message> {
-        match self {
-            Dialog::FileTag { tab, tag, .. } => container(
-                column![
-                    row![text("Add tag")],
-                    row![text_input("tag", &tag.clone().unwrap_or("".to_string()))
-                        .width(250)
-                        .on_input(|result| Message::TagChanged(tab.clone(), result).into())],
-                    row![button("close").on_press(Message::CloseDialog(tab.clone()).into())],
-                ]
-                .spacing(10),
-            )
-            .style(container::rounded_box)
-            .padding(10),
-        }
+    fn update(&mut self, tag: String) -> Task<gui::Message> {
+        self.tag = Some(tag);
+        Task::none()
+    }
+
+    fn view(&self) -> Element<gui::Message> {
+        let Self { tab, tag, .. } = self;
+        container(
+            column![
+                row![text("Add tag")],
+                row![text_input("tag", &tag.clone().unwrap_or("".to_string()))
+                    .width(250)
+                    .on_input(|result| Message::TagChanged(tab.clone(), result).into())],
+                row![button("close").on_press(Message::CloseDialog(tab.clone()).into())],
+            ]
+            .spacing(10),
+        )
+        .style(container::rounded_box)
+        .padding(10)
         .into()
+    }
+
+    fn close<FDS>(self, file_data_source: Arc<FDS>) -> Task<gui::Message>
+    where
+        FDS: FileDataSource + Send + Sync + 'static,
+        <FDS as api::FileDataSource>::Error: 'static,
+    {
+        match self {
+            FileTag {
+                tab,
+                tag: Some(tag),
+                ..
+            } if !tag.trim().is_empty() => Task::perform(
+                add_file_tag(file_data_source, self.file_id, tag.trim().to_string()),
+                move |result| Message::TagApplied(tab.clone(), result).into(),
+            ),
+            _ => Task::none(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum Dialog {
+    FileTag(FileTag),
+}
+
+impl IdentifyTab for Dialog {
+    fn tab(&self) -> CurrentTab {
+        match self {
+            Self::FileTag(dialog) => dialog.tab.clone(),
+        }
+    }
+}
+
+impl Dialog {
+    fn file_tag(tab: CurrentTab, file_id: i32) -> Self {
+        Self::FileTag(FileTag::new(tab, file_id))
+    }
+
+    fn view(&self) -> Element<gui::Message> {
+        match self {
+            Dialog::FileTag(file_tag) => file_tag.view(),
+        }
     }
 }
 
@@ -99,7 +144,7 @@ pub(super) enum Message {
     ToggleShortenPath(CurrentTab),
     ToggleDuplicates(CurrentTab),
     CloseDialog(CurrentTab),
-    OpenDialog(CurrentTab, Dialog),
+    OpenDialog(Dialog),
     TagChanged(CurrentTab, String),
     TagApplied(CurrentTab, Result<Vec<String>, Error>),
     FilesLoaded(CurrentTab, Result<Vec<File>, Error>),
@@ -115,7 +160,7 @@ impl IdentifyTab for Message {
             Message::ToggleShortenPath(tab) => tab.clone(),
             Message::ToggleDuplicates(tab) => tab.clone(),
             Message::CloseDialog(tab) => tab.clone(),
-            Message::OpenDialog(tab, ..) => tab.clone(),
+            Message::OpenDialog(dialog) => dialog.tab(),
             Message::TagChanged(tab, ..) => tab.clone(),
             Message::TagApplied(tab, ..) => tab.clone(),
             Message::FilesLoaded(tab, ..) => tab.clone(),
@@ -129,17 +174,6 @@ impl IdentifyTab for Message {
 impl From<Message> for gui::Message {
     fn from(value: Message) -> Self {
         gui::Message::Files(value)
-    }
-}
-
-impl TryFrom<gui::Message> for Message {
-    type Error = gui::InvalidMessage;
-    fn try_from(message: gui::Message) -> Result<Self, Self::Error> {
-        if let gui::Message::Files(message) = message {
-            Ok(message)
-        } else {
-            Err(gui::InvalidMessage(message))
-        }
     }
 }
 
@@ -189,18 +223,7 @@ where
                 Task::none()
             }
             Message::CloseDialog(_) => match self.dialog.take() {
-                Some(Dialog::FileTag {
-                    tab,
-                    file_id,
-                    tag: Some(tag),
-                }) if !tag.trim().is_empty() => Task::perform(
-                    add_file_tag(
-                        self.file_data_source.clone(),
-                        file_id,
-                        tag.trim().to_string(),
-                    ),
-                    move |result| Message::TagApplied(tab.clone(), result).into(),
-                ),
+                Some(Dialog::FileTag(dialog)) => dialog.close(self.file_data_source.clone()),
                 _ => Task::none(),
             },
             Message::TagApplied(tab, Ok(file_tag)) => {
@@ -211,20 +234,15 @@ where
                 tracing::error!("Could not add file_tag: {error}");
                 Task::none()
             }
-            Message::OpenDialog(_, dialog) => {
+            Message::OpenDialog(dialog) => {
                 self.dialog = Some(dialog);
+                // TODO: emit task from `dialog::init()`
                 Task::none()
             }
-            Message::TagChanged(tab, tag) => {
-                if let Some(Dialog::FileTag { file_id, .. }) = &self.dialog {
-                    self.dialog = Some(Dialog::FileTag {
-                        tab,
-                        file_id: *file_id,
-                        tag: Some(tag),
-                    })
-                }
-                Task::none()
-            }
+            Message::TagChanged(_, tag) => match &mut self.dialog {
+                Some(Dialog::FileTag(ref mut dialog)) => dialog.update(tag),
+                None => Task::none(),
+            },
             Message::FilesLoaded(_, Ok(files)) => {
                 self.files = files;
                 Task::none()
@@ -249,6 +267,11 @@ where
     }
 
     pub fn view(&self) -> Element<gui::Message> {
+        // If a dialog is active, show that
+        if let Some(dialog) = &self.dialog {
+            return dialog.view();
+        }
+
         let action_bar = row![
             button("Toggle Short Path").on_press(Message::ToggleShortenPath(self.tab()).into()),
             button("Toggle Duplicates").on_press(Message::ToggleDuplicates(self.tab()).into()),
@@ -300,9 +323,8 @@ where
             };
 
             grid = grid.push(grid_row![
-                row![button("tag").on_press(
-                    Message::OpenDialog(self.tab(), Dialog::file_tag(self.tab(), file.id)).into()
-                ),],
+                row![button("tag")
+                    .on_press(Message::OpenDialog(Dialog::file_tag(self.tab(), file.id)).into())],
                 text(file.id),
                 text(file.type_.clone()),
                 text(file.size),
@@ -321,10 +343,7 @@ where
             ]);
         }
 
-        match &self.dialog {
-            Some(dialog) => dialog.to_element(),
-            None => column![action_bar, grid].spacing(10).into(),
-        }
+        column![action_bar, grid].spacing(10).into()
     }
 }
 
