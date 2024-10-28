@@ -35,3 +35,4 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] Store folders to scan in database, and add command to scan configured folders
 - [ ] Check files in the database to see whether they still exist
 - [ ] Change directory modules API so that they can match and still recurse into the directory
+- [ ] Add allow/denylist for directories to scan
