@@ -25,59 +25,69 @@ impl FileDataSource for DbClient {
     type Error = Error;
 
     async fn status(&self) -> Result<Status, Self::Error> {
-        let mut connection = self.connection_pool.get()?;
-        let _: usize = diesel::sql_query("SELECT 1").execute(&mut connection)?;
-        Ok(Status {})
+        tokio::task::block_in_place(|| {
+            let mut connection = self.connection_pool.get()?;
+            let _: usize = diesel::sql_query("SELECT 1").execute(&mut connection)?;
+            Ok(Status {})
+        })
     }
 
     async fn get_files(&self) -> Result<Vec<File>, Self::Error> {
-        let files = self.connection_pool.select_all_files()?;
-        let file_tags = self.connection_pool.select_all_file_tags()?;
+        tokio::task::block_in_place(|| {
+            let files = self.connection_pool.select_all_files()?;
+            let file_tags = self.connection_pool.select_all_file_tags()?;
 
-        let mut result: IndexMap<i32, (DbFile, Vec<DbFileTag>)> = files
-            .into_iter()
-            .map(|file| (file.id, (file, Vec::new())))
-            .collect();
+            let mut result: IndexMap<i32, (DbFile, Vec<DbFileTag>)> = files
+                .into_iter()
+                .map(|file| (file.id, (file, Vec::new())))
+                .collect();
 
-        for tag in file_tags {
-            if let Some((_file, tags)) = result.get_mut(&tag.file_id) {
-                tags.push(tag);
+            for tag in file_tags {
+                if let Some((_file, tags)) = result.get_mut(&tag.file_id) {
+                    tags.push(tag);
+                }
             }
-        }
 
-        let result = result.into_values().map(Into::into).collect();
-        Ok(result)
+            let result = result.into_values().map(Into::into).collect();
+            Ok(result)
+        })
     }
 
     async fn get_files_tags(&self) -> Result<Vec<String>, Self::Error> {
-        self.connection_pool.select_all_tags()
+        tokio::task::block_in_place(|| self.connection_pool.select_all_tags())
     }
 
     async fn get_file(&self, id: i32) -> Result<Option<File>, Self::Error> {
-        let file = self.connection_pool.select_file_by_id(id)?;
-        let file_tags = self.connection_pool.select_file_tags_by_file_id(id)?;
-        let result = file.map(|file| (file, file_tags).into());
-        Ok(result)
+        tokio::task::block_in_place(|| {
+            let file = self.connection_pool.select_file_by_id(id)?;
+            let file_tags = self.connection_pool.select_file_tags_by_file_id(id)?;
+            let result = file.map(|file| (file, file_tags).into());
+            Ok(result)
+        })
     }
 
     async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Self::Error> {
-        let file_tags = self.connection_pool.select_file_tags_by_file_id(id)?;
-        let file_tags = file_tags.into_iter().map(|t| t.tag).collect();
-        Ok(file_tags)
+        tokio::task::block_in_place(|| {
+            let file_tags = self.connection_pool.select_file_tags_by_file_id(id)?;
+            let file_tags = file_tags.into_iter().map(|t| t.tag).collect();
+            Ok(file_tags)
+        })
     }
 
     async fn add_file_tags(&self, id: i32, tags: Vec<String>) -> Result<Vec<String>, Self::Error> {
-        let tags = tags
-            .into_iter()
-            .map(|tag| DbFileTag { file_id: id, tag })
-            .collect();
-        self.connection_pool.upsert_file_tags(tags)?;
-        let tags = self
-            .connection_pool
-            .select_file_tags_by_file_id(id)?
-            .into_iter()
-            .map(|tag| tag.tag)
-            .collect();
-        Ok(tags)
+        tokio::task::block_in_place(|| {
+            let tags = tags
+                .into_iter()
+                .map(|tag| DbFileTag { file_id: id, tag })
+                .collect();
+            self.connection_pool.upsert_file_tags(tags)?;
+            let tags = self
+                .connection_pool
+                .select_file_tags_by_file_id(id)?
+                .into_iter()
+                .map(|tag| tag.tag)
+                .collect();
+            Ok(tags)
+        })
     }
 }

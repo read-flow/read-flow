@@ -275,5 +275,5 @@ async fn add_remote_url(
     connection_pool: ConnectionPool,
     base_url: String,
 ) -> Result<Remote, dao::Error> {
-    connection_pool.insert_remote(NewRemote { base_url })
+    tokio::task::block_in_place(|| connection_pool.insert_remote(NewRemote { base_url }))
 }
