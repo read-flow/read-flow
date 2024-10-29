@@ -2,105 +2,23 @@ use std::sync::Arc;
 
 use iced::{
     alignment::{Horizontal, Vertical},
-    widget::{button, column, container, row, text, text_input},
+    widget::{button, column, container, row, text},
     Element, Task,
 };
 use iced_aw::{grid_row, Grid};
 use indexmap::IndexMap;
 
 use crate::{
-    api::{self, File, FileDataSource},
+    api::{File, FileDataSource},
     client::FilesClient,
     gui::{self, CurrentTab, IdentifyTab},
     to_buckets,
 };
 
-use super::tag_button;
+use super::{tag_button, Dialog, Error, Message, OrderFilesBy};
 
 #[derive(Debug, Clone)]
-pub(crate) struct FileTag {
-    tab: CurrentTab,
-    file_id: i32,
-    tag: Option<String>,
-}
-
-impl FileTag {
-    fn new(tab: CurrentTab, file_id: i32) -> Self {
-        Self {
-            tab,
-            file_id,
-            tag: None,
-        }
-    }
-
-    fn update(&mut self, tag: String) -> Task<gui::Message> {
-        self.tag = Some(tag);
-        Task::none()
-    }
-
-    fn view(&self) -> Element<gui::Message> {
-        let Self { tab, tag, .. } = self;
-        container(
-            column![
-                row![text("Add tag")],
-                row![text_input("tag", &tag.clone().unwrap_or("".to_string()))
-                    .width(250)
-                    .on_input(|result| Message::TagChanged(tab.clone(), result).into())],
-                row![button("close").on_press(Message::CloseDialog(tab.clone()).into())],
-            ]
-            .spacing(10),
-        )
-        .style(container::rounded_box)
-        .padding(10)
-        .into()
-    }
-
-    fn close<FDS>(self, file_data_source: Arc<FDS>) -> Task<gui::Message>
-    where
-        FDS: FileDataSource + Send + Sync + 'static,
-        <FDS as api::FileDataSource>::Error: 'static,
-    {
-        match self {
-            FileTag {
-                tab,
-                tag: Some(tag),
-                ..
-            } if !tag.trim().is_empty() => Task::perform(
-                add_file_tag(file_data_source, self.file_id, tag.trim().to_string()),
-                move |result| Message::TagApplied(tab.clone(), result).into(),
-            ),
-            _ => Task::none(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(super) enum Dialog {
-    FileTag(FileTag),
-}
-
-impl IdentifyTab for Dialog {
-    fn tab(&self) -> CurrentTab {
-        match self {
-            Self::FileTag(dialog) => dialog.tab.clone(),
-        }
-    }
-}
-
-impl Dialog {
-    fn file_tag(tab: CurrentTab, file_id: i32) -> Self {
-        Self::FileTag(FileTag::new(tab, file_id))
-    }
-
-    fn view(&self) -> Element<gui::Message> {
-        match self {
-            Dialog::FileTag(file_tag) => file_tag.view(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct Page<FDS> {
+pub struct Page<FDS> {
     shorten_path: bool,
     ordering: OrderFilesBy,
     file_data_source: Arc<FDS>,
@@ -119,61 +37,6 @@ impl IdentifyTab for Page<gui::DbClient> {
 impl IdentifyTab for Page<FilesClient> {
     fn tab(&self) -> CurrentTab {
         CurrentTab::RemoteFiles(self.file_data_source.base_url().clone())
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub(super) enum OrderFilesBy {
-    #[default]
-    Id,
-    Type,
-    Path,
-    Size,
-    Fingerprint,
-}
-
-#[derive(Debug, Clone, thiserror::Error)]
-pub(super) enum Error {
-    #[error("database error: {0}")]
-    DataSourceError(String),
-}
-
-#[derive(Debug, Clone)]
-pub(super) enum Message {
-    Update(CurrentTab),
-    ToggleShortenPath(CurrentTab),
-    ToggleDuplicates(CurrentTab),
-    CloseDialog(CurrentTab),
-    OpenDialog(Dialog),
-    TagChanged(CurrentTab, String),
-    TagApplied(CurrentTab, Result<Vec<String>, Error>),
-    FilesLoaded(CurrentTab, Result<Vec<File>, Error>),
-    OrderBy(CurrentTab, OrderFilesBy),
-    AddTagFilter(CurrentTab, String),
-    RemoveTagFilter(CurrentTab, String),
-}
-
-impl IdentifyTab for Message {
-    fn tab(&self) -> CurrentTab {
-        match self {
-            Message::Update(tab) => tab.clone(),
-            Message::ToggleShortenPath(tab) => tab.clone(),
-            Message::ToggleDuplicates(tab) => tab.clone(),
-            Message::CloseDialog(tab) => tab.clone(),
-            Message::OpenDialog(dialog) => dialog.tab(),
-            Message::TagChanged(tab, ..) => tab.clone(),
-            Message::TagApplied(tab, ..) => tab.clone(),
-            Message::FilesLoaded(tab, ..) => tab.clone(),
-            Message::OrderBy(tab, ..) => tab.clone(),
-            Message::AddTagFilter(tab, ..) => tab.clone(),
-            Message::RemoveTagFilter(tab, ..) => tab.clone(),
-        }
-    }
-}
-
-impl From<Message> for gui::Message {
-    fn from(value: Message) -> Self {
-        gui::Message::Files(value)
     }
 }
 
@@ -373,21 +236,4 @@ where
         .into_iter()
         .filter(|file| tags.iter().all(|tag| file.tags.contains(tag)))
         .collect())
-}
-
-async fn add_file_tag<FDS>(
-    file_data_source: Arc<FDS>,
-    file_id: i32,
-    tag: String,
-) -> Result<Vec<String>, Error>
-where
-    FDS: FileDataSource,
-    <FDS as FileDataSource>::Error: 'static,
-{
-    let tags = file_data_source
-        .add_file_tags(file_id, vec![tag])
-        .await
-        .map_err(|error| Error::DataSourceError(format!("{error}")))?;
-
-    Ok(tags)
 }
