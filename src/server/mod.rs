@@ -22,7 +22,6 @@ use crate::{
     db::{
         self,
         dao::{self, FileDao, FileTagDao},
-        datasource::DbClient,
     },
     scan, to_unique_file, ApplicationModule,
 };
@@ -108,9 +107,7 @@ async fn status(
     application_module: &State<ApplicationModule>,
     _user: AuthorizedUser,
 ) -> Result<Json<Status>> {
-    let status = DbClient::new(application_module.connection_pool.clone())
-        .status()
-        .await?;
+    let status = application_module.db_client().status().await?;
     Ok(Json(status))
 }
 
@@ -269,8 +266,7 @@ async fn upload_file(
 
     file.persist_to(target_file.as_path()).await?;
 
-    let visitor = scan::create_visitor(application_module.connection_pool.clone());
-    visitor.visit(&target_file)?;
+    application_module.visitor().visit(&target_file)?;
 
     let result = application_module
         .connection_pool

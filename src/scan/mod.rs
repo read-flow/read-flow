@@ -35,10 +35,8 @@ pub fn create_visitor(connection_pool: ConnectionPool) -> FileSystemVisitor {
 
 impl ApplicationModule {
     pub fn scan(self, path: PathBuf) -> Result<()> {
-        let visitor = create_visitor(self.connection_pool);
         let path = path.canonicalize()?;
-        visitor.visit(&path)?;
-
+        self.visitor().visit(&path)?;
         Ok(())
     }
 }

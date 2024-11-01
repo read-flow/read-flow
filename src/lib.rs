@@ -13,7 +13,8 @@ use std::{hash::Hash, path::PathBuf, sync::Arc};
 use figment::Figment;
 use indexmap::IndexMap;
 
-use db::ConnectionPool;
+use db::{datasource::DbClient, ConnectionPool};
+use scan::FileSystemVisitor;
 use settings::Settings;
 
 #[derive(Clone, Debug)]
@@ -39,6 +40,14 @@ impl ApplicationModule {
             settings: Arc::new(settings),
             connection_pool,
         }
+    }
+
+    fn db_client(&self) -> DbClient {
+        DbClient::new(self.connection_pool.clone())
+    }
+
+    fn visitor(&self) -> FileSystemVisitor {
+        scan::create_visitor(self.connection_pool.clone())
     }
 }
 

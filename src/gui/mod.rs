@@ -72,9 +72,7 @@ impl Tabs {
 
         Self {
             current_tab: CurrentTab::Welcome,
-            local_files: files_page::Page::new(DbClient::new(
-                application_module.connection_pool.clone(),
-            )),
+            local_files: files_page::Page::new(application_module.db_client()),
             welcome_page: welcome_page::Page::new(application_module),
             remote_files,
         }
