@@ -1,2 +1,4 @@
 #!/usr/bin/env bash
-echo DATABASE_URL=$PWD/database.db > .env
+rm -f .env
+mkdir -p ~/.local/share/archive-organizer
+cat archive-organizer.template.toml | envsubst > archive-organizer.toml

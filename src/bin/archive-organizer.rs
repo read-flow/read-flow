@@ -2,34 +2,13 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use tokio::runtime::Runtime;
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 use url::Url;
 
-#[cfg(feature = "gui")]
-use archive_organizer::gui::gui;
 #[cfg(feature = "server")]
 use archive_organizer::server;
-use archive_organizer::{
-    api::FileDataSource,
-    client,
-    db::{get_connection_pool, ConnectionPool},
-    scan::scan,
-};
-
-pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
-
-fn run_migrations(connection_pool: &ConnectionPool) -> Result<()> {
-    let mut connection = connection_pool.get()?;
-
-    // This will run the necessary migrations.
-    // See the documentation for `MigrationHarness` for all available methods.
-    // TODO: error handling
-    let _ = connection.run_pending_migrations(MIGRATIONS);
-
-    Ok(())
-}
+use archive_organizer::{api::FileDataSource, client, ApplicationModule};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -58,13 +37,10 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let connection_pool = get_connection_pool();
-    run_migrations(&connection_pool)?;
-
     match cli.command {
-        Commands::Scan { path } => scan(path, get_connection_pool())?,
+        Commands::Scan { path } => ApplicationModule::instantiate()?.scan(path)?,
         #[cfg(feature = "gui")]
-        Commands::Gui => gui(get_connection_pool())?,
+        Commands::Gui => ApplicationModule::instantiate()?.gui()?,
         #[cfg(feature = "server")]
         Commands::Serve => server::main(),
         Commands::Client => {

@@ -1,6 +1,7 @@
-/target
+/*.pdf
 /.env
+/archive-organizer.toml
 /database.db
 /database.db-shm
 /database.db-wal
-/*.pdf
+/target/

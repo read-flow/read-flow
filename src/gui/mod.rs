@@ -18,6 +18,7 @@ use crate::{
         models::{NewRemote, Remote},
         ConnectionPool,
     },
+    ApplicationModule,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -54,9 +55,10 @@ struct Tabs {
 }
 
 impl Tabs {
-    fn new(connection_pool: ConnectionPool) -> Self {
+    fn new(application_module: ApplicationModule) -> Self {
         // TODO: proper error handling of unwraps here
-        let remote_files = connection_pool
+        let remote_files = application_module
+            .connection_pool
             .select_all_remotes()
             .unwrap()
             .into_iter()
@@ -70,8 +72,10 @@ impl Tabs {
 
         Self {
             current_tab: CurrentTab::Welcome,
-            welcome_page: welcome_page::Page::new(connection_pool.clone()),
-            local_files: files_page::Page::new(DbClient::new(connection_pool)),
+            local_files: files_page::Page::new(DbClient::new(
+                application_module.connection_pool.clone(),
+            )),
+            welcome_page: welcome_page::Page::new(application_module),
             remote_files,
         }
     }
@@ -114,13 +118,14 @@ struct App {
 }
 
 impl App {
-    fn new(connection_pool: ConnectionPool) -> (Self, Task<Message>) {
-        let tabs = Tabs::new(connection_pool.clone());
+    fn new(application_module: ApplicationModule) -> (Self, Task<Message>) {
+        let connection_pool = application_module.connection_pool.clone();
+        let tabs = Tabs::new(application_module);
         let initialize_tabs = tabs.init();
         (
             App {
                 tabs,
-                connection_pool: connection_pool.clone(),
+                connection_pool,
                 new_remote_url: Default::default(),
             },
             initialize_tabs,
@@ -213,10 +218,12 @@ impl App {
     }
 }
 
-pub fn gui(connection_pool: ConnectionPool) -> iced::Result {
-    iced::application("ArchiveOrganizer - Files", App::update, App::view)
-        .theme(|_| Theme::TokyoNight)
-        .run_with(|| App::new(connection_pool))
+impl ApplicationModule {
+    pub fn gui(self) -> iced::Result {
+        iced::application("ArchiveOrganizer - Files", App::update, App::view)
+            .theme(|_| Theme::TokyoNight)
+            .run_with(|| App::new(self))
+    }
 }
 
 fn tag_button(tag: String) -> widget::Button<'static, Message> {

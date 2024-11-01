@@ -4,7 +4,7 @@ use rocket::{
     request::{FromRequest, Outcome, Request},
 };
 
-use crate::server;
+use crate::settings;
 
 pub struct AuthorizedUser;
 
@@ -42,8 +42,8 @@ impl<'r> FromRequest<'r> for AuthorizedUser {
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let settings = request
             .rocket()
-            .state::<server::Settings>()
-            .expect("settings should exist");
+            .state::<settings::Settings>()
+            .expect("Settings should exist");
 
         let authorization_header = request
             .headers()
@@ -56,7 +56,11 @@ impl<'r> FromRequest<'r> for AuthorizedUser {
                 match Self::extract_bearer_token(authorization_header) {
                     // TODO: validate token against some registry
                     Ok(token) => {
-                        if settings.authorization_tokens.contains(&token.to_owned()) {
+                        if settings
+                            .server
+                            .authorization_tokens
+                            .contains(&token.to_owned())
+                        {
                             Outcome::Success(AuthorizedUser)
                         } else {
                             Outcome::Error((Status::Forbidden, Error::InvalidToken))

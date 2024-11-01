@@ -5,7 +5,7 @@ use iced::{
 };
 use rfd::{AsyncFileDialog, FileHandle};
 
-use crate::{db::ConnectionPool, gui, scan::scan};
+use crate::{gui, ApplicationModule};
 
 #[derive(Debug, Clone)]
 pub(super) enum Message {
@@ -35,14 +35,14 @@ impl TryFrom<gui::Message> for Message {
 #[derive(Debug, Clone)]
 pub(super) struct Page {
     scan_directory: Option<FileHandle>,
-    connection_pool: ConnectionPool,
+    application_module: ApplicationModule,
 }
 
 impl Page {
-    pub fn new(connection_pool: ConnectionPool) -> Self {
+    pub fn new(application_module: ApplicationModule) -> Self {
         Self {
             scan_directory: None,
-            connection_pool,
+            application_module,
         }
     }
 
@@ -62,7 +62,7 @@ impl Page {
             Message::ScanDirectory => {
                 if let Some(file_handle) = &self.scan_directory {
                     Task::perform(
-                        scan_directory(file_handle.clone(), self.connection_pool.clone()),
+                        scan_directory(file_handle.clone(), self.application_module.clone()),
                         |result| Message::ScanComplete(result).into(),
                     )
                 } else {
@@ -111,8 +111,8 @@ async fn select_path() -> Option<FileHandle> {
     AsyncFileDialog::new().pick_folder().await
 }
 
-async fn scan_directory(path: FileHandle, connection_pool: ConnectionPool) -> Option<String> {
-    match scan(path.path().to_path_buf(), connection_pool) {
+async fn scan_directory(path: FileHandle, application_module: ApplicationModule) -> Option<String> {
+    match application_module.scan(path.path().to_path_buf()) {
         Ok(()) => None,
         Err(error) => Some(error.to_string()),
     }

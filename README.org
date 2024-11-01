@@ -5,7 +5,7 @@ This is a tool to help discover and organize files locally and on remote servers
 * TODO: Implement the following items [11/28]
 
 - [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
-- [ ] Make database URL configurable (using ~figment~)
+- [X] Make database URL configurable (using ~figment~)
 - [ ] Store configuration in default location like =$HOME/.config/archive-organizer=
 - [X] Add functions to convert between mime-types and extensions
 - [X] Use filename from part in multipart form and remove explicit form field

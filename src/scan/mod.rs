@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
-use crate::db::ConnectionPool;
+use crate::{db::ConnectionPool, ApplicationModule};
 
 pub use file_system_visitor::{Error, FileSystemVisitor};
 use modules::{file_extension_finder::FileExtensionFinder, scm_project_finder::ScmProjectFinder};
@@ -33,10 +33,12 @@ pub fn create_visitor(connection_pool: ConnectionPool) -> FileSystemVisitor {
     )
 }
 
-pub fn scan(path: PathBuf, connection_pool: ConnectionPool) -> Result<()> {
-    let visitor = create_visitor(connection_pool);
-    let path = path.canonicalize()?;
-    visitor.visit(&path)?;
+impl ApplicationModule {
+    pub fn scan(self, path: PathBuf) -> Result<()> {
+        let visitor = create_visitor(self.connection_pool);
+        let path = path.canonicalize()?;
+        visitor.visit(&path)?;
 
-    Ok(())
+        Ok(())
+    }
 }

@@ -6,27 +6,69 @@ pub mod gui;
 pub mod scan;
 #[cfg(feature = "server")]
 pub mod server;
+pub mod settings;
 
-use std::{hash::Hash, path::PathBuf};
+use std::{hash::Hash, path::PathBuf, sync::Arc};
 
+use figment::Figment;
 use indexmap::IndexMap;
 
-fn to_unique_file(file_path: &mut PathBuf, extension: &str) {
+use db::ConnectionPool;
+use settings::Settings;
+
+#[derive(Clone, Debug)]
+pub struct ApplicationModule {
+    settings: Arc<Settings>,
+    connection_pool: ConnectionPool,
+}
+
+impl ApplicationModule {
+    pub fn instantiate() -> anyhow::Result<Self> {
+        let settings = settings::extract()?;
+        Ok(Self::from_settings(settings))
+    }
+
+    pub fn from_figment(figment: &Figment) -> Result<Self, figment::Error> {
+        let settings = figment.extract()?;
+        Ok(Self::from_settings(settings))
+    }
+
+    fn from_settings(settings: Settings) -> Self {
+        let connection_pool = db::get_connection_pool(&settings.database);
+        Self {
+            settings: Arc::new(settings),
+            connection_pool,
+        }
+    }
+}
+
+/// Modify `filename` by adding a number before the extension, so that it contains a filename for a not yet existing file.
+/// Panics when `filename` does not end with `extension`.
+/// For example:
+/// - given `filename` is `my_file.txt`, `extension` is `txt` and `my_file.txt` does not exist, results in `my_file.txt`
+/// - given `filename` is `my_file.txt`, `extension` is `txt` and `my_file.txt` exists, results in `my_file.1.txt`
+/// - given `filename` is `my_file.txt`, `extension` is `txt` and both `my_file.txt` and `my_file.1.txt` exist, results in `my_file.2.txt`
+fn to_unique_file(filename: &mut PathBuf, extension: &str) {
+    assert!(filename.ends_with(extension));
+
     let mut index: usize = 1;
 
-    while file_path.exists() {
+    while filename.exists() {
         if index > 1 {
-            file_path.set_extension("");
+            filename.set_extension("");
         }
-        file_path.set_extension(format!("{index}.{extension}"));
+        filename.set_extension(format!("{index}.{extension}"));
         index += 1;
     }
 }
 
+/// Returns the extension of `filename`, which is everything after a `.` in the `filename`.
 fn extension_of(filename: &str) -> Option<&str> {
     filename.split(".").last()
 }
 
+/// Collect all the items from `iterator` in a [`IndexMap`] indexed by the key indicated by `to_key`.
+/// Values are collected in a [`Vec`], so that multiple values per key are supported.
 pub fn to_buckets<K, V, F>(iterator: impl Iterator<Item = V>, to_key: F) -> IndexMap<K, Vec<V>>
 where
     K: Hash + Eq,

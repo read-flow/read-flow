@@ -5,9 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use figment::providers::{Format, Toml};
 use indexmap::IndexMap;
 use rocket::{
-    fairing::AdHoc,
     form::Form,
     fs::{NamedFile, TempFile},
     get,
@@ -23,16 +23,15 @@ use crate::{
         self,
         dao::{self, FileDao, FileTagDao},
         datasource::DbClient,
-        get_connection_pool, ConnectionPool,
     },
-    scan, to_unique_file,
+    scan, to_unique_file, ApplicationModule,
 };
 
 use authn::AuthorizedUser;
 
 #[derive(Debug, Deserialize)]
 #[serde(crate = "rocket::serde")]
-struct Settings {
+pub struct ServerSettings {
     download_folder: PathBuf,
     authorization_tokens: Vec<String>,
 }
@@ -84,33 +83,32 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[rocket::launch]
 pub fn serve() -> _ {
-    // Get the connection_pool
-    let connection_pool = get_connection_pool();
+    let figment = rocket::Config::figment().merge(Toml::file("archive-organizer.toml"));
 
-    rocket::build()
-        .mount(
-            "/",
-            routes![
-                status,
-                get_file,
-                get_file_tags,
-                post_file_tags,
-                get_files,
-                get_files_tags,
-                download_file,
-                upload_file,
-            ],
-        )
-        .attach(AdHoc::config::<Settings>())
-        .manage(connection_pool)
+    let application_module = ApplicationModule::from_figment(&figment);
+
+    let routes = routes![
+        status,
+        get_file,
+        get_file_tags,
+        post_file_tags,
+        get_files,
+        get_files_tags,
+        download_file,
+        upload_file,
+    ];
+
+    rocket::custom(figment)
+        .mount("/", routes)
+        .manage(application_module)
 }
 
 #[get("/status")]
 async fn status(
-    connection_pool: &State<ConnectionPool>,
+    application_module: &State<ApplicationModule>,
     _user: AuthorizedUser,
 ) -> Result<Json<Status>> {
-    let status = DbClient::new(connection_pool.inner().clone())
+    let status = DbClient::new(application_module.connection_pool.clone())
         .status()
         .await?;
     Ok(Json(status))
@@ -118,11 +116,11 @@ async fn status(
 
 #[get("/files")]
 fn get_files(
-    connection_pool: &State<ConnectionPool>,
+    application_module: &State<ApplicationModule>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<File>>> {
-    let files = connection_pool.select_all_files()?;
-    let file_tags = connection_pool.select_all_file_tags()?;
+    let files = application_module.connection_pool.select_all_files()?;
+    let file_tags = application_module.connection_pool.select_all_file_tags()?;
 
     let mut file_tags_map: IndexMap<_, Vec<_>> = IndexMap::new();
 
@@ -150,21 +148,24 @@ fn get_files(
 
 #[get("/files/tags")]
 fn get_files_tags(
-    connection_pool: &State<ConnectionPool>,
+    application_module: &State<ApplicationModule>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
-    let tags = connection_pool.select_all_tags()?;
+    let tags = application_module.connection_pool.select_all_tags()?;
     Ok(Json(tags))
 }
 
 #[get("/files/<id>")]
 fn get_file(
     id: i32,
-    connection_pool: &State<ConnectionPool>,
+    application_module: &State<ApplicationModule>,
     _user: AuthorizedUser,
 ) -> Result<Option<Json<File>>> {
-    let tags = connection_pool.select_file_tags_by_file_id(id)?;
-    let file = connection_pool
+    let tags = application_module
+        .connection_pool
+        .select_file_tags_by_file_id(id)?;
+    let file = application_module
+        .connection_pool
         .select_file_by_id(id)?
         .map(|file| (file, tags).into());
 
@@ -174,10 +175,11 @@ fn get_file(
 #[get("/files/<id>/tags")]
 fn get_file_tags(
     id: i32,
-    connection_pool: &State<ConnectionPool>,
+    application_module: &State<ApplicationModule>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
-    let tags = connection_pool
+    let tags = application_module
+        .connection_pool
         .select_file_tags_by_file_id(id)?
         .into_iter()
         .map(|tag| tag.tag)
@@ -189,7 +191,7 @@ fn get_file_tags(
 fn post_file_tags(
     id: i32,
     tags: Json<Vec<String>>,
-    connection_pool: &State<ConnectionPool>,
+    application_module: &State<ApplicationModule>,
     user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
     let file_tags = tags
@@ -197,19 +199,21 @@ fn post_file_tags(
         .into_iter()
         .map(|tag| db::models::FileTag { file_id: id, tag })
         .collect();
-    connection_pool.upsert_file_tags(file_tags)?;
+    application_module
+        .connection_pool
+        .upsert_file_tags(file_tags)?;
 
-    get_file_tags(id, connection_pool, user)
+    get_file_tags(id, application_module, user)
 }
 
 #[get("/files/<id>/download-as/<file_name>")]
 async fn download_file(
     id: i32,
     file_name: &str,
-    connection_pool: &State<ConnectionPool>,
+    application_module: &State<ApplicationModule>,
     _user: AuthorizedUser,
 ) -> Result<Option<(ContentType, NamedFile)>> {
-    let file = connection_pool.select_file_by_id(id)?;
+    let file = application_module.connection_pool.select_file_by_id(id)?;
 
     match file {
         None => Ok(None),
@@ -241,8 +245,7 @@ async fn download_file(
 #[post("/files", data = "<file>")]
 async fn upload_file(
     mut file: Form<TempFile<'_>>,
-    connection_pool: &State<ConnectionPool>,
-    settings: &State<Settings>,
+    application_module: &State<ApplicationModule>,
     _user: AuthorizedUser,
 ) -> Result<Json<File>> {
     let extension = file
@@ -256,18 +259,21 @@ async fn upload_file(
     }
 
     let filename = file.name().unwrap(); // sanitized filename, safe to use
-    let mut target_file = settings
+    let mut target_file = application_module
+        .settings
+        .server
         .download_folder
         .join(format!("{filename}.{extension}"));
 
     to_unique_file(&mut target_file, &extension);
 
-    file.persist_to(target_file.clone()).await?;
+    file.persist_to(target_file.as_path()).await?;
 
-    let visitor = scan::create_visitor(connection_pool.inner().clone());
+    let visitor = scan::create_visitor(application_module.connection_pool.clone());
     visitor.visit(&target_file)?;
 
-    let result = connection_pool
+    let result = application_module
+        .connection_pool
         .select_file_by_path(&format!("{}", target_file.display()))?
         .unwrap();
     Ok(Json((result, vec![]).into()))

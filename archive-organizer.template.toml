@@ -1,0 +1,10 @@
+[database]
+# The location of the database
+url = "$HOME/.local/share/archive-organizer/database.db"
+
+[server]
+# Specifies the folder where downloaded files will go
+download_folder = "/tmp/" # MUST end with a '/'
+
+# Authorized tokes
+authorization_tokens = ["secret"]
