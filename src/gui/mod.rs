@@ -181,30 +181,27 @@ impl App {
                     .on_press(Message::SwitchTab(CurrentTab::Welcome))]
             },
             if matches!(self.tabs.current_tab, CurrentTab::LocalFiles) {
-                row![button("Local Files").width(iced::Fill)]
+                row![button("Local").width(iced::Fill)]
             } else {
-                row![button("Local Files")
+                row![button("Local")
                     .width(iced::Fill)
                     .on_press(Message::SwitchTab(CurrentTab::LocalFiles))]
             }
         ];
         for remote_connection in self.tabs.remote_files.keys() {
-            let row = if matches!(&self.tabs.current_tab, CurrentTab::RemoteFiles(url) if url == remote_connection)
+            let mut button = button(column![
+                row![text("Remote")],
+                row![text(remote_connection.domain().unwrap()).size(11)],
+            ])
+            .width(iced::Fill);
+
+            if !matches!(&self.tabs.current_tab, CurrentTab::RemoteFiles(url) if url == remote_connection)
             {
-                row![
-                    button(text(format!("Remote Files\n({})", remote_connection)))
-                        .width(iced::Fill)
-                ]
-            } else {
-                row![
-                    button(text(format!("Remote Files\n({})", remote_connection)))
-                        .width(iced::Fill)
-                        .on_press(Message::SwitchTab(CurrentTab::RemoteFiles(
-                            remote_connection.clone()
-                        )))
-                ]
-            };
-            side_bar = side_bar.push(row);
+                button = button.on_press(Message::SwitchTab(CurrentTab::RemoteFiles(
+                    remote_connection.clone(),
+                )));
+            }
+            side_bar = side_bar.push(row![button]);
         }
         side_bar = side_bar.push(row![column![
             text_input("Remote URL", &self.new_remote_url).on_input(Message::EditNewRemoteUrl),
