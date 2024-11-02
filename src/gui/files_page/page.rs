@@ -134,16 +134,20 @@ where
     }
 
     pub fn view_menu(&self) -> Vec<Element<gui::Message>> {
-        vec![
-            button("Toggle Short Path")
-                .width(iced::Fill)
-                .on_press(Message::ToggleShortenPath(self.tab()).into())
-                .into(),
-            button("Toggle Duplicates")
-                .width(iced::Fill)
-                .on_press(Message::ToggleDuplicates(self.tab()).into())
-                .into(),
-        ]
+        if self.is_offline {
+            vec![]
+        } else {
+            vec![
+                button("Toggle Short Path")
+                    .width(iced::Fill)
+                    .on_press(Message::ToggleShortenPath(self.tab()).into())
+                    .into(),
+                button("Toggle Duplicates")
+                    .width(iced::Fill)
+                    .on_press(Message::ToggleDuplicates(self.tab()).into())
+                    .into(),
+            ]
+        }
     }
 
     pub fn view(&self) -> Element<gui::Message> {

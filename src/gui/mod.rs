@@ -2,7 +2,7 @@ mod files_page;
 mod welcome_page;
 
 use iced::{
-    border,
+    border, padding,
     widget::{self, button, column, container, row, scrollable, text, text_input},
     Element, Task, Theme,
 };
@@ -180,22 +180,45 @@ impl App {
 
     fn view(&self) -> Element<Message> {
         let header_bar = row![container(text("ArchiveOrganizer"))];
-        let mut side_bar = column![
-            if matches!(self.tabs.current_tab, CurrentTab::Welcome) {
-                button("Welcome").width(iced::Fill)
-            } else {
+        let mut side_bar = widget::Column::new();
+
+        if matches!(self.tabs.current_tab, CurrentTab::Welcome) {
+            // TODO: add `view_menu`
+            side_bar = side_bar.push(button("Welcome").width(iced::Fill));
+            side_bar = side_bar.push(
+                container(
+                    widget::Column::new()
+                        .spacing(5)
+                        .extend(self.tabs.view_menu()),
+                )
+                .padding(padding::left(10)),
+            );
+        } else {
+            side_bar = side_bar.push(
                 button("Welcome")
                     .width(iced::Fill)
-                    .on_press(Message::SwitchTab(CurrentTab::Welcome))
-            },
-            if matches!(self.tabs.current_tab, CurrentTab::LocalFiles) {
-                button("Local").width(iced::Fill)
-            } else {
+                    .on_press(Message::SwitchTab(CurrentTab::Welcome)),
+            );
+        }
+
+        if matches!(self.tabs.current_tab, CurrentTab::LocalFiles) {
+            side_bar = side_bar.push(button("Local").width(iced::Fill));
+            side_bar = side_bar.push(
+                container(
+                    widget::Column::new()
+                        .spacing(5)
+                        .extend(self.tabs.view_menu()),
+                )
+                .padding(padding::left(10)),
+            );
+        } else {
+            side_bar = side_bar.push(
                 button("Local")
                     .width(iced::Fill)
-                    .on_press(Message::SwitchTab(CurrentTab::LocalFiles))
-            }
-        ];
+                    .on_press(Message::SwitchTab(CurrentTab::LocalFiles)),
+            );
+        }
+
         for remote_connection in self.tabs.remote_files.keys() {
             let mut button = button(column![
                 text("Remote"),
@@ -203,20 +226,28 @@ impl App {
             ])
             .width(iced::Fill);
 
-            if !matches!(&self.tabs.current_tab, CurrentTab::RemoteFiles(url) if url == remote_connection)
+            if matches!(&self.tabs.current_tab, CurrentTab::RemoteFiles(url) if url == remote_connection)
             {
+                side_bar = side_bar.push(button);
+                side_bar = side_bar.push(
+                    container(
+                        widget::Column::new()
+                            .spacing(5)
+                            .extend(self.tabs.view_menu()),
+                    )
+                    .padding(padding::left(10)),
+                );
+            } else {
                 button = button.on_press(Message::SwitchTab(CurrentTab::RemoteFiles(
                     remote_connection.clone(),
                 )));
+                side_bar = side_bar.push(button);
             }
-            side_bar = side_bar.push(button);
         }
         side_bar = side_bar.push(column![
             text_input("Remote URL", &self.new_remote_url).on_input(Message::EditNewRemoteUrl),
             button("Add remote").on_press(Message::AddNewRemoteUrl)
         ]);
-
-        side_bar = side_bar.push(text("")).extend(self.tabs.view_menu());
 
         let pane_content = self.tabs.view();
         layout(header_bar, side_bar, column![pane_content]).into()
