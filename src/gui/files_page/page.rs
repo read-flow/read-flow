@@ -26,6 +26,7 @@ pub struct Page<FDS> {
     dialog: Option<Dialog>,
     selected_tags: Vec<String>,
     duplicates: bool,
+    is_offline: bool,
 }
 
 impl IdentifyTab for Page<gui::DbClient> {
@@ -54,6 +55,7 @@ where
             dialog: Default::default(),
             selected_tags: Default::default(),
             duplicates: Default::default(),
+            is_offline: Default::default(),
         }
     }
 
@@ -109,6 +111,7 @@ where
             }
             Message::FilesLoaded(_, Err(error)) => {
                 tracing::error!("error while loading files from database: {error}");
+                self.is_offline = true;
                 Task::none()
             }
             Message::OrderBy(tab, ordering) => {
@@ -131,6 +134,10 @@ where
     }
 
     pub fn view(&self) -> Element<gui::Message> {
+        if self.is_offline {
+            return text("Offline").into();
+        }
+
         // If a dialog is active, show that
         if let Some(dialog) = &self.dialog {
             return dialog.view();
