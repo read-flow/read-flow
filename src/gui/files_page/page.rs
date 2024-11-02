@@ -103,18 +103,6 @@ where
                 self.dialog = Some(dialog);
                 task
             }
-            Message::EditTag(_, tag) => match &mut self.dialog {
-                Some(Dialog::EditFile(ref mut dialog)) => dialog.edit_tag(tag),
-                None => Task::none(),
-            },
-            Message::AddTag(_) => match &mut self.dialog {
-                Some(Dialog::EditFile(ref mut dialog)) => dialog.add_tag(),
-                None => Task::none(),
-            },
-            Message::DeleteTag(_, tag) => match &mut self.dialog {
-                Some(Dialog::EditFile(ref mut dialog)) => dialog.delete_tag(tag),
-                None => Task::none(),
-            },
             Message::FilesLoaded(_, Ok(files)) => {
                 self.files = files;
                 Task::none()
@@ -135,6 +123,10 @@ where
                 self.selected_tags.retain(|t| t != &tag);
                 Task::done(Message::Update(tab).into())
             }
+            Message::EditDialog(message) => match &mut self.dialog {
+                Some(Dialog::EditFile(ref mut dialog)) => dialog.update(message),
+                None => Task::none(),
+            },
         }
     }
 

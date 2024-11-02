@@ -25,13 +25,11 @@ pub(super) enum Message {
     CancelDialog(CurrentTab),
     SubmitDialog(CurrentTab),
     OpenDialog(Dialog),
-    EditTag(CurrentTab, String),
-    AddTag(CurrentTab),
-    DeleteTag(CurrentTab, String),
     FilesLoaded(CurrentTab, Result<Vec<File>, Error>),
     OrderBy(CurrentTab, OrderFilesBy),
     AddTagFilter(CurrentTab, String),
     RemoveTagFilter(CurrentTab, String),
+    EditDialog(dialog_edit_file::Message),
 }
 
 impl IdentifyTab for Message {
@@ -44,13 +42,11 @@ impl IdentifyTab for Message {
             Message::CancelDialog(tab) => tab.clone(),
             Message::SubmitDialog(tab) => tab.clone(),
             Message::OpenDialog(dialog) => dialog.tab(),
-            Message::EditTag(tab, ..) => tab.clone(),
-            Message::AddTag(tab) => tab.clone(),
-            Message::DeleteTag(tab, ..) => tab.clone(),
             Message::FilesLoaded(tab, ..) => tab.clone(),
             Message::OrderBy(tab, ..) => tab.clone(),
             Message::AddTagFilter(tab, ..) => tab.clone(),
             Message::RemoveTagFilter(tab, ..) => tab.clone(),
+            Message::EditDialog(message) => message.tab(),
         }
     }
 }

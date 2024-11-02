@@ -11,7 +11,31 @@ use crate::{
     gui::{self, delete_tag_button, tag_button, IdentifyTab},
 };
 
-use super::{CurrentTab, File, Message};
+use super::{CurrentTab, File};
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Clone)]
+pub(in crate::gui) enum Message {
+    EditTag(CurrentTab, String),
+    AddTag(CurrentTab),
+    DeleteTag(CurrentTab, String),
+}
+
+impl IdentifyTab for Message {
+    fn tab(&self) -> CurrentTab {
+        match self {
+            Message::EditTag(tab, ..) => tab.clone(),
+            Message::AddTag(tab) => tab.clone(),
+            Message::DeleteTag(tab, ..) => tab.clone(),
+        }
+    }
+}
+
+impl From<Message> for gui::Message {
+    fn from(value: Message) -> Self {
+        gui::Message::Files(super::Message::EditDialog(value))
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct EditFile {
@@ -70,10 +94,10 @@ impl EditFile {
                     row![
                         button(text("Cancel"))
                             .style(button::secondary)
-                            .on_press(Message::CancelDialog(self.tab().clone()).into()),
+                            .on_press(super::Message::CancelDialog(self.tab().clone()).into()),
                         button(text("Submit"))
                             .style(button::primary)
-                            .on_press(Message::SubmitDialog(self.tab().clone()).into()),
+                            .on_press(super::Message::SubmitDialog(self.tab().clone()).into()),
                     ]
                     .spacing(10)
                 ]
@@ -83,9 +107,26 @@ impl EditFile {
         .into()
     }
 
-    pub(crate) fn edit_tag(&mut self, tag: String) -> Task<gui::Message> {
-        self.tag = Some(tag);
-        Task::none()
+    pub(super) fn update(&mut self, message: Message) -> Task<gui::Message> {
+        match message {
+            Message::EditTag(_, tag) => {
+                self.tag = Some(tag);
+                Task::none()
+            }
+            Message::AddTag(_) => {
+                if let Some(tag) = self.tag.take() {
+                    let tag = tag.trim();
+                    if !tag.is_empty() {
+                        self.file.tags.push(tag.to_owned());
+                    }
+                }
+                Task::none()
+            }
+            Message::DeleteTag(_, tag) => {
+                self.file.tags.retain(|t| *t != tag);
+                Task::none()
+            }
+        }
     }
 
     pub(crate) fn submit<FDS>(self, file_data_source: Arc<FDS>) -> Task<gui::Message>
@@ -96,25 +137,10 @@ impl EditFile {
         Task::perform(
             super::update_file(file_data_source, self.file.clone()),
             move |result| match result {
-                Ok(()) => Message::Update(self.tab().clone()).into(),
-                Err(error) => Message::Error(self.tab().clone(), error).into(),
+                Ok(()) => super::Message::Update(self.tab().clone()).into(),
+                Err(error) => super::Message::Error(self.tab().clone(), error).into(),
             },
         )
-    }
-
-    pub(crate) fn add_tag(&mut self) -> Task<gui::Message> {
-        if let Some(tag) = self.tag.take() {
-            let tag = tag.trim();
-            if !tag.is_empty() {
-                self.file.tags.push(tag.to_owned());
-            }
-        }
-        Task::none()
-    }
-
-    pub(crate) fn delete_tag(&mut self, tag: String) -> Task<gui::Message> {
-        self.file.tags.retain(|t| *t != tag);
-        Task::none()
     }
 }
 
