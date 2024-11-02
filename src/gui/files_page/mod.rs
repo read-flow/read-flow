@@ -1,9 +1,9 @@
-mod dialog_file_tag;
+mod dialog_edit_file;
 mod page;
 
 use std::sync::Arc;
 
-use iced::Element;
+use iced::{Element, Task};
 
 use crate::{
     api::{File, FileDataSource},
@@ -12,19 +12,22 @@ use crate::{
 
 use super::tag_button;
 
-use dialog_file_tag::FileTag;
+use dialog_edit_file::EditFile;
 
 pub use page::Page;
 
 #[derive(Debug, Clone)]
 pub(super) enum Message {
     Update(CurrentTab),
+    Error(CurrentTab, Error),
     ToggleShortenPath(CurrentTab),
     ToggleDuplicates(CurrentTab),
-    CloseDialog(CurrentTab),
+    CancelDialog(CurrentTab),
+    SubmitDialog(CurrentTab),
     OpenDialog(Dialog),
-    TagChanged(CurrentTab, String),
-    TagApplied(CurrentTab, Result<Vec<String>, Error>),
+    EditTag(CurrentTab, String),
+    AddTag(CurrentTab),
+    DeleteTag(CurrentTab, String),
     FilesLoaded(CurrentTab, Result<Vec<File>, Error>),
     OrderBy(CurrentTab, OrderFilesBy),
     AddTagFilter(CurrentTab, String),
@@ -35,12 +38,15 @@ impl IdentifyTab for Message {
     fn tab(&self) -> CurrentTab {
         match self {
             Message::Update(tab) => tab.clone(),
+            Message::Error(tab, ..) => tab.clone(),
             Message::ToggleShortenPath(tab) => tab.clone(),
             Message::ToggleDuplicates(tab) => tab.clone(),
-            Message::CloseDialog(tab) => tab.clone(),
+            Message::CancelDialog(tab) => tab.clone(),
+            Message::SubmitDialog(tab) => tab.clone(),
             Message::OpenDialog(dialog) => dialog.tab(),
-            Message::TagChanged(tab, ..) => tab.clone(),
-            Message::TagApplied(tab, ..) => tab.clone(),
+            Message::EditTag(tab, ..) => tab.clone(),
+            Message::AddTag(tab) => tab.clone(),
+            Message::DeleteTag(tab, ..) => tab.clone(),
             Message::FilesLoaded(tab, ..) => tab.clone(),
             Message::OrderBy(tab, ..) => tab.clone(),
             Message::AddTagFilter(tab, ..) => tab.clone(),
@@ -71,44 +77,67 @@ pub(super) enum OrderFilesBy {
     Fingerprint,
 }
 
-async fn add_file_tag<FDS>(
-    file_data_source: Arc<FDS>,
-    file_id: i32,
-    tag: String,
-) -> Result<Vec<String>, Error>
+async fn update_file<FDS>(file_data_source: Arc<FDS>, file: File) -> Result<(), Error>
 where
     FDS: FileDataSource,
     <FDS as FileDataSource>::Error: 'static,
 {
-    let tags = file_data_source
-        .add_file_tags(file_id, vec![tag])
+    match file_data_source
+        .get_file(file.id)
         .await
-        .map_err(|error| Error::DataSourceError(format!("{error}")))?;
+        .map_err(|error| Error::DataSourceError(format!("{error}")))?
+    {
+        None => todo!(),
+        Some(original_file) => {
+            let mut tags_to_delete = original_file.tags.clone();
+            tags_to_delete.retain(|t| !file.tags.contains(t));
+            tracing::warn!("tags to delete: {tags_to_delete:?}");
 
-    Ok(tags)
+            file_data_source
+                .delete_file_tags(file.id, tags_to_delete)
+                .await
+                .map_err(|error| Error::DataSourceError(format!("{error}")))?;
+
+            let mut tags_to_insert = file.tags.clone();
+            tags_to_insert.retain(|t| !original_file.tags.contains(t));
+            tracing::warn!("tags to insert: {tags_to_insert:?}");
+
+            file_data_source
+                .add_file_tags(file.id, tags_to_insert)
+                .await
+                .map_err(|error| Error::DataSourceError(format!("{error}")))?;
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
 pub(super) enum Dialog {
-    FileTag(FileTag),
+    EditFile(EditFile),
 }
 
 impl IdentifyTab for Dialog {
     fn tab(&self) -> CurrentTab {
         match self {
-            Self::FileTag(dialog) => dialog.tab(),
+            Self::EditFile(dialog) => dialog.tab(),
         }
     }
 }
 
 impl Dialog {
-    fn file_tag(tab: CurrentTab, file_id: i32) -> Self {
-        Self::FileTag(FileTag::new(tab, file_id))
+    fn edit_file(tab: CurrentTab, file: File) -> Self {
+        Self::EditFile(EditFile::new(tab, file))
+    }
+
+    fn init(&self) -> Task<gui::Message> {
+        match self {
+            Dialog::EditFile(dialog) => dialog.init(),
+        }
     }
 
     fn view(&self) -> Element<gui::Message> {
         match self {
-            Dialog::FileTag(file_tag) => file_tag.view(),
+            Dialog::EditFile(dialog) => dialog.view(),
         }
     }
 }

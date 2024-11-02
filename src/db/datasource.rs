@@ -90,4 +90,14 @@ impl FileDataSource for DbClient {
             Ok(tags)
         })
     }
+
+    async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Self::Error> {
+        tokio::task::block_in_place(|| {
+            for tag in tags {
+                self.connection_pool
+                    .delete_file_tag(DbFileTag { file_id: id, tag })?;
+            }
+            Ok(())
+        })
+    }
 }

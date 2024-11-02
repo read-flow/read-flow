@@ -77,6 +77,10 @@ where
                 ),
                 move |result| Message::FilesLoaded(tab.clone(), result).into(),
             ),
+            Message::Error(_, error) => {
+                tracing::error!("error: {error}");
+                Task::none()
+            }
             Message::ToggleShortenPath(_) => {
                 self.shorten_path = !self.shorten_path;
                 Task::none()
@@ -85,25 +89,30 @@ where
                 self.duplicates = !self.duplicates;
                 Task::none()
             }
-            Message::CloseDialog(_) => match self.dialog.take() {
-                Some(Dialog::FileTag(dialog)) => dialog.close(self.file_data_source.clone()),
-                _ => Task::none(),
+            Message::CancelDialog(_) => {
+                self.dialog = None;
+                Task::none()
+            }
+            Message::SubmitDialog(_) => match self.dialog.take() {
+                Some(Dialog::EditFile(dialog)) => dialog.submit(self.file_data_source.clone()),
+                None => Task::none(),
             },
-            Message::TagApplied(tab, Ok(file_tag)) => {
-                tracing::debug!("Added file_tag: {file_tag:?}");
-                Task::done(Message::Update(tab).into())
-            }
-            Message::TagApplied(_, Err(error)) => {
-                tracing::error!("Could not add file_tag: {error}");
-                Task::none()
-            }
             Message::OpenDialog(dialog) => {
+                // task created here to avoid a clone
+                let task = dialog.init();
                 self.dialog = Some(dialog);
-                // TODO: emit task from `dialog::init()`
-                Task::none()
+                task
             }
-            Message::TagChanged(_, tag) => match &mut self.dialog {
-                Some(Dialog::FileTag(ref mut dialog)) => dialog.update(tag),
+            Message::EditTag(_, tag) => match &mut self.dialog {
+                Some(Dialog::EditFile(ref mut dialog)) => dialog.edit_tag(tag),
+                None => Task::none(),
+            },
+            Message::AddTag(_) => match &mut self.dialog {
+                Some(Dialog::EditFile(ref mut dialog)) => dialog.add_tag(),
+                None => Task::none(),
+            },
+            Message::DeleteTag(_, tag) => match &mut self.dialog {
+                Some(Dialog::EditFile(ref mut dialog)) => dialog.delete_tag(tag),
                 None => Task::none(),
             },
             Message::FilesLoaded(_, Ok(files)) => {
@@ -143,7 +152,6 @@ where
 
         let mut grid = Grid::new()
             .push(grid_row![
-                text("actions"),
                 button("id").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Id).into()),
                 button("type").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Type).into()),
                 button("size").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Size).into()),
@@ -153,7 +161,9 @@ where
                     .on_press(Message::OrderBy(self.tab(), OrderFilesBy::Path).into())]
                 .extend(self.selected_tags.iter().map(|t| {
                     container(
-                        tag_button(t.clone())
+                        button(text(t).size(11))
+                            .padding(4)
+                            .style(tag_button)
                             .on_press(Message::RemoveTagFilter(self.tab(), t.clone()).into()),
                     )
                     .padding(4)
@@ -178,7 +188,7 @@ where
             self.files.iter().collect()
         };
 
-        for file in files.iter() {
+        for file in files {
             let path = if self.shorten_path {
                 file.path.clone().split('/').last().unwrap().to_string()
             } else {
@@ -186,23 +196,28 @@ where
             };
 
             grid = grid.push(grid_row![
-                row![button("tag")
-                    .on_press(Message::OpenDialog(Dialog::file_tag(self.tab(), file.id)).into())],
                 text(file.id),
                 text(file.type_.clone()),
                 text(file.size),
                 text(format!("{}...", &file.fingerprint[..9])),
-                row![text(path)]
-                    .extend(file.tags.iter().map(|tag| {
-                        if self.selected_tags.contains(tag) {
-                            tag_button(tag.clone()).into()
-                        } else {
-                            tag_button(tag.clone())
-                                .on_press(Message::AddTagFilter(self.tab(), tag.clone()).into())
-                                .into()
-                        }
-                    }))
-                    .spacing(5),
+                row![button(text(path)).style(button::text).on_press(
+                    Message::OpenDialog(Dialog::edit_file(self.tab(), file.clone())).into()
+                )]
+                .extend(file.tags.iter().map(|tag| {
+                    if self.selected_tags.contains(tag) {
+                        button(text(tag).size(11))
+                            .padding(4)
+                            .style(tag_button)
+                            .into()
+                    } else {
+                        button(text(tag).size(11))
+                            .padding(4)
+                            .style(tag_button)
+                            .on_press(Message::AddTagFilter(self.tab(), tag.clone()).into())
+                            .into()
+                    }
+                }))
+                .spacing(5),
             ]);
         }
 

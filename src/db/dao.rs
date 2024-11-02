@@ -34,6 +34,7 @@ pub trait FileTagDao {
     fn select_all_file_tags(&self) -> Result<Vec<FileTag>, Self::Error>;
     fn select_file_tags_by_file_id(&self, file_id: i32) -> Result<Vec<FileTag>, Self::Error>;
     fn select_file_tags_by_tag(&self, tag: &str) -> Result<Vec<FileTag>, Self::Error>;
+    fn delete_file_tag(&self, file_tag: FileTag) -> Result<(), Self::Error>;
 }
 
 pub trait DirectoryDao {
@@ -176,6 +177,7 @@ impl FileTagDao for ConnectionPool {
     type Error = Error;
 
     fn insert_file_tag(&self, file_tag: FileTag) -> Result<FileTag, Self::Error> {
+        tracing::debug!("inserting tag: {file_tag:?}");
         let mut connection = self.get()?;
         let file_tag = diesel::insert_into(file_tags::table)
             .values(&file_tag)
@@ -185,6 +187,7 @@ impl FileTagDao for ConnectionPool {
     }
 
     fn upsert_file_tag(&self, file_tag: FileTag) -> Result<(), Self::Error> {
+        tracing::debug!("upserting tag: {file_tag:?}");
         let mut connection = self.get()?;
         diesel::insert_into(file_tags::table)
             .values(&file_tag)
@@ -195,7 +198,6 @@ impl FileTagDao for ConnectionPool {
 
     fn insert_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error> {
         for file_tag in file_tags {
-            tracing::debug!("inserting tag: {file_tag:?}");
             self.insert_file_tag(file_tag)?;
         }
         Ok(())
@@ -203,7 +205,6 @@ impl FileTagDao for ConnectionPool {
 
     fn upsert_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error> {
         for file_tag in file_tags {
-            tracing::debug!("upserting tag: {file_tag:?}");
             self.upsert_file_tag(file_tag)?;
         }
         Ok(())
@@ -240,6 +241,20 @@ impl FileTagDao for ConnectionPool {
             .select(FileTag::as_select())
             .load(&mut connection)?;
         Ok(file_tags)
+    }
+
+    fn delete_file_tag(&self, file_tag: FileTag) -> Result<(), Self::Error> {
+        tracing::debug!("deleting tag: {file_tag:?}");
+        let mut connection = self.get()?;
+        diesel::delete(
+            file_tags::table.filter(
+                file_tags::file_id
+                    .eq(file_tag.file_id)
+                    .and(file_tags::tag.eq(file_tag.tag)),
+            ),
+        )
+        .execute(&mut connection)?;
+        Ok(())
     }
 }
 

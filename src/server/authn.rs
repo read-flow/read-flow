@@ -4,7 +4,7 @@ use rocket::{
     request::{FromRequest, Outcome, Request},
 };
 
-use crate::settings;
+use crate::ApplicationModule;
 
 pub struct AuthorizedUser;
 
@@ -40,10 +40,12 @@ impl<'r> FromRequest<'r> for AuthorizedUser {
     type Error = Error;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let settings = request
+        let application_module = request
             .rocket()
-            .state::<settings::Settings>()
-            .expect("Settings should exist");
+            .state::<ApplicationModule>()
+            .expect("ApplicationModule should exist");
+
+        let settings = application_module.settings.clone();
 
         let authorization_header = request
             .headers()

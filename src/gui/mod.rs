@@ -224,13 +224,18 @@ impl ApplicationModule {
     }
 }
 
-fn tag_button(tag: String) -> widget::Button<'static, Message> {
-    button(text(tag).size(11))
-        .padding(4)
-        .style(|theme, status| button::Style {
-            border: border::rounded(8),
-            ..button::secondary(theme, status)
-        })
+fn tag_button(theme: &Theme, status: button::Status) -> button::Style {
+    button::Style {
+        border: border::rounded(8),
+        ..button::secondary(theme, status)
+    }
+}
+
+fn delete_tag_button(theme: &Theme, status: button::Status) -> button::Style {
+    button::Style {
+        border: border::rounded(8),
+        ..button::danger(theme, status)
+    }
 }
 
 fn layout<'a>(

@@ -79,4 +79,6 @@ pub trait FileDataSource {
     async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Self::Error>;
 
     async fn add_file_tags(&self, id: i32, tags: Vec<String>) -> Result<Vec<String>, Self::Error>;
+
+    async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Self::Error>;
 }

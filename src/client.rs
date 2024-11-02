@@ -175,4 +175,19 @@ impl FileDataSource for FilesClient {
 
         Ok(result)
     }
+
+    async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Error> {
+        let response = self
+            .client
+            .delete(self.base_url.join(&format!("/files/{id}/tags"))?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, "bearer secret")
+            .json(&tags)
+            .send()
+            .await?;
+
+        let _result: Vec<String> = response.json().await?;
+
+        Ok(())
+    }
 }

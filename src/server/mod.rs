@@ -8,6 +8,7 @@ use std::{
 use figment::providers::{Format, Toml};
 use indexmap::IndexMap;
 use rocket::{
+    delete,
     form::Form,
     fs::{NamedFile, TempFile},
     get,
@@ -84,13 +85,14 @@ type Result<T> = std::result::Result<T, Error>;
 pub fn serve() -> _ {
     let figment = rocket::Config::figment().merge(Toml::file("archive-organizer.toml"));
 
-    let application_module = ApplicationModule::from_figment(&figment);
+    let application_module = ApplicationModule::from_figment(&figment).unwrap();
 
     let routes = routes![
         status,
         get_file,
         get_file_tags,
         post_file_tags,
+        delete_file_tags,
         get_files,
         get_files_tags,
         download_file,
@@ -199,6 +201,22 @@ fn post_file_tags(
     application_module
         .connection_pool
         .upsert_file_tags(file_tags)?;
+
+    get_file_tags(id, application_module, user)
+}
+
+#[delete("/files/<id>/tags", data = "<tags>")]
+fn delete_file_tags(
+    id: i32,
+    tags: Json<Vec<String>>,
+    application_module: &State<ApplicationModule>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<String>>> {
+    for tag in tags.into_inner() {
+        application_module
+            .connection_pool
+            .delete_file_tag(db::models::FileTag { file_id: id, tag })?;
+    }
 
     get_file_tags(id, application_module, user)
 }
