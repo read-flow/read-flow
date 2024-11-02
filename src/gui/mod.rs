@@ -107,6 +107,14 @@ impl Tabs {
             CurrentTab::RemoteFiles(url) => self.remote_files[url].view(),
         }
     }
+
+    fn view_menu(&self) -> Vec<Element<Message>> {
+        match &self.current_tab {
+            CurrentTab::Welcome => self.welcome_page.view_menu(),
+            CurrentTab::LocalFiles => self.local_files.view_menu(),
+            CurrentTab::RemoteFiles(url) => self.remote_files[url].view_menu(),
+        }
+    }
 }
 
 struct App {
@@ -174,24 +182,24 @@ impl App {
         let header_bar = row![container(text("ArchiveOrganizer"))];
         let mut side_bar = column![
             if matches!(self.tabs.current_tab, CurrentTab::Welcome) {
-                row![button("Welcome").width(iced::Fill)]
+                button("Welcome").width(iced::Fill)
             } else {
-                row![button("Welcome")
+                button("Welcome")
                     .width(iced::Fill)
-                    .on_press(Message::SwitchTab(CurrentTab::Welcome))]
+                    .on_press(Message::SwitchTab(CurrentTab::Welcome))
             },
             if matches!(self.tabs.current_tab, CurrentTab::LocalFiles) {
-                row![button("Local").width(iced::Fill)]
+                button("Local").width(iced::Fill)
             } else {
-                row![button("Local")
+                button("Local")
                     .width(iced::Fill)
-                    .on_press(Message::SwitchTab(CurrentTab::LocalFiles))]
+                    .on_press(Message::SwitchTab(CurrentTab::LocalFiles))
             }
         ];
         for remote_connection in self.tabs.remote_files.keys() {
             let mut button = button(column![
-                row![text("Remote")],
-                row![text(remote_connection.domain().unwrap()).size(11)],
+                text("Remote"),
+                text(remote_connection.domain().unwrap()).size(11),
             ])
             .width(iced::Fill);
 
@@ -201,12 +209,14 @@ impl App {
                     remote_connection.clone(),
                 )));
             }
-            side_bar = side_bar.push(row![button]);
+            side_bar = side_bar.push(button);
         }
-        side_bar = side_bar.push(row![column![
+        side_bar = side_bar.push(column![
             text_input("Remote URL", &self.new_remote_url).on_input(Message::EditNewRemoteUrl),
             button("Add remote").on_press(Message::AddNewRemoteUrl)
-        ]]);
+        ]);
+
+        side_bar = side_bar.push(text("")).extend(self.tabs.view_menu());
 
         let pane_content = self.tabs.view();
         layout(header_bar, side_bar, column![pane_content]).into()

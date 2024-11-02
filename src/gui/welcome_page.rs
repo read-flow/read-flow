@@ -81,6 +81,10 @@ impl Page {
         }
     }
 
+    pub fn view_menu(&self) -> Vec<iced::Element<gui::Message>> {
+        vec![]
+    }
+
     pub fn view(&self) -> iced::Element<gui::Message> {
         container(
             column![

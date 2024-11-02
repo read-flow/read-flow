@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use iced::{
     alignment::{Horizontal, Vertical},
-    widget::{button, column, container, row, text},
+    widget::{button, container, row, text},
     Element, Task,
 };
 use iced_aw::{grid_row, Grid};
@@ -133,6 +133,19 @@ where
         }
     }
 
+    pub fn view_menu(&self) -> Vec<Element<gui::Message>> {
+        vec![
+            button("Toggle Short Path")
+                .width(iced::Fill)
+                .on_press(Message::ToggleShortenPath(self.tab()).into())
+                .into(),
+            button("Toggle Duplicates")
+                .width(iced::Fill)
+                .on_press(Message::ToggleDuplicates(self.tab()).into())
+                .into(),
+        ]
+    }
+
     pub fn view(&self) -> Element<gui::Message> {
         if self.is_offline {
             return text("Offline").into();
@@ -142,12 +155,6 @@ where
         if let Some(dialog) = &self.dialog {
             return dialog.view();
         }
-
-        let action_bar = row![
-            button("Toggle Short Path").on_press(Message::ToggleShortenPath(self.tab()).into()),
-            button("Toggle Duplicates").on_press(Message::ToggleDuplicates(self.tab()).into()),
-        ]
-        .spacing(10);
 
         let mut grid = Grid::new()
             .push(grid_row![
@@ -220,7 +227,7 @@ where
             ]);
         }
 
-        column![action_bar, grid].spacing(10).into()
+        grid.into()
     }
 }
 
