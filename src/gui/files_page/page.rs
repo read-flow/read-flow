@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use iced::{
     alignment::{Horizontal, Vertical},
-    widget::{button, container, row, text},
+    widget::{button, checkbox, container, row, text},
     Element, Task,
 };
 use iced_aw::{grid_row, Grid};
@@ -138,13 +138,13 @@ where
             vec![]
         } else {
             vec![
-                button("Toggle Short Path")
+                checkbox("Short Path", self.shorten_path)
                     .width(iced::Fill)
-                    .on_press(Message::ToggleShortenPath(self.tab()).into())
+                    .on_toggle(|_| Message::ToggleShortenPath(self.tab()).into())
                     .into(),
-                button("Toggle Duplicates")
+                checkbox("Duplicates", self.duplicates)
                     .width(iced::Fill)
-                    .on_press(Message::ToggleDuplicates(self.tab()).into())
+                    .on_toggle(|_| Message::ToggleDuplicates(self.tab()).into())
                     .into(),
             ]
         }
