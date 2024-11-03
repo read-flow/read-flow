@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use url::Url;
 
 use crate::{
-    api::FileDataSource,
+    api::{File, FileDataSource},
     client::{self, FilesClient},
     db::{
         dao::{self, RemoteDao},
@@ -34,10 +34,12 @@ enum Message {
     AddNewRemoteUrl,
     RemoteUrlAdded(Result<Remote, dao::Error>),
     RemoteUrlVerified(Result<String, client::Error>),
+    FindDuplicates(CurrentTab, String),
+    Duplicates(CurrentTab, Vec<(CurrentTab, Vec<File>)>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CurrentTabRef<'a> {
+enum CurrentTabRef<'a> {
     Welcome,
     LocalFiles,
     RemoteFiles(&'a Url),
@@ -76,13 +78,13 @@ impl<'a> From<CurrentTabRef<'a>> for CurrentTab {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CurrentTab {
+enum CurrentTab {
     Welcome,
     LocalFiles,
     RemoteFiles(Url),
 }
 
-pub trait IdentifyTab {
+trait IdentifyTab {
     fn tab(&self) -> CurrentTab;
 }
 
@@ -135,6 +137,15 @@ impl Tabs {
                     unreachable!("Not expected here: {message:?}")
                 }
             },
+            Message::Duplicates(tab, duplicates) => match tab {
+                CurrentTab::LocalFiles => self.local_files.update((tab.clone(), duplicates).into()),
+                CurrentTab::RemoteFiles(ref url) => {
+                    self.remote_files[url].update((tab.clone(), duplicates).into())
+                }
+                _ => {
+                    unreachable!()
+                }
+            },
             _ => panic!("Not expected here: {message:?}"),
         }
     }
@@ -173,6 +184,21 @@ impl Tabs {
             CurrentTab::LocalFiles => self.local_files.view_menu(),
             CurrentTab::RemoteFiles(url) => self.remote_files[url].view_menu(),
         }
+    }
+
+    fn duplicate_files(&self, fingerprint: &str) -> Vec<(CurrentTab, Vec<File>)> {
+        let mut duplicates = Vec::new();
+        duplicates.push((
+            CurrentTab::LocalFiles,
+            self.local_files.duplicate_files(fingerprint),
+        ));
+        duplicates.extend(self.remote_files.iter().map(|(remote, files)| {
+            (
+                CurrentTab::RemoteFiles(remote.clone()),
+                files.duplicate_files(fingerprint),
+            )
+        }));
+        duplicates
     }
 }
 
@@ -233,7 +259,13 @@ impl App {
                 tracing::error!("error while adding remote: {error}");
                 Task::none()
             }
-            Message::Welcome(_) | Message::Files(_) => self.tabs.update(message),
+            Message::Welcome(_) | Message::Files(_) | Message::Duplicates(..) => {
+                self.tabs.update(message)
+            }
+            Message::FindDuplicates(tab, fingerprint) => Task::done(Message::Duplicates(
+                tab,
+                self.tabs.duplicate_files(&fingerprint),
+            )),
         }
     }
 

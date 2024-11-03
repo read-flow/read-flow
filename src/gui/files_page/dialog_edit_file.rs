@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
 use iced::{
+    alignment::{Horizontal, Vertical},
     widget::{button, column, container, row, text, text_input},
     Element, Task,
 };
@@ -8,7 +9,7 @@ use iced_aw::{grid, grid_row};
 
 use crate::{
     api::FileDataSource,
-    gui::{self, delete_tag_button, tag_button, IdentifyTab},
+    gui::{self, delete_tag_button, tag_button, CurrentTabRef, IdentifyTab},
 };
 
 use super::{CurrentTab, File};
@@ -19,6 +20,7 @@ pub(in crate::gui) enum Message {
     EditTag(CurrentTab, String),
     AddTag(CurrentTab),
     DeleteTag(CurrentTab, String),
+    Duplicates(CurrentTab, Vec<(CurrentTab, Vec<File>)>),
 }
 
 impl IdentifyTab for Message {
@@ -27,6 +29,7 @@ impl IdentifyTab for Message {
             Message::EditTag(tab, ..) => tab.clone(),
             Message::AddTag(tab) => tab.clone(),
             Message::DeleteTag(tab, ..) => tab.clone(),
+            Message::Duplicates(tab, ..) => tab.clone(),
         }
     }
 }
@@ -42,6 +45,19 @@ pub(crate) struct EditFile {
     tab: CurrentTab,
     file: File,
     tag: Option<String>,
+    duplicates: Vec<(CurrentTab, Vec<File>)>,
+}
+
+fn display_path(path: &str) -> Element<gui::Message> {
+    let path = Path::new(path);
+    let directory = path.parent().unwrap();
+    let filename = path.file_name().unwrap();
+    column![
+        text(format!("{}", filename.to_string_lossy())),
+        text(format!("{}", directory.display())).size(11),
+    ]
+    .spacing(5)
+    .into()
 }
 
 impl EditFile {
@@ -49,33 +65,43 @@ impl EditFile {
         Self {
             tab,
             file,
-            tag: None,
+            tag: Default::default(),
+            duplicates: Default::default(),
         }
     }
 
     pub(crate) fn init(&self) -> Task<gui::Message> {
-        text_input::focus("input-tag")
+        Task::batch(vec![
+            text_input::focus("input-tag"),
+            Task::done(gui::Message::FindDuplicates(
+                self.tab.clone(),
+                self.file.fingerprint.clone(),
+            )),
+        ])
     }
 
     pub(crate) fn view(&self) -> Element<gui::Message> {
-        container(
-            grid![
-                grid_row![text("id"), text(self.file.id)],
-                grid_row![text("path"), text(&self.file.path)],
-                grid_row![text("type"), text(&self.file.type_)],
-                grid_row![text("size"), text(self.file.size)],
-                grid_row![text("fingerprint"), text(&self.file.fingerprint)],
-                grid_row![
-                    text("tags"),
-                    container(
-                        column![
+        let column = column![grid![
+            grid_row![text("id"), text(self.file.id)],
+            grid_row![text("path"), display_path(&self.file.path)],
+            grid_row![text("type"), text(&self.file.type_)],
+            grid_row![text("size"), text(self.file.size)],
+            grid_row![text("fingerprint"), text(&self.file.fingerprint)],
+            grid_row![
+                text("tags"),
+                container(
+                    column![
                         row![]
                             .extend(self.file.tags.iter().map(|tag| {
                                 container(row![
                                     button(text(tag).size(11)).padding(4).style(tag_button),
-                                    button(text("X").size(11)).padding(4).style(delete_tag_button).on_press(
-                                        Message::DeleteTag(self.tab.clone(), tag.clone()).into()
-                                    )
+                                    button(text("X").size(11))
+                                        .padding(4)
+                                        .style(delete_tag_button)
+                                        .on_press(
+                                            Message::DeleteTag(self.tab.clone(), tag.clone())
+                                                .into()
+                                        )
                                 ])
                                 .into()
                             }))
@@ -84,27 +110,53 @@ impl EditFile {
                             .width(250)
                             .id("input-tag")
                             .on_input(|result| Message::EditTag(self.tab.clone(), result).into())
-                            .on_submit(Message::AddTag(self.tab.clone()).into())
-                    ]
+                            .on_submit(Message::AddTag(self.tab.clone()).into()),
+                        row![
+                            button(text("Cancel"))
+                                .style(button::secondary)
+                                .on_press(super::Message::CancelDialog(self.tab().clone()).into()),
+                            button(text("Submit"))
+                                .style(button::primary)
+                                .on_press(super::Message::SubmitDialog(self.tab().clone()).into()),
+                        ]
                         .spacing(10)
-                    ),
-                ],
-                grid_row![
-                    text(""),
-                    row![
-                        button(text("Cancel"))
-                            .style(button::secondary)
-                            .on_press(super::Message::CancelDialog(self.tab().clone()).into()),
-                        button(text("Submit"))
-                            .style(button::primary)
-                            .on_press(super::Message::SubmitDialog(self.tab().clone()).into()),
                     ]
                     .spacing(10)
-                ]
-            ]
-            .spacing(10),
-        )
-        .into()
+                ),
+            ],
+            grid_row![
+                text("location"),
+                CurrentTabRef::from(&self.tab).button_text()
+            ],
+            grid_row![text("duplicates"), {
+                let mut grid = grid![]
+                    .horizontal_alignment(Horizontal::Left)
+                    .vertical_alignment(Vertical::Top);
+                for (tab, duplicates) in self.duplicates.iter().map(|(tab, duplicates)| {
+                    (
+                        tab,
+                        duplicates
+                            .iter()
+                            .filter(|d| !(*tab == self.tab && d.path == self.file.path))
+                            .collect::<Vec<_>>(),
+                    )
+                }) {
+                    if !duplicates.is_empty() {
+                        let tab_ref: CurrentTabRef = tab.into();
+                        grid = grid.push(grid_row![
+                            tab_ref.button_text(),
+                            column![].extend(duplicates.iter().map(|d| { display_path(&d.path) }))
+                        ]);
+                    }
+                }
+                grid.spacing(10)
+            }]
+        ]
+        .horizontal_alignment(Horizontal::Left)
+        .vertical_alignment(Vertical::Top)
+        .spacing(10),];
+
+        column.spacing(10).into()
     }
 
     pub(super) fn update(&mut self, message: Message) -> Task<gui::Message> {
@@ -124,6 +176,10 @@ impl EditFile {
             }
             Message::DeleteTag(_, tag) => {
                 self.file.tags.retain(|t| *t != tag);
+                Task::none()
+            }
+            Message::Duplicates(_, duplicates) => {
+                self.duplicates = duplicates;
                 Task::none()
             }
         }

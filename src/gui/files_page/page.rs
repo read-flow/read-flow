@@ -59,6 +59,14 @@ where
         }
     }
 
+    pub fn duplicate_files(&self, fingerprint: &str) -> Vec<File> {
+        self.files
+            .iter()
+            .filter(|f| f.fingerprint == fingerprint)
+            .cloned()
+            .collect()
+    }
+
     pub fn init(&self) -> Task<gui::Message> {
         let ordering = self.ordering;
         let selected_tags = self.selected_tags.clone();

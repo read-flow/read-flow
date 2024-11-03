@@ -1,4 +1,4 @@
-mod dialog_edit_file;
+pub(super) mod dialog_edit_file;
 mod page;
 
 use std::sync::Arc;
@@ -54,6 +54,12 @@ impl IdentifyTab for Message {
 impl From<Message> for gui::Message {
     fn from(value: Message) -> Self {
         gui::Message::Files(value)
+    }
+}
+
+impl From<(CurrentTab, Vec<(CurrentTab, Vec<File>)>)> for Message {
+    fn from((tab, duplicates): (CurrentTab, Vec<(CurrentTab, Vec<File>)>)) -> Self {
+        Message::EditDialog(dialog_edit_file::Message::Duplicates(tab, duplicates))
     }
 }
 

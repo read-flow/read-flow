@@ -2,7 +2,7 @@
 
 This is a tool to help discover and organize files locally and on remote servers.
 
-* TODO: Implement the following items [13/28]
+* TODO: Implement the following items [14/29]
 
 - [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
 - [X] Make database URL configurable (using ~figment~)
@@ -24,7 +24,7 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
 - [ ] Proper HTTP error handling in ~server~ module, including tests
 - [ ] Make it possible to correlate `books` of different file types
-- [ ] Recognize duplicates accross local/remote repositories
+- [X] Recognize duplicates accross local/remote repositories
 - [ ] Separate file discovery in multiple main categories:
   - documents(.doc, .docx, .pdf, .epub, .mobi, etc.)
   - images(.jpg, .png, .webp, etc.)
@@ -36,3 +36,4 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] Check files in the database to see whether they still exist
 - [ ] Change directory modules API so that they can match and still recurse into the directory
 - [ ] Add allow/denylist for directories to scan
+- [ ] Allow copying full paths from file details page
