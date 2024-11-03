@@ -247,12 +247,20 @@ impl App {
             .extend(self.tabs.remote_files.keys().flat_map(|remote| {
                 self.tabs
                     .view_menu_entry(CurrentTabRef::RemoteFiles(remote))
-            }));
-
-        side_bar = side_bar.push(column![
-            text_input("Remote URL", &self.new_remote_url).on_input(Message::EditNewRemoteUrl),
-            button("Add remote").on_press(Message::AddNewRemoteUrl)
-        ]);
+            }))
+            .push(container(""))
+            .push(
+                text_input("Remote URL", &self.new_remote_url)
+                    .width(iced::Fill)
+                    .on_input(Message::EditNewRemoteUrl),
+            )
+            .push(
+                button("Add remote")
+                    .width(iced::Fill)
+                    .style(button::success)
+                    .on_press(Message::AddNewRemoteUrl),
+            )
+            .spacing(5);
 
         let pane_content = self.tabs.view();
         layout(header_bar, side_bar, column![pane_content]).into()
