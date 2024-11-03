@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use figment::{
     providers::{Format, Toml},
     Error, Figment,
@@ -15,7 +17,37 @@ pub struct Settings {
     pub server: ServerSettings,
 }
 
+pub fn decorate(figment: Figment) -> Figment {
+    let path = if Path::new("Cargo.toml").exists() && Path::new("archive-organizer.toml").exists() {
+        let path = PathBuf::from("archive-organizer.toml")
+            .canonicalize()
+            .expect("should work for valid file");
+        tracing::warn!(
+            "detected `archive-organizer.toml` and `Cargo.toml` in current directory, loading `{}`",
+            path.display()
+        );
+
+        path
+    } else {
+        let path = expanduser::expanduser("~/.config/archive-organizer/archive-organizer.toml")
+            .expect("could not expand user home");
+
+        if !path.exists() {
+            tracing::error!(
+                "No configuration file found, please create one in: `{}`",
+                path.display()
+            );
+            panic!("No configuration file found");
+        } else {
+            tracing::info!("using configuration from `{}`", path.display());
+        }
+
+        path
+    };
+    figment.merge(Toml::file(path))
+}
+
 pub fn extract() -> Result<Settings, Error> {
-    let figment = Figment::new().merge(Toml::file("archive-organizer.toml"));
+    let figment = decorate(Figment::new());
     figment.extract()
 }

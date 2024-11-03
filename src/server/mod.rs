@@ -5,7 +5,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use figment::providers::{Format, Toml};
 use indexmap::IndexMap;
 use rocket::{
     delete,
@@ -24,7 +23,7 @@ use crate::{
         self,
         dao::{self, FileDao, FileTagDao},
     },
-    scan, to_unique_file, ApplicationModule,
+    scan, settings, to_unique_file, ApplicationModule,
 };
 
 use authn::AuthorizedUser;
@@ -83,7 +82,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[rocket::launch]
 pub fn serve() -> _ {
-    let figment = rocket::Config::figment().merge(Toml::file("archive-organizer.toml"));
+    let figment = settings::decorate(rocket::Config::figment());
 
     let application_module = ApplicationModule::from_figment(&figment).unwrap();
 

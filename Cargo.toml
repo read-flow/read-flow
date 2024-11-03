@@ -15,6 +15,7 @@ async-trait = "0.1.83"
 clap = { version = "4.5.20", features = ["derive"] }
 diesel = { version = "2.2.0", features = ["sqlite", "r2d2", "returning_clauses_for_sqlite_3_35"] }
 diesel_migrations = { version = "2.2.0", features = ["sqlite"] }
+expanduser = "1.2.2"
 # build libsqlite3 as part of the build process
 # uncomment this line if you run into setup issues
 # libsqlite3-sys = { version = "0.30", features = ["bundled"] }
