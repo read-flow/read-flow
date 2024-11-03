@@ -37,6 +37,45 @@ enum Message {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CurrentTabRef<'a> {
+    Welcome,
+    LocalFiles,
+    RemoteFiles(&'a Url),
+}
+
+impl<'a> CurrentTabRef<'a> {
+    fn button_text(&self) -> Element<'a, Message> {
+        match self {
+            Self::Welcome => text("Welcome").into(),
+            Self::LocalFiles => text("Local").into(),
+            Self::RemoteFiles(url) => {
+                column![text("Remote"), text(url.domain().unwrap()).size(11),].into()
+            }
+        }
+    }
+}
+
+impl<'a> From<&'a CurrentTab> for CurrentTabRef<'a> {
+    fn from(value: &'a CurrentTab) -> Self {
+        match value {
+            CurrentTab::Welcome => Self::Welcome,
+            CurrentTab::LocalFiles => Self::LocalFiles,
+            CurrentTab::RemoteFiles(url) => Self::RemoteFiles(url),
+        }
+    }
+}
+
+impl<'a> From<CurrentTabRef<'a>> for CurrentTab {
+    fn from(value: CurrentTabRef<'a>) -> Self {
+        match value {
+            CurrentTabRef::Welcome => Self::Welcome,
+            CurrentTabRef::LocalFiles => Self::LocalFiles,
+            CurrentTabRef::RemoteFiles(url) => Self::RemoteFiles(url.clone()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CurrentTab {
     Welcome,
     LocalFiles,
@@ -108,7 +147,27 @@ impl Tabs {
         }
     }
 
-    fn view_menu(&self) -> Vec<Element<Message>> {
+    fn view_menu_entry<'a>(&'a self, tab: CurrentTabRef<'a>) -> Vec<Element<'a, Message>> {
+        let button = button(tab.button_text()).width(iced::Fill);
+        let mut side_bar = vec![];
+        if tab == (&self.current_tab).into() {
+            side_bar.push(button.into());
+            side_bar.push(
+                container(
+                    widget::Column::new()
+                        .spacing(5)
+                        .extend(self.view_sub_menu()),
+                )
+                .padding(padding::left(10))
+                .into(),
+            );
+        } else {
+            side_bar.push(button.on_press(Message::SwitchTab(tab.into())).into());
+        }
+        side_bar
+    }
+
+    fn view_sub_menu(&self) -> Vec<Element<Message>> {
         match &self.current_tab {
             CurrentTab::Welcome => self.welcome_page.view_menu(),
             CurrentTab::LocalFiles => self.local_files.view_menu(),
@@ -182,68 +241,14 @@ impl App {
         let header_bar = row![container(text("ArchiveOrganizer"))];
         let mut side_bar = widget::Column::new();
 
-        if matches!(self.tabs.current_tab, CurrentTab::Welcome) {
-            // TODO: add `view_menu`
-            side_bar = side_bar.push(button("Welcome").width(iced::Fill));
-            side_bar = side_bar.push(
-                container(
-                    widget::Column::new()
-                        .spacing(5)
-                        .extend(self.tabs.view_menu()),
-                )
-                .padding(padding::left(10)),
-            );
-        } else {
-            side_bar = side_bar.push(
-                button("Welcome")
-                    .width(iced::Fill)
-                    .on_press(Message::SwitchTab(CurrentTab::Welcome)),
-            );
-        }
+        side_bar = side_bar
+            .extend(self.tabs.view_menu_entry(CurrentTabRef::Welcome))
+            .extend(self.tabs.view_menu_entry(CurrentTabRef::LocalFiles))
+            .extend(self.tabs.remote_files.keys().flat_map(|remote| {
+                self.tabs
+                    .view_menu_entry(CurrentTabRef::RemoteFiles(remote))
+            }));
 
-        if matches!(self.tabs.current_tab, CurrentTab::LocalFiles) {
-            side_bar = side_bar.push(button("Local").width(iced::Fill));
-            side_bar = side_bar.push(
-                container(
-                    widget::Column::new()
-                        .spacing(5)
-                        .extend(self.tabs.view_menu()),
-                )
-                .padding(padding::left(10)),
-            );
-        } else {
-            side_bar = side_bar.push(
-                button("Local")
-                    .width(iced::Fill)
-                    .on_press(Message::SwitchTab(CurrentTab::LocalFiles)),
-            );
-        }
-
-        for remote_connection in self.tabs.remote_files.keys() {
-            let mut button = button(column![
-                text("Remote"),
-                text(remote_connection.domain().unwrap()).size(11),
-            ])
-            .width(iced::Fill);
-
-            if matches!(&self.tabs.current_tab, CurrentTab::RemoteFiles(url) if url == remote_connection)
-            {
-                side_bar = side_bar.push(button);
-                side_bar = side_bar.push(
-                    container(
-                        widget::Column::new()
-                            .spacing(5)
-                            .extend(self.tabs.view_menu()),
-                    )
-                    .padding(padding::left(10)),
-                );
-            } else {
-                button = button.on_press(Message::SwitchTab(CurrentTab::RemoteFiles(
-                    remote_connection.clone(),
-                )));
-                side_bar = side_bar.push(button);
-            }
-        }
         side_bar = side_bar.push(column![
             text_input("Remote URL", &self.new_remote_url).on_input(Message::EditNewRemoteUrl),
             button("Add remote").on_press(Message::AddNewRemoteUrl)
