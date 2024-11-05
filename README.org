@@ -2,7 +2,7 @@
 
 This is a tool to help discover and organize files locally and on remote servers.
 
-* TODO: Implement the following items [14/29]
+* TODO: Implement the following items [15/30]
 
 - [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
 - [X] Make database URL configurable (using ~figment~)
@@ -37,3 +37,4 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] Change directory modules API so that they can match and still recurse into the directory
 - [ ] Add allow/denylist for directories to scan
 - [ ] Allow copying full paths from file details page
+- [X] In File Edit dialog, show all unused tags and allow to set them using a single click

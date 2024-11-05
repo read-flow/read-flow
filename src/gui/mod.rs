@@ -6,7 +6,7 @@ use iced::{
     widget::{self, button, column, container, row, scrollable, text, text_input},
     Element, Task, Theme,
 };
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use url::Url;
 
 use crate::{
@@ -27,6 +27,7 @@ struct InvalidMessage(Message);
 
 #[derive(Debug, Clone)]
 enum Message {
+    // TODO: Add PageMessage
     Files(files_page::Message),
     Welcome(welcome_page::Message),
     SwitchTab(CurrentTab),
@@ -36,6 +37,8 @@ enum Message {
     RemoteUrlVerified(Result<String, client::Error>),
     FindDuplicates(CurrentTab, String),
     Duplicates(CurrentTab, Vec<(CurrentTab, Vec<File>)>),
+    GetTags(CurrentTab),
+    Tags(CurrentTab, Vec<String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +149,15 @@ impl Tabs {
                     unreachable!()
                 }
             },
+            Message::Tags(tab, tags) => match tab {
+                CurrentTab::LocalFiles => self.local_files.update((tab.clone(), tags).into()),
+                CurrentTab::RemoteFiles(ref url) => {
+                    self.remote_files[url].update((tab.clone(), tags).into())
+                }
+                _ => {
+                    unreachable!()
+                }
+            },
             _ => panic!("Not expected here: {message:?}"),
         }
     }
@@ -199,6 +211,17 @@ impl Tabs {
             )
         }));
         duplicates
+    }
+
+    fn all_tags(&self) -> IndexSet<String> {
+        let mut all_tags = IndexSet::new();
+        all_tags.extend(self.local_files.all_tags());
+        all_tags.extend(
+            self.remote_files
+                .values()
+                .flat_map(files_page::Page::all_tags),
+        );
+        all_tags
     }
 }
 
@@ -259,12 +282,17 @@ impl App {
                 tracing::error!("error while adding remote: {error}");
                 Task::none()
             }
-            Message::Welcome(_) | Message::Files(_) | Message::Duplicates(..) => {
-                self.tabs.update(message)
-            }
+            Message::Welcome(_)
+            | Message::Files(_)
+            | Message::Duplicates(..)
+            | Message::Tags(..) => self.tabs.update(message),
             Message::FindDuplicates(tab, fingerprint) => Task::done(Message::Duplicates(
                 tab,
                 self.tabs.duplicate_files(&fingerprint),
+            )),
+            Message::GetTags(tab) => Task::done(Message::Tags(
+                tab,
+                self.tabs.all_tags().into_iter().collect(),
             )),
         }
     }
@@ -318,6 +346,13 @@ fn delete_tag_button(theme: &Theme, status: button::Status) -> button::Style {
     button::Style {
         border: border::rounded(8),
         ..button::danger(theme, status)
+    }
+}
+
+fn add_tag_button(theme: &Theme, status: button::Status) -> button::Style {
+    button::Style {
+        border: border::rounded(8),
+        ..button::success(theme, status)
     }
 }
 

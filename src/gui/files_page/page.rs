@@ -6,7 +6,7 @@ use iced::{
     Element, Task,
 };
 use iced_aw::{grid_row, Grid};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 
 use crate::{
     api::{File, FileDataSource},
@@ -65,6 +65,10 @@ where
             .filter(|f| f.fingerprint == fingerprint)
             .cloned()
             .collect()
+    }
+
+    pub fn all_tags(&self) -> IndexSet<String> {
+        self.files.iter().flat_map(|f| f.tags.clone()).collect()
     }
 
     pub fn init(&self) -> Task<gui::Message> {

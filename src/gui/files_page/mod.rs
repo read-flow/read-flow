@@ -63,6 +63,12 @@ impl From<(CurrentTab, Vec<(CurrentTab, Vec<File>)>)> for Message {
     }
 }
 
+impl From<(CurrentTab, Vec<String>)> for Message {
+    fn from((tab, tags): (CurrentTab, Vec<String>)) -> Self {
+        Message::EditDialog(dialog_edit_file::Message::Tags(tab, tags))
+    }
+}
+
 #[derive(Debug, Clone, thiserror::Error)]
 pub(super) enum Error {
     #[error("database error: {0}")]

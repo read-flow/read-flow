@@ -9,7 +9,7 @@ use iced_aw::{grid, grid_row};
 
 use crate::{
     api::FileDataSource,
-    gui::{self, delete_tag_button, tag_button, CurrentTabRef, IdentifyTab},
+    gui::{self, add_tag_button, delete_tag_button, tag_button, CurrentTabRef, IdentifyTab},
 };
 
 use super::{CurrentTab, File};
@@ -18,18 +18,20 @@ use super::{CurrentTab, File};
 #[derive(Debug, Clone)]
 pub(in crate::gui) enum Message {
     EditTag(CurrentTab, String),
-    AddTag(CurrentTab),
+    AddTag(CurrentTab, Option<String>),
     DeleteTag(CurrentTab, String),
     Duplicates(CurrentTab, Vec<(CurrentTab, Vec<File>)>),
+    Tags(CurrentTab, Vec<String>),
 }
 
 impl IdentifyTab for Message {
     fn tab(&self) -> CurrentTab {
         match self {
             Message::EditTag(tab, ..) => tab.clone(),
-            Message::AddTag(tab) => tab.clone(),
+            Message::AddTag(tab, ..) => tab.clone(),
             Message::DeleteTag(tab, ..) => tab.clone(),
             Message::Duplicates(tab, ..) => tab.clone(),
+            Message::Tags(tab, ..) => tab.clone(),
         }
     }
 }
@@ -45,6 +47,7 @@ pub(crate) struct EditFile {
     tab: CurrentTab,
     file: File,
     tag: Option<String>,
+    all_tags: Vec<String>,
     duplicates: Vec<(CurrentTab, Vec<File>)>,
 }
 
@@ -66,6 +69,7 @@ impl EditFile {
             tab,
             file,
             tag: Default::default(),
+            all_tags: Default::default(),
             duplicates: Default::default(),
         }
     }
@@ -77,10 +81,16 @@ impl EditFile {
                 self.tab.clone(),
                 self.file.fingerprint.clone(),
             )),
+            Task::done(gui::Message::GetTags(self.tab.clone())),
         ])
     }
 
     pub(crate) fn view(&self) -> Element<gui::Message> {
+        let selectable_tags = self
+            .all_tags
+            .iter()
+            .filter(|tag| !self.file.tags.contains(tag))
+            .collect::<Vec<_>>();
         let column = column![grid![
             grid_row![text("id"), text(self.file.id)],
             grid_row![text("path"), display_path(&self.file.path)],
@@ -95,8 +105,8 @@ impl EditFile {
                             .extend(self.file.tags.iter().map(|tag| {
                                 container(row![
                                     button(text(tag).size(11)).padding(4).style(tag_button),
-                                    button(text("X").size(11))
-                                        .padding(4)
+                                    button(text(" X ").size(15))
+                                        .padding(1)
                                         .style(delete_tag_button)
                                         .on_press(
                                             Message::DeleteTag(self.tab.clone(), tag.clone())
@@ -110,7 +120,7 @@ impl EditFile {
                             .width(250)
                             .id("input-tag")
                             .on_input(|result| Message::EditTag(self.tab.clone(), result).into())
-                            .on_submit(Message::AddTag(self.tab.clone()).into()),
+                            .on_submit(Message::AddTag(self.tab.clone(), None).into()),
                         row![
                             button(text("Cancel"))
                                 .style(button::secondary)
@@ -123,6 +133,23 @@ impl EditFile {
                     ]
                     .spacing(10)
                 ),
+            ],
+            grid_row![
+                text("existing tags"),
+                row![]
+                    .extend(selectable_tags.into_iter().map(|tag| {
+                        container(row![
+                            button(text(tag).size(11)).padding(4).style(tag_button),
+                            button(text(" + ").size(15))
+                                .padding(1)
+                                .style(add_tag_button)
+                                .on_press(
+                                    Message::AddTag(self.tab.clone(), tag.clone().into()).into()
+                                )
+                        ])
+                        .into()
+                    }))
+                    .spacing(10),
             ],
             grid_row![
                 text("location"),
@@ -165,12 +192,19 @@ impl EditFile {
                 self.tag = Some(tag);
                 Task::none()
             }
-            Message::AddTag(_) => {
+            Message::AddTag(_, None) => {
                 if let Some(tag) = self.tag.take() {
                     let tag = tag.trim();
                     if !tag.is_empty() {
                         self.file.tags.push(tag.to_owned());
                     }
+                }
+                Task::none()
+            }
+            Message::AddTag(_, Some(tag)) => {
+                let tag = tag.trim();
+                if !tag.is_empty() {
+                    self.file.tags.push(tag.to_owned());
                 }
                 Task::none()
             }
@@ -180,6 +214,10 @@ impl EditFile {
             }
             Message::Duplicates(_, duplicates) => {
                 self.duplicates = duplicates;
+                Task::none()
+            }
+            Message::Tags(_, tags) => {
+                self.all_tags = tags;
                 Task::none()
             }
         }
