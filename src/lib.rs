@@ -7,6 +7,7 @@ pub mod scan;
 #[cfg(feature = "server")]
 pub mod server;
 pub mod settings;
+pub mod tag;
 
 use std::{hash::Hash, path::PathBuf, sync::Arc};
 

@@ -7,6 +7,7 @@ use figment::{
 use serde::Deserialize;
 
 use crate::db::DbSettings;
+use crate::scan::ScanSettings;
 #[cfg(feature = "server")]
 use crate::server::ServerSettings;
 
@@ -15,6 +16,7 @@ pub struct Settings {
     pub database: DbSettings,
     #[cfg(feature = "server")]
     pub server: ServerSettings,
+    pub scan: Option<ScanSettings>,
 }
 
 pub fn decorate(figment: Figment) -> Figment {

@@ -195,11 +195,11 @@ fn post_file_tags(
     let file_tags = tags
         .into_inner()
         .into_iter()
-        .map(|tag| db::models::FileTag { file_id: id, tag })
+        .map(|tag| db::models::FileTag::new(id, tag))
         .collect();
     application_module
         .connection_pool
-        .upsert_file_tags(file_tags)?;
+        .upsert_many_file_tags(file_tags)?;
 
     get_file_tags(id, application_module, user)
 }
@@ -214,7 +214,7 @@ fn delete_file_tags(
     for tag in tags.into_inner() {
         application_module
             .connection_pool
-            .delete_file_tag(db::models::FileTag { file_id: id, tag })?;
+            .delete_file_tag(db::models::FileTag::new(id, tag))?;
     }
 
     get_file_tags(id, application_module, user)

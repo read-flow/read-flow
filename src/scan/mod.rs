@@ -4,11 +4,19 @@ pub mod modules;
 use std::path::PathBuf;
 
 use anyhow::Result;
+use indexmap::IndexMap;
+use serde::Deserialize;
 
 use crate::{db::ConnectionPool, ApplicationModule};
 
 pub use file_system_visitor::{Error, FileSystemVisitor};
 use modules::{file_extension_finder::FileExtensionFinder, scm_project_finder::ScmProjectFinder};
+
+#[derive(Debug, Deserialize)]
+pub struct ScanSettings {
+    pub dry_run: bool,
+    pub auto_tags: IndexMap<String, Vec<String>>,
+}
 
 pub fn create_visitor(connection_pool: ConnectionPool) -> FileSystemVisitor {
     FileSystemVisitor::new(

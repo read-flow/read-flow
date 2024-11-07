@@ -78,9 +78,9 @@ impl FileDataSource for DbClient {
         tokio::task::block_in_place(|| {
             let tags = tags
                 .into_iter()
-                .map(|tag| DbFileTag { file_id: id, tag })
+                .map(|tag| DbFileTag::new(id, tag))
                 .collect();
-            self.connection_pool.upsert_file_tags(tags)?;
+            self.connection_pool.upsert_many_file_tags(tags)?;
             let tags = self
                 .connection_pool
                 .select_file_tags_by_file_id(id)?
@@ -95,7 +95,7 @@ impl FileDataSource for DbClient {
         tokio::task::block_in_place(|| {
             for tag in tags {
                 self.connection_pool
-                    .delete_file_tag(DbFileTag { file_id: id, tag })?;
+                    .delete_file_tag(DbFileTag::new(id, tag))?;
             }
             Ok(())
         })

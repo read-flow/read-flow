@@ -22,14 +22,15 @@ pub trait FileDao {
     fn select_all_files_order_by_fingerprint(&self) -> Result<Vec<File>, Self::Error>;
     fn select_file_by_id(&self, id: i32) -> Result<Option<File>, Self::Error>;
     fn select_file_by_path(&self, path: &str) -> Result<Option<File>, Self::Error>;
+    fn select_all_files_by_path_like(&self, path: &str) -> Result<Vec<File>, Self::Error>;
 }
 
 pub trait FileTagDao {
     type Error;
     fn insert_file_tag(&self, file_tag: FileTag) -> Result<FileTag, Self::Error>;
     fn upsert_file_tag(&self, file_tag: FileTag) -> Result<(), Self::Error>;
-    fn insert_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error>;
-    fn upsert_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error>;
+    fn insert_many_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error>;
+    fn upsert_many_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error>;
     fn select_all_tags(&self) -> Result<Vec<String>, Self::Error>;
     fn select_all_file_tags(&self) -> Result<Vec<FileTag>, Self::Error>;
     fn select_file_tags_by_file_id(&self, file_id: i32) -> Result<Vec<FileTag>, Self::Error>;
@@ -171,6 +172,14 @@ impl FileDao for ConnectionPool {
             .optional()?;
         Ok(file)
     }
+
+    fn select_all_files_by_path_like(&self, path: &str) -> Result<Vec<File>, Self::Error> {
+        let mut connection = self.get()?;
+        let files = files::table
+            .filter(files::path.like(path))
+            .load(&mut connection)?;
+        Ok(files)
+    }
 }
 
 impl FileTagDao for ConnectionPool {
@@ -196,14 +205,14 @@ impl FileTagDao for ConnectionPool {
         Ok(())
     }
 
-    fn insert_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error> {
+    fn insert_many_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error> {
         for file_tag in file_tags {
             self.insert_file_tag(file_tag)?;
         }
         Ok(())
     }
 
-    fn upsert_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error> {
+    fn upsert_many_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error> {
         for file_tag in file_tags {
             self.upsert_file_tag(file_tag)?;
         }

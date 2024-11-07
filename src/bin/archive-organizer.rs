@@ -22,6 +22,7 @@ enum Commands {
     Scan {
         path: PathBuf,
     },
+    ApplyTags,
     #[cfg(feature = "gui")]
     Gui,
     #[cfg(feature = "server")]
@@ -31,7 +32,7 @@ enum Commands {
 
 fn main() -> Result<()> {
     tracing_subscriber::registry()
-        .with(fmt::layer())
+        .with(fmt::layer().with_writer(std::io::stderr))
         .with(EnvFilter::from_default_env())
         .init();
 
@@ -39,6 +40,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::Scan { path } => ApplicationModule::instantiate()?.scan(path)?,
+        Commands::ApplyTags => ApplicationModule::instantiate()?.apply_tags()?,
         #[cfg(feature = "gui")]
         Commands::Gui => ApplicationModule::instantiate()?.gui()?,
         #[cfg(feature = "server")]

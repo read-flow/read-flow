@@ -32,6 +32,12 @@ pub struct FileTag {
     pub tag: String,
 }
 
+impl FileTag {
+    pub fn new(file_id: i32, tag: String) -> Self {
+        Self { file_id, tag }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Selectable)]
 #[diesel(table_name = directories)]
 #[diesel(check_for_backend(Sqlite))]

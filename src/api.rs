@@ -49,10 +49,7 @@ impl From<File> for (DbFile, Vec<DbTag>) {
             tags,
         }: File,
     ) -> Self {
-        let tags = tags
-            .into_iter()
-            .map(|tag| DbTag { file_id: id, tag })
-            .collect();
+        let tags = tags.into_iter().map(|tag| DbTag::new(id, tag)).collect();
         let file = DbFile {
             id,
             path,
