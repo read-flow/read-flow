@@ -5,7 +5,8 @@ use iced::{
     widget::{button, column, container, row, text, text_input},
     Element, Task,
 };
-use iced_aw::{grid, grid_row};
+use iced_aw::{grid, grid_row, Wrap};
+use itertools::Itertools;
 
 use crate::{
     api::FileDataSource,
@@ -86,11 +87,23 @@ impl EditFile {
     }
 
     pub(crate) fn view(&self) -> Element<gui::Message> {
-        let selectable_tags = self
+        let wrap = self
             .all_tags
             .iter()
             .filter(|tag| !self.file.tags.contains(tag))
-            .collect::<Vec<_>>();
+            .sorted()
+            .fold(Wrap::new_vertical(), |wrap, tag| {
+                wrap.push(container(row![
+                    button(text(tag).size(11)).padding(4).style(tag_button),
+                    button(text(" + ").size(15))
+                        .padding(1)
+                        .style(add_tag_button)
+                        .on_press(Message::AddTag(self.tab.clone(), tag.clone().into()).into())
+                ]))
+            })
+            .spacing(10)
+            .line_spacing(10);
+
         let column = column![grid![
             grid_row![text("id"), text(self.file.id)],
             grid_row![text("path"), display_path(&self.file.path)],
@@ -134,54 +147,39 @@ impl EditFile {
                     .spacing(10)
                 ),
             ],
-            grid_row![
-                text("existing tags"),
-                row![]
-                    .extend(selectable_tags.into_iter().map(|tag| {
-                        container(row![
-                            button(text(tag).size(11)).padding(4).style(tag_button),
-                            button(text(" + ").size(15))
-                                .padding(1)
-                                .style(add_tag_button)
-                                .on_press(
-                                    Message::AddTag(self.tab.clone(), tag.clone().into()).into()
-                                )
-                        ])
-                        .into()
-                    }))
-                    .spacing(10),
-            ],
+            grid_row![text("existing tags"), container(wrap).height(100.0)],
             grid_row![
                 text("location"),
                 CurrentTabRef::from(&self.tab).button_text()
             ],
             grid_row![text("duplicates"), {
-                let mut grid = grid![]
-                    .horizontal_alignment(Horizontal::Left)
-                    .vertical_alignment(Vertical::Top);
-                for (tab, duplicates) in self.duplicates.iter().map(|(tab, duplicates)| {
-                    (
-                        tab,
-                        duplicates
-                            .iter()
-                            .filter(|d| !(*tab == self.tab && d.path == self.file.path))
-                            .collect::<Vec<_>>(),
-                    )
-                }) {
-                    if !duplicates.is_empty() {
+                self.duplicates
+                    .iter()
+                    .map(|(tab, duplicates)| {
+                        (
+                            tab,
+                            duplicates
+                                .iter()
+                                .filter(|d| !(*tab == self.tab && d.path == self.file.path))
+                                .collect::<Vec<_>>(),
+                        )
+                    })
+                    .filter(|(_, duplicates)| !duplicates.is_empty())
+                    .fold(grid![], |grid, (tab, duplicates)| {
                         let tab_ref: CurrentTabRef = tab.into();
-                        grid = grid.push(grid_row![
+                        grid.push(grid_row![
                             tab_ref.button_text(),
                             column![].extend(duplicates.iter().map(|d| { display_path(&d.path) }))
-                        ]);
-                    }
-                }
-                grid.spacing(10)
-            }]
+                        ])
+                    })
+                    .horizontal_alignment(Horizontal::Left)
+                    .vertical_alignment(Vertical::Top)
+                    .spacing(10)
+            }],
         ]
         .horizontal_alignment(Horizontal::Left)
         .vertical_alignment(Vertical::Top)
-        .spacing(10),];
+        .spacing(10)];
 
         column.spacing(10).into()
     }
