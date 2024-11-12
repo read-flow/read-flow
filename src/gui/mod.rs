@@ -3,7 +3,7 @@ mod welcome_page;
 
 use iced::{
     border, padding,
-    widget::{self, button, column, container, row, scrollable, text, text_input},
+    widget::{self, button, column, container, pick_list, row, scrollable, text, text_input},
     Element, Task, Theme,
 };
 use indexmap::{IndexMap, IndexSet};
@@ -38,6 +38,7 @@ enum Message {
     FindDuplicates(CurrentTab, String),
     Duplicates(CurrentTab, Vec<(CurrentTab, Vec<File>)>),
     GetTags(CurrentTab),
+    ThemeSelected(Theme),
     Tags(CurrentTab, Vec<String>),
 }
 
@@ -229,6 +230,7 @@ struct App {
     tabs: Tabs,
     connection_pool: ConnectionPool,
     new_remote_url: String,
+    theme: Theme,
 }
 
 impl App {
@@ -241,6 +243,7 @@ impl App {
                 tabs,
                 connection_pool,
                 new_remote_url: Default::default(),
+                theme: Theme::TokyoNight,
             },
             initialize_tabs,
         )
@@ -248,6 +251,10 @@ impl App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::ThemeSelected(theme) => {
+                self.theme = theme;
+                Task::none()
+            }
             Message::SwitchTab(tab_page) => {
                 self.tabs.current_tab = tab_page;
                 Task::none()
@@ -320,17 +327,24 @@ impl App {
                     .style(button::success)
                     .on_press(Message::AddNewRemoteUrl),
             )
+            .push(container(""))
+            .push(
+                pick_list(Theme::ALL, Some(self.theme.clone()), Message::ThemeSelected)
+                    .width(iced::Fill),
+            )
             .spacing(5);
 
         let pane_content = self.tabs.view();
-        layout(header_bar, side_bar, column![pane_content]).into()
+        let element: Element<Message> = layout(header_bar, side_bar, column![pane_content]).into();
+        element
+        // .explain(color!(0x0000ff))
     }
 }
 
 impl ApplicationModule {
     pub fn gui(self) -> iced::Result {
         iced::application("ArchiveOrganizer - Files", App::update, App::view)
-            .theme(|_| Theme::TokyoNight)
+            .theme(|app| app.theme.clone())
             .run_with(|| App::new(self))
     }
 }
