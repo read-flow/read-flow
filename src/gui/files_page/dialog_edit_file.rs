@@ -2,7 +2,7 @@ use std::{path::Path, sync::Arc};
 
 use iced::{
     alignment::{Horizontal, Vertical},
-    widget::{button, column, container, row, text, text_input},
+    widget::{button, column, row, text, text_input},
     Element, Task,
 };
 use iced_aw::{grid, grid_row, Wrap};
@@ -92,15 +92,16 @@ impl EditFile {
             .iter()
             .filter(|tag| !self.file.tags.contains(tag))
             .sorted()
-            .fold(Wrap::new_vertical(), |wrap, tag| {
-                wrap.push(container(row![
+            .fold(Wrap::new(), |wrap, tag| {
+                wrap.push(row![
                     button(text(tag).size(11)).padding(4).style(tag_button),
                     button(text(" + ").size(15))
                         .padding(1)
                         .style(add_tag_button)
                         .on_press(Message::AddTag(self.tab.clone(), tag.clone().into()).into())
-                ]))
+                ])
             })
+            .max_width(580.0)
             .spacing(10)
             .line_spacing(10);
 
@@ -112,42 +113,43 @@ impl EditFile {
             grid_row![text("fingerprint"), text(&self.file.fingerprint)],
             grid_row![
                 text("tags"),
-                container(
-                    column![
-                        row![]
-                            .extend(self.file.tags.iter().map(|tag| {
-                                container(row![
-                                    button(text(tag).size(11)).padding(4).style(tag_button),
-                                    button(text(" X ").size(15))
-                                        .padding(1)
-                                        .style(delete_tag_button)
-                                        .on_press(
-                                            Message::DeleteTag(self.tab.clone(), tag.clone())
-                                                .into()
-                                        )
-                                ])
-                                .into()
-                            }))
-                            .spacing(10),
-                        text_input("tag", &self.tag.clone().unwrap_or("".to_string()))
-                            .width(250)
-                            .id("input-tag")
-                            .on_input(|result| Message::EditTag(self.tab.clone(), result).into())
-                            .on_submit(Message::AddTag(self.tab.clone(), None).into()),
-                        row![
-                            button(text("Cancel"))
-                                .style(button::secondary)
-                                .on_press(super::Message::CancelDialog(self.tab().clone()).into()),
-                            button(text("Submit"))
-                                .style(button::primary)
-                                .on_press(super::Message::SubmitDialog(self.tab().clone()).into()),
-                        ]
+                column![
+                    self.file
+                        .tags
+                        .iter()
+                        .sorted()
+                        .fold(Wrap::new(), |wrap, tag| {
+                            wrap.push(row![
+                                button(text(tag).size(11)).padding(4).style(tag_button),
+                                button(text(" X ").size(15))
+                                    .padding(1)
+                                    .style(delete_tag_button)
+                                    .on_press(
+                                        Message::DeleteTag(self.tab.clone(), tag.clone()).into()
+                                    )
+                            ])
+                        })
+                        .max_width(580.0)
                         .spacing(10)
+                        .line_spacing(10),
+                    text_input("tag", &self.tag.clone().unwrap_or("".to_string()))
+                        .width(250)
+                        .id("input-tag")
+                        .on_input(|result| Message::EditTag(self.tab.clone(), result).into())
+                        .on_submit(Message::AddTag(self.tab.clone(), None).into()),
+                    row![
+                        button(text("Cancel"))
+                            .style(button::secondary)
+                            .on_press(super::Message::CancelDialog(self.tab().clone()).into()),
+                        button(text("Submit"))
+                            .style(button::primary)
+                            .on_press(super::Message::SubmitDialog(self.tab().clone()).into()),
                     ]
                     .spacing(10)
-                ),
+                ]
+                .spacing(10),
             ],
-            grid_row![text("existing tags"), container(wrap).height(100.0)],
+            grid_row![text("existing tags"), wrap],
             grid_row![
                 text("location"),
                 CurrentTabRef::from(&self.tab).button_text()
