@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use iced::{
     alignment::{Horizontal, Vertical},
-    widget::{button, checkbox, container, row, text},
+    widget::{button, checkbox, container, row, text, text_input},
     Element, Task,
 };
 use iced_aw::{grid_row, Grid};
 use indexmap::{IndexMap, IndexSet};
+use regex::Regex;
 
 use crate::{
     api::{File, FileDataSource},
@@ -27,6 +28,7 @@ pub struct Page<FDS> {
     selected_tags: Vec<String>,
     duplicates: bool,
     is_offline: bool,
+    regex: Option<String>,
 }
 
 impl IdentifyTab for Page<gui::DbClient> {
@@ -56,6 +58,7 @@ where
             selected_tags: Default::default(),
             duplicates: Default::default(),
             is_offline: Default::default(),
+            regex: Default::default(),
         }
     }
 
@@ -76,7 +79,12 @@ where
         let selected_tags = self.selected_tags.clone();
         let tab = self.tab();
         Task::perform(
-            query_files_by_tags(self.file_data_source.clone(), ordering, selected_tags),
+            query_files_by_tags(
+                self.file_data_source.clone(),
+                ordering,
+                selected_tags,
+                self.regex.clone(),
+            ),
             move |result| Message::FilesLoaded(tab.clone(), result).into(),
         )
     }
@@ -88,6 +96,7 @@ where
                     self.file_data_source.clone(),
                     self.ordering,
                     self.selected_tags.clone(),
+                    self.regex.clone(),
                 ),
                 move |result| Message::FilesLoaded(tab.clone(), result).into(),
             ),
@@ -138,6 +147,14 @@ where
                 self.selected_tags.retain(|t| t != &tag);
                 Task::done(Message::Update(tab).into())
             }
+            Message::SetRegex(tab, regex) => {
+                if regex.is_empty() {
+                    self.regex = None;
+                } else {
+                    self.regex = Some(regex);
+                }
+                Task::done(Message::Update(tab).into())
+            }
             Message::EditDialog(message) => match &mut self.dialog {
                 Some(Dialog::EditFile(ref mut dialog)) => dialog.update(message),
                 None => Task::none(),
@@ -158,6 +175,13 @@ where
                     .width(iced::Fill)
                     .on_toggle(|_| Message::ToggleDuplicates(self.tab()).into())
                     .into(),
+                text_input(
+                    "Regular expression",
+                    self.regex.as_ref().unwrap_or(&String::from("")),
+                )
+                .width(iced::Fill)
+                .on_input(|value| Message::SetRegex(self.tab(), value).into())
+                .into(),
             ]
         }
     }
@@ -251,6 +275,7 @@ async fn query_files_by_tags<FDS>(
     file_data_source: Arc<FDS>,
     order_by: OrderFilesBy,
     tags: Vec<String>,
+    regex: Option<String>,
 ) -> Result<Vec<File>, Error>
 where
     FDS: FileDataSource,
@@ -269,8 +294,14 @@ where
         OrderFilesBy::Fingerprint => files.sort_by_key(|file| file.fingerprint.clone()),
     };
 
+    let select_regex = regex.and_then(|r| Regex::new(&r).ok());
+
     Ok(files
         .into_iter()
         .filter(|file| tags.iter().all(|tag| file.tags.contains(tag)))
+        .filter(|file| match &select_regex {
+            Some(regex) => regex.is_match(&file.path),
+            None => true,
+        })
         .collect())
 }

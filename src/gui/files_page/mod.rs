@@ -29,6 +29,7 @@ pub(super) enum Message {
     OrderBy(CurrentTab, OrderFilesBy),
     AddTagFilter(CurrentTab, String),
     RemoveTagFilter(CurrentTab, String),
+    SetRegex(CurrentTab, String),
     EditDialog(dialog_edit_file::Message),
 }
 
@@ -46,6 +47,7 @@ impl IdentifyTab for Message {
             Message::OrderBy(tab, ..) => tab.clone(),
             Message::AddTagFilter(tab, ..) => tab.clone(),
             Message::RemoveTagFilter(tab, ..) => tab.clone(),
+            Message::SetRegex(tab, ..) => tab.clone(),
             Message::EditDialog(message) => message.tab(),
         }
     }
