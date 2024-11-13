@@ -113,41 +113,32 @@ impl EditFile {
             grid_row![text("fingerprint"), text(&self.file.fingerprint)],
             grid_row![
                 text("tags"),
-                column![
-                    self.file
-                        .tags
-                        .iter()
-                        .sorted()
-                        .fold(Wrap::new(), |wrap, tag| {
-                            wrap.push(row![
-                                button(text(tag).size(11)).padding(4).style(tag_button),
-                                button(text(" X ").size(15))
-                                    .padding(1)
-                                    .style(delete_tag_button)
-                                    .on_press(
-                                        Message::DeleteTag(self.tab.clone(), tag.clone()).into()
-                                    )
-                            ])
-                        })
-                        .max_width(580.0)
-                        .spacing(10)
-                        .line_spacing(10),
-                    text_input("tag", &self.tag.clone().unwrap_or("".to_string()))
-                        .width(250)
-                        .id("input-tag")
-                        .on_input(|result| Message::EditTag(self.tab.clone(), result).into())
-                        .on_submit(Message::AddTag(self.tab.clone(), None).into()),
-                    row![
-                        button(text("Cancel"))
-                            .style(button::secondary)
-                            .on_press(super::Message::CancelDialog(self.tab().clone()).into()),
-                        button(text("Submit"))
-                            .style(button::primary)
-                            .on_press(super::Message::SubmitDialog(self.tab().clone()).into()),
-                    ]
+                column![self
+                    .file
+                    .tags
+                    .iter()
+                    .sorted()
+                    .fold(Wrap::new(), |wrap, tag| {
+                        wrap.push(row![
+                            button(text(tag).size(11)).padding(4).style(tag_button),
+                            button(text(" X ").size(15))
+                                .padding(1)
+                                .style(delete_tag_button)
+                                .on_press(Message::DeleteTag(self.tab.clone(), tag.clone()).into())
+                        ])
+                    })
+                    .max_width(580.0)
                     .spacing(10)
-                ]
+                    .line_spacing(10),]
                 .spacing(10),
+            ],
+            grid_row![
+                text("create tag"),
+                text_input("tag", &self.tag.clone().unwrap_or("".to_string()))
+                    .width(250)
+                    .id("input-tag")
+                    .on_input(|result| Message::EditTag(self.tab.clone(), result).into())
+                    .on_submit(Message::AddTag(self.tab.clone(), None).into()),
             ],
             grid_row![text("existing tags"), wrap],
             grid_row![
@@ -178,6 +169,19 @@ impl EditFile {
                     .vertical_alignment(Vertical::Top)
                     .spacing(10)
             }],
+            grid_row![
+                text(""),
+                row![
+                    button(text("Close"))
+                        .style(button::secondary)
+                        .on_press(super::Message::CancelDialog(self.tab().clone()).into()),
+                    button(text("Save Changes"))
+                        .style(button::primary)
+                        .on_press(super::Message::SubmitDialog(self.tab().clone()).into()),
+                ]
+                .width(600.0)
+                .spacing(10)
+            ],
         ]
         .horizontal_alignment(Horizontal::Left)
         .vertical_alignment(Vertical::Top)
