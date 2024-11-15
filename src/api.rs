@@ -1,4 +1,4 @@
-use std::result::Result;
+use std::{process::ExitStatus, result::Result};
 
 use serde::{Deserialize, Serialize};
 
@@ -78,4 +78,6 @@ pub trait FileDataSource {
     async fn add_file_tags(&self, id: i32, tags: Vec<String>) -> Result<Vec<String>, Self::Error>;
 
     async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Self::Error>;
+
+    async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error>;
 }

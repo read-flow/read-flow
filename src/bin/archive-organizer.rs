@@ -58,7 +58,9 @@ fn main() -> Result<()> {
                 let result = client.status().await;
                 tracing::info!("status result: {result:?}");
 
-                let result = client.download_file(4, "horse-power.pdf").await;
+                let result = client
+                    .download_file(4, &PathBuf::from("horse-power.pdf"))
+                    .await;
                 tracing::info!("download result: {result:?}");
 
                 let result = client.upload_file(&PathBuf::from("horse-power.pdf")).await;

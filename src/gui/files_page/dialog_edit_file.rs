@@ -107,7 +107,12 @@ impl EditFile {
 
         let column = column![grid![
             grid_row![text("id"), text(self.file.id)],
-            grid_row![text("path"), display_path(&self.file.path)],
+            grid_row![
+                text("path"),
+                button(display_path(&self.file.path))
+                    .style(button::text)
+                    .on_press(super::Message::OpenFile(self.tab.clone(), self.file.clone()).into())
+            ],
             grid_row![text("type"), text(&self.file.type_)],
             grid_row![text("size"), text(self.file.size)],
             grid_row![text("fingerprint"), text(&self.file.fingerprint)],

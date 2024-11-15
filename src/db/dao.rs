@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{io, sync::Arc};
 
 use diesel::prelude::*;
 
@@ -58,6 +58,8 @@ pub enum Error {
     Diesel(#[source] Arc<diesel::result::Error>),
     #[error("connection pool error: {0}")]
     R2D2(#[source] Arc<r2d2::Error>),
+    #[error("io error: {0}")]
+    IO(#[source] Arc<io::Error>),
 }
 
 impl From<diesel::result::Error> for Error {
@@ -69,6 +71,12 @@ impl From<diesel::result::Error> for Error {
 impl From<r2d2::Error> for Error {
     fn from(value: r2d2::Error) -> Self {
         Self::R2D2(Arc::new(value))
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(value: io::Error) -> Self {
+        Self::IO(Arc::new(value))
     }
 }
 

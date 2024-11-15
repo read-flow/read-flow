@@ -1,13 +1,16 @@
 use std::{
     convert::Infallible,
+    env,
+    ffi::OsStr,
     io,
     path::{Path, PathBuf},
+    process::ExitStatus,
     sync::Arc,
 };
 
 use futures::StreamExt;
 use reqwest::{header, Client, Url};
-use tokio::fs;
+use tokio::{fs, process::Command};
 
 use crate::{
     api::{File, FileDataSource, Status},
@@ -89,13 +92,13 @@ impl FilesClient {
         Ok(file_path)
     }
 
-    pub async fn download_file(&self, id: i32, filename: &str) -> Result<(), Error> {
+    pub async fn download_file(&self, id: i32, filename: &Path) -> Result<PathBuf, Error> {
         let response = self
             .client
-            .get(
-                self.base_url
-                    .join(&format!("files/{id}/download-as/{filename}"))?,
-            )
+            .get(self.base_url.join(&format!(
+                "files/{id}/download-as/{}",
+                filename.file_name().and_then(OsStr::to_str).unwrap()
+            ))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
             .header(header::AUTHORIZATION, "bearer secret")
             .send()
@@ -103,14 +106,14 @@ impl FilesClient {
 
         let mut bytes = response.bytes_stream();
 
-        let target_filename = Self::get_target_file(filename)?;
+        let target_filename = Self::get_target_file(&format!("{}", filename.display()))?;
         let mut target_file = fs::File::create(&target_filename).await?;
 
         while let Some(item) = bytes.next().await {
             tokio::io::copy(&mut item?.as_ref(), &mut target_file).await?;
         }
 
-        Ok(())
+        Ok(target_filename)
     }
 
     pub async fn upload_file(&self, filename: &Path) -> Result<File, Error> {
@@ -190,4 +193,32 @@ impl FileDataSource for FilesClient {
 
         Ok(())
     }
+
+    async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Error> {
+        let tempdir = env::temp_dir().join("archive-organizer");
+
+        if !tempdir.exists() {
+            tokio::fs::create_dir(&tempdir).await?;
+        }
+
+        let file_path = PathBuf::from(file.path);
+        let mut filename = tempdir.join(PathBuf::from(file_path.file_name().unwrap()));
+
+        if !filename.exists() || fingerprint_of(&filename).await? != file.fingerprint {
+            filename = self.download_file(file.id, &filename).await?;
+        }
+
+        // Note that xdg-open will exit while the application is still running, so
+        // we cannot delete `filename` after this line.
+        let status = Command::new("xdg-open").arg(&filename).status().await?;
+
+        Ok(status)
+    }
+}
+
+async fn fingerprint_of(filename: &Path) -> Result<String, Error> {
+    let output = Command::new("sha256sum").arg(filename).output().await?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let fingerprint = stdout.split(' ').next().expect("expected fingerprint");
+    Ok(fingerprint.to_string())
 }

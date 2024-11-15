@@ -59,7 +59,12 @@ impl ApplicationModule {
 /// - given `filename` is `my_file.txt`, `extension` is `txt` and `my_file.txt` exists, results in `my_file.1.txt`
 /// - given `filename` is `my_file.txt`, `extension` is `txt` and both `my_file.txt` and `my_file.1.txt` exist, results in `my_file.2.txt`
 fn to_unique_file(filename: &mut PathBuf, extension: &str) {
-    assert!(filename.ends_with(extension));
+    // Use display as a UTF-8 string to compare
+    let filename_display = format!("{}", filename.display());
+    assert!(
+        filename_display.ends_with(extension),
+        "{filename_display} should end with {extension}",
+    );
 
     let mut index: usize = 1;
 

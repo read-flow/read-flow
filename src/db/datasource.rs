@@ -1,5 +1,8 @@
+use std::process::ExitStatus;
+
 use diesel::RunQueryDsl;
 use indexmap::IndexMap;
+use tokio::process::Command;
 
 use crate::{
     api::{File, FileDataSource, Status},
@@ -99,5 +102,10 @@ impl FileDataSource for DbClient {
             }
             Ok(())
         })
+    }
+
+    async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error> {
+        let status = Command::new("xdg-open").arg(file.path).status().await?;
+        Ok(status)
     }
 }

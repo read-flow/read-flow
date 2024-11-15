@@ -126,6 +126,11 @@ where
                 self.dialog = Some(dialog);
                 task
             }
+            Message::OpenFile(tab, file) => {
+                Task::perform(open_file(self.file_data_source.clone(), file), move |_| {
+                    super::Message::Update(tab.clone()).into() // TODO: Should be noop
+                })
+            }
             Message::FilesLoaded(_, Ok(files)) => {
                 self.files = files;
                 Task::none()
@@ -304,4 +309,16 @@ where
             None => true,
         })
         .collect())
+}
+
+async fn open_file<FDS>(file_data_source: Arc<FDS>, file: File)
+where
+    FDS: FileDataSource,
+    <FDS as FileDataSource>::Error: 'static,
+{
+    let result = file_data_source.xdg_open_file(file).await;
+    match result {
+        Ok(status) => tracing::info!("the command exited with: {status}"),
+        Err(error) => tracing::error!("error while executing command: {error}"),
+    }
 }
