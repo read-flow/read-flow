@@ -171,6 +171,14 @@ impl Tabs {
         }
     }
 
+    fn refresh_current_tab(&self) -> Task<Message> {
+        match &self.current_tab {
+            CurrentTab::Welcome => self.welcome_page.init(),
+            CurrentTab::LocalFiles => self.local_files.init(),
+            CurrentTab::RemoteFiles(url) => self.remote_files[url].init(),
+        }
+    }
+
     fn view_menu_entry<'a>(&'a self, tab: CurrentTabRef<'a>) -> Vec<Element<'a, Message>> {
         let button = button(tab.button_text()).width(iced::Fill);
         let mut side_bar = vec![];
@@ -255,9 +263,9 @@ impl App {
                 self.theme = theme;
                 Task::none()
             }
-            Message::SwitchTab(tab_page) => {
-                self.tabs.current_tab = tab_page;
-                Task::none()
+            Message::SwitchTab(tab) => {
+                self.tabs.current_tab = tab.clone();
+                self.tabs.refresh_current_tab()
             }
             Message::EditNewRemoteUrl(url) => {
                 self.new_remote_url = url;

@@ -75,18 +75,7 @@ where
     }
 
     pub fn init(&self) -> Task<gui::Message> {
-        let ordering = self.ordering;
-        let selected_tags = self.selected_tags.clone();
-        let tab = self.tab();
-        Task::perform(
-            query_files_by_tags(
-                self.file_data_source.clone(),
-                ordering,
-                selected_tags,
-                self.regex.clone(),
-            ),
-            move |result| Message::FilesLoaded(tab.clone(), result).into(),
-        )
+        Task::done(Message::Update(self.tab()).into())
     }
 
     pub fn update(&mut self, message: Message) -> Task<gui::Message> {
@@ -133,6 +122,7 @@ where
             }
             Message::FilesLoaded(_, Ok(files)) => {
                 self.files = files;
+                self.is_offline = false;
                 Task::none()
             }
             Message::FilesLoaded(_, Err(error)) => {
