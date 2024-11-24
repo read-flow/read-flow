@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 use iced::{
     alignment::{Horizontal, Vertical},
@@ -13,7 +13,7 @@ use crate::{
     gui::{self, add_tag_button, delete_tag_button, tag_button, CurrentTabRef, IdentifyTab},
 };
 
-use super::{CurrentTab, File};
+use super::{display_path, CurrentTab, File};
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone)]
@@ -50,18 +50,6 @@ pub(crate) struct EditFile {
     tag: Option<String>,
     all_tags: Vec<String>,
     duplicates: Vec<(CurrentTab, Vec<File>)>,
-}
-
-fn display_path(path: &str) -> Element<gui::Message> {
-    let path = Path::new(path);
-    let directory = path.parent().unwrap();
-    let filename = path.file_name().unwrap();
-    column![
-        text(format!("{}", filename.to_string_lossy())),
-        text(format!("{}", directory.display())).size(11),
-    ]
-    .spacing(5)
-    .into()
 }
 
 impl EditFile {
@@ -109,7 +97,7 @@ impl EditFile {
             grid_row![text("id"), text(self.file.id)],
             grid_row![
                 text("path"),
-                button(display_path(&self.file.path))
+                button(display_path(self.file.path.clone()))
                     .style(button::text)
                     .on_press(super::Message::OpenFile(self.tab.clone(), self.file.clone()).into())
             ],
@@ -167,7 +155,9 @@ impl EditFile {
                         let tab_ref: CurrentTabRef = tab.into();
                         grid.push(grid_row![
                             tab_ref.button_text(),
-                            column![].extend(duplicates.iter().map(|d| { display_path(&d.path) }))
+                            column![].extend(
+                                duplicates.iter().map(|d| { display_path(d.path.clone()) })
+                            )
                         ])
                     })
                     .horizontal_alignment(Horizontal::Left)

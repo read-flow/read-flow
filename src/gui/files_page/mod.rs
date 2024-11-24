@@ -1,9 +1,12 @@
 pub(super) mod dialog_edit_file;
 mod page;
 
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
 
-use iced::{Element, Task};
+use iced::{
+    widget::{column, text},
+    Element, Task,
+};
 
 use crate::{
     api::{File, FileDataSource},
@@ -90,9 +93,26 @@ pub(super) enum OrderFilesBy {
     #[default]
     Id,
     Type,
-    Path,
+    Filename,
+    Folder,
     Size,
     Fingerprint,
+}
+
+fn display_path<P: AsRef<Path>>(path: P) -> Element<'static, gui::Message> {
+    let path = path.as_ref();
+    let directory = path.parent().unwrap();
+    let filename = path.file_name().unwrap();
+    if directory.is_dir() {
+        column![
+            text(format!("{}", filename.to_string_lossy())),
+            text(format!("{}", directory.display())).size(11),
+        ]
+        .spacing(5)
+        .into()
+    } else {
+        text(format!("{}", filename.to_string_lossy())).into()
+    }
 }
 
 async fn update_file<FDS>(file_data_source: Arc<FDS>, file: File) -> Result<(), Error>

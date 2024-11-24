@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ffi::OsStr, path::Path, sync::Arc};
 
 use iced::{
     alignment::{Horizontal, Vertical},
@@ -16,7 +16,7 @@ use crate::{
     to_buckets, Builder,
 };
 
-use super::{tag_button, Dialog, Error, Message, OrderFilesBy};
+use super::{display_path, tag_button, Dialog, Error, Message, OrderFilesBy};
 
 #[derive(Debug, Clone)]
 pub struct Page<FDS> {
@@ -198,13 +198,14 @@ where
             vec![button("Refresh")
                 .width(iced::Fill)
                 .on_press(Message::Update(self.tab()).into())
+                .style(button::success)
                 .into()]
         } else {
             vec![
                 container(
                     column![
                         text("Display Options"),
-                        checkbox("Short Path", self.shorten_path)
+                        checkbox("Hide Folder", self.shorten_path)
                             .width(iced::Fill)
                             .on_toggle(|_| Message::ToggleShortenPath(self.tab()).into()),
                     ]
@@ -275,13 +276,17 @@ where
 
         let mut grid = Grid::new()
             .push(grid_row![
-                button("id").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Id).into()),
-                button("type").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Type).into()),
+                // button("id").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Id).into()),
+                // button("type").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Type).into()),
                 button("size").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Size).into()),
-                button("fingerprint")
-                    .on_press(Message::OrderBy(self.tab(), OrderFilesBy::Fingerprint).into()),
-                row![button("path")
-                    .on_press(Message::OrderBy(self.tab(), OrderFilesBy::Path).into())]
+                // button("fingerprint")
+                //     .on_press(Message::OrderBy(self.tab(), OrderFilesBy::Fingerprint).into()),
+                row![
+                    button("Folder")
+                        .on_press(Message::OrderBy(self.tab(), OrderFilesBy::Folder).into()),
+                    button("Filename")
+                        .on_press(Message::OrderBy(self.tab(), OrderFilesBy::Filename).into()),
+                ]
                 .extend(self.selected_tags.iter().map(|t| {
                     container(
                         button(text(t).size(11))
@@ -319,11 +324,11 @@ where
             };
 
             grid = grid.push(grid_row![
-                text(file.id),
-                text(file.type_.clone()),
+                // text(file.id),
+                // text(file.type_.clone()),
                 text(file.size),
-                text(format!("{}...", &file.fingerprint[..9])),
-                row![button(text(path)).style(button::text).on_press(
+                // text(format!("{}...", &file.fingerprint[..9])),
+                row![button(display_path(path)).style(button::text).on_press(
                     Message::OpenDialog(Dialog::edit_file(self.tab(), file.clone())).into()
                 )]
                 .extend(file.tags.iter().map(|tag| {
@@ -365,10 +370,22 @@ where
 
     match order_by {
         OrderFilesBy::Id => files.sort_by_key(|file| file.id),
-        OrderFilesBy::Type => files.sort_by_key(|file| file.type_.clone()),
-        OrderFilesBy::Path => files.sort_by_key(|file| file.path.clone()),
+        OrderFilesBy::Type => files.sort_by(|f1, f2| f1.type_.cmp(&f2.type_)),
+        OrderFilesBy::Filename => files.sort_by(|f1, f2| {
+            Path::new(&f1.path)
+                .file_name()
+                .map(OsStr::to_ascii_lowercase)
+                .cmp(
+                    &Path::new(&f2.path)
+                        .file_name()
+                        .map(OsStr::to_ascii_lowercase),
+                )
+        }),
+        OrderFilesBy::Folder => {
+            files.sort_by(|f1, f2| f1.path.to_lowercase().cmp(&f2.path.to_lowercase()))
+        }
         OrderFilesBy::Size => files.sort_by_key(|file| file.size),
-        OrderFilesBy::Fingerprint => files.sort_by_key(|file| file.fingerprint.clone()),
+        OrderFilesBy::Fingerprint => files.sort_by(|f1, f2| f1.fingerprint.cmp(&f2.fingerprint)),
     };
 
     let select_regex = regex.and_then(|r| Regex::new(&r).ok());

@@ -2,7 +2,7 @@ mod files_page;
 mod welcome_page;
 
 use iced::{
-    border, padding,
+    border,
     widget::{self, button, column, container, pick_list, row, scrollable, text, text_input},
     Element, Task, Theme,
 };
