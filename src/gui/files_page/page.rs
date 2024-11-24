@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, path::Path, sync::Arc};
+use std::{cmp::Ordering, ffi::OsStr, path::Path, sync::Arc};
 
 use iced::{
     alignment::{Horizontal, Vertical},
@@ -16,12 +16,13 @@ use crate::{
     to_buckets, Builder,
 };
 
-use super::{display_path, tag_button, Dialog, Error, Message, OrderFilesBy};
+use super::{display_path, tag_button, Dialog, Error, Message, OrderDirection, OrderFilesBy};
 
 #[derive(Debug, Clone)]
 pub struct Page<FDS> {
     shorten_path: bool,
     ordering: OrderFilesBy,
+    direction: OrderDirection,
     file_data_source: Arc<FDS>,
     files: Vec<File>,
     dialog: Option<Dialog>,
@@ -53,6 +54,7 @@ where
         Self {
             shorten_path: Default::default(),
             ordering: Default::default(),
+            direction: Default::default(),
             file_data_source: file_data_source.into(),
             files: Default::default(),
             dialog: Default::default(),
@@ -86,6 +88,7 @@ where
                 query_files_by_tags(
                     self.file_data_source.clone(),
                     self.ordering,
+                    self.direction,
                     self.selected_tags.clone(),
                     self.regex.clone(),
                 ),
@@ -133,7 +136,12 @@ where
                 Task::none()
             }
             Message::OrderBy(tab, ordering) => {
-                self.ordering = ordering;
+                if self.ordering == ordering {
+                    self.direction.toggle();
+                } else {
+                    self.ordering = ordering;
+                    self.direction = Default::default();
+                }
                 Task::done(Message::Update(tab).into())
             }
             Message::AddTagFilter(tab, tag) => {
@@ -356,6 +364,7 @@ where
 async fn query_files_by_tags<FDS>(
     file_data_source: Arc<FDS>,
     order_by: OrderFilesBy,
+    order_direction: OrderDirection,
     tags: Vec<String>,
     regex: Option<String>,
 ) -> Result<Vec<File>, Error>
@@ -368,10 +377,10 @@ where
         .await
         .map_err(|error| Error::DataSourceError(format!("{error}")))?;
 
-    match order_by {
-        OrderFilesBy::Id => files.sort_by_key(|file| file.id),
-        OrderFilesBy::Type => files.sort_by(|f1, f2| f1.type_.cmp(&f2.type_)),
-        OrderFilesBy::Filename => files.sort_by(|f1, f2| {
+    let comp: fn(&File, &File) -> Ordering = match order_by {
+        OrderFilesBy::Id => |f1, f2| f1.id.cmp(&f2.id),
+        OrderFilesBy::Type => |f1, f2| f1.type_.cmp(&f2.type_),
+        OrderFilesBy::Filename => |f1, f2| {
             Path::new(&f1.path)
                 .file_name()
                 .map(OsStr::to_ascii_lowercase)
@@ -380,13 +389,18 @@ where
                         .file_name()
                         .map(OsStr::to_ascii_lowercase),
                 )
-        }),
-        OrderFilesBy::Folder => {
-            files.sort_by(|f1, f2| f1.path.to_lowercase().cmp(&f2.path.to_lowercase()))
-        }
-        OrderFilesBy::Size => files.sort_by_key(|file| file.size),
-        OrderFilesBy::Fingerprint => files.sort_by(|f1, f2| f1.fingerprint.cmp(&f2.fingerprint)),
+        },
+        OrderFilesBy::Folder => |f1, f2| f1.path.to_lowercase().cmp(&f2.path.to_lowercase()),
+        OrderFilesBy::Size => |f1, f2| f1.size.cmp(&f2.size),
+        OrderFilesBy::Fingerprint => |f1, f2| f1.fingerprint.cmp(&f2.fingerprint),
     };
+
+    files.sort_by(|f1, f2| {
+        comp(f1, f2).apply_if(
+            order_direction == OrderDirection::Descending,
+            Ordering::reverse,
+        )
+    });
 
     let select_regex = regex.and_then(|r| Regex::new(&r).ok());
 

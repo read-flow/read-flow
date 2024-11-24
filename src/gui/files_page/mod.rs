@@ -88,7 +88,23 @@ pub(super) enum Error {
     DataSourceError(String),
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum OrderDirection {
+    #[default]
+    Ascending,
+    Descending,
+}
+
+impl OrderDirection {
+    fn toggle(&mut self) {
+        match self {
+            OrderDirection::Ascending => *self = OrderDirection::Descending,
+            OrderDirection::Descending => *self = OrderDirection::Ascending,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum OrderFilesBy {
     #[default]
     Id,
