@@ -32,6 +32,9 @@ pub(super) enum Message {
     RemoveTagFilter(CurrentTab, String),
     SetRegex(CurrentTab, String),
     EditDialog(dialog_edit_file::Message),
+    SetSelectionTag(CurrentTab, String),
+    AddTagToSelection(CurrentTab),
+    DeleteTagFromSelection(CurrentTab),
 }
 
 impl IdentifyTab for Message {
@@ -51,6 +54,9 @@ impl IdentifyTab for Message {
             Message::RemoveTagFilter(tab, ..) => tab.clone(),
             Message::SetRegex(tab, ..) => tab.clone(),
             Message::EditDialog(message) => message.tab(),
+            Message::SetSelectionTag(tab, ..) => tab.clone(),
+            Message::AddTagToSelection(tab) => tab.clone(),
+            Message::DeleteTagFromSelection(tab) => tab.clone(),
         }
     }
 }

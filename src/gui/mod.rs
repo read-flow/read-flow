@@ -190,7 +190,6 @@ impl Tabs {
                         .spacing(5)
                         .extend(self.view_sub_menu()),
                 )
-                .padding(padding::left(10))
                 .into(),
             );
         } else {
@@ -397,9 +396,7 @@ fn header(row: widget::Row<Message>) -> widget::Container<'_, Message> {
 
 fn sidebar(column: widget::Column<Message>) -> widget::Container<'_, Message> {
     let column = column.push(widget::Row::new().height(iced::Fill));
-    container(column.spacing(5).padding(10).width(200).align_x(iced::Left))
-        .style(container::rounded_box)
-        .center_y(iced::Fill)
+    container(column.spacing(5).padding(10).width(200).align_x(iced::Left)).center_y(iced::Fill)
 }
 
 fn content(column: widget::Column<Message>) -> widget::Container<'_, Message> {

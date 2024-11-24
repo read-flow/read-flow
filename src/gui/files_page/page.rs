@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use iced::{
     alignment::{Horizontal, Vertical},
-    widget::{button, checkbox, container, row, text, text_input},
+    widget::{button, checkbox, column, container, row, text, text_input},
     Element, Task,
 };
 use iced_aw::{grid_row, Grid};
@@ -13,7 +13,7 @@ use crate::{
     api::{File, FileDataSource},
     client::FilesClient,
     gui::{self, CurrentTab, IdentifyTab},
-    to_buckets,
+    to_buckets, Builder,
 };
 
 use super::{tag_button, Dialog, Error, Message, OrderFilesBy};
@@ -29,6 +29,7 @@ pub struct Page<FDS> {
     duplicates: bool,
     is_offline: bool,
     regex: Option<String>,
+    selection_tag: Option<String>,
 }
 
 impl IdentifyTab for Page<gui::DbClient> {
@@ -59,6 +60,7 @@ where
             duplicates: Default::default(),
             is_offline: Default::default(),
             regex: Default::default(),
+            selection_tag: Default::default(),
         }
     }
 
@@ -143,10 +145,11 @@ where
                 Task::done(Message::Update(tab).into())
             }
             Message::SetRegex(tab, regex) => {
+                let regex = regex.trim();
                 if regex.is_empty() {
                     self.regex = None;
                 } else {
-                    self.regex = Some(regex);
+                    self.regex = Some(regex.to_string());
                 }
                 Task::done(Message::Update(tab).into())
             }
@@ -154,28 +157,107 @@ where
                 Some(Dialog::EditFile(ref mut dialog)) => dialog.update(message),
                 None => Task::none(),
             },
+            Message::SetSelectionTag(_, tag) => {
+                let tag = tag.trim();
+                if tag.is_empty() {
+                    self.selection_tag = None;
+                } else {
+                    self.selection_tag = Some(tag.to_string());
+                }
+                Task::none()
+            }
+            Message::AddTagToSelection(tab) => match self.selection_tag.take() {
+                Some(tag) => Task::perform(
+                    add_tag_to_selection(self.file_data_source.clone(), self.files.clone(), tag),
+                    move |result| match result {
+                        Ok(()) => Message::Update(tab.clone()).into(),
+                        Err(error) => Message::Error(tab.clone(), error).into(),
+                    },
+                ),
+                None => Task::none(),
+            },
+            Message::DeleteTagFromSelection(tab) => match self.selection_tag.take() {
+                Some(tag) => Task::perform(
+                    delete_tag_from_selection(
+                        self.file_data_source.clone(),
+                        self.files.clone(),
+                        tag,
+                    ),
+                    move |result| match result {
+                        Ok(()) => Message::Update(tab.clone()).into(),
+                        Err(error) => Message::Error(tab.clone(), error).into(),
+                    },
+                ),
+                None => Task::none(),
+            },
         }
     }
 
     pub fn view_menu(&self) -> Vec<Element<gui::Message>> {
         if self.is_offline {
-            vec![]
+            vec![button("Refresh")
+                .width(iced::Fill)
+                .on_press(Message::Update(self.tab()).into())
+                .into()]
         } else {
             vec![
-                checkbox("Short Path", self.shorten_path)
-                    .width(iced::Fill)
-                    .on_toggle(|_| Message::ToggleShortenPath(self.tab()).into())
-                    .into(),
-                checkbox("Duplicates", self.duplicates)
-                    .width(iced::Fill)
-                    .on_toggle(|_| Message::ToggleDuplicates(self.tab()).into())
-                    .into(),
-                text_input(
-                    "Regular expression",
-                    self.regex.as_ref().unwrap_or(&String::from("")),
+                container(
+                    column![
+                        text("Display Options"),
+                        checkbox("Short Path", self.shorten_path)
+                            .width(iced::Fill)
+                            .on_toggle(|_| Message::ToggleShortenPath(self.tab()).into()),
+                    ]
+                    .spacing(5),
                 )
-                .width(iced::Fill)
-                .on_input(|value| Message::SetRegex(self.tab(), value).into())
+                .style(container::rounded_box)
+                .padding(10)
+                .into(),
+                container(
+                    column![
+                        text("Filter Options"),
+                        checkbox("Duplicates", self.duplicates)
+                            .width(iced::Fill)
+                            .on_toggle(|_| Message::ToggleDuplicates(self.tab()).into()),
+                        text_input(
+                            "Regular expression",
+                            self.regex.as_ref().unwrap_or(&String::from("")),
+                        )
+                        .width(iced::Fill)
+                        .on_input(|value| Message::SetRegex(self.tab(), value).into()),
+                    ]
+                    .spacing(5),
+                )
+                .style(container::rounded_box)
+                .padding(10)
+                .into(),
+                container(
+                    column![
+                        text("Tag Options"),
+                        text_input(
+                            "Tag",
+                            self.selection_tag.as_ref().unwrap_or(&String::from("")),
+                        )
+                        .width(iced::Fill)
+                        .on_input(|value| Message::SetSelectionTag(self.tab(), value).into()),
+                        row![
+                            button("Delete")
+                                .style(button::danger)
+                                .width(iced::Fill)
+                                .apply_if(self.selection_tag.is_some(), |this| this
+                                    .on_press(Message::DeleteTagFromSelection(self.tab()).into())),
+                            button("Add")
+                                .style(button::success)
+                                .width(iced::Fill)
+                                .apply_if(self.selection_tag.is_some(), |this| this
+                                    .on_press(Message::AddTagToSelection(self.tab()).into())),
+                        ]
+                        .spacing(5),
+                    ]
+                    .spacing(5),
+                )
+                .style(container::rounded_box)
+                .padding(10)
                 .into(),
             ]
         }
@@ -311,4 +393,40 @@ where
         Ok(status) => tracing::info!("the command exited with: {status}"),
         Err(error) => tracing::error!("error while executing command: {error}"),
     }
+}
+
+async fn add_tag_to_selection<FDS>(
+    file_data_source: Arc<FDS>,
+    files: Vec<File>,
+    tag: String,
+) -> Result<(), Error>
+where
+    FDS: FileDataSource,
+    <FDS as FileDataSource>::Error: 'static,
+{
+    for file in files {
+        file_data_source
+            .add_file_tags(file.id, vec![tag.clone()])
+            .await
+            .map_err(|error| Error::DataSourceError(format!("{error}")))?;
+    }
+    Ok(())
+}
+
+async fn delete_tag_from_selection<FDS>(
+    file_data_source: Arc<FDS>,
+    files: Vec<File>,
+    tag: String,
+) -> Result<(), Error>
+where
+    FDS: FileDataSource,
+    <FDS as FileDataSource>::Error: 'static,
+{
+    for file in files {
+        file_data_source
+            .delete_file_tags(file.id, vec![tag.clone()])
+            .await
+            .map_err(|error| Error::DataSourceError(format!("{error}")))?;
+    }
+    Ok(())
 }

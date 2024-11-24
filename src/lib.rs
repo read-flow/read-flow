@@ -100,6 +100,25 @@ where
     buckets
 }
 
+trait Builder: Sized {
+    fn apply_if<F>(self, condition: bool, fun: F) -> Self
+    where
+        F: FnOnce(Self) -> Self;
+}
+
+impl<T> Builder for T {
+    fn apply_if<F>(self, condition: bool, fun: F) -> Self
+    where
+        F: FnOnce(Self) -> Self,
+    {
+        if condition {
+            fun(self)
+        } else {
+            self
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use indexmap::IndexMap;
