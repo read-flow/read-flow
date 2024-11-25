@@ -203,11 +203,18 @@ where
 
     pub fn view_menu(&self) -> Vec<Element<gui::Message>> {
         if self.is_offline {
-            vec![button("Refresh")
-                .width(iced::Fill)
-                .on_press(Message::Update(self.tab()).into())
-                .style(button::success)
-                .into()]
+            vec![container(
+                column![
+                    text("Offline"),
+                    button("Refresh")
+                        .width(iced::Fill)
+                        .on_press(Message::Update(self.tab()).into()),
+                ]
+                .spacing(5),
+            )
+            .style(container::rounded_box)
+            .padding(10)
+            .into()]
         } else {
             vec![
                 container(
