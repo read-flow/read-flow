@@ -97,7 +97,7 @@ impl EditFile {
             grid_row![text("id"), text(self.file.id)],
             grid_row![
                 text("path"),
-                button(display_path(self.file.path.clone()))
+                button(display_path(self.file.path.clone(), false))
                     .style(button::text)
                     .on_press(super::Message::OpenFile(self.tab.clone(), self.file.clone()).into())
             ],
@@ -156,7 +156,9 @@ impl EditFile {
                         grid.push(grid_row![
                             tab_ref.button_text(),
                             column![].extend(
-                                duplicates.iter().map(|d| { display_path(d.path.clone()) })
+                                duplicates
+                                    .iter()
+                                    .map(|d| { display_path(d.path.clone(), false) })
                             )
                         ])
                     })

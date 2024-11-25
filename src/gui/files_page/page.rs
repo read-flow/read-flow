@@ -332,20 +332,16 @@ where
         };
 
         for file in files {
-            let path = if self.shorten_path {
-                file.path.clone().split('/').last().unwrap().to_string()
-            } else {
-                file.path.clone()
-            };
-
             grid = grid.push(grid_row![
                 // text(file.id),
                 // text(file.type_.clone()),
                 text(file.size),
                 // text(format!("{}...", &file.fingerprint[..9])),
-                row![button(display_path(path)).style(button::text).on_press(
-                    Message::OpenDialog(Dialog::edit_file(self.tab(), file.clone())).into()
-                )]
+                row![button(display_path(file.path.clone(), self.shorten_path))
+                    .style(button::text)
+                    .on_press(
+                        Message::OpenDialog(Dialog::edit_file(self.tab(), file.clone())).into()
+                    )]
                 .extend(file.tags.iter().map(|tag| {
                     if self.selected_tags.contains(tag) {
                         button(text(tag).size(11))

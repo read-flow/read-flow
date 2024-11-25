@@ -115,19 +115,19 @@ pub(super) enum OrderFilesBy {
     Fingerprint,
 }
 
-fn display_path<P: AsRef<Path>>(path: P) -> Element<'static, gui::Message> {
+fn display_path<P: AsRef<Path>>(path: P, shorten_path: bool) -> Element<'static, gui::Message> {
     let path = path.as_ref();
-    let directory = path.parent().unwrap();
+    let directory = format!("{}", path.parent().unwrap().display());
     let filename = path.file_name().unwrap();
-    if directory.is_dir() {
+    if shorten_path {
+        text(format!("{}", filename.to_string_lossy())).into()
+    } else {
         column![
             text(format!("{}", filename.to_string_lossy())),
-            text(format!("{}", directory.display())).size(11),
+            text(directory).size(11),
         ]
         .spacing(5)
         .into()
-    } else {
-        text(format!("{}", filename.to_string_lossy())).into()
     }
 }
 
