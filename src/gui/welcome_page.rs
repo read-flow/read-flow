@@ -116,7 +116,7 @@ async fn select_path() -> Option<FileHandle> {
 }
 
 async fn scan_directory(path: FileHandle, application_module: ApplicationModule) -> Option<String> {
-    match application_module.scan(path.path().to_path_buf()) {
+    match application_module.scan(path.path()) {
         Ok(()) => None,
         Err(error) => Some(error.to_string()),
     }

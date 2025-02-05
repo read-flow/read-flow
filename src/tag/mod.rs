@@ -11,10 +11,7 @@ use crate::{
 
 impl ApplicationModule {
     pub fn apply_tags(&self) -> Result<(), Error> {
-        match &self.settings.scan {
-            None => Ok(()),
-            Some(scan_settings) => self.apply_tags_from_settings(scan_settings),
-        }
+        self.apply_tags_from_settings(&self.settings.scan)
     }
 
     fn apply_tags_from_settings(&self, scan_settings: &ScanSettings) -> Result<(), Error> {

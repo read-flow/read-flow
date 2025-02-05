@@ -16,3 +16,10 @@ dry_run = true
 # Map of patterns to automatically place tags using the `apply-tags` command
 [scan.auto_tags]
 "%Calibre Library%" = ["calibre", "ebook"]
+
+# Define scan options for specific folders.
+# Folders with "action" = "Ignore" will not be scanned, even when the parent is explicitly scanned
+# Folders with "action" = "Scan" will be scanned when scan is invoked via HTTP
+[scan.directories]
+"$HOME/Downloads" = { action = "Ignore", inherit = false }
+"$HOME/Calibre Library" = { action = "Scan", inherit = true, tags = [ "calibre" ] }

@@ -28,6 +28,7 @@ enum Commands {
     #[cfg(feature = "server")]
     Serve,
     Client,
+    ExtractScanDirectories,
 }
 
 fn main() -> Result<()> {
@@ -39,10 +40,13 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Scan { path } => ApplicationModule::instantiate()?.scan(path)?,
         Commands::ApplyTags => ApplicationModule::instantiate()?.apply_tags()?,
+        Commands::ExtractScanDirectories => {
+            ApplicationModule::instantiate()?.extract_scan_directories()
+        }
         #[cfg(feature = "gui")]
         Commands::Gui => ApplicationModule::instantiate()?.gui()?,
+        Commands::Scan { path } => ApplicationModule::instantiate()?.scan(path)?,
         #[cfg(feature = "server")]
         Commands::Serve => server::main(),
         Commands::Client => {

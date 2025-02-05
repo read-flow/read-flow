@@ -72,10 +72,6 @@ impl FileSystemVisitor {
         Ok(())
     }
 
-    pub fn is_file_supported(&self, file: &Path) -> bool {
-        self.find_module_for_file(file).is_some()
-    }
-
     fn find_module_for_file(&self, file: &Path) -> Option<&(dyn FileModule + Send + Sync)> {
         self.file_modules
             .iter()

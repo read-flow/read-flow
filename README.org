@@ -40,3 +40,6 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] In File Edit dialog, show all unused tags and allow to set them using a single click
 - [X] Open files from the gui
 - [X] Order files ascending or descending
+- [ ] Add private mode, with configuration to hide documents by default
+- [ ] Allow deleting duplicate files (including from file storage) from file edit dialog
+- [ ] Allow duplicating files to/from remote, with configuration/input of location.

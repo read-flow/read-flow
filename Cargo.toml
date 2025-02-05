@@ -2,7 +2,12 @@
 name = "archive-organizer"
 version = "0.1.0"
 edition = "2021"
+
+authors = ["Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"]
 license = "MIT"
+
+[package.metadata.deb]
+maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 
 [features]
 default = ["gui", "server"]
@@ -10,10 +15,10 @@ gui = ["dep:iced", "dep:iced_aw", "dep:rfd"]
 server = ["dep:rocket"]
 
 [dependencies]
-anyhow = "1.0.89"
-async-trait = "0.1.83"
-clap = { version = "4.5.20", features = ["derive"] }
-diesel = { version = "2.2.0", features = ["sqlite", "r2d2", "returning_clauses_for_sqlite_3_35"] }
+anyhow = "1.0.95"
+async-trait = "0.1.86"
+clap = { version = "4.5.28", features = ["derive"] }
+diesel = { version = "2.2.7", features = ["sqlite", "r2d2", "returning_clauses_for_sqlite_3_35"] }
 diesel_migrations = { version = "2.2.0", features = ["sqlite"] }
 expanduser = "1.2.2"
 # build libsqlite3 as part of the build process
@@ -23,18 +28,23 @@ figment = { version = "0.10.19", default-features = false, features = ["toml"] }
 futures = "0.3.31"
 iced = { version = "0.13.1", optional = true, features = ["tokio"] }
 iced_aw = { version = "0.11.0", optional = true, default-features = false, features = ["grid", "wrap"] }
-indexmap = "2.6.0"
-itertools = "0.13.0"
+indexmap = "2.7.1"
+itertools = "0.14.0"
 mime = "0.3.17"
 r2d2 = "0.8.10"
 rayon = "1.10.0"
 regex = "1.11.1"
-reqwest = { version = "0.12.8", features = ["json", "stream", "multipart"] }
-rfd = { version = "0.15.0", optional = true }
+reqwest = { version = "0.12.12", features = ["json", "stream", "multipart"] }
+rfd = { version = "0.15.2", optional = true }
 rocket = { version = "0.5.1", optional = true, features = ["http2", "json"] }
-serde = { version = "1.0.210", features = ["derive"] }
-thiserror = "1.0.64"
-tokio = { version = "1.40.0", features = ["rt-multi-thread", "process"] }
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["std", "env-filter"] }
-url = "2.5.2"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_with = { version = "3.12.0", features = ["indexmap"] }
+thiserror = "2.0.11"
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "process"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["std", "env-filter"] }
+url = "2.5.4"
+
+[dev-dependencies]
+assert4rs = "0.1.0"
+rstest = "0.24.0"

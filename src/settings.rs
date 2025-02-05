@@ -16,7 +16,7 @@ pub struct Settings {
     pub database: DbSettings,
     #[cfg(feature = "server")]
     pub server: ServerSettings,
-    pub scan: Option<ScanSettings>,
+    pub scan: ScanSettings,
 }
 
 pub fn decorate(figment: Figment) -> Figment {

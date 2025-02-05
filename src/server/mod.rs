@@ -1,9 +1,6 @@
 mod authn;
 
-use std::{
-    io,
-    path::{Path, PathBuf},
-};
+use std::{io, path::Path};
 
 use indexmap::IndexMap;
 use rocket::{
@@ -23,7 +20,7 @@ use crate::{
         self,
         dao::{self, FileDao, FileTagDao},
     },
-    scan, settings, to_unique_file, ApplicationModule,
+    scan, settings, to_unique_file, ApplicationModule, ExpandedPath,
 };
 
 use authn::AuthorizedUser;
@@ -31,7 +28,7 @@ use authn::AuthorizedUser;
 #[derive(Debug, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct ServerSettings {
-    download_folder: PathBuf,
+    download_folder: ExpandedPath,
     authorization_tokens: Vec<String>,
 }
 

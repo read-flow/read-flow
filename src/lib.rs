@@ -9,13 +9,24 @@ pub mod server;
 pub mod settings;
 pub mod tag;
 
-use std::{hash::Hash, path::PathBuf, sync::Arc};
+use std::{
+    hash::Hash,
+    ops::Deref,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+};
 
+use api::FileDataSource;
+use expanduser::expanduser;
 use figment::Figment;
 use indexmap::IndexMap;
+use itertools::Itertools;
+use serde::Deserialize;
+use tokio::runtime::Runtime;
 
 use db::{datasource::DbClient, ConnectionPool};
-use scan::FileSystemVisitor;
+use scan::{DirectorySettings, FileSystemVisitor};
 use settings::Settings;
 
 #[derive(Clone, Debug)]
@@ -48,7 +59,57 @@ impl ApplicationModule {
     }
 
     fn visitor(&self) -> FileSystemVisitor {
-        scan::create_visitor(self.connection_pool.clone())
+        scan::create_visitor(self.connection_pool.clone(), self.settings.scan.clone())
+    }
+
+    pub fn extract_scan_directories(&self) {
+        // Create the runtime
+        let rt = Runtime::new().unwrap();
+
+        let scan_directories = self
+            .settings
+            .scan
+            .directories
+            .iter()
+            .filter(|(_, settings)| matches!(settings, DirectorySettings::Scan { .. }))
+            .map(|(dir, _)| dir.as_ref())
+            .collect::<Vec<_>>();
+
+        // dbg!(&scan_directories);
+
+        // Execute the future, blocking the current thread until completion
+        rt.block_on(async {
+            let files: Vec<PathBuf> = self
+                .db_client()
+                .get_files()
+                .await
+                .expect("database available")
+                .into_iter()
+                .map(|f| PathBuf::from(f.path))
+                .collect();
+
+            let directories: Vec<String> = files
+                .iter()
+                .flat_map(|f| f.parent())
+                .chain(scan_directories)
+                .map(|d| format!("{}", d.display()))
+                .unique()
+                .sorted()
+                .collect();
+
+            // dbg!(&directories);
+
+            for dir in directories.into_iter().fold(Vec::new(), |mut acc, dir| {
+                if !acc.iter().any(|d| dir.starts_with(d)) {
+                    acc.push(dir);
+                } else {
+                    // dbg!(&dir);
+                }
+                acc
+            }) {
+                println!("{}", dir);
+            }
+        });
     }
 }
 
@@ -116,6 +177,52 @@ impl<T> Builder for T {
         } else {
             self
         }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[serde(try_from = "PathBuf")]
+pub struct ExpandedPath(PathBuf);
+
+impl ExpandedPath {
+    fn into_inner(self) -> PathBuf {
+        self.0
+    }
+}
+
+impl FromStr for ExpandedPath {
+    type Err = std::io::Error;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let expanded = expanduser(value)?;
+        Ok(ExpandedPath(expanded))
+    }
+}
+
+impl TryFrom<PathBuf> for ExpandedPath {
+    type Error = std::io::Error;
+
+    fn try_from(value: PathBuf) -> Result<Self, Self::Error> {
+        let expanded = expanduser(format!("{}", value.display()))?;
+        Ok(ExpandedPath(expanded))
+    }
+}
+
+impl AsRef<PathBuf> for ExpandedPath {
+    fn as_ref(&self) -> &PathBuf {
+        &self.0
+    }
+}
+
+impl AsRef<Path> for ExpandedPath {
+    fn as_ref(&self) -> &Path {
+        self.0.as_path()
+    }
+}
+
+impl Deref for ExpandedPath {
+    type Target = PathBuf;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
