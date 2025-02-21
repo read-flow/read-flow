@@ -2,7 +2,7 @@ use std::{cmp::Ordering, ffi::OsStr, path::Path, sync::Arc};
 
 use iced::{
     alignment::{Horizontal, Vertical},
-    widget::{button, checkbox, column, container, row, text, text_input},
+    widget::{button, checkbox, column, container, row, text, text_input, Row},
     Element, Task,
 };
 use iced_aw::{grid_row, Grid};
@@ -361,6 +361,16 @@ where
         }
 
         grid.into()
+    }
+
+    pub(crate) fn extend_breadcrumb<'a>(
+        &'a self,
+        breadcrumb: Row<'a, gui::Message>,
+    ) -> Row<'a, gui::Message> {
+        match &self.dialog {
+            Some(Dialog::EditFile(dialog)) => dialog.extend_breadcrumb(breadcrumb),
+            None => breadcrumb,
+        }
     }
 }
 

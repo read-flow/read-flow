@@ -3,7 +3,7 @@ mod welcome_page;
 
 use iced::{
     border,
-    widget::{self, button, column, container, pick_list, row, scrollable, text, text_input},
+    widget::{self, button, column, container, pick_list, row, scrollable, text, text_input, Row},
     Element, Task, Theme,
 };
 use indexmap::{IndexMap, IndexSet};
@@ -88,6 +88,19 @@ enum CurrentTab {
     RemoteFiles(Url),
 }
 
+impl CurrentTab {
+    fn extend_breadcrumb<'a>(&'a self, breadcrumb: Row<'a, Message>) -> Row<'a, Message> {
+        let breadcrumb = breadcrumb.push(text(" » "));
+        match self {
+            Self::Welcome => breadcrumb.push(text("Welcome")),
+            Self::LocalFiles => breadcrumb.push(text("Local")),
+            Self::RemoteFiles(url) => breadcrumb
+                .push(text("Remote"))
+                .push(text(url.domain().unwrap())),
+        }
+    }
+}
+
 trait IdentifyTab {
     fn tab(&self) -> CurrentTab;
 }
@@ -160,6 +173,15 @@ impl Tabs {
                 }
             },
             _ => panic!("Not expected here: {message:?}"),
+        }
+    }
+
+    fn extend_breadcrumb<'a>(&'a self, breadcrumb: Row<'a, Message>) -> Row<'a, Message> {
+        let breadcrumb = self.current_tab.extend_breadcrumb(breadcrumb);
+        match &self.current_tab {
+            CurrentTab::Welcome => breadcrumb,
+            CurrentTab::LocalFiles => self.local_files.extend_breadcrumb(breadcrumb),
+            CurrentTab::RemoteFiles(url) => self.remote_files[url].extend_breadcrumb(breadcrumb),
         }
     }
 
@@ -250,7 +272,7 @@ impl App {
                 tabs,
                 connection_pool,
                 new_remote_url: Default::default(),
-                theme: Theme::TokyoNight,
+                theme: Theme::Nord,
             },
             initialize_tabs,
         )
@@ -313,9 +335,9 @@ impl App {
 
     fn view(&self) -> Element<Message> {
         let header_bar = row![container(text("ArchiveOrganizer"))];
-        let mut side_bar = widget::Column::new();
+        let header_bar = self.tabs.extend_breadcrumb(header_bar).spacing(10);
 
-        side_bar = side_bar
+        let side_bar = widget::Column::new()
             .extend(self.tabs.view_menu_entry(CurrentTabRef::Welcome))
             .extend(self.tabs.view_menu_entry(CurrentTabRef::LocalFiles))
             .extend(self.tabs.remote_files.keys().flat_map(|remote| {
@@ -382,16 +404,12 @@ fn layout<'a>(
     bar: widget::Column<'a, Message>,
     main: widget::Column<'a, Message>,
 ) -> widget::Column<'a, Message> {
-    //row![sidebar(bar), column![header(head), content(main)]]
+    // row![sidebar(bar), column![header(head), content(main)]]
     column![header(head), row![sidebar(bar), content(main)]]
 }
 
 fn header(row: widget::Row<Message>) -> widget::Container<'_, Message> {
-    container(row.padding(10).align_y(iced::Center)).style(|theme| {
-        let palette = theme.extended_palette();
-
-        container::Style::default().border(border::color(palette.background.strong.color).width(1))
-    })
+    container(row.padding(10).align_y(iced::Center))
 }
 
 fn sidebar(column: widget::Column<Message>) -> widget::Container<'_, Message> {

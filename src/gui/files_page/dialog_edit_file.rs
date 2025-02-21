@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use iced::{
     alignment::{Horizontal, Vertical},
-    widget::{button, column, row, text, text_input},
+    widget::{button, column, row, text, text_input, Row},
     Element, Task,
 };
 use iced_aw::{grid, grid_row, Wrap};
@@ -236,6 +236,14 @@ impl EditFile {
                 Err(error) => super::Message::Error(self.tab().clone(), error).into(),
             },
         )
+    }
+
+    pub(crate) fn extend_breadcrumb<'a>(
+        &self,
+        breadcrumb: Row<'a, gui::Message>,
+    ) -> Row<'a, gui::Message> {
+        let breadcrumb = breadcrumb.push(text(" » "));
+        breadcrumb.push(display_path(self.file.path.clone(), true))
     }
 }
 
