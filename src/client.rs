@@ -9,7 +9,7 @@ use std::{
 };
 
 use futures::StreamExt;
-use reqwest::{header, Client, Url};
+use reqwest::{Client, Url, header};
 use tokio::{fs, process::Command};
 
 use crate::{

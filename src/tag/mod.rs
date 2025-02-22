@@ -1,12 +1,12 @@
-use itertools::{concat, Itertools};
+use itertools::{Itertools, concat};
 
 use crate::{
+    ApplicationModule,
     db::{
         dao::{Error, FileDao, FileTagDao},
         models::{File, FileTag},
     },
     scan::ScanSettings,
-    ApplicationModule,
 };
 
 impl ApplicationModule {

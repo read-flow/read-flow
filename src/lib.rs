@@ -25,7 +25,7 @@ use itertools::Itertools;
 use serde::Deserialize;
 use tokio::runtime::Runtime;
 
-use db::{datasource::DbClient, ConnectionPool};
+use db::{ConnectionPool, datasource::DbClient};
 use scan::{DirectorySettings, FileSystemVisitor};
 use settings::Settings;
 
@@ -172,11 +172,7 @@ impl<T> Builder for T {
     where
         F: FnOnce(Self) -> Self,
     {
-        if condition {
-            fun(self)
-        } else {
-            self
-        }
+        if condition { fun(self) } else { self }
     }
 }
 

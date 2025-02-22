@@ -3,9 +3,9 @@ use std::{io, sync::Arc};
 use diesel::prelude::*;
 
 use crate::db::{
+    ConnectionPool,
     models::{Directory, File, FileTag, NewDirectory, NewFile, NewRemote, Remote},
     schema::{directories, file_tags, files, remotes},
-    ConnectionPool,
 };
 
 pub trait FileDao {

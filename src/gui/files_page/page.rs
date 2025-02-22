@@ -1,22 +1,23 @@
 use std::{cmp::Ordering, ffi::OsStr, path::Path, sync::Arc};
 
 use iced::{
-    alignment::{Horizontal, Vertical},
-    widget::{button, checkbox, column, container, row, text, text_input, Row},
     Element, Task,
+    alignment::{Horizontal, Vertical},
+    widget::{Row, button, checkbox, column, container, row, text, text_input},
 };
-use iced_aw::{grid_row, Grid};
+use iced_aw::{Grid, grid_row};
 use indexmap::{IndexMap, IndexSet};
 use regex::Regex;
 
 use crate::{
+    Builder,
     api::{File, FileDataSource},
     client::FilesClient,
     gui::{self, CurrentTab, IdentifyTab},
-    to_buckets, Builder,
+    to_buckets,
 };
 
-use super::{display_path, tag_button, Dialog, Error, Message, OrderDirection, OrderFilesBy};
+use super::{Dialog, Error, Message, OrderDirection, OrderFilesBy, display_path, tag_button};
 
 #[derive(Debug, Clone)]
 pub struct Page<FDS> {
@@ -162,7 +163,7 @@ where
                 Task::done(Message::Update(tab).into())
             }
             Message::EditDialog(message) => match &mut self.dialog {
-                Some(Dialog::EditFile(ref mut dialog)) => dialog.update(message),
+                Some(Dialog::EditFile(dialog)) => dialog.update(message),
                 None => Task::none(),
             },
             Message::SetSelectionTag(_, tag) => {
@@ -203,18 +204,20 @@ where
 
     pub fn view_menu(&self) -> Vec<Element<gui::Message>> {
         if self.is_offline {
-            vec![container(
-                column![
-                    text("Offline"),
-                    button("Refresh")
-                        .width(iced::Fill)
-                        .on_press(Message::Update(self.tab()).into()),
-                ]
-                .spacing(5),
-            )
-            .style(container::rounded_box)
-            .padding(10)
-            .into()]
+            vec![
+                container(
+                    column![
+                        text("Offline"),
+                        button("Refresh")
+                            .width(iced::Fill)
+                            .on_press(Message::Update(self.tab()).into()),
+                    ]
+                    .spacing(5),
+                )
+                .style(container::rounded_box)
+                .padding(10)
+                .into(),
+            ]
         } else {
             vec![
                 container(
@@ -337,11 +340,13 @@ where
                 // text(file.type_.clone()),
                 text(file.size),
                 // text(format!("{}...", &file.fingerprint[..9])),
-                row![button(display_path(file.path.clone(), self.shorten_path))
-                    .style(button::text)
-                    .on_press(
-                        Message::OpenDialog(Dialog::edit_file(self.tab(), file.clone())).into()
-                    )]
+                row![
+                    button(display_path(file.path.clone(), self.shorten_path))
+                        .style(button::text)
+                        .on_press(
+                            Message::OpenDialog(Dialog::edit_file(self.tab(), file.clone())).into()
+                        )
+                ]
                 .extend(file.tags.iter().map(|tag| {
                     if self.selected_tags.contains(tag) {
                         button(text(tag).size(11))

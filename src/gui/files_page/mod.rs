@@ -4,8 +4,8 @@ mod page;
 use std::{path::Path, sync::Arc};
 
 use iced::{
-    widget::{column, text},
     Element, Task,
+    widget::{column, text},
 };
 
 use crate::{

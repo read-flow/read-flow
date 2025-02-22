@@ -2,23 +2,22 @@ mod files_page;
 mod welcome_page;
 
 use iced::{
-    border,
-    widget::{self, button, column, container, pick_list, row, scrollable, text, text_input, Row},
-    Element, Task, Theme,
+    Element, Task, Theme, border,
+    widget::{self, Row, button, column, container, pick_list, row, scrollable, text, text_input},
 };
 use indexmap::{IndexMap, IndexSet};
 use url::Url;
 
 use crate::{
+    ApplicationModule,
     api::{File, FileDataSource},
     client::{self, FilesClient},
     db::{
+        ConnectionPool,
         dao::{self, RemoteDao},
         datasource::DbClient,
         models::{NewRemote, Remote},
-        ConnectionPool,
     },
-    ApplicationModule,
 };
 
 #[derive(Debug, thiserror::Error)]

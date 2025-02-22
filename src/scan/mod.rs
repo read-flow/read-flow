@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::Deserialize;
 
-use crate::{db::ConnectionPool, ApplicationModule, ExpandedPath};
+use crate::{ApplicationModule, ExpandedPath, db::ConnectionPool};
 
 pub use file_system_visitor::{Error, FileSystemVisitor};
 use modules::{file_extension_finder::FileExtensionFinder, scm_project_finder::ScmProjectFinder};

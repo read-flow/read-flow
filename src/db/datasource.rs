@@ -9,8 +9,8 @@ use crate::{
     db::models::{File as DbFile, FileTag as DbFileTag},
 };
 
-use super::dao::{Error, FileDao, FileTagDao};
 use super::ConnectionPool;
+use super::dao::{Error, FileDao, FileTagDao};
 
 #[derive(Clone)]
 pub struct DbClient {

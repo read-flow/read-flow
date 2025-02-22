@@ -2,9 +2,9 @@ use std::{os::unix::fs::MetadataExt, path::Path, process::Command, sync::Arc};
 
 use crate::{
     db::{
+        ConnectionPool,
         dao::{FileDao, FileTagDao},
         models::{FileTag, NewFile},
-        ConnectionPool,
     },
     scan::{DirectorySettings, ScanSettings},
 };

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::db::{dao::DirectoryDao, models::NewDirectory, ConnectionPool};
+use crate::db::{ConnectionPool, dao::DirectoryDao, models::NewDirectory};
 
 use super::{DirectoryError, DirectoryModule};
 

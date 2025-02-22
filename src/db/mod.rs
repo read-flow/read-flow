@@ -10,7 +10,7 @@ use diesel::{
     prelude::*,
     r2d2::{ConnectionManager, CustomizeConnection, Pool},
 };
-use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 
 #[derive(Debug, serde::Deserialize)]
 pub struct DbSettings {

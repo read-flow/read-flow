@@ -8,7 +8,7 @@ use url::Url;
 
 #[cfg(feature = "server")]
 use archive_organizer::server;
-use archive_organizer::{api::FileDataSource, client, ApplicationModule};
+use archive_organizer::{ApplicationModule, api::FileDataSource, client};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

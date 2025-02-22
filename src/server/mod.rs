@@ -4,23 +4,23 @@ use std::{io, path::Path};
 
 use indexmap::IndexMap;
 use rocket::{
-    delete,
+    Responder, State, delete,
     form::Form,
     fs::{NamedFile, TempFile},
     get,
     http::ContentType,
     post, routes,
-    serde::{json::Json, Deserialize},
-    Responder, State,
+    serde::{Deserialize, json::Json},
 };
 
 use crate::{
+    ApplicationModule, ExpandedPath,
     api::{File, FileDataSource, Status},
     db::{
         self,
         dao::{self, FileDao, FileTagDao},
     },
-    scan, settings, to_unique_file, ApplicationModule, ExpandedPath,
+    scan, settings, to_unique_file,
 };
 
 use authn::AuthorizedUser;

@@ -1,11 +1,11 @@
 use anyhow::Result;
 use iced::{
-    widget::{button, column, container, row, text, text_input},
     Task,
+    widget::{button, column, container, row, text, text_input},
 };
 use rfd::{AsyncFileDialog, FileHandle};
 
-use crate::{gui, ApplicationModule};
+use crate::{ApplicationModule, gui};
 
 #[derive(Debug, Clone)]
 pub(super) enum Message {
