@@ -9,7 +9,7 @@ use rocket::{
     fs::{NamedFile, TempFile},
     get,
     http::ContentType,
-    post, routes,
+    post, put, routes,
     serde::{Deserialize, json::Json},
 };
 
@@ -86,6 +86,7 @@ pub fn serve() -> _ {
     let routes = routes![
         status,
         get_file,
+        update_file,
         get_file_tags,
         post_file_tags,
         delete_file_tags,
@@ -139,6 +140,18 @@ fn get_files(
         .collect();
 
     Ok(Json(models))
+}
+
+#[put("/files", data = "<file>")]
+fn update_file(
+    file: Json<File>,
+    application_module: &State<ApplicationModule>,
+    _user: AuthorizedUser,
+) -> Result<Json<File>> {
+    let (db_file, _) = file.0.clone().into();
+    application_module.connection_pool.update_file(db_file)?;
+
+    Ok(file)
 }
 
 #[get("/files/tags")]

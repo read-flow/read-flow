@@ -69,6 +69,31 @@ impl FileDataSource for DbClient {
         })
     }
 
+    async fn update_file(&self, file: File) -> Result<(), Self::Error> {
+        tokio::task::block_in_place(|| {
+            let (file, tags) = file.into();
+            let file_id = file.id;
+            self.connection_pool.update_file(file)?;
+
+            // Delete removed tags
+            self.connection_pool
+                .select_file_tags_by_file_id(file_id)?
+                .into_iter()
+                .map(|tag| {
+                    if !tags.iter().any(|t| t.tag == tag.tag) {
+                        self.connection_pool.delete_file_tag(tag)
+                    } else {
+                        Ok(())
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // Insert any new tags
+            self.connection_pool.upsert_many_file_tags(tags)?;
+            Ok(())
+        })
+    }
+
     async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Self::Error> {
         tokio::task::block_in_place(|| {
             let file_tags = self.connection_pool.select_file_tags_by_file_id(id)?;

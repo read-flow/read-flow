@@ -160,6 +160,21 @@ impl FileDataSource for FilesClient {
         self.get_json(&format!("files/{id}")).await
     }
 
+    async fn update_file(&self, file: File) -> Result<(), Error> {
+        let response = self
+            .client
+            .put(self.base_url.join("/files")?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, "bearer secret")
+            .json(&file)
+            .send()
+            .await?;
+
+        response.error_for_status_ref()?;
+
+        Ok(())
+    }
+
     async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Error> {
         self.get_json(&format!("files/{id}/tags")).await
     }

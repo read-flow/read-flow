@@ -11,6 +11,7 @@ pub struct File {
     pub type_: String,
     pub size: i32,
     pub fingerprint: String,
+    pub status: i32,
 }
 
 #[derive(Insertable)]
@@ -21,6 +22,19 @@ pub struct NewFile {
     pub type_: String,
     pub size: i32,
     pub fingerprint: String,
+    pub status: i32,
+}
+
+#[derive(Default, Identifiable, AsChangeset)]
+#[diesel(table_name = files)]
+#[diesel(check_for_backend(Sqlite))]
+pub struct UpdateFile {
+    pub id: i32,
+    pub path: Option<String>,
+    pub type_: Option<String>,
+    pub size: Option<i32>,
+    pub fingerprint: Option<String>,
+    pub status: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable, Associations)]

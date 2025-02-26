@@ -3,13 +3,14 @@ use std::sync::Arc;
 use iced::{
     Element, Task,
     alignment::{Horizontal, Vertical},
-    widget::{Row, button, column, row, text, text_input},
+    widget::{Column, Row, button, column, radio, row, text, text_input},
 };
 use iced_aw::{Wrap, grid, grid_row};
 use itertools::Itertools;
+use strum::IntoEnumIterator;
 
 use crate::{
-    api::FileDataSource,
+    api::{FileDataSource, FileStatus},
     gui::{self, CurrentTabRef, IdentifyTab, add_tag_button, delete_tag_button, tag_button},
 };
 
@@ -23,6 +24,7 @@ pub(in crate::gui) enum Message {
     DeleteTag(CurrentTab, String),
     Duplicates(CurrentTab, Vec<(CurrentTab, Vec<File>)>),
     Tags(CurrentTab, Vec<String>),
+    SetStatus(CurrentTab, FileStatus),
 }
 
 impl IdentifyTab for Message {
@@ -33,6 +35,7 @@ impl IdentifyTab for Message {
             Message::DeleteTag(tab, ..) => tab.clone(),
             Message::Duplicates(tab, ..) => tab.clone(),
             Message::Tags(tab, ..) => tab.clone(),
+            Message::SetStatus(tab, ..) => tab.clone(),
         }
     }
 }
@@ -103,6 +106,22 @@ impl EditFile {
                         .on_press(
                             super::Message::OpenFile(self.tab.clone(), self.file.clone()).into()
                         )
+                ],
+                grid_row![
+                    text("status"),
+                    FileStatus::iter()
+                        .map(|status| {
+                            radio(
+                                format!("{}", &status),
+                                status,
+                                Some(self.file.status),
+                                |status| Message::SetStatus(self.tab.clone(), status).into(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .fold(Column::new(), |column, radio| column.push(radio))
+                        .spacing(10)
                 ],
                 grid_row![text("type"), text(&self.file.type_)],
                 grid_row![text("size"), text(self.file.size)],
@@ -227,6 +246,10 @@ impl EditFile {
             }
             Message::Tags(_, tags) => {
                 self.all_tags = tags;
+                Task::none()
+            }
+            Message::SetStatus(_, status) => {
+                self.file.status = status;
                 Task::none()
             }
         }

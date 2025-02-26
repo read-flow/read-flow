@@ -1,8 +1,56 @@
-use std::{process::ExitStatus, result::Result};
+use std::{
+    fmt::{Display, Formatter},
+    process::ExitStatus,
+    result::Result,
+};
 
 use serde::{Deserialize, Serialize};
+use strum::EnumIter;
 
 use crate::db::models::{File as DbFile, FileTag as DbTag};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, PartialOrd, Ord, EnumIter)]
+pub enum FileStatus {
+    Unread,
+    Reading,
+    Read,
+}
+
+impl Display for FileStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+// TODO: should be TryFrom
+impl From<i32> for FileStatus {
+    fn from(value: i32) -> Self {
+        match value {
+            0 => Self::Unread,
+            1 => Self::Reading,
+            2 => Self::Read,
+            _ => panic!("Invalid file status"),
+        }
+    }
+}
+
+impl From<FileStatus> for i32 {
+    fn from(value: FileStatus) -> Self {
+        match value {
+            FileStatus::Unread => 0,
+            FileStatus::Reading => 1,
+            FileStatus::Read => 2,
+        }
+    }
+}
+
+pub fn get_update<T: PartialEq + Clone>(original: &T, updated: &T) -> Option<T> {
+    if original == updated {
+        None
+    } else {
+        Some(updated.clone())
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Status {}
@@ -15,6 +63,7 @@ pub struct File {
     pub size: i32,
     pub fingerprint: String,
     pub tags: Vec<String>,
+    pub status: FileStatus,
 }
 
 impl From<(DbFile, Vec<DbTag>)> for File {
@@ -26,6 +75,7 @@ impl From<(DbFile, Vec<DbTag>)> for File {
             type_,
             size,
             fingerprint,
+            status,
         } = file;
         Self {
             id,
@@ -34,6 +84,7 @@ impl From<(DbFile, Vec<DbTag>)> for File {
             size,
             fingerprint,
             tags,
+            status: status.into(),
         }
     }
 }
@@ -47,6 +98,7 @@ impl From<File> for (DbFile, Vec<DbTag>) {
             size,
             fingerprint,
             tags,
+            status,
         }: File,
     ) -> Self {
         let tags = tags.into_iter().map(|tag| DbTag::new(id, tag)).collect();
@@ -56,6 +108,7 @@ impl From<File> for (DbFile, Vec<DbTag>) {
             type_,
             size,
             fingerprint,
+            status: status.into(),
         };
         (file, tags)
     }
@@ -78,6 +131,8 @@ pub trait FileDataSource {
     async fn add_file_tags(&self, id: i32, tags: Vec<String>) -> Result<Vec<String>, Self::Error>;
 
     async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Self::Error>;
+
+    async fn update_file(&self, file: File) -> Result<(), Self::Error>;
 
     async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error>;
 }

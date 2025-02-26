@@ -136,32 +136,10 @@ where
     FDS: FileDataSource,
     <FDS as FileDataSource>::Error: 'static,
 {
-    match file_data_source
-        .get_file(file.id)
+    file_data_source
+        .update_file(file.clone())
         .await
-        .map_err(|error| Error::DataSourceError(format!("{error}")))?
-    {
-        None => todo!(),
-        Some(original_file) => {
-            let mut tags_to_delete = original_file.tags.clone();
-            tags_to_delete.retain(|t| !file.tags.contains(t));
-            tracing::warn!("tags to delete: {tags_to_delete:?}");
-
-            file_data_source
-                .delete_file_tags(file.id, tags_to_delete)
-                .await
-                .map_err(|error| Error::DataSourceError(format!("{error}")))?;
-
-            let mut tags_to_insert = file.tags.clone();
-            tags_to_insert.retain(|t| !original_file.tags.contains(t));
-            tracing::warn!("tags to insert: {tags_to_insert:?}");
-
-            file_data_source
-                .add_file_tags(file.id, tags_to_insert)
-                .await
-                .map_err(|error| Error::DataSourceError(format!("{error}")))?;
-        }
-    }
+        .map_err(|error| Error::DataSourceError(format!("{error}")))?;
     Ok(())
 }
 

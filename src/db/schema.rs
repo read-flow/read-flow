@@ -31,6 +31,7 @@ diesel::table! {
         type_ -> Text,
         size -> Integer,
         fingerprint -> Text,
+        status -> Integer,
     }
 }
 

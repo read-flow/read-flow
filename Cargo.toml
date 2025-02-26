@@ -18,7 +18,11 @@ server = ["dep:rocket"]
 anyhow = "1.0.95"
 async-trait = "0.1.86"
 clap = { version = "4.5.30", features = ["derive"] }
-diesel = { version = "2.2.7", features = ["sqlite", "r2d2", "returning_clauses_for_sqlite_3_35"] }
+diesel = { version = "2.2.7", features = [
+    "sqlite",
+    "r2d2",
+    "returning_clauses_for_sqlite_3_35",
+] }
 diesel_migrations = { version = "2.2.0", features = ["sqlite"] }
 expanduser = "1.2.2"
 # build libsqlite3 as part of the build process
@@ -27,7 +31,10 @@ expanduser = "1.2.2"
 figment = { version = "0.10.19", default-features = false, features = ["toml"] }
 futures = "0.3.31"
 iced = { version = "0.13.1", optional = true, features = ["tokio"] }
-iced_aw = { version = "0.12.0", optional = true, default-features = false, features = ["grid", "wrap"] }
+iced_aw = { version = "0.12.0", optional = true, default-features = false, features = [
+    "grid",
+    "wrap",
+] }
 indexmap = "2.7.1"
 itertools = "0.14.0"
 mime = "0.3.17"
@@ -39,6 +46,7 @@ rfd = { version = "0.15.2", optional = true }
 rocket = { version = "0.5.1", optional = true, features = ["http2", "json"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_with = { version = "3.12.0", features = ["indexmap"] }
+strum = { version = "0.27.1", features = ["derive"] }
 thiserror = "2.0.11"
 tokio = { version = "1.43.0", features = ["rt-multi-thread", "process"] }
 tracing = "0.1.41"

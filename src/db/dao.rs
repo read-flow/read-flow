@@ -2,16 +2,20 @@ use std::{io, sync::Arc};
 
 use diesel::prelude::*;
 
-use crate::db::{
-    ConnectionPool,
-    models::{Directory, File, FileTag, NewDirectory, NewFile, NewRemote, Remote},
-    schema::{directories, file_tags, files, remotes},
+use crate::{
+    api::get_update,
+    db::{
+        ConnectionPool,
+        models::{Directory, File, FileTag, NewDirectory, NewFile, NewRemote, Remote, UpdateFile},
+        schema::{directories, file_tags, files, remotes},
+    },
 };
 
 pub trait FileDao {
     type Error;
     fn insert_file(&self, file: NewFile) -> Result<File, Self::Error>;
     fn upsert_file(&self, file: NewFile) -> Result<(), Self::Error>;
+    fn update_file(&self, file: File) -> Result<(), Self::Error>;
     fn insert_many_files(&self, files: Vec<NewFile>) -> Result<(), Self::Error>;
     fn upsert_many_files(&self, files: Vec<NewFile>) -> Result<(), Self::Error>;
     fn select_all_files(&self) -> Result<Vec<File>, Self::Error>;
@@ -98,6 +102,33 @@ impl FileDao for ConnectionPool {
             .values(&file)
             .on_conflict_do_nothing()
             .execute(&mut connection)?;
+        Ok(())
+    }
+
+    fn update_file(&self, file: File) -> Result<(), Self::Error> {
+        let mut connection = self.get()?;
+
+        let original_file = files::table
+            .find(file.id)
+            .select(File::as_select())
+            .first(&mut connection)?;
+
+        if original_file != file {
+            // Differences detected, update file
+            let update_file = UpdateFile {
+                id: file.id,
+                path: get_update(&original_file.path, &file.path),
+                type_: get_update(&original_file.type_, &file.type_),
+                size: get_update(&original_file.size, &file.size),
+                fingerprint: get_update(&original_file.fingerprint, &file.fingerprint),
+                status: get_update(&original_file.status, &file.status),
+            };
+
+            diesel::update(files::table)
+                .filter(files::id.eq(file.id))
+                .set(update_file)
+                .execute(&mut connection)?;
+        }
         Ok(())
     }
 

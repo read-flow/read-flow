@@ -1,6 +1,7 @@
 use std::{os::unix::fs::MetadataExt, path::Path, process::Command, sync::Arc};
 
 use crate::{
+    api::FileStatus,
     db::{
         ConnectionPool,
         dao::{FileDao, FileTagDao},
@@ -89,5 +90,6 @@ pub fn to_new_file(file: &Path, extension: &str) -> NewFile {
         type_: extension.to_owned(),
         size,
         fingerprint: fingerprint.to_string(),
+        status: FileStatus::Unread.into(),
     }
 }
