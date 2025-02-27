@@ -9,7 +9,7 @@ use iced::{
 };
 
 use crate::{
-    api::{File, FileDataSource},
+    api::{File, FileDataSource, ReadingStatus},
     gui::{self, CurrentTab, IdentifyTab},
 };
 
@@ -38,6 +38,7 @@ pub(super) enum Message {
     SetSelectionTag(CurrentTab, String),
     AddTagToSelection(CurrentTab),
     DeleteTagFromSelection(CurrentTab),
+    FilterByReadingStatus(CurrentTab, ReadingStatus, bool),
 }
 
 impl IdentifyTab for Message {
@@ -60,6 +61,7 @@ impl IdentifyTab for Message {
             Message::SetSelectionTag(tab, ..) => tab.clone(),
             Message::AddTagToSelection(tab) => tab.clone(),
             Message::DeleteTagFromSelection(tab) => tab.clone(),
+            Message::FilterByReadingStatus(tab, ..) => tab.clone(),
         }
     }
 }

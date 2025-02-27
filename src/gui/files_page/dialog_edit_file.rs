@@ -10,7 +10,7 @@ use itertools::Itertools;
 use strum::IntoEnumIterator;
 
 use crate::{
-    api::{FileDataSource, FileStatus},
+    api::{FileDataSource, ReadingStatus},
     gui::{self, CurrentTabRef, IdentifyTab, add_tag_button, delete_tag_button, tag_button},
 };
 
@@ -24,7 +24,7 @@ pub(in crate::gui) enum Message {
     DeleteTag(CurrentTab, String),
     Duplicates(CurrentTab, Vec<(CurrentTab, Vec<File>)>),
     Tags(CurrentTab, Vec<String>),
-    SetStatus(CurrentTab, FileStatus),
+    SetStatus(CurrentTab, ReadingStatus),
 }
 
 impl IdentifyTab for Message {
@@ -109,18 +109,13 @@ impl EditFile {
                 ],
                 grid_row![
                     text("status"),
-                    FileStatus::iter()
-                        .map(|status| {
-                            radio(
-                                format!("{}", &status),
-                                status,
-                                Some(self.file.status),
-                                |status| Message::SetStatus(self.tab.clone(), status).into(),
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .fold(Column::new(), |column, radio| column.push(radio))
+                    ReadingStatus::iter()
+                        .fold(Column::new(), |column, status| column.push(radio(
+                            format!("{status}"),
+                            status,
+                            Some(self.file.status),
+                            |status| Message::SetStatus(self.tab.clone(), status).into(),
+                        )))
                         .spacing(10)
                 ],
                 grid_row![text("type"), text(&self.file.type_)],

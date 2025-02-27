@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, ffi::OsStr, path::Path, sync::Arc};
+use std::{cmp::Ordering, collections::HashSet, ffi::OsStr, path::Path, sync::Arc};
 
 use iced::{
     Element, Task,
@@ -8,10 +8,11 @@ use iced::{
 use iced_aw::{Grid, grid_row};
 use indexmap::{IndexMap, IndexSet};
 use regex::Regex;
+use strum::IntoEnumIterator;
 
 use crate::{
     Builder,
-    api::{File, FileDataSource},
+    api::{File, FileDataSource, ReadingStatus},
     client::FilesClient,
     gui::{self, CurrentTab, IdentifyTab},
     to_buckets,
@@ -32,6 +33,7 @@ pub struct Page<FDS> {
     is_offline: bool,
     regex: Option<String>,
     selection_tag: Option<String>,
+    filter_by_reading_status: HashSet<ReadingStatus>,
 }
 
 impl IdentifyTab for Page<gui::DbClient> {
@@ -64,6 +66,7 @@ where
             is_offline: Default::default(),
             regex: Default::default(),
             selection_tag: Default::default(),
+            filter_by_reading_status: Default::default(),
         }
     }
 
@@ -92,6 +95,7 @@ where
                     self.direction,
                     self.selected_tags.clone(),
                     self.regex.clone(),
+                    self.filter_by_reading_status.clone(),
                 ),
                 move |result| Message::FilesLoaded(tab.clone(), result).into(),
             ),
@@ -199,6 +203,14 @@ where
                 ),
                 None => Task::none(),
             },
+            Message::FilterByReadingStatus(_, status, is_set) => {
+                if is_set {
+                    self.filter_by_reading_status.insert(status);
+                } else {
+                    self.filter_by_reading_status.remove(&status);
+                }
+                Task::done(Message::Update(self.tab()).into())
+            }
         }
     }
 
@@ -244,6 +256,22 @@ where
                         )
                         .width(iced::Fill)
                         .on_input(|value| Message::SetRegex(self.tab(), value).into()),
+                        container(ReadingStatus::iter().fold(
+                            column![text("Reading Status")],
+                            |column, status| {
+                                column.push(
+                                    checkbox(
+                                        format!("{status}"),
+                                        self.filter_by_reading_status.contains(&status),
+                                    )
+                                    .width(iced::Fill)
+                                    .on_toggle(move |value| {
+                                        Message::FilterByReadingStatus(self.tab(), status, value)
+                                            .into()
+                                    }),
+                                )
+                            }
+                        ))
                     ]
                     .spacing(5),
                 )
@@ -385,6 +413,7 @@ async fn query_files_by_tags<FDS>(
     order_direction: OrderDirection,
     tags: Vec<String>,
     regex: Option<String>,
+    reading_status: HashSet<ReadingStatus>,
 ) -> Result<Vec<File>, Error>
 where
     FDS: FileDataSource,
@@ -429,6 +458,7 @@ where
             Some(regex) => regex.is_match(&file.path),
             None => true,
         })
+        .filter(|file| reading_status.is_empty() || reading_status.contains(&file.status))
         .collect())
 }
 

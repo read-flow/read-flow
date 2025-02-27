@@ -9,21 +9,23 @@ use strum::EnumIter;
 
 use crate::db::models::{File as DbFile, FileTag as DbTag};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, PartialOrd, Ord, EnumIter)]
-pub enum FileStatus {
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, PartialOrd, Ord, EnumIter, Hash,
+)]
+pub enum ReadingStatus {
     Unread,
     Reading,
     Read,
 }
 
-impl Display for FileStatus {
+impl Display for ReadingStatus {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
     }
 }
 
 // TODO: should be TryFrom
-impl From<i32> for FileStatus {
+impl From<i32> for ReadingStatus {
     fn from(value: i32) -> Self {
         match value {
             0 => Self::Unread,
@@ -34,12 +36,12 @@ impl From<i32> for FileStatus {
     }
 }
 
-impl From<FileStatus> for i32 {
-    fn from(value: FileStatus) -> Self {
+impl From<ReadingStatus> for i32 {
+    fn from(value: ReadingStatus) -> Self {
         match value {
-            FileStatus::Unread => 0,
-            FileStatus::Reading => 1,
-            FileStatus::Read => 2,
+            ReadingStatus::Unread => 0,
+            ReadingStatus::Reading => 1,
+            ReadingStatus::Read => 2,
         }
     }
 }
@@ -63,7 +65,7 @@ pub struct File {
     pub size: i32,
     pub fingerprint: String,
     pub tags: Vec<String>,
-    pub status: FileStatus,
+    pub status: ReadingStatus,
 }
 
 impl From<(DbFile, Vec<DbTag>)> for File {
