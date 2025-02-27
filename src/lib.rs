@@ -180,11 +180,11 @@ impl<T> Builder for T {
 #[serde(try_from = "PathBuf")]
 pub struct ExpandedPath(PathBuf);
 
-impl ExpandedPath {
-    fn into_inner(self) -> PathBuf {
-        self.0
-    }
-}
+// impl ExpandedPath {
+//     fn into_inner(self) -> PathBuf {
+//         self.0
+//     }
+// }
 
 impl FromStr for ExpandedPath {
     type Err = std::io::Error;

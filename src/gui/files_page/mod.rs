@@ -108,11 +108,11 @@ impl OrderDirection {
 pub(super) enum OrderFilesBy {
     #[default]
     Id,
-    Type,
+    // Type,
     Filename,
     Folder,
     Size,
-    Fingerprint,
+    // Fingerprint,
 }
 
 fn display_path<P: AsRef<Path>>(path: P, shorten_path: bool) -> Element<'static, gui::Message> {

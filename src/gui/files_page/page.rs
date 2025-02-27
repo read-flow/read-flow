@@ -397,7 +397,7 @@ where
 
     let comp: fn(&File, &File) -> Ordering = match order_by {
         OrderFilesBy::Id => |f1, f2| f1.id.cmp(&f2.id),
-        OrderFilesBy::Type => |f1, f2| f1.type_.cmp(&f2.type_),
+        // OrderFilesBy::Type => |f1, f2| f1.type_.cmp(&f2.type_),
         OrderFilesBy::Filename => |f1, f2| {
             Path::new(&f1.path)
                 .file_name()
@@ -410,7 +410,7 @@ where
         },
         OrderFilesBy::Folder => |f1, f2| f1.path.to_lowercase().cmp(&f2.path.to_lowercase()),
         OrderFilesBy::Size => |f1, f2| f1.size.cmp(&f2.size),
-        OrderFilesBy::Fingerprint => |f1, f2| f1.fingerprint.cmp(&f2.fingerprint),
+        // OrderFilesBy::Fingerprint => |f1, f2| f1.fingerprint.cmp(&f2.fingerprint),
     };
 
     files.sort_by(|f1, f2| {
