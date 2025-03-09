@@ -74,9 +74,21 @@ where
         }
     }
 
+    pub fn filtered_files(&self) -> Vec<&File> {
+        filter_files(
+            &self.files,
+            self.ordering,
+            self.direction,
+            &self.selected_tags,
+            self.settings.clone(),
+            &self.regex,
+            &self.filter_by_reading_status,
+        )
+    }
+
     pub fn duplicate_files(&self, fingerprint: &str) -> Vec<File> {
-        self.files
-            .iter()
+        self.filtered_files()
+            .into_iter()
             .filter(|f| f.fingerprint == fingerprint)
             .cloned()
             .collect()
@@ -178,9 +190,13 @@ where
             }
             Message::AddTagToSelection(tab) => match self.selection_tag.take() {
                 Some(tag) => Task::perform(
-                    add_tag_to_selection(self.file_data_source.clone(), self.files.clone(), tag),
+                    add_tag_to_selection(
+                        self.file_data_source.clone(),
+                        self.filtered_files().into_iter().cloned().collect(),
+                        tag,
+                    ),
                     move |result| match result {
-                        Ok(()) => gui::Message::Noop,
+                        Ok(()) => Message::LoadFiles(tab.clone()).into(),
                         Err(error) => Message::Error(tab.clone(), error).into(),
                     },
                 ),
@@ -190,11 +206,11 @@ where
                 Some(tag) => Task::perform(
                     delete_tag_from_selection(
                         self.file_data_source.clone(),
-                        self.files.clone(),
+                        self.filtered_files().into_iter().cloned().collect(),
                         tag,
                     ),
                     move |result| match result {
-                        Ok(()) => gui::Message::Noop,
+                        Ok(()) => Message::LoadFiles(tab.clone()).into(),
                         Err(error) => Message::Error(tab.clone(), error).into(),
                     },
                 ),
@@ -347,26 +363,18 @@ where
             .row_spacing(5)
             .column_spacing(10);
 
-        let filtered_files = filter_files(
-            &self.files,
-            self.ordering,
-            self.direction,
-            &self.selected_tags,
-            self.settings.clone(),
-            &self.regex,
-            &self.filter_by_reading_status,
-        );
-
         let files: Vec<_> = if self.duplicates {
             let buckets: IndexMap<String, Vec<&File>> =
-                to_buckets(filtered_files.into_iter(), |file| file.fingerprint.clone());
+                to_buckets(self.filtered_files().into_iter(), |file| {
+                    file.fingerprint.clone()
+                });
             buckets
                 .into_iter()
                 .filter(|(_, values)| values.len() > 1)
                 .flat_map(|(_, values)| values)
                 .collect()
         } else {
-            filtered_files
+            self.filtered_files()
         };
 
         for file in files {
