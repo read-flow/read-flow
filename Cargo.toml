@@ -9,6 +9,9 @@ license = "MIT"
 [package.metadata.deb]
 maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 
+[profile.release]
+lto = true
+
 [features]
 default = ["gui", "server"]
 gui = ["dep:iced", "dep:iced_aw", "dep:rfd"]
