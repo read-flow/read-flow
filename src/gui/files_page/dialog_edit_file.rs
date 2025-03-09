@@ -107,6 +107,8 @@ impl EditFile {
                             super::Message::OpenFile(self.tab.clone(), self.file.clone()).into()
                         )
                 ],
+                grid_row![text("type"), text(&self.file.type_)],
+                grid_row![text("size"), text(self.file.size)],
                 grid_row![
                     text("status"),
                     ReadingStatus::iter()
@@ -118,8 +120,6 @@ impl EditFile {
                         )))
                         .spacing(10)
                 ],
-                grid_row![text("type"), text(&self.file.type_)],
-                grid_row![text("size"), text(self.file.size)],
                 grid_row![text("fingerprint"), text(&self.file.fingerprint)],
                 grid_row![
                     text("tags"),
