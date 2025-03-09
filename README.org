@@ -2,7 +2,7 @@
 
 This is a tool to help discover and organize files locally and on remote servers.
 
-* TODO: Implement the following items [19/37]
+* TODO: Implement the following items [20/37]
 
 - [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
 - [X] Make database URL configurable (using ~figment~)
@@ -40,7 +40,7 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] In File Edit dialog, show all unused tags and allow to set them using a single click
 - [X] Open files from the gui
 - [X] Order files ascending or descending
-- [ ] Add private mode, with configuration to hide documents by default
+- [X] Add private mode, with configuration to hide documents by default
 - [ ] Allow deleting duplicate files (including from file storage) from file edit dialog
 - [ ] Allow duplicating files to/from remote, with configuration/input of location.
 - [X] Allow marking files as read/reading/unread

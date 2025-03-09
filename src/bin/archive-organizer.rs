@@ -8,7 +8,7 @@ use url::Url;
 
 #[cfg(feature = "server")]
 use archive_organizer::server;
-use archive_organizer::{ApplicationModule, api::FileDataSource, client};
+use archive_organizer::{ApplicationModule, api::FileDataSource, client, gui::UiSettings};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -24,7 +24,7 @@ enum Commands {
     },
     ApplyTags,
     #[cfg(feature = "gui")]
-    Gui,
+    Gui(UiSettings),
     #[cfg(feature = "server")]
     Serve,
     Client,
@@ -45,7 +45,7 @@ fn main() -> Result<()> {
             ApplicationModule::instantiate()?.extract_scan_directories()
         }
         #[cfg(feature = "gui")]
-        Commands::Gui => ApplicationModule::instantiate()?.gui()?,
+        Commands::Gui(ui_settings) => ApplicationModule::instantiate_gui(ui_settings)?.gui()?,
         Commands::Scan { path } => ApplicationModule::instantiate()?.scan(path)?,
         #[cfg(feature = "server")]
         Commands::Serve => server::main(),

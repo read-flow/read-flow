@@ -8,6 +8,10 @@ use serde::Deserialize;
 
 use crate::db::DbSettings;
 use crate::scan::ScanSettings;
+
+#[cfg(feature = "gui")]
+use crate::gui::UiSettings;
+
 #[cfg(feature = "server")]
 use crate::server::ServerSettings;
 
@@ -17,6 +21,8 @@ pub struct Settings {
     #[cfg(feature = "server")]
     pub server: ServerSettings,
     pub scan: ScanSettings,
+    #[cfg(feature = "gui")]
+    pub ui: UiSettings,
 }
 
 pub fn decorate(figment: Figment) -> Figment {

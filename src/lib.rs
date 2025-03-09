@@ -26,6 +26,7 @@ use serde::Deserialize;
 use tokio::runtime::Runtime;
 
 use db::{ConnectionPool, datasource::DbClient};
+use gui::UiSettings;
 use scan::{DirectorySettings, FileSystemVisitor};
 use settings::Settings;
 
@@ -36,6 +37,12 @@ pub struct ApplicationModule {
 }
 
 impl ApplicationModule {
+    pub fn instantiate_gui(ui_settings: UiSettings) -> anyhow::Result<Self> {
+        let mut settings = settings::extract()?;
+        settings.ui.merge_in(ui_settings);
+        Ok(Self::from_settings(settings))
+    }
+
     pub fn instantiate() -> anyhow::Result<Self> {
         let settings = settings::extract()?;
         Ok(Self::from_settings(settings))

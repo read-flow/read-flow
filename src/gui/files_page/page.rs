@@ -16,6 +16,7 @@ use crate::{
     api::{File, FileDataSource, ReadingStatus},
     client::FilesClient,
     gui::{self, CurrentTab, IdentifyTab},
+    settings::Settings,
     to_buckets,
 };
 
@@ -35,6 +36,7 @@ pub struct Page<FDS> {
     regex: Option<String>,
     selection_tag: Option<String>,
     filter_by_reading_status: HashSet<ReadingStatus>,
+    settings: Arc<Settings>,
 }
 
 impl IdentifyTab for Page<gui::DbClient> {
@@ -54,7 +56,7 @@ where
     FDS: FileDataSource + Send + Sync + 'static,
     Self: IdentifyTab,
 {
-    pub fn new(file_data_source: FDS) -> Self {
+    pub fn new(settings: Arc<Settings>, file_data_source: FDS) -> Self {
         Self {
             shorten_path: Default::default(),
             ordering: Default::default(),
@@ -68,6 +70,7 @@ where
             regex: Default::default(),
             selection_tag: Default::default(),
             filter_by_reading_status: Default::default(),
+            settings,
         }
     }
 
@@ -348,9 +351,10 @@ where
             &self.files,
             self.ordering,
             self.direction,
-            self.selected_tags.clone(),
-            self.regex.clone(),
-            self.filter_by_reading_status.clone(),
+            &self.selected_tags,
+            self.settings.clone(),
+            &self.regex,
+            &self.filter_by_reading_status,
         );
 
         let files: Vec<_> = if self.duplicates {
@@ -410,14 +414,15 @@ where
     }
 }
 
-fn filter_files(
-    files: &[File],
+fn filter_files<'a>(
+    files: &'a [File],
     order_by: OrderFilesBy,
     order_direction: OrderDirection,
-    tags: Vec<String>,
-    regex: Option<String>,
-    reading_status: HashSet<ReadingStatus>,
-) -> Vec<&File> {
+    tags: &'a [String],
+    settings: Arc<Settings>,
+    regex: &'a Option<String>,
+    reading_status: &'a HashSet<ReadingStatus>,
+) -> Vec<&'a File> {
     let comp: fn(&File, &File) -> Ordering = match order_by {
         OrderFilesBy::Id => |f1, f2| f1.id.cmp(&f2.id),
         // OrderFilesBy::Type => |f1, f2| f1.type_.cmp(&f2.type_),
@@ -436,11 +441,12 @@ fn filter_files(
         // OrderFilesBy::Fingerprint => |f1, f2| f1.fingerprint.cmp(&f2.fingerprint),
     };
 
-    let select_regex = regex.and_then(|r| Regex::new(&r).ok());
+    let select_regex = regex.as_ref().and_then(|r| Regex::new(r).ok());
 
     files
         .iter()
         .filter(|file| tags.iter().all(|tag| file.tags.contains(tag)))
+        .filter(|file| !settings.ui.contains_hidden_tag(&file.tags))
         .filter(|file| match &select_regex {
             Some(regex) => regex.is_match(&file.path),
             None => true,

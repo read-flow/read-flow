@@ -1,11 +1,15 @@
 mod files_page;
 mod welcome_page;
 
+use std::sync::Arc;
+
+use clap::Args;
 use iced::{
     Element, Task, Theme, border,
     widget::{self, Row, button, column, container, pick_list, row, scrollable, text, text_input},
 };
 use indexmap::{IndexMap, IndexSet};
+use serde::Deserialize;
 use url::Url;
 
 use crate::{
@@ -18,7 +22,42 @@ use crate::{
         datasource::DbClient,
         models::{NewRemote, Remote},
     },
+    settings::Settings,
 };
+
+#[derive(Debug, Args, Deserialize)]
+pub struct UiSettings {
+    #[clap(long, default_value = "false")]
+    #[serde(default)]
+    /// Enable private mode, which makes all `--private-tags` visible
+    private_mode: bool,
+    #[clap(long)]
+    /// Private tags and tagged files are hidden from the UI by default
+    private_tags: Vec<String>,
+}
+
+impl UiSettings {
+    fn contains_hidden_tag(&self, tags: &[String]) -> bool {
+        if self.private_mode {
+            false
+        } else {
+            tags.iter().any(|tag| self.private_tags.contains(tag))
+        }
+    }
+
+    fn hidden_tags(&self) -> &[String] {
+        if self.private_mode {
+            &[]
+        } else {
+            self.private_tags.as_slice()
+        }
+    }
+
+    pub fn merge_in(&mut self, other: Self) {
+        self.private_mode |= other.private_mode;
+        self.private_tags.extend(other.private_tags);
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 #[error("invalid message")]
@@ -110,6 +149,7 @@ struct Tabs {
     welcome_page: welcome_page::Page,
     local_files: files_page::Page<DbClient>,
     remote_files: IndexMap<Url, files_page::Page<FilesClient>>,
+    settings: Arc<Settings>,
 }
 
 impl Tabs {
@@ -122,17 +162,22 @@ impl Tabs {
             .into_iter()
             .map(|remote| {
                 let remote_connection: Url = remote.base_url.parse().unwrap();
-                let page =
-                    files_page::Page::new(FilesClient::new(remote_connection.clone()).unwrap());
+                let page = files_page::Page::new(
+                    application_module.settings.clone(),
+                    FilesClient::new(remote_connection.clone()).unwrap(),
+                );
                 (remote_connection, page)
             })
             .collect();
 
+        let settings = application_module.settings.clone();
+
         Self {
             current_tab: CurrentTab::Welcome,
-            local_files: files_page::Page::new(application_module.db_client()),
+            local_files: files_page::Page::new(settings.clone(), application_module.db_client()),
             welcome_page: welcome_page::Page::new(application_module),
             remote_files,
+            settings,
         }
     }
 
@@ -252,6 +297,9 @@ impl Tabs {
                 .flat_map(files_page::Page::all_tags),
         );
         all_tags
+            .into_iter()
+            .filter(|tag| !self.settings.ui.hidden_tags().contains(tag))
+            .collect()
     }
 }
 
@@ -259,11 +307,13 @@ struct App {
     tabs: Tabs,
     connection_pool: ConnectionPool,
     new_remote_url: String,
+    settings: Arc<Settings>,
     theme: Theme,
 }
 
 impl App {
     fn new(application_module: ApplicationModule) -> (Self, Task<Message>) {
+        let settings = application_module.settings.clone();
         let connection_pool = application_module.connection_pool.clone();
         let tabs = Tabs::new(application_module);
         let initialize_tabs = tabs.init();
@@ -272,6 +322,7 @@ impl App {
                 tabs,
                 connection_pool,
                 new_remote_url: Default::default(),
+                settings,
                 theme: Theme::Nord,
             },
             initialize_tabs,
@@ -310,7 +361,10 @@ impl App {
             }
             Message::RemoteUrlAdded(Ok(remote)) => {
                 let base_url: Url = remote.base_url.parse().unwrap();
-                let page = files_page::Page::new(FilesClient::new(base_url.clone()).unwrap());
+                let page = files_page::Page::new(
+                    self.settings.clone(),
+                    FilesClient::new(base_url.clone()).unwrap(),
+                );
                 let initialize_page = page.init();
                 self.tabs.remote_files.insert(base_url, page);
                 initialize_page
