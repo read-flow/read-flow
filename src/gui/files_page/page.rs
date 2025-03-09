@@ -7,6 +7,7 @@ use iced::{
 };
 use iced_aw::{Grid, grid_row};
 use indexmap::{IndexMap, IndexSet};
+use itertools::Itertools;
 use regex::Regex;
 use strum::IntoEnumIterator;
 
@@ -83,20 +84,13 @@ where
     }
 
     pub fn init(&self) -> Task<gui::Message> {
-        Task::done(Message::Update(self.tab()).into())
+        Task::done(Message::LoadFiles(self.tab()).into())
     }
 
     pub fn update(&mut self, message: Message) -> Task<gui::Message> {
         match message {
-            Message::Update(tab) => Task::perform(
-                query_files_by_tags(
-                    self.file_data_source.clone(),
-                    self.ordering,
-                    self.direction,
-                    self.selected_tags.clone(),
-                    self.regex.clone(),
-                    self.filter_by_reading_status.clone(),
-                ),
+            Message::LoadFiles(tab) => Task::perform(
+                retrieve_files(self.file_data_source.clone()),
                 move |result| Message::FilesLoaded(tab.clone(), result).into(),
             ),
             Message::Error(_, error) => {
@@ -125,9 +119,9 @@ where
                 self.dialog = Some(dialog);
                 task
             }
-            Message::OpenFile(tab, file) => {
+            Message::OpenFile(_, file) => {
                 Task::perform(open_file(self.file_data_source.clone(), file), move |_| {
-                    super::Message::Update(tab.clone()).into() // TODO: Should be noop
+                    gui::Message::Noop
                 })
             }
             Message::FilesLoaded(_, Ok(files)) => {
@@ -140,31 +134,31 @@ where
                 self.is_offline = true;
                 Task::none()
             }
-            Message::OrderBy(tab, ordering) => {
+            Message::OrderBy(_, ordering) => {
                 if self.ordering == ordering {
                     self.direction.toggle();
                 } else {
                     self.ordering = ordering;
                     self.direction = Default::default();
                 }
-                Task::done(Message::Update(tab).into())
+                Task::none()
             }
-            Message::AddTagFilter(tab, tag) => {
+            Message::AddTagFilter(_, tag) => {
                 self.selected_tags.push(tag);
-                Task::done(Message::Update(tab).into())
+                Task::none()
             }
-            Message::RemoveTagFilter(tab, tag) => {
+            Message::RemoveTagFilter(_, tag) => {
                 self.selected_tags.retain(|t| t != &tag);
-                Task::done(Message::Update(tab).into())
+                Task::none()
             }
-            Message::SetRegex(tab, regex) => {
+            Message::SetRegex(_, regex) => {
                 let regex = regex.trim();
                 if regex.is_empty() {
                     self.regex = None;
                 } else {
                     self.regex = Some(regex.to_string());
                 }
-                Task::done(Message::Update(tab).into())
+                Task::none()
             }
             Message::EditDialog(message) => match &mut self.dialog {
                 Some(Dialog::EditFile(dialog)) => dialog.update(message),
@@ -183,7 +177,7 @@ where
                 Some(tag) => Task::perform(
                     add_tag_to_selection(self.file_data_source.clone(), self.files.clone(), tag),
                     move |result| match result {
-                        Ok(()) => Message::Update(tab.clone()).into(),
+                        Ok(()) => gui::Message::Noop,
                         Err(error) => Message::Error(tab.clone(), error).into(),
                     },
                 ),
@@ -197,7 +191,7 @@ where
                         tag,
                     ),
                     move |result| match result {
-                        Ok(()) => Message::Update(tab.clone()).into(),
+                        Ok(()) => gui::Message::Noop,
                         Err(error) => Message::Error(tab.clone(), error).into(),
                     },
                 ),
@@ -209,7 +203,7 @@ where
                 } else {
                     self.filter_by_reading_status.remove(&status);
                 }
-                Task::done(Message::Update(self.tab()).into())
+                Task::none()
             }
         }
     }
@@ -222,7 +216,7 @@ where
                         text("Offline"),
                         button("Refresh")
                             .width(iced::Fill)
-                            .on_press(Message::Update(self.tab()).into()),
+                            .on_press(Message::LoadFiles(self.tab()).into()),
                     ]
                     .spacing(5),
                 )
@@ -350,16 +344,25 @@ where
             .row_spacing(5)
             .column_spacing(10);
 
+        let filtered_files = filter_files(
+            &self.files,
+            self.ordering,
+            self.direction,
+            self.selected_tags.clone(),
+            self.regex.clone(),
+            self.filter_by_reading_status.clone(),
+        );
+
         let files: Vec<_> = if self.duplicates {
             let buckets: IndexMap<String, Vec<&File>> =
-                to_buckets(self.files.iter(), |file| file.fingerprint.clone());
+                to_buckets(filtered_files.into_iter(), |file| file.fingerprint.clone());
             buckets
                 .into_iter()
                 .filter(|(_, values)| values.len() > 1)
                 .flat_map(|(_, values)| values)
                 .collect()
         } else {
-            self.files.iter().collect()
+            filtered_files
         };
 
         for file in files {
@@ -407,23 +410,14 @@ where
     }
 }
 
-async fn query_files_by_tags<FDS>(
-    file_data_source: Arc<FDS>,
+fn filter_files(
+    files: &[File],
     order_by: OrderFilesBy,
     order_direction: OrderDirection,
     tags: Vec<String>,
     regex: Option<String>,
     reading_status: HashSet<ReadingStatus>,
-) -> Result<Vec<File>, Error>
-where
-    FDS: FileDataSource,
-    <FDS as FileDataSource>::Error: 'static,
-{
-    let mut files = file_data_source
-        .get_files()
-        .await
-        .map_err(|error| Error::DataSourceError(format!("{error}")))?;
-
+) -> Vec<&File> {
     let comp: fn(&File, &File) -> Ordering = match order_by {
         OrderFilesBy::Id => |f1, f2| f1.id.cmp(&f2.id),
         // OrderFilesBy::Type => |f1, f2| f1.type_.cmp(&f2.type_),
@@ -442,24 +436,35 @@ where
         // OrderFilesBy::Fingerprint => |f1, f2| f1.fingerprint.cmp(&f2.fingerprint),
     };
 
-    files.sort_by(|f1, f2| {
-        comp(f1, f2).apply_if(
-            order_direction == OrderDirection::Descending,
-            Ordering::reverse,
-        )
-    });
-
     let select_regex = regex.and_then(|r| Regex::new(&r).ok());
 
-    Ok(files
-        .into_iter()
+    files
+        .iter()
         .filter(|file| tags.iter().all(|tag| file.tags.contains(tag)))
         .filter(|file| match &select_regex {
             Some(regex) => regex.is_match(&file.path),
             None => true,
         })
         .filter(|file| reading_status.is_empty() || reading_status.contains(&file.status))
-        .collect())
+        .sorted_by(|f1, f2| {
+            comp(f1, f2).apply_if(
+                order_direction == OrderDirection::Descending,
+                Ordering::reverse,
+            )
+        })
+        .collect()
+}
+
+async fn retrieve_files<FDS>(file_data_source: Arc<FDS>) -> Result<Vec<File>, Error>
+where
+    FDS: FileDataSource,
+    <FDS as FileDataSource>::Error: 'static,
+{
+    let files = file_data_source
+        .get_files()
+        .await
+        .map_err(|error| Error::DataSourceError(format!("{error}")))?;
+    Ok(files)
 }
 
 async fn open_file<FDS>(file_data_source: Arc<FDS>, file: File)

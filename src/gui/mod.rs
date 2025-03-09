@@ -39,6 +39,7 @@ enum Message {
     GetTags(CurrentTab),
     ThemeSelected(Theme),
     Tags(CurrentTab, Vec<String>),
+    Noop,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -279,6 +280,7 @@ impl App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Noop => Task::none(),
             Message::ThemeSelected(theme) => {
                 self.theme = theme;
                 Task::none()

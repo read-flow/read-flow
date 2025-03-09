@@ -258,7 +258,7 @@ impl EditFile {
         Task::perform(
             super::update_file(file_data_source, self.file.clone()),
             move |result| match result {
-                Ok(()) => super::Message::Update(self.tab().clone()).into(),
+                Ok(()) => super::Message::LoadFiles(self.tab().clone()).into(),
                 Err(error) => super::Message::Error(self.tab().clone(), error).into(),
             },
         )

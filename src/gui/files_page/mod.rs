@@ -21,7 +21,7 @@ pub use page::Page;
 
 #[derive(Debug, Clone)]
 pub(super) enum Message {
-    Update(CurrentTab),
+    LoadFiles(CurrentTab),
     Error(CurrentTab, Error),
     ToggleShortenPath(CurrentTab),
     ToggleDuplicates(CurrentTab),
@@ -44,7 +44,7 @@ pub(super) enum Message {
 impl IdentifyTab for Message {
     fn tab(&self) -> CurrentTab {
         match self {
-            Message::Update(tab) => tab.clone(),
+            Message::LoadFiles(tab) => tab.clone(),
             Message::Error(tab, ..) => tab.clone(),
             Message::ToggleShortenPath(tab) => tab.clone(),
             Message::ToggleDuplicates(tab) => tab.clone(),
