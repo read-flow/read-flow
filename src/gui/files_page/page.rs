@@ -22,20 +22,30 @@ use crate::{
 
 use super::{Dialog, Error, Message, OrderDirection, OrderFilesBy, display_path, tag_button};
 
+#[derive(Debug, Default, Clone)]
+pub struct DisplayOptions {
+    direction: OrderDirection,
+    order: OrderFilesBy,
+    shorten_path: bool,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct FilterOptions {
+    duplicates: bool,
+    reading_status: HashSet<ReadingStatus>,
+    regex: Option<String>,
+    selected_tags: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Page<FDS> {
-    shorten_path: bool,
-    ordering: OrderFilesBy,
-    direction: OrderDirection,
+    dialog: Option<Dialog>,
+    display_options: DisplayOptions,
     file_data_source: Arc<FDS>,
     files: Vec<File>,
-    dialog: Option<Dialog>,
-    selected_tags: Vec<String>,
-    duplicates: bool,
+    filter_options: FilterOptions,
     is_offline: bool,
-    regex: Option<String>,
     selection_tag: Option<String>,
-    filter_by_reading_status: HashSet<ReadingStatus>,
     settings: Arc<Settings>,
 }
 
@@ -58,18 +68,13 @@ where
 {
     pub fn new(settings: Arc<Settings>, file_data_source: FDS) -> Self {
         Self {
-            shorten_path: Default::default(),
-            ordering: Default::default(),
-            direction: Default::default(),
+            display_options: DisplayOptions::default(),
             file_data_source: file_data_source.into(),
             files: Default::default(),
             dialog: Default::default(),
-            selected_tags: Default::default(),
-            duplicates: Default::default(),
+            filter_options: FilterOptions::default(),
             is_offline: Default::default(),
-            regex: Default::default(),
             selection_tag: Default::default(),
-            filter_by_reading_status: Default::default(),
             settings,
         }
     }
@@ -77,12 +82,9 @@ where
     pub fn filtered_files(&self) -> Vec<&File> {
         filter_files(
             &self.files,
-            self.ordering,
-            self.direction,
-            &self.selected_tags,
+            &self.display_options,
+            &self.filter_options,
             self.settings.clone(),
-            &self.regex,
-            &self.filter_by_reading_status,
         )
     }
 
@@ -113,11 +115,11 @@ where
                 Task::none()
             }
             Message::ToggleShortenPath(_) => {
-                self.shorten_path = !self.shorten_path;
+                self.display_options.shorten_path ^= true;
                 Task::none()
             }
             Message::ToggleDuplicates(_) => {
-                self.duplicates = !self.duplicates;
+                self.filter_options.duplicates ^= true;
                 Task::none()
             }
             Message::CancelDialog(_) => {
@@ -150,28 +152,28 @@ where
                 Task::none()
             }
             Message::OrderBy(_, ordering) => {
-                if self.ordering == ordering {
-                    self.direction.toggle();
+                if self.display_options.order == ordering {
+                    self.display_options.direction.toggle();
                 } else {
-                    self.ordering = ordering;
-                    self.direction = Default::default();
+                    self.display_options.order = ordering;
+                    self.display_options.direction = Default::default();
                 }
                 Task::none()
             }
             Message::AddTagFilter(_, tag) => {
-                self.selected_tags.push(tag);
+                self.filter_options.selected_tags.push(tag);
                 Task::none()
             }
             Message::RemoveTagFilter(_, tag) => {
-                self.selected_tags.retain(|t| t != &tag);
+                self.filter_options.selected_tags.retain(|t| t != &tag);
                 Task::none()
             }
             Message::SetRegex(_, regex) => {
                 let regex = regex.trim();
                 if regex.is_empty() {
-                    self.regex = None;
+                    self.filter_options.regex = None;
                 } else {
-                    self.regex = Some(regex.to_string());
+                    self.filter_options.regex = Some(regex.to_string());
                 }
                 Task::none()
             }
@@ -218,9 +220,9 @@ where
             },
             Message::FilterByReadingStatus(_, status, is_set) => {
                 if is_set {
-                    self.filter_by_reading_status.insert(status);
+                    self.filter_options.reading_status.insert(status);
                 } else {
-                    self.filter_by_reading_status.remove(&status);
+                    self.filter_options.reading_status.remove(&status);
                 }
                 Task::none()
             }
@@ -248,7 +250,7 @@ where
                 container(
                     column![
                         text("Display Options"),
-                        checkbox("Hide Folder", self.shorten_path)
+                        checkbox("Hide Folder", self.display_options.shorten_path)
                             .width(iced::Fill)
                             .on_toggle(|_| Message::ToggleShortenPath(self.tab()).into()),
                     ]
@@ -260,12 +262,15 @@ where
                 container(
                     column![
                         text("Filter Options"),
-                        checkbox("Duplicates", self.duplicates)
+                        checkbox("Duplicates", self.filter_options.duplicates)
                             .width(iced::Fill)
                             .on_toggle(|_| Message::ToggleDuplicates(self.tab()).into()),
                         text_input(
                             "Regular expression",
-                            self.regex.as_ref().unwrap_or(&String::from("")),
+                            self.filter_options
+                                .regex
+                                .as_ref()
+                                .unwrap_or(&String::from("")),
                         )
                         .width(iced::Fill)
                         .on_input(|value| Message::SetRegex(self.tab(), value).into()),
@@ -275,7 +280,7 @@ where
                                 column.push(
                                     checkbox(
                                         format!("{status}"),
-                                        self.filter_by_reading_status.contains(&status),
+                                        self.filter_options.reading_status.contains(&status),
                                     )
                                     .width(iced::Fill)
                                     .on_toggle(move |value| {
@@ -346,7 +351,7 @@ where
                     button("Filename")
                         .on_press(Message::OrderBy(self.tab(), OrderFilesBy::Filename).into()),
                 ]
-                .extend(self.selected_tags.iter().map(|t| {
+                .extend(self.filter_options.selected_tags.iter().map(|t| {
                     container(
                         button(text(t).size(11))
                             .padding(4)
@@ -363,7 +368,7 @@ where
             .row_spacing(5)
             .column_spacing(10);
 
-        let files: Vec<_> = if self.duplicates {
+        let files: Vec<_> = if self.filter_options.duplicates {
             let buckets: IndexMap<String, Vec<&File>> =
                 to_buckets(self.filtered_files().into_iter(), |file| {
                     file.fingerprint.clone()
@@ -384,14 +389,17 @@ where
                 text(file.size),
                 // text(format!("{}...", &file.fingerprint[..9])),
                 row![
-                    button(display_path(file.path.clone(), self.shorten_path))
-                        .style(button::text)
-                        .on_press(
-                            Message::OpenDialog(Dialog::edit_file(self.tab(), file.clone())).into()
-                        )
+                    button(display_path(
+                        file.path.clone(),
+                        self.display_options.shorten_path
+                    ))
+                    .style(button::text)
+                    .on_press(
+                        Message::OpenDialog(Dialog::edit_file(self.tab(), file.clone())).into()
+                    )
                 ]
                 .extend(file.tags.iter().map(|tag| {
-                    if self.selected_tags.contains(tag) {
+                    if self.filter_options.selected_tags.contains(tag) {
                         button(text(tag).size(11))
                             .padding(4)
                             .style(tag_button)
@@ -424,14 +432,11 @@ where
 
 fn filter_files<'a>(
     files: &'a [File],
-    order_by: OrderFilesBy,
-    order_direction: OrderDirection,
-    tags: &'a [String],
+    display_options: &DisplayOptions,
+    filter_options: &FilterOptions,
     settings: Arc<Settings>,
-    regex: &'a Option<String>,
-    reading_status: &'a HashSet<ReadingStatus>,
 ) -> Vec<&'a File> {
-    let comp: fn(&File, &File) -> Ordering = match order_by {
+    let comp: fn(&File, &File) -> Ordering = match display_options.order {
         OrderFilesBy::Id => |f1, f2| f1.id.cmp(&f2.id),
         // OrderFilesBy::Type => |f1, f2| f1.type_.cmp(&f2.type_),
         OrderFilesBy::Filename => |f1, f2| {
@@ -449,20 +454,31 @@ fn filter_files<'a>(
         // OrderFilesBy::Fingerprint => |f1, f2| f1.fingerprint.cmp(&f2.fingerprint),
     };
 
-    let select_regex = regex.as_ref().and_then(|r| Regex::new(r).ok());
+    let select_regex = filter_options
+        .regex
+        .as_ref()
+        .and_then(|r| Regex::new(r).ok());
 
     files
         .iter()
-        .filter(|file| tags.iter().all(|tag| file.tags.contains(tag)))
+        .filter(|file| {
+            filter_options
+                .selected_tags
+                .iter()
+                .all(|tag| file.tags.contains(tag))
+        })
         .filter(|file| !settings.ui.contains_hidden_tag(&file.tags))
         .filter(|file| match &select_regex {
             Some(regex) => regex.is_match(&file.path),
             None => true,
         })
-        .filter(|file| reading_status.is_empty() || reading_status.contains(&file.status))
+        .filter(|file| {
+            filter_options.reading_status.is_empty()
+                || filter_options.reading_status.contains(&file.status)
+        })
         .sorted_by(|f1, f2| {
             comp(f1, f2).apply_if(
-                order_direction == OrderDirection::Descending,
+                display_options.direction == OrderDirection::Descending,
                 Ordering::reverse,
             )
         })
