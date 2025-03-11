@@ -1,7 +1,7 @@
 use anyhow::Result;
 use iced::{
-    Task,
-    widget::{button, column, container, row, text, text_input},
+    Task, Theme,
+    widget::{button, column, container, pick_list, row, text, text_input},
 };
 use rfd::{AsyncFileDialog, FileHandle};
 
@@ -13,6 +13,9 @@ pub(super) enum Message {
     SelectedDirectory(Option<FileHandle>),
     ScanDirectory,
     ScanComplete(Option<String>),
+    EditNewRemoteUrl(String),
+    AddNewRemoteUrl,
+    ThemeSelected(Theme),
 }
 
 impl From<Message> for gui::Message {
@@ -36,13 +39,17 @@ impl TryFrom<gui::Message> for Message {
 pub(super) struct Page {
     scan_directory: Option<FileHandle>,
     application_module: ApplicationModule,
+    new_remote_url: String,
+    theme: Theme,
 }
 
 impl Page {
-    pub fn new(application_module: ApplicationModule) -> Self {
+    pub fn new(application_module: ApplicationModule, theme: Theme) -> Self {
         Self {
             scan_directory: None,
             application_module,
+            new_remote_url: String::new(),
+            theme,
         }
     }
 
@@ -78,11 +85,52 @@ impl Page {
                 tracing::error!("Scan completed with error: `{error}`");
                 Task::none()
             }
+            Message::EditNewRemoteUrl(url) => {
+                self.new_remote_url = url;
+                Task::none()
+            }
+            Message::AddNewRemoteUrl => {
+                let mut new_remote_url = Default::default();
+                std::mem::swap(&mut new_remote_url, &mut self.new_remote_url);
+                Task::done(gui::Message::AddNewRemoteUrl(new_remote_url))
+            }
+            Message::ThemeSelected(theme) => {
+                self.theme = theme.clone();
+                Task::done(gui::Message::ThemeSelected(theme))
+            }
         }
     }
 
     pub fn view_menu(&self) -> Vec<iced::Element<gui::Message>> {
-        vec![]
+        vec![
+            container(
+                column![
+                    text_input("Remote URL", &self.new_remote_url)
+                        .width(iced::Fill)
+                        .on_input(|url| Message::EditNewRemoteUrl(url).into()),
+                    button("Add remote")
+                        .width(iced::Fill)
+                        .style(button::success)
+                        .on_press(Message::AddNewRemoteUrl.into()),
+                ]
+                .spacing(5),
+            )
+            .style(container::rounded_box)
+            .padding(10)
+            .into(),
+            container(
+                column![
+                    pick_list(Theme::ALL, Some(self.theme.clone()), |theme| {
+                        Message::ThemeSelected(theme).into()
+                    })
+                    .width(iced::Fill),
+                ]
+                .spacing(5),
+            )
+            .style(container::rounded_box)
+            .padding(10)
+            .into(),
+        ]
     }
 
     pub fn view(&self) -> iced::Element<gui::Message> {

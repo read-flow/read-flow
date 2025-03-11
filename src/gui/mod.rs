@@ -6,7 +6,7 @@ use std::sync::Arc;
 use clap::Args;
 use iced::{
     Element, Task, Theme, border,
-    widget::{self, Row, button, column, container, pick_list, row, scrollable, text, text_input},
+    widget::{self, Row, button, column, container, row, scrollable, text},
 };
 use indexmap::{IndexMap, IndexSet};
 use serde::Deserialize;
@@ -69,8 +69,7 @@ enum Message {
     Files(files_page::Message),
     Welcome(welcome_page::Message),
     SwitchTab(CurrentTab),
-    EditNewRemoteUrl(String),
-    AddNewRemoteUrl,
+    AddNewRemoteUrl(String),
     RemoteUrlAdded(Result<Remote, dao::Error>),
     RemoteUrlVerified(Result<String, client::Error>),
     FindDuplicates(CurrentTab, String),
@@ -149,11 +148,10 @@ struct Tabs {
     welcome_page: welcome_page::Page,
     local_files: files_page::Page<DbClient>,
     remote_files: IndexMap<Url, files_page::Page<FilesClient>>,
-    settings: Arc<Settings>,
 }
 
 impl Tabs {
-    fn new(application_module: ApplicationModule) -> Self {
+    fn new(application_module: ApplicationModule, theme: Theme) -> Self {
         // TODO: proper error handling of unwraps here
         let remote_files = application_module
             .connection_pool
@@ -174,10 +172,9 @@ impl Tabs {
 
         Self {
             current_tab: CurrentTab::Welcome,
-            local_files: files_page::Page::new(settings.clone(), application_module.db_client()),
-            welcome_page: welcome_page::Page::new(application_module),
+            local_files: files_page::Page::new(settings, application_module.db_client()),
+            welcome_page: welcome_page::Page::new(application_module, theme),
             remote_files,
-            settings,
         }
     }
 
@@ -297,16 +294,12 @@ impl Tabs {
                 .flat_map(files_page::Page::all_tags),
         );
         all_tags
-            .into_iter()
-            .filter(|tag| !self.settings.ui.hidden_tags().contains(tag))
-            .collect()
     }
 }
 
 struct App {
     tabs: Tabs,
     connection_pool: ConnectionPool,
-    new_remote_url: String,
     settings: Arc<Settings>,
     theme: Theme,
 }
@@ -315,15 +308,15 @@ impl App {
     fn new(application_module: ApplicationModule) -> (Self, Task<Message>) {
         let settings = application_module.settings.clone();
         let connection_pool = application_module.connection_pool.clone();
-        let tabs = Tabs::new(application_module);
+        let theme = Theme::Nord;
+        let tabs = Tabs::new(application_module, theme.clone());
         let initialize_tabs = tabs.init();
         (
             App {
                 tabs,
                 connection_pool,
-                new_remote_url: Default::default(),
                 settings,
-                theme: Theme::Nord,
+                theme,
             },
             initialize_tabs,
         )
@@ -340,13 +333,7 @@ impl App {
                 self.tabs.current_tab = tab.clone();
                 self.tabs.refresh_current_tab()
             }
-            Message::EditNewRemoteUrl(url) => {
-                self.new_remote_url = url;
-                Task::none()
-            }
-            Message::AddNewRemoteUrl => {
-                let mut new_remote_url = Default::default();
-                std::mem::swap(&mut new_remote_url, &mut self.new_remote_url);
+            Message::AddNewRemoteUrl(new_remote_url) => {
                 Task::perform(test_remote_url(new_remote_url.clone()), move |result| {
                     Message::RemoteUrlVerified(result.map(|_| new_remote_url.clone()))
                 })
@@ -399,23 +386,6 @@ impl App {
                 self.tabs
                     .view_menu_entry(CurrentTabRef::RemoteFiles(remote))
             }))
-            .push(container(""))
-            .push(
-                text_input("Remote URL", &self.new_remote_url)
-                    .width(iced::Fill)
-                    .on_input(Message::EditNewRemoteUrl),
-            )
-            .push(
-                button("Add remote")
-                    .width(iced::Fill)
-                    .style(button::success)
-                    .on_press(Message::AddNewRemoteUrl),
-            )
-            .push(container(""))
-            .push(
-                pick_list(Theme::ALL, Some(self.theme.clone()), Message::ThemeSelected)
-                    .width(iced::Fill),
-            )
             .spacing(5);
 
         let pane_content = self.tabs.view();
@@ -468,8 +438,12 @@ fn header(row: widget::Row<Message>) -> widget::Container<'_, Message> {
 }
 
 fn sidebar(column: widget::Column<Message>) -> widget::Container<'_, Message> {
-    let column = column.push(widget::Row::new().height(iced::Fill));
-    container(column.spacing(5).padding(10).width(200).align_x(iced::Left)).center_y(iced::Fill)
+    container(
+        scrollable(column.spacing(5).padding(10).width(200).align_x(iced::Left))
+            .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new()))
+            .height(iced::Fill),
+    )
+    .center_y(iced::Fill)
 }
 
 fn content(column: widget::Column<Message>) -> widget::Container<'_, Message> {

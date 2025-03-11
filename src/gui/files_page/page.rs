@@ -3,9 +3,11 @@ use std::{cmp::Ordering, collections::HashSet, ffi::OsStr, path::Path, sync::Arc
 use iced::{
     Element, Task,
     alignment::{Horizontal, Vertical},
-    widget::{Row, button, checkbox, column, container, row, text, text_input},
+    widget::{
+        Row, button, checkbox, column, container, horizontal_rule, pick_list, row, text, text_input,
+    },
 };
-use iced_aw::{Grid, grid_row};
+use iced_aw::{Grid, Wrap, grid_row};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use regex::Regex;
@@ -15,7 +17,7 @@ use crate::{
     Builder,
     api::{File, FileDataSource, ReadingStatus},
     client::FilesClient,
-    gui::{self, CurrentTab, IdentifyTab},
+    gui::{self, CurrentTab, IdentifyTab, add_tag_button, delete_tag_button},
     settings::Settings,
     to_buckets,
 };
@@ -34,7 +36,8 @@ pub struct FilterOptions {
     duplicates: bool,
     reading_status: HashSet<ReadingStatus>,
     regex: Option<String>,
-    selected_tags: Vec<String>,
+    allow_tags: IndexSet<String>,
+    deny_tags: IndexSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -97,7 +100,11 @@ where
     }
 
     pub fn all_tags(&self) -> IndexSet<String> {
-        self.files.iter().flat_map(|f| f.tags.clone()).collect()
+        self.files
+            .iter()
+            .flat_map(|f| f.tags.clone())
+            .filter(|tag| !self.settings.ui.hidden_tags().contains(tag))
+            .collect()
     }
 
     pub fn init(&self) -> Task<gui::Message> {
@@ -160,12 +167,20 @@ where
                 }
                 Task::none()
             }
-            Message::AddTagFilter(_, tag) => {
-                self.filter_options.selected_tags.push(tag);
+            Message::AddAllowTag(_, tag) => {
+                self.filter_options.allow_tags.insert(tag);
                 Task::none()
             }
-            Message::RemoveTagFilter(_, tag) => {
-                self.filter_options.selected_tags.retain(|t| t != &tag);
+            Message::RemoveAllowTag(_, tag) => {
+                self.filter_options.allow_tags.retain(|t| t != &tag);
+                Task::none()
+            }
+            Message::AddDenyTag(_, tag) => {
+                self.filter_options.deny_tags.insert(tag);
+                Task::none()
+            }
+            Message::RemoveDenyTag(_, tag) => {
+                self.filter_options.deny_tags.retain(|t| t != &tag);
                 Task::none()
             }
             Message::SetRegex(_, regex) => {
@@ -250,6 +265,7 @@ where
                 container(
                     column![
                         text("Display Options"),
+                        horizontal_rule(2),
                         checkbox("Hide Folder", self.display_options.shorten_path)
                             .width(iced::Fill)
                             .on_toggle(|_| Message::ToggleShortenPath(self.tab()).into()),
@@ -262,9 +278,11 @@ where
                 container(
                     column![
                         text("Filter Options"),
+                        horizontal_rule(2),
                         checkbox("Duplicates", self.filter_options.duplicates)
                             .width(iced::Fill)
                             .on_toggle(|_| Message::ToggleDuplicates(self.tab()).into()),
+                        horizontal_rule(2),
                         text_input(
                             "Regular expression",
                             self.filter_options
@@ -274,6 +292,71 @@ where
                         )
                         .width(iced::Fill)
                         .on_input(|value| Message::SetRegex(self.tab(), value).into()),
+                        horizontal_rule(2),
+                        container(
+                            column![
+                                text("Allowed tags"),
+                                self.filter_options
+                                    .allow_tags
+                                    .iter()
+                                    .fold(Wrap::new(), |wrap, tag| wrap.push(
+                                        button(text(tag).size(11))
+                                            .padding(4)
+                                            .style(delete_tag_button)
+                                            .on_press(
+                                                Message::RemoveAllowTag(self.tab(), tag.clone())
+                                                    .into()
+                                            ),
+                                    ))
+                                    .spacing(5)
+                                    .line_spacing(5),
+                                pick_list(
+                                    self.all_tags()
+                                        .into_iter()
+                                        .filter(|tag| !self.filter_options.allow_tags.contains(tag)
+                                            && !self.filter_options.deny_tags.contains(tag))
+                                        .sorted()
+                                        .collect::<Vec<_>>(),
+                                    None::<String>,
+                                    |tag| Message::AddAllowTag(self.tab(), tag).into()
+                                )
+                                .placeholder("Allow tag")
+                            ]
+                            .spacing(10)
+                        ),
+                        horizontal_rule(2),
+                        container(
+                            column![
+                                text("Denied tags"),
+                                self.filter_options
+                                    .deny_tags
+                                    .iter()
+                                    .fold(Wrap::new(), |wrap, tag| wrap.push(
+                                        button(text(tag).size(11))
+                                            .padding(4)
+                                            .style(add_tag_button)
+                                            .on_press(
+                                                Message::RemoveDenyTag(self.tab(), tag.clone())
+                                                    .into()
+                                            ),
+                                    ))
+                                    .spacing(5)
+                                    .line_spacing(5),
+                                pick_list(
+                                    self.all_tags()
+                                        .into_iter()
+                                        .filter(|tag| !self.filter_options.allow_tags.contains(tag)
+                                            && !self.filter_options.deny_tags.contains(tag))
+                                        .sorted()
+                                        .collect::<Vec<_>>(),
+                                    None::<String>,
+                                    |tag| Message::AddDenyTag(self.tab(), tag).into()
+                                )
+                                .placeholder("Deny tag")
+                            ]
+                            .spacing(10)
+                        ),
+                        horizontal_rule(2),
                         container(ReadingStatus::iter().fold(
                             column![text("Reading Status")],
                             |column, status| {
@@ -299,6 +382,7 @@ where
                 container(
                     column![
                         text("Tag Options"),
+                        horizontal_rule(2),
                         text_input(
                             "Tag",
                             self.selection_tag.as_ref().unwrap_or(&String::from("")),
@@ -351,16 +435,6 @@ where
                     button("Filename")
                         .on_press(Message::OrderBy(self.tab(), OrderFilesBy::Filename).into()),
                 ]
-                .extend(self.filter_options.selected_tags.iter().map(|t| {
-                    container(
-                        button(text(t).size(11))
-                            .padding(4)
-                            .style(tag_button)
-                            .on_press(Message::RemoveTagFilter(self.tab(), t.clone()).into()),
-                    )
-                    .padding(4)
-                    .into()
-                }))
                 .spacing(5),
             ])
             .vertical_alignment(Vertical::Center)
@@ -399,7 +473,7 @@ where
                     )
                 ]
                 .extend(file.tags.iter().map(|tag| {
-                    if self.filter_options.selected_tags.contains(tag) {
+                    if self.filter_options.allow_tags.contains(tag) {
                         button(text(tag).size(11))
                             .padding(4)
                             .style(tag_button)
@@ -408,7 +482,7 @@ where
                         button(text(tag).size(11))
                             .padding(4)
                             .style(tag_button)
-                            .on_press(Message::AddTagFilter(self.tab(), tag.clone()).into())
+                            .on_press(Message::AddAllowTag(self.tab(), tag.clone()).into())
                             .into()
                     }
                 }))
@@ -463,9 +537,15 @@ fn filter_files<'a>(
         .iter()
         .filter(|file| {
             filter_options
-                .selected_tags
+                .allow_tags
                 .iter()
                 .all(|tag| file.tags.contains(tag))
+        })
+        .filter(|file| {
+            !file
+                .tags
+                .iter()
+                .any(|tag| filter_options.deny_tags.contains(tag))
         })
         .filter(|file| !settings.ui.contains_hidden_tag(&file.tags))
         .filter(|file| match &select_regex {
