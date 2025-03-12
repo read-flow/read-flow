@@ -4,9 +4,12 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 
+use archive_organizer::ApplicationModule;
+
+#[cfg(feature = "gui")]
+use archive_organizer::gui::UiSettings;
 #[cfg(feature = "server")]
 use archive_organizer::server;
-use archive_organizer::{ApplicationModule, gui::UiSettings};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

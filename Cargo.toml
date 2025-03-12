@@ -38,7 +38,7 @@ iced_aw = { version = "0.12.2", optional = true, default-features = false, featu
     "grid",
     "wrap",
 ] }
-indexmap = "2.8.0"
+indexmap = { version = "2.8.0", features = ["serde"] }
 itertools = "0.14.0"
 mime = "0.3.17"
 r2d2 = "0.8.10"

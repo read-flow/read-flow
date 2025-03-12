@@ -26,9 +26,12 @@ use serde::Deserialize;
 use tokio::runtime::Runtime;
 
 use db::{ConnectionPool, datasource::DbClient};
-use gui::UiSettings;
+
 use scan::{DirectorySettings, FileSystemVisitor};
 use settings::Settings;
+
+#[cfg(feature = "gui")]
+use gui::UiSettings;
 
 #[derive(Clone, Debug)]
 pub struct ApplicationModule {
@@ -37,6 +40,7 @@ pub struct ApplicationModule {
 }
 
 impl ApplicationModule {
+    #[cfg(feature = "gui")]
     pub fn instantiate_gui(ui_settings: UiSettings) -> anyhow::Result<Self> {
         let mut settings = settings::extract()?;
         settings.ui.merge_in(ui_settings);
