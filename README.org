@@ -2,7 +2,7 @@
 
 This is a tool to help discover and organize files locally and on remote servers.
 
-* TODO: Implement the following items [20/37]
+* TODO: Implement the following items [21/37]
 
 - [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
 - [X] Make database URL configurable (using ~figment~)
@@ -31,7 +31,7 @@ This is a tool to help discover and organize files locally and on remote servers
   - videos(.mpeg, .mov, mp4, etc.)
   - audio(.ogg, .mp3, .wav, etc.)
 - [ ] Recognize calibre directories, and support calibre database to import data
-- [ ] Derive folders to scan from discovered files
+- [X] Derive folders to scan from discovered files
 - [ ] Store folders to scan in database, and add command to scan configured folders
 - [ ] Check files in the database to see whether they still exist
 - [ ] Change directory modules API so that they can match and still recurse into the directory
