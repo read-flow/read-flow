@@ -244,6 +244,80 @@ where
         }
     }
 
+    fn allowed_tags_filter_menu(&self) -> Element<gui::Message> {
+        let mut col = column![text("Allowed tags")];
+        if !self.filter_options.allow_tags.is_empty() {
+            col = col.push(
+                self.filter_options
+                    .allow_tags
+                    .iter()
+                    .fold(Wrap::new(), |wrap, tag| {
+                        wrap.push(
+                            button(text(tag).size(11))
+                                .padding(4)
+                                .style(delete_tag_button)
+                                .on_press(Message::RemoveAllowTag(self.tab(), tag.clone()).into()),
+                        )
+                    })
+                    .spacing(5)
+                    .line_spacing(5),
+            );
+        };
+        col = col.push(
+            pick_list(
+                self.all_tags()
+                    .into_iter()
+                    .filter(|tag| {
+                        !self.filter_options.allow_tags.contains(tag)
+                            && !self.filter_options.deny_tags.contains(tag)
+                    })
+                    .sorted()
+                    .collect::<Vec<_>>(),
+                None::<String>,
+                |tag| Message::AddAllowTag(self.tab(), tag).into(),
+            )
+            .placeholder("Allow tag"),
+        );
+        col.spacing(10).into()
+    }
+
+    fn denied_tags_filter_menu(&self) -> Element<gui::Message> {
+        let mut col = column![text("Denied tags")];
+        if !self.filter_options.deny_tags.is_empty() {
+            col = col.push(
+                self.filter_options
+                    .deny_tags
+                    .iter()
+                    .fold(Wrap::new(), |wrap, tag| {
+                        wrap.push(
+                            button(text(tag).size(11))
+                                .padding(4)
+                                .style(add_tag_button)
+                                .on_press(Message::RemoveDenyTag(self.tab(), tag.clone()).into()),
+                        )
+                    })
+                    .spacing(5)
+                    .line_spacing(5),
+            );
+        };
+        col = col.push(
+            pick_list(
+                self.all_tags()
+                    .into_iter()
+                    .filter(|tag| {
+                        !self.filter_options.allow_tags.contains(tag)
+                            && !self.filter_options.deny_tags.contains(tag)
+                    })
+                    .sorted()
+                    .collect::<Vec<_>>(),
+                None::<String>,
+                |tag| Message::AddDenyTag(self.tab(), tag).into(),
+            )
+            .placeholder("Deny tag"),
+        );
+        col.spacing(10).into()
+    }
+
     pub fn view_menu(&self) -> Vec<Element<gui::Message>> {
         if self.is_offline {
             vec![
@@ -293,69 +367,9 @@ where
                         .width(iced::Fill)
                         .on_input(|value| Message::SetRegex(self.tab(), value).into()),
                         horizontal_rule(2),
-                        container(
-                            column![
-                                text("Allowed tags"),
-                                self.filter_options
-                                    .allow_tags
-                                    .iter()
-                                    .fold(Wrap::new(), |wrap, tag| wrap.push(
-                                        button(text(tag).size(11))
-                                            .padding(4)
-                                            .style(delete_tag_button)
-                                            .on_press(
-                                                Message::RemoveAllowTag(self.tab(), tag.clone())
-                                                    .into()
-                                            ),
-                                    ))
-                                    .spacing(5)
-                                    .line_spacing(5),
-                                pick_list(
-                                    self.all_tags()
-                                        .into_iter()
-                                        .filter(|tag| !self.filter_options.allow_tags.contains(tag)
-                                            && !self.filter_options.deny_tags.contains(tag))
-                                        .sorted()
-                                        .collect::<Vec<_>>(),
-                                    None::<String>,
-                                    |tag| Message::AddAllowTag(self.tab(), tag).into()
-                                )
-                                .placeholder("Allow tag")
-                            ]
-                            .spacing(10)
-                        ),
+                        container(self.allowed_tags_filter_menu()),
                         horizontal_rule(2),
-                        container(
-                            column![
-                                text("Denied tags"),
-                                self.filter_options
-                                    .deny_tags
-                                    .iter()
-                                    .fold(Wrap::new(), |wrap, tag| wrap.push(
-                                        button(text(tag).size(11))
-                                            .padding(4)
-                                            .style(add_tag_button)
-                                            .on_press(
-                                                Message::RemoveDenyTag(self.tab(), tag.clone())
-                                                    .into()
-                                            ),
-                                    ))
-                                    .spacing(5)
-                                    .line_spacing(5),
-                                pick_list(
-                                    self.all_tags()
-                                        .into_iter()
-                                        .filter(|tag| !self.filter_options.allow_tags.contains(tag)
-                                            && !self.filter_options.deny_tags.contains(tag))
-                                        .sorted()
-                                        .collect::<Vec<_>>(),
-                                    None::<String>,
-                                    |tag| Message::AddDenyTag(self.tab(), tag).into()
-                                )
-                                .placeholder("Deny tag")
-                            ]
-                            .spacing(10)
-                        ),
+                        container(self.denied_tags_filter_menu()),
                         horizontal_rule(2),
                         container(ReadingStatus::iter().fold(
                             column![text("Reading Status")],
