@@ -4,7 +4,8 @@ use iced::{
     Element, Task,
     alignment::{Horizontal, Vertical},
     widget::{
-        Row, button, checkbox, column, container, horizontal_rule, pick_list, row, text, text_input,
+        PickList, Row, button, checkbox, column, container, horizontal_rule, pick_list, row, text,
+        text_input,
     },
 };
 use iced_aw::{Grid, Wrap, grid_row};
@@ -244,78 +245,80 @@ where
         }
     }
 
+    fn tag_pick_list<'a>(
+        &'a self,
+        message: impl Fn(String) -> gui::Message + 'a,
+    ) -> PickList<'a, String, Vec<String>, String, gui::Message> {
+        pick_list(
+            self.all_tags()
+                .into_iter()
+                .filter(|tag| {
+                    !self.filter_options.allow_tags.contains(tag)
+                        && !self.filter_options.deny_tags.contains(tag)
+                })
+                .sorted()
+                .collect::<Vec<_>>(),
+            None::<String>,
+            message,
+        )
+    }
+
     fn allowed_tags_filter_menu(&self) -> Element<gui::Message> {
-        let mut col = column![text("Allowed tags")];
-        if !self.filter_options.allow_tags.is_empty() {
-            col = col.push(
-                self.filter_options
-                    .allow_tags
-                    .iter()
-                    .fold(Wrap::new(), |wrap, tag| {
-                        wrap.push(
-                            button(text(tag).size(11))
-                                .padding(4)
-                                .style(delete_tag_button)
-                                .on_press(Message::RemoveAllowTag(self.tab(), tag.clone()).into()),
-                        )
-                    })
-                    .spacing(5)
-                    .line_spacing(5),
-            );
-        };
-        col = col.push(
-            pick_list(
-                self.all_tags()
-                    .into_iter()
-                    .filter(|tag| {
-                        !self.filter_options.allow_tags.contains(tag)
-                            && !self.filter_options.deny_tags.contains(tag)
-                    })
-                    .sorted()
-                    .collect::<Vec<_>>(),
-                None::<String>,
-                |tag| Message::AddAllowTag(self.tab(), tag).into(),
+        column![text("Allowed tags")]
+            .apply_if(!self.filter_options.allow_tags.is_empty(), |col| {
+                col.push(
+                    self.filter_options
+                        .allow_tags
+                        .iter()
+                        .fold(Wrap::new(), |wrap, tag| {
+                            wrap.push(
+                                button(text(tag).size(11))
+                                    .padding(4)
+                                    .style(delete_tag_button)
+                                    .on_press(
+                                        Message::RemoveAllowTag(self.tab(), tag.clone()).into(),
+                                    ),
+                            )
+                        })
+                        .spacing(5)
+                        .line_spacing(5),
+                )
+            })
+            .push(
+                self.tag_pick_list(|tag| Message::AddAllowTag(self.tab(), tag).into())
+                    .placeholder("Allow tag"),
             )
-            .placeholder("Allow tag"),
-        );
-        col.spacing(10).into()
+            .spacing(10)
+            .into()
     }
 
     fn denied_tags_filter_menu(&self) -> Element<gui::Message> {
-        let mut col = column![text("Denied tags")];
-        if !self.filter_options.deny_tags.is_empty() {
-            col = col.push(
-                self.filter_options
-                    .deny_tags
-                    .iter()
-                    .fold(Wrap::new(), |wrap, tag| {
-                        wrap.push(
-                            button(text(tag).size(11))
-                                .padding(4)
-                                .style(add_tag_button)
-                                .on_press(Message::RemoveDenyTag(self.tab(), tag.clone()).into()),
-                        )
-                    })
-                    .spacing(5)
-                    .line_spacing(5),
-            );
-        };
-        col = col.push(
-            pick_list(
-                self.all_tags()
-                    .into_iter()
-                    .filter(|tag| {
-                        !self.filter_options.allow_tags.contains(tag)
-                            && !self.filter_options.deny_tags.contains(tag)
-                    })
-                    .sorted()
-                    .collect::<Vec<_>>(),
-                None::<String>,
-                |tag| Message::AddDenyTag(self.tab(), tag).into(),
+        column![text("Denied tags")]
+            .apply_if(!self.filter_options.deny_tags.is_empty(), |col| {
+                col.push(
+                    self.filter_options
+                        .deny_tags
+                        .iter()
+                        .fold(Wrap::new(), |wrap, tag| {
+                            wrap.push(
+                                button(text(tag).size(11))
+                                    .padding(4)
+                                    .style(add_tag_button)
+                                    .on_press(
+                                        Message::RemoveDenyTag(self.tab(), tag.clone()).into(),
+                                    ),
+                            )
+                        })
+                        .spacing(5)
+                        .line_spacing(5),
+                )
+            })
+            .push(
+                self.tag_pick_list(|tag| Message::AddDenyTag(self.tab(), tag).into())
+                    .placeholder("Deny tag"),
             )
-            .placeholder("Deny tag"),
-        );
-        col.spacing(10).into()
+            .spacing(10)
+            .into()
     }
 
     pub fn view_menu(&self) -> Vec<Element<gui::Message>> {
