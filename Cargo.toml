@@ -18,10 +18,10 @@ gui = ["dep:iced", "dep:iced_aw", "dep:rfd"]
 server = ["dep:rocket"]
 
 [dependencies]
-anyhow = "1.0.95"
-async-trait = "0.1.86"
-clap = { version = "4.5.30", features = ["derive"] }
-diesel = { version = "2.2.7", features = [
+anyhow = "1.0.97"
+async-trait = "0.1.87"
+clap = { version = "4.5.32", features = ["derive"] }
+diesel = { version = "2.2.8", features = [
     "sqlite",
     "r2d2",
     "returning_clauses_for_sqlite_3_35",
@@ -38,24 +38,24 @@ iced_aw = { version = "0.12.2", optional = true, default-features = false, featu
     "grid",
     "wrap",
 ] }
-indexmap = "2.7.1"
+indexmap = "2.8.0"
 itertools = "0.14.0"
 mime = "0.3.17"
 r2d2 = "0.8.10"
 rayon = "1.10.0"
 regex = "1.11.1"
-reqwest = { version = "0.12.12", features = ["json", "stream", "multipart"] }
+reqwest = { version = "0.12.14", features = ["json", "stream", "multipart"] }
 rfd = { version = "0.15.2", optional = true }
 rocket = { version = "0.5.1", optional = true, features = ["http2", "json"] }
-serde = { version = "1.0.217", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 serde_with = { version = "3.12.0", features = ["indexmap"] }
 strum = { version = "0.27.1", features = ["derive"] }
-thiserror = "2.0.11"
-tokio = { version = "1.43.0", features = ["rt-multi-thread", "process"] }
+thiserror = "2.0.12"
+tokio = { version = "1.44.0", features = ["rt-multi-thread", "process"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["std", "env-filter"] }
 url = "2.5.4"
 
 [dev-dependencies]
 assert4rs = "0.1.0"
-rstest = "0.24.0"
+rstest = "0.25.0"
