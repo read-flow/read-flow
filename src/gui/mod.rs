@@ -334,7 +334,7 @@ impl App {
                 self.tabs.refresh_current_tab()
             }
             Message::AddNewRemoteUrl(new_remote_url) => {
-                Task::perform(test_remote_url(new_remote_url.clone()), move |result| {
+                Task::perform(verify_remote_url(new_remote_url.clone()), move |result| {
                     Message::RemoteUrlVerified(result.map(|_| new_remote_url.clone()))
                 })
             }
@@ -459,7 +459,7 @@ fn content(column: widget::Column<Message>) -> widget::Container<'_, Message> {
     .padding(10)
 }
 
-async fn test_remote_url(base_url: String) -> Result<(), client::Error> {
+async fn verify_remote_url(base_url: String) -> Result<(), client::Error> {
     let client = FilesClient::new(base_url.parse::<Url>().unwrap()).unwrap();
     client.status().await?;
     Ok(())
