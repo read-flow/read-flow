@@ -65,7 +65,7 @@ impl ApplicationModule {
         }
     }
 
-    fn db_client(&self) -> DbClient {
+    pub fn db_client(&self) -> DbClient {
         DbClient::new(self.connection_pool.clone())
     }
 
