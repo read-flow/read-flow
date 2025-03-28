@@ -2,6 +2,7 @@ use std::{
     fmt::{Display, Formatter},
     process::ExitStatus,
     result::Result,
+    str::FromStr,
 };
 
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,19 @@ pub enum ReadingStatus {
 impl Display for ReadingStatus {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl FromStr for ReadingStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "unread" => Ok(Self::Unread),
+            "reading" => Ok(Self::Reading),
+            "read" => Ok(Self::Read),
+            _ => Err(format!("Invalid reading status: {}", s)),
+        }
     }
 }
 
