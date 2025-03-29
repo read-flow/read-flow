@@ -14,7 +14,7 @@ lto = true
 
 [features]
 default = ["gui", "server"]
-gui = ["dep:iced", "dep:iced_aw", "dep:rfd"]
+gui = ["dep:iced", "dep:libcosmic", "dep:rfd"]
 server = ["dep:rocket"]
 
 [dependencies]
@@ -34,12 +34,9 @@ expanduser = "1.2.2"
 figment = { version = "0.10.19", default-features = false, features = ["toml"] }
 futures = "0.3.31"
 iced = { version = "0.13.1", optional = true, features = ["tokio"] }
-iced_aw = { version = "0.12.2", optional = true, default-features = false, features = [
-    "grid",
-    "wrap",
-] }
 indexmap = { version = "2.8.0", features = ["serde"] }
 itertools = "0.14.0"
+libcosmic = { git = "https://github.com/pop-os/libcosmic", optional = true }
 mime = "0.3.17"
 r2d2 = "0.8.10"
 rayon = "1.10.0"

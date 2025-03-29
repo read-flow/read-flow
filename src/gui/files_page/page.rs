@@ -2,13 +2,11 @@ use std::{cmp::Ordering, collections::HashSet, ffi::OsStr, path::Path, sync::Arc
 
 use iced::{
     Element, Task,
-    alignment::{Horizontal, Vertical},
     widget::{
-        PickList, Row, button, checkbox, column, container, horizontal_rule, pick_list, row, text,
-        text_input,
+        Column, PickList, Row, button, checkbox, column, container, horizontal_rule, pick_list,
+        row, text, text_input,
     },
 };
-use iced_aw::{Grid, Wrap, grid_row};
 use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use regex::Regex;
@@ -270,8 +268,8 @@ where
                     self.filter_options
                         .allow_tags
                         .iter()
-                        .fold(Wrap::new(), |wrap, tag| {
-                            wrap.push(
+                        .fold(Column::new(), |col, tag| {
+                            col.push(
                                 button(text(tag).size(11))
                                     .padding(4)
                                     .style(delete_tag_button)
@@ -280,8 +278,7 @@ where
                                     ),
                             )
                         })
-                        .spacing(5)
-                        .line_spacing(5),
+                        .spacing(5),
                 )
             })
             .push(
@@ -299,8 +296,8 @@ where
                     self.filter_options
                         .deny_tags
                         .iter()
-                        .fold(Wrap::new(), |wrap, tag| {
-                            wrap.push(
+                        .fold(Column::new(), |col, tag| {
+                            col.push(
                                 button(text(tag).size(11))
                                     .padding(4)
                                     .style(add_tag_button)
@@ -309,8 +306,7 @@ where
                                     ),
                             )
                         })
-                        .spacing(5)
-                        .line_spacing(5),
+                        .spacing(5),
                 )
             })
             .push(
@@ -439,8 +435,8 @@ where
             return dialog.view();
         }
 
-        let mut grid = Grid::new()
-            .push(grid_row![
+        let mut grid = Column::new()
+            .push(row![
                 // button("id").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Id).into()),
                 // button("type").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Type).into()),
                 button("size").on_press(Message::OrderBy(self.tab(), OrderFilesBy::Size).into()),
@@ -454,10 +450,7 @@ where
                 ]
                 .spacing(5),
             ])
-            .vertical_alignment(Vertical::Center)
-            .horizontal_alignment(Horizontal::Left)
-            .row_spacing(5)
-            .column_spacing(10);
+            .spacing(10);
 
         let files: Vec<_> = if self.filter_options.duplicates {
             let buckets: IndexMap<String, Vec<&File>> =
@@ -474,7 +467,7 @@ where
         };
 
         for file in files {
-            grid = grid.push(grid_row![
+            grid = grid.push(row![
                 // text(file.id),
                 // text(file.type_.clone()),
                 text(file.size),
