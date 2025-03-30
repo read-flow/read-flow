@@ -35,8 +35,8 @@ use gui::UiSettings;
 
 #[derive(Clone, Debug)]
 pub struct ApplicationModule {
-    settings: Arc<Settings>,
-    connection_pool: ConnectionPool,
+    pub settings: Arc<Settings>,
+    pub connection_pool: ConnectionPool,
 }
 
 impl ApplicationModule {
@@ -172,7 +172,7 @@ where
     buckets
 }
 
-trait Builder: Sized {
+pub trait Builder: Sized {
     fn apply_if<F>(self, condition: bool, fun: F) -> Self
     where
         F: FnOnce(Self) -> Self;
