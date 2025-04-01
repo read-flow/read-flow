@@ -35,8 +35,8 @@ use gui::UiSettings;
 
 #[derive(Clone, Debug)]
 pub struct ApplicationModule {
-    settings: Arc<Settings>,
-    connection_pool: ConnectionPool,
+    pub settings: Arc<Settings>,
+    pub connection_pool: ConnectionPool,
 }
 
 impl ApplicationModule {
