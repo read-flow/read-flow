@@ -10,10 +10,8 @@ use relm4::loading_widgets::LoadingWidgets;
 use relm4::once_cell::sync::Lazy;
 use relm4::view;
 
-use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
 
-use crate::file_box::FileBoxOutput;
 use crate::file_details::FileDetails;
 use crate::file_list::FileList;
 
@@ -33,12 +31,6 @@ where
 {
     file_data_source: Arc<FDS>,
     file_list: AsyncController<FileList<FDS>>,
-    details: Option<AsyncController<FileDetails<FDS>>>,
-}
-
-#[derive(Debug)]
-pub enum AppInput {
-    FileClicked(File),
 }
 
 #[relm4::component(pub, async)]
@@ -47,7 +39,7 @@ where
     FDS: FileDataSource + 'static,
 {
     type Init = Arc<FDS>;
-    type Input = AppInput;
+    type Input = ();
     type Output = ();
     type CommandOutput = ();
 
@@ -109,14 +101,11 @@ where
 
         let file_list = FileList::builder()
             .launch(file_data_source.clone())
-            .forward(sender.input_sender(), |output| match output {
-                FileBoxOutput::FileClicked(file) => AppInput::FileClicked(file),
-            });
+            .forward(sender.input_sender(), |_| {});
 
         let model = App {
             file_data_source,
             file_list,
-            details: None,
         };
 
         let file_list = model.file_list.widget();
@@ -128,21 +117,10 @@ where
 
     async fn update(
         &mut self,
-        msg: Self::Input,
+        _msg: Self::Input,
         _sender: AsyncComponentSender<Self>,
         _root: &Self::Root,
     ) {
-        match msg {
-            AppInput::FileClicked(file) => {
-                if let Some(_details) = self.details.take() {
-                    // The component will be dropped when the window is closed
-                }
-                self.details = Some(
-                    FileDetails::builder()
-                        .launch((file.clone(), self.file_data_source.clone()))
-                        .detach(),
-                );
-            }
-        }
+        // No update needed as all functionality is handled by FileList
     }
 }

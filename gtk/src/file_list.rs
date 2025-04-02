@@ -5,13 +5,14 @@ use relm4::component::AsyncComponentParts;
 use relm4::component::AsyncComponentSender;
 use relm4::gtk;
 use relm4::once_cell::sync::Lazy;
-use relm4::prelude::AsyncFactoryVecDeque;
+use relm4::prelude::*;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
 
 use crate::file_box::FileBox;
 use crate::file_box::FileBoxOutput;
+use crate::file_details::FileDetails;
 
 use std::sync::Arc;
 
@@ -22,9 +23,13 @@ static INITIALIZE_CSS: Lazy<()> = Lazy::new(|| {
     relm4::set_global_css_with_priority(COMPONENT_CSS, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 });
 
-pub struct FileList<FDS> {
+pub struct FileList<FDS>
+where
+    FileDetails<FDS>: relm4::component::AsyncComponent,
+{
     file_data_source: Arc<FDS>,
     files: AsyncFactoryVecDeque<FileBox>,
+    details: Option<AsyncController<FileDetails<FDS>>>,
 }
 
 #[derive(Debug)]
@@ -90,6 +95,7 @@ where
         let model = FileList {
             file_data_source,
             files: files_deque,
+            details: None,
         };
 
         let files_box = model.files.widget();
@@ -107,6 +113,14 @@ where
     ) {
         match msg {
             FileListInput::FileClicked(file) => {
+                if let Some(_details) = self.details.take() {
+                    // The component will be dropped when the window is closed
+                }
+                self.details = Some(
+                    FileDetails::builder()
+                        .launch((file.clone(), self.file_data_source.clone()))
+                        .detach(),
+                );
                 sender.output(FileBoxOutput::FileClicked(file)).unwrap();
             }
         }
