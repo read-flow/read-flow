@@ -2,9 +2,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use gtk::prelude::*;
+use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentParts;
 use relm4::component::AsyncComponentSender;
+
 use relm4::gtk;
 
 use archive_organizer::api::File;
@@ -50,171 +52,165 @@ where
         #[root]
         gtk::Window {
             set_title: Some("File Details"),
-            set_default_width: 500,
+            set_default_width: 600,
             set_default_height: 600,
             set_modal: true,
+            set_icon_name: Some("folder-archives"),
             add_css_class: "about-dialog",
             connect_close_request[sender] => move |_| {
                 sender.input(FileDetailsInput::Close);
-		gtk::glib::Propagation::Proceed
+                gtk::glib::Propagation::Proceed
+            },
+
+            gtk::HeaderBar {
+                set_show_title_buttons: true,
+                #[wrap(Some)]
+                set_title_widget = &gtk::Label::new(Some("File Details")),
             },
 
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 0,
+                set_spacing: 12,
+                set_margin_all: 12,
 
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 12,
-                    set_margin_start: 20,
-                    set_margin_end: 20,
-                    set_margin_top: 20,
-                    set_margin_bottom: 20,
+
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 8,
+                        set_halign: gtk::Align::End,
+                        set_hexpand: true,
+
+                        #[name(tag_container)]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 8,
+                            set_halign: gtk::Align::End,
+                        },
+                    },
 
                     #[name(filename_label)]
                     gtk::Label {
                         set_label: &model.filename,
                         add_css_class: "title-1",
-                        set_halign: gtk::Align::Center,
+                        set_halign: gtk::Align::Start,
                     },
 
                     #[name(folder_label)]
                     gtk::Label {
                         set_label: &model.folder,
                         add_css_class: "dim-label",
-                        set_halign: gtk::Align::Center,
+                        set_halign: gtk::Align::Start,
                         set_selectable: true,
                     },
 
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 8,
-                        set_margin_top: 12,
-
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_spacing: 8,
-                            set_halign: gtk::Align::End,
-
-                            #[name(tag_container)]
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 8,
-                            },
-                        },
-                    },
-                },
-
-                gtk::Separator {
-                    set_orientation: gtk::Orientation::Horizontal,
-                },
-
-                gtk::ScrolledWindow {
-                    set_vexpand: true,
-                    set_hexpand: true,
-                    set_min_content_height: 300,
-
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 12,
-                        set_margin_start: 20,
-                        set_margin_end: 20,
-                        set_margin_top: 20,
-                        set_margin_bottom: 20,
-
-                        #[name(details_label)]
-                        gtk::Label {
-                            set_label: "Details",
-                            add_css_class: "title-2",
-                            set_halign: gtk::Align::Start,
-                        },
+                    gtk::ScrolledWindow {
+                        set_vexpand: true,
+                        set_hexpand: true,
+                        set_min_content_height: 300,
+                        set_policy: (gtk::PolicyType::Automatic, gtk::PolicyType::Automatic),
 
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
                             set_spacing: 12,
+                            set_margin_all: 12,
 
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 12,
-
-                                #[name(id_label)]
-                                gtk::Label {
-                                    set_label: "ID",
-                                    add_css_class: "dim-label",
-                                    set_width_request: 100,
-                                },
-                                #[name(id_value)]
-                                gtk::Label {
-                                    set_label: &model.file.id.to_string(),
-                                    set_selectable: true,
-                                },
+                            #[name(details_label)]
+                            gtk::Label {
+                                set_label: "Details",
+                                add_css_class: "title-2",
+                                set_halign: gtk::Align::Start,
                             },
 
                             gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
+                                set_orientation: gtk::Orientation::Vertical,
                                 set_spacing: 12,
 
-                                #[name(type_label)]
-                                gtk::Label {
-                                    set_label: "Type",
-                                    add_css_class: "dim-label",
-                                    set_width_request: 100,
-                                },
-                                #[name(type_value)]
-                                gtk::Label {
-                                    set_label: &model.file.type_,
-                                    set_selectable: true,
-                                },
-                            },
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 12,
 
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 12,
-
-                                #[name(size_label)]
-                                gtk::Label {
-                                    set_label: "Size",
-                                    add_css_class: "dim-label",
-                                    set_width_request: 100,
+                                    #[name(id_label)]
+                                    gtk::Label {
+                                        set_label: "ID",
+                                        add_css_class: "dim-label",
+                                        set_width_request: 100,
+                                    },
+                                    #[name(id_value)]
+                                    gtk::Label {
+                                        set_label: &model.file.id.to_string(),
+                                        set_selectable: true,
+                                    },
                                 },
-                                #[name(size_value)]
-                                gtk::Label {
-                                    set_label: &format!("{} bytes", model.file.size),
-                                    set_selectable: true,
-                                },
-                            },
 
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 12,
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 12,
 
-                                #[name(fingerprint_label)]
-                                gtk::Label {
-                                    set_label: "Fingerprint",
-                                    add_css_class: "dim-label",
-                                    set_width_request: 100,
+                                    #[name(type_label)]
+                                    gtk::Label {
+                                        set_label: "Type",
+                                        add_css_class: "dim-label",
+                                        set_width_request: 100,
+                                    },
+                                    #[name(type_value)]
+                                    gtk::Label {
+                                        set_label: &model.file.type_,
+                                        set_selectable: true,
+                                    },
                                 },
-                                #[name(fingerprint_value)]
-                                gtk::Label {
-                                    set_label: &model.file.fingerprint,
-                                    set_selectable: true,
-                                },
-                            },
 
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 12,
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 12,
 
-                                #[name(status_label)]
-                                gtk::Label {
-                                    set_label: "Status",
-                                    add_css_class: "dim-label",
-                                    set_width_request: 100,
+                                    #[name(size_label)]
+                                    gtk::Label {
+                                        set_label: "Size",
+                                        add_css_class: "dim-label",
+                                        set_width_request: 100,
+                                    },
+                                    #[name(size_value)]
+                                    gtk::Label {
+                                        set_label: &format!("{} bytes", model.file.size),
+                                        set_selectable: true,
+                                    },
                                 },
-                                #[name(status_value)]
-                                gtk::Label {
-                                    set_label: &format!("{:?}", model.file.status),
-                                    set_selectable: true,
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 12,
+
+                                    #[name(fingerprint_label)]
+                                    gtk::Label {
+                                        set_label: "Fingerprint",
+                                        add_css_class: "dim-label",
+                                        set_width_request: 100,
+                                    },
+                                    #[name(fingerprint_value)]
+                                    gtk::Label {
+                                        set_label: &model.file.fingerprint,
+                                        set_selectable: true,
+                                    },
+                                },
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 12,
+
+                                    #[name(status_label)]
+                                    gtk::Label {
+                                        set_label: "Status",
+                                        add_css_class: "dim-label",
+                                        set_width_request: 100,
+                                    },
+                                    #[name(status_value)]
+                                    gtk::Label {
+                                        set_label: &format!("{:?}", model.file.status),
+                                        set_selectable: true,
+                                    },
                                 },
                             },
                         },
@@ -228,33 +224,24 @@ where
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
                     set_spacing: 12,
-                    set_margin_start: 20,
-                    set_margin_end: 20,
-                    set_margin_top: 20,
+                    set_margin_all: 12,
+                    set_halign: gtk::Align::End,
 
                     gtk::Button {
                         set_label: "Open File",
-                        set_hexpand: true,
+                        add_css_class: "suggested-action",
                         connect_clicked[sender] => move |_| {
                             sender.input(FileDetailsInput::OpenFile);
                         },
                     },
-                },
-
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 12,
-                    set_margin_start: 20,
-                    set_margin_end: 20,
-                    set_margin_top: 12,
-                    set_margin_bottom: 12,
 
                     gtk::Button {
                         set_label: "Close",
+                        add_css_class: "destructive-action",
                         connect_clicked => FileDetailsInput::Close,
                     },
                 },
-            }
+            },
         }
     }
 
@@ -295,7 +282,12 @@ where
         AsyncComponentParts { model, widgets }
     }
 
-    async fn update(&mut self, msg: Self::Input, _sender: AsyncComponentSender<Self>, root: &Self::Root) {
+    async fn update(
+        &mut self,
+        msg: Self::Input,
+        _sender: AsyncComponentSender<Self>,
+        root: &Self::Root,
+    ) {
         match msg {
             FileDetailsInput::Close => {
                 root.close();

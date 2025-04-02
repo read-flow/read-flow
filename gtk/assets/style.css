@@ -1,17 +1,48 @@
 .my-path {
     font-size: 11px;
+    color: @theme_text_color;
+    margin-top: 4px;
 }
 
 .tag-badge {
-    background-color: rgba(26, 115, 232, 0.1);
+    background-color: @accent_color;
+    color: @accent_text_color;
     border-radius: 12px;
     padding: 4px 12px;
     margin: 2px;
-    font-size: 12px;
-    color: #1a73e8;
+    font-weight: 500;
 }
 
 .tag-container {
+    display: flex;
     flex-wrap: wrap;
+    margin-top: 4px;
+    gap: 4px;
+}
+
+/* GNOME HIG specific styles */
+.file-item {
+    padding: 8px;
+    border-radius: 6px;
+    transition: background-color 0.2s;
+}
+
+.file-item:hover {
+    background-color: @theme_bg_color;
+}
+
+.file-item:active {
+    background-color: @theme_selected_bg_color;
+}
+
+.file-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: @theme_text_color;
+}
+
+.file-details {
+    font-size: 12px;
+    color: @theme_text_color;
     margin-top: 4px;
 }

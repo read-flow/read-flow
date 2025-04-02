@@ -6,7 +6,9 @@ use url::Url;
 
 use archive_organizer::{ApplicationModule, client::FilesClient, db::dao::RemoteDao};
 
-pub fn get_remote_clients(application_module: &ApplicationModule) -> anyhow::Result<Vec<FilesClient>> {
+pub fn get_remote_clients(
+    application_module: &ApplicationModule,
+) -> anyhow::Result<Vec<FilesClient>> {
     application_module
         .connection_pool
         .select_all_remotes()?

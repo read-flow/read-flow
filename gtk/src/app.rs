@@ -54,15 +54,30 @@ where
         #[root]
         gtk::Window {
             set_title: Some("Archive Organizer"),
-            set_default_width: 400,
-            set_default_height: 300,
+            set_default_width: 800,
+            set_default_height: 600,
+            set_icon_name: Some("folder-archives"),
 
-            gtk::ScrolledWindow {
-                #[local_ref]
-                files_box -> gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 10,
-                    set_margin_all: 20,
+            gtk::HeaderBar {
+                set_show_title_buttons: true,
+                set_title_widget: Some(&gtk::Label::new(Some("Archive Organizer"))),
+            },
+
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 12,
+                set_margin_all: 12,
+
+                gtk::ScrolledWindow {
+                    set_vexpand: true,
+                    set_policy: (gtk::PolicyType::Never, gtk::PolicyType::Automatic),
+
+                    #[local_ref]
+                    files_box -> gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 8,
+                        set_margin_all: 12,
+                    },
                 },
             },
         }
@@ -98,12 +113,11 @@ where
 
         let files = file_data_source.get_files().await.unwrap(); // TODO: error handling
 
-        let mut files_deque =
-            AsyncFactoryVecDeque::builder()
-                .launch(gtk::Box::default())
-                .forward(sender.input_sender(), |output| match output {
-                    FileBoxOutput::FileClicked(file) => AppInput::FileClicked(file),
-                });
+        let mut files_deque = AsyncFactoryVecDeque::builder()
+            .launch(gtk::Box::default())
+            .forward(sender.input_sender(), |output| match output {
+                FileBoxOutput::FileClicked(file) => AppInput::FileClicked(file),
+            });
 
         {
             let mut mut_files = files_deque.guard();
@@ -126,7 +140,12 @@ where
         AsyncComponentParts { model, widgets }
     }
 
-    async fn update(&mut self, msg: Self::Input, _sender: AsyncComponentSender<Self>, _root: &Self::Root) {
+    async fn update(
+        &mut self,
+        msg: Self::Input,
+        _sender: AsyncComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
         match msg {
             AppInput::FileClicked(file) => {
                 if let Some(_details) = self.details.take() {

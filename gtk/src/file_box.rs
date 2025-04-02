@@ -19,7 +19,11 @@ impl FileBox {
         let folder = format!("{}", path.parent().unwrap().display());
         let filename = format!("{}", path.file_name().unwrap().to_string_lossy());
 
-        Self { file, filename, folder }
+        Self {
+            file,
+            filename,
+            folder,
+        }
     }
 }
 
