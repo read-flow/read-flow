@@ -29,7 +29,6 @@ where
     FileList<FDS>: relm4::component::AsyncComponent,
     FileDetails<FDS>: relm4::component::AsyncComponent,
 {
-    file_data_source: Arc<FDS>,
     file_list: AsyncController<FileList<FDS>>,
 }
 
@@ -104,7 +103,6 @@ where
             .forward(sender.input_sender(), |_| {});
 
         let model = App {
-            file_data_source,
             file_list,
         };
 
