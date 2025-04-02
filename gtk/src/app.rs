@@ -1,3 +1,4 @@
+use archive_organizer::db::datasource::DbClient;
 use gtk::prelude::*;
 use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
@@ -10,9 +11,6 @@ use relm4::loading_widgets::LoadingWidgets;
 use relm4::once_cell::sync::Lazy;
 use relm4::view;
 
-use archive_organizer::api::FileDataSource;
-
-use crate::file_details::FileDetails;
 use crate::file_list::FileList;
 
 use std::sync::Arc;
@@ -24,20 +22,13 @@ static INITIALIZE_CSS: Lazy<()> = Lazy::new(|| {
     relm4::set_global_css_with_priority(COMPONENT_CSS, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 });
 
-pub struct App<FDS>
-where
-    FileList<FDS>: relm4::component::AsyncComponent,
-    FileDetails<FDS>: relm4::component::AsyncComponent,
-{
-    file_list: AsyncController<FileList<FDS>>,
+pub struct App {
+    local_file_list: AsyncController<FileList<DbClient>>,
 }
 
 #[relm4::component(pub, async)]
-impl<FDS> AsyncComponent for App<FDS>
-where
-    FDS: FileDataSource + 'static,
-{
-    type Init = Arc<FDS>;
+impl AsyncComponent for App {
+    type Init = Arc<DbClient>;
     type Input = ();
     type Output = ();
     type CommandOutput = ();
@@ -98,15 +89,13 @@ where
         #[allow(clippy::no_effect)]
         *INITIALIZE_CSS;
 
-        let file_list = FileList::builder()
+        let local_file_list = FileList::builder()
             .launch(file_data_source.clone())
             .forward(sender.input_sender(), |_| {});
 
-        let model = App {
-            file_list,
-        };
+        let model = App { local_file_list };
 
-        let file_list = model.file_list.widget();
+        let file_list = model.local_file_list.widget();
 
         let widgets = view_output!();
 
