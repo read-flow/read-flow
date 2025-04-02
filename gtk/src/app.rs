@@ -1,21 +1,21 @@
 use gtk::prelude::*;
 use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
+use relm4::component::AsyncComponentController;
 use relm4::component::AsyncComponentParts;
 use relm4::component::AsyncComponentSender;
 use relm4::component::AsyncController;
 use relm4::gtk;
 use relm4::loading_widgets::LoadingWidgets;
 use relm4::once_cell::sync::Lazy;
-use relm4::prelude::AsyncFactoryVecDeque;
 use relm4::view;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
 
-use crate::file_box::FileBox;
 use crate::file_box::FileBoxOutput;
 use crate::file_details::FileDetails;
+use crate::file_list::FileList;
 
 use std::sync::Arc;
 
@@ -28,10 +28,11 @@ static INITIALIZE_CSS: Lazy<()> = Lazy::new(|| {
 
 pub struct App<FDS>
 where
+    FileList<FDS>: relm4::component::AsyncComponent,
     FileDetails<FDS>: relm4::component::AsyncComponent,
 {
     file_data_source: Arc<FDS>,
-    files: AsyncFactoryVecDeque<FileBox>,
+    file_list: AsyncController<FileList<FDS>>,
     details: Option<AsyncController<FileDetails<FDS>>>,
 }
 
@@ -73,11 +74,7 @@ where
                     set_policy: (gtk::PolicyType::Never, gtk::PolicyType::Automatic),
 
                     #[local_ref]
-                    files_box -> gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 8,
-                        set_margin_all: 12,
-                    },
+                    file_list -> gtk::Box,
                 },
             },
         }
@@ -87,15 +84,14 @@ where
         view! {
             #[local]
             root {
-                set_title: Some("Simple app"),
-                set_default_size: (300, 100),
+                set_title: Some("Archive Organizer"),
+                set_default_size: (800, 600),
 
-                // This will be removed automatically by
-                // LoadingWidgets when the full view has loaded
                 #[name(spinner)]
                 gtk::Spinner {
                     start: (),
                     set_halign: gtk::Align::Center,
+                    set_valign: gtk::Align::Center,
                 }
             }
         }
@@ -108,33 +104,23 @@ where
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
         // Initialize the CSS.
-        #[allow(clippy::no_effect)] // Fixes a false positive in Rust < 1.78
+        #[allow(clippy::no_effect)]
         *INITIALIZE_CSS;
 
-        let files = file_data_source.get_files().await.unwrap(); // TODO: error handling
-
-        let mut files_deque = AsyncFactoryVecDeque::builder()
-            .launch(gtk::Box::default())
+        let file_list = FileList::builder()
+            .launch(file_data_source.clone())
             .forward(sender.input_sender(), |output| match output {
                 FileBoxOutput::FileClicked(file) => AppInput::FileClicked(file),
             });
 
-        {
-            let mut mut_files = files_deque.guard();
-            for file in files {
-                mut_files.push_back(file);
-            }
-        }
-
         let model = App {
             file_data_source,
-            files: files_deque,
+            file_list,
             details: None,
         };
 
-        let files_box = model.files.widget();
+        let file_list = model.file_list.widget();
 
-        // Insert the code generation of the view! macro here
         let widgets = view_output!();
 
         AsyncComponentParts { model, widgets }

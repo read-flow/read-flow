@@ -1,6 +1,7 @@
 pub mod app;
 pub mod file_box;
 pub mod file_details;
+pub mod file_list;
 
 use url::Url;
 
