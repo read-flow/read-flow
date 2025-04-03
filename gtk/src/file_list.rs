@@ -14,8 +14,6 @@ use crate::file_box::FileBox;
 use crate::file_box::FileBoxOutput;
 use crate::file_details::FileDetails;
 
-use std::sync::Arc;
-
 const COMPONENT_CSS: &str = include_str!("../assets/style.css");
 
 /// The initializer for the CSS, ensuring it only happens once.
@@ -27,7 +25,7 @@ pub struct FileList<FDS>
 where
     FileDetails<FDS>: relm4::component::AsyncComponent,
 {
-    file_data_source: Arc<FDS>,
+    pub(super) file_data_source: FDS,
     files: AsyncFactoryVecDeque<FileBox>,
     details: Option<AsyncController<FileDetails<FDS>>>,
 }
@@ -40,9 +38,9 @@ pub enum FileListInput {
 #[relm4::component(pub, async)]
 impl<FDS> AsyncComponent for FileList<FDS>
 where
-    FDS: FileDataSource + 'static,
+    FDS: FileDataSource + Clone + 'static,
 {
-    type Init = Arc<FDS>;
+    type Init = FDS;
     type Input = FileListInput;
     type Output = FileBoxOutput;
     type CommandOutput = ();

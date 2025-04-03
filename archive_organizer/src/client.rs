@@ -19,7 +19,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct FilesClient {
-    base_url: Url,
+    pub base_url: Url,
     client: Client,
 }
 

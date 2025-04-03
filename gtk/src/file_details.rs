@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::sync::Arc;
 
 use gtk::prelude::*;
 use relm4::RelmWidgetExt;
@@ -29,7 +28,7 @@ pub struct FileDetails<FDS> {
     file: File,
     filename: String,
     folder: String,
-    file_data_source: Arc<FDS>,
+    file_data_source: FDS,
 }
 
 #[derive(Debug)]
@@ -43,7 +42,7 @@ impl<FDS> AsyncComponent for FileDetails<FDS>
 where
     FDS: FileDataSource + 'static,
 {
-    type Init = (File, Arc<FDS>);
+    type Init = (File, FDS);
     type Input = FileDetailsInput;
     type Output = ();
     type CommandOutput = ();

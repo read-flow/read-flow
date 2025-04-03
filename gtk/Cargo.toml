@@ -11,8 +11,9 @@ maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 
 [dependencies]
 anyhow.workspace = true
-relm4.workspace = true
+indexmap.workspace = true
 relm4-components.workspace = true
+relm4.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros"] }
