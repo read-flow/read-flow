@@ -44,6 +44,7 @@ regex.workspace = true
 reqwest = { workspace = true, features = ["json", "stream", "multipart"] }
 rfd = { workspace = true, optional = true }
 rocket = { workspace = true, optional = true, features = ["http2", "json"] }
+rocket_cors = "0.6.0"
 serde = { workspace = true, features = ["derive"] }
 serde_with = { workspace = true, features = ["indexmap"] }
 strum = { workspace = true, features = ["derive"] }

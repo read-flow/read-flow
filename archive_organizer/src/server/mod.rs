@@ -9,9 +9,11 @@ use rocket::{
     fs::{NamedFile, TempFile},
     get,
     http::ContentType,
+    http::Method,
     post, put, routes,
     serde::{Deserialize, json::Json},
 };
+use rocket_cors::{CorsOptions, Cors, AllowedOrigins, Origins};
 
 use crate::{
     ApplicationModule, ExpandedPath,
@@ -77,11 +79,29 @@ impl From<scan::Error> for Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
+#[cfg(debug_assertions)]
+const ALLOWED_ORIGINS: &str = "http://localhost:5173";
+
+#[cfg(not(debug_assertions))]
+const ALLOWED_ORIGINS: &str = "<your production origin>";
+
+pub fn create_cors() -> Cors {
+    let cors = CorsOptions::default()
+        .allowed_origins(AllowedOrigins::all())
+        .allowed_methods(vec![Method::Get, Method::Post, Method::Options].into_iter().map(From::from).collect())
+        .allowed_headers(rocket_cors::AllowedHeaders::All)
+        .allow_credentials(true);
+
+    cors.to_cors().unwrap()
+}
+
 #[rocket::launch]
 pub fn serve() -> _ {
     let figment = settings::decorate(rocket::Config::figment());
 
     let application_module = ApplicationModule::from_figment(&figment).unwrap();
+
+    let cors = create_cors();
 
     let routes = routes![
         status,
@@ -99,6 +119,7 @@ pub fn serve() -> _ {
     rocket::custom(figment)
         .mount("/", routes)
         .manage(application_module)
+        .attach(cors)
 }
 
 #[get("/status")]

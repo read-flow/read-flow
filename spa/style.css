@@ -1,0 +1,68 @@
+body {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f4f4;
+    margin: 0;
+    padding: 0;
+}
+
+h1 {
+    text-align: center;
+    padding: 20px 0;
+    background-color: #333;
+    color: white;
+    margin: 0;
+}
+
+#file-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    padding: 20px;
+}
+
+.file-item {
+    background-color: #fff;
+    border-radius: 5px;
+    padding: 20px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease-in-out;
+}
+
+.file-item:hover {
+    transform: translateY(-5px);
+}
+
+.file-item p {
+    margin: 5px 0;
+}
+
+.file-name {
+    font-size: 1.2em;
+    font-weight: bold;
+}
+
+.file-directory {
+    font-size: 0.8em;
+    color: #777;
+}
+
+.tag {
+    background-color: #007bff; /* A more appealing blue */
+    color: white;
+    padding: 5px 10px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 12px;
+    margin: 4px 2px;
+    cursor: pointer;
+    border-radius: 5px;
+}
+
+footer {
+    text-align: center;
+    padding: 10px 0;
+    background-color: #333;
+    color: white;
+    margin-top: 20px;
+}
