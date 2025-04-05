@@ -13,7 +13,7 @@ use rocket::{
     post, put, routes,
     serde::{Deserialize, json::Json},
 };
-use rocket_cors::{CorsOptions, Cors, AllowedOrigins, Origins};
+use rocket_cors::{CorsOptions, Cors, AllowedOrigins};
 
 use crate::{
     ApplicationModule, ExpandedPath,
@@ -79,16 +79,15 @@ impl From<scan::Error> for Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
-#[cfg(debug_assertions)]
-const ALLOWED_ORIGINS: &str = "http://localhost:5173";
-
-#[cfg(not(debug_assertions))]
-const ALLOWED_ORIGINS: &str = "<your production origin>";
-
 pub fn create_cors() -> Cors {
     let cors = CorsOptions::default()
         .allowed_origins(AllowedOrigins::all())
-        .allowed_methods(vec![Method::Get, Method::Post, Method::Options].into_iter().map(From::from).collect())
+        .allowed_methods(vec![
+            Method::Get,
+            Method::Post,
+            Method::Options,
+            Method::Delete,
+        ].into_iter().map(From::from).collect())
         .allowed_headers(rocket_cors::AllowedHeaders::All)
         .allow_credentials(true);
 

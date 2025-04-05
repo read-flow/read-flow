@@ -57,9 +57,20 @@ function showFileDetails(file) {
                 <h3 class="text-lg font-semibold mb-2">Tags</h3>
                 <div class="flex flex-wrap gap-2">
                     ${file.tags.map(tag => `
-                    <span class="inline-block bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium">
-                        ${tag}
-                    </span>
+                    <div class="relative">
+                        <span class="inline-block bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium">
+                            ${tag}
+                        </span>
+                        <button 
+                            class="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors"
+                            onclick="deleteTag(${file.id}, '${tag}')"
+                            title="Remove tag"
+                        >
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
                     `).join('')}
                 </div>
 
@@ -99,9 +110,20 @@ function showFileDetails(file) {
             <h3 class="text-lg font-semibold mb-2">Tags</h3>
             <div class="flex flex-wrap gap-2" data-file-id="${file.id}">
                 ${file.tags.map(tag => `
-                <span class="inline-block bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium">
-                    ${tag}
-                </span>
+                <div class="relative">
+                    <span class="inline-block bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium">
+                        ${tag}
+                    </span>
+                    <button 
+                        class="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors"
+                        onclick="deleteTag(${file.id}, '${tag}')"
+                        title="Remove tag"
+                    >
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
                 `).join('')}
             </div>
 
@@ -236,6 +258,48 @@ async function addTag(fileId) {
     } catch (error) {
         console.error('Error adding tag:', error);
         alert('Failed to add tag');
+    }
+}
+
+async function deleteTag(fileId, tag) {
+    try {
+        const response = await fetch(`http://localhost:8000/files/${fileId}/tags`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': 'bearer secret',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify([tag])
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to delete tag');
+        }
+
+        // Get the updated file details
+        const updatedFileResponse = await fetch(`http://localhost:8000/files/${fileId}`, {
+            headers: {
+                'Authorization': 'bearer secret'
+            }
+        });
+
+        if (!updatedFileResponse.ok) {
+            throw new Error('Failed to fetch updated file details');
+        }
+
+        const updatedFile = await updatedFileResponse.json();
+
+        // Update the details card
+        if (currentFile && currentFile.id === fileId) {
+            currentFile = updatedFile;
+            showFileDetails(updatedFile);
+        }
+
+        // Update the file list
+        updateFileList();
+    } catch (error) {
+        console.error('Error deleting tag:', error);
+        alert('Failed to delete tag');
     }
 }
 
