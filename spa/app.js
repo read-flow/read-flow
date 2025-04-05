@@ -1,17 +1,112 @@
-const fileListDiv = document.getElementById('file-list');
+// === Constants and Configuration ===
+const CONFIG = {
+    API_URL: 'http://localhost:8000',
+    AUTH_TOKEN: 'bearer secret',
+    PAGE_SIZE: 20,
+    TAG_COLORS: {
+        allowed: 'bg-green-500 text-white',
+        denied: 'bg-red-500 text-white',
+        default: 'bg-blue-500 text-white'
+    }
+};
 
-// Add state management for current file
+// === Type Definitions ===
+/**
+ * @typedef {Object} File
+ * @property {number} id
+ * @property {string} path
+ * @property {string} type_
+ * @property {number} size
+ * @property {string} fingerprint
+ * @property {string[]} tags
+ * @property {string} status
+ */
+
+/**
+ * @typedef {Object} FileState
+ * @property {File[]} files
+ * @property {File[]} filteredFiles
+ * @property {File[]} currentView
+ * @property {number} viewStart
+ * @property {number} viewEnd
+ * @property {boolean} loading
+ * @property {string|null} error
+ * @property {string} searchTerm
+ * @property {string} sortField
+ * @property {string} sortOrder
+ */
+
+// === State Management ===
 let currentFile = null;
 let allowedTags = new Set();
 let deniedTags = new Set();
 let allTags = new Set();
 
-// Function to get all unique tags from the files
+/**
+ * @type {FileState}
+ */
+let fileState = {
+    files: [],
+    filteredFiles: [],
+    currentView: [],
+    viewStart: 0,
+    viewEnd: CONFIG.PAGE_SIZE,
+    loading: false,
+    error: null,
+    searchTerm: '',
+    sortField: 'name',
+    sortOrder: 'asc'
+};
+
+// === Utility Functions ===
+/**
+ * @param {string} bytes
+ * @returns {string}
+ */
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+/**
+ * @param {Function} func
+ * @param {number} wait
+ * @returns {Function}
+ */
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+/**
+ * @param {string} path
+ * @returns {{name: string, directory: string}}
+ */
+function parseFilePath(path) {
+    const fileName = path.split('/').pop();
+    const fileDirectory = path.substring(0, path.lastIndexOf('/'));
+    return { name: fileName, directory: fileDirectory };
+}
+
+// === API Functions ===
+/**
+ * @returns {Promise<void>}
+ */
 async function getAllTags() {
     try {
-        const response = await fetch('http://localhost:8000/files', {
+        const response = await fetch(`${CONFIG.API_URL}/files`, {
             headers: {
-                'Authorization': 'bearer secret'
+                'Authorization': CONFIG.AUTH_TOKEN
             }
         });
 
@@ -20,6 +115,11 @@ async function getAllTags() {
         }
 
         const files = await response.json();
+        
+        // Clear the existing tags
+        allTags.clear();
+        
+        // Add all tags from the files
         files.forEach(file => {
             file.tags.forEach(tag => allTags.add(tag));
         });
@@ -28,10 +128,103 @@ async function getAllTags() {
     }
 }
 
-// Function to filter files by tags
+/**
+ * @param {number} fileId
+ * @param {string} tag
+ * @returns {Promise<void>}
+ */
+async function addFileTag(fileId, tag) {
+    try {
+        const response = await fetch(`${CONFIG.API_URL}/files/${fileId}/tags`, {
+            method: 'POST',
+            headers: {
+                'Authorization': CONFIG.AUTH_TOKEN,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify([tag])
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to add tag');
+        }
+
+        // Update the tag list
+        allTags.add(tag);
+    } catch (error) {
+        console.error('Error adding tag:', error);
+        throw error;
+    }
+}
+
+/**
+ * @param {number} fileId
+ * @param {string} tag
+ * @returns {Promise<void>}
+ */
+async function removeFileTag(fileId, tag) {
+    try {
+        const response = await fetch(`${CONFIG.API_URL}/files/${fileId}/tags`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': CONFIG.AUTH_TOKEN,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify([tag])
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to delete tag');
+        }
+    } catch (error) {
+        console.error('Error deleting tag:', error);
+        throw error;
+    }
+}
+
+// === DOM Elements ===
+const fileListDiv = document.getElementById('file-list');
+
+// === File Operations ===
+/**
+ * @param {number} fileId
+ * @param {string} fileName
+ * @returns {Promise<void>}
+ */
+async function downloadFile(fileId, fileName) {
+    try {
+        const response = await fetch(`${CONFIG.API_URL}/files/${fileId}/download-as/${encodeURIComponent(fileName)}`, {
+            headers: {
+                'Authorization': CONFIG.AUTH_TOKEN
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to download file');
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    } catch (error) {
+        console.error('Error downloading file:', error);
+        alert('Failed to download file');
+    }
+}
+
+// === UI Components ===
+/**
+ * @param {File[]} files
+ * @param {Set<string>} allowedTags
+ * @param {Set<string>} deniedTags
+ * @returns {File[]}
+ */
 function filterFilesByTags(files, allowedTags, deniedTags) {
-    if (allowedTags.size === 0 && deniedTags.size === 0) return files;
-    
     return files.filter(file => {
         const hasAllowedTags = allowedTags.size === 0 || 
             Array.from(allowedTags).every(tag => file.tags.includes(tag));
@@ -42,12 +235,41 @@ function filterFilesByTags(files, allowedTags, deniedTags) {
     });
 }
 
-// Function to create the control section
+/**
+ * @param {File} file
+ * @returns {string}
+ */
+function createTagButtonHTML(file, tag) {
+    const tagColor = allowedTags.has(tag) ? CONFIG.TAG_COLORS.allowed :
+                     deniedTags.has(tag) ? CONFIG.TAG_COLORS.denied :
+                     CONFIG.TAG_COLORS.default;
+
+    return `
+        <div class="relative">
+            <span class="inline-block ${tagColor} px-3 py-1 rounded-full text-sm font-medium">
+                ${tag}
+            </span>
+            <button 
+                class="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors"
+                onclick="deleteTag(${file.id}, '${tag}')"
+                title="Remove tag"
+            >
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+    `;
+}
+
+/**
+ * @returns {HTMLDivElement}
+ */
 function createControlSection() {
     const controlSection = document.createElement('div');
     controlSection.className = 'bg-gray-50 p-4 mb-6 rounded-lg shadow-sm';
 
-    // Create tag filters container and place it at the top
+    // Create tag filters container
     const tagFiltersContainer = document.createElement('div');
     tagFiltersContainer.className = 'mb-4 flex flex-wrap gap-2';
 
@@ -74,8 +296,6 @@ function createControlSection() {
         tagFiltersContainer.appendChild(button);
     });
 
-    controlSection.appendChild(tagFiltersContainer);
-
     // Create selected tags container
     const selectedTagsContainer = document.createElement('div');
     selectedTagsContainer.className = 'mb-4';
@@ -92,25 +312,14 @@ function createControlSection() {
     const allowedTagsContainer = document.createElement('div');
     allowedTagsContainer.className = 'flex flex-wrap gap-2';
     
-    allowedTags.forEach(tag => {
+    Array.from(allowedTags).forEach(tag => {
         const tagButton = document.createElement('button');
-        tagButton.className = `px-3 py-1 rounded-full text-sm font-medium ${
-            allowedTags.has(tag) ? 'bg-green-500 text-white' :
-            deniedTags.has(tag) ? 'bg-red-500 text-white' :
-            'bg-blue-500 text-white'
-        } hover:bg-blue-600 transition-colors`;
+        tagButton.className = 'px-3 py-1 rounded-full text-sm font-medium bg-green-500 text-white hover:bg-green-600 transition-colors';
         tagButton.textContent = tag;
         
         tagButton.onclick = (e) => {
             e.stopPropagation();
-            if (allowedTags.has(tag)) {
-                allowedTags.delete(tag);
-                deniedTags.add(tag);
-            } else if (deniedTags.has(tag)) {
-                deniedTags.delete(tag);
-            } else {
-                allowedTags.add(tag);
-            }
+            allowedTags.delete(tag);
             updateFileList();
         };
         
@@ -131,25 +340,14 @@ function createControlSection() {
     const deniedTagsContainer = document.createElement('div');
     deniedTagsContainer.className = 'flex flex-wrap gap-2';
     
-    deniedTags.forEach(tag => {
+    Array.from(deniedTags).forEach(tag => {
         const tagButton = document.createElement('button');
-        tagButton.className = `px-3 py-1 rounded-full text-sm font-medium ${
-            allowedTags.has(tag) ? 'bg-green-500 text-white' :
-            deniedTags.has(tag) ? 'bg-red-500 text-white' :
-            'bg-blue-500 text-white'
-        } hover:bg-blue-600 transition-colors`;
+        tagButton.className = 'px-3 py-1 rounded-full text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors';
         tagButton.textContent = tag;
         
         tagButton.onclick = (e) => {
             e.stopPropagation();
-            if (allowedTags.has(tag)) {
-                allowedTags.delete(tag);
-                deniedTags.add(tag);
-            } else if (deniedTags.has(tag)) {
-                deniedTags.delete(tag);
-            } else {
-                allowedTags.add(tag);
-            }
+            deniedTags.delete(tag);
             updateFileList();
         };
         
@@ -170,16 +368,249 @@ function createControlSection() {
     };
     selectedTagsContainer.appendChild(clearAllButton);
 
+    controlSection.appendChild(tagFiltersContainer);
     controlSection.appendChild(selectedTagsContainer);
     return controlSection;
 }
 
-// Function to update the file list
+// === Helper Functions ===
+/**
+ * @param {number} fileId
+ * @param {string} tag
+ * @returns {Promise<void>}
+ */
+async function updateTagState(fileId, tag) {
+    // Get the updated file details
+    const updatedFileResponse = await fetch(`${CONFIG.API_URL}/files/${fileId}`, {
+        headers: {
+            'Authorization': CONFIG.AUTH_TOKEN
+        }
+    });
+
+    if (!updatedFileResponse.ok) {
+        throw new Error('Failed to fetch updated file details');
+    }
+
+    const updatedFile = await updatedFileResponse.json();
+
+    // Remove the tag from allowed and denied lists if present
+    if (allowedTags.has(tag)) {
+        allowedTags.delete(tag);
+    }
+    if (deniedTags.has(tag)) {
+        deniedTags.delete(tag);
+    }
+
+    // Update the details card if it's currently open
+    if (currentFile && currentFile.id === fileId) {
+        const detailsContainer = document.getElementById('file-details');
+        if (detailsContainer) {
+            detailsContainer.remove();
+            showFileDetails(updatedFile);
+        }
+    }
+
+    // Reload all tags from the server
+    await getAllTags();
+
+    // Update the file list to reflect changes
+    updateFileList();
+}
+
+/**
+ * @param {number} fileId
+ * @returns {void}
+ */
+function handleTagKeyPress(event, fileId) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        addTag(fileId);
+    }
+}
+
+/**
+ * @param {number} fileId
+ * @returns {Promise<void>}
+ */
+async function addTag(fileId) {
+    const input = document.getElementById(`tag-input-${fileId}`);
+    const newTag = input.value.trim();
+
+    if (!newTag) {
+        alert('Please enter a tag');
+        return;
+    }
+
+    try {
+        await addFileTag(fileId, newTag);
+        await updateTagState(fileId, newTag);
+
+        // Clear the input
+        input.value = '';
+    } catch (error) {
+        console.error('Error adding tag:', error);
+        alert('Failed to add tag');
+    }
+}
+
+/**
+ * @param {number} fileId
+ * @param {string} tag
+ * @returns {Promise<void>}
+ */
+async function deleteTag(fileId, tag) {
+    try {
+        await removeFileTag(fileId, tag);
+        await updateTagState(fileId, tag);
+    } catch (error) {
+        console.error('Error deleting tag:', error);
+        alert('Failed to delete tag');
+    }
+}
+
+/**
+ * @param {File} file
+ * @returns {void}
+ */
+function showFileDetails(file) {
+    currentFile = file;
+    
+    const fileName = file.path.split('/').pop();
+    const fileDirectory = file.path.substring(0, file.path.lastIndexOf('/'));
+
+    // Create details container if it doesn't exist
+    let detailsContainer = document.getElementById('file-details');
+    if (!detailsContainer) {
+        detailsContainer = document.createElement('div');
+        detailsContainer.id = 'file-details';
+        detailsContainer.className = 'fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50';
+        document.body.appendChild(detailsContainer);
+    }
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'bg-white rounded-lg p-8 w-full max-w-4xl mx-4 flex flex-col';
+
+    modalContent.innerHTML = `
+        <div class="flex justify-between items-start mb-6">
+            <h2 class="text-2xl font-bold">${fileName}</h2>
+            <button 
+                class="text-gray-400 hover:text-gray-500"
+                onclick="document.getElementById('file-details').remove()"
+            >
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <!-- Left column - Basic Info -->
+            <div>
+                <h3 class="text-lg font-semibold mb-4">Basic Info</h3>
+                <div class="space-y-2">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Type</span>
+                        <span class="font-medium">${file.type_}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Size</span>
+                        <span class="font-medium">${formatFileSize(file.size)}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Status</span>
+                        <span class="font-medium">${file.status}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">ID</span>
+                        <span class="font-medium">#${file.id}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right column - File Path -->
+            <div>
+                <h3 class="text-lg font-semibold mb-4">File Details</h3>
+                <div class="space-y-4">
+                    <div>
+                        <h4 class="text-sm font-medium text-gray-600 mb-1">File Path</h4>
+                        <div class="bg-gray-50 p-3 rounded">
+                            <code class="text-sm">${file.path}</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4">Actions</h3>
+            <button
+                class="w-full bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
+                onclick="downloadFile(${file.id}, '${fileName}')"
+            >
+                Download
+            </button>
+        </div>
+
+        <!-- Tags Section -->
+        <div class="mb-8">
+            <h3 class="text-lg font-semibold mb-4">Tags</h3>
+            <div class="flex flex-wrap gap-2" data-file-id="${file.id}">
+                ${file.tags.map(tag => createTagButtonHTML(file, tag)).join('')}
+            </div>
+
+            <!-- Add Tag Form -->
+            <div class="mt-4">
+                <div class="flex gap-2">
+                    <input
+                        type="text"
+                        placeholder="Enter new tag"
+                        class="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        id="tag-input-${file.id}"
+                        onkeypress="handleTagKeyPress(event, ${file.id})"
+                    >
+                    <button
+                        class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+                        onclick="addTag(${file.id})"
+                    >
+                        Add Tag
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fingerprint Section -->
+        <div class="border-t pt-6">
+            <h3 class="text-lg font-semibold mb-4">Technical Details</h3>
+            <div class="space-y-4">
+                <div>
+                    <h4 class="text-sm font-medium text-gray-600 mb-1">Fingerprint</h4>
+                    <div class="bg-gray-50 p-3 rounded">
+                        <code class="text-sm">${file.fingerprint}</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    detailsContainer.onclick = (e) => {
+        if (e.target === detailsContainer) {
+            detailsContainer.remove();
+            currentFile = null;
+        }
+    };
+
+    detailsContainer.appendChild(modalContent);
+}
+
+/**
+ * @returns {Promise<void>}
+ */
 async function updateFileList() {
     try {
-        const response = await fetch('http://localhost:8000/files', {
+        const response = await fetch(`${CONFIG.API_URL}/files`, {
             headers: {
-                'Authorization': 'bearer secret'
+                'Authorization': CONFIG.AUTH_TOKEN
             }
         });
 
@@ -189,7 +620,6 @@ async function updateFileList() {
 
         const files = await response.json();
         const filteredFiles = filterFilesByTags(files, allowedTags, deniedTags);
-        const fileListDiv = document.getElementById('file-list');
         fileListDiv.innerHTML = '';
 
         // Add control section
@@ -202,17 +632,15 @@ async function updateFileList() {
             fileItemDiv.onclick = () => showFileDetails(file);
             fileItemDiv.setAttribute('data-file-id', file.id);
 
-            const filePath = file.path;
-            const fileName = filePath.split('/').pop();
-            const fileDirectory = filePath.substring(0, filePath.lastIndexOf('/'));
+            const { name, directory } = parseFilePath(file.path);
 
             const fileNameElement = document.createElement('p');
             fileNameElement.className = 'text-xl font-semibold mb-2';
-            fileNameElement.textContent = fileName;
+            fileNameElement.textContent = name;
 
             const fileDirectoryElement = document.createElement('p');
             fileDirectoryElement.className = 'text-gray-600 text-sm mb-4';
-            fileDirectoryElement.textContent = fileDirectory;
+            fileDirectoryElement.textContent = directory;
 
             fileItemDiv.appendChild(fileNameElement);
             fileItemDiv.appendChild(fileDirectoryElement);
@@ -231,9 +659,8 @@ async function updateFileList() {
                 } hover:bg-blue-600 transition-colors`;
                 tagButton.textContent = tag;
                 
-                // Add click handler to cycle through states
                 tagButton.onclick = (e) => {
-                    e.stopPropagation(); // Prevent file click handler from triggering
+                    e.stopPropagation();
                     if (allowedTags.has(tag)) {
                         allowedTags.delete(tag);
                         deniedTags.add(tag);
@@ -257,301 +684,5 @@ async function updateFileList() {
     }
 }
 
-// Add function to display file details
-function showFileDetails(file) {
-    currentFile = file;
-
-    // Create details container if it doesn't exist
-    let detailsContainer = document.getElementById('file-details');
-    if (!detailsContainer) {
-        detailsContainer = document.createElement('div');
-        detailsContainer.id = 'file-details';
-        detailsContainer.className = 'fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50';
-        document.body.appendChild(detailsContainer);
-    }
-
-    // Create modal content
-    const modalContent = document.createElement('div');
-    modalContent.className = 'bg-white rounded-lg p-8 w-full max-w-4xl mx-4 flex flex-col';
-
-    // Add file information
-    const fileName = file.path.split('/').pop();
-    const fileDirectory = file.path.substring(0, file.path.lastIndexOf('/'));
-
-    modalContent.innerHTML = `
-        <h2 class="text-2xl font-bold mb-4">${fileName}</h2>
-        <p class="text-gray-600 mb-6">${fileDirectory}</p>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <!-- Left column -->
-            <div>
-                <h3 class="text-lg font-semibold mb-2">Basic Info</h3>
-                <div class="space-y-4">
-                    <div>
-                        <span class="font-medium">Type:</span>
-                        <span class="ml-2">${file.type_}</span>
-                    </div>
-                    <div>
-                        <span class="font-medium">Size:</span>
-                        <span class="ml-2">${(file.size / 1024).toFixed(2)} KB</span>
-                    </div>
-                    <div>
-                        <span class="font-medium">Status:</span>
-                        <span class="ml-2">${file.status}</span>
-                    </div>
-                    <div>
-                        <span class="font-medium">ID:</span>
-                        <span class="ml-2">#${file.id}</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right column -->
-            <div>
-                <h3 class="text-lg font-semibold mb-2">Tags</h3>
-                <div class="flex flex-wrap gap-2">
-                    ${file.tags.map(tag => `
-                    <div class="relative">
-                        <span class="inline-block bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium">
-                            ${tag}
-                        </span>
-                        <button 
-                            class="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors"
-                            onclick="deleteTag(${file.id}, '${tag}')"
-                            title="Remove tag"
-                        >
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                            </svg>
-                        </button>
-                    </div>
-                    `).join('')}
-                </div>
-
-                <h3 class="text-lg font-semibold mt-6 mb-2">Fingerprint</h3>
-                <div class="bg-gray-50 p-3 rounded">
-                    <code>${file.fingerprint}</code>
-                </div>
-            </div>
-        </div>
-
-        <div class="mt-8">
-            <h3 class="text-lg font-semibold mb-2">File Path</h3>
-            <div class="bg-gray-50 p-3 rounded">
-                <code>${file.path}</code>
-            </div>
-        </div>
-
-        <div class="mt-8 space-y-4">
-            <h3 class="text-lg font-semibold mb-2">Actions</h3>
-            <div class="space-y-2">
-                <!-- Download Button -->
-                <button
-                    class="w-full bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
-                    onclick="downloadFile(${file.id}, '${fileName}')"
-                >
-                    Download
-                </button>
-            </div>
-        </div>
-
-        <div class="mt-8 space-y-4">
-            <h3 class="text-lg font-semibold mb-2">Tags</h3>
-            <div class="flex flex-wrap gap-2" data-file-id="${file.id}">
-                ${file.tags.map(tag => `
-                <div class="relative">
-                    <span class="inline-block bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium">
-                        ${tag}
-                    </span>
-                    <button 
-                        class="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors"
-                        onclick="deleteTag(${file.id}, '${tag}')"
-                        title="Remove tag"
-                    >
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                    </button>
-                </div>
-                `).join('')}
-            </div>
-
-            <!-- Add Tag Form -->
-            <div class="mt-4">
-                <div class="flex gap-2">
-                    <input
-                        type="text"
-                        placeholder="Enter new tag"
-                        class="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        id="tag-input-${file.id}"
-                        onkeypress="handleTagKeyPress(event, ${file.id})"
-                    >
-                    <button
-                        class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
-                        onclick="addTag(${file.id})"
-                    >
-                        Add Tag
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-
-    // Add close button at the bottom of the modal
-    const closeButtonBottom = document.createElement('button');
-    closeButtonBottom.className = 'mt-6 w-full bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600 transition-colors';
-    closeButtonBottom.textContent = 'Close';
-    closeButtonBottom.onclick = () => {
-        detailsContainer.remove();
-        currentFile = null;
-    };
-
-    // Add close button and modal content
-    detailsContainer.innerHTML = '';
-    detailsContainer.appendChild(modalContent);
-    modalContent.appendChild(closeButtonBottom);
-
-    // Add click outside handler to close modal
-    detailsContainer.onclick = (e) => {
-        if (e.target === detailsContainer) {
-            detailsContainer.remove();
-            currentFile = null;
-        }
-    };
-}
-
-// Add file operations functions
-async function downloadFile(fileId, fileName) {
-    try {
-        const response = await fetch(`http://localhost:8000/files/${fileId}/download-as/${encodeURIComponent(fileName)}`, {
-            headers: {
-                'Authorization': 'bearer secret'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to download file');
-        }
-
-        // Create a blob from the response and create a download link
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-    } catch (error) {
-        console.error('Error downloading file:', error);
-        alert('Failed to download file');
-    }
-}
-
-// Tag management functions
-function handleTagKeyPress(event, fileId) {
-    if (event.key === 'Enter') {
-        event.preventDefault();
-        addTag(fileId);
-    }
-}
-
-async function addTag(fileId) {
-    const input = document.getElementById(`tag-input-${fileId}`);
-    const newTag = input.value.trim();
-
-    if (!newTag) {
-        alert('Please enter a tag');
-        return;
-    }
-
-    try {
-        const response = await fetch(`http://localhost:8000/files/${fileId}/tags`, {
-            method: 'POST',
-            headers: {
-                'Authorization': 'bearer secret',
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify([newTag])
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to add tag');
-        }
-
-        // Get the updated file details
-        const updatedFileResponse = await fetch(`http://localhost:8000/files/${fileId}`, {
-            headers: {
-                'Authorization': 'bearer secret'
-            }
-        });
-
-        if (!updatedFileResponse.ok) {
-            throw new Error('Failed to fetch updated file details');
-        }
-
-        const updatedFile = await updatedFileResponse.json();
-
-        // Update the details card
-        if (currentFile && currentFile.id === fileId) {
-            currentFile = updatedFile;
-            showFileDetails(updatedFile);
-        }
-
-        // Update the tag list
-        allTags.add(newTag);
-        updateFileList();
-
-        // Clear the input
-        input.value = '';
-    } catch (error) {
-        console.error('Error adding tag:', error);
-        alert('Failed to add tag');
-    }
-}
-
-async function deleteTag(fileId, tag) {
-    try {
-        const response = await fetch(`http://localhost:8000/files/${fileId}/tags`, {
-            method: 'DELETE',
-            headers: {
-                'Authorization': 'bearer secret',
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify([tag])
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to delete tag');
-        }
-
-        // Get the updated file details
-        const updatedFileResponse = await fetch(`http://localhost:8000/files/${fileId}`, {
-            headers: {
-                'Authorization': 'bearer secret'
-            }
-        });
-
-        if (!updatedFileResponse.ok) {
-            throw new Error('Failed to fetch updated file details');
-        }
-
-        const updatedFile = await updatedFileResponse.json();
-
-        // Update the details card
-        if (currentFile && currentFile.id === fileId) {
-            currentFile = updatedFile;
-            showFileDetails(updatedFile);
-        }
-
-        // Update the file list
-        updateFileList();
-    } catch (error) {
-        console.error('Error deleting tag:', error);
-        alert('Failed to delete tag');
-    }
-}
-
-// Initial file list fetch
+// === Initialization ===
 getAllTags().then(() => updateFileList());
