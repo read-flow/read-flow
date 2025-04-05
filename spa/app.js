@@ -2,7 +2,8 @@ const fileListDiv = document.getElementById('file-list');
 
 // Add state management for current file
 let currentFile = null;
-let selectedTags = new Set();
+let allowedTags = new Set();
+let deniedTags = new Set();
 let allTags = new Set();
 
 // Function to get all unique tags from the files
@@ -28,10 +29,16 @@ async function getAllTags() {
 }
 
 // Function to filter files by tags
-function filterFilesByTags(files, tags) {
-    if (tags.size === 0) return files;
+function filterFilesByTags(files, allowedTags, deniedTags) {
+    if (allowedTags.size === 0 && deniedTags.size === 0) return files;
+    
     return files.filter(file => {
-        return Array.from(tags).every(tag => file.tags.includes(tag));
+        const hasAllowedTags = allowedTags.size === 0 || 
+            Array.from(allowedTags).every(tag => file.tags.includes(tag));
+        const hasDeniedTags = deniedTags.size === 0 || 
+            Array.from(deniedTags).every(tag => !file.tags.includes(tag));
+        
+        return hasAllowedTags && hasDeniedTags;
     });
 }
 
@@ -40,52 +47,130 @@ function createControlSection() {
     const controlSection = document.createElement('div');
     controlSection.className = 'bg-gray-50 p-4 mb-6 rounded-lg shadow-sm';
 
-    // Create selected tags container
-    const selectedTagsContainer = document.createElement('div');
-    selectedTagsContainer.className = 'mb-4 flex flex-wrap gap-2';
-    
-    // Add clear all button
-    const clearAllButton = document.createElement('button');
-    clearAllButton.className = 'px-3 py-1 text-sm text-gray-700 hover:text-red-600 transition-colors';
-    clearAllButton.textContent = 'Clear All';
-    clearAllButton.onclick = () => {
-        selectedTags.clear();
-        updateFileList();
-    };
-    selectedTagsContainer.appendChild(clearAllButton);
-
-    // Add selected tags
-    selectedTags.forEach(tag => {
-        const tagElement = document.createElement('span');
-        tagElement.className = 'px-3 py-1 bg-blue-500 text-white rounded-full text-sm';
-        tagElement.textContent = tag;
-        selectedTagsContainer.appendChild(tagElement);
-    });
-
-    // Create tag filters container
+    // Create tag filters container and place it at the top
     const tagFiltersContainer = document.createElement('div');
-    tagFiltersContainer.className = 'flex flex-wrap gap-2';
+    tagFiltersContainer.className = 'mb-4 flex flex-wrap gap-2';
 
     // Add buttons for each tag
     allTags.forEach(tag => {
         const button = document.createElement('button');
         button.className = `px-4 py-2 rounded-lg ${
-            selectedTags.has(tag) ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
+            allowedTags.has(tag) ? 'bg-green-500 text-white' :
+            deniedTags.has(tag) ? 'bg-red-500 text-white' :
+            'bg-gray-200 text-gray-700'
         } hover:bg-blue-600 transition-colors`;
         button.textContent = tag;
         button.onclick = () => {
-            if (selectedTags.has(tag)) {
-                selectedTags.delete(tag);
+            if (allowedTags.has(tag)) {
+                allowedTags.delete(tag);
+                deniedTags.add(tag);
+            } else if (deniedTags.has(tag)) {
+                deniedTags.delete(tag);
             } else {
-                selectedTags.add(tag);
+                allowedTags.add(tag);
             }
             updateFileList();
         };
         tagFiltersContainer.appendChild(button);
     });
 
-    controlSection.appendChild(selectedTagsContainer);
     controlSection.appendChild(tagFiltersContainer);
+
+    // Create selected tags container
+    const selectedTagsContainer = document.createElement('div');
+    selectedTagsContainer.className = 'mb-4';
+
+    // Create allowed tags section
+    const allowedSection = document.createElement('div');
+    allowedSection.className = 'mb-4';
+    
+    const allowedLabel = document.createElement('div');
+    allowedLabel.className = 'text-sm font-medium text-gray-700 mb-2';
+    allowedLabel.textContent = 'Show files with all of these tags:';
+    allowedSection.appendChild(allowedLabel);
+
+    const allowedTagsContainer = document.createElement('div');
+    allowedTagsContainer.className = 'flex flex-wrap gap-2';
+    
+    allowedTags.forEach(tag => {
+        const tagButton = document.createElement('button');
+        tagButton.className = `px-3 py-1 rounded-full text-sm font-medium ${
+            allowedTags.has(tag) ? 'bg-green-500 text-white' :
+            deniedTags.has(tag) ? 'bg-red-500 text-white' :
+            'bg-blue-500 text-white'
+        } hover:bg-blue-600 transition-colors`;
+        tagButton.textContent = tag;
+        
+        tagButton.onclick = (e) => {
+            e.stopPropagation();
+            if (allowedTags.has(tag)) {
+                allowedTags.delete(tag);
+                deniedTags.add(tag);
+            } else if (deniedTags.has(tag)) {
+                deniedTags.delete(tag);
+            } else {
+                allowedTags.add(tag);
+            }
+            updateFileList();
+        };
+        
+        allowedTagsContainer.appendChild(tagButton);
+    });
+    
+    allowedSection.appendChild(allowedTagsContainer);
+    selectedTagsContainer.appendChild(allowedSection);
+
+    // Create denied tags section
+    const deniedSection = document.createElement('div');
+    
+    const deniedLabel = document.createElement('div');
+    deniedLabel.className = 'text-sm font-medium text-gray-700 mb-2';
+    deniedLabel.textContent = 'Hide files with any of these tags:';
+    deniedSection.appendChild(deniedLabel);
+
+    const deniedTagsContainer = document.createElement('div');
+    deniedTagsContainer.className = 'flex flex-wrap gap-2';
+    
+    deniedTags.forEach(tag => {
+        const tagButton = document.createElement('button');
+        tagButton.className = `px-3 py-1 rounded-full text-sm font-medium ${
+            allowedTags.has(tag) ? 'bg-green-500 text-white' :
+            deniedTags.has(tag) ? 'bg-red-500 text-white' :
+            'bg-blue-500 text-white'
+        } hover:bg-blue-600 transition-colors`;
+        tagButton.textContent = tag;
+        
+        tagButton.onclick = (e) => {
+            e.stopPropagation();
+            if (allowedTags.has(tag)) {
+                allowedTags.delete(tag);
+                deniedTags.add(tag);
+            } else if (deniedTags.has(tag)) {
+                deniedTags.delete(tag);
+            } else {
+                allowedTags.add(tag);
+            }
+            updateFileList();
+        };
+        
+        deniedTagsContainer.appendChild(tagButton);
+    });
+    
+    deniedSection.appendChild(deniedTagsContainer);
+    selectedTagsContainer.appendChild(deniedSection);
+
+    // Add clear all button at the bottom
+    const clearAllButton = document.createElement('button');
+    clearAllButton.className = 'px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors';
+    clearAllButton.textContent = 'Clear All';
+    clearAllButton.onclick = () => {
+        allowedTags.clear();
+        deniedTags.clear();
+        updateFileList();
+    };
+    selectedTagsContainer.appendChild(clearAllButton);
+
+    controlSection.appendChild(selectedTagsContainer);
     return controlSection;
 }
 
@@ -103,7 +188,7 @@ async function updateFileList() {
         }
 
         const files = await response.json();
-        const filteredFiles = filterFilesByTags(files, selectedTags);
+        const filteredFiles = filterFilesByTags(files, allowedTags, deniedTags);
         const fileListDiv = document.getElementById('file-list');
         fileListDiv.innerHTML = '';
 
@@ -138,10 +223,29 @@ async function updateFileList() {
             tagsContainer.setAttribute('data-file-id', file.id);
 
             file.tags.forEach(tag => {
-                const tagElement = document.createElement('span');
-                tagElement.className = 'inline-block bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium';
-                tagElement.textContent = tag;
-                tagsContainer.appendChild(tagElement);
+                const tagButton = document.createElement('button');
+                tagButton.className = `px-3 py-1 rounded-full text-sm font-medium ${
+                    allowedTags.has(tag) ? 'bg-green-500 text-white' :
+                    deniedTags.has(tag) ? 'bg-red-500 text-white' :
+                    'bg-blue-500 text-white'
+                } hover:bg-blue-600 transition-colors`;
+                tagButton.textContent = tag;
+                
+                // Add click handler to cycle through states
+                tagButton.onclick = (e) => {
+                    e.stopPropagation(); // Prevent file click handler from triggering
+                    if (allowedTags.has(tag)) {
+                        allowedTags.delete(tag);
+                        deniedTags.add(tag);
+                    } else if (deniedTags.has(tag)) {
+                        deniedTags.delete(tag);
+                    } else {
+                        allowedTags.add(tag);
+                    }
+                    updateFileList();
+                };
+                
+                tagsContainer.appendChild(tagButton);
             });
 
             fileItemDiv.appendChild(tagsContainer);
@@ -400,7 +504,8 @@ async function addTag(fileId) {
             showFileDetails(updatedFile);
         }
 
-        // Update the file list
+        // Update the tag list
+        allTags.add(newTag);
         updateFileList();
 
         // Clear the input
