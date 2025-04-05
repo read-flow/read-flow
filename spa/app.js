@@ -2,6 +2,156 @@ const fileListDiv = document.getElementById('file-list');
 
 // Add state management for current file
 let currentFile = null;
+let selectedTags = new Set();
+let allTags = new Set();
+
+// Function to get all unique tags from the files
+async function getAllTags() {
+    try {
+        const response = await fetch('http://localhost:8000/files', {
+            headers: {
+                'Authorization': 'bearer secret'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch files');
+        }
+
+        const files = await response.json();
+        files.forEach(file => {
+            file.tags.forEach(tag => allTags.add(tag));
+        });
+    } catch (error) {
+        console.error('Error fetching tags:', error);
+    }
+}
+
+// Function to filter files by tags
+function filterFilesByTags(files, tags) {
+    if (tags.size === 0) return files;
+    return files.filter(file => {
+        return Array.from(tags).every(tag => file.tags.includes(tag));
+    });
+}
+
+// Function to create the control section
+function createControlSection() {
+    const controlSection = document.createElement('div');
+    controlSection.className = 'bg-gray-50 p-4 mb-6 rounded-lg shadow-sm';
+
+    // Create selected tags container
+    const selectedTagsContainer = document.createElement('div');
+    selectedTagsContainer.className = 'mb-4 flex flex-wrap gap-2';
+    
+    // Add clear all button
+    const clearAllButton = document.createElement('button');
+    clearAllButton.className = 'px-3 py-1 text-sm text-gray-700 hover:text-red-600 transition-colors';
+    clearAllButton.textContent = 'Clear All';
+    clearAllButton.onclick = () => {
+        selectedTags.clear();
+        updateFileList();
+    };
+    selectedTagsContainer.appendChild(clearAllButton);
+
+    // Add selected tags
+    selectedTags.forEach(tag => {
+        const tagElement = document.createElement('span');
+        tagElement.className = 'px-3 py-1 bg-blue-500 text-white rounded-full text-sm';
+        tagElement.textContent = tag;
+        selectedTagsContainer.appendChild(tagElement);
+    });
+
+    // Create tag filters container
+    const tagFiltersContainer = document.createElement('div');
+    tagFiltersContainer.className = 'flex flex-wrap gap-2';
+
+    // Add buttons for each tag
+    allTags.forEach(tag => {
+        const button = document.createElement('button');
+        button.className = `px-4 py-2 rounded-lg ${
+            selectedTags.has(tag) ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700'
+        } hover:bg-blue-600 transition-colors`;
+        button.textContent = tag;
+        button.onclick = () => {
+            if (selectedTags.has(tag)) {
+                selectedTags.delete(tag);
+            } else {
+                selectedTags.add(tag);
+            }
+            updateFileList();
+        };
+        tagFiltersContainer.appendChild(button);
+    });
+
+    controlSection.appendChild(selectedTagsContainer);
+    controlSection.appendChild(tagFiltersContainer);
+    return controlSection;
+}
+
+// Function to update the file list
+async function updateFileList() {
+    try {
+        const response = await fetch('http://localhost:8000/files', {
+            headers: {
+                'Authorization': 'bearer secret'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch files');
+        }
+
+        const files = await response.json();
+        const filteredFiles = filterFilesByTags(files, selectedTags);
+        const fileListDiv = document.getElementById('file-list');
+        fileListDiv.innerHTML = '';
+
+        // Add control section
+        const controlSection = createControlSection();
+        fileListDiv.appendChild(controlSection);
+
+        filteredFiles.forEach(file => {
+            const fileItemDiv = document.createElement('div');
+            fileItemDiv.className = 'bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow duration-300 cursor-pointer';
+            fileItemDiv.onclick = () => showFileDetails(file);
+            fileItemDiv.setAttribute('data-file-id', file.id);
+
+            const filePath = file.path;
+            const fileName = filePath.split('/').pop();
+            const fileDirectory = filePath.substring(0, filePath.lastIndexOf('/'));
+
+            const fileNameElement = document.createElement('p');
+            fileNameElement.className = 'text-xl font-semibold mb-2';
+            fileNameElement.textContent = fileName;
+
+            const fileDirectoryElement = document.createElement('p');
+            fileDirectoryElement.className = 'text-gray-600 text-sm mb-4';
+            fileDirectoryElement.textContent = fileDirectory;
+
+            fileItemDiv.appendChild(fileNameElement);
+            fileItemDiv.appendChild(fileDirectoryElement);
+
+            // Add tags
+            const tagsContainer = document.createElement('div');
+            tagsContainer.className = 'flex flex-wrap gap-2 tags';
+            tagsContainer.setAttribute('data-file-id', file.id);
+
+            file.tags.forEach(tag => {
+                const tagElement = document.createElement('span');
+                tagElement.className = 'inline-block bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium';
+                tagElement.textContent = tag;
+                tagsContainer.appendChild(tagElement);
+            });
+
+            fileItemDiv.appendChild(tagsContainer);
+            fileListDiv.appendChild(fileItemDiv);
+        });
+    } catch (error) {
+        console.error('Error updating file list:', error);
+        alert('Failed to update file list');
+    }
+}
 
 // Add function to display file details
 function showFileDetails(file) {
@@ -303,64 +453,5 @@ async function deleteTag(fileId, tag) {
     }
 }
 
-// Function to update the file list
-async function updateFileList() {
-    try {
-        const response = await fetch('http://localhost:8000/files', {
-            headers: {
-                'Authorization': 'bearer secret'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to fetch files');
-        }
-
-        const files = await response.json();
-        const fileListDiv = document.getElementById('file-list');
-        fileListDiv.innerHTML = '';
-
-        files.forEach(file => {
-            const fileItemDiv = document.createElement('div');
-            fileItemDiv.className = 'bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow duration-300 cursor-pointer';
-            fileItemDiv.onclick = () => showFileDetails(file);
-            fileItemDiv.setAttribute('data-file-id', file.id);
-
-            const filePath = file.path;
-            const fileName = filePath.split('/').pop();
-            const fileDirectory = filePath.substring(0, filePath.lastIndexOf('/'));
-
-            const fileNameElement = document.createElement('p');
-            fileNameElement.className = 'text-xl font-semibold mb-2';
-            fileNameElement.textContent = fileName;
-
-            const fileDirectoryElement = document.createElement('p');
-            fileDirectoryElement.className = 'text-gray-600 text-sm mb-4';
-            fileDirectoryElement.textContent = fileDirectory;
-
-            fileItemDiv.appendChild(fileNameElement);
-            fileItemDiv.appendChild(fileDirectoryElement);
-
-            // Add tags
-            const tagsContainer = document.createElement('div');
-            tagsContainer.className = 'flex flex-wrap gap-2 tags';
-            tagsContainer.setAttribute('data-file-id', file.id);
-
-            file.tags.forEach(tag => {
-                const tagElement = document.createElement('span');
-                tagElement.className = 'inline-block bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium';
-                tagElement.textContent = tag;
-                tagsContainer.appendChild(tagElement);
-            });
-
-            fileItemDiv.appendChild(tagsContainer);
-            fileListDiv.appendChild(fileItemDiv);
-        });
-    } catch (error) {
-        console.error('Error updating file list:', error);
-        alert('Failed to update file list');
-    }
-}
-
 // Initial file list fetch
-updateFileList();
+getAllTags().then(() => updateFileList());
