@@ -342,11 +342,6 @@ function showFileDetails(file) {
             </div>
         </div>
 
-        <div class="mt-8">
-            <h3 class="text-lg font-semibold mb-2">Description</h3>
-            <p class="text-gray-600">${file.description || 'No description available'}</p>
-        </div>
-
         <div class="mt-8 space-y-4">
             <h3 class="text-lg font-semibold mb-2">Actions</h3>
             <div class="space-y-2">
