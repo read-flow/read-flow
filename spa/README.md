@@ -26,6 +26,7 @@ spa/
 - Modern UI with Tailwind CSS
 - Real-time file updates
 - Tag management (add/remove)
+- PDF file viewing with built-in PDF.js viewer
 
 ## Prerequisites
 
@@ -83,6 +84,25 @@ The application is configured in `app.js` with the following settings:
   - Handles API requests (currently stubbed - needs backend integration)
   - Enables CORS for API requests
 
+## PDF Viewing
+The application includes a built-in PDF viewer using PDF.js that allows you to:
+- View PDF files directly in the browser
+- Zoom in/out of PDF documents
+- Navigate through pages
+- Print PDF documents
+- Rotate pages automatically when printing
+
+To view a PDF file:
+1. Click on any PDF file in the archive list
+2. The PDF viewer will open in a modal window
+3. Use the close button in the top-right corner to exit the viewer
+
+The PDF viewer is optimized for performance and includes features like:
+- Hardware-accelerated rendering
+- Progressive loading of PDF pages
+- Support for large PDF documents
+- Error handling for corrupted PDF files
+
 ## API Integration
 
 The application is configured to work with a backend API. The current configuration in `app.js` points to `http://localhost:8000`. You'll need to:
@@ -97,6 +117,7 @@ The application is configured to work with a backend API. The current configurat
   - JavaScript (ES6+)
   - Tailwind CSS
   - HTML5
+  - PDF.js (for PDF viewing)
 
 - Backend:
   - Node.js

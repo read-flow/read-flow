@@ -10,12 +10,17 @@
     "build:css": "npx tailwindcss -i ./input.css -o ./public/styles.css --minify",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["archive", "organizer", "spa"],
+  "keywords": [
+    "archive",
+    "organizer",
+    "spa"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^4.18.2",
-    "cors": "^2.8.5"
+    "pdfjs-dist": "^5.1.91"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.21",
