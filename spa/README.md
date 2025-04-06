@@ -1,101 +1,108 @@
-# Archive Organizer SPA
+# Archive Organizer - Single Page Application
 
-This directory contains the Single Page Application (SPA) frontend for the Archive Organizer project. The frontend is built using vanilla JavaScript and styled with Tailwind CSS.
+A modern web application for organizing and managing archive files with tagging capabilities.
 
 ## Project Structure
 
 ```
 spa/
-├── index.html         # Main HTML file
-├── app.js            # JavaScript application logic
-├── package.json      # Node.js project configuration
-├── tailwind.config.js # Tailwind CSS configuration
-└── README.md         # This file
+├── public/                  # Static assets served by the web server
+│   ├── app.js              # Main client-side application code
+│   ├── index.html          # Main HTML file
+│   └── styles.css          # Compiled CSS styles
+├── server.js               # Express server for serving static files and API proxy
+├── input.css               # Tailwind CSS configuration
+├── package.json            # Project dependencies and scripts
+├── package-lock.json       # Dependency lock file
+├── tailwind.config.js      # Tailwind CSS configuration
+└── README.md              # This file
 ```
+
+## Features
+
+- File listing and organization
+- Tag-based filtering
+- File details view
+- Modern UI with Tailwind CSS
+- Real-time file updates
+- Tag management (add/remove)
 
 ## Prerequisites
 
-- Node.js (v14 or higher)
+- Node.js (v18 or higher recommended)
 - npm (comes with Node.js)
 
-## Development Setup
+## Installation
 
-1. Install dependencies:
+1. Clone the repository
+2. Navigate to the project directory:
+   ```bash
+   cd spa
+   ```
+3. Install dependencies:
    ```bash
    npm install
    ```
 
-2. The project uses the Tailwind CSS CDN, so no additional build steps are required for development.
+## Development
 
-## Running the Development Server
+### Start Development Server
 
-Since this is a static frontend application, you can run it in several ways:
+Run the development server with hot-reloading:
+```bash
+npm run dev
+```
 
-1. Using Python's built-in HTTP server (recommended for development):
-   ```bash
-   python3 -m http.server 5173
-   ```
-   Then open `http://localhost:5173` in your browser.
+The application will be available at `http://localhost:3000`
 
-2. Using a simple Node.js server:
-   ```bash
-   npx serve
-   ```
+### Build for Production
 
-3. Or simply open the `index.html` file directly in your browser (though this won't work for API calls due to CORS restrictions).
+To build the CSS styles for production:
+```bash
+npm run build
+```
+
+## Configuration
+
+The application is configured in `app.js` with the following settings:
+
+- `API_URL`: Base URL for the backend API
+- `AUTH_TOKEN`: Authentication token for API requests
+- `PAGE_SIZE`: Number of files to display per page
+- `TAG_COLORS`: Color configuration for different tag states
+
+## Directory Structure
+
+- `public/`: Contains all static assets that are served directly by the web server
+  - `app.js`: Main client-side JavaScript application
+  - `index.html`: Main HTML file
+  - `styles.css`: Compiled CSS styles
+
+- `server.js`: Express server that:
+  - Serves static files from the public directory
+  - Handles API requests (currently stubbed - needs backend integration)
+  - Enables CORS for API requests
 
 ## API Integration
 
-The frontend communicates with the Archive Organizer backend server running at `http://localhost:8000`. All API requests require an authorization header:
+The application is configured to work with a backend API. The current configuration in `app.js` points to `http://localhost:8000`. You'll need to:
 
-```
-Authorization: bearer secret
-```
+1. Set up your backend server
+2. Update the `API_URL` and `AUTH_TOKEN` in `app.js` to match your backend configuration
+3. Implement the API endpoints in `server.js` to proxy requests to your backend
 
-## Building for Production
+## Technologies Used
 
-1. The project uses Tailwind CSS CDN, so no build step is required.
-2. Simply copy the contents of this directory to your production server.
-3. Ensure the backend server is running and accessible.
+- Frontend:
+  - JavaScript (ES6+)
+  - Tailwind CSS
+  - HTML5
 
-## Testing
-
-Currently, this project doesn't have automated tests. To test the application:
-
-1. Start the backend server:
-   ```bash
-   cd ../archive_organizer
-   cargo run --features server
-   ```
-
-2. Start the frontend development server (see "Running the Development Server" above).
-
-3. Open the application in your browser and verify that:
-   - Files are listed correctly
-   - File names and directories are displayed properly
-   - Tags are rendered as banners
-   - Hover effects work on file cards
-
-## Deployment
-
-1. Copy the contents of this directory to your production server.
-2. Ensure the backend server is running and accessible.
-3. Configure your web server to serve the static files from this directory.
-
-## Security
-
-- All API requests require an authorization header.
-- The frontend is served from a different origin than the backend, requiring proper CORS configuration.
-- Keep the authorization token (`bearer secret`) secure in production.
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+- Backend:
+  - Node.js
+  - Express
+  - CORS
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+ISC License - see LICENSE file for details
