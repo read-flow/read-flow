@@ -5,3 +5,4 @@
 /database.db-shm
 /database.db-wal
 /target/
+/.idea/

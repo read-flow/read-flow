@@ -12,7 +12,7 @@ use archive_organizer::api::FileDataSource;
 
 use crate::file_box::FileBox;
 use crate::file_box::FileBoxOutput;
-use crate::file_details::FileDetails;
+use crate::file_details::{FileDetails, FileDetailsOutput};
 
 const COMPONENT_CSS: &str = include_str!("../assets/style.css");
 
@@ -33,6 +33,7 @@ where
 #[derive(Debug)]
 pub enum FileListInput {
     FileClicked(File),
+    RefreshFiles,
 }
 
 #[relm4::component(pub, async)]
@@ -117,9 +118,27 @@ where
                 self.details = Some(
                     FileDetails::builder()
                         .launch((file.clone(), self.file_data_source.clone()))
-                        .detach(),
+                        .forward(sender.input_sender(), |msg| match msg {
+                            FileDetailsOutput::TagsChanged(_) => FileListInput::RefreshFiles,
+                        }),
                 );
                 sender.output(FileBoxOutput::FileClicked(file)).unwrap();
+            }
+            FileListInput::RefreshFiles => {
+                // Reload files from the data source
+                match self.file_data_source.get_files().await {
+                    Ok(files) => {
+                        // Clear and repopulate the files list
+                        let mut mut_files = self.files.guard();
+                        mut_files.clear();
+                        for file in files {
+                            mut_files.push_back(file);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error refreshing files: {}", e);
+                    }
+                }
             }
         }
     }
