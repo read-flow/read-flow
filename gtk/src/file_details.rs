@@ -19,30 +19,51 @@ struct TagBadge {
 }
 
 impl TagBadge {
-    fn new<S>(
-        tag: &str,
-        sender: &S,
-    ) -> Self
+    fn new<S>(tag: &str, sender: &S) -> Self
     where
         S: Fn(FileDetailsInput) + Clone + 'static,
     {
+        // Create a container with horizontal orientation
         let container = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-        container.add_css_class("tag-badge-container");
+        container.add_css_class("card");
+        container.add_css_class("tag-badge");
+        container.set_margin_end(4);
+        container.set_margin_bottom(4);
 
+        // Add a small icon to represent the tag
+        let icon = gtk::Image::new();
+        icon.set_icon_name(Some("tag-symbolic"));
+        icon.set_pixel_size(12);
+        icon.set_margin_start(6);
+        icon.set_margin_top(4);
+        icon.set_margin_bottom(4);
+        icon.set_opacity(0.7);
+
+        // Create the label for the tag text
         let label = gtk::Label::new(Some(tag));
-        label.add_css_class("tag-badge");
-        label.set_selectable(true);
+        label.add_css_class("caption");
+        label.set_margin_start(4);
+        label.set_margin_end(2);
+        label.set_margin_top(4);
+        label.set_margin_bottom(4);
 
+        // Create the delete button
         let delete_button = gtk::Button::new();
-        delete_button.set_label("×");
-        delete_button.add_css_class("tag-delete-button");
+        delete_button.set_icon_name("window-close-symbolic");
+        delete_button.add_css_class("flat");
+        delete_button.add_css_class("circular");
+        delete_button.set_valign(gtk::Align::Center);
+        delete_button.set_tooltip_text(Some("Remove tag"));
 
+        // Connect the delete button to the DeleteTag action
         let tag_clone = tag.to_string();
         let sender_clone = sender.clone();
         delete_button.connect_clicked(move |_| {
             sender_clone(FileDetailsInput::DeleteTag(tag_clone.clone()));
         });
 
+        // Add all elements to the container
+        container.append(&icon);
         container.append(&label);
         container.append(&delete_button);
 
@@ -59,7 +80,8 @@ pub struct FileDetails<FDS> {
     filename: String,
     folder: String,
     file_data_source: FDS,
-    tag_container: Option<gtk::Box>,
+    tag_container: Option<gtk::FlowBox>,
+    tag_input: Option<gtk::Entry>,
 }
 
 #[derive(Debug)]
@@ -68,11 +90,57 @@ pub enum FileDetailsInput {
     OpenFile,
     AddTag(String),
     DeleteTag(String),
+    FocusTagInput,
 }
 
 #[derive(Debug)]
 pub enum FileDetailsOutput {
     TagsChanged(i32),
+}
+
+impl<FDS> FileDetails<FDS>
+where
+    FDS: FileDataSource + 'static,
+{
+    // Helper method to refresh the tags display
+    async fn refresh_tags(&mut self, sender: &AsyncComponentSender<FileDetails<FDS>>) {
+        // Refresh the tags display
+        if let Ok(updated_file) = self.file_data_source.get_file(self.file.id).await {
+            // unwrap is safe, because otherwise the tag operation would fail.
+            self.file = updated_file.unwrap();
+            // Clear existing tags
+            if let Some(tag_container) = &self.tag_container {
+                // Remove all existing children
+                while let Some(child) = tag_container.first_child() {
+                    tag_container.remove(&child);
+                }
+
+                // Add new tags
+                // Create a sender clone outside the loop
+                let sender_clone = sender.clone();
+                for tag in &self.file.tags {
+                    let sender_clone = sender_clone.clone();
+                    let badge = TagBadge::new(tag, &move |input| {
+                        sender_clone.input(input);
+                    });
+
+                    // Create a FlowBoxChild to hold the badge
+                    let flow_child = gtk::FlowBoxChild::new();
+                    flow_child.set_child(Some(&badge.container));
+                    flow_child.set_visible(true);
+                    tag_container.append(&flow_child);
+
+                    // Make sure the tag container is visible
+                    tag_container.set_visible(true);
+                }
+            }
+
+            // Notify that tags have changed
+            sender
+                .output(FileDetailsOutput::TagsChanged(self.file.id))
+                .unwrap();
+        }
+    }
 }
 
 #[relm4::component(pub, async)]
@@ -93,180 +161,179 @@ where
             set_default_height: 600,
             set_modal: true,
             set_icon_name: Some("folder-archives"),
-            add_css_class: "about-dialog",
+            add_css_class: "default-spacing",
+            set_resizable: true,
+            set_hide_on_close: false,
+
+            // We'll handle responsive behavior with CSS media queries instead
+            #[wrap(Some)]
+            set_titlebar = &gtk::HeaderBar {
+                set_show_title_buttons: true,
+                #[wrap(Some)]
+                set_title_widget = &gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 10,
+                    set_valign: gtk::Align::Center,
+
+                    gtk::Image {
+                        set_icon_name: Some(match model.file.type_.to_lowercase().as_str() {
+                            "pdf" => "application-pdf",
+                            "epub" => "x-office-document",
+                            "mobi" => "ebook-reader",
+                            _ => "text-x-generic",
+                        }),
+                        set_pixel_size: 24,
+                    },
+
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_valign: gtk::Align::Center,
+                        set_hexpand: true,
+
+                        gtk::Label {
+                            set_label: &model.filename,
+                            add_css_class: "title",
+                            set_ellipsize: gtk::pango::EllipsizeMode::End,
+                        },
+
+                        gtk::Label {
+                            set_label: &model.folder,
+                            add_css_class: "subtitle",
+                            set_ellipsize: gtk::pango::EllipsizeMode::End,
+                        },
+                    },
+
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_valign: gtk::Align::Center,
+                        add_css_class: "status-badge",
+                        add_css_class: match model.file.status {
+                            archive_organizer::api::ReadingStatus::Unread => "status-unread",
+                            archive_organizer::api::ReadingStatus::Reading => "status-reading",
+                            archive_organizer::api::ReadingStatus::Read => "status-read",
+                        },
+
+                        gtk::Label {
+                            set_label: &format!("{:?}", model.file.status),
+                            set_margin_start: 8,
+                            set_margin_end: 8,
+                            set_margin_top: 4,
+                            set_margin_bottom: 4,
+                        },
+                    },
+                },
+
+                pack_end = &gtk::Button {
+                    set_icon_name: "document-open-symbolic",
+                    set_tooltip_text: Some("Open File (Ctrl+O)"),
+                    add_css_class: "flat",
+                    set_accessible_role: gtk::AccessibleRole::Button,
+                    set_focusable: true,
+                    set_focus_on_click: true,
+                    connect_clicked[sender] => move |_| {
+                        sender.input(FileDetailsInput::OpenFile);
+                    },
+                },
+            },
             connect_close_request[sender] => move |_| {
                 sender.input(FileDetailsInput::Close);
                 gtk::glib::Propagation::Proceed
             },
 
-            gtk::HeaderBar {
-                set_show_title_buttons: true,
-                #[wrap(Some)]
-                set_title_widget = &gtk::Label::new(Some("File Details")),
-            },
+            // We'll use key bindings in a different way
 
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 12,
-                set_margin_all: 12,
+                set_spacing: 24,
+                set_margin_all: 24,
 
+                // File information section
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 12,
+                    set_margin_bottom: 12,
 
                     gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 8,
-                        set_halign: gtk::Align::End,
-                        set_hexpand: true,
+                        set_spacing: 12,
+                        set_margin_bottom: 8,
+
+                        gtk::Image {
+                            set_icon_name: Some(match model.file.type_.to_lowercase().as_str() {
+                                "pdf" => "application-pdf-symbolic",
+                                "epub" => "x-office-document-symbolic",
+                                "mobi" => "ebook-reader-symbolic",
+                                _ => "text-x-generic-symbolic",
+                            }),
+                            set_pixel_size: 48,
+                            set_margin_end: 12,
+                        },
 
                         gtk::Box {
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_spacing: 8,
-                            set_halign: gtk::Align::End,
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 4,
+                            set_valign: gtk::Align::Center,
 
-                            #[name(tag_input)]
-                            gtk::Entry {
-                                set_placeholder_text: Some("Enter new tag"),
-                                set_width_request: 200,
-                                connect_activate[sender] => move |entry| {
-                                    let tag = entry.text().as_str().trim().to_string();
-                                    if !tag.is_empty() {
-                                        sender.input(FileDetailsInput::AddTag(tag));
-                                        entry.set_text("");
-                                    }
-                                },
+                            gtk::Label {
+                                set_label: "File Information",
+                                add_css_class: "heading",
+                                set_halign: gtk::Align::Start,
                             },
 
-                            #[name(tag_container)]
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 8,
-                                set_halign: gtk::Align::End,
+                            gtk::Label {
+                                set_label: &format!("Type: {}", model.file.type_.to_uppercase()),
+                                add_css_class: "caption",
+                                add_css_class: "dim-label",
+                                set_halign: gtk::Align::Start,
                             },
                         },
                     },
 
-                    #[name(filename_label)]
-                    gtk::Label {
-                        set_label: &model.filename,
-                        add_css_class: "title-1",
-                        set_halign: gtk::Align::Start,
-                    },
-
-                    #[name(folder_label)]
-                    gtk::Label {
-                        set_label: &model.folder,
-                        add_css_class: "dim-label",
-                        set_halign: gtk::Align::Start,
-                        set_selectable: true,
-                    },
-
-                    gtk::ScrolledWindow {
-                        set_vexpand: true,
-                        set_hexpand: true,
-                        set_min_content_height: 300,
-                        set_policy: (gtk::PolicyType::Automatic, gtk::PolicyType::Automatic),
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 4,
 
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 12,
-                            set_margin_all: 12,
+                            set_spacing: 8,
+                            set_margin_start: 12,
+                            set_margin_top: 8,
 
-                            #[name(details_label)]
-                            gtk::Label {
-                                set_label: "Details",
-                                add_css_class: "title-2",
-                                set_halign: gtk::Align::Start,
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_spacing: 8,
+
+                                gtk::Label {
+                                    set_label: "Filename:",
+                                    add_css_class: "dim-label",
+                                    set_halign: gtk::Align::Start,
+                                },
+
+                                gtk::Label {
+                                    set_label: &model.filename,
+                                    set_halign: gtk::Align::Start,
+                                    set_hexpand: true,
+                                    set_selectable: true,
+                                    set_ellipsize: gtk::pango::EllipsizeMode::End,
+                                },
                             },
 
                             gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_spacing: 12,
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_spacing: 8,
 
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_spacing: 12,
-
-                                    #[name(id_label)]
-                                    gtk::Label {
-                                        set_label: "ID",
-                                        add_css_class: "dim-label",
-                                        set_width_request: 100,
-                                    },
-                                    #[name(id_value)]
-                                    gtk::Label {
-                                        set_label: &model.file.id.to_string(),
-                                        set_selectable: true,
-                                    },
+                                gtk::Label {
+                                    set_label: "Location:",
+                                    add_css_class: "dim-label",
+                                    set_halign: gtk::Align::Start,
                                 },
 
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_spacing: 12,
-
-                                    #[name(type_label)]
-                                    gtk::Label {
-                                        set_label: "Type",
-                                        add_css_class: "dim-label",
-                                        set_width_request: 100,
-                                    },
-                                    #[name(type_value)]
-                                    gtk::Label {
-                                        set_label: &model.file.type_,
-                                        set_selectable: true,
-                                    },
-                                },
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_spacing: 12,
-
-                                    #[name(size_label)]
-                                    gtk::Label {
-                                        set_label: "Size",
-                                        add_css_class: "dim-label",
-                                        set_width_request: 100,
-                                    },
-                                    #[name(size_value)]
-                                    gtk::Label {
-                                        set_label: &format!("{} bytes", model.file.size),
-                                        set_selectable: true,
-                                    },
-                                },
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_spacing: 12,
-
-                                    #[name(fingerprint_label)]
-                                    gtk::Label {
-                                        set_label: "Fingerprint",
-                                        add_css_class: "dim-label",
-                                        set_width_request: 100,
-                                    },
-                                    #[name(fingerprint_value)]
-                                    gtk::Label {
-                                        set_label: &model.file.fingerprint,
-                                        set_selectable: true,
-                                    },
-                                },
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Horizontal,
-                                    set_spacing: 12,
-
-                                    #[name(status_label)]
-                                    gtk::Label {
-                                        set_label: "Status",
-                                        add_css_class: "dim-label",
-                                        set_width_request: 100,
-                                    },
-                                    #[name(status_value)]
-                                    gtk::Label {
-                                        set_label: &format!("{:?}", model.file.status),
-                                        set_selectable: true,
-                                    },
+                                gtk::Label {
+                                    set_label: &model.folder,
+                                    set_halign: gtk::Align::Start,
+                                    set_hexpand: true,
+                                    set_selectable: true,
+                                    set_ellipsize: gtk::pango::EllipsizeMode::End,
                                 },
                             },
                         },
@@ -277,24 +344,227 @@ where
                     set_orientation: gtk::Orientation::Horizontal,
                 },
 
+                // Tags section
                 gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
+                    set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 12,
-                    set_margin_all: 12,
-                    set_halign: gtk::Align::End,
 
-                    gtk::Button {
-                        set_label: "Open File",
-                        add_css_class: "suggested-action",
-                        connect_clicked[sender] => move |_| {
-                            sender.input(FileDetailsInput::OpenFile);
+                    gtk::Label {
+                        set_label: "Tags",
+                        add_css_class: "heading",
+                        set_halign: gtk::Align::Start,
+                    },
+
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 12,
+                        set_margin_bottom: 12,
+                        add_css_class: "tag-input-box",
+
+                        #[name(tag_input)]
+                        gtk::Entry {
+                            set_placeholder_text: Some("Add a new tag"),
+                            set_hexpand: true,
+                            set_tooltip_text: Some("Enter a tag and press Enter to add it (Ctrl+T)"),
+                            set_accessible_role: gtk::AccessibleRole::SearchBox,
+                            connect_activate[sender] => move |entry| {
+                                let tag = entry.text().as_str().trim().to_string();
+                                if !tag.is_empty() {
+                                    sender.input(FileDetailsInput::AddTag(tag));
+                                    entry.set_text("");
+                                }
+                            },
+                        },
+
+                        gtk::Button {
+                            set_label: "Add",
+                            add_css_class: "suggested-action",
+                            set_tooltip_text: Some("Add the tag"),
+                            set_accessible_role: gtk::AccessibleRole::Button,
+                            set_focusable: true,
+                            set_focus_on_click: true,
+                            connect_clicked[sender, tag_input] => move |_| {
+                                let tag = tag_input.text().as_str().trim().to_string();
+                                if !tag.is_empty() {
+                                    sender.input(FileDetailsInput::AddTag(tag));
+                                    tag_input.set_text("");
+                                }
+                            },
                         },
                     },
 
-                    gtk::Button {
-                        set_label: "Close",
-                        add_css_class: "destructive-action",
-                        connect_clicked => FileDetailsInput::Close,
+                    gtk::Overlay {
+                        #[name(tag_container)]
+                        gtk::FlowBox {
+                            set_selection_mode: gtk::SelectionMode::None,
+                            set_max_children_per_line: 5,
+                            set_row_spacing: 8,
+                            set_column_spacing: 8,
+                            set_homogeneous: false,
+                            set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                            set_vexpand: true,
+                            set_margin_top: 8,
+                            set_margin_bottom: 8,
+                            set_visible: true,
+                        },
+                    },
+                },
+
+                gtk::Separator {
+                    set_orientation: gtk::Orientation::Horizontal,
+                },
+
+                // File details section
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 12,
+
+                    gtk::Label {
+                        set_label: "File Details",
+                        add_css_class: "heading",
+                        set_halign: gtk::Align::Start,
+                    },
+
+                    gtk::ListBox {
+                        add_css_class: "boxed-list",
+
+                        // ID row
+                        gtk::ListBoxRow {
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_spacing: 12,
+                                set_margin_all: 12,
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_valign: gtk::Align::Center,
+                                    set_hexpand: true,
+
+                                    gtk::Label {
+                                        set_label: "ID",
+                                        add_css_class: "heading",
+                                        set_halign: gtk::Align::Start,
+                                    },
+
+                                    gtk::Label {
+                                        set_label: &model.file.id.to_string(),
+                                        set_selectable: true,
+                                        set_halign: gtk::Align::Start,
+                                    },
+                                },
+                            },
+                        },
+
+                        // Type row
+                        gtk::ListBoxRow {
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_spacing: 12,
+                                set_margin_all: 12,
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_valign: gtk::Align::Center,
+                                    set_hexpand: true,
+
+                                    gtk::Label {
+                                        set_label: "Type",
+                                        add_css_class: "heading",
+                                        set_halign: gtk::Align::Start,
+                                    },
+
+                                    gtk::Label {
+                                        set_label: &model.file.type_,
+                                        set_selectable: true,
+                                        set_halign: gtk::Align::Start,
+                                    },
+                                },
+                            },
+                        },
+
+                        // Size row
+                        gtk::ListBoxRow {
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_spacing: 12,
+                                set_margin_all: 12,
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_valign: gtk::Align::Center,
+                                    set_hexpand: true,
+
+                                    gtk::Label {
+                                        set_label: "Size",
+                                        add_css_class: "heading",
+                                        set_halign: gtk::Align::Start,
+                                    },
+
+                                    gtk::Label {
+                                        set_label: &format!("{} bytes", model.file.size),
+                                        set_selectable: true,
+                                        set_halign: gtk::Align::Start,
+                                    },
+                                },
+                            },
+                        },
+
+                        // Fingerprint row
+                        gtk::ListBoxRow {
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_spacing: 12,
+                                set_margin_all: 12,
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_valign: gtk::Align::Center,
+                                    set_hexpand: true,
+
+                                    gtk::Label {
+                                        set_label: "Fingerprint",
+                                        add_css_class: "heading",
+                                        set_halign: gtk::Align::Start,
+                                    },
+
+                                    gtk::Label {
+                                        set_label: &model.file.fingerprint,
+                                        set_selectable: true,
+                                        set_halign: gtk::Align::Start,
+                                        set_wrap: true,
+                                        set_wrap_mode: gtk::pango::WrapMode::WordChar,
+                                    },
+                                },
+                            },
+                        },
+
+                        // Status row
+                        gtk::ListBoxRow {
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_spacing: 12,
+                                set_margin_all: 12,
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Vertical,
+                                    set_valign: gtk::Align::Center,
+                                    set_hexpand: true,
+
+                                    gtk::Label {
+                                        set_label: "Status",
+                                        add_css_class: "heading",
+                                        set_halign: gtk::Align::Start,
+                                    },
+
+                                    gtk::Label {
+                                        set_label: &format!("{:?}", model.file.status),
+                                        set_selectable: true,
+                                        set_halign: gtk::Align::Start,
+                                    },
+                                },
+                            },
+                        },
                     },
                 },
             },
@@ -324,6 +594,7 @@ where
             folder,
             file_data_source,
             tag_container: None,
+            tag_input: None,
         };
 
         let widgets = view_output!();
@@ -336,14 +607,23 @@ where
             let badge = TagBadge::new(tag, &move |input| {
                 sender_clone.input(input);
             });
-            widgets.tag_container.append(&badge.container);
+
+            // Create a FlowBoxChild to hold the badge
+            let flow_child = gtk::FlowBoxChild::new();
+            flow_child.set_child(Some(&badge.container));
+            flow_child.set_visible(true);
+            widgets.tag_container.append(&flow_child);
+
+            // Make sure the tag container is visible
+            widgets.tag_container.set_visible(true);
         }
 
         root.present();
 
-        // Store a reference to the tag_container in the model
+        // Store references to widgets in the model
         let mut model = model;
         model.tag_container = Some(widgets.tag_container.clone());
+        model.tag_input = Some(widgets.tag_input.clone());
 
         AsyncComponentParts { model, widgets }
     }
@@ -368,69 +648,63 @@ where
                 }
             }
             FileDetailsInput::AddTag(tag) => {
-                if let Err(e) = self
+                // Show a loading indicator
+                if let Some(tag_input) = &self.tag_input {
+                    tag_input.set_sensitive(false);
+                    tag_input.set_progress_fraction(0.5);
+                }
+
+                // Try to add the tag
+                let result = self
                     .file_data_source
                     .add_file_tags(self.file.id, vec![tag.clone()])
-                    .await
-                {
-                    eprintln!("Error adding tag: {}", e);
+                    .await;
+
+                // Reset the loading indicator
+                if let Some(tag_input) = &self.tag_input {
+                    tag_input.set_sensitive(true);
+                    tag_input.set_progress_fraction(0.0);
+                }
+
+                // Handle the result and refresh the UI
+                if let Err(e) = result {
+                    // Log the error
+                    eprintln!("Failed to add tag: {}", e);
                 } else {
-                    // Refresh the tags display
-                    if let Ok(updated_file) = self.file_data_source.get_file(self.file.id).await {
-                        // unwrap is safe, because otherwise the `add_file_tags` would fail.
-                        self.file = updated_file.unwrap();
-                        // Clear existing tags
-                        if let Some(tag_container) = &self.tag_container {
-                            tag_container.remove_all();
-                            // Add new tags
-                            // Create a sender clone outside the loop
-                            let sender_clone = sender.clone();
-                            for tag in &self.file.tags {
-                                let sender_clone = sender_clone.clone();
-                                let badge = TagBadge::new(tag, &move |input| {
-                                    sender_clone.input(input);
-                                });
-                                tag_container.append(&badge.container);
-                            }
-                        }
-                        // Notify that tags have changed
-                        sender
-                            .output(FileDetailsOutput::TagsChanged(self.file.id))
-                            .unwrap();
-                    }
+                    self.refresh_tags(&sender).await;
                 }
             }
             FileDetailsInput::DeleteTag(tag) => {
-                if let Err(e) = self
+                // Show a loading indicator in the tag input
+                if let Some(tag_input) = &self.tag_input {
+                    tag_input.set_sensitive(false);
+                    tag_input.set_progress_fraction(0.5);
+                }
+
+                // Try to delete the tag
+                let result = self
                     .file_data_source
                     .delete_file_tags(self.file.id, vec![tag.clone()])
-                    .await
-                {
-                    eprintln!("Error deleting tag: {}", e);
+                    .await;
+
+                // Reset the loading indicator
+                if let Some(tag_input) = &self.tag_input {
+                    tag_input.set_sensitive(true);
+                    tag_input.set_progress_fraction(0.0);
+                }
+
+                // Handle the result and refresh the UI
+                if let Err(e) = result {
+                    // Log the error
+                    eprintln!("Failed to delete tag: {}", e);
                 } else {
-                    // Refresh the tags display
-                    if let Ok(updated_file) = self.file_data_source.get_file(self.file.id).await {
-                        // unwrap is safe, because otherwise the `delete_file_tags` would fail.
-                        self.file = updated_file.unwrap();
-                        // Clear existing tags
-                        if let Some(tag_container) = &self.tag_container {
-                            tag_container.remove_all();
-                            // Add new tags
-                            // Create a sender clone outside the loop
-                            let sender_clone = sender.clone();
-                            for tag in &self.file.tags {
-                                let sender_clone = sender_clone.clone();
-                                let badge = TagBadge::new(tag, &move |input| {
-                                    sender_clone.input(input);
-                                });
-                                tag_container.append(&badge.container);
-                            }
-                        }
-                        // Notify that tags have changed
-                        sender
-                            .output(FileDetailsOutput::TagsChanged(self.file.id))
-                            .unwrap();
-                    }
+                    self.refresh_tags(&sender).await;
+                }
+            }
+            FileDetailsInput::FocusTagInput => {
+                // Focus the tag input field
+                if let Some(tag_input) = &self.tag_input {
+                    tag_input.grab_focus();
                 }
             }
         }
