@@ -14,6 +14,9 @@ use crate::file_box::FileBox;
 use crate::file_box::FileBoxOutput;
 use crate::file_details::{FileDetails, FileDetailsOutput};
 
+use std::collections::HashSet;
+use std::sync::Arc;
+
 use tracing;
 
 const COMPONENT_CSS: &str = include_str!("../assets/style.css");
@@ -24,7 +27,6 @@ static INITIALIZE_CSS: Lazy<()> = Lazy::new(|| {
 });
 
 use archive_organizer::api::ReadingStatus;
-use std::collections::HashSet;
 use strum::IntoEnumIterator;
 
 pub struct FileList<FDS>
@@ -36,6 +38,10 @@ where
     details: Option<AsyncController<FileDetails<FDS>>>,
     // Track which reading statuses are selected for filtering
     status_filters: HashSet<ReadingStatus>,
+    // Track which tags are selected for filtering
+    tag_filters: HashSet<String>,
+    // Store all available tags
+    all_tags: Vec<String>,
     // Store all files to make filtering easier
     all_files: Vec<File>,
     // References to filter checkboxes
@@ -50,6 +56,12 @@ where
     sidebar_container: Option<gtk::Box>,
     // Width of the expanded sidebar
     expanded_sidebar_width: i32,
+    // Reference to the tag dropdown
+    tag_dropdown: Option<gtk::DropDown>,
+    // Reference to the tag filters container
+    tag_filters_container: Option<gtk::FlowBox>,
+    // Reference to the selected tags label
+    selected_tags_label: Option<gtk::Label>,
 }
 
 #[derive(Debug)]
@@ -58,6 +70,10 @@ pub enum FileListInput {
     RefreshFiles,
     ToggleStatusFilter(ReadingStatus),
     ToggleFilterSection,
+    AddTagFilter(String),
+    RemoveTagFilter(String),
+    TagSelected,
+    LoadTags,
 }
 
 impl<FDS> FileList<FDS>
@@ -69,10 +85,57 @@ where
         let mut mut_files = self.files.guard();
         mut_files.clear();
 
-        // Apply reading status filters
+        // Apply both reading status and tag filters
         for file in &self.all_files {
-            if self.status_filters.contains(&file.status) {
+            // Check if the file matches the reading status filter
+            let status_match = self.status_filters.contains(&file.status);
+
+            // Check if the file matches the tag filters (if any)
+            let tag_match = if self.tag_filters.is_empty() {
+                // If no tag filters are selected, all files match
+                true
+            } else {
+                // A file matches if it has at least one of the selected tags
+                file.tags.iter().any(|tag| self.tag_filters.contains(tag))
+            };
+
+            // Only include files that match both filters
+            if status_match && tag_match {
                 mut_files.push_back(file.clone());
+            }
+        }
+    }
+
+    // Helper method to update the tag filters display
+    fn update_tag_filters_display(&mut self, sender: &AsyncComponentSender<Self>) {
+        if let Some(container) = &self.tag_filters_container {
+            // Clear existing children
+            while let Some(child) = container.first_child() {
+                container.remove(&child);
+            }
+
+            // Add a button for each selected tag
+            for tag in &self.tag_filters.clone() {
+                let tag_clone = tag.clone();
+                let button = gtk::Button::builder()
+                    .label(&format!("{} ×", tag))
+                    .build();
+
+                button.add_css_class("tag-button");
+
+                // Connect the button click to remove the tag filter
+                let tag_for_closure = tag_clone.clone();
+                let sender = sender.clone();
+                button.connect_clicked(move |_| {
+                    sender.input(FileListInput::RemoveTagFilter(tag_for_closure.clone()));
+                });
+
+                container.append(&button);
+            }
+
+            // Update visibility of the "Selected Tags:" label
+            if let Some(label) = &self.selected_tags_label {
+                label.set_visible(!self.tag_filters.is_empty());
             }
         }
     }
@@ -177,6 +240,51 @@ where
 
                     gtk::Separator {
                         set_orientation: gtk::Orientation::Horizontal,
+                        set_margin_top: 8,
+                        set_margin_bottom: 8,
+                    },
+
+                    // Tag filtering section
+                    gtk::Label {
+                        set_label: "Filter by Tags",
+                        add_css_class: "heading",
+                        set_halign: gtk::Align::Start,
+                        set_hexpand: true,
+                        set_margin_bottom: 8,
+                    },
+
+                    // Tag dropdown
+                    #[name(tag_dropdown)]
+                    gtk::DropDown {
+                        set_enable_search: true,
+                        set_margin_bottom: 8,
+                        connect_selected_notify[sender] => move |_| {
+                            sender.input(FileListInput::TagSelected);
+                        },
+                    },
+
+                    // Selected tag filters display
+                    #[name(selected_tags_label)]
+                    gtk::Label {
+                        set_label: "Selected Tags:",
+                        set_halign: gtk::Align::Start,
+                        set_margin_top: 4,
+                        set_visible: !model.tag_filters.is_empty(),
+                    },
+
+                    // Container for tag filter buttons
+                    #[name(tag_filters_container)]
+                    gtk::FlowBox {
+                        set_selection_mode: gtk::SelectionMode::None,
+                        set_max_children_per_line: 3,
+                        set_homogeneous: false,
+                        set_row_spacing: 4,
+                        set_column_spacing: 4,
+                        set_margin_bottom: 8,
+                    },
+
+                    gtk::Separator {
+                        set_orientation: gtk::Orientation::Horizontal,
                     },
                 },
             },
@@ -247,6 +355,8 @@ where
             files: files_deque,
             details: None,
             status_filters,
+            tag_filters: HashSet::new(),
+            all_tags: Vec::new(),
             all_files,
             unread_checkbox: None,
             reading_checkbox: None,
@@ -255,7 +365,13 @@ where
             filter_options_container: None,
             sidebar_container: None,
             expanded_sidebar_width: 200, // Default expanded width
+            tag_dropdown: None,
+            tag_filters_container: None,
+            selected_tags_label: None,
         };
+
+        // Load tags asynchronously
+        sender.input(FileListInput::LoadTags);
 
         let files_box = model.files.widget();
         let widgets = view_output!();
@@ -268,6 +384,9 @@ where
         model.read_checkbox = Some(widgets.read_checkbox.clone());
         model.filter_options_container = Some(widgets.filter_options_container.clone());
         model.sidebar_container = Some(widgets.sidebar_container.clone());
+        model.tag_dropdown = Some(widgets.tag_dropdown.clone());
+        model.tag_filters_container = Some(widgets.tag_filters_container.clone());
+        model.selected_tags_label = Some(widgets.selected_tags_label.clone());
 
         AsyncComponentParts { model, widgets }
     }
@@ -306,6 +425,9 @@ where
                         tracing::warn!("Error refreshing files: {}", e);
                     }
                 }
+
+                // Also refresh the tags
+                sender.input(FileListInput::LoadTags);
             }
             FileListInput::ToggleStatusFilter(status) => {
                 // Toggle the status in the filter set
@@ -342,25 +464,110 @@ where
 
                 // Find the toggle button and update its icon
                 if let Some(container) = &self.filter_options_container {
-                    if let Some(button) = container.first_child() {
-                        if let Ok(button) = button.downcast::<gtk::Button>() {
-                            let icon_name = if self.filter_section_visible {
-                                "panel-center-symbolic"
-                            } else {
-                                "panel-left-symbolic"
-                            };
-                            button.set_icon_name(icon_name);
+                    if let Some(parent) = container.parent() {
+                        // The toggle button is in the first child box
+                        if let Some(toggle_box) = parent.first_child() {
+                            if let Some(button) = toggle_box.first_child() {
+                                if let Ok(button) = button.downcast::<gtk::Button>() {
+                                    let icon_name = if self.filter_section_visible {
+                                        "panel-center-symbolic"
+                                    } else {
+                                        "panel-left-symbolic"
+                                    };
+                                    button.set_icon_name(icon_name);
 
-                            let tooltip = if self.filter_section_visible {
-                                "Hide filters"
-                            } else {
-                                "Show filters"
-                            };
-                            button.set_tooltip_text(Some(tooltip));
+                                    let tooltip = if self.filter_section_visible {
+                                        "Hide filters"
+                                    } else {
+                                        "Show filters"
+                                    };
+                                    button.set_tooltip_text(Some(tooltip));
+                                }
+                            }
                         }
                     }
                 }
             }
+            FileListInput::LoadTags => {
+                // Load all available tags from the data source
+                match self.file_data_source.get_files_tags().await {
+                    Ok(tags) => {
+                        // Update the all_tags list
+                        self.all_tags = tags;
+
+                        // Update the dropdown with the new tags
+                        if let Some(dropdown) = &self.tag_dropdown {
+                            // Create a string list model for the dropdown
+                            let model = gtk::StringList::new(&[]);
+
+                            // Add an empty item at the beginning for "Select a tag"
+                            model.append("Select a tag...");
+
+                            // Add all tags to the model
+                            for tag in &self.all_tags {
+                                model.append(tag);
+                            }
+
+                            // Set the model on the dropdown
+                            dropdown.set_model(Some(&model));
+                            dropdown.set_selected(0); // Select the first item ("Select a tag...")
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Error loading tags: {}", e);
+                    }
+                }
+            }
+            FileListInput::TagSelected => {
+                // Handle tag selection from the dropdown
+                if let Some(dropdown) = &self.tag_dropdown {
+                    let selected = dropdown.selected();
+                    if selected > 0 { // Skip the first item ("Select a tag...")
+                        if let Some(model) = dropdown.model() {
+                            if let Ok(string_list) = model.downcast::<gtk::StringList>() {
+                                if let Some(tag_item) = string_list.string(selected) {
+                                    let tag = tag_item.to_string();
+
+                                    // Add the tag to filters if it's not already there
+                                    if !self.tag_filters.contains(&tag) {
+                                        sender.input(FileListInput::AddTagFilter(tag));
+                                    }
+
+                                    // Reset dropdown selection to the first item
+                                    dropdown.set_selected(0);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            FileListInput::AddTagFilter(tag) => {
+                // Add the tag to the filter set
+                self.tag_filters.insert(tag.clone());
+
+                // Update the tag filters display
+                self.update_tag_filters_display(&sender);
+
+                // Apply the updated filters
+                self.apply_filters();
+
+                tracing::debug!("Tag filters after add: {:?}", &self.tag_filters);
+            }
+            FileListInput::RemoveTagFilter(tag) => {
+                // Remove the tag from the filter set
+                self.tag_filters.remove(&tag);
+
+                // Update the tag filters display
+                self.update_tag_filters_display(&sender);
+
+                // Apply the updated filters
+                self.apply_filters();
+
+                tracing::debug!("Tag filters after remove: {:?}", &self.tag_filters);
+            }
+
         }
     }
+
+
 }
