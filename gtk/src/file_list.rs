@@ -194,6 +194,50 @@ where
             }
         }
     }
+
+    // Helper method to update both tag dropdowns with available tags
+    fn update_tag_dropdowns(&self) {
+        // Get available tags (tags that are not in either allow or deny lists)
+        let available_tags: Vec<&String> = self.all_tags.iter()
+            .filter(|tag| !self.tag_filters.contains(*tag) && !self.tag_deny_filters.contains(*tag))
+            .collect();
+
+        // Update the include dropdown
+        if let Some(dropdown) = &self.tag_dropdown {
+            // Create a string list model for the dropdown
+            let model = gtk::StringList::new(&[]);
+
+            // Add an empty item at the beginning for "Select a tag"
+            model.append("Select a tag...");
+
+            // Add available tags to the model
+            for tag in &available_tags {
+                model.append(tag);
+            }
+
+            // Set the model on the dropdown
+            dropdown.set_model(Some(&model));
+            dropdown.set_selected(0); // Select the first item
+        }
+
+        // Update the deny dropdown
+        if let Some(dropdown) = &self.tag_deny_dropdown {
+            // Create a string list model for the dropdown
+            let model = gtk::StringList::new(&[]);
+
+            // Add an empty item at the beginning for "Select a tag to exclude"
+            model.append("Select a tag to exclude...");
+
+            // Add available tags to the model
+            for tag in &available_tags {
+                model.append(tag);
+            }
+
+            // Set the model on the dropdown
+            dropdown.set_model(Some(&model));
+            dropdown.set_selected(0); // Select the first item
+        }
+    }
 }
 
 #[relm4::component(pub, async)]
@@ -602,41 +646,8 @@ where
                         // Update the all_tags list
                         self.all_tags = tags;
 
-                        // Update the include dropdown with the new tags
-                        if let Some(dropdown) = &self.tag_dropdown {
-                            // Create a string list model for the dropdown
-                            let model = gtk::StringList::new(&[]);
-
-                            // Add an empty item at the beginning for "Select a tag"
-                            model.append("Select a tag...");
-
-                            // Add all tags to the model
-                            for tag in &self.all_tags {
-                                model.append(tag);
-                            }
-
-                            // Set the model on the dropdown
-                            dropdown.set_model(Some(&model));
-                            dropdown.set_selected(0); // Select the first item ("Select a tag...")
-                        }
-
-                        // Update the deny dropdown with the new tags
-                        if let Some(dropdown) = &self.tag_deny_dropdown {
-                            // Create a string list model for the dropdown
-                            let model = gtk::StringList::new(&[]);
-
-                            // Add an empty item at the beginning for "Select a tag to exclude"
-                            model.append("Select a tag to exclude...");
-
-                            // Add all tags to the model
-                            for tag in &self.all_tags {
-                                model.append(tag);
-                            }
-
-                            // Set the model on the dropdown
-                            dropdown.set_model(Some(&model));
-                            dropdown.set_selected(0); // Select the first item
-                        }
+                        // Update both dropdowns
+                        self.update_tag_dropdowns();
                     }
                     Err(e) => {
                         tracing::warn!("Error loading tags: {}", e);
@@ -673,6 +684,9 @@ where
                 // Update the tag filters display
                 self.update_tag_filters_display(&sender);
 
+                // Update the dropdowns to remove the selected tag
+                self.update_tag_dropdowns();
+
                 // Apply the updated filters
                 self.apply_filters();
 
@@ -684,6 +698,9 @@ where
 
                 // Update the tag filters display
                 self.update_tag_filters_display(&sender);
+
+                // Update the dropdowns to add back the removed tag
+                self.update_tag_dropdowns();
 
                 // Apply the updated filters
                 self.apply_filters();
@@ -720,6 +737,9 @@ where
                 // Update the tag deny filters display
                 self.update_tag_deny_filters_display(&sender);
 
+                // Update the dropdowns to remove the selected tag
+                self.update_tag_dropdowns();
+
                 // Apply the updated filters
                 self.apply_filters();
 
@@ -731,6 +751,9 @@ where
 
                 // Update the tag deny filters display
                 self.update_tag_deny_filters_display(&sender);
+
+                // Update the dropdowns to add back the removed tag
+                self.update_tag_dropdowns();
 
                 // Apply the updated filters
                 self.apply_filters();
