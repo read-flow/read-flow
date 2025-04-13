@@ -15,7 +15,6 @@ use crate::file_box::FileBoxOutput;
 use crate::file_details::{FileDetails, FileDetailsOutput};
 
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use tracing;
 
@@ -134,23 +133,39 @@ where
                 container.remove(&child);
             }
 
-            // Add a button for each selected tag
+            // Add a chip for each selected tag
             for tag in &self.tag_filters.clone() {
                 let tag_clone = tag.clone();
-                let button = gtk::Button::builder()
-                    .label(&format!("{} ×", tag))
-                    .build();
 
-                button.add_css_class("tag-button");
+                // Create a chip-style container for the tag
+                let chip = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+                chip.add_css_class("tag-chip");
 
-                // Connect the button click to remove the tag filter
+                // Add the tag label
+                let label = gtk::Label::new(Some(tag));
+                label.add_css_class("tag-label");
+                chip.append(&label);
+
+                // Add the remove button
+                let remove_btn = gtk::Button::new();
+                remove_btn.set_icon_name("window-close-symbolic");
+                remove_btn.add_css_class("flat");
+                remove_btn.add_css_class("circular");
+                remove_btn.add_css_class("tag-remove");
+
+                // Connect the remove button
                 let tag_for_closure = tag_clone.clone();
                 let sender = sender.clone();
-                button.connect_clicked(move |_| {
+                remove_btn.connect_clicked(move |_| {
                     sender.input(FileListInput::RemoveTagFilter(tag_for_closure.clone()));
                 });
 
-                container.append(&button);
+                chip.append(&remove_btn);
+
+                // Add the chip to the container
+                let child = gtk::FlowBoxChild::new();
+                child.set_child(Some(&chip));
+                container.append(&child);
             }
 
             // Update visibility of the "Selected Tags:" label
@@ -168,24 +183,40 @@ where
                 container.remove(&child);
             }
 
-            // Add a button for each selected deny tag
+            // Add a chip for each selected deny tag
             for tag in &self.tag_deny_filters.clone() {
                 let tag_clone = tag.clone();
-                let button = gtk::Button::builder()
-                    .label(&format!("{} ×", tag))
-                    .build();
 
-                button.add_css_class("tag-button");
-                button.add_css_class("tag-deny-button"); // Additional class for styling
+                // Create a chip-style container for the tag
+                let chip = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+                chip.add_css_class("tag-chip");
+                chip.add_css_class("deny"); // Additional class for styling deny tags
 
-                // Connect the button click to remove the tag deny filter
+                // Add the tag label
+                let label = gtk::Label::new(Some(tag));
+                label.add_css_class("tag-label");
+                chip.append(&label);
+
+                // Add the remove button
+                let remove_btn = gtk::Button::new();
+                remove_btn.set_icon_name("window-close-symbolic");
+                remove_btn.add_css_class("flat");
+                remove_btn.add_css_class("circular");
+                remove_btn.add_css_class("tag-remove");
+
+                // Connect the remove button
                 let tag_for_closure = tag_clone.clone();
                 let sender = sender.clone();
-                button.connect_clicked(move |_| {
+                remove_btn.connect_clicked(move |_| {
                     sender.input(FileListInput::RemoveTagDenyFilter(tag_for_closure.clone()));
                 });
 
-                container.append(&button);
+                chip.append(&remove_btn);
+
+                // Add the chip to the container
+                let child = gtk::FlowBoxChild::new();
+                child.set_child(Some(&chip));
+                container.append(&child);
             }
 
             // Update visibility of the "Excluded Tags:" label
@@ -261,25 +292,37 @@ where
             #[name(sidebar_container)]
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 8,
-                set_margin_bottom: 12,
+                set_spacing: 0,  // Reduced spacing for GNOME style
                 set_hexpand: false,
                 set_vexpand: true,
                 set_width_request: model.expanded_sidebar_width,
+                add_css_class: "sidebar",  // Add GNOME sidebar styling
 
                 // Toggle button for sidebar
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 8,
-                    set_margin_bottom: 8,
+                    set_spacing: 0,
+                    set_margin_bottom: 0,
+                    add_css_class: "toolbar",  // GNOME-style toolbar
+                    set_margin_all: 8,
 
                     gtk::Button {
-                        set_icon_name: if model.filter_section_visible { "panel-center-symbolic" } else { "panel-left-symbolic" },
+                        set_icon_name: if model.filter_section_visible { "view-restore-symbolic" } else { "view-more-symbolic" },
                         set_tooltip_text: Some(if model.filter_section_visible { "Hide filters" } else { "Show filters" }),
                         add_css_class: "flat",
+                        add_css_class: "circular",
+                        add_css_class: "filter-toggle",
                         connect_clicked[sender] => move |_| {
                             sender.input(FileListInput::ToggleFilterSection);
                         },
+                    },
+
+                    gtk::Label {
+                        set_label: "Filters",
+                        add_css_class: "heading",
+                        set_halign: gtk::Align::Start,
+                        set_hexpand: true,
+                        set_margin_start: 8,
                     },
                 },
 
@@ -287,148 +330,155 @@ where
                 #[name(filter_options_container)]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 12,
-                    set_margin_top: 4,
-                    set_margin_bottom: 8,
+                    set_spacing: 16,  // Increased spacing between sections
+                    set_margin_start: 16,
+                    set_margin_end: 16,
+                    set_margin_top: 16,
+                    set_margin_bottom: 16,
                     set_visible: model.filter_section_visible,
 
-                    gtk::Label {
-                        set_label: "Filter by Reading Status",
-                        add_css_class: "heading",
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: true,
-                        set_margin_bottom: 8,
-                    },
-
-                    // Unread checkbox
-                    #[name(unread_checkbox)]
-                    gtk::CheckButton {
-                        set_label: Some("Unread"),
-                        set_active: model.status_filters.contains(&ReadingStatus::Unread),
-                        add_css_class: "check",
-                        connect_toggled[sender] => move |_| {
-                            sender.input(FileListInput::ToggleStatusFilter(ReadingStatus::Unread));
-                        },
-                    },
-
-                    // Reading checkbox
-                    #[name(reading_checkbox)]
-                    gtk::CheckButton {
-                        set_label: Some("Reading"),
-                        set_active: model.status_filters.contains(&ReadingStatus::Reading),
-                        add_css_class: "check",
-                        connect_toggled[sender] => move |_| {
-                            sender.input(FileListInput::ToggleStatusFilter(ReadingStatus::Reading));
-                        },
-                    },
-
-                    // Read checkbox
-                    #[name(read_checkbox)]
-                    gtk::CheckButton {
-                        set_label: Some("Read"),
-                        set_active: model.status_filters.contains(&ReadingStatus::Read),
-                        add_css_class: "check",
-                        connect_toggled[sender] => move |_| {
-                            sender.input(FileListInput::ToggleStatusFilter(ReadingStatus::Read));
-                        },
-                    },
-
+                    // Reading Status Section
                     gtk::Box {
-                        set_hexpand: true,
-                    },
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 8,
+                        add_css_class: "section-box",
 
-                    gtk::Separator {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_margin_top: 8,
-                        set_margin_bottom: 8,
+                        gtk::Label {
+                            set_label: "Reading Status",
+                            add_css_class: "caption-heading",
+                            set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                            set_margin_bottom: 8,
+                        },
+
+                        // Unread checkbox
+                        #[name(unread_checkbox)]
+                        gtk::CheckButton {
+                            set_label: Some("Unread"),
+                            set_active: model.status_filters.contains(&ReadingStatus::Unread),
+                            add_css_class: "check",
+                            connect_toggled[sender] => move |_| {
+                                sender.input(FileListInput::ToggleStatusFilter(ReadingStatus::Unread));
+                            },
+                        },
+
+                        // Reading checkbox
+                        #[name(reading_checkbox)]
+                        gtk::CheckButton {
+                            set_label: Some("Reading"),
+                            set_active: model.status_filters.contains(&ReadingStatus::Reading),
+                            add_css_class: "check",
+                            connect_toggled[sender] => move |_| {
+                                sender.input(FileListInput::ToggleStatusFilter(ReadingStatus::Reading));
+                            },
+                        },
+
+                        // Read checkbox
+                        #[name(read_checkbox)]
+                        gtk::CheckButton {
+                            set_label: Some("Read"),
+                            set_active: model.status_filters.contains(&ReadingStatus::Read),
+                            add_css_class: "check",
+                            connect_toggled[sender] => move |_| {
+                                sender.input(FileListInput::ToggleStatusFilter(ReadingStatus::Read));
+                            },
+                        },
                     },
 
                     // Tag filtering section
-                    gtk::Label {
-                        set_label: "Filter by Tags",
-                        add_css_class: "heading",
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: true,
-                        set_margin_bottom: 8,
-                    },
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 8,
+                        add_css_class: "section-box",
+                        add_css_class: "filter-section",
 
-                    // Tag dropdown
-                    #[name(tag_dropdown)]
-                    gtk::DropDown {
-                        set_enable_search: true,
-                        set_margin_bottom: 8,
-                        connect_selected_notify[sender] => move |_| {
-                            sender.input(FileListInput::TagSelected);
+                        gtk::Label {
+                            set_label: "Include Files with Tags",
+                            add_css_class: "caption-heading",
+                            set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                            set_margin_bottom: 8,
                         },
-                    },
 
-                    // Selected tag filters display
-                    #[name(selected_tags_label)]
-                    gtk::Label {
-                        set_label: "Selected Tags:",
-                        set_halign: gtk::Align::Start,
-                        set_margin_top: 4,
-                        set_visible: !model.tag_filters.is_empty(),
-                    },
+                        // Tag dropdown with improved styling
+                        #[name(tag_dropdown)]
+                        gtk::DropDown {
+                            set_enable_search: true,
+                            set_margin_bottom: 12,
+                            add_css_class: "tag-dropdown",
+                            connect_selected_notify[sender] => move |_| {
+                                sender.input(FileListInput::TagSelected);
+                            },
+                        },
 
-                    // Container for tag filter buttons
-                    #[name(tag_filters_container)]
-                    gtk::FlowBox {
-                        set_selection_mode: gtk::SelectionMode::None,
-                        set_max_children_per_line: 3,
-                        set_homogeneous: false,
-                        set_row_spacing: 4,
-                        set_column_spacing: 4,
-                        set_margin_bottom: 8,
-                    },
+                        // Selected tag filters display
+                        #[name(selected_tags_label)]
+                        gtk::Label {
+                            set_label: "Selected Tags:",
+                            add_css_class: "caption-heading",
+                            set_halign: gtk::Align::Start,
+                            set_margin_top: 4,
+                            set_visible: !model.tag_filters.is_empty(),
+                        },
 
-                    gtk::Separator {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_margin_top: 8,
-                        set_margin_bottom: 8,
+                        // Container for tag filter buttons
+                        #[name(tag_filters_container)]
+                        gtk::FlowBox {
+                            set_selection_mode: gtk::SelectionMode::None,
+                            set_max_children_per_line: 3,
+                            set_homogeneous: false,
+                            set_row_spacing: 6,  // Increased spacing
+                            set_column_spacing: 6,  // Increased spacing
+                            set_margin_bottom: 8,
+                        },
                     },
 
                     // Tag deny filtering section
-                    gtk::Label {
-                        set_label: "Exclude Files with Tags",
-                        add_css_class: "heading",
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: true,
-                        set_margin_bottom: 8,
-                    },
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 8,
+                        add_css_class: "section-box",
+                        add_css_class: "filter-section",
 
-                    // Tag deny dropdown
-                    #[name(tag_deny_dropdown)]
-                    gtk::DropDown {
-                        set_enable_search: true,
-                        set_margin_bottom: 8,
-                        connect_selected_notify[sender] => move |_| {
-                            sender.input(FileListInput::TagDenySelected);
+                        gtk::Label {
+                            set_label: "Exclude Files with Tags",
+                            add_css_class: "caption-heading",
+                            set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                            set_margin_bottom: 8,
                         },
-                    },
 
-                    // Selected tag deny filters display
-                    #[name(selected_deny_tags_label)]
-                    gtk::Label {
-                        set_label: "Excluded Tags:",
-                        set_halign: gtk::Align::Start,
-                        set_margin_top: 4,
-                        set_visible: !model.tag_deny_filters.is_empty(),
-                    },
+                        // Tag deny dropdown with improved styling
+                        #[name(tag_deny_dropdown)]
+                        gtk::DropDown {
+                            set_enable_search: true,
+                            set_margin_bottom: 12,
+                            add_css_class: "tag-dropdown",
+                            connect_selected_notify[sender] => move |_| {
+                                sender.input(FileListInput::TagDenySelected);
+                            },
+                        },
 
-                    // Container for tag deny filter buttons
-                    #[name(tag_deny_filters_container)]
-                    gtk::FlowBox {
-                        set_selection_mode: gtk::SelectionMode::None,
-                        set_max_children_per_line: 3,
-                        set_homogeneous: false,
-                        set_row_spacing: 4,
-                        set_column_spacing: 4,
-                        set_margin_bottom: 8,
-                    },
+                        // Selected tag deny filters display
+                        #[name(selected_deny_tags_label)]
+                        gtk::Label {
+                            set_label: "Excluded Tags:",
+                            add_css_class: "caption-heading",
+                            set_halign: gtk::Align::Start,
+                            set_margin_top: 4,
+                            set_visible: !model.tag_deny_filters.is_empty(),
+                        },
 
-                    gtk::Separator {
-                        set_orientation: gtk::Orientation::Horizontal,
+                        // Container for tag deny filter buttons
+                        #[name(tag_deny_filters_container)]
+                        gtk::FlowBox {
+                            set_selection_mode: gtk::SelectionMode::None,
+                            set_max_children_per_line: 3,
+                            set_homogeneous: false,
+                            set_row_spacing: 6,  // Increased spacing
+                            set_column_spacing: 6,  // Increased spacing
+                            set_margin_bottom: 8,
+                        },
                     },
                 },
             },
@@ -437,11 +487,20 @@ where
             gtk::ScrolledWindow {
                 set_hexpand: true,
                 set_vexpand: true,
+                add_css_class: "file-list-container",
+                set_margin_start: 12,
+                set_margin_end: 12,
+                set_margin_top: 12,
+                set_margin_bottom: 12,
 
                 #[local_ref]
                 files_box -> gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 8,
+                    set_spacing: 12,  // Increased spacing between files
+                    set_margin_start: 4,
+                    set_margin_end: 4,
+                    set_margin_top: 4,
+                    set_margin_bottom: 4,
                 },
             },
         },

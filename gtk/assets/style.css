@@ -52,17 +52,115 @@
 
 /* GNOME HIG specific styles */
 .file-item {
-    padding: 8px;
-    -gtk-border-radius: 6px;
+    padding: 12px;
+    border-radius: 8px;
     transition: background-color 0.2s;
+    margin-bottom: 4px;
 }
 
 .file-item:hover {
-    background-color: @theme_bg_color;
+    background-color: alpha(@theme_bg_color, 0.7);
 }
 
 .file-item:active {
-    background-color: @theme_selected_bg_color;
+    background-color: alpha(@theme_selected_bg_color, 0.3);
+}
+
+/* Sidebar styling */
+.sidebar {
+    background-color: @theme_base_color;
+    border-right: 1px solid @borders;
+    padding: 0;
+}
+
+/* Tag chips styling */
+.tag-chip {
+    background-color: alpha(@accent_bg_color, 0.15);
+    border-radius: 999px;
+    padding: 4px 8px;
+    margin: 2px;
+    transition: all 0.2s ease;
+}
+
+.tag-chip:hover {
+    background-color: alpha(@accent_bg_color, 0.25);
+}
+
+.tag-chip.deny {
+    background-color: alpha(@error_color, 0.15);
+}
+
+.tag-chip.deny:hover {
+    background-color: alpha(@error_color, 0.25);
+}
+
+.tag-label {
+    font-size: 0.9em;
+    margin: 0 4px;
+}
+
+.tag-remove {
+    min-width: 20px;
+    min-height: 20px;
+    padding: 0;
+    opacity: 0.7;
+}
+
+.tag-remove:hover {
+    opacity: 1;
+}
+
+/* Section headings */
+.caption-heading {
+    font-weight: bold;
+    font-size: 0.9em;
+    opacity: 0.8;
+    margin-bottom: 6px;
+}
+
+.section-box {
+    margin-bottom: 18px;
+}
+
+/* Filter controls */
+.filter-toggle {
+    min-height: 34px;
+    min-width: 34px;
+    padding: 0;
+    margin: 0;
+    border-radius: 17px;
+}
+
+.filter-section {
+    padding: 12px;
+    border-radius: 8px;
+    background-color: alpha(@theme_bg_color, 0.3);
+    margin-bottom: 12px;
+}
+
+/* Empty state */
+.empty-state {
+    margin: 24px;
+    padding: 24px;
+    border-radius: 12px;
+    background-color: alpha(@theme_bg_color, 0.5);
+    border: 1px solid @borders;
+}
+
+.empty-state-icon {
+    opacity: 0.5;
+    margin-bottom: 12px;
+}
+
+.empty-state-title {
+    font-size: 1.2em;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.empty-state-description {
+    opacity: 0.7;
+    margin-bottom: 16px;
 }
 
 .file-name {
