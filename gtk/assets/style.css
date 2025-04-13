@@ -77,26 +77,6 @@
     margin-top: 4px;
 }
 
-/* Status badges */
-.status-badge {
-    -gtk-border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
-    color: white;
-}
-
-.status-unread {
-    background-color: @warning_color;
-}
-
-.status-reading {
-    background-color: @accent_bg_color;
-}
-
-.status-read {
-    background-color: @success_color;
-}
-
 /* Card styles */
 .card-container {
     background-color: alpha(@theme_bg_color, 0.5);

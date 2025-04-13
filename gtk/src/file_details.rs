@@ -81,6 +81,7 @@ pub struct FileDetails<FDS> {
     file_data_source: FDS,
     tag_container: Option<gtk::FlowBox>,
     tag_input: Option<gtk::Entry>,
+    status_label: Option<gtk::Label>,
 }
 
 #[derive(Debug)]
@@ -90,6 +91,7 @@ pub enum FileDetailsInput {
     AddTag(String),
     DeleteTag(String),
     FocusTagInput,
+    UpdateReadingStatus(archive_organizer::api::ReadingStatus),
 }
 
 #[derive(Debug)]
@@ -174,16 +176,6 @@ where
                     set_spacing: 10,
                     set_valign: gtk::Align::Center,
 
-                    gtk::Image {
-                        set_icon_name: Some(match model.file.type_.to_lowercase().as_str() {
-                            "pdf" => "application-pdf",
-                            "epub" => "x-office-document",
-                            "mobi" => "ebook-reader",
-                            _ => "text-x-generic",
-                        }),
-                        set_pixel_size: 24,
-                    },
-
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
                         set_valign: gtk::Align::Center,
@@ -199,25 +191,6 @@ where
                             set_label: &model.folder,
                             add_css_class: "subtitle",
                             set_ellipsize: gtk::pango::EllipsizeMode::End,
-                        },
-                    },
-
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_valign: gtk::Align::Center,
-                        add_css_class: "status-badge",
-                        add_css_class: match model.file.status {
-                            archive_organizer::api::ReadingStatus::Unread => "status-unread",
-                            archive_organizer::api::ReadingStatus::Reading => "status-reading",
-                            archive_organizer::api::ReadingStatus::Read => "status-read",
-                        },
-
-                        gtk::Label {
-                            set_label: &format!("{:?}", model.file.status),
-                            set_margin_start: 8,
-                            set_margin_end: 8,
-                            set_margin_top: 4,
-                            set_margin_bottom: 4,
                         },
                     },
                 },
@@ -551,14 +524,93 @@ where
                                     set_hexpand: true,
 
                                     gtk::Label {
-                                        set_label: "Status",
+                                        set_label: "Reading Status",
                                         add_css_class: "heading",
                                         set_halign: gtk::Align::Start,
                                     },
 
+                                    gtk::Box {
+                                        set_orientation: gtk::Orientation::Horizontal,
+                                        set_spacing: 12,
+                                        set_margin_top: 8,
+                                        set_margin_bottom: 4,
+
+                                        // Radio button for Unread status
+                                        gtk::Box {
+                                            set_orientation: gtk::Orientation::Horizontal,
+                                            set_spacing: 4,
+
+                                            #[name(unread_radio)]
+                                            gtk::CheckButton {
+                                                set_active: model.file.status == archive_organizer::api::ReadingStatus::Unread,
+                                                add_css_class: "radio",
+                                                connect_toggled[sender] => move |btn| {
+                                                    if btn.is_active() {
+                                                        sender.input(FileDetailsInput::UpdateReadingStatus(archive_organizer::api::ReadingStatus::Unread));
+                                                    }
+                                                },
+                                            },
+
+                                            gtk::Label {
+                                                set_label: "Unread",
+                                                set_margin_start: 4,
+                                            },
+                                        },
+
+                                        // Radio button for Reading status
+                                        gtk::Box {
+                                            set_orientation: gtk::Orientation::Horizontal,
+                                            set_spacing: 4,
+                                            set_margin_start: 12,
+
+                                            #[name(reading_radio)]
+                                            gtk::CheckButton {
+                                                set_active: model.file.status == archive_organizer::api::ReadingStatus::Reading,
+                                                set_group: Some(&unread_radio),
+                                                add_css_class: "radio",
+                                                connect_toggled[sender] => move |btn| {
+                                                    if btn.is_active() {
+                                                        sender.input(FileDetailsInput::UpdateReadingStatus(archive_organizer::api::ReadingStatus::Reading));
+                                                    }
+                                                },
+                                            },
+
+                                            gtk::Label {
+                                                set_label: "Reading",
+                                                set_margin_start: 4,
+                                            },
+                                        },
+
+                                        // Radio button for Read status
+                                        gtk::Box {
+                                            set_orientation: gtk::Orientation::Horizontal,
+                                            set_spacing: 4,
+                                            set_margin_start: 12,
+
+                                            gtk::CheckButton {
+                                                set_active: model.file.status == archive_organizer::api::ReadingStatus::Read,
+                                                set_group: Some(&unread_radio),
+                                                add_css_class: "radio",
+                                                connect_toggled[sender] => move |btn| {
+                                                    if btn.is_active() {
+                                                        sender.input(FileDetailsInput::UpdateReadingStatus(archive_organizer::api::ReadingStatus::Read));
+                                                    }
+                                                },
+                                            },
+
+                                            gtk::Label {
+                                                set_label: "Read",
+                                                set_margin_start: 4,
+                                            },
+                                        },
+                                    },
+
+                                    #[name(status_label)]
                                     gtk::Label {
-                                        set_label: &format!("{:?}", model.file.status),
-                                        set_selectable: true,
+                                        set_label: &format!("Current status: {:?}", model.file.status),
+                                        set_margin_top: 4,
+                                        add_css_class: "caption",
+                                        add_css_class: "dim-label",
                                         set_halign: gtk::Align::Start,
                                     },
                                 },
@@ -594,6 +646,7 @@ where
             file_data_source,
             tag_container: None,
             tag_input: None,
+	    status_label: None,
         };
 
         let widgets = view_output!();
@@ -623,6 +676,7 @@ where
         let mut model = model;
         model.tag_container = Some(widgets.tag_container.clone());
         model.tag_input = Some(widgets.tag_input.clone());
+        model.status_label = Some(widgets.status_label.clone());
 
         AsyncComponentParts { model, widgets }
     }
@@ -704,6 +758,30 @@ where
                 // Focus the tag input field
                 if let Some(tag_input) = &self.tag_input {
                     tag_input.grab_focus();
+                }
+            }
+            FileDetailsInput::UpdateReadingStatus(status) => {
+                // Update the file's reading status
+                if self.file.status != status {
+                    // Update the local model
+                    self.file.status = status;
+
+                    // Update the status label
+                    if let Some(status_label) = &self.status_label {
+                        status_label.set_label(&format!("Current status: {:?}", self.file.status));
+                    }
+
+                    // Update the file in the database
+                    let result = self.file_data_source.update_file(self.file.clone()).await;
+
+                    if let Err(e) = result {
+                        tracing::warn!("Failed to update reading status: {}", e);
+                    } else {
+                        // Notify that the file has been updated
+                        sender
+                            .output(FileDetailsOutput::TagsChanged(self.file.id))
+                            .unwrap();
+                    }
                 }
             }
         }
