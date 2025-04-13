@@ -42,6 +42,14 @@ where
     unread_checkbox: Option<gtk::CheckButton>,
     reading_checkbox: Option<gtk::CheckButton>,
     read_checkbox: Option<gtk::CheckButton>,
+    // Track filter section visibility
+    filter_section_visible: bool,
+    // Reference to the filter options container
+    filter_options_container: Option<gtk::Box>,
+    // Reference to the sidebar container
+    sidebar_container: Option<gtk::Box>,
+    // Width of the expanded sidebar
+    expanded_sidebar_width: i32,
 }
 
 #[derive(Debug)]
@@ -49,6 +57,7 @@ pub enum FileListInput {
     FileClicked(File),
     RefreshFiles,
     ToggleStatusFilter(ReadingStatus),
+    ToggleFilterSection,
 }
 
 impl<FDS> FileList<FDS>
@@ -81,28 +90,53 @@ where
 
     view! {
         #[root]
-    gtk::Box {
-            set_orientation: gtk::Orientation::Vertical,
+        gtk::Box {
+            set_orientation: gtk::Orientation::Horizontal,
             set_spacing: 12,
             set_margin_all: 12,
 
-            // Reading status filter section
+            // Reading status filter section (sidebar)
+            #[name(sidebar_container)]
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 8,
                 set_margin_bottom: 12,
+                set_hexpand: false,
+                set_vexpand: true,
+                set_width_request: model.expanded_sidebar_width,
 
-                gtk::Label {
-                    set_label: "Filter by Reading Status",
-                    add_css_class: "heading",
-                    set_halign: gtk::Align::Start,
-                },
-
+                // Toggle button for sidebar
                 gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 8,
+                    set_margin_bottom: 8,
+
+                    gtk::Button {
+                        set_icon_name: if model.filter_section_visible { "panel-center-symbolic" } else { "panel-left-symbolic" },
+                        set_tooltip_text: Some(if model.filter_section_visible { "Hide filters" } else { "Show filters" }),
+                        add_css_class: "flat",
+                        connect_clicked[sender] => move |_| {
+                            sender.input(FileListInput::ToggleFilterSection);
+                        },
+                    },
+                },
+
+                // Filter options container (includes everything except the toggle button)
+                #[name(filter_options_container)]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 12,
                     set_margin_top: 4,
                     set_margin_bottom: 8,
+                    set_visible: model.filter_section_visible,
+
+                    gtk::Label {
+                        set_label: "Filter by Reading Status",
+                        add_css_class: "heading",
+                        set_halign: gtk::Align::Start,
+                        set_hexpand: true,
+                        set_margin_bottom: 8,
+                    },
 
                     // Unread checkbox
                     #[name(unread_checkbox)]
@@ -140,23 +174,25 @@ where
                     gtk::Box {
                         set_hexpand: true,
                     },
-                },
 
-                gtk::Separator {
-                    set_orientation: gtk::Orientation::Horizontal,
+                    gtk::Separator {
+                        set_orientation: gtk::Orientation::Horizontal,
+                    },
                 },
             },
 
             // Files list
             gtk::ScrolledWindow {
+                set_hexpand: true,
                 set_vexpand: true,
+
                 #[local_ref]
                 files_box -> gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 8,
                 },
             },
-    },
+        },
     }
 
     async fn init(
@@ -215,17 +251,23 @@ where
             unread_checkbox: None,
             reading_checkbox: None,
             read_checkbox: None,
+            filter_section_visible: true,
+            filter_options_container: None,
+            sidebar_container: None,
+            expanded_sidebar_width: 200, // Default expanded width
         };
 
         let files_box = model.files.widget();
         let widgets = view_output!();
         tracing::debug!("FileList initialization complete");
 
-        // Store references to the checkboxes
+        // Store references to the checkboxes and containers
         let mut model = model;
         model.unread_checkbox = Some(widgets.unread_checkbox.clone());
         model.reading_checkbox = Some(widgets.reading_checkbox.clone());
         model.read_checkbox = Some(widgets.read_checkbox.clone());
+        model.filter_options_container = Some(widgets.filter_options_container.clone());
+        model.sidebar_container = Some(widgets.sidebar_container.clone());
 
         AsyncComponentParts { model, widgets }
     }
@@ -277,6 +319,47 @@ where
                 self.apply_filters();
 
                 tracing::debug!("filters after toggle: {:?}", &self.status_filters);
+            }
+            FileListInput::ToggleFilterSection => {
+                // Toggle the filter section visibility
+                self.filter_section_visible = !self.filter_section_visible;
+
+                // Update the filter options visibility
+                if let Some(container) = &self.filter_options_container {
+                    container.set_visible(self.filter_section_visible);
+                }
+
+                // Update the sidebar width
+                if let Some(sidebar) = &self.sidebar_container {
+                    if self.filter_section_visible {
+                        // Expand the sidebar
+                        sidebar.set_width_request(self.expanded_sidebar_width);
+                    } else {
+                        // Collapse the sidebar to just fit the toggle button
+                        sidebar.set_width_request(40);
+                    }
+                }
+
+                // Find the toggle button and update its icon
+                if let Some(container) = &self.filter_options_container {
+                    if let Some(button) = container.first_child() {
+                        if let Ok(button) = button.downcast::<gtk::Button>() {
+                            let icon_name = if self.filter_section_visible {
+                                "panel-center-symbolic"
+                            } else {
+                                "panel-left-symbolic"
+                            };
+                            button.set_icon_name(icon_name);
+
+                            let tooltip = if self.filter_section_visible {
+                                "Hide filters"
+                            } else {
+                                "Show filters"
+                            };
+                            button.set_tooltip_text(Some(tooltip));
+                        }
+                    }
+                }
             }
         }
     }
