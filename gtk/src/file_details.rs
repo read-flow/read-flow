@@ -11,66 +11,17 @@ use relm4::gtk;
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
 
-struct TagBadge {
-    container: gtk::Box,
-    label: gtk::Label,
-    delete_button: gtk::Button,
+use crate::tag_badge::{TagBadge, TagBadgeHandler};
+
+// Implement the TagBadgeHandler trait for the FileDetailsInput sender function
+#[derive(Clone)]
+struct FileDetailsTagHandler {
+    sender: relm4::Sender<FileDetailsInput>,
 }
 
-impl TagBadge {
-    fn new<S>(tag: &str, sender: &S) -> Self
-    where
-        S: Fn(FileDetailsInput) + Clone + 'static,
-    {
-        // Create a container with horizontal orientation
-        let container = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-        container.add_css_class("card");
-        container.add_css_class("tag-badge");
-        container.set_margin_end(4);
-        container.set_margin_bottom(4);
-
-        // Add a small icon to represent the tag
-        let icon = gtk::Image::new();
-        icon.set_icon_name(Some("tag-symbolic"));
-        icon.set_pixel_size(12);
-        icon.set_margin_start(6);
-        icon.set_margin_top(4);
-        icon.set_margin_bottom(4);
-        icon.set_opacity(0.7);
-
-        // Create the label for the tag text
-        let label = gtk::Label::new(Some(tag));
-        label.add_css_class("caption");
-        label.set_margin_start(4);
-        label.set_margin_end(2);
-        label.set_margin_top(4);
-        label.set_margin_bottom(4);
-
-        // Create the delete button
-        let delete_button = gtk::Button::new();
-        delete_button.set_icon_name("window-close-symbolic");
-        delete_button.add_css_class("flat");
-        delete_button.add_css_class("circular");
-        delete_button.set_valign(gtk::Align::Center);
-        delete_button.set_tooltip_text(Some("Remove tag"));
-
-        // Connect the delete button to the DeleteTag action
-        let tag_clone = tag.to_string();
-        let sender_clone = sender.clone();
-        delete_button.connect_clicked(move |_| {
-            sender_clone(FileDetailsInput::DeleteTag(tag_clone.clone()));
-        });
-
-        // Add all elements to the container
-        container.append(&icon);
-        container.append(&label);
-        container.append(&delete_button);
-
-        Self {
-            container,
-            label,
-            delete_button,
-        }
+impl TagBadgeHandler for FileDetailsTagHandler {
+    fn on_delete_tag(&self, tag: String) {
+        self.sender.send(FileDetailsInput::DeleteTag(tag)).unwrap();
     }
 }
 
@@ -109,6 +60,7 @@ where
         if let Ok(updated_file) = self.file_data_source.get_file(self.file.id).await {
             // unwrap is safe, because otherwise the tag operation would fail.
             self.file = updated_file.unwrap();
+
             // Clear existing tags
             if let Some(tag_container) = &self.tag_container {
                 // Remove all existing children
@@ -117,17 +69,17 @@ where
                 }
 
                 // Add new tags
-                // Create a sender clone outside the loop
-                let sender_clone = sender.clone();
+                // Create a tag handler with the sender
+                let tag_handler = FileDetailsTagHandler {
+                    sender: sender.input_sender().clone(),
+                };
+
                 for tag in &self.file.tags {
-                    let sender_clone = sender_clone.clone();
-                    let badge = TagBadge::new(tag, &move |input| {
-                        sender_clone.input(input);
-                    });
+                    let badge = TagBadge::new(tag, &tag_handler);
 
                     // Create a FlowBoxChild to hold the badge
                     let flow_child = gtk::FlowBoxChild::new();
-                    flow_child.set_child(Some(&badge.container));
+                    flow_child.set_child(Some(badge.widget()));
                     flow_child.set_visible(true);
                     tag_container.append(&flow_child);
 
@@ -652,17 +604,17 @@ where
         let widgets = view_output!();
 
         // Add tag badges
-        // Create a sender clone outside the loop
-        let sender_clone = sender.clone();
+        // Create a tag handler with the sender
+        let tag_handler = FileDetailsTagHandler {
+            sender: sender.input_sender().clone(),
+        };
+
         for tag in &model.file.tags {
-            let sender_clone = sender_clone.clone();
-            let badge = TagBadge::new(tag, &move |input| {
-                sender_clone.input(input);
-            });
+            let badge = TagBadge::new(tag, &tag_handler);
 
             // Create a FlowBoxChild to hold the badge
             let flow_child = gtk::FlowBoxChild::new();
-            flow_child.set_child(Some(&badge.container));
+            flow_child.set_child(Some(badge.widget()));
             flow_child.set_visible(true);
             widgets.tag_container.append(&flow_child);
 

@@ -13,7 +13,7 @@ use rocket::{
     post, put, routes,
     serde::{Deserialize, json::Json},
 };
-use rocket_cors::{CorsOptions, Cors, AllowedOrigins};
+use rocket_cors::{AllowedOrigins, Cors, CorsOptions};
 
 use crate::{
     ApplicationModule, ExpandedPath,
@@ -82,12 +82,12 @@ type Result<T> = std::result::Result<T, Error>;
 pub fn create_cors() -> Cors {
     let cors = CorsOptions::default()
         .allowed_origins(AllowedOrigins::all())
-        .allowed_methods(vec![
-            Method::Get,
-            Method::Post,
-            Method::Options,
-            Method::Delete,
-        ].into_iter().map(From::from).collect())
+        .allowed_methods(
+            vec![Method::Get, Method::Post, Method::Options, Method::Delete]
+                .into_iter()
+                .map(From::from)
+                .collect(),
+        )
         .allowed_headers(rocket_cors::AllowedHeaders::All)
         .allow_credentials(true);
 
