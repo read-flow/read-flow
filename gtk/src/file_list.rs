@@ -38,8 +38,10 @@ where
     details: Option<AsyncController<FileDetails<FDS>>>,
     // Track which reading statuses are selected for filtering
     status_filters: HashSet<ReadingStatus>,
-    // Track which tags are selected for filtering
+    // Track which tags are selected for filtering (include)
     tag_filters: HashSet<String>,
+    // Track which tags are selected for exclusion (deny)
+    tag_deny_filters: HashSet<String>,
     // Store all available tags
     all_tags: Vec<String>,
     // Store all files to make filtering easier
@@ -56,12 +58,18 @@ where
     sidebar_container: Option<gtk::Box>,
     // Width of the expanded sidebar
     expanded_sidebar_width: i32,
-    // Reference to the tag dropdown
+    // Reference to the tag dropdown (include)
     tag_dropdown: Option<gtk::DropDown>,
-    // Reference to the tag filters container
+    // Reference to the tag filters container (include)
     tag_filters_container: Option<gtk::FlowBox>,
-    // Reference to the selected tags label
+    // Reference to the selected tags label (include)
     selected_tags_label: Option<gtk::Label>,
+    // Reference to the tag deny dropdown
+    tag_deny_dropdown: Option<gtk::DropDown>,
+    // Reference to the tag deny filters container
+    tag_deny_filters_container: Option<gtk::FlowBox>,
+    // Reference to the selected deny tags label
+    selected_deny_tags_label: Option<gtk::Label>,
 }
 
 #[derive(Debug)]
@@ -74,6 +82,9 @@ pub enum FileListInput {
     RemoveTagFilter(String),
     TagSelected,
     LoadTags,
+    AddTagDenyFilter(String),
+    RemoveTagDenyFilter(String),
+    TagDenySelected,
 }
 
 impl<FDS> FileList<FDS>
@@ -85,22 +96,31 @@ where
         let mut mut_files = self.files.guard();
         mut_files.clear();
 
-        // Apply both reading status and tag filters
+        // Apply reading status, tag include filters, and tag deny filters
         for file in &self.all_files {
             // Check if the file matches the reading status filter
             let status_match = self.status_filters.contains(&file.status);
 
-            // Check if the file matches the tag filters (if any)
-            let tag_match = if self.tag_filters.is_empty() {
-                // If no tag filters are selected, all files match
+            // Check if the file matches the tag include filters (if any)
+            let tag_include_match = if self.tag_filters.is_empty() {
+                // If no tag include filters are selected, all files match
                 true
             } else {
                 // A file matches if it has at least one of the selected tags
                 file.tags.iter().any(|tag| self.tag_filters.contains(tag))
             };
 
-            // Only include files that match both filters
-            if status_match && tag_match {
+            // Check if the file matches the tag deny filters (if any)
+            let tag_deny_match = if self.tag_deny_filters.is_empty() {
+                // If no tag deny filters are selected, all files match
+                true
+            } else {
+                // A file matches if it does NOT have any of the denied tags
+                !file.tags.iter().any(|tag| self.tag_deny_filters.contains(tag))
+            };
+
+            // Only include files that match all filters
+            if status_match && tag_include_match && tag_deny_match {
                 mut_files.push_back(file.clone());
             }
         }
@@ -136,6 +156,41 @@ where
             // Update visibility of the "Selected Tags:" label
             if let Some(label) = &self.selected_tags_label {
                 label.set_visible(!self.tag_filters.is_empty());
+            }
+        }
+    }
+
+    // Helper method to update the tag deny filters display
+    fn update_tag_deny_filters_display(&mut self, sender: &AsyncComponentSender<Self>) {
+        if let Some(container) = &self.tag_deny_filters_container {
+            // Clear existing children
+            while let Some(child) = container.first_child() {
+                container.remove(&child);
+            }
+
+            // Add a button for each selected deny tag
+            for tag in &self.tag_deny_filters.clone() {
+                let tag_clone = tag.clone();
+                let button = gtk::Button::builder()
+                    .label(&format!("{} ×", tag))
+                    .build();
+
+                button.add_css_class("tag-button");
+                button.add_css_class("tag-deny-button"); // Additional class for styling
+
+                // Connect the button click to remove the tag deny filter
+                let tag_for_closure = tag_clone.clone();
+                let sender = sender.clone();
+                button.connect_clicked(move |_| {
+                    sender.input(FileListInput::RemoveTagDenyFilter(tag_for_closure.clone()));
+                });
+
+                container.append(&button);
+            }
+
+            // Update visibility of the "Excluded Tags:" label
+            if let Some(label) = &self.selected_deny_tags_label {
+                label.set_visible(!self.tag_deny_filters.is_empty());
             }
         }
     }
@@ -285,6 +340,51 @@ where
 
                     gtk::Separator {
                         set_orientation: gtk::Orientation::Horizontal,
+                        set_margin_top: 8,
+                        set_margin_bottom: 8,
+                    },
+
+                    // Tag deny filtering section
+                    gtk::Label {
+                        set_label: "Exclude Files with Tags",
+                        add_css_class: "heading",
+                        set_halign: gtk::Align::Start,
+                        set_hexpand: true,
+                        set_margin_bottom: 8,
+                    },
+
+                    // Tag deny dropdown
+                    #[name(tag_deny_dropdown)]
+                    gtk::DropDown {
+                        set_enable_search: true,
+                        set_margin_bottom: 8,
+                        connect_selected_notify[sender] => move |_| {
+                            sender.input(FileListInput::TagDenySelected);
+                        },
+                    },
+
+                    // Selected tag deny filters display
+                    #[name(selected_deny_tags_label)]
+                    gtk::Label {
+                        set_label: "Excluded Tags:",
+                        set_halign: gtk::Align::Start,
+                        set_margin_top: 4,
+                        set_visible: !model.tag_deny_filters.is_empty(),
+                    },
+
+                    // Container for tag deny filter buttons
+                    #[name(tag_deny_filters_container)]
+                    gtk::FlowBox {
+                        set_selection_mode: gtk::SelectionMode::None,
+                        set_max_children_per_line: 3,
+                        set_homogeneous: false,
+                        set_row_spacing: 4,
+                        set_column_spacing: 4,
+                        set_margin_bottom: 8,
+                    },
+
+                    gtk::Separator {
+                        set_orientation: gtk::Orientation::Horizontal,
                     },
                 },
             },
@@ -356,6 +456,7 @@ where
             details: None,
             status_filters,
             tag_filters: HashSet::new(),
+            tag_deny_filters: HashSet::new(),
             all_tags: Vec::new(),
             all_files,
             unread_checkbox: None,
@@ -368,6 +469,9 @@ where
             tag_dropdown: None,
             tag_filters_container: None,
             selected_tags_label: None,
+            tag_deny_dropdown: None,
+            tag_deny_filters_container: None,
+            selected_deny_tags_label: None,
         };
 
         // Load tags asynchronously
@@ -387,6 +491,9 @@ where
         model.tag_dropdown = Some(widgets.tag_dropdown.clone());
         model.tag_filters_container = Some(widgets.tag_filters_container.clone());
         model.selected_tags_label = Some(widgets.selected_tags_label.clone());
+        model.tag_deny_dropdown = Some(widgets.tag_deny_dropdown.clone());
+        model.tag_deny_filters_container = Some(widgets.tag_deny_filters_container.clone());
+        model.selected_deny_tags_label = Some(widgets.selected_deny_tags_label.clone());
 
         AsyncComponentParts { model, widgets }
     }
@@ -495,7 +602,7 @@ where
                         // Update the all_tags list
                         self.all_tags = tags;
 
-                        // Update the dropdown with the new tags
+                        // Update the include dropdown with the new tags
                         if let Some(dropdown) = &self.tag_dropdown {
                             // Create a string list model for the dropdown
                             let model = gtk::StringList::new(&[]);
@@ -511,6 +618,24 @@ where
                             // Set the model on the dropdown
                             dropdown.set_model(Some(&model));
                             dropdown.set_selected(0); // Select the first item ("Select a tag...")
+                        }
+
+                        // Update the deny dropdown with the new tags
+                        if let Some(dropdown) = &self.tag_deny_dropdown {
+                            // Create a string list model for the dropdown
+                            let model = gtk::StringList::new(&[]);
+
+                            // Add an empty item at the beginning for "Select a tag to exclude"
+                            model.append("Select a tag to exclude...");
+
+                            // Add all tags to the model
+                            for tag in &self.all_tags {
+                                model.append(tag);
+                            }
+
+                            // Set the model on the dropdown
+                            dropdown.set_model(Some(&model));
+                            dropdown.set_selected(0); // Select the first item
                         }
                     }
                     Err(e) => {
@@ -565,7 +690,53 @@ where
 
                 tracing::debug!("Tag filters after remove: {:?}", &self.tag_filters);
             }
+            FileListInput::TagDenySelected => {
+                // Handle tag deny selection from the dropdown
+                if let Some(dropdown) = &self.tag_deny_dropdown {
+                    let selected = dropdown.selected();
+                    if selected > 0 { // Skip the first item ("Select a tag to exclude...")
+                        if let Some(model) = dropdown.model() {
+                            if let Ok(string_list) = model.downcast::<gtk::StringList>() {
+                                if let Some(tag_item) = string_list.string(selected) {
+                                    let tag = tag_item.to_string();
 
+                                    // Add the tag to deny filters if it's not already there
+                                    if !self.tag_deny_filters.contains(&tag) {
+                                        sender.input(FileListInput::AddTagDenyFilter(tag));
+                                    }
+
+                                    // Reset dropdown selection to the first item
+                                    dropdown.set_selected(0);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            FileListInput::AddTagDenyFilter(tag) => {
+                // Add the tag to the deny filter set
+                self.tag_deny_filters.insert(tag.clone());
+
+                // Update the tag deny filters display
+                self.update_tag_deny_filters_display(&sender);
+
+                // Apply the updated filters
+                self.apply_filters();
+
+                tracing::debug!("Tag deny filters after add: {:?}", &self.tag_deny_filters);
+            }
+            FileListInput::RemoveTagDenyFilter(tag) => {
+                // Remove the tag from the deny filter set
+                self.tag_deny_filters.remove(&tag);
+
+                // Update the tag deny filters display
+                self.update_tag_deny_filters_display(&sender);
+
+                // Apply the updated filters
+                self.apply_filters();
+
+                tracing::debug!("Tag deny filters after remove: {:?}", &self.tag_deny_filters);
+            }
         }
     }
 
