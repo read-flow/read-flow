@@ -115,7 +115,10 @@ where
                 true
             } else {
                 // A file matches if it does NOT have any of the denied tags
-                !file.tags.iter().any(|tag| self.tag_deny_filters.contains(tag))
+                !file
+                    .tags
+                    .iter()
+                    .any(|tag| self.tag_deny_filters.contains(tag))
             };
 
             // Only include files that match all filters
@@ -229,7 +232,9 @@ where
     // Helper method to update both tag dropdowns with available tags
     fn update_tag_dropdowns(&self) {
         // Get available tags (tags that are not in either allow or deny lists)
-        let available_tags: Vec<&String> = self.all_tags.iter()
+        let available_tags: Vec<&String> = self
+            .all_tags
+            .iter()
             .filter(|tag| !self.tag_filters.contains(*tag) && !self.tag_deny_filters.contains(*tag))
             .collect();
 
@@ -717,7 +722,8 @@ where
                 // Handle tag selection from the dropdown
                 if let Some(dropdown) = &self.tag_dropdown {
                     let selected = dropdown.selected();
-                    if selected > 0 { // Skip the first item ("Select a tag...")
+                    if selected > 0 {
+                        // Skip the first item ("Select a tag...")
                         if let Some(model) = dropdown.model() {
                             if let Ok(string_list) = model.downcast::<gtk::StringList>() {
                                 if let Some(tag_item) = string_list.string(selected) {
@@ -770,7 +776,8 @@ where
                 // Handle tag deny selection from the dropdown
                 if let Some(dropdown) = &self.tag_deny_dropdown {
                     let selected = dropdown.selected();
-                    if selected > 0 { // Skip the first item ("Select a tag to exclude...")
+                    if selected > 0 {
+                        // Skip the first item ("Select a tag to exclude...")
                         if let Some(model) = dropdown.model() {
                             if let Ok(string_list) = model.downcast::<gtk::StringList>() {
                                 if let Some(tag_item) = string_list.string(selected) {
@@ -817,10 +824,11 @@ where
                 // Apply the updated filters
                 self.apply_filters();
 
-                tracing::debug!("Tag deny filters after remove: {:?}", &self.tag_deny_filters);
+                tracing::debug!(
+                    "Tag deny filters after remove: {:?}",
+                    &self.tag_deny_filters
+                );
             }
         }
     }
-
-
 }

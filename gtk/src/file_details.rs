@@ -200,7 +200,7 @@ where
 
                             gtk::Label {
                                 set_label: "File Information",
-                                add_css_class: "heading",
+                                add_css_class: "caption-heading",
                                 set_halign: gtk::Align::Start,
                             },
 
@@ -275,7 +275,7 @@ where
 
                     gtk::Label {
                         set_label: "Tags",
-                        add_css_class: "heading",
+                        add_css_class: "caption-heading",
                         set_halign: gtk::Align::Start,
                     },
 
@@ -284,6 +284,7 @@ where
                         set_spacing: 12,
                         set_margin_bottom: 12,
                         add_css_class: "tag-input-box",
+                        add_css_class: "linked",  // Add linked class for GNOME style
 
                         #[name(tag_input)]
                         gtk::Entry {
@@ -291,6 +292,7 @@ where
                             set_hexpand: true,
                             set_tooltip_text: Some("Enter a tag and press Enter to add it (Ctrl+T)"),
                             set_accessible_role: gtk::AccessibleRole::SearchBox,
+                            add_css_class: "search-entry",  // Add search-entry class for better styling
                             connect_activate[sender] => move |entry| {
                                 let tag = entry.text().as_str().trim().to_string();
                                 if !tag.is_empty() {
@@ -322,8 +324,8 @@ where
                         gtk::FlowBox {
                             set_selection_mode: gtk::SelectionMode::None,
                             set_max_children_per_line: 5,
-                            set_row_spacing: 8,
-                            set_column_spacing: 8,
+                            set_row_spacing: 6,  // Reduced spacing for GNOME style
+                            set_column_spacing: 6,  // Reduced spacing for GNOME style
                             set_homogeneous: false,
                             set_halign: gtk::Align::Start,
                             set_hexpand: true,
@@ -331,6 +333,7 @@ where
                             set_margin_top: 8,
                             set_margin_bottom: 8,
                             set_visible: true,
+                            add_css_class: "tag-container",  // Add the tag-container class
                         },
                     },
                 },
@@ -346,12 +349,13 @@ where
 
                     gtk::Label {
                         set_label: "File Details",
-                        add_css_class: "heading",
+                        add_css_class: "caption-heading",
                         set_halign: gtk::Align::Start,
                     },
 
                     gtk::ListBox {
                         add_css_class: "boxed-list",
+                        add_css_class: "content-list",  // Add content-list class for GNOME style
 
                         // ID row
                         gtk::ListBoxRow {

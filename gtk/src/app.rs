@@ -73,9 +73,9 @@ impl AsyncComponent for App {
         #[root]
         gtk::ApplicationWindow {
             set_title: Some("Archive Organizer"),
-            set_default_width: 800,
-            set_default_height: 600,
-            set_icon_name: Some("folder-archives"),
+            set_default_width: 900,
+            set_default_height: 700,
+            set_icon_name: Some("folder-documents-symbolic"),
             set_resizable: true,
 
             #[wrap(Some)]
@@ -177,7 +177,7 @@ impl AsyncComponent for App {
         }
 
         tracing::debug!("Showing notebook");
-        // notebook.show();
+        notebook.show();
 
         let model = App {
             local_file_list,

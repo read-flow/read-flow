@@ -110,6 +110,16 @@
     opacity: 1;
 }
 
+.tag-container {
+    background-color: alpha(@theme_bg_color, 0.3);
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.tag-input-box {
+    margin-top: 8px;
+}
+
 /* Section headings */
 .caption-heading {
     font-weight: bold;

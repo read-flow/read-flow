@@ -21,8 +21,7 @@ impl TagBadge {
     {
         // Create a container with horizontal orientation
         let container = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-        container.add_css_class("card");
-        container.add_css_class("tag-badge");
+        container.add_css_class("tag-chip"); // Use the GNOME-style tag-chip class
         container.set_margin_end(4);
         container.set_margin_bottom(4);
 
@@ -37,7 +36,7 @@ impl TagBadge {
 
         // Create the label for the tag text
         let label = gtk::Label::new(Some(tag));
-        label.add_css_class("caption");
+        label.add_css_class("tag-label"); // Use the GNOME-style tag-label class
         label.set_margin_start(4);
         label.set_margin_end(2);
         label.set_margin_top(4);
@@ -48,6 +47,7 @@ impl TagBadge {
         delete_button.set_icon_name("window-close-symbolic");
         delete_button.add_css_class("flat");
         delete_button.add_css_class("circular");
+        delete_button.add_css_class("tag-remove"); // Use the GNOME-style tag-remove class
         delete_button.set_valign(gtk::Align::Center);
         delete_button.set_tooltip_text(Some("Remove tag"));
 
