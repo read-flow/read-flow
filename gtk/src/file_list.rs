@@ -14,6 +14,8 @@ use crate::file_box::FileBox;
 use crate::file_box::FileBoxOutput;
 use crate::file_details::{FileDetails, FileDetailsOutput};
 
+use tracing;
+
 const COMPONENT_CSS: &str = include_str!("../assets/style.css");
 
 /// The initializer for the CSS, ensuring it only happens once.
@@ -48,17 +50,19 @@ where
 
     view! {
         #[root]
-        gtk::Box {
-            set_orientation: gtk::Orientation::Vertical,
-            set_spacing: 8,
-            set_margin_all: 12,
-
-            #[local_ref]
-            files_box -> gtk::Box {
+        gtk::ScrolledWindow {
+            gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 8,
+                set_margin_all: 12,
+
+                #[local_ref]
+                files_box -> gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 8,
+                },
             },
-        }
+        },
     }
 
     async fn init(
@@ -66,18 +70,25 @@ where
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
+        tracing::debug!("Initializing FileList component");
+
         // Initialize the CSS.
         #[allow(clippy::no_effect)]
         *INITIALIZE_CSS;
 
+        tracing::debug!("Loading files from data source");
         let files = match file_data_source.get_files().await {
-            Ok(files) => files,
+            Ok(files) => {
+                tracing::debug!("Successfully loaded {} files", files.len());
+                files
+            }
             Err(e) => {
-                eprintln!("Error loading files: {}", e);
+                tracing::error!("Error loading files: {}", e);
                 Vec::new()
             }
         };
 
+        tracing::debug!("Setting up file list factory");
         let mut files_deque = AsyncFactoryVecDeque::builder()
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), |output| match output {
@@ -86,6 +97,7 @@ where
 
         {
             let mut mut_files = files_deque.guard();
+            tracing::debug!("Adding {} files to list", files.len());
             for file in files {
                 mut_files.push_back(file);
             }
@@ -98,8 +110,8 @@ where
         };
 
         let files_box = model.files.widget();
-
         let widgets = view_output!();
+        tracing::debug!("FileList initialization complete");
 
         AsyncComponentParts { model, widgets }
     }
@@ -136,7 +148,7 @@ where
                         }
                     }
                     Err(e) => {
-                        eprintln!("Error refreshing files: {}", e);
+                        tracing::warn!("Error refreshing files: {}", e);
                     }
                 }
             }

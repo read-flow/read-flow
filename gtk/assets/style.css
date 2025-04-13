@@ -7,7 +7,7 @@
 .tag-badge {
     background-color: @accent_color;
     color: @accent_text_color;
-    border-radius: 12px;
+    -gtk-border-radius: 12px;
     padding: 4px 12px;
     margin: 4px;
     font-weight: 500;
@@ -26,7 +26,7 @@
     min-width: 24px;
     min-height: 24px;
     padding: 0;
-    border-radius: 50%;
+    -gtk-border-radius: 50%;
     transition: all 0.2s ease;
 }
 
@@ -38,21 +38,22 @@
     min-height: 100px;
     min-width: 200px;
     border: 1px dashed @borders;
-    border-radius: 6px;
+    -gtk-border-radius: 6px;
     background-color: alpha(@theme_bg_color, 0.5);
 }
 
 .tag-container {
-    display: flex;
-    flex-wrap: wrap;
+    display: -webkit-box;
+    -webkit-box-orient: horizontal;
+    -webkit-box-direction: normal;
+    -webkit-box-wrap: wrap;
     margin-top: 4px;
-    gap: 4px;
 }
 
 /* GNOME HIG specific styles */
 .file-item {
     padding: 8px;
-    border-radius: 6px;
+    -gtk-border-radius: 6px;
     transition: background-color 0.2s;
 }
 
@@ -78,7 +79,7 @@
 
 /* Status badges */
 .status-badge {
-    border-radius: 12px;
+    -gtk-border-radius: 12px;
     font-size: 12px;
     font-weight: 500;
     color: white;
@@ -99,12 +100,11 @@
 /* Card styles */
 .card-container {
     background-color: alpha(@theme_bg_color, 0.5);
-    border-radius: 12px;
+    -gtk-border-radius: 12px;
     padding: 16px;
     margin: 8px 0;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-    animation: fade-in 0.3s ease-out;
+    transition: all 0.3s ease;
 }
 
 .card-container:hover {
@@ -121,16 +121,15 @@
 /* Preview section */
 .preview-box {
     background-color: alpha(@theme_bg_color, 0.5);
-    border-radius: 12px;
+    -gtk-border-radius: 12px;
     padding: 16px;
     margin: 8px 0;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    animation: slide-up 0.4s ease-out;
 }
 
 /* Responsive styles */
 .narrow .preview-box {
-    flex-direction: column;
+    -webkit-box-orient: vertical;
 }
 
 .narrow .card-container {
@@ -143,7 +142,7 @@
 }
 
 .preview-image {
-    border-radius: 6px;
+    -gtk-border-radius: 6px;
     background-color: @theme_bg_color;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
@@ -151,23 +150,23 @@
 .preview-placeholder {
     background-color: alpha(@theme_bg_color, 0.7);
     border: 1px dashed @borders;
-    border-radius: 6px;
+    -gtk-border-radius: 6px;
     min-height: 150px;
     min-width: 120px;
 }
 
 /* Animations */
-@keyframes fade-in {
+@-webkit-keyframes fade-in {
     from { opacity: 0; }
     to { opacity: 1; }
 }
 
-@keyframes slide-up {
+@-webkit-keyframes slide-up {
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes pulse {
+@-webkit-keyframes pulse {
     0% { transform: scale(1); }
     50% { transform: scale(1.05); }
     100% { transform: scale(1); }
@@ -184,5 +183,5 @@ button:active {
 }
 
 .tag-input-box {
-    animation: fade-in 0.5s ease-out;
+    -webkit-animation: fade-in 0.5s ease-out;
 }

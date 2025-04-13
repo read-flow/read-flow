@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use gtk::prelude::*;
-use relm4::RelmRemoveAllExt;
 use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentParts;
@@ -644,7 +643,7 @@ where
             }
             FileDetailsInput::OpenFile => {
                 if let Err(e) = self.file_data_source.xdg_open_file(self.file.clone()).await {
-                    eprintln!("Error opening file: {}", e);
+                    tracing::warn!("Error opening file: {}", e);
                 }
             }
             FileDetailsInput::AddTag(tag) => {
@@ -669,7 +668,7 @@ where
                 // Handle the result and refresh the UI
                 if let Err(e) = result {
                     // Log the error
-                    eprintln!("Failed to add tag: {}", e);
+                    tracing::warn!("Failed to add tag: {}", e);
                 } else {
                     self.refresh_tags(&sender).await;
                 }
@@ -696,7 +695,7 @@ where
                 // Handle the result and refresh the UI
                 if let Err(e) = result {
                     // Log the error
-                    eprintln!("Failed to delete tag: {}", e);
+                    tracing::warn!("Failed to delete tag: {}", e);
                 } else {
                     self.refresh_tags(&sender).await;
                 }

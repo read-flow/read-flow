@@ -12,6 +12,7 @@ use relm4::gtk;
 use relm4::loading_widgets::LoadingWidgets;
 use relm4::once_cell::sync::Lazy;
 use relm4::view;
+use tracing;
 use url::Url;
 
 use crate::file_list::FileList;
@@ -43,10 +44,11 @@ pub struct App {
     remote_file_lists: IndexMap<Url, AsyncController<FileList<FilesClient>>>,
     file_list_selector: FileListSelector,
     combobox: gtk::ComboBoxText,
+    notebook: gtk::Notebook,
 }
 
 impl App {
-    pub fn get_file_list(&self) -> &gtk::Box {
+    pub fn get_file_list(&self) -> &gtk::ScrolledWindow {
         match &self.file_list_selector {
             FileListSelector::LocalFiles => self.local_file_list.widget(),
             FileListSelector::RemoteFiles(url_selector) => self
@@ -69,43 +71,35 @@ impl AsyncComponent for App {
 
     view! {
         #[root]
-        gtk::Window {
+        gtk::ApplicationWindow {
             set_title: Some("Archive Organizer"),
             set_default_width: 800,
             set_default_height: 600,
             set_icon_name: Some("folder-archives"),
+            set_resizable: true,
 
-            gtk::HeaderBar {
+            #[wrap(Some)]
+            set_titlebar = &gtk::HeaderBar {
                 set_show_title_buttons: true,
                 set_title_widget: Some(&gtk::Label::new(Some("Archive Organizer"))),
             },
 
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 12,
-                set_margin_all: 12,
+                set_hexpand: true,
+                set_vexpand: true,
 
                 #[local_ref]
-                combobox -> gtk::ComboBoxText {
+                notebook -> gtk::Notebook {
                     set_hexpand: true,
-                    set_vexpand: false,
-                    set_margin_start: 12,
-                    set_margin_end: 12,
-                    set_margin_top: 12,
-                    set_margin_bottom: 12,
-                    connect_changed[sender] => move |_| {
-                        sender.input_sender().send(AppMessage::ChangeFileList).unwrap();
-                    },
-                },
-
-                gtk::ScrolledWindow {
                     set_vexpand: true,
-                    set_policy: (gtk::PolicyType::Never, gtk::PolicyType::Automatic),
-                    set_margin_all: 12,
-
-                    #[local_ref]
-                    file_list -> gtk::Box,
-                },
+                    set_scrollable: true,
+                    set_show_border: false,
+                    set_show_tabs: true,
+                    connect_switch_page[sender] => move |_, _, page_num| {
+                        sender.input_sender().send(AppMessage::TabChanged(page_num as usize)).unwrap();
+                    },
+                }
             },
         }
     }
@@ -133,45 +127,68 @@ impl AsyncComponent for App {
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
+        tracing::debug!("Initializing App component");
+
         // Initialize the CSS.
         #[allow(clippy::no_effect)]
         *INITIALIZE_CSS;
 
+        // Initialize local file list with error handling
+        tracing::debug!("Initializing local file list");
         let local_file_list = FileList::builder()
-            .launch(file_data_source)
+            .launch(file_data_source.clone())
             .forward(sender.input_sender(), |_| AppMessage::ChangeFileList);
+        tracing::debug!("Successfully initialized local file list");
 
-        let remote_file_lists: IndexMap<_, _> = remote_data_sources
-            .into_iter()
-            .map(|remote| {
-                (
-                    remote.base_url.clone(),
-                    FileList::builder()
-                        .launch(remote)
-                        .forward(sender.input_sender(), |_| AppMessage::ChangeFileList),
-                )
-            })
-            .collect();
-
-        let combobox = gtk::ComboBoxText::new();
-        combobox.append_text("Local Files");
-        for (i, _) in remote_file_lists.iter().enumerate() {
-            combobox.append_text(&format!("Remote Files {}", i));
+        tracing::debug!("Initializing remote file lists");
+        let mut remote_file_lists: IndexMap<Url, AsyncController<FileList<FilesClient>>> =
+            IndexMap::new();
+        for remote in remote_data_sources {
+            tracing::debug!("Initializing remote file list for: {}", &remote.base_url);
+            let url = remote.base_url.clone();
+            let controller = FileList::builder()
+                .launch(remote.clone())
+                .forward(sender.input_sender(), |_| AppMessage::ChangeFileList);
+            tracing::debug!("Successfully initialized remote file list for: {}", &url);
+            remote_file_lists.insert(url, controller);
         }
 
-        combobox.set_active(Some(0));
-        combobox.show();
+        // Create notebook for tabs
+        tracing::debug!("Creating notebook");
+        let notebook = gtk::Notebook::new();
+        notebook.set_scrollable(true);
+        notebook.set_show_border(false);
+
+        // Add local files tab
+        tracing::debug!("Adding local files tab");
+        let local_label = gtk::Label::new(Some("Local Files"));
+        let local_widget = local_file_list.widget();
+        notebook.append_page(local_widget, Some(&local_label));
+
+        // Add remote files tabs
+        tracing::debug!("Adding remote files tabs");
+        for (url, remote_controller) in remote_file_lists.iter() {
+            let remote_label = gtk::Label::new(Some(&format!(
+                "Remote: {}",
+                url.host_str().unwrap_or("Unknown")
+            )));
+            let remote_widget = remote_controller.widget();
+            notebook.append_page(remote_widget, Some(&remote_label));
+        }
+
+        tracing::debug!("Showing notebook");
+        // notebook.show();
 
         let model = App {
             local_file_list,
             remote_file_lists,
             file_list_selector: FileListSelector::LocalFiles,
-            combobox: combobox.clone(),
+            combobox: gtk::ComboBoxText::new(),
+            notebook: notebook.clone(),
         };
 
-        let file_list = model.local_file_list.widget();
-
         let widgets = view_output!();
+        tracing::debug!("App initialization complete");
 
         AsyncComponentParts { model, widgets }
     }
@@ -184,19 +201,17 @@ impl AsyncComponent for App {
     ) {
         match msg {
             AppMessage::ChangeFileList => {
-                let active_index = self.combobox.active_text().unwrap().to_string();
-                if active_index == "Local Files" {
+                // Legacy message, not used anymore
+            }
+            AppMessage::TabChanged(tab_index) => {
+                // Update the file list selector based on the selected tab
+                if tab_index == 0 {
                     self.file_list_selector = FileListSelector::LocalFiles;
                 } else {
-                    let index = active_index.replace("Remote Files ", "");
-                    let url = self
-                        .remote_file_lists
-                        .iter()
-                        .nth(index.parse::<usize>().unwrap())
-                        .unwrap()
-                        .0
-                        .clone();
-                    self.file_list_selector = FileListSelector::RemoteFiles(url);
+                    let remote_index = tab_index - 1;
+                    if let Some((url, _)) = self.remote_file_lists.get_index(remote_index) {
+                        self.file_list_selector = FileListSelector::RemoteFiles(url.clone());
+                    }
                 }
             }
         }
@@ -206,4 +221,5 @@ impl AsyncComponent for App {
 #[derive(Debug)]
 pub enum AppMessage {
     ChangeFileList,
+    TabChanged(usize),
 }
