@@ -4,7 +4,7 @@ use gtk::prelude::*;
 use relm4::gtk;
 use relm4::prelude::AsyncFactoryComponent;
 
-use archive_organizer::api::File;
+use archive_organizer::api::{File, ReadingStatus};
 
 #[derive(Debug)]
 pub struct FileBox {
@@ -76,10 +76,28 @@ impl AsyncFactoryComponent for FileBox {
                     },
                 },
 
-                #[name(tags)]
-                gtk::Label {
-                    set_label: &self.file.tags.join(", "),
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 8,
                     set_halign: gtk::Align::End,
+
+                    // Reading status indicator
+                    gtk::Label {
+                        set_label: &format!("{:?}", self.file.status),
+                        add_css_class: match self.file.status {
+                            ReadingStatus::Unread => "dim-label",
+                            ReadingStatus::Reading => "accent",
+                            ReadingStatus::Read => "success",
+                        },
+                        set_margin_end: 8,
+                    },
+
+                    // Tags
+                    #[name(tags)]
+                    gtk::Label {
+                        set_label: &self.file.tags.join(", "),
+                        set_halign: gtk::Align::End,
+                    },
                 },
             }
         }

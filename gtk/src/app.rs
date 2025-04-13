@@ -48,7 +48,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn get_file_list(&self) -> &gtk::ScrolledWindow {
+    pub fn get_file_list(&self) -> &gtk::Box {
         match &self.file_list_selector {
             FileListSelector::LocalFiles => self.local_file_list.widget(),
             FileListSelector::RemoteFiles(url_selector) => self

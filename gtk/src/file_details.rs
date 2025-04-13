@@ -646,7 +646,7 @@ where
             file_data_source,
             tag_container: None,
             tag_input: None,
-	    status_label: None,
+            status_label: None,
         };
 
         let widgets = view_output!();
