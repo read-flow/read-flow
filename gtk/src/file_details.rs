@@ -300,6 +300,13 @@ where
                                     entry.set_text("");
                                 }
                             },
+
+                            // Add a focus controller to properly handle focus events
+                            add_controller = gtk::EventControllerFocus::new() {
+                                connect_leave => move |_| {
+                                    // Focus is leaving the entry - no action needed, just let GTK handle it
+                                },
+                            },
                         },
 
                         gtk::Button {
