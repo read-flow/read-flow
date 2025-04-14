@@ -330,15 +330,17 @@ where
                         #[name(tag_container)]
                         gtk::FlowBox {
                             set_selection_mode: gtk::SelectionMode::None,
-                            set_max_children_per_line: 5,
-                            set_row_spacing: 6,  // Reduced spacing for GNOME style
-                            set_column_spacing: 6,  // Reduced spacing for GNOME style
-                            set_homogeneous: false,
-                            set_halign: gtk::Align::Start,
+                            set_max_children_per_line: 100,  // Allow many tags per line for better space usage
+                            set_row_spacing: 2,  // Reduced spacing
+                            set_column_spacing: 2,  // Reduced spacing
+                            set_homogeneous: false,  // Don't make all children the same size
+                            set_halign: gtk::Align::Fill,
                             set_hexpand: true,
                             set_vexpand: true,
-                            set_margin_top: 8,
-                            set_margin_bottom: 8,
+                            set_margin_top: 4,  // Reduced margin
+                            set_margin_bottom: 4,  // Reduced margin
+                            set_margin_start: 4,  // Reduced margin
+                            set_margin_end: 4,  // Reduced margin
                             set_visible: true,
                             add_css_class: "tag-container",  // Add the tag-container class
                         },

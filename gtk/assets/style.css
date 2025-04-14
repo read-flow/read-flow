@@ -77,8 +77,8 @@
 .tag-chip {
     background-color: alpha(@accent_bg_color, 0.15);
     border-radius: 999px;
-    padding: 4px 8px;
-    margin: 2px;
+    padding: 2px 6px;  /* Reduced padding */
+    margin: 1px;  /* Reduced margin */
     transition: all 0.2s ease;
 }
 
@@ -95,13 +95,13 @@
 }
 
 .tag-label {
-    font-size: 0.9em;
-    margin: 0 4px;
+    font-size: 0.85em;  /* Slightly smaller font */
+    margin: 0 2px;  /* Reduced margin */
 }
 
 .tag-remove {
-    min-width: 20px;
-    min-height: 20px;
+    min-width: 16px;  /* Smaller button */
+    min-height: 16px;  /* Smaller button */
     padding: 0;
     opacity: 0.7;
 }
@@ -112,24 +112,24 @@
 
 .tag-container {
     background-color: alpha(@theme_bg_color, 0.3);
-    border-radius: 8px;
-    padding: 8px;
+    border-radius: 6px;  /* Reduced border radius */
+    padding: 4px;  /* Reduced padding */
 }
 
 .tag-input-box {
-    margin-top: 8px;
+    margin-top: 4px;  /* Reduced margin */
 }
 
 /* Section headings */
 .caption-heading {
     font-weight: bold;
-    font-size: 0.9em;
+    font-size: 0.85em;  /* Slightly smaller font */
     opacity: 0.8;
-    margin-bottom: 6px;
+    margin-bottom: 4px;  /* Reduced margin */
 }
 
 .section-box {
-    margin-bottom: 18px;
+    margin-bottom: 12px;  /* Reduced margin */
 }
 
 /* Filter controls */
@@ -142,10 +142,10 @@
 }
 
 .filter-section {
-    padding: 12px;
-    border-radius: 8px;
+    padding: 8px;  /* Reduced padding */
+    border-radius: 6px;  /* Reduced border radius */
     background-color: alpha(@theme_bg_color, 0.3);
-    margin-bottom: 12px;
+    margin-bottom: 8px;  /* Reduced margin */
 }
 
 /* Empty state */

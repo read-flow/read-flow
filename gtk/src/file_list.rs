@@ -328,6 +328,7 @@ where
                         set_halign: gtk::Align::Start,
                         set_hexpand: true,
                         set_margin_start: 8,
+            set_visible: model.filter_section_visible,
                     },
                 },
 
@@ -335,17 +336,17 @@ where
                 #[name(filter_options_container)]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 16,  // Increased spacing between sections
-                    set_margin_start: 16,
-                    set_margin_end: 16,
-                    set_margin_top: 16,
-                    set_margin_bottom: 16,
+                    set_spacing: 12,  // Reduced spacing between sections
+                    set_margin_start: 12,  // Reduced margin
+                    set_margin_end: 12,  // Reduced margin
+                    set_margin_top: 12,  // Reduced margin
+                    set_margin_bottom: 12,  // Reduced margin
                     set_visible: model.filter_section_visible,
 
                     // Reading Status Section
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 8,
+                        set_spacing: 6,  // Reduced spacing
                         add_css_class: "section-box",
 
                         gtk::Label {
@@ -353,7 +354,7 @@ where
                             add_css_class: "caption-heading",
                             set_halign: gtk::Align::Start,
                             set_hexpand: true,
-                            set_margin_bottom: 8,
+                            set_margin_bottom: 4,  // Reduced margin
                         },
 
                         // Unread checkbox
@@ -393,7 +394,7 @@ where
                     // Tag filtering section
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 8,
+                        set_spacing: 6,  // Reduced spacing
                         add_css_class: "section-box",
                         add_css_class: "filter-section",
 
@@ -402,14 +403,14 @@ where
                             add_css_class: "caption-heading",
                             set_halign: gtk::Align::Start,
                             set_hexpand: true,
-                            set_margin_bottom: 8,
+                            set_margin_bottom: 4,  // Reduced margin
                         },
 
                         // Tag dropdown with improved styling
                         #[name(tag_dropdown)]
                         gtk::DropDown {
                             set_enable_search: true,
-                            set_margin_bottom: 12,
+                            set_margin_bottom: 6,  // Reduced margin
                             add_css_class: "tag-dropdown",
                             connect_selected_notify[sender] => move |_| {
                                 sender.input(FileListInput::TagSelected);
@@ -430,18 +431,18 @@ where
                         #[name(tag_filters_container)]
                         gtk::FlowBox {
                             set_selection_mode: gtk::SelectionMode::None,
-                            set_max_children_per_line: 3,
-                            set_homogeneous: false,
-                            set_row_spacing: 6,  // Increased spacing
-                            set_column_spacing: 6,  // Increased spacing
-                            set_margin_bottom: 8,
+                            set_max_children_per_line: 100,  // Allow many tags per line for better space usage
+                            set_homogeneous: false,  // Don't make all children the same size
+                            set_row_spacing: 2,  // Reduced spacing
+                            set_column_spacing: 2,  // Reduced spacing
+                            set_margin_bottom: 4,  // Reduced margin
                         },
                     },
 
                     // Tag deny filtering section
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 8,
+                        set_spacing: 6,  // Reduced spacing
                         add_css_class: "section-box",
                         add_css_class: "filter-section",
 
@@ -450,14 +451,14 @@ where
                             add_css_class: "caption-heading",
                             set_halign: gtk::Align::Start,
                             set_hexpand: true,
-                            set_margin_bottom: 8,
+                            set_margin_bottom: 4,  // Reduced margin
                         },
 
                         // Tag deny dropdown with improved styling
                         #[name(tag_deny_dropdown)]
                         gtk::DropDown {
                             set_enable_search: true,
-                            set_margin_bottom: 12,
+                            set_margin_bottom: 6,  // Reduced margin
                             add_css_class: "tag-dropdown",
                             connect_selected_notify[sender] => move |_| {
                                 sender.input(FileListInput::TagDenySelected);
@@ -478,11 +479,11 @@ where
                         #[name(tag_deny_filters_container)]
                         gtk::FlowBox {
                             set_selection_mode: gtk::SelectionMode::None,
-                            set_max_children_per_line: 3,
-                            set_homogeneous: false,
-                            set_row_spacing: 6,  // Increased spacing
-                            set_column_spacing: 6,  // Increased spacing
-                            set_margin_bottom: 8,
+                            set_max_children_per_line: 100,  // Allow many tags per line for better space usage
+                            set_homogeneous: false,  // Don't make all children the same size
+                            set_row_spacing: 2,  // Reduced spacing
+                            set_column_spacing: 2,  // Reduced spacing
+                            set_margin_bottom: 4,  // Reduced margin
                         },
                     },
                 },
