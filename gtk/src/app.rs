@@ -2,7 +2,6 @@ use archive_organizer::client::FilesClient;
 use archive_organizer::db::datasource::DbClient;
 use gtk::prelude::*;
 use indexmap::IndexMap;
-use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentController;
 use relm4::component::AsyncComponentParts;

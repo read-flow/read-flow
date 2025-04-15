@@ -69,6 +69,18 @@ where
     tag_deny_filters_container: Option<gtk::FlowBox>,
     // Reference to the selected deny tags label
     selected_deny_tags_label: Option<gtk::Label>,
+    // Reference to the details side panel container
+    details_panel_container: Option<gtk::Box>,
+    // Reference to the content area within the details panel
+    details_content_container: Option<gtk::Box>,
+    // Track if the details panel is visible
+    details_panel_visible: bool,
+    // Width of the details panel
+    details_panel_width: i32,
+    // Currently selected file
+    selected_file: Option<File>,
+    // Currently selected file ID (for highlighting in the list)
+    selected_file_id: Option<i32>,
 }
 
 #[derive(Debug)]
@@ -84,6 +96,12 @@ pub enum FileListInput {
     AddTagDenyFilter(String),
     RemoveTagDenyFilter(String),
     TagDenySelected,
+    ToggleDetailsPanel,
+    CloseDetailsPanel,
+    OpenSelectedFile,
+    AddTagToFile(String),
+    RemoveTagFromFile(String),
+    UpdateFileReadingStatus(ReadingStatus),
 }
 
 impl<FDS> FileList<FDS>
@@ -123,7 +141,7 @@ where
 
             // Only include files that match all filters
             if status_match && tag_include_match && tag_deny_match {
-                mut_files.push_back(file.clone());
+                mut_files.push_back((file.clone(), self.selected_file_id));
             }
         }
     }
@@ -489,24 +507,85 @@ where
                 },
             },
 
-            // Files list
-            gtk::ScrolledWindow {
+            // Main content area (files list and details panel)
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 0,
                 set_hexpand: true,
                 set_vexpand: true,
-                add_css_class: "file-list-container",
-                set_margin_start: 12,
-                set_margin_end: 12,
-                set_margin_top: 12,
-                set_margin_bottom: 12,
 
-                #[local_ref]
-                files_box -> gtk::Box {
+                // Files list
+                gtk::ScrolledWindow {
+                    set_hexpand: true,
+                    set_vexpand: true,
+                    add_css_class: "file-list-container",
+                    set_margin_start: 12,
+                    set_margin_end: 12,
+                    set_margin_top: 12,
+                    set_margin_bottom: 12,
+
+                    #[local_ref]
+                    files_box -> gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 12,  // Increased spacing between files
+                        set_margin_start: 4,
+                        set_margin_end: 4,
+                        set_margin_top: 4,
+                        set_margin_bottom: 4,
+                    },
+                },
+
+                // Details side panel
+                #[name(details_panel_container)]
+                gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 12,  // Increased spacing between files
-                    set_margin_start: 4,
-                    set_margin_end: 4,
-                    set_margin_top: 4,
-                    set_margin_bottom: 4,
+                    set_width_request: model.details_panel_width,
+                    set_visible: model.details_panel_visible,
+                    add_css_class: "sidebar",
+                    add_css_class: "details-panel",
+
+                    // Header with close button
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 0,
+                        add_css_class: "toolbar",
+                        set_margin_all: 8,
+
+                        gtk::Label {
+                            set_label: "File Details",
+                            add_css_class: "heading",
+                            set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                        },
+
+                        gtk::Button {
+                            set_icon_name: "window-close-symbolic",
+                            add_css_class: "flat",
+                            add_css_class: "circular",
+                            set_tooltip_text: Some("Close details"),
+                            connect_clicked[sender] => move |_| {
+                                sender.input(FileListInput::CloseDetailsPanel);
+                            },
+                        },
+                    },
+
+                    // Scrollable content area for file details
+                    gtk::ScrolledWindow {
+                        set_hexpand: true,
+                        set_vexpand: true,
+                        set_hscrollbar_policy: gtk::PolicyType::Never,
+                        set_vscrollbar_policy: gtk::PolicyType::Automatic,
+
+                        #[name(details_content_container)]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_hexpand: true,
+                            set_vexpand: true,
+                            set_margin_start: 8,
+                            set_margin_end: 8,
+                            set_margin_bottom: 8,
+                        }
+                    }
                 },
             },
         },
@@ -549,7 +628,7 @@ where
             let mut mut_files = files_deque.guard();
             tracing::debug!("Adding {} files to list", files.len());
             for file in files {
-                mut_files.push_back(file);
+                mut_files.push_back((file, None));
             }
         }
 
@@ -581,6 +660,12 @@ where
             tag_deny_dropdown: None,
             tag_deny_filters_container: None,
             selected_deny_tags_label: None,
+            details_panel_container: None,
+            details_content_container: None,
+            details_panel_visible: false, // Initially hidden
+            details_panel_width: 300,     // Default width for details panel
+            selected_file: None,
+            selected_file_id: None,
         };
 
         // Load tags asynchronously
@@ -603,6 +688,8 @@ where
         model.tag_deny_dropdown = Some(widgets.tag_deny_dropdown.clone());
         model.tag_deny_filters_container = Some(widgets.tag_deny_filters_container.clone());
         model.selected_deny_tags_label = Some(widgets.selected_deny_tags_label.clone());
+        model.details_panel_container = Some(widgets.details_panel_container.clone());
+        model.details_content_container = Some(widgets.details_content_container.clone());
 
         AsyncComponentParts { model, widgets }
     }
@@ -615,16 +702,50 @@ where
     ) {
         match msg {
             FileListInput::FileClicked(file) => {
-                if let Some(_details) = self.details.take() {
-                    // The component will be dropped when the window is closed
+                // Store the selected file
+                self.selected_file = Some(file.clone());
+                // Store the selected file ID for highlighting
+                self.selected_file_id = Some(file.id);
+
+                // Show the details panel
+                if let Some(panel) = &self.details_panel_container {
+                    if let Some(content_container) = &self.details_content_container {
+                        // If the panel is already visible, we need to remove the existing component
+                        if self.details_panel_visible {
+                            // Remove the existing file details component
+                            if let Some(_details) = self.details.take() {
+                                // Remove all children from the content container
+                                while let Some(child) = content_container.first_child() {
+                                    content_container.remove(&child);
+                                }
+                            }
+                        }
+
+                        // Create and launch the file details component
+                        let controller = FileDetails::builder()
+                            .launch((file.clone(), self.file_data_source.clone()))
+                            .forward(sender.input_sender(), |msg| match msg {
+                                FileDetailsOutput::TagsChanged(_) => FileListInput::RefreshFiles,
+                                FileDetailsOutput::TagAdded(_) => FileListInput::RefreshFiles,
+                                FileDetailsOutput::TagRemoved(_) => FileListInput::RefreshFiles,
+                                FileDetailsOutput::StatusChanged(_) => FileListInput::RefreshFiles,
+                                FileDetailsOutput::FileUpdated(_) => FileListInput::RefreshFiles,
+                                FileDetailsOutput::OpenFile => FileListInput::OpenSelectedFile,
+                                FileDetailsOutput::Closed => FileListInput::CloseDetailsPanel,
+                            });
+
+                        // Add the component's widget to the content container
+                        content_container.append(controller.widget());
+
+                        // Store the controller
+                        self.details = Some(controller);
+
+                        // Make sure the panel is visible
+                        panel.set_visible(true);
+                        self.details_panel_visible = true;
+                    }
                 }
-                self.details = Some(
-                    FileDetails::builder()
-                        .launch((file.clone(), self.file_data_source.clone()))
-                        .forward(sender.input_sender(), |msg| match msg {
-                            FileDetailsOutput::TagsChanged(_) => FileListInput::RefreshFiles,
-                        }),
-                );
+
                 sender.output(FileBoxOutput::FileClicked(file)).unwrap();
             }
             FileListInput::RefreshFiles => {
@@ -829,6 +950,101 @@ where
                     "Tag deny filters after remove: {:?}",
                     &self.tag_deny_filters
                 );
+            }
+            FileListInput::CloseDetailsPanel => {
+                // Hide the details panel
+                if let Some(panel) = &self.details_panel_container {
+                    if let Some(content_container) = &self.details_content_container {
+                        // Remove the file details component if it exists
+                        if let Some(_details) = self.details.take() {
+                            // The component will be dropped
+
+                            // Remove all children from the content container
+                            while let Some(child) = content_container.first_child() {
+                                content_container.remove(&child);
+                            }
+                        }
+                    }
+
+                    panel.set_visible(false);
+                    self.details_panel_visible = false;
+                }
+
+                // Clear the selected file
+                self.selected_file = None;
+                // Clear the selected file ID
+                self.selected_file_id = None;
+
+                // Refresh the file list to update the highlighting
+                self.apply_filters();
+            }
+            FileListInput::ToggleDetailsPanel => {
+                // Toggle the details panel visibility
+                if let Some(_panel) = &self.details_panel_container {
+                    if self.details_panel_visible {
+                        // If it's visible, close it
+                        sender.input(FileListInput::CloseDetailsPanel);
+                    } else {
+                        // If it's hidden and we have a selected file, show it
+                        if let Some(file) = &self.selected_file {
+                            sender.input(FileListInput::FileClicked(file.clone()));
+                        }
+                    }
+                }
+            }
+            FileListInput::OpenSelectedFile => {
+                // Open the selected file
+                if let Some(file) = &self.selected_file {
+                    if let Err(e) = self.file_data_source.xdg_open_file(file.clone()).await {
+                        tracing::warn!("Error opening file: {}", e);
+                    }
+                }
+            }
+            FileListInput::AddTagToFile(tag) => {
+                // Add the tag to the selected file
+                if let Some(file) = &mut self.selected_file {
+                    if !file.tags.contains(&tag) {
+                        file.tags.push(tag.clone());
+
+                        // Update the file in the data source
+                        if let Err(e) = self.file_data_source.update_file(file.clone()).await {
+                            tracing::warn!("Error updating file: {}", e);
+                        }
+
+                        // Refresh the files list
+                        sender.input(FileListInput::RefreshFiles);
+                    }
+                }
+            }
+            FileListInput::RemoveTagFromFile(tag) => {
+                // Remove the tag from the selected file
+                if let Some(file) = &mut self.selected_file {
+                    if let Some(index) = file.tags.iter().position(|t| t == &tag) {
+                        file.tags.remove(index);
+
+                        // Update the file in the data source
+                        if let Err(e) = self.file_data_source.update_file(file.clone()).await {
+                            tracing::warn!("Error updating file: {}", e);
+                        }
+
+                        // Refresh the files list
+                        sender.input(FileListInput::RefreshFiles);
+                    }
+                }
+            }
+            FileListInput::UpdateFileReadingStatus(status) => {
+                // Update the reading status of the selected file
+                if let Some(file) = &mut self.selected_file {
+                    file.status = status;
+
+                    // Update the file in the data source
+                    if let Err(e) = self.file_data_source.update_file(file.clone()).await {
+                        tracing::warn!("Error updating file: {}", e);
+                    }
+
+                    // Refresh the files list
+                    sender.input(FileListInput::RefreshFiles);
+                }
             }
         }
     }

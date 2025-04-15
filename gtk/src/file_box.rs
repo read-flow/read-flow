@@ -11,6 +11,7 @@ pub struct FileBox {
     file: File,
     filename: String,
     folder: String,
+    is_selected: bool,
 }
 
 impl FileBox {
@@ -23,6 +24,7 @@ impl FileBox {
             file,
             filename,
             folder,
+            is_selected: false,
         }
     }
 }
@@ -39,7 +41,7 @@ pub enum FileBoxOutput {
 
 #[relm4::factory(pub, async)]
 impl AsyncFactoryComponent for FileBox {
-    type Init = File;
+    type Init = (File, Option<i32>);
     type Input = FileBoxInput;
     type Output = FileBoxOutput;
     type CommandOutput = ();
@@ -50,6 +52,7 @@ impl AsyncFactoryComponent for FileBox {
         gtk::Button {
             set_has_frame: false,
             set_can_focus: false,
+            add_css_class: if self.is_selected { "selected-file" } else { "" },
             connect_clicked => FileBoxInput::Clicked,
 
             gtk::Box {
@@ -104,11 +107,19 @@ impl AsyncFactoryComponent for FileBox {
     }
 
     async fn init_model(
-        file: Self::Init,
+        init: Self::Init,
         _index: &relm4::prelude::DynamicIndex,
         _sender: relm4::AsyncFactorySender<Self>,
     ) -> Self {
-        Self::new(file)
+        let (file, selected_id) = init;
+        let mut model = Self::new(file);
+
+        // Set selected state if this file matches the selected ID
+        if let Some(id) = selected_id {
+            model.is_selected = model.file.id == id;
+        }
+
+        model
     }
 
     async fn update(&mut self, message: Self::Input, sender: relm4::AsyncFactorySender<Self>) {

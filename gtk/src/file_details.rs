@@ -33,6 +33,7 @@ pub struct FileDetails<FDS> {
     tag_container: Option<gtk::FlowBox>,
     tag_input: Option<gtk::Entry>,
     status_label: Option<gtk::Label>,
+    title_label: Option<gtk::Label>,
 }
 
 #[derive(Debug)]
@@ -43,11 +44,18 @@ pub enum FileDetailsInput {
     DeleteTag(String),
     FocusTagInput,
     UpdateReadingStatus(archive_organizer::api::ReadingStatus),
+    UpdateFile(File),
 }
 
 #[derive(Debug)]
 pub enum FileDetailsOutput {
     TagsChanged(i32),
+    TagAdded(String),
+    TagRemoved(String),
+    StatusChanged(archive_organizer::api::ReadingStatus),
+    OpenFile,
+    Closed,
+    FileUpdated(File),
 }
 
 impl<FDS> FileDetails<FDS>
@@ -108,79 +116,55 @@ where
 
     view! {
         #[root]
-        gtk::Window {
-            set_title: Some("File Details"),
-            set_default_width: 600,
-            set_default_height: 600,
-            set_modal: true,
-            set_icon_name: Some("folder-archives"),
+        gtk::Box {
+            set_orientation: gtk::Orientation::Vertical,
+            set_spacing: 8,
             add_css_class: "default-spacing",
-            set_resizable: true,
-            set_hide_on_close: false,
+            add_css_class: "details-panel-content",
+            set_vexpand: true,
 
-            // We'll handle responsive behavior with CSS media queries instead
-            #[wrap(Some)]
-            set_titlebar = &gtk::HeaderBar {
-                set_show_title_buttons: true,
-                #[wrap(Some)]
-                set_title_widget = &gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 10,
-                    set_valign: gtk::Align::Center,
+            // File header with title and open button
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 8,
+                set_margin_bottom: 8,
 
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_valign: gtk::Align::Center,
-                        set_hexpand: true,
-
-                        gtk::Label {
-                            set_label: &model.filename,
-                            add_css_class: "title",
-                            set_ellipsize: gtk::pango::EllipsizeMode::End,
-                        },
-
-                        gtk::Label {
-                            set_label: &model.folder,
-                            add_css_class: "subtitle",
-                            set_ellipsize: gtk::pango::EllipsizeMode::End,
-                        },
-                    },
+                #[name(title_label)]
+                gtk::Label {
+                    set_label: &model.filename,
+                    add_css_class: "title-4",
+                    set_ellipsize: gtk::pango::EllipsizeMode::End,
+                    set_hexpand: true,
+                    set_halign: gtk::Align::Start,
+                    set_wrap: true,
+                    set_wrap_mode: gtk::pango::WrapMode::WordChar,
                 },
 
-                pack_end = &gtk::Button {
+                gtk::Button {
                     set_icon_name: "document-open-symbolic",
-                    set_tooltip_text: Some("Open File (Ctrl+O)"),
+                    set_tooltip_text: Some("Open File"),
                     add_css_class: "flat",
-                    set_accessible_role: gtk::AccessibleRole::Button,
-                    set_focusable: true,
-                    set_focus_on_click: true,
+                    add_css_class: "circular",
                     connect_clicked[sender] => move |_| {
                         sender.input(FileDetailsInput::OpenFile);
                     },
                 },
             },
-            connect_close_request[sender] => move |_| {
-                sender.input(FileDetailsInput::Close);
-                gtk::glib::Propagation::Proceed
-            },
-
-            // We'll use key bindings in a different way
 
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 24,
-                set_margin_all: 24,
+                set_spacing: 16,
 
                 // File information section
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 12,
-                    set_margin_bottom: 12,
+                    set_margin_bottom: 8,
 
                     gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_spacing: 12,
-                        set_margin_bottom: 8,
+                        set_margin_bottom: 4,
 
                         gtk::Image {
                             set_icon_name: Some(match model.file.type_.to_lowercase().as_str() {
@@ -189,8 +173,8 @@ where
                                 "mobi" => "ebook-reader-symbolic",
                                 _ => "text-x-generic-symbolic",
                             }),
-                            set_pixel_size: 48,
-                            set_margin_end: 12,
+                            set_pixel_size: 36,
+                            set_margin_end: 8,
                         },
 
                         gtk::Box {
@@ -220,8 +204,8 @@ where
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
                             set_spacing: 8,
-                            set_margin_start: 12,
-                            set_margin_top: 8,
+                            set_margin_start: 8,
+                            set_margin_top: 4,
 
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
@@ -281,10 +265,12 @@ where
 
                     gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 12,
-                        set_margin_bottom: 12,
+                        set_spacing: 8,
+                        set_margin_bottom: 8,
                         add_css_class: "tag-input-box",
                         add_css_class: "linked",  // Add linked class for GNOME style
+                        set_margin_start: 4,
+                        set_margin_end: 4,
 
                         #[name(tag_input)]
                         gtk::Entry {
@@ -330,7 +316,7 @@ where
                         #[name(tag_container)]
                         gtk::FlowBox {
                             set_selection_mode: gtk::SelectionMode::None,
-                            set_max_children_per_line: 100,  // Allow many tags per line for better space usage
+                            set_max_children_per_line: 4,  // Fewer tags per line for side panel
                             set_row_spacing: 2,  // Reduced spacing
                             set_column_spacing: 2,  // Reduced spacing
                             set_homogeneous: false,  // Don't make all children the same size
@@ -371,7 +357,7 @@ where
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 set_spacing: 12,
-                                set_margin_all: 12,
+                                set_margin_all: 8,
 
                                 gtk::Box {
                                     set_orientation: gtk::Orientation::Vertical,
@@ -398,7 +384,7 @@ where
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 set_spacing: 12,
-                                set_margin_all: 12,
+                                set_margin_all: 8,
 
                                 gtk::Box {
                                     set_orientation: gtk::Orientation::Vertical,
@@ -425,7 +411,7 @@ where
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 set_spacing: 12,
-                                set_margin_all: 12,
+                                set_margin_all: 8,
 
                                 gtk::Box {
                                     set_orientation: gtk::Orientation::Vertical,
@@ -452,7 +438,7 @@ where
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 set_spacing: 12,
-                                set_margin_all: 12,
+                                set_margin_all: 8,
 
                                 gtk::Box {
                                     set_orientation: gtk::Orientation::Vertical,
@@ -481,7 +467,7 @@ where
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 set_spacing: 12,
-                                set_margin_all: 12,
+                                set_margin_all: 8,
 
                                 gtk::Box {
                                     set_orientation: gtk::Orientation::Vertical,
@@ -497,8 +483,8 @@ where
                                     gtk::Box {
                                         set_orientation: gtk::Orientation::Horizontal,
                                         set_spacing: 12,
-                                        set_margin_top: 8,
-                                        set_margin_bottom: 4,
+                                        set_margin_top: 6,
+                                        set_margin_bottom: 2,
 
                                         // Radio button for Unread status
                                         gtk::Box {
@@ -526,7 +512,7 @@ where
                                         gtk::Box {
                                             set_orientation: gtk::Orientation::Horizontal,
                                             set_spacing: 4,
-                                            set_margin_start: 12,
+                                            set_margin_start: 8,
 
                                             #[name(reading_radio)]
                                             gtk::CheckButton {
@@ -550,7 +536,7 @@ where
                                         gtk::Box {
                                             set_orientation: gtk::Orientation::Horizontal,
                                             set_spacing: 4,
-                                            set_margin_start: 12,
+                                            set_margin_start: 8,
 
                                             gtk::CheckButton {
                                                 set_active: model.file.status == archive_organizer::api::ReadingStatus::Read,
@@ -612,6 +598,7 @@ where
             tag_container: None,
             tag_input: None,
             status_label: None,
+            title_label: None,
         };
 
         let widgets = view_output!();
@@ -635,13 +622,14 @@ where
             widgets.tag_container.set_visible(true);
         }
 
-        root.present();
+        // No need to present as a dialog anymore
 
         // Store references to widgets in the model
         let mut model = model;
         model.tag_container = Some(widgets.tag_container.clone());
         model.tag_input = Some(widgets.tag_input.clone());
         model.status_label = Some(widgets.status_label.clone());
+        model.title_label = Some(widgets.title_label.clone());
 
         AsyncComponentParts { model, widgets }
     }
@@ -654,16 +642,12 @@ where
     ) {
         match msg {
             FileDetailsInput::Close => {
-                // Notify that we're closing in case any tags were changed
-                sender
-                    .output(FileDetailsOutput::TagsChanged(self.file.id))
-                    .unwrap();
-                root.close();
+                // Notify that we're closing
+                sender.output(FileDetailsOutput::Closed).unwrap();
             }
             FileDetailsInput::OpenFile => {
-                if let Err(e) = self.file_data_source.xdg_open_file(self.file.clone()).await {
-                    tracing::warn!("Error opening file: {}", e);
-                }
+                // Notify that we want to open the file
+                sender.output(FileDetailsOutput::OpenFile).unwrap();
             }
             FileDetailsInput::AddTag(tag) => {
                 // Show a loading indicator
@@ -690,6 +674,21 @@ where
                     tracing::warn!("Failed to add tag: {}", e);
                 } else {
                     self.refresh_tags(&sender).await;
+
+                    // Notify that tags have changed
+                    sender
+                        .output(FileDetailsOutput::TagsChanged(self.file.id))
+                        .unwrap();
+
+                    // Notify that a tag was added
+                    sender
+                        .output(FileDetailsOutput::TagAdded(tag.clone()))
+                        .unwrap();
+
+                    // Notify that the file was updated
+                    sender
+                        .output(FileDetailsOutput::FileUpdated(self.file.clone()))
+                        .unwrap();
                 }
             }
             FileDetailsInput::DeleteTag(tag) => {
@@ -717,6 +716,21 @@ where
                     tracing::warn!("Failed to delete tag: {}", e);
                 } else {
                     self.refresh_tags(&sender).await;
+
+                    // Notify that tags have changed
+                    sender
+                        .output(FileDetailsOutput::TagsChanged(self.file.id))
+                        .unwrap();
+
+                    // Notify that a tag was removed
+                    sender
+                        .output(FileDetailsOutput::TagRemoved(tag.clone()))
+                        .unwrap();
+
+                    // Notify that the file was updated
+                    sender
+                        .output(FileDetailsOutput::FileUpdated(self.file.clone()))
+                        .unwrap();
                 }
             }
             FileDetailsInput::FocusTagInput => {
@@ -746,8 +760,34 @@ where
                         sender
                             .output(FileDetailsOutput::TagsChanged(self.file.id))
                             .unwrap();
+
+                        // Notify that the reading status has changed
+                        sender
+                            .output(FileDetailsOutput::StatusChanged(status))
+                            .unwrap();
+
+                        // Notify that the file was updated
+                        sender
+                            .output(FileDetailsOutput::FileUpdated(self.file.clone()))
+                            .unwrap();
                     }
                 }
+            }
+            FileDetailsInput::UpdateFile(file) => {
+                // Update the file
+                self.file = file;
+
+                // Update the UI
+                if let Some(title_label) = &self.title_label {
+                    title_label.set_label(&self.filename);
+                }
+
+                if let Some(status_label) = &self.status_label {
+                    status_label.set_label(&format!("Current status: {:?}", self.file.status));
+                }
+
+                // Refresh the tags
+                self.refresh_tags(&sender).await;
             }
         }
     }
