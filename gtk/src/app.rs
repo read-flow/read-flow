@@ -36,7 +36,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn get_file_list(&self) -> &gtk::Box {
+    pub fn get_file_list(&self) -> &gtk::Widget {
         match &self.file_list_selector {
             FileListSelector::LocalFiles => self.local_file_list.widget(),
             FileListSelector::RemoteFiles(url_selector) => self
