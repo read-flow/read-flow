@@ -69,6 +69,8 @@ where
     tag_deny_filters_container: Option<gtk::FlowBox>,
     // Reference to the selected deny tags label
     selected_deny_tags_label: Option<gtk::Label>,
+    // Reference to the main content paned widget
+    main_content_paned: Option<gtk::Paned>,
     // Reference to the details side panel container
     details_panel_container: Option<gtk::Box>,
     // Reference to the content area within the details panel
@@ -77,6 +79,8 @@ where
     details_panel_visible: bool,
     // Width of the details panel
     details_panel_width: i32,
+    // Last position of the main content paned before showing details
+    last_paned_position: i32,
     // Currently selected file
     selected_file: Option<File>,
     // Currently selected file ID (for highlighting in the list)
@@ -306,19 +310,22 @@ where
 
     view! {
         #[root]
-        gtk::Box {
+        gtk::Paned {
             set_orientation: gtk::Orientation::Horizontal,
-            set_spacing: 12,
             set_margin_all: 12,
+            set_position: model.expanded_sidebar_width,
+            set_resize_start_child: true,
+            set_shrink_start_child: false,
+            set_wide_handle: true,
 
             // Reading status filter section (sidebar)
             #[name(sidebar_container)]
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 0,  // Reduced spacing for GNOME style
-                set_hexpand: false,
+                set_hexpand: true,
                 set_vexpand: true,
-                set_width_request: model.expanded_sidebar_width,
+                set_width_request: 150, // Minimum width
                 add_css_class: "sidebar",  // Add GNOME sidebar styling
 
                 // Toggle button for sidebar
@@ -508,11 +515,15 @@ where
             },
 
             // Main content area (files list and details panel)
-            gtk::Box {
+            #[name(main_content_paned)]
+            gtk::Paned {
                 set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 0,
                 set_hexpand: true,
                 set_vexpand: true,
+                set_position: 600, // Default position before details panel is shown
+                set_resize_end_child: true,
+                set_shrink_end_child: false,
+                set_wide_handle: true,
 
                 // Files list
                 gtk::ScrolledWindow {
@@ -541,6 +552,8 @@ where
                     set_orientation: gtk::Orientation::Vertical,
                     set_width_request: model.details_panel_width,
                     set_visible: model.details_panel_visible,
+                    set_hexpand: true,
+                    set_vexpand: true,
                     add_css_class: "sidebar",
                     add_css_class: "details-panel",
 
@@ -660,10 +673,12 @@ where
             tag_deny_dropdown: None,
             tag_deny_filters_container: None,
             selected_deny_tags_label: None,
+            main_content_paned: None,
             details_panel_container: None,
             details_content_container: None,
             details_panel_visible: false, // Initially hidden
             details_panel_width: 300,     // Default width for details panel
+            last_paned_position: 600,     // Default position before showing details
             selected_file: None,
             selected_file_id: None,
         };
@@ -688,6 +703,7 @@ where
         model.tag_deny_dropdown = Some(widgets.tag_deny_dropdown.clone());
         model.tag_deny_filters_container = Some(widgets.tag_deny_filters_container.clone());
         model.selected_deny_tags_label = Some(widgets.selected_deny_tags_label.clone());
+        model.main_content_paned = Some(widgets.main_content_paned.clone());
         model.details_panel_container = Some(widgets.details_panel_container.clone());
         model.details_content_container = Some(widgets.details_content_container.clone());
 
@@ -718,6 +734,15 @@ where
                                 while let Some(child) = content_container.first_child() {
                                     content_container.remove(&child);
                                 }
+                            }
+                        } else {
+                            // If the panel is not visible, store the current paned position
+                            if let Some(paned) = &self.main_content_paned {
+                                self.last_paned_position = paned.position();
+
+                                // Set the paned position to show the details panel
+                                let new_position = paned.width() - self.details_panel_width - 20; // 20px for padding
+                                paned.set_position(new_position);
                             }
                         }
 
@@ -968,6 +993,11 @@ where
 
                     panel.set_visible(false);
                     self.details_panel_visible = false;
+
+                    // Restore the paned position
+                    if let Some(paned) = &self.main_content_paned {
+                        paned.set_position(self.last_paned_position);
+                    }
                 }
 
                 // Clear the selected file
