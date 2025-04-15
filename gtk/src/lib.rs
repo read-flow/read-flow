@@ -1,12 +1,16 @@
 pub mod app;
 pub mod file_box;
 pub mod file_details;
+pub mod file_details_section;
+pub mod file_info_section;
 pub mod file_list;
+pub mod status_radio_group;
 pub mod tag_badge;
+pub mod ui_utils;
 
 use url::Url;
 
-use archive_organizer::{ApplicationModule, client::FilesClient, db::dao::RemoteDao};
+use archive_organizer::{client::FilesClient, db::dao::RemoteDao, ApplicationModule};
 
 pub fn get_remote_clients(
     application_module: &ApplicationModule,

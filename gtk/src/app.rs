@@ -29,21 +29,10 @@ enum FileListSelector {
     RemoteFiles(Url),
 }
 
-impl FileListSelector {
-    fn get_name(&self) -> String {
-        match self {
-            FileListSelector::LocalFiles => "Local Files".to_string(),
-            FileListSelector::RemoteFiles(url) => url.to_string(),
-        }
-    }
-}
-
 pub struct App {
     local_file_list: AsyncController<FileList<DbClient>>,
     remote_file_lists: IndexMap<Url, AsyncController<FileList<FilesClient>>>,
     file_list_selector: FileListSelector,
-    combobox: gtk::ComboBoxText,
-    notebook: gtk::Notebook,
 }
 
 impl App {
@@ -182,8 +171,6 @@ impl AsyncComponent for App {
             local_file_list,
             remote_file_lists,
             file_list_selector: FileListSelector::LocalFiles,
-            combobox: gtk::ComboBoxText::new(),
-            notebook: notebook.clone(),
         };
 
         let widgets = view_output!();

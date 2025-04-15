@@ -1,9 +1,8 @@
-use std::path::Path;
-
 use gtk::prelude::*;
 use relm4::gtk;
 use relm4::prelude::AsyncFactoryComponent;
 
+use crate::ui_utils;
 use archive_organizer::api::{File, ReadingStatus};
 
 #[derive(Debug)]
@@ -16,9 +15,7 @@ pub struct FileBox {
 
 impl FileBox {
     pub fn new(file: File) -> Self {
-        let path: &Path = file.path.as_ref();
-        let folder = format!("{}", path.parent().unwrap().display());
-        let filename = format!("{}", path.file_name().unwrap().to_string_lossy());
+        let (filename, folder) = ui_utils::extract_path_components(&file.path);
 
         Self {
             file,

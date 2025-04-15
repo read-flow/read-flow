@@ -1,17 +1,18 @@
-use std::path::Path;
-
 use gtk::prelude::*;
 use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentParts;
 use relm4::component::AsyncComponentSender;
-
 use relm4::gtk;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
 
+use crate::file_details_section::FileDetailsSection;
+use crate::file_info_section::FileInfoSection;
+use crate::status_radio_group::StatusRadioGroup;
 use crate::tag_badge::{TagBadge, TagBadgeHandler};
+use crate::ui_utils;
 
 // Implement the TagBadgeHandler trait for the FileDetailsInput sender function
 #[derive(Clone)]
@@ -32,8 +33,10 @@ pub struct FileDetails<FDS> {
     file_data_source: FDS,
     tag_container: Option<gtk::FlowBox>,
     tag_input: Option<gtk::Entry>,
-    status_label: Option<gtk::Label>,
     title_label: Option<gtk::Label>,
+    status_container: Option<gtk::Box>,
+    file_info_container: Option<gtk::Box>,
+    file_details_container: Option<gtk::Box>,
 }
 
 #[derive(Debug)]
@@ -161,91 +164,13 @@ where
                     set_spacing: 12,
                     set_margin_bottom: 8,
 
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 12,
-                        set_margin_bottom: 4,
-
-                        gtk::Image {
-                            set_icon_name: Some(match model.file.type_.to_lowercase().as_str() {
-                                "pdf" => "application-pdf-symbolic",
-                                "epub" => "x-office-document-symbolic",
-                                "mobi" => "ebook-reader-symbolic",
-                                _ => "text-x-generic-symbolic",
-                            }),
-                            set_pixel_size: 36,
-                            set_margin_end: 8,
-                        },
-
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 4,
-                            set_valign: gtk::Align::Center,
-
-                            gtk::Label {
-                                set_label: "File Information",
-                                add_css_class: "caption-heading",
-                                set_halign: gtk::Align::Start,
-                            },
-
-                            gtk::Label {
-                                set_label: &format!("Type: {}", model.file.type_.to_uppercase()),
-                                add_css_class: "caption",
-                                add_css_class: "dim-label",
-                                set_halign: gtk::Align::Start,
-                            },
-                        },
-                    },
-
+                    // File info container
+                    #[name(file_info_container)]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 4,
-
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_spacing: 8,
-                            set_margin_start: 8,
-                            set_margin_top: 4,
-
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 8,
-
-                                gtk::Label {
-                                    set_label: "Filename:",
-                                    add_css_class: "dim-label",
-                                    set_halign: gtk::Align::Start,
-                                },
-
-                                gtk::Label {
-                                    set_label: &model.filename,
-                                    set_halign: gtk::Align::Start,
-                                    set_hexpand: true,
-                                    set_selectable: true,
-                                    set_ellipsize: gtk::pango::EllipsizeMode::End,
-                                },
-                            },
-
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 8,
-
-                                gtk::Label {
-                                    set_label: "Location:",
-                                    add_css_class: "dim-label",
-                                    set_halign: gtk::Align::Start,
-                                },
-
-                                gtk::Label {
-                                    set_label: &model.folder,
-                                    set_halign: gtk::Align::Start,
-                                    set_hexpand: true,
-                                    set_selectable: true,
-                                    set_ellipsize: gtk::pango::EllipsizeMode::End,
-                                },
-                            },
-                        },
-                    },
+                        set_spacing: 12,
+                        set_margin_bottom: 8,
+                    }
                 },
 
                 gtk::Separator {
@@ -254,21 +179,28 @@ where
 
                 // Tags section
                 gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 12,
-
-                    gtk::Label {
-                        set_label: "Tags",
-                        add_css_class: "caption-heading",
-                        set_halign: gtk::Align::Start,
+                    #[name(tag_container)]
+                    gtk::FlowBox {
+                        set_selection_mode: gtk::SelectionMode::None,
+                        set_max_children_per_line: 4,  // Fewer tags per line for side panel
+                        set_row_spacing: 2,  // Reduced spacing
+                        set_column_spacing: 2,  // Reduced spacing
+                        set_homogeneous: false,  // Don't make all children the same size
+                        set_halign: gtk::Align::Fill,
+                        set_hexpand: true,
+                        set_vexpand: true,
+                        set_margin_all: 4,
+                        set_visible: true,
+                        add_css_class: "tag-container",  // Add the tag-container class
                     },
 
+                    // Tag input
                     gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_spacing: 8,
                         set_margin_bottom: 8,
                         add_css_class: "tag-input-box",
-                        add_css_class: "linked",  // Add linked class for GNOME style
+                        add_css_class: "linked",
                         set_margin_start: 4,
                         set_margin_end: 4,
 
@@ -276,9 +208,9 @@ where
                         gtk::Entry {
                             set_placeholder_text: Some("Add a new tag"),
                             set_hexpand: true,
-                            set_tooltip_text: Some("Enter a tag and press Enter to add it (Ctrl+T)"),
+                            set_tooltip_text: Some("Enter a tag and press Enter to add it"),
                             set_accessible_role: gtk::AccessibleRole::SearchBox,
-                            add_css_class: "search-entry",  // Add search-entry class for better styling
+                            add_css_class: "search-entry",
                             connect_activate[sender] => move |entry| {
                                 let tag = entry.text().as_str().trim().to_string();
                                 if !tag.is_empty() {
@@ -286,22 +218,12 @@ where
                                     entry.set_text("");
                                 }
                             },
-
-                            // Add a focus controller to properly handle focus events
-                            add_controller = gtk::EventControllerFocus::new() {
-                                connect_leave => move |_| {
-                                    // Focus is leaving the entry - no action needed, just let GTK handle it
-                                },
-                            },
                         },
 
                         gtk::Button {
                             set_label: "Add",
                             add_css_class: "suggested-action",
                             set_tooltip_text: Some("Add the tag"),
-                            set_accessible_role: gtk::AccessibleRole::Button,
-                            set_focusable: true,
-                            set_focus_on_click: true,
                             connect_clicked[sender, tag_input] => move |_| {
                                 let tag = tag_input.text().as_str().trim().to_string();
                                 if !tag.is_empty() {
@@ -311,26 +233,6 @@ where
                             },
                         },
                     },
-
-                    gtk::Overlay {
-                        #[name(tag_container)]
-                        gtk::FlowBox {
-                            set_selection_mode: gtk::SelectionMode::None,
-                            set_max_children_per_line: 4,  // Fewer tags per line for side panel
-                            set_row_spacing: 2,  // Reduced spacing
-                            set_column_spacing: 2,  // Reduced spacing
-                            set_homogeneous: false,  // Don't make all children the same size
-                            set_halign: gtk::Align::Fill,
-                            set_hexpand: true,
-                            set_vexpand: true,
-                            set_margin_top: 4,  // Reduced margin
-                            set_margin_bottom: 4,  // Reduced margin
-                            set_margin_start: 4,  // Reduced margin
-                            set_margin_end: 4,  // Reduced margin
-                            set_visible: true,
-                            add_css_class: "tag-container",  // Add the tag-container class
-                        },
-                    },
                 },
 
                 gtk::Separator {
@@ -338,237 +240,24 @@ where
                 },
 
                 // File details section
+                #[name(file_details_container)]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 12,
-
-                    gtk::Label {
-                        set_label: "File Details",
-                        add_css_class: "caption-heading",
-                        set_halign: gtk::Align::Start,
-                    },
-
-                    gtk::ListBox {
-                        add_css_class: "boxed-list",
-                        add_css_class: "content-list",  // Add content-list class for GNOME style
-
-                        // ID row
-                        gtk::ListBoxRow {
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 12,
-                                set_margin_all: 8,
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Vertical,
-                                    set_valign: gtk::Align::Center,
-                                    set_hexpand: true,
-
-                                    gtk::Label {
-                                        set_label: "ID",
-                                        add_css_class: "heading",
-                                        set_halign: gtk::Align::Start,
-                                    },
-
-                                    gtk::Label {
-                                        set_label: &model.file.id.to_string(),
-                                        set_selectable: true,
-                                        set_halign: gtk::Align::Start,
-                                    },
-                                },
-                            },
-                        },
-
-                        // Type row
-                        gtk::ListBoxRow {
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 12,
-                                set_margin_all: 8,
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Vertical,
-                                    set_valign: gtk::Align::Center,
-                                    set_hexpand: true,
-
-                                    gtk::Label {
-                                        set_label: "Type",
-                                        add_css_class: "heading",
-                                        set_halign: gtk::Align::Start,
-                                    },
-
-                                    gtk::Label {
-                                        set_label: &model.file.type_,
-                                        set_selectable: true,
-                                        set_halign: gtk::Align::Start,
-                                    },
-                                },
-                            },
-                        },
-
-                        // Size row
-                        gtk::ListBoxRow {
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 12,
-                                set_margin_all: 8,
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Vertical,
-                                    set_valign: gtk::Align::Center,
-                                    set_hexpand: true,
-
-                                    gtk::Label {
-                                        set_label: "Size",
-                                        add_css_class: "heading",
-                                        set_halign: gtk::Align::Start,
-                                    },
-
-                                    gtk::Label {
-                                        set_label: &format!("{} bytes", model.file.size),
-                                        set_selectable: true,
-                                        set_halign: gtk::Align::Start,
-                                    },
-                                },
-                            },
-                        },
-
-                        // Fingerprint row
-                        gtk::ListBoxRow {
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 12,
-                                set_margin_all: 8,
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Vertical,
-                                    set_valign: gtk::Align::Center,
-                                    set_hexpand: true,
-
-                                    gtk::Label {
-                                        set_label: "Fingerprint",
-                                        add_css_class: "heading",
-                                        set_halign: gtk::Align::Start,
-                                    },
-
-                                    gtk::Label {
-                                        set_label: &model.file.fingerprint,
-                                        set_selectable: true,
-                                        set_halign: gtk::Align::Start,
-                                        set_wrap: true,
-                                        set_wrap_mode: gtk::pango::WrapMode::WordChar,
-                                    },
-                                },
-                            },
-                        },
-
-                        // Status row
-                        gtk::ListBoxRow {
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 12,
-                                set_margin_all: 8,
-
-                                gtk::Box {
-                                    set_orientation: gtk::Orientation::Vertical,
-                                    set_valign: gtk::Align::Center,
-                                    set_hexpand: true,
-
-                                    gtk::Label {
-                                        set_label: "Reading Status",
-                                        add_css_class: "heading",
-                                        set_halign: gtk::Align::Start,
-                                    },
-
-                                    gtk::Box {
-                                        set_orientation: gtk::Orientation::Horizontal,
-                                        set_spacing: 12,
-                                        set_margin_top: 6,
-                                        set_margin_bottom: 2,
-
-                                        // Radio button for Unread status
-                                        gtk::Box {
-                                            set_orientation: gtk::Orientation::Horizontal,
-                                            set_spacing: 4,
-
-                                            #[name(unread_radio)]
-                                            gtk::CheckButton {
-                                                set_active: model.file.status == archive_organizer::api::ReadingStatus::Unread,
-                                                add_css_class: "radio",
-                                                connect_toggled[sender] => move |btn| {
-                                                    if btn.is_active() {
-                                                        sender.input(FileDetailsInput::UpdateReadingStatus(archive_organizer::api::ReadingStatus::Unread));
-                                                    }
-                                                },
-                                            },
-
-                                            gtk::Label {
-                                                set_label: "Unread",
-                                                set_margin_start: 4,
-                                            },
-                                        },
-
-                                        // Radio button for Reading status
-                                        gtk::Box {
-                                            set_orientation: gtk::Orientation::Horizontal,
-                                            set_spacing: 4,
-                                            set_margin_start: 8,
-
-                                            #[name(reading_radio)]
-                                            gtk::CheckButton {
-                                                set_active: model.file.status == archive_organizer::api::ReadingStatus::Reading,
-                                                set_group: Some(&unread_radio),
-                                                add_css_class: "radio",
-                                                connect_toggled[sender] => move |btn| {
-                                                    if btn.is_active() {
-                                                        sender.input(FileDetailsInput::UpdateReadingStatus(archive_organizer::api::ReadingStatus::Reading));
-                                                    }
-                                                },
-                                            },
-
-                                            gtk::Label {
-                                                set_label: "Reading",
-                                                set_margin_start: 4,
-                                            },
-                                        },
-
-                                        // Radio button for Read status
-                                        gtk::Box {
-                                            set_orientation: gtk::Orientation::Horizontal,
-                                            set_spacing: 4,
-                                            set_margin_start: 8,
-
-                                            gtk::CheckButton {
-                                                set_active: model.file.status == archive_organizer::api::ReadingStatus::Read,
-                                                set_group: Some(&unread_radio),
-                                                add_css_class: "radio",
-                                                connect_toggled[sender] => move |btn| {
-                                                    if btn.is_active() {
-                                                        sender.input(FileDetailsInput::UpdateReadingStatus(archive_organizer::api::ReadingStatus::Read));
-                                                    }
-                                                },
-                                            },
-
-                                            gtk::Label {
-                                                set_label: "Read",
-                                                set_margin_start: 4,
-                                            },
-                                        },
-                                    },
-
-                                    #[name(status_label)]
-                                    gtk::Label {
-                                        set_label: &format!("Current status: {:?}", model.file.status),
-                                        set_margin_top: 4,
-                                        add_css_class: "caption",
-                                        add_css_class: "dim-label",
-                                        set_halign: gtk::Align::Start,
-                                    },
-                                },
-                            },
-                        },
-                    },
                 },
+
+                gtk::Separator {
+                    set_orientation: gtk::Orientation::Horizontal,
+                },
+
+                // Reading status section
+                #[name(status_container)]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 12,
+                },
+
+                // We'll add the StatusRadioGroup in the init method
             },
         }
     }
@@ -578,17 +267,7 @@ where
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
-        let filename = Path::new(&file.path)
-            .file_name()
-            .and_then(|os_str| os_str.to_str())
-            .unwrap_or("Unknown file")
-            .to_string();
-
-        let folder = Path::new(&file.path)
-            .parent()
-            .and_then(|path| path.to_str())
-            .unwrap_or("Unknown folder")
-            .to_string();
+        let (filename, folder) = ui_utils::extract_path_components(&file.path);
 
         let model = FileDetails {
             file,
@@ -597,18 +276,20 @@ where
             file_data_source,
             tag_container: None,
             tag_input: None,
-            status_label: None,
             title_label: None,
+            status_container: None,
+            file_info_container: None,
+            file_details_container: None,
         };
 
         let widgets = view_output!();
 
-        // Add tag badges
         // Create a tag handler with the sender
         let tag_handler = FileDetailsTagHandler {
             sender: sender.input_sender().clone(),
         };
 
+        // Add tag badges
         for tag in &model.file.tags {
             let badge = TagBadge::new(tag, &tag_handler);
 
@@ -622,14 +303,30 @@ where
             widgets.tag_container.set_visible(true);
         }
 
-        // No need to present as a dialog anymore
-
         // Store references to widgets in the model
         let mut model = model;
         model.tag_container = Some(widgets.tag_container.clone());
         model.tag_input = Some(widgets.tag_input.clone());
-        model.status_label = Some(widgets.status_label.clone());
         model.title_label = Some(widgets.title_label.clone());
+        model.status_container = Some(widgets.status_container.clone());
+        model.file_info_container = Some(widgets.file_info_container.clone());
+        model.file_details_container = Some(widgets.file_details_container.clone());
+
+        // Create the component instances
+        let file_info_section = FileInfoSection::new(&model.file.type_, &model.filename, &model.folder);
+
+        // Add the FileInfoSection to its container
+        widgets.file_info_container.append(file_info_section.widget());
+
+        // Add the FileDetailsSection to its container
+        let file_details_section = FileDetailsSection::new(&model.file);
+        widgets.file_details_container.append(file_details_section.widget());
+
+        // Add the StatusRadioGroup to its container
+        let status_radio_group = StatusRadioGroup::new(model.file.status, move |status| {
+            sender.input(FileDetailsInput::UpdateReadingStatus(status));
+        });
+        widgets.status_container.append(status_radio_group.widget());
 
         AsyncComponentParts { model, widgets }
     }
@@ -638,7 +335,7 @@ where
         &mut self,
         msg: Self::Input,
         sender: AsyncComponentSender<Self>,
-        root: &Self::Root,
+        _root: &Self::Root,
     ) {
         match msg {
             FileDetailsInput::Close => {
@@ -745,11 +442,6 @@ where
                     // Update the local model
                     self.file.status = status;
 
-                    // Update the status label
-                    if let Some(status_label) = &self.status_label {
-                        status_label.set_label(&format!("Current status: {:?}", self.file.status));
-                    }
-
                     // Update the file in the database
                     let result = self.file_data_source.update_file(self.file.clone()).await;
 
@@ -777,13 +469,54 @@ where
                 // Update the file
                 self.file = file;
 
+                // Update the filename and folder
+                let (new_filename, new_folder) = ui_utils::extract_path_components(&self.file.path);
+                self.filename = new_filename;
+                self.folder = new_folder;
+
                 // Update the UI
                 if let Some(title_label) = &self.title_label {
                     title_label.set_label(&self.filename);
                 }
 
-                if let Some(status_label) = &self.status_label {
-                    status_label.set_label(&format!("Current status: {:?}", self.file.status));
+                // Update the file info container
+                if let Some(file_info_container) = &self.file_info_container {
+                    // Clear the container
+                    while let Some(child) = file_info_container.first_child() {
+                        file_info_container.remove(&child);
+                    }
+
+                    // Add a new FileInfoSection
+                    let file_info_section = FileInfoSection::new(&self.file.type_, &self.filename, &self.folder);
+                    file_info_container.append(file_info_section.widget());
+                }
+
+                // Update the file details container
+                if let Some(file_details_container) = &self.file_details_container {
+                    // Clear the container
+                    while let Some(child) = file_details_container.first_child() {
+                        file_details_container.remove(&child);
+                    }
+
+                    // Add a new FileDetailsSection
+                    let file_details_section = FileDetailsSection::new(&self.file);
+                    file_details_container.append(file_details_section.widget());
+                }
+
+                // Update the status radio group if the status has changed
+                if let Some(status_container) = &self.status_container {
+                    // Clear the container and add a new StatusRadioGroup
+                    while let Some(child) = status_container.first_child() {
+                        status_container.remove(&child);
+                    }
+
+                    // Create a new status radio group with the updated status
+                    let sender_clone = sender.clone();
+                    let status_radio_group =
+                        StatusRadioGroup::new(self.file.status, move |status| {
+                            sender_clone.input(FileDetailsInput::UpdateReadingStatus(status));
+                        });
+                    status_container.append(status_radio_group.widget());
                 }
 
                 // Refresh the tags
