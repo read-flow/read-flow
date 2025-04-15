@@ -317,9 +317,11 @@ where
         gtk::Box {
             set_orientation: gtk::Orientation::Horizontal,
             set_spacing: 0,
-            set_margin_all: 12,
+            set_margin_all: 0,  // Remove margin to use full space
             set_hexpand: true,
             set_vexpand: true,
+            set_halign: gtk::Align::Fill,
+            set_valign: gtk::Align::Fill,
 
             // Left side: sidebar with filters
             #[name(sidebar_container)]
@@ -523,16 +525,20 @@ where
                 set_orientation: gtk::Orientation::Horizontal,
                 set_hexpand: true,
                 set_vexpand: true,
+                set_halign: gtk::Align::Fill,
+                set_valign: gtk::Align::Fill,
 
                 // Files list
                 gtk::ScrolledWindow {
                     set_hexpand: true,
                     set_vexpand: true,
+                    set_halign: gtk::Align::Fill,
+                    set_valign: gtk::Align::Fill,
                     add_css_class: "file-list-container",
-                    set_margin_start: 12,
-                    set_margin_end: 12,
-                    set_margin_top: 12,
-                    set_margin_bottom: 12,
+                    set_margin_start: 0,
+                    set_margin_end: 0,
+                    set_margin_top: 0,
+                    set_margin_bottom: 0,
 
                     #[local_ref]
                     files_box -> gtk::Box {
@@ -551,8 +557,10 @@ where
                     set_orientation: gtk::Orientation::Vertical,
                     set_width_request: model.details_panel_width,
                     set_visible: model.details_panel_visible,
-                    set_hexpand: false,
+                    set_hexpand: true,  // Changed to true to use available space
                     set_vexpand: true,
+                    set_halign: gtk::Align::Fill,
+                    set_valign: gtk::Align::Fill,
                     add_css_class: "sidebar",
                     add_css_class: "details-panel",
 
@@ -716,6 +724,8 @@ where
         outer_paned.set_wide_handle(true);
         outer_paned.set_hexpand(true);
         outer_paned.set_vexpand(true);
+        outer_paned.set_halign(gtk::Align::Fill);
+        outer_paned.set_valign(gtk::Align::Fill);
 
         // Set the start child (sidebar)
         outer_paned.set_start_child(Some(&widgets.sidebar_container));
@@ -734,6 +744,8 @@ where
         inner_paned.set_wide_handle(true);
         inner_paned.set_hexpand(true);
         inner_paned.set_vexpand(true);
+        inner_paned.set_halign(gtk::Align::Fill);
+        inner_paned.set_valign(gtk::Align::Fill);
 
         // Get the children from the main content box
         let files_scroll = widgets.main_content_box.first_child().unwrap();
@@ -814,7 +826,12 @@ where
                             }
 
                             // Set the position to show the details panel
-                            let new_position = paned.width() - self.details_panel_width - 20; // 20px for padding
+                            // Calculate a position that gives the details panel its requested width
+                            // but ensures it doesn't take more than 40% of the total width
+                            let total_width = paned.width();
+                            let max_details_width = (total_width as f64 * 0.4) as i32;
+                            let details_width = self.details_panel_width.min(max_details_width);
+                            let new_position = total_width - details_width;
                             paned.set_position(new_position);
                         }
                     }
