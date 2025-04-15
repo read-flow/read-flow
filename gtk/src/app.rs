@@ -38,14 +38,15 @@ pub struct App {
 impl App {
     pub fn get_file_list(&self) -> &gtk::Widget {
         match &self.file_list_selector {
-            FileListSelector::LocalFiles => self.local_file_list.widget(),
+            FileListSelector::LocalFiles => self.local_file_list.widget().upcast_ref(),
             FileListSelector::RemoteFiles(url_selector) => self
                 .remote_file_lists
                 .iter()
                 .find(|(base_url, _)| base_url == &url_selector)
                 .unwrap()
                 .1
-                .widget(),
+                .widget()
+                .upcast_ref(),
         }
     }
 }

@@ -705,7 +705,6 @@ where
         model.tag_deny_filters_container = Some(widgets.tag_deny_filters_container.clone());
         model.selected_deny_tags_label = Some(widgets.selected_deny_tags_label.clone());
         model.main_content_box = Some(widgets.main_content_box.clone());
-        model.outer_paned = Some(widgets.outer_paned.clone());
         model.details_panel_container = Some(widgets.details_panel_container.clone());
         model.details_content_container = Some(widgets.details_content_container.clone());
 
@@ -725,7 +724,7 @@ where
         outer_paned.set_end_child(Some(&widgets.main_content_box));
 
         // Add the paned widget to the root
-        widgets.root.append(&outer_paned);
+        root.append(&outer_paned);
 
         // Create a second paned widget for the details panel
         let inner_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
