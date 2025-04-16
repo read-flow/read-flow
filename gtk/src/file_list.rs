@@ -71,6 +71,8 @@ where
     selected_deny_tags_label: Option<gtk::Label>,
     // Reference to the main content box
     main_content_box: Option<gtk::Box>,
+    // Reference to the outer paned widget (for resizable left panel)
+    outer_paned: Option<gtk::Paned>,
     // Reference to the inner paned widget (will be created in init)
     inner_paned: Option<gtk::Paned>,
     // Reference to the details side panel container
@@ -681,6 +683,7 @@ where
             tag_deny_filters_container: None,
             selected_deny_tags_label: None,
             main_content_box: None,
+            outer_paned: None,
             inner_paned: None,
             details_panel_container: None,
             details_content_container: None,
@@ -714,6 +717,36 @@ where
         model.main_content_box = Some(widgets.main_content_box.clone());
         model.details_panel_container = Some(widgets.details_panel_container.clone());
         model.details_content_container = Some(widgets.details_content_container.clone());
+
+        // Create an outer paned widget to make the left panel resizable
+        let outer_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+        outer_paned.set_position(model.expanded_sidebar_width);
+        outer_paned.set_resize_start_child(true);
+        outer_paned.set_shrink_start_child(false);
+        outer_paned.set_wide_handle(true);
+        outer_paned.set_hexpand(true);
+        outer_paned.set_vexpand(true);
+        outer_paned.set_halign(gtk::Align::Fill);
+        outer_paned.set_valign(gtk::Align::Fill);
+
+        // Get the children from the root box
+        if let Some(sidebar) = root.first_child() {
+            if let Some(main_content) = root.last_child() {
+                // Remove them from the box
+                root.remove(&sidebar);
+                root.remove(&main_content);
+
+                // Add them to the paned widget
+                outer_paned.set_start_child(Some(&sidebar));
+                outer_paned.set_end_child(Some(&main_content));
+
+                // Add the paned widget to the root
+                root.append(&outer_paned);
+
+                // Store a reference to the outer paned widget
+                model.outer_paned = Some(outer_paned);
+            }
+        }
 
         // Create the inner paned widget for resizable panels
         let inner_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
@@ -861,14 +894,14 @@ where
                     container.set_visible(self.filter_section_visible);
                 }
 
-                // Update the sidebar width
-                if let Some(sidebar) = &self.sidebar_container {
+                // Update the sidebar width using the outer paned widget
+                if let Some(paned) = &self.outer_paned {
                     if self.filter_section_visible {
                         // Expand the sidebar
-                        sidebar.set_width_request(self.expanded_sidebar_width);
+                        paned.set_position(self.expanded_sidebar_width);
                     } else {
                         // Collapse the sidebar to just fit the toggle button
-                        sidebar.set_width_request(40);
+                        paned.set_position(40);
                     }
                 }
 
