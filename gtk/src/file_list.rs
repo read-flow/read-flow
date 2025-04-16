@@ -89,6 +89,8 @@ where
     selected_file: Option<File>,
     // Currently selected file ID (for highlighting in the list)
     selected_file_id: Option<i32>,
+    // Error message to display when files can't be loaded
+    error_message: Option<String>,
 }
 
 #[derive(Debug)]
@@ -523,28 +525,78 @@ where
                 set_halign: gtk::Align::Fill,
                 set_valign: gtk::Align::Fill,
 
-                // Files list
-                gtk::ScrolledWindow {
+                // Files list with potential error message
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
                     set_hexpand: true,
                     set_vexpand: true,
                     set_halign: gtk::Align::Fill,
                     set_valign: gtk::Align::Fill,
-                    add_css_class: "file-list-container",
-                    set_margin_start: 0,
-                    set_margin_end: 0,
-                    set_margin_top: 0,
-                    set_margin_bottom: 0,
 
-                    #[local_ref]
-                    files_box -> gtk::Box {
+                    // Error message container (only visible when there's an error)
+                    gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 12,  // Increased spacing between files
-                        set_margin_start: 8,
-                        set_margin_end: 8,
-                        set_margin_top: 8,
-                        set_margin_bottom: 8,
+                        set_spacing: 12,
+                        set_margin_all: 24,
+                        set_halign: gtk::Align::Center,
+                        set_valign: gtk::Align::Center,
                         set_hexpand: true,
+                        set_vexpand: true,
+                        add_css_class: "empty-state",
+                        set_visible: model.error_message.is_some(),
+
+                        gtk::Image {
+                            set_icon_name: Some("network-error-symbolic"),
+                            set_pixel_size: 48,
+                            add_css_class: "empty-state-icon",
+                        },
+
+                        gtk::Label {
+                            set_label: "Connection Error",
+                            add_css_class: "empty-state-title",
+                        },
+
+                        gtk::Label {
+                            set_label: model.error_message.as_deref().unwrap_or("Unable to retrieve files. The server may be unavailable or unreachable."),
+                            set_wrap: true,
+                            set_max_width_chars: 50,
+                            add_css_class: "empty-state-description",
+                        },
+
+                        gtk::Button {
+                            set_label: "Retry",
+                            add_css_class: "suggested-action",
+                            set_halign: gtk::Align::Center,
+                            connect_clicked[sender] => move |_| {
+                                sender.input(FileListInput::RefreshFiles);
+                            },
+                        },
+                    },
+
+                    // Scrollable files list (hidden when there's an error)
+                    gtk::ScrolledWindow {
+                        set_hexpand: true,
+                        set_vexpand: true,
                         set_halign: gtk::Align::Fill,
+                        set_valign: gtk::Align::Fill,
+                        add_css_class: "file-list-container",
+                        set_margin_start: 0,
+                        set_margin_end: 0,
+                        set_margin_top: 0,
+                        set_margin_bottom: 0,
+                        set_visible: model.error_message.is_none(),
+
+                        #[local_ref]
+                        files_box -> gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 12,  // Increased spacing between files
+                            set_margin_start: 8,
+                            set_margin_end: 8,
+                            set_margin_top: 8,
+                            set_margin_bottom: 8,
+                            set_hexpand: true,
+                            set_halign: gtk::Align::Fill,
+                        },
                     },
                 },
 
@@ -620,14 +672,17 @@ where
         *INITIALIZE_CSS;
 
         tracing::debug!("Loading files from data source");
-        let files = match file_data_source.get_files().await {
+        // Try to load files from the data source
+        let (files, error_message) = match file_data_source.get_files().await {
             Ok(files) => {
                 tracing::debug!("Successfully loaded {} files", files.len());
-                files
+                (files, None)
             }
             Err(e) => {
                 tracing::error!("Error loading files: {}", e);
-                Vec::new()
+                // Create a user-friendly error message
+                let error_msg = format!("Could not connect to the file server: {}", e);
+                (Vec::new(), Some(error_msg))
             }
         };
 
@@ -687,6 +742,7 @@ where
             last_paned_position: 600,     // Default position before showing details
             selected_file: None,
             selected_file_id: None,
+            error_message: error_message,
         };
 
         // Load tags asynchronously
@@ -856,11 +912,33 @@ where
                         // Update the all_files list
                         self.all_files = files.clone();
 
+                        // Clear any previous error message
+                        self.error_message = None;
+
                         // Apply filters to update the displayed files
                         self.apply_filters();
                     }
                     Err(e) => {
                         tracing::warn!("Error refreshing files: {}", e);
+
+                        // Set the error message
+                        self.error_message = Some(format!("Could not connect to the file server: {}", e));
+                    }
+                }
+
+                // Update the visibility of the error message and file list
+                if let Some(main_content) = &self.main_content_box {
+                    if let Some(content_box) = main_content.first_child() {
+                        // The first child should be our vertical box containing both the error message and file list
+                        if let Some(error_container) = content_box.first_child() {
+                            // Update error container visibility
+                            error_container.set_visible(self.error_message.is_some());
+
+                            // Update file list visibility (should be the next sibling)
+                            if let Some(file_list) = error_container.next_sibling() {
+                                file_list.set_visible(self.error_message.is_none());
+                            }
+                        }
                     }
                 }
 
@@ -939,17 +1017,23 @@ where
                 }
             }
             FileListInput::LoadTags => {
-                // Load all available tags from the data source
-                match self.file_data_source.get_files_tags().await {
-                    Ok(tags) => {
-                        // Update the all_tags list
-                        self.all_tags = tags;
+                // Only try to load tags if we don't have an error message
+                // (i.e., we can connect to the server)
+                if self.error_message.is_none() {
+                    // Load all available tags from the data source
+                    match self.file_data_source.get_files_tags().await {
+                        Ok(tags) => {
+                            // Update the all_tags list
+                            self.all_tags = tags;
 
-                        // Update both dropdowns
-                        self.update_tag_dropdowns();
-                    }
-                    Err(e) => {
-                        tracing::warn!("Error loading tags: {}", e);
+                            // Update both dropdowns
+                            self.update_tag_dropdowns();
+                        }
+                        Err(e) => {
+                            tracing::warn!("Error loading tags: {}", e);
+                            // We don't show an error message for tags loading failure
+                            // as it's less critical than file loading
+                        }
                     }
                 }
             }
