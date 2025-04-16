@@ -330,7 +330,8 @@ where
                 set_spacing: 0,
                 set_hexpand: false,
                 set_vexpand: true,
-                set_width_request: model.expanded_sidebar_width,
+                set_width_request: if model.filter_section_visible { model.expanded_sidebar_width } else { 16 },
+                set_margin_all: 0,
                 add_css_class: "sidebar",
 
                 // Toggle button for sidebar
@@ -340,6 +341,7 @@ where
                     set_margin_bottom: 0,
                     add_css_class: "toolbar",
                     set_margin_all: 8,
+                    set_halign: gtk::Align::Start,
 
                     gtk::Button {
                         set_icon_name: if model.filter_section_visible { "view-restore-symbolic" } else { "view-more-symbolic" },
@@ -352,14 +354,7 @@ where
                         },
                     },
 
-                    gtk::Label {
-                        set_label: "Filters",
-                        add_css_class: "heading",
-                        set_halign: gtk::Align::Start,
-                        set_hexpand: true,
-                        set_margin_start: 8,
-                        set_visible: model.filter_section_visible,
-                    },
+                    // Removed the Filters label to make the collapsed panel smaller
                 },
 
                 // Filter options container (includes everything except the toggle button)
@@ -900,9 +895,18 @@ where
                         // Expand the sidebar
                         paned.set_position(self.expanded_sidebar_width);
                     } else {
-                        // Collapse the sidebar to just fit the toggle button
-                        paned.set_position(40);
+                        // Collapse the sidebar to just fit the icon button (no label)
+                        paned.set_position(16);
                     }
+                }
+
+                // Update the width request of the sidebar container
+                if let Some(sidebar) = &self.sidebar_container {
+                    sidebar.set_width_request(if self.filter_section_visible {
+                        self.expanded_sidebar_width
+                    } else {
+                        16
+                    });
                 }
 
                 // Find the toggle button and update its icon
@@ -910,12 +914,15 @@ where
                     if let Some(parent) = container.parent() {
                         // The toggle button is in the first child box
                         if let Some(toggle_box) = parent.first_child() {
+                            // Update the alignment of the toggle box
+                            // No need to update the box widget
+
                             if let Some(button) = toggle_box.first_child() {
                                 if let Ok(button) = button.downcast::<gtk::Button>() {
                                     let icon_name = if self.filter_section_visible {
-                                        "panel-center-symbolic"
+                                        "view-restore-symbolic"
                                     } else {
-                                        "panel-left-symbolic"
+                                        "view-more-symbolic"
                                     };
                                     button.set_icon_name(icon_name);
 
