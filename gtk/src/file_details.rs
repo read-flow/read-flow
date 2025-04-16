@@ -33,8 +33,9 @@ pub struct FileDetails<FDS> {
     folder: String,
     file_data_source: FDS,
     tag_container: Option<gtk::FlowBox>,
-    tag_input: Option<gtk::Entry>,
-    tag_completion: Option<gtk::EntryCompletion>,
+    tag_input: Option<gtk::DropDown>,
+    tag_entry: Option<gtk::Entry>,
+    tag_string_list: Option<gtk::StringList>,
     all_tags: Vec<String>,
     title_label: Option<gtk::Label>,
     status_container: Option<gtk::Box>,
@@ -107,6 +108,9 @@ where
             sender
                 .output(FileDetailsOutput::TagsChanged(self.file.id))
                 .unwrap();
+
+            // Refresh the available tags in the dropdown
+            sender.input(FileDetailsInput::LoadAvailableTags);
         }
     }
 }
@@ -205,11 +209,11 @@ where
                         set_margin_start: 4,
                         set_margin_end: 4,
 
-                        #[name(tag_input)]
+                        #[name(tag_entry)]
                         gtk::Entry {
                             set_placeholder_text: Some("Add a new tag"),
                             set_hexpand: true,
-                            set_tooltip_text: Some("Enter a tag or select from existing tags"),
+                            set_tooltip_text: Some("Type a new tag"),
                             set_accessible_role: gtk::AccessibleRole::SearchBox,
                             add_css_class: "search-entry",
                             connect_activate[sender] => move |entry| {
@@ -221,15 +225,41 @@ where
                             },
                         },
 
+                        #[name(tag_input)]
+                        gtk::DropDown {
+                            set_tooltip_text: Some("Select from existing tags"),
+                            set_enable_search: true,
+                            set_show_arrow: true,
+                            add_css_class: "tag-dropdown",
+                            set_hexpand: false,
+                            set_width_request: 150,
+                            connect_selected_notify[sender, tag_entry] => move |dropdown| {
+                                if dropdown.selected() != gtk::INVALID_LIST_POSITION && dropdown.selected() > 0 {
+                                    // Only process selection if it's not the placeholder (index 0)
+                                    if let Some(selected_item) = dropdown.selected_item() {
+                                        if let Some(string_object) = selected_item.downcast_ref::<gtk::StringObject>() {
+                                            let selected_tag = string_object.string();
+                                            // Don't set text if it's the placeholder
+                                            if selected_tag != "Select a tag..." {
+                                                tag_entry.set_text(&selected_tag);
+                                            }
+                                        }
+                                    }
+                                    // Reset selection to the placeholder after using it
+                                    dropdown.set_selected(0);
+                                }
+                            },
+                        },
+
                         gtk::Button {
                             set_label: "Add",
                             add_css_class: "suggested-action",
                             set_tooltip_text: Some("Add the tag"),
-                            connect_clicked[sender, tag_input] => move |_| {
-                                let tag = tag_input.text().as_str().trim().to_string();
+                            connect_clicked[sender, tag_entry] => move |_| {
+                                let tag = tag_entry.text().as_str().trim().to_string();
                                 if !tag.is_empty() {
                                     sender.input(FileDetailsInput::AddTag(tag));
-                                    tag_input.set_text("");
+                                    tag_entry.set_text("");
                                 }
                             },
                         },
@@ -293,7 +323,8 @@ where
             file_data_source,
             tag_container: None,
             tag_input: None,
-            tag_completion: None,
+            tag_entry: None,
+            tag_string_list: None,
             all_tags: Vec::new(),
             title_label: None,
             status_container: None,
@@ -326,29 +357,22 @@ where
         let mut model = model;
         model.tag_container = Some(widgets.tag_container.clone());
         model.tag_input = Some(widgets.tag_input.clone());
+        model.tag_entry = Some(widgets.tag_entry.clone());
         model.title_label = Some(widgets.title_label.clone());
         model.status_container = Some(widgets.status_container.clone());
         model.file_info_container = Some(widgets.file_info_container.clone());
         model.file_details_container = Some(widgets.file_details_container.clone());
 
-        // Set up tag completion
+        // Set up tag input with StringList model for the dropdown
         if let Some(tag_input) = &model.tag_input {
-            // Create a list store for the completion
-            let list_store = gtk::ListStore::new(&[glib::Type::STRING]);
+            // Create a StringList for the dropdown with a placeholder
+            let string_list = gtk::StringList::new(&["Select a tag..."]);
+            tag_input.set_model(Some(&string_list));
+            tag_input.set_enable_search(true);
+            tag_input.set_selected(0); // Select the placeholder by default
 
-            // Create the completion
-            let completion = gtk::EntryCompletion::new();
-            completion.set_model(Some(&list_store));
-            completion.set_text_column(0);
-            completion.set_popup_completion(true);
-            completion.set_popup_single_match(true);
-            completion.set_minimum_key_length(1);
-
-            // Set the completion for the entry
-            tag_input.set_completion(Some(&completion));
-
-            // Store the completion
-            model.tag_completion = Some(completion);
+            // Store the string list for later updates
+            model.tag_string_list = Some(string_list);
 
             // Load available tags
             sender.input(FileDetailsInput::LoadAvailableTags);
@@ -390,9 +414,12 @@ where
             }
             FileDetailsInput::AddTag(tag) => {
                 // Show a loading indicator
-                if let Some(tag_input) = &self.tag_input {
-                    tag_input.set_sensitive(false);
-                    tag_input.set_progress_fraction(0.5);
+                if let Some(entry) = &self.tag_entry {
+                    entry.set_sensitive(false);
+                    entry.set_progress_fraction(0.5);
+                }
+                if let Some(dropdown) = &self.tag_input {
+                    dropdown.set_sensitive(false);
                 }
 
                 // Try to add the tag
@@ -402,9 +429,12 @@ where
                     .await;
 
                 // Reset the loading indicator
-                if let Some(tag_input) = &self.tag_input {
-                    tag_input.set_sensitive(true);
-                    tag_input.set_progress_fraction(0.0);
+                if let Some(entry) = &self.tag_entry {
+                    entry.set_sensitive(true);
+                    entry.set_progress_fraction(0.0);
+                }
+                if let Some(dropdown) = &self.tag_input {
+                    dropdown.set_sensitive(true);
                 }
 
                 // Handle the result and refresh the UI
@@ -428,16 +458,16 @@ where
                     sender
                         .output(FileDetailsOutput::FileUpdated(self.file.clone()))
                         .unwrap();
-
-                    // Refresh available tags
-                    sender.input(FileDetailsInput::LoadAvailableTags);
                 }
             }
             FileDetailsInput::DeleteTag(tag) => {
-                // Show a loading indicator in the tag input
-                if let Some(tag_input) = &self.tag_input {
-                    tag_input.set_sensitive(false);
-                    tag_input.set_progress_fraction(0.5);
+                // Show a loading indicator
+                if let Some(entry) = &self.tag_entry {
+                    entry.set_sensitive(false);
+                    entry.set_progress_fraction(0.5);
+                }
+                if let Some(dropdown) = &self.tag_input {
+                    dropdown.set_sensitive(false);
                 }
 
                 // Try to delete the tag
@@ -447,9 +477,12 @@ where
                     .await;
 
                 // Reset the loading indicator
-                if let Some(tag_input) = &self.tag_input {
-                    tag_input.set_sensitive(true);
-                    tag_input.set_progress_fraction(0.0);
+                if let Some(entry) = &self.tag_entry {
+                    entry.set_sensitive(true);
+                    entry.set_progress_fraction(0.0);
+                }
+                if let Some(dropdown) = &self.tag_input {
+                    dropdown.set_sensitive(true);
                 }
 
                 // Handle the result and refresh the UI
@@ -473,15 +506,14 @@ where
                     sender
                         .output(FileDetailsOutput::FileUpdated(self.file.clone()))
                         .unwrap();
-
-                    // Refresh available tags
-                    sender.input(FileDetailsInput::LoadAvailableTags);
                 }
             }
             FileDetailsInput::FocusTagInput => {
-                // Focus the tag input field
-                if let Some(tag_input) = &self.tag_input {
-                    tag_input.grab_focus();
+                // Focus the tag entry field
+                if let Some(entry) = &self.tag_entry {
+                    entry.grab_focus();
+                } else if let Some(dropdown) = &self.tag_input {
+                    dropdown.grab_focus();
                 }
             }
             FileDetailsInput::UpdateReadingStatus(status) => {
@@ -576,18 +608,35 @@ where
                 if let Ok(tags) = self.file_data_source.get_files_tags().await {
                     self.all_tags = tags;
 
-                    // Update the completion model
-                    if let Some(completion) = &self.tag_completion {
-                        if let Some(model) = completion.model() {
-                            if let Some(list_store) = model.dynamic_cast_ref::<gtk::ListStore>() {
-                                // Clear the model
-                                list_store.clear();
+                    // Update the StringList model for the dropdown
+                    if let Some(string_list) = &self.tag_string_list {
+                        // Remember current text in the entry
+                        let current_text = self.tag_entry.as_ref().map(|e| e.text().to_string());
 
-                                // Add all tags to the model
-                                for tag in &self.all_tags {
-                                    let iter = list_store.append();
-                                    list_store.set_value(&iter, 0, &tag.to_value());
-                                }
+                        // Clear the string list but keep the placeholder
+                        while string_list.n_items() > 1 {
+                            string_list.remove(1);
+                        }
+
+                        // If there's no placeholder, add it
+                        if string_list.n_items() == 0 {
+                            string_list.append("Select a tag...");
+                        }
+
+                        // Filter out tags that are already applied to this file
+                        let current_file_tags: std::collections::HashSet<&String> = self.file.tags.iter().collect();
+
+                        // Add only tags that aren't already applied to the file
+                        for tag in &self.all_tags {
+                            if !current_file_tags.contains(tag) {
+                                string_list.append(tag);
+                            }
+                        }
+
+                        // Restore the text if there was any
+                        if let Some(text) = current_text {
+                            if let Some(entry) = &self.tag_entry {
+                                entry.set_text(&text);
                             }
                         }
                     }
