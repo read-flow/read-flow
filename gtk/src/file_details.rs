@@ -239,8 +239,8 @@ where
                     set_orientation: gtk::Orientation::Horizontal,
                 },
 
-                // File details section
-                #[name(file_details_container)]
+                // Reading status section (moved up for better visibility)
+                #[name(status_container)]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 12,
@@ -250,8 +250,8 @@ where
                     set_orientation: gtk::Orientation::Horizontal,
                 },
 
-                // Reading status section
-                #[name(status_container)]
+                // File details section
+                #[name(file_details_container)]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 12,
