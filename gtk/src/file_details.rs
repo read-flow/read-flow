@@ -4,6 +4,7 @@ use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentParts;
 use relm4::component::AsyncComponentSender;
 use relm4::gtk;
+use relm4::gtk::glib;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
@@ -33,6 +34,8 @@ pub struct FileDetails<FDS> {
     file_data_source: FDS,
     tag_container: Option<gtk::FlowBox>,
     tag_input: Option<gtk::Entry>,
+    tag_completion: Option<gtk::EntryCompletion>,
+    all_tags: Vec<String>,
     title_label: Option<gtk::Label>,
     status_container: Option<gtk::Box>,
     file_info_container: Option<gtk::Box>,
@@ -48,6 +51,7 @@ pub enum FileDetailsInput {
     FocusTagInput,
     UpdateReadingStatus(archive_organizer::api::ReadingStatus),
     UpdateFile(File),
+    LoadAvailableTags,
 }
 
 #[derive(Debug)]
@@ -205,7 +209,7 @@ where
                         gtk::Entry {
                             set_placeholder_text: Some("Add a new tag"),
                             set_hexpand: true,
-                            set_tooltip_text: Some("Enter a tag and press Enter to add it"),
+                            set_tooltip_text: Some("Enter a tag or select from existing tags"),
                             set_accessible_role: gtk::AccessibleRole::SearchBox,
                             add_css_class: "search-entry",
                             connect_activate[sender] => move |entry| {
@@ -289,6 +293,8 @@ where
             file_data_source,
             tag_container: None,
             tag_input: None,
+            tag_completion: None,
+            all_tags: Vec::new(),
             title_label: None,
             status_container: None,
             file_info_container: None,
@@ -324,6 +330,29 @@ where
         model.status_container = Some(widgets.status_container.clone());
         model.file_info_container = Some(widgets.file_info_container.clone());
         model.file_details_container = Some(widgets.file_details_container.clone());
+
+        // Set up tag completion
+        if let Some(tag_input) = &model.tag_input {
+            // Create a list store for the completion
+            let list_store = gtk::ListStore::new(&[glib::Type::STRING]);
+
+            // Create the completion
+            let completion = gtk::EntryCompletion::new();
+            completion.set_model(Some(&list_store));
+            completion.set_text_column(0);
+            completion.set_popup_completion(true);
+            completion.set_popup_single_match(true);
+            completion.set_minimum_key_length(1);
+
+            // Set the completion for the entry
+            tag_input.set_completion(Some(&completion));
+
+            // Store the completion
+            model.tag_completion = Some(completion);
+
+            // Load available tags
+            sender.input(FileDetailsInput::LoadAvailableTags);
+        }
 
         // Create the component instances
         let file_info_section = FileInfoSection::new(&model.file.type_, &model.filename, &model.folder);
@@ -399,6 +428,9 @@ where
                     sender
                         .output(FileDetailsOutput::FileUpdated(self.file.clone()))
                         .unwrap();
+
+                    // Refresh available tags
+                    sender.input(FileDetailsInput::LoadAvailableTags);
                 }
             }
             FileDetailsInput::DeleteTag(tag) => {
@@ -441,6 +473,9 @@ where
                     sender
                         .output(FileDetailsOutput::FileUpdated(self.file.clone()))
                         .unwrap();
+
+                    // Refresh available tags
+                    sender.input(FileDetailsInput::LoadAvailableTags);
                 }
             }
             FileDetailsInput::FocusTagInput => {
@@ -534,6 +569,29 @@ where
 
                 // Refresh the tags
                 self.refresh_tags(&sender).await;
+            },
+
+            FileDetailsInput::LoadAvailableTags => {
+                // Load all available tags
+                if let Ok(tags) = self.file_data_source.get_files_tags().await {
+                    self.all_tags = tags;
+
+                    // Update the completion model
+                    if let Some(completion) = &self.tag_completion {
+                        if let Some(model) = completion.model() {
+                            if let Some(list_store) = model.dynamic_cast_ref::<gtk::ListStore>() {
+                                // Clear the model
+                                list_store.clear();
+
+                                // Add all tags to the model
+                                for tag in &self.all_tags {
+                                    let iter = list_store.append();
+                                    list_store.set_value(&iter, 0, &tag.to_value());
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
