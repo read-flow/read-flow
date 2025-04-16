@@ -69,10 +69,6 @@ where
     tag_deny_filters_container: Option<gtk::FlowBox>,
     // Reference to the selected deny tags label
     selected_deny_tags_label: Option<gtk::Label>,
-    // Reference to the main content box
-    main_content_box: Option<gtk::Box>,
-    // Reference to the outer paned widget
-    outer_paned: Option<gtk::Paned>,
     // Reference to the inner paned widget
     inner_paned: Option<gtk::Paned>,
     // Reference to the details side panel container
@@ -314,10 +310,12 @@ where
 
     view! {
         #[root]
-        gtk::Box {
+        gtk::Paned {
             set_orientation: gtk::Orientation::Horizontal,
-            set_spacing: 0,
-            set_margin_all: 0,  // Remove margin to use full space
+            set_position: model.expanded_sidebar_width,
+            set_resize_start_child: true,
+            set_shrink_start_child: false,
+            set_wide_handle: true,
             set_hexpand: true,
             set_vexpand: true,
             set_halign: gtk::Align::Fill,
@@ -328,9 +326,9 @@ where
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 0,
-                set_hexpand: false,
+                set_hexpand: true,
                 set_vexpand: true,
-                set_width_request: model.expanded_sidebar_width,
+                set_width_request: 150, // Minimum width
                 add_css_class: "sidebar",
 
                 // Toggle button for sidebar
@@ -520,9 +518,13 @@ where
             },
 
             // Main content area (files list and details panel)
-            #[name(main_content_box)]
-            gtk::Box {
+            #[name(inner_paned)]
+            gtk::Paned {
                 set_orientation: gtk::Orientation::Horizontal,
+                set_position: 800, // Default position that gives most space to file list
+                set_resize_end_child: true,
+                set_shrink_end_child: false,
+                set_wide_handle: true,
                 set_hexpand: true,
                 set_vexpand: true,
                 set_halign: gtk::Align::Fill,
@@ -544,10 +546,12 @@ where
                     files_box -> gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
                         set_spacing: 12,  // Increased spacing between files
-                        set_margin_start: 4,
-                        set_margin_end: 4,
-                        set_margin_top: 4,
-                        set_margin_bottom: 4,
+                        set_margin_start: 8,
+                        set_margin_end: 8,
+                        set_margin_top: 8,
+                        set_margin_bottom: 8,
+                        set_hexpand: true,
+                        set_halign: gtk::Align::Fill,
                     },
                 },
 
@@ -680,8 +684,6 @@ where
             tag_deny_dropdown: None,
             tag_deny_filters_container: None,
             selected_deny_tags_label: None,
-            main_content_box: None,
-            outer_paned: None,
             inner_paned: None,
             details_panel_container: None,
             details_content_container: None,
@@ -712,58 +714,9 @@ where
         model.tag_deny_dropdown = Some(widgets.tag_deny_dropdown.clone());
         model.tag_deny_filters_container = Some(widgets.tag_deny_filters_container.clone());
         model.selected_deny_tags_label = Some(widgets.selected_deny_tags_label.clone());
-        model.main_content_box = Some(widgets.main_content_box.clone());
+        model.inner_paned = Some(widgets.inner_paned.clone());
         model.details_panel_container = Some(widgets.details_panel_container.clone());
         model.details_content_container = Some(widgets.details_content_container.clone());
-
-        // Set up the paned widgets
-        let outer_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
-        outer_paned.set_position(model.expanded_sidebar_width);
-        outer_paned.set_resize_start_child(true);
-        outer_paned.set_shrink_start_child(false);
-        outer_paned.set_wide_handle(true);
-        outer_paned.set_hexpand(true);
-        outer_paned.set_vexpand(true);
-        outer_paned.set_halign(gtk::Align::Fill);
-        outer_paned.set_valign(gtk::Align::Fill);
-
-        // Set the start child (sidebar)
-        outer_paned.set_start_child(Some(&widgets.sidebar_container));
-
-        // Set the end child (main content)
-        outer_paned.set_end_child(Some(&widgets.main_content_box));
-
-        // Add the paned widget to the root
-        root.append(&outer_paned);
-
-        // Create a second paned widget for the details panel
-        let inner_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
-        inner_paned.set_position(600); // Default position
-        inner_paned.set_resize_end_child(true);
-        inner_paned.set_shrink_end_child(false);
-        inner_paned.set_wide_handle(true);
-        inner_paned.set_hexpand(true);
-        inner_paned.set_vexpand(true);
-        inner_paned.set_halign(gtk::Align::Fill);
-        inner_paned.set_valign(gtk::Align::Fill);
-
-        // Get the children from the main content box
-        let files_scroll = widgets.main_content_box.first_child().unwrap();
-        let details_panel = widgets.main_content_box.last_child().unwrap();
-
-        // Remove them from the box
-        widgets.main_content_box.remove(&files_scroll);
-        widgets.main_content_box.remove(&details_panel);
-
-        // Add them to the paned widget
-        inner_paned.set_start_child(Some(&files_scroll));
-        inner_paned.set_end_child(Some(&details_panel));
-
-        // Add the paned widget to the main content box
-        widgets.main_content_box.append(&inner_paned);
-
-        // Store a reference to the inner paned widget
-        model.inner_paned = Some(inner_paned);
 
         AsyncComponentParts { model, widgets }
     }
