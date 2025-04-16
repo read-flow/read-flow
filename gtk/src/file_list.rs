@@ -69,7 +69,9 @@ where
     tag_deny_filters_container: Option<gtk::FlowBox>,
     // Reference to the selected deny tags label
     selected_deny_tags_label: Option<gtk::Label>,
-    // Reference to the inner paned widget
+    // Reference to the main content box
+    main_content_box: Option<gtk::Box>,
+    // Reference to the inner paned widget (will be created in init)
     inner_paned: Option<gtk::Paned>,
     // Reference to the details side panel container
     details_panel_container: Option<gtk::Box>,
@@ -310,12 +312,10 @@ where
 
     view! {
         #[root]
-        gtk::Paned {
+        gtk::Box {
             set_orientation: gtk::Orientation::Horizontal,
-            set_position: model.expanded_sidebar_width,
-            set_resize_start_child: true,
-            set_shrink_start_child: false,
-            set_wide_handle: true,
+            set_spacing: 0,
+            set_margin_all: 0,
             set_hexpand: true,
             set_vexpand: true,
             set_halign: gtk::Align::Fill,
@@ -326,9 +326,9 @@ where
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 0,
-                set_hexpand: true,
+                set_hexpand: false,
                 set_vexpand: true,
-                set_width_request: 150, // Minimum width
+                set_width_request: model.expanded_sidebar_width,
                 add_css_class: "sidebar",
 
                 // Toggle button for sidebar
@@ -518,13 +518,9 @@ where
             },
 
             // Main content area (files list and details panel)
-            #[name(inner_paned)]
-            gtk::Paned {
+            #[name(main_content_box)]
+            gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
-                set_position: 800, // Default position that gives most space to file list
-                set_resize_end_child: true,
-                set_shrink_end_child: false,
-                set_wide_handle: true,
                 set_hexpand: true,
                 set_vexpand: true,
                 set_halign: gtk::Align::Fill,
@@ -684,6 +680,7 @@ where
             tag_deny_dropdown: None,
             tag_deny_filters_container: None,
             selected_deny_tags_label: None,
+            main_content_box: None,
             inner_paned: None,
             details_panel_container: None,
             details_content_container: None,
@@ -714,9 +711,41 @@ where
         model.tag_deny_dropdown = Some(widgets.tag_deny_dropdown.clone());
         model.tag_deny_filters_container = Some(widgets.tag_deny_filters_container.clone());
         model.selected_deny_tags_label = Some(widgets.selected_deny_tags_label.clone());
-        model.inner_paned = Some(widgets.inner_paned.clone());
+        model.main_content_box = Some(widgets.main_content_box.clone());
         model.details_panel_container = Some(widgets.details_panel_container.clone());
         model.details_content_container = Some(widgets.details_content_container.clone());
+
+        // Create the inner paned widget for resizable panels
+        let inner_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+        inner_paned.set_position(800); // Default position
+        inner_paned.set_resize_end_child(true);
+        inner_paned.set_shrink_end_child(false);
+        inner_paned.set_wide_handle(true);
+        inner_paned.set_hexpand(true);
+        inner_paned.set_vexpand(true);
+        inner_paned.set_halign(gtk::Align::Fill);
+        inner_paned.set_valign(gtk::Align::Fill);
+
+        // Get the children from the main content box
+        if let Some(main_box) = &model.main_content_box {
+            if let Some(files_scroll) = main_box.first_child() {
+                if let Some(details_panel) = main_box.last_child() {
+                    // Remove them from the box
+                    main_box.remove(&files_scroll);
+                    main_box.remove(&details_panel);
+
+                    // Add them to the paned widget
+                    inner_paned.set_start_child(Some(&files_scroll));
+                    inner_paned.set_end_child(Some(&details_panel));
+
+                    // Add the paned widget to the main content box
+                    main_box.append(&inner_paned);
+
+                    // Store a reference to the inner paned widget
+                    model.inner_paned = Some(inner_paned);
+                }
+            }
+        }
 
         AsyncComponentParts { model, widgets }
     }
