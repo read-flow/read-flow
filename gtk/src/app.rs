@@ -86,7 +86,12 @@ impl AsyncComponent for App {
                     set_show_border: false,
                     set_show_tabs: true,
                     connect_switch_page[sender] => move |_, _, page_num| {
-                        sender.input_sender().send(AppMessage::TabChanged(page_num as usize)).unwrap();
+                        // Use if let to handle the error case gracefully
+                        // This prevents panic when closing the app
+                        if let Err(e) = sender.input_sender().send(AppMessage::TabChanged(page_num as usize)) {
+                            // Just log the error and continue
+                            tracing::debug!("Failed to send tab changed message: {e:?}");
+                        }
                     },
                 }
             },
