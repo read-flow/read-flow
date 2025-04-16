@@ -179,22 +179,19 @@ where
 
                 // Tags section
                 gtk::Box {
-                    #[name(tag_container)]
-                    gtk::FlowBox {
-                        set_selection_mode: gtk::SelectionMode::None,
-                        set_max_children_per_line: 4,  // Fewer tags per line for side panel
-                        set_row_spacing: 2,  // Reduced spacing
-                        set_column_spacing: 2,  // Reduced spacing
-                        set_homogeneous: false,  // Don't make all children the same size
-                        set_halign: gtk::Align::Fill,
-                        set_hexpand: true,
-                        set_vexpand: true,
-                        set_margin_all: 4,
-                        set_visible: true,
-                        add_css_class: "tag-container",  // Add the tag-container class
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 8,
+
+                    // Tags section header
+                    gtk::Label {
+                        set_label: "Tags",
+                        add_css_class: "caption-heading",
+                        set_halign: gtk::Align::Start,
+                        set_margin_start: 4,
+                        set_margin_bottom: 4,
                     },
 
-                    // Tag input
+                    // Tag input (now above the tag container)
                     gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_spacing: 8,
@@ -232,6 +229,22 @@ where
                                 }
                             },
                         },
+                    },
+
+                    // Tag container (now below the input field)
+                    #[name(tag_container)]
+                    gtk::FlowBox {
+                        set_selection_mode: gtk::SelectionMode::None,
+                        set_max_children_per_line: 4,  // Fewer tags per line for side panel
+                        set_row_spacing: 2,  // Reduced spacing
+                        set_column_spacing: 2,  // Reduced spacing
+                        set_homogeneous: false,  // Don't make all children the same size
+                        set_halign: gtk::Align::Fill,
+                        set_hexpand: true,
+                        set_vexpand: true,
+                        set_margin_all: 4,
+                        set_visible: true,
+                        add_css_class: "tag-container",  // Add the tag-container class
                     },
                 },
 
