@@ -1115,14 +1115,38 @@ where
                     dialog.close();
                 }
 
+                // Extract filename for display
+                let filename = file.path.split('/').last().unwrap_or("File");
+
                 // Create a new dialog window
                 let dialog = gtk::Window::new();
-                dialog.set_title(Some(&format!("File Details: {}", file.path.split('/').last().unwrap_or("File"))));
                 dialog.set_default_size(600, 700);
                 dialog.set_modal(true);
                 dialog.set_destroy_with_parent(true);
                 dialog.set_transient_for(gtk::Window::NONE);
                 dialog.add_css_class("details-dialog");
+
+                // Create a headerbar
+                let headerbar = gtk::HeaderBar::new();
+                headerbar.set_title_widget(Some(&gtk::Label::builder()
+                    .label(filename)
+                    .css_classes(vec!["title"])
+                    .build()));
+                headerbar.set_show_title_buttons(true);
+
+                // Add action buttons to the headerbar
+                let open_button = gtk::Button::new();
+                open_button.set_icon_name("document-open-symbolic");
+                open_button.add_css_class("flat");
+                open_button.set_tooltip_text(Some("Open file"));
+                let sender_clone = sender.input_sender().clone();
+                open_button.connect_clicked(move |_| {
+                    sender_clone.send(FileListInput::OpenSelectedFile).unwrap();
+                });
+                headerbar.pack_start(&open_button);
+
+                // Set the headerbar as the title bar
+                dialog.set_titlebar(Some(&headerbar));
 
                 // Create a content box for the dialog
                 let content_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -1130,30 +1154,6 @@ where
                 content_box.set_hexpand(true);
                 content_box.set_vexpand(true);
                 dialog.set_child(Some(&content_box));
-
-                // Create a header with close button
-                let header_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                header_box.add_css_class("toolbar");
-                header_box.set_margin_bottom(16);
-
-                let title_label = gtk::Label::new(Some(&format!("File: {}", file.path.split('/').last().unwrap_or("File"))));
-                title_label.add_css_class("heading");
-                title_label.set_halign(gtk::Align::Start);
-                title_label.set_hexpand(true);
-                header_box.append(&title_label);
-
-                let close_button = gtk::Button::new();
-                close_button.set_icon_name("window-close-symbolic");
-                close_button.add_css_class("flat");
-                close_button.add_css_class("circular");
-                close_button.set_tooltip_text(Some("Close details"));
-                let sender_clone = sender.input_sender().clone();
-                close_button.connect_clicked(move |_| {
-                    sender_clone.send(FileListInput::CloseDetailsPanel).unwrap();
-                });
-                header_box.append(&close_button);
-
-                content_box.append(&header_box);
 
                 // Create a scrolled window for the content
                 let scrolled_window = gtk::ScrolledWindow::new();
