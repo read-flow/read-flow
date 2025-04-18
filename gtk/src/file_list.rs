@@ -1134,16 +1134,7 @@ where
                     .build()));
                 headerbar.set_show_title_buttons(true);
 
-                // Add action buttons to the headerbar
-                let open_button = gtk::Button::new();
-                open_button.set_icon_name("document-open-symbolic");
-                open_button.add_css_class("flat");
-                open_button.set_tooltip_text(Some("Open file"));
-                let sender_clone = sender.input_sender().clone();
-                open_button.connect_clicked(move |_| {
-                    sender_clone.send(FileListInput::OpenSelectedFile).unwrap();
-                });
-                headerbar.pack_start(&open_button);
+                // We don't need action buttons in the headerbar as they're already in the file details component
 
                 // Set the headerbar as the title bar
                 dialog.set_titlebar(Some(&headerbar));
