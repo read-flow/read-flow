@@ -4,6 +4,7 @@ use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentParts;
 use relm4::component::AsyncComponentSender;
 use relm4::gtk;
+use relm4::gtk::glib;
 use relm4::once_cell::sync::Lazy;
 use relm4::prelude::*;
 
@@ -77,18 +78,10 @@ where
     main_content_box: Option<gtk::Box>,
     // Reference to the outer paned widget (for resizable left panel)
     outer_paned: Option<gtk::Paned>,
-    // Reference to the inner paned widget (will be created in init)
-    inner_paned: Option<gtk::Paned>,
-    // Reference to the details side panel container
-    details_panel_container: Option<gtk::Box>,
-    // Reference to the content area within the details panel
+    // Reference to the details dialog window
+    details_dialog: Option<gtk::Window>,
+    // Reference to the content area within the details dialog
     details_content_container: Option<gtk::Box>,
-    // Track if the details panel is visible
-    details_panel_visible: bool,
-    // Width of the details panel
-    details_panel_width: i32,
-    // Last position of the main content paned before showing details
-    last_paned_position: i32,
     // Currently selected file
     selected_file: Option<File>,
     // Currently selected file ID (for highlighting in the list)
@@ -654,62 +647,7 @@ where
                     },
                 },
 
-                // Details side panel
-                #[name(details_panel_container)]
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_width_request: model.details_panel_width,
-                    set_visible: model.details_panel_visible,
-                    set_hexpand: true,  // Changed to true to use available space
-                    set_vexpand: true,
-                    set_halign: gtk::Align::Fill,
-                    set_valign: gtk::Align::Fill,
-                    add_css_class: "sidebar",
-                    add_css_class: "details-panel",
 
-                    // Header with close button
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 0,
-                        add_css_class: "toolbar",
-                        set_margin_all: 8,
-
-                        gtk::Label {
-                            set_label: "File Details",
-                            add_css_class: "heading",
-                            set_halign: gtk::Align::Start,
-                            set_hexpand: true,
-                        },
-
-                        gtk::Button {
-                            set_icon_name: "window-close-symbolic",
-                            add_css_class: "flat",
-                            add_css_class: "circular",
-                            set_tooltip_text: Some("Close details"),
-                            connect_clicked[sender] => move |_| {
-                                sender.input(FileListInput::CloseDetailsPanel);
-                            },
-                        },
-                    },
-
-                    // Scrollable content area for file details
-                    gtk::ScrolledWindow {
-                        set_hexpand: true,
-                        set_vexpand: true,
-                        set_hscrollbar_policy: gtk::PolicyType::Never,
-                        set_vscrollbar_policy: gtk::PolicyType::Automatic,
-
-                        #[name(details_content_container)]
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_hexpand: true,
-                            set_vexpand: true,
-                            set_margin_start: 8,
-                            set_margin_end: 8,
-                            set_margin_bottom: 8,
-                        }
-                    }
-                },
             },
         },
     }
@@ -790,12 +728,8 @@ where
             selected_deny_tags_label: None,
             main_content_box: None,
             outer_paned: None,
-            inner_paned: None,
-            details_panel_container: None,
+            details_dialog: None,
             details_content_container: None,
-            details_panel_visible: false, // Initially hidden
-            details_panel_width: 300,     // Default width for details panel
-            last_paned_position: 600,     // Default position before showing details
             selected_file: None,
             selected_file_id: None,
             error_message: error_message,
@@ -822,8 +756,6 @@ where
         model.tag_deny_filters_container = Some(widgets.tag_deny_filters_container.clone());
         model.selected_deny_tags_label = Some(widgets.selected_deny_tags_label.clone());
         model.main_content_box = Some(widgets.main_content_box.clone());
-        model.details_panel_container = Some(widgets.details_panel_container.clone());
-        model.details_content_container = Some(widgets.details_content_container.clone());
         model.search_entry = Some(widgets.search_entry.clone());
 
         // Create an outer paned widget to make the left panel resizable
@@ -856,37 +788,7 @@ where
             }
         }
 
-        // Create the inner paned widget for resizable panels
-        let inner_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
-        inner_paned.set_position(800); // Default position
-        inner_paned.set_resize_end_child(true);
-        inner_paned.set_shrink_end_child(false);
-        inner_paned.set_wide_handle(true);
-        inner_paned.set_hexpand(true);
-        inner_paned.set_vexpand(true);
-        inner_paned.set_halign(gtk::Align::Fill);
-        inner_paned.set_valign(gtk::Align::Fill);
 
-        // Get the children from the main content box
-        if let Some(main_box) = &model.main_content_box {
-            if let Some(files_scroll) = main_box.first_child() {
-                if let Some(details_panel) = main_box.last_child() {
-                    // Remove them from the box
-                    main_box.remove(&files_scroll);
-                    main_box.remove(&details_panel);
-
-                    // Add them to the paned widget
-                    inner_paned.set_start_child(Some(&files_scroll));
-                    inner_paned.set_end_child(Some(&details_panel));
-
-                    // Add the paned widget to the main content box
-                    main_box.append(&inner_paned);
-
-                    // Store a reference to the inner paned widget
-                    model.inner_paned = Some(inner_paned);
-                }
-            }
-        }
 
         AsyncComponentParts { model, widgets }
     }
@@ -898,70 +800,7 @@ where
         _root: &Self::Root,
     ) {
         match msg {
-            FileListInput::FileClicked(file) => {
-                // Store the selected file
-                self.selected_file = Some(file.clone());
-                // Store the selected file ID for highlighting
-                self.selected_file_id = Some(file.id);
 
-                // Show the details panel
-                if let Some(panel) = &self.details_panel_container {
-                    if let Some(content_container) = &self.details_content_container {
-                        // If the panel is already visible, we need to remove the existing component
-                        if self.details_panel_visible {
-                            // Remove the existing file details component
-                            if let Some(_details) = self.details.take() {
-                                // Remove all children from the content container
-                                while let Some(child) = content_container.first_child() {
-                                    content_container.remove(&child);
-                                }
-                            }
-                        }
-
-                        // Create and launch the file details component
-                        let controller = FileDetails::builder()
-                            .launch((file.clone(), self.file_data_source.clone()))
-                            .forward(sender.input_sender(), |msg| match msg {
-                                FileDetailsOutput::TagsChanged(_) => FileListInput::RefreshFiles,
-                                FileDetailsOutput::TagAdded(_) => FileListInput::RefreshFiles,
-                                FileDetailsOutput::TagRemoved(_) => FileListInput::RefreshFiles,
-                                FileDetailsOutput::StatusChanged(_) => FileListInput::RefreshFiles,
-                                FileDetailsOutput::FileUpdated(_) => FileListInput::RefreshFiles,
-                                FileDetailsOutput::OpenFile => FileListInput::OpenSelectedFile,
-                                FileDetailsOutput::Closed => FileListInput::CloseDetailsPanel,
-                            });
-
-                        // Add the component's widget to the content container
-                        content_container.append(controller.widget());
-
-                        // Store the controller
-                        self.details = Some(controller);
-
-                        // Make sure the panel is visible
-                        panel.set_visible(true);
-                        self.details_panel_visible = true;
-
-                        // Adjust the inner paned position to show the details panel
-                        if let Some(paned) = &self.inner_paned {
-                            if !self.details_panel_visible {
-                                // Store the current position
-                                self.last_paned_position = paned.position();
-                            }
-
-                            // Set the position to show the details panel
-                            // Calculate a position that gives the details panel its requested width
-                            // but ensures it doesn't take more than 40% of the total width
-                            let total_width = paned.width();
-                            let max_details_width = (total_width as f64 * 0.4) as i32;
-                            let details_width = self.details_panel_width.min(max_details_width);
-                            let new_position = total_width - details_width;
-                            paned.set_position(new_position);
-                        }
-                    }
-                }
-
-                sender.output(FileBoxOutput::FileClicked(file)).unwrap();
-            }
             FileListInput::RefreshFiles => {
                 // Reload files from the data source
                 match self.file_data_source.get_files().await {
@@ -1205,50 +1044,10 @@ where
                     &self.tag_deny_filters
                 );
             }
-            FileListInput::CloseDetailsPanel => {
-                // Hide the details panel
-                if let Some(panel) = &self.details_panel_container {
-                    if let Some(content_container) = &self.details_content_container {
-                        // Remove the file details component if it exists
-                        if let Some(_details) = self.details.take() {
-                            // The component will be dropped
-
-                            // Remove all children from the content container
-                            while let Some(child) = content_container.first_child() {
-                                content_container.remove(&child);
-                            }
-                        }
-                    }
-
-                    panel.set_visible(false);
-                    self.details_panel_visible = false;
-
-                    // Restore the inner paned position
-                    if let Some(paned) = &self.inner_paned {
-                        paned.set_position(self.last_paned_position);
-                    }
-                }
-
-                // Clear the selected file
-                self.selected_file = None;
-                // Clear the selected file ID
-                self.selected_file_id = None;
-
-                // Refresh the file list to update the highlighting
-                self.apply_filters();
-            }
             FileListInput::ToggleDetailsPanel => {
-                // Toggle the details panel visibility
-                if let Some(_panel) = &self.details_panel_container {
-                    if self.details_panel_visible {
-                        // If it's visible, close it
-                        sender.input(FileListInput::CloseDetailsPanel);
-                    } else {
-                        // If it's hidden and we have a selected file, show it
-                        if let Some(file) = &self.selected_file {
-                            sender.input(FileListInput::FileClicked(file.clone()));
-                        }
-                    }
+                // If we have a selected file, show the details dialog
+                if let Some(file) = &self.selected_file {
+                    sender.input(FileListInput::FileClicked(file.clone()));
                 }
             }
             FileListInput::OpenSelectedFile => {
@@ -1304,6 +1103,119 @@ where
                     // Refresh the files list
                     sender.input(FileListInput::RefreshFiles);
                 }
+            },
+            FileListInput::FileClicked(file) => {
+                // Store the selected file
+                self.selected_file = Some(file.clone());
+                // Store the selected file ID for highlighting
+                self.selected_file_id = Some(file.id);
+
+                // Close existing dialog if any
+                if let Some(dialog) = self.details_dialog.take() {
+                    dialog.close();
+                }
+
+                // Create a new dialog window
+                let dialog = gtk::Window::new();
+                dialog.set_title(Some(&format!("File Details: {}", file.path.split('/').last().unwrap_or("File"))));
+                dialog.set_default_size(600, 700);
+                dialog.set_modal(true);
+                dialog.set_destroy_with_parent(true);
+                dialog.set_transient_for(gtk::Window::NONE);
+                dialog.add_css_class("details-dialog");
+
+                // Create a content box for the dialog
+                let content_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                content_box.set_margin_all(16);
+                content_box.set_hexpand(true);
+                content_box.set_vexpand(true);
+                dialog.set_child(Some(&content_box));
+
+                // Create a header with close button
+                let header_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                header_box.add_css_class("toolbar");
+                header_box.set_margin_bottom(16);
+
+                let title_label = gtk::Label::new(Some(&format!("File: {}", file.path.split('/').last().unwrap_or("File"))));
+                title_label.add_css_class("heading");
+                title_label.set_halign(gtk::Align::Start);
+                title_label.set_hexpand(true);
+                header_box.append(&title_label);
+
+                let close_button = gtk::Button::new();
+                close_button.set_icon_name("window-close-symbolic");
+                close_button.add_css_class("flat");
+                close_button.add_css_class("circular");
+                close_button.set_tooltip_text(Some("Close details"));
+                let sender_clone = sender.input_sender().clone();
+                close_button.connect_clicked(move |_| {
+                    sender_clone.send(FileListInput::CloseDetailsPanel).unwrap();
+                });
+                header_box.append(&close_button);
+
+                content_box.append(&header_box);
+
+                // Create a scrolled window for the content
+                let scrolled_window = gtk::ScrolledWindow::new();
+                scrolled_window.set_hexpand(true);
+                scrolled_window.set_vexpand(true);
+                scrolled_window.set_hscrollbar_policy(gtk::PolicyType::Never);
+                scrolled_window.set_vscrollbar_policy(gtk::PolicyType::Automatic);
+
+                // Create a box for the file details content
+                let details_content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                details_content.set_hexpand(true);
+                details_content.set_vexpand(true);
+                details_content.set_margin_start(8);
+                details_content.set_margin_end(8);
+                details_content.set_margin_bottom(8);
+                scrolled_window.set_child(Some(&details_content));
+
+                content_box.append(&scrolled_window);
+
+                // Create and launch the file details component
+                let controller = FileDetails::builder()
+                    .launch((file.clone(), self.file_data_source.clone()))
+                    .forward(sender.input_sender(), |msg| match msg {
+                        FileDetailsOutput::TagsChanged(_) => FileListInput::RefreshFiles,
+                        FileDetailsOutput::TagAdded(_) => FileListInput::RefreshFiles,
+                        FileDetailsOutput::TagRemoved(_) => FileListInput::RefreshFiles,
+                        FileDetailsOutput::StatusChanged(_) => FileListInput::RefreshFiles,
+                        FileDetailsOutput::FileUpdated(_) => FileListInput::RefreshFiles,
+                        FileDetailsOutput::OpenFile => FileListInput::OpenSelectedFile,
+                        FileDetailsOutput::Closed => FileListInput::CloseDetailsPanel,
+                    });
+
+                // Add the component's widget to the content container
+                details_content.append(controller.widget());
+
+                // Store references
+                self.details = Some(controller);
+                self.details_dialog = Some(dialog.clone());
+                self.details_content_container = Some(details_content);
+
+                // Connect the dialog's close event
+                let sender_clone = sender.input_sender().clone();
+                dialog.connect_close_request(move |_| {
+                    sender_clone.send(FileListInput::CloseDetailsPanel).unwrap();
+                    glib::Propagation::Proceed
+                });
+
+                // Show the dialog
+                dialog.present();
+
+                // Send output to notify parent components
+                sender.output(FileBoxOutput::FileClicked(file)).unwrap();
+            },
+            FileListInput::CloseDetailsPanel => {
+                // Close the details dialog
+                if let Some(dialog) = self.details_dialog.take() {
+                    dialog.close();
+                }
+
+                // Clear the details component
+                self.details = None;
+                self.details_content_container = None;
             },
             FileListInput::SearchTextChanged(text) => {
                 tracing::debug!("Search text changed: {}", text);
