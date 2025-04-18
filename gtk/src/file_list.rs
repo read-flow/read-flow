@@ -45,6 +45,10 @@ where
     all_tags: Vec<String>,
     // Store all files to make filtering easier
     all_files: Vec<File>,
+    // Search pattern for filtering files
+    search_pattern: Option<String>,
+    // Reference to the search entry
+    search_entry: Option<gtk::SearchEntry>,
     // References to filter checkboxes
     unread_checkbox: Option<gtk::CheckButton>,
     reading_checkbox: Option<gtk::CheckButton>,
@@ -112,6 +116,8 @@ pub enum FileListInput {
     AddTagToFile(String),
     RemoveTagFromFile(String),
     UpdateFileReadingStatus(ReadingStatus),
+    SearchTextChanged(String),
+    ClearSearch,
 }
 
 impl<FDS> FileList<FDS>
@@ -123,7 +129,7 @@ where
         let mut mut_files = self.files.guard();
         mut_files.clear();
 
-        // Apply reading status, tag include filters, and tag deny filters
+        // Apply reading status, tag include filters, tag deny filters, and search pattern
         for file in &self.all_files {
             // Check if the file matches the reading status filter
             let status_match = self.status_filters.contains(&file.status);
@@ -149,8 +155,23 @@ where
                     .any(|tag| self.tag_deny_filters.contains(tag))
             };
 
+            // Check if the file matches the search pattern (if any)
+            let search_match = match &self.search_pattern {
+                None => true, // No search pattern, all files match
+                Some(pattern) if pattern.is_empty() => true, // Empty pattern, all files match
+                Some(pattern) => {
+                    let pattern = pattern.to_lowercase();
+                    // Extract filename from path for matching
+                    let filename = file.path.split('/').last().unwrap_or("").to_lowercase();
+                    // Match on filename, path, or tags
+                    filename.contains(&pattern) ||
+                    file.path.to_lowercase().contains(&pattern) ||
+                    file.tags.iter().any(|tag| tag.to_lowercase().contains(&pattern))
+                }
+            };
+
             // Only include files that match all filters
-            if status_match && tag_include_match && tag_deny_match {
+            if status_match && tag_include_match && tag_deny_match && search_match {
                 mut_files.push_back((file.clone(), self.selected_file_id));
             }
         }
@@ -533,6 +554,39 @@ where
                     set_halign: gtk::Align::Fill,
                     set_valign: gtk::Align::Fill,
 
+                    // Search bar at the top
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 8,
+                        set_margin_all: 8,
+                        set_halign: gtk::Align::Fill,
+                        set_hexpand: true,
+                        add_css_class: "search-container",
+
+                        #[name(search_entry)]
+                        gtk::SearchEntry {
+                            set_placeholder_text: Some("Search files by name, path, or tags"),
+                            set_hexpand: true,
+                            set_halign: gtk::Align::Fill,
+                            add_css_class: "search-entry",
+                            connect_search_changed[sender] => move |entry| {
+                                let text = entry.text().to_string();
+                                sender.input(FileListInput::SearchTextChanged(text));
+                            },
+                        },
+
+                        gtk::Button {
+                            set_icon_name: "edit-clear-symbolic",
+                            set_tooltip_text: Some("Clear search"),
+                            add_css_class: "flat",
+                            add_css_class: "circular",
+                            connect_clicked[sender] => move |_| {
+                                sender.input(FileListInput::ClearSearch);
+                            },
+                            set_visible: model.search_pattern.is_some() && model.search_pattern.as_ref().map_or(false, |p| !p.is_empty()),
+                        },
+                    },
+
                     // Error message container (only visible when there's an error)
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
@@ -719,6 +773,8 @@ where
             tag_deny_filters: HashSet::new(),
             all_tags: Vec::new(),
             all_files,
+            search_pattern: None,
+            search_entry: None,
             unread_checkbox: None,
             reading_checkbox: None,
             read_checkbox: None,
@@ -768,6 +824,7 @@ where
         model.main_content_box = Some(widgets.main_content_box.clone());
         model.details_panel_container = Some(widgets.details_panel_container.clone());
         model.details_content_container = Some(widgets.details_content_container.clone());
+        model.search_entry = Some(widgets.search_entry.clone());
 
         // Create an outer paned widget to make the left panel resizable
         let outer_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
@@ -1247,6 +1304,52 @@ where
                     // Refresh the files list
                     sender.input(FileListInput::RefreshFiles);
                 }
+            },
+            FileListInput::SearchTextChanged(text) => {
+                tracing::debug!("Search text changed: {}", text);
+
+                // Update the search pattern
+                if text.is_empty() {
+                    self.search_pattern = None;
+                } else {
+                    self.search_pattern = Some(text);
+                }
+
+                // Update the clear button visibility
+                if let Some(search_entry) = &self.search_entry {
+                    if let Some(parent) = search_entry.parent() {
+                        if let Some(clear_button) = parent.last_child() {
+                            clear_button.set_visible(self.search_pattern.is_some() &&
+                                self.search_pattern.as_ref().map_or(false, |p| !p.is_empty()));
+                        }
+                    }
+                }
+
+                // Apply the updated filters
+                self.apply_filters();
+            },
+            FileListInput::ClearSearch => {
+                tracing::debug!("Clearing search");
+
+                // Clear the search pattern
+                self.search_pattern = None;
+
+                // Clear the search entry text
+                if let Some(search_entry) = &self.search_entry {
+                    search_entry.set_text("");
+                }
+
+                // Update the clear button visibility
+                if let Some(search_entry) = &self.search_entry {
+                    if let Some(parent) = search_entry.parent() {
+                        if let Some(clear_button) = parent.last_child() {
+                            clear_button.set_visible(false);
+                        }
+                    }
+                }
+
+                // Apply the updated filters
+                self.apply_filters();
             }
         }
     }
