@@ -7,6 +7,7 @@ use relm4::gtk;
 use relm4::gtk::glib;
 use relm4::once_cell::sync::Lazy;
 use relm4::prelude::*;
+use regex::Regex;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
@@ -50,6 +51,12 @@ where
     search_pattern: Option<String>,
     // Reference to the search entry
     search_entry: Option<gtk::SearchEntry>,
+    // Whether regex search mode is enabled
+    regex_search_mode: bool,
+    // Compiled regex pattern (if in regex mode)
+    regex_pattern: Option<Regex>,
+    // Reference to the regex mode toggle button
+    regex_toggle: Option<gtk::ToggleButton>,
     // References to filter checkboxes
     unread_checkbox: Option<gtk::CheckButton>,
     reading_checkbox: Option<gtk::CheckButton>,
@@ -111,6 +118,7 @@ pub enum FileListInput {
     UpdateFileReadingStatus(ReadingStatus),
     SearchTextChanged(String),
     ClearSearch,
+    ToggleRegexMode,
 }
 
 impl<FDS> FileList<FDS>
@@ -153,13 +161,36 @@ where
                 None => true, // No search pattern, all files match
                 Some(pattern) if pattern.is_empty() => true, // Empty pattern, all files match
                 Some(pattern) => {
-                    let pattern = pattern.to_lowercase();
-                    // Extract filename from path for matching
-                    let filename = file.path.split('/').last().unwrap_or("").to_lowercase();
-                    // Match on filename, path, or tags
-                    filename.contains(&pattern) ||
-                    file.path.to_lowercase().contains(&pattern) ||
-                    file.tags.iter().any(|tag| tag.to_lowercase().contains(&pattern))
+                    if self.regex_search_mode {
+                        // Use regex matching if regex mode is enabled
+                        if self.regex_pattern.is_none() {
+                            // Try to compile the regex pattern if it's not already compiled
+                            match Regex::new(pattern) {
+                                Ok(regex) => self.regex_pattern = Some(regex),
+                                Err(_) => return, // Invalid regex pattern, don't update the list
+                            }
+                        }
+
+                        if let Some(regex) = &self.regex_pattern {
+                            // Extract filename from path for matching
+                            let filename = file.path.split('/').last().unwrap_or("");
+                            // Match on filename, path, or tags
+                            regex.is_match(filename) ||
+                            regex.is_match(&file.path) ||
+                            file.tags.iter().any(|tag| regex.is_match(tag))
+                        } else {
+                            true // Fallback if regex compilation failed
+                        }
+                    } else {
+                        // Use normal string matching
+                        let pattern = pattern.to_lowercase();
+                        // Extract filename from path for matching
+                        let filename = file.path.split('/').last().unwrap_or("").to_lowercase();
+                        // Match on filename, path, or tags
+                        filename.contains(&pattern) ||
+                        file.path.to_lowercase().contains(&pattern) ||
+                        file.tags.iter().any(|tag| tag.to_lowercase().contains(&pattern))
+                    }
                 }
             };
 
@@ -558,13 +589,34 @@ where
 
                         #[name(search_entry)]
                         gtk::SearchEntry {
-                            set_placeholder_text: Some("Search files by name, path, or tags"),
+                            set_placeholder_text: Some(if model.regex_search_mode {
+                                "Search with regex (e.g., \\d+\\.pdf)"
+                            } else {
+                                "Search files by name, path, or tags"
+                            }),
                             set_hexpand: true,
                             set_halign: gtk::Align::Fill,
                             add_css_class: "search-entry",
                             connect_search_changed[sender] => move |entry| {
                                 let text = entry.text().to_string();
                                 sender.input(FileListInput::SearchTextChanged(text));
+                            },
+                        },
+
+                        // Regex mode toggle button
+                        #[name(regex_toggle)]
+                        gtk::ToggleButton {
+                            set_icon_name: "system-search-symbolic",
+                            set_tooltip_text: Some(if model.regex_search_mode {
+                                "Switch to normal search"
+                            } else {
+                                "Switch to regex search"
+                            }),
+                            add_css_class: "flat",
+                            add_css_class: if model.regex_search_mode { "accent" } else { "" },
+                            set_active: model.regex_search_mode,
+                            connect_toggled[sender] => move |_| {
+                                sender.input(FileListInput::ToggleRegexMode);
                             },
                         },
 
@@ -713,6 +765,9 @@ where
             all_files,
             search_pattern: None,
             search_entry: None,
+            regex_search_mode: false,
+            regex_pattern: None,
+            regex_toggle: None,
             unread_checkbox: None,
             reading_checkbox: None,
             read_checkbox: None,
@@ -757,6 +812,7 @@ where
         model.selected_deny_tags_label = Some(widgets.selected_deny_tags_label.clone());
         model.main_content_box = Some(widgets.main_content_box.clone());
         model.search_entry = Some(widgets.search_entry.clone());
+        model.regex_toggle = Some(widgets.regex_toggle.clone());
 
         // Create an outer paned widget to make the left panel resizable
         let outer_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
@@ -1224,8 +1280,10 @@ where
                 // Update the search pattern
                 if text.is_empty() {
                     self.search_pattern = None;
+                    self.regex_pattern = None; // Clear compiled regex when search is empty
                 } else {
                     self.search_pattern = Some(text);
+                    self.regex_pattern = None; // Reset compiled regex when search text changes
                 }
 
                 // Update the clear button visibility
@@ -1246,6 +1304,7 @@ where
 
                 // Clear the search pattern
                 self.search_pattern = None;
+                self.regex_pattern = None; // Clear compiled regex
 
                 // Clear the search entry text
                 if let Some(search_entry) = &self.search_entry {
@@ -1263,6 +1322,46 @@ where
 
                 // Apply the updated filters
                 self.apply_filters();
+            },
+            FileListInput::ToggleRegexMode => {
+                tracing::debug!("Toggling regex search mode");
+
+                // Toggle regex mode
+                self.regex_search_mode = !self.regex_search_mode;
+                self.regex_pattern = None; // Clear compiled regex when toggling mode
+
+                // Update the toggle button appearance
+                if let Some(toggle) = &self.regex_toggle {
+                    toggle.set_active(self.regex_search_mode);
+
+                    // Update tooltip
+                    toggle.set_tooltip_text(Some(if self.regex_search_mode {
+                        "Switch to normal search"
+                    } else {
+                        "Switch to regex search"
+                    }));
+
+                    // Update CSS class
+                    if self.regex_search_mode {
+                        toggle.add_css_class("accent");
+                    } else {
+                        toggle.remove_css_class("accent");
+                    }
+                }
+
+                // Update search entry placeholder
+                if let Some(search_entry) = &self.search_entry {
+                    search_entry.set_placeholder_text(Some(if self.regex_search_mode {
+                        "Search with regex (e.g., \\d+\\.pdf)"
+                    } else {
+                        "Search files by name, path, or tags"
+                    }));
+                }
+
+                // Apply the updated filters if there's a search pattern
+                if self.search_pattern.is_some() {
+                    self.apply_filters();
+                }
             }
         }
     }
