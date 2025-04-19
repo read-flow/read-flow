@@ -55,8 +55,8 @@ where
     regex_search_mode: bool,
     // Compiled regex pattern (if in regex mode)
     regex_pattern: Option<Regex>,
-    // Reference to the regex mode toggle button
-    regex_toggle: Option<gtk::ToggleButton>,
+    // Reference to the regex mode checkbox
+    regex_toggle: Option<gtk::CheckButton>,
     // References to filter checkboxes
     unread_checkbox: Option<gtk::CheckButton>,
     reading_checkbox: Option<gtk::CheckButton>,
@@ -603,18 +603,15 @@ where
                             },
                         },
 
-                        // Regex mode toggle button
+                        // Regex mode checkbox
                         #[name(regex_toggle)]
-                        gtk::ToggleButton {
-                            set_icon_name: "system-search-symbolic",
-                            set_tooltip_text: Some(if model.regex_search_mode {
-                                "Switch to normal search"
-                            } else {
-                                "Switch to regex search"
-                            }),
-                            add_css_class: "flat",
-                            add_css_class: if model.regex_search_mode { "accent" } else { "" },
+                        gtk::CheckButton {
+                            set_label: Some("Regular Expression"),
+                            set_tooltip_text: Some("Enable regular expression search"),
                             set_active: model.regex_search_mode,
+                            set_margin_start: 8,
+                            set_margin_end: 8,
+                            add_css_class: "regex-checkbox",
                             connect_toggled[sender] => move |_| {
                                 sender.input(FileListInput::ToggleRegexMode);
                             },
@@ -1330,23 +1327,9 @@ where
                 self.regex_search_mode = !self.regex_search_mode;
                 self.regex_pattern = None; // Clear compiled regex when toggling mode
 
-                // Update the toggle button appearance
-                if let Some(toggle) = &self.regex_toggle {
-                    toggle.set_active(self.regex_search_mode);
-
-                    // Update tooltip
-                    toggle.set_tooltip_text(Some(if self.regex_search_mode {
-                        "Switch to normal search"
-                    } else {
-                        "Switch to regex search"
-                    }));
-
-                    // Update CSS class
-                    if self.regex_search_mode {
-                        toggle.add_css_class("accent");
-                    } else {
-                        toggle.remove_css_class("accent");
-                    }
+                // Update the checkbox state
+                if let Some(checkbox) = &self.regex_toggle {
+                    checkbox.set_active(self.regex_search_mode);
                 }
 
                 // Update search entry placeholder

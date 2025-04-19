@@ -269,6 +269,12 @@
     min-width: 120px;
 }
 
+/* Regex checkbox styling */
+.regex-checkbox {
+    font-size: 0.9em;
+    margin-left: 4px;
+}
+
 /* Animations */
 @-webkit-keyframes fade-in {
     from { opacity: 0; }
