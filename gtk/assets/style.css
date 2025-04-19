@@ -7,7 +7,7 @@
 .tag-badge {
     background-color: @accent_color;
     color: @accent_text_color;
-    -gtk-border-radius: 12px;
+    border-radius: 12px;
     padding: 4px 12px;
     margin: 4px;
     font-weight: 500;
@@ -26,7 +26,7 @@
     min-width: 24px;
     min-height: 24px;
     padding: 0;
-    -gtk-border-radius: 50%;
+    border-radius: 50%;
     transition: all 0.2s ease;
 }
 
@@ -38,15 +38,11 @@
     min-height: 100px;
     min-width: 200px;
     border: 1px dashed @borders;
-    -gtk-border-radius: 6px;
+    border-radius: 6px;
     background-color: alpha(@theme_bg_color, 0.5);
 }
 
 .tag-container {
-    display: -webkit-box;
-    -webkit-box-orient: horizontal;
-    -webkit-box-direction: normal;
-    -webkit-box-wrap: wrap;
     margin-top: 4px;
 }
 
@@ -209,6 +205,20 @@
     margin-bottom: 16px;
 }
 
+.file-item {
+    transition: background-color 0.2s ease;
+    border-radius: 6px;
+}
+
+.file-item:hover {
+    background-color: alpha(@theme_selected_bg_color, 0.1);
+}
+
+.selected-file {
+    background-color: alpha(@theme_selected_bg_color, 0.2);
+    border-left: 3px solid @theme_selected_bg_color;
+}
+
 .file-name {
     font-size: 14px;
     font-weight: 600;
@@ -224,7 +234,7 @@
 /* Card styles */
 .card-container {
     background-color: alpha(@theme_bg_color, 0.5);
-    -gtk-border-radius: 12px;
+    border-radius: 12px;
     padding: 16px;
     margin: 8px 0;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -245,7 +255,7 @@
 /* Preview section */
 .preview-box {
     background-color: alpha(@theme_bg_color, 0.5);
-    -gtk-border-radius: 12px;
+    border-radius: 12px;
     padding: 16px;
     margin: 8px 0;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -253,7 +263,8 @@
 
 /* Responsive styles */
 .narrow .preview-box {
-    -webkit-box-orient: vertical;
+    /* Use GTK layout properties instead of flex */
+    /* This will be handled by the orientation property in code */
 }
 
 .narrow .card-container {
@@ -266,7 +277,7 @@
 }
 
 .preview-image {
-    -gtk-border-radius: 6px;
+    border-radius: 6px;
     background-color: @theme_bg_color;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
@@ -274,7 +285,7 @@
 .preview-placeholder {
     background-color: alpha(@theme_bg_color, 0.7);
     border: 1px dashed @borders;
-    -gtk-border-radius: 6px;
+    border-radius: 6px;
     min-height: 150px;
     min-width: 120px;
 }
@@ -286,17 +297,17 @@
 }
 
 /* Animations */
-@-webkit-keyframes fade-in {
+@keyframes fade-in {
     from { opacity: 0; }
     to { opacity: 1; }
 }
 
-@-webkit-keyframes slide-up {
+@keyframes slide-up {
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
-@-webkit-keyframes pulse {
+@keyframes pulse {
     0% { transform: scale(1); }
     50% { transform: scale(1.05); }
     100% { transform: scale(1); }
@@ -313,5 +324,5 @@ button:active {
 }
 
 .tag-input-box {
-    -webkit-animation: fade-in 0.5s ease-out;
+    animation: fade-in 0.5s ease-out;
 }

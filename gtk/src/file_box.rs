@@ -49,7 +49,8 @@ impl AsyncFactoryComponent for FileBox {
         gtk::Button {
             set_has_frame: false,
             set_can_focus: false,
-            add_css_class: if self.is_selected { "selected-file" } else { "" },
+            add_css_class: "file-item",
+            set_css_classes: &[if self.is_selected { "selected-file" } else { "file-item" }],
             connect_clicked => FileBoxInput::Clicked,
 
             gtk::Box {
