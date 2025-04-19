@@ -6,6 +6,7 @@ pub mod file_info_section;
 pub mod file_list;
 pub mod status_radio_group;
 pub mod tag_badge;
+pub mod tag_input;
 pub mod ui_utils;
 
 use url::Url;

@@ -3,6 +3,8 @@ use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentParts;
 use relm4::component::AsyncComponentSender;
+use relm4::component::AsyncComponentController;
+use relm4::component::AsyncController;
 use relm4::gtk;
 use relm4::gtk::glib;
 use relm4::once_cell::sync::Lazy;
@@ -15,6 +17,7 @@ use archive_organizer::api::FileDataSource;
 use crate::file_box::FileBox;
 use crate::file_box::FileBoxOutput;
 use crate::file_details::{FileDetails, FileDetailsOutput};
+use crate::tag_input::{TagInput, TagInputInput, TagInputOutput};
 
 use std::collections::HashSet;
 
@@ -57,6 +60,8 @@ where
     regex_pattern: Option<Regex>,
     // Reference to the regex mode checkbox
     regex_toggle: Option<gtk::CheckButton>,
+    // Tag input component for adding tags to multiple files
+    bulk_tag_input: Option<AsyncController<TagInput>>,
     // References to filter checkboxes
     unread_checkbox: Option<gtk::CheckButton>,
     reading_checkbox: Option<gtk::CheckButton>,
@@ -119,6 +124,7 @@ pub enum FileListInput {
     SearchTextChanged(String),
     ClearSearch,
     ToggleRegexMode,
+    AddTagToAllFiles(String),
 }
 
 impl<FDS> FileList<FDS>
@@ -471,6 +477,28 @@ where
                         },
                     },
 
+                    // Bulk tag operations section
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 6,
+                        add_css_class: "section-box",
+                        add_css_class: "filter-section",
+
+                        gtk::Label {
+                            set_label: "Add Tag to All Displayed Files",
+                            add_css_class: "caption-heading",
+                            set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                            set_margin_bottom: 4,
+                        },
+
+                        // Tag input component placeholder (will be added in init)
+                        #[name(bulk_tag_input_container)]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                        },
+                    },
+
                     // Tag filtering section
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
@@ -774,6 +802,7 @@ where
             regex_search_mode: false,
             regex_pattern: None,
             regex_toggle: None,
+            bulk_tag_input: None,
             unread_checkbox: None,
             reading_checkbox: None,
             read_checkbox: None,
@@ -819,6 +848,22 @@ where
         model.main_content_box = Some(widgets.main_content_box.clone());
         model.search_entry = Some(widgets.search_entry.clone());
         model.regex_toggle = Some(widgets.regex_toggle.clone());
+
+        // Create and launch the bulk tag input component
+        let bulk_tag_input_controller = TagInput::builder()
+            .launch((Vec::new(), "Add tag to all displayed files".to_string(), "Add to All".to_string()))
+            .forward(sender.input_sender(), |msg| match msg {
+                TagInputOutput::TagAdded(tag) => FileListInput::AddTagToAllFiles(tag),
+            });
+
+        // Add the bulk tag input component to the container
+        widgets.bulk_tag_input_container.append(bulk_tag_input_controller.widget());
+
+        // Store the controller
+        model.bulk_tag_input = Some(bulk_tag_input_controller);
+
+        // Load available tags
+        sender.input(FileListInput::LoadTags);
 
         // Create an outer paned widget to make the left panel resizable
         let outer_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
@@ -984,10 +1029,15 @@ where
                     match self.file_data_source.get_files_tags().await {
                         Ok(tags) => {
                             // Update the all_tags list
-                            self.all_tags = tags;
+                            self.all_tags = tags.clone();
 
                             // Update both dropdowns
                             self.update_tag_dropdowns();
+
+                            // Update the bulk tag input component
+                            if let Some(bulk_tag_input) = &self.bulk_tag_input {
+                                bulk_tag_input.sender().send(TagInputInput::UpdateTags(tags)).unwrap();
+                            }
                         }
                         Err(e) => {
                             tracing::warn!("Error loading tags: {}", e);
@@ -1356,6 +1406,104 @@ where
                 if self.search_pattern.is_some() {
                     self.apply_filters();
                 }
+            },
+            FileListInput::AddTagToAllFiles(tag) => {
+                tracing::debug!("Adding tag '{}' to all displayed files", tag);
+
+                // Show a loading indicator
+                if let Some(bulk_tag_input) = &self.bulk_tag_input {
+                    bulk_tag_input.sender().send(TagInputInput::SetLoading(true)).unwrap();
+                }
+
+                // Get all currently displayed files
+                let mut displayed_files = Vec::new();
+
+                // We need to get the files that are currently displayed
+                // Since we can't access the private fields of FileBox directly,
+                // we'll use the filtered files from all_files based on our current filters
+                for file in &self.all_files {
+                    // Apply the same filters as in apply_filters method
+                    let status_match = self.status_filters.contains(&file.status);
+
+                    let tag_include_match = if self.tag_filters.is_empty() {
+                        true
+                    } else {
+                        file.tags.iter().any(|tag| self.tag_filters.contains(tag))
+                    };
+
+                    let tag_deny_match = if self.tag_deny_filters.is_empty() {
+                        true
+                    } else {
+                        !file.tags.iter().any(|tag| self.tag_deny_filters.contains(tag))
+                    };
+
+                    let search_match = match &self.search_pattern {
+                        None => true,
+                        Some(pattern) if pattern.is_empty() => true,
+                        Some(pattern) => {
+                            if self.regex_search_mode {
+                                if let Some(regex) = &self.regex_pattern {
+                                    let filename = file.path.split('/').last().unwrap_or("");
+                                    regex.is_match(filename) ||
+                                    regex.is_match(&file.path) ||
+                                    file.tags.iter().any(|tag| regex.is_match(tag))
+                                } else {
+                                    true
+                                }
+                            } else {
+                                let pattern = pattern.to_lowercase();
+                                let filename = file.path.split('/').last().unwrap_or("").to_lowercase();
+                                filename.contains(&pattern) ||
+                                file.path.to_lowercase().contains(&pattern) ||
+                                file.tags.iter().any(|tag| tag.to_lowercase().contains(&pattern))
+                            }
+                        }
+                    };
+
+                    if status_match && tag_include_match && tag_deny_match && search_match {
+                        displayed_files.push(file.clone());
+                    }
+                }
+
+                // If there are no files displayed, show a message and return
+                if displayed_files.is_empty() {
+                    tracing::warn!("No files displayed to add tag to");
+                    if let Some(bulk_tag_input) = &self.bulk_tag_input {
+                        bulk_tag_input.sender().send(TagInputInput::SetLoading(false)).unwrap();
+                        bulk_tag_input.sender().send(TagInputInput::ClearEntry).unwrap();
+                    }
+                    return;
+                }
+
+                // Add the tag to each file
+                let mut success_count = 0;
+                let mut error_count = 0;
+                for file in &displayed_files {
+                    // Skip files that already have this tag
+                    if file.tags.contains(&tag) {
+                        continue;
+                    }
+
+                    // Add the tag to the file
+                    match self.file_data_source.add_file_tags(file.id, vec![tag.clone()]).await {
+                        Ok(_) => success_count += 1,
+                        Err(e) => {
+                            tracing::warn!("Error adding tag to file {}: {}", file.id, e);
+                            error_count += 1;
+                        }
+                    }
+                }
+
+                // Reset the loading indicator
+                if let Some(bulk_tag_input) = &self.bulk_tag_input {
+                    bulk_tag_input.sender().send(TagInputInput::SetLoading(false)).unwrap();
+                    bulk_tag_input.sender().send(TagInputInput::ClearEntry).unwrap();
+                }
+
+                tracing::info!("Added tag '{}' to {} files ({} errors)", tag, success_count, error_count);
+
+                // Refresh the files list
+                sender.input(FileListInput::RefreshFiles);
             }
         }
     }
