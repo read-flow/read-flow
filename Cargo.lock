@@ -222,6 +222,7 @@ dependencies = [
  "anyhow",
  "archive-organizer",
  "indexmap 2.9.0",
+ "regex",
  "relm4",
  "relm4-components",
  "serde",
