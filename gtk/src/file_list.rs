@@ -1110,6 +1110,9 @@ where
                 // Store the selected file ID for highlighting
                 self.selected_file_id = Some(file.id);
 
+                // Apply the updated filters to refresh the file list with the new selection
+                self.apply_filters();
+
                 // Close existing dialog if any
                 if let Some(dialog) = self.details_dialog.take() {
                     dialog.close();
@@ -1207,6 +1210,13 @@ where
                 // Clear the details component
                 self.details = None;
                 self.details_content_container = None;
+
+                // Clear the selected file
+                self.selected_file = None;
+                self.selected_file_id = None;
+
+                // Apply the updated filters to refresh the file list without selection
+                self.apply_filters();
             },
             FileListInput::SearchTextChanged(text) => {
                 tracing::debug!("Search text changed: {}", text);
