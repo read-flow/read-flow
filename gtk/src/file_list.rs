@@ -100,6 +100,8 @@ where
     selected_file_id: Option<i32>,
     // Error message to display when files can't be loaded
     error_message: Option<String>,
+    // Whether we're in offline mode (can't connect to server)
+    is_offline: bool,
 }
 
 #[derive(Debug)]
@@ -131,6 +133,26 @@ impl<FDS> FileList<FDS>
 where
     FDS: FileDataSource + Clone + 'static,
 {
+    // Helper method to update UI visibility based on offline state
+    fn update_offline_state(&self) {
+        // Update the visibility of the error message and file list
+        if let Some(main_content) = &self.main_content_box {
+            if let Some(content_box) = main_content.first_child() {
+                // Get the second child (index 1), which is the error container
+                // The first child (index 0) is the search box
+                if let Some(error_container) = content_box.first_child().and_then(|c| c.next_sibling()) {
+                    // Update error container visibility
+                    error_container.set_visible(self.is_offline);
+
+                    // Update file list visibility (should be the next sibling)
+                    if let Some(file_list) = error_container.next_sibling() {
+                        file_list.set_visible(!self.is_offline);
+                    }
+                }
+            }
+        }
+    }
+
     // Helper method to apply filters and update the displayed files
     fn apply_filters(&mut self) {
         let mut mut_files = self.files.guard();
@@ -676,7 +698,7 @@ where
                         set_hexpand: true,
                         set_vexpand: true,
                         add_css_class: "empty-state",
-                        set_visible: model.error_message.is_some(),
+                        set_visible: model.is_offline,
 
                         gtk::Image {
                             set_icon_name: Some("network-error-symbolic"),
@@ -717,7 +739,7 @@ where
                         set_margin_end: 0,
                         set_margin_top: 0,
                         set_margin_bottom: 0,
-                        set_visible: model.error_message.is_none(),
+                        set_visible: !model.is_offline,
 
                         #[local_ref]
                         files_box -> gtk::Box {
@@ -822,7 +844,8 @@ where
             details_content_container: None,
             selected_file: None,
             selected_file_id: None,
-            error_message: error_message,
+            error_message: error_message.clone(),
+            is_offline: error_message.is_some(),
         };
 
         // Load tags asynchronously
@@ -915,8 +938,9 @@ where
                         // Update the all_files list
                         self.all_files = files.clone();
 
-                        // Clear any previous error message
+                        // Clear any previous error message and set offline state to false
                         self.error_message = None;
+                        self.is_offline = false;
 
                         // Apply filters to update the displayed files
                         self.apply_filters();
@@ -924,26 +948,14 @@ where
                     Err(e) => {
                         tracing::warn!("Error refreshing files: {}", e);
 
-                        // Set the error message
+                        // Set the error message and offline state
                         self.error_message = Some(format!("Could not connect to the file server: {}", e));
+                        self.is_offline = true;
                     }
                 }
 
-                // Update the visibility of the error message and file list
-                if let Some(main_content) = &self.main_content_box {
-                    if let Some(content_box) = main_content.first_child() {
-                        // The first child should be our vertical box containing both the error message and file list
-                        if let Some(error_container) = content_box.first_child() {
-                            // Update error container visibility
-                            error_container.set_visible(self.error_message.is_some());
-
-                            // Update file list visibility (should be the next sibling)
-                            if let Some(file_list) = error_container.next_sibling() {
-                                file_list.set_visible(self.error_message.is_none());
-                            }
-                        }
-                    }
-                }
+                // Update the UI based on offline state
+                self.update_offline_state();
 
                 // Also refresh the tags
                 sender.input(FileListInput::LoadTags);
@@ -1511,6 +1523,12 @@ where
 
                 // Apply filters to update the displayed files without making a network request
                 self.apply_filters();
+
+                // Make sure we're not in offline mode after a successful operation
+                if success_count > 0 {
+                    self.is_offline = false;
+                    self.update_offline_state();
+                }
 
                 // Also refresh the tags
                 sender.input(FileListInput::LoadTags);
