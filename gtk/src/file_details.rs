@@ -1,9 +1,9 @@
 use gtk::prelude::*;
 use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
+use relm4::component::AsyncComponentController;
 use relm4::component::AsyncComponentParts;
 use relm4::component::AsyncComponentSender;
-use relm4::component::AsyncComponentController;
 use relm4::component::AsyncController;
 use relm4::gtk;
 
@@ -129,132 +129,247 @@ where
         #[root]
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
-            set_spacing: 8,
-            add_css_class: "default-spacing",
             add_css_class: "details-panel-content",
             set_vexpand: true,
 
-            // File header with title and open button
+            // Modern header with prominent file actions
             gtk::Box {
-                add_css_class: "details-panel-header",
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 12,
-
-                #[name(title_label)]
-                gtk::Label {
-                    set_label: &model.filename,
-                    add_css_class: "title-4",
-                    add_css_class: "location-title",
-                    set_ellipsize: gtk::pango::EllipsizeMode::End,
-                    set_hexpand: true,
-                    set_halign: gtk::Align::Start,
-                    set_wrap: true,
-                    set_wrap_mode: gtk::pango::WrapMode::WordChar,
-                },
-
-                gtk::Button {
-                    set_icon_name: "document-open-symbolic",
-                    set_tooltip_text: Some("Open File"),
-                    add_css_class: "flat",
-                    add_css_class: "circular",
-                    add_css_class: "nav-button",
-                    connect_clicked[sender] => move |_| {
-                        sender.input(FileDetailsInput::OpenFile);
-                    },
-                },
-            },
-
-            gtk::Box {
+                add_css_class: "details-header",
                 set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 16,
+                set_spacing: 0,
 
-                // File information section
+                // Title and actions row
                 gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 12,
-                    set_margin_bottom: 8,
-
-                    // File info container
-                    #[name(file_info_container)]
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 12,
-                        set_margin_bottom: 8,
-                    }
-                },
-
-                gtk::Separator {
                     set_orientation: gtk::Orientation::Horizontal,
-                },
+                    set_spacing: 16,
+                    set_margin_bottom: 16,
 
-                // Tags section
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 8,
-
-                    // Tags section header
-                    gtk::Label {
-                        set_label: "Tags",
-                        add_css_class: "caption-heading",
-                        set_halign: gtk::Align::Start,
-                        set_margin_start: 4,
-                        set_margin_bottom: 4,
+                    // File icon based on type
+                    gtk::Image {
+                        set_icon_name: Some("text-x-generic-symbolic"),
+                        set_pixel_size: 48,
+                        set_margin_end: 16,
                     },
 
-                    // Tag input component placeholder (will be added in init)
+                    // Title and path
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 0,
-                        set_margin_bottom: 8,
-                        set_margin_start: 4,
-                        set_margin_end: 4,
-                        #[name(tag_input_container)]
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 4,
+                        set_hexpand: true,
+
+                        #[name(title_label)]
+                        gtk::Label {
+                            set_label: &model.filename,
+                            add_css_class: "details-header-title",
+                            set_ellipsize: gtk::pango::EllipsizeMode::End,
+                            set_halign: gtk::Align::Start,
+                            set_wrap: true,
+                            set_wrap_mode: gtk::pango::WrapMode::WordChar,
+                        },
+
+                        gtk::Label {
+                            set_label: &model.folder,
+                            add_css_class: "details-header-subtitle",
+                            set_halign: gtk::Align::Start,
+                            set_ellipsize: gtk::pango::EllipsizeMode::Start,
                         },
                     },
 
-                    // Tag container (now below the input field)
-                    #[name(tag_container)]
-                    gtk::FlowBox {
-                        set_selection_mode: gtk::SelectionMode::None,
-                        set_max_children_per_line: 4,  // Fewer tags per line for side panel
-                        set_row_spacing: 2,  // Reduced spacing
-                        set_column_spacing: 2,  // Reduced spacing
-                        set_homogeneous: false,  // Don't make all children the same size
-                        set_halign: gtk::Align::Fill,
-                        set_hexpand: true,
-                        set_vexpand: true,
-                        set_margin_all: 4,
-                        set_visible: true,
-                        add_css_class: "tag-container",  // Add the tag-container class
-                    },
-                },
+                    // Action buttons
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 8,
+                        set_halign: gtk::Align::End,
+                        set_valign: gtk::Align::Center,
 
-                gtk::Separator {
-                    set_orientation: gtk::Orientation::Horizontal,
-                },
+                        // Open file button (prominent)
+                        gtk::Button {
+                            set_label: "Open File",
+                            set_icon_name: "document-open-symbolic",
+                            add_css_class: "details-action-button",
+                            set_tooltip_text: Some("Open this file"),
+                            connect_clicked[sender] => move |_| {
+                                sender.input(FileDetailsInput::OpenFile);
+                            },
+                        },
 
-                // Reading status section (moved up for better visibility)
-                #[name(status_container)]
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 12,
+                        // Close button
+                        gtk::Button {
+                            set_icon_name: "window-close-symbolic",
+                            add_css_class: "flat",
+                            add_css_class: "circular",
+                            set_tooltip_text: Some("Close details"),
+                            connect_clicked[sender] => move |_| {
+                                sender.input(FileDetailsInput::Close);
+                            },
+                        }
+                    }
                 },
-
-                gtk::Separator {
-                    set_orientation: gtk::Orientation::Horizontal,
-                },
-
-                // File details section
-                #[name(file_details_container)]
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 12,
-                },
-
-                // We'll add the StatusRadioGroup in the init method
             },
+
+            // Content area
+            gtk::ScrolledWindow {
+                set_hexpand: true,
+                set_vexpand: true,
+                set_policy: (gtk::PolicyType::Never, gtk::PolicyType::Automatic),
+
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 24,
+                    set_margin_start: 24,
+                    set_margin_end: 24,
+                    set_margin_top: 24,
+                    set_margin_bottom: 24,
+
+                    // File information section
+                    gtk::Box {
+                        add_css_class: "details-card",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 16,
+
+                        // Card header
+                        gtk::Box {
+                            add_css_class: "details-card-header",
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 8,
+
+                            gtk::Image {
+                                add_css_class: "details-card-icon",
+                                set_icon_name: Some("document-properties-symbolic"),
+                            },
+
+                            gtk::Label {
+                                add_css_class: "details-card-title",
+                                set_label: "File Information",
+                                set_halign: gtk::Align::Start,
+                            }
+                        },
+
+                        // File info container
+                        #[name(file_info_container)]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 12,
+                        }
+                    },
+
+                    // Tags section
+                    gtk::Box {
+                        add_css_class: "details-card",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 16,
+
+                        // Card header
+                        gtk::Box {
+                            add_css_class: "details-card-header",
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 8,
+
+                            gtk::Image {
+                                add_css_class: "details-card-icon",
+                                set_icon_name: Some("tag-symbolic"),
+                            },
+
+                            gtk::Label {
+                                add_css_class: "details-card-title",
+                                set_label: "Tags",
+                                set_halign: gtk::Align::Start,
+                            }
+                        },
+
+                        // Tag input component placeholder (will be added in init)
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 0,
+                            set_margin_bottom: 8,
+                            #[name(tag_input_container)]
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                            },
+                        },
+
+                        // Tag container (now below the input field)
+                        #[name(tag_container)]
+                        gtk::FlowBox {
+                            add_css_class: "details-tags-container",
+                            set_selection_mode: gtk::SelectionMode::None,
+                            set_max_children_per_line: 4,
+                            set_row_spacing: 8,
+                            set_column_spacing: 8,
+                            set_homogeneous: false,
+                            set_halign: gtk::Align::Fill,
+                            set_hexpand: true,
+                            set_vexpand: true,
+                            set_visible: true,
+                        },
+                    },
+
+                    // Reading status section
+                    gtk::Box {
+                        add_css_class: "details-card",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 16,
+
+                        // Card header
+                        gtk::Box {
+                            add_css_class: "details-card-header",
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 8,
+
+                            gtk::Image {
+                                add_css_class: "details-card-icon",
+                                set_icon_name: Some("emblem-important-symbolic"),
+                            },
+
+                            gtk::Label {
+                                add_css_class: "details-card-title",
+                                set_label: "Reading Status",
+                                set_halign: gtk::Align::Start,
+                            }
+                        },
+
+                        // Status radio group
+                        #[name(status_container)]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 12,
+                        }
+                    },
+
+                    // File details section
+                    gtk::Box {
+                        add_css_class: "details-card",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 16,
+
+                        // Card header
+                        gtk::Box {
+                            add_css_class: "details-card-header",
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 8,
+
+                            gtk::Image {
+                                add_css_class: "details-card-icon",
+                                set_icon_name: Some("text-x-generic-symbolic"),
+                            },
+
+                            gtk::Label {
+                                add_css_class: "details-card-title",
+                                set_label: "File Details",
+                                set_halign: gtk::Align::Start,
+                            }
+                        },
+
+                        // File details container
+                        #[name(file_details_container)]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 12,
+                        }
+                    }
+
+                }
+            }
         }
     }
 
@@ -316,7 +431,9 @@ where
             });
 
         // Add the TagInput component to the container
-        widgets.tag_input_container.append(tag_input_controller.widget());
+        widgets
+            .tag_input_container
+            .append(tag_input_controller.widget());
 
         // Store the controller
         model.tag_input = Some(tag_input_controller);
@@ -325,14 +442,19 @@ where
         sender.input(FileDetailsInput::LoadAvailableTags);
 
         // Create the component instances
-        let file_info_section = FileInfoSection::new(&model.file.type_, &model.filename, &model.folder);
+        let file_info_section =
+            FileInfoSection::new(&model.file.type_, &model.filename, &model.folder);
 
         // Add the FileInfoSection to its container
-        widgets.file_info_container.append(file_info_section.widget());
+        widgets
+            .file_info_container
+            .append(file_info_section.widget());
 
         // Add the FileDetailsSection to its container
         let file_details_section = FileDetailsSection::new(&model.file);
-        widgets.file_details_container.append(file_details_section.widget());
+        widgets
+            .file_details_container
+            .append(file_details_section.widget());
 
         // Add the StatusRadioGroup to its container
         let status_radio_group = StatusRadioGroup::new(model.file.status, move |status| {
@@ -361,7 +483,10 @@ where
             FileDetailsInput::AddTag(tag) => {
                 // Show a loading indicator
                 if let Some(tag_input) = &self.tag_input {
-                    tag_input.sender().send(TagInputInput::SetLoading(true)).unwrap();
+                    tag_input
+                        .sender()
+                        .send(TagInputInput::SetLoading(true))
+                        .unwrap();
                 }
 
                 // Try to add the tag
@@ -372,7 +497,10 @@ where
 
                 // Reset the loading indicator
                 if let Some(tag_input) = &self.tag_input {
-                    tag_input.sender().send(TagInputInput::SetLoading(false)).unwrap();
+                    tag_input
+                        .sender()
+                        .send(TagInputInput::SetLoading(false))
+                        .unwrap();
                     tag_input.sender().send(TagInputInput::ClearEntry).unwrap();
                 }
 
@@ -402,7 +530,10 @@ where
             FileDetailsInput::DeleteTag(tag) => {
                 // Show a loading indicator
                 if let Some(tag_input) = &self.tag_input {
-                    tag_input.sender().send(TagInputInput::SetLoading(true)).unwrap();
+                    tag_input
+                        .sender()
+                        .send(TagInputInput::SetLoading(true))
+                        .unwrap();
                 }
 
                 // Try to delete the tag
@@ -413,7 +544,10 @@ where
 
                 // Reset the loading indicator
                 if let Some(tag_input) = &self.tag_input {
-                    tag_input.sender().send(TagInputInput::SetLoading(false)).unwrap();
+                    tag_input
+                        .sender()
+                        .send(TagInputInput::SetLoading(false))
+                        .unwrap();
                 }
 
                 // Handle the result and refresh the UI
@@ -496,7 +630,8 @@ where
                     }
 
                     // Add a new FileInfoSection
-                    let file_info_section = FileInfoSection::new(&self.file.type_, &self.filename, &self.folder);
+                    let file_info_section =
+                        FileInfoSection::new(&self.file.type_, &self.filename, &self.folder);
                     file_info_container.append(file_info_section.widget());
                 }
 
@@ -530,7 +665,7 @@ where
 
                 // Refresh the tags
                 self.refresh_tags(&sender).await;
-            },
+            }
 
             FileDetailsInput::LoadAvailableTags => {
                 // Load all available tags
@@ -538,8 +673,10 @@ where
                     self.all_tags = tags.clone();
 
                     // Filter out tags that are already applied to this file
-                    let current_file_tags: std::collections::HashSet<&String> = self.file.tags.iter().collect();
-                    let available_tags: Vec<String> = self.all_tags
+                    let current_file_tags: std::collections::HashSet<&String> =
+                        self.file.tags.iter().collect();
+                    let available_tags: Vec<String> = self
+                        .all_tags
                         .iter()
                         .filter(|tag| !current_file_tags.contains(tag))
                         .cloned()
@@ -547,7 +684,10 @@ where
 
                     // Update the TagInput component with the available tags
                     if let Some(tag_input) = &self.tag_input {
-                        tag_input.sender().send(TagInputInput::UpdateTags(available_tags)).unwrap();
+                        tag_input
+                            .sender()
+                            .send(TagInputInput::UpdateTags(available_tags))
+                            .unwrap();
                     }
                 }
             }

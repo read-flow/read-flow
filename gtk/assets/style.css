@@ -134,75 +134,235 @@
     opacity: 1.0;
 }
 
-/* Details panel styling */
+/* Details panel styling - Modern Redesign */
 .details-panel {
-    border-left: 1px solid @borders;
-    background-color: alpha(@theme_base_color, 0.98);
+    background-color: @theme_base_color;
     transition: all 0.3s ease;
-    box-shadow: -2px 0 5px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
 }
 
 .details-panel-content {
-    padding: 16px;
+    padding: 0;
     margin: 0;
     animation: slide-in-right 0.3s ease-out;
 }
 
-.details-panel-header {
-    border-bottom: 1px solid alpha(@borders, 0.3);
-    padding-bottom: 12px;
-    margin-bottom: 16px;
-    background-color: alpha(@theme_bg_color, 0.3);
-    border-radius: 8px;
-    padding: 12px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+/* Modern header styling */
+.details-header {
+    background-color: alpha(@theme_selected_bg_color, 0.9);
+    color: @theme_selected_fg_color;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    position: relative;
+    border-bottom: 1px solid alpha(@theme_selected_bg_color, 0.7);
 }
 
-.details-panel-section {
-    background-color: alpha(@theme_bg_color, 0.3);
-    border-radius: 8px;
-    padding: 16px;
+.details-header-title {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.details-header-subtitle {
+    font-size: 14px;
+    opacity: 0.8;
     margin-bottom: 16px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    border: 1px solid alpha(@borders, 0.2);
+}
+
+.details-action-button {
+    background-color: @theme_selected_fg_color;
+    color: @theme_selected_bg_color;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-weight: 500;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     transition: all 0.2s ease;
 }
 
-.details-panel-section:hover {
-    background-color: alpha(@theme_bg_color, 0.5);
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+.details-action-button:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
 }
 
-.details-panel-section-title {
-    font-weight: bold;
+.details-action-button.circular {
+    border-radius: 50%;
+    padding: 12px;
+}
+
+/* Tab styling */
+.details-tabs {
+    background-color: @theme_base_color;
+    border-bottom: 1px solid alpha(@borders, 0.3);
+    padding: 0 16px;
+}
+
+.details-tab-button {
+    padding: 16px 24px;
+    font-weight: 500;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.details-tab-button:hover {
+    background-color: alpha(@theme_selected_bg_color, 0.05);
+}
+
+.details-tab-button.active {
+    border-bottom: 3px solid @theme_selected_bg_color;
     color: @theme_selected_bg_color;
-    margin-bottom: 12px;
-    letter-spacing: 0.5px;
-    border-bottom: 1px solid alpha(@borders, 0.2);
-    padding-bottom: 8px;
 }
 
+/* Content area styling */
+.details-content-area {
+    background-color: alpha(@theme_bg_color, 0.5);
+}
+
+/* Card styling */
+.details-card {
+    background-color: @theme_base_color;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid alpha(@borders, 0.15);
+    transition: all 0.2s ease;
+}
+
+.details-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
+    border-color: alpha(@theme_selected_bg_color, 0.3);
+}
+
+.details-card-header {
+    border-bottom: 1px solid alpha(@borders, 0.2);
+    padding-bottom: 16px;
+    margin-bottom: 16px;
+    display: flex;
+    background-color: alpha(@theme_bg_color, 0.3);
+    margin: -20px -20px 16px -20px;
+    padding: 16px 20px;
+    border-radius: 12px 12px 0 0;
+}
+
+.details-card-title {
+    font-weight: 600;
+    font-size: 16px;
+    color: @theme_selected_bg_color;
+    letter-spacing: 0.5px;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.details-card-icon {
+    margin-right: 12px;
+    opacity: 0.8;
+}
+
+/* Property styling */
 .details-property-row {
-    padding: 8px;
-    border-radius: 4px;
+    padding: 12px;
+    border-radius: 8px;
     transition: background-color 0.2s ease;
+    margin-bottom: 8px;
+    border-bottom: 1px solid alpha(@borders, 0.05);
 }
 
 .details-property-row:hover {
-    background-color: alpha(@theme_selected_bg_color, 0.1);
+    background-color: alpha(@theme_selected_bg_color, 0.05);
 }
 
 .details-property-label {
     font-weight: 500;
-    color: alpha(@theme_fg_color, 0.8);
+    color: alpha(@theme_fg_color, 0.7);
+    font-size: 13px;
+    margin-bottom: 4px;
 }
 
 .details-property-value {
     font-family: monospace;
     background-color: alpha(@theme_bg_color, 0.5);
-    padding: 4px 8px;
-    border-radius: 4px;
-    border: 1px solid alpha(@borders, 0.3);
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid alpha(@borders, 0.1);
+    font-size: 14px;
+    color: @theme_fg_color;
+}
+
+/* Preview area styling */
+.details-preview-area {
+    background-color: @theme_bg_color;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    border: 1px solid alpha(@borders, 0.1);
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.details-preview-placeholder {
+    opacity: 0.5;
+    font-size: 16px;
+    font-style: italic;
+}
+
+.details-preview-image {
+    max-width: 100%;
+    max-height: 300px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Tags styling */
+.details-tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.details-tag {
+    background-color: alpha(@accent_bg_color, 0.2);
+    color: @accent_fg_color;
+    border-radius: 16px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.details-tag:hover {
+    background-color: alpha(@accent_bg_color, 0.3);
+    transform: translateY(-1px);
+}
+
+/* Metadata styling */
+.details-metadata-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.details-metadata-item {
+    background-color: alpha(@theme_bg_color, 0.5);
+    border-radius: 8px;
+    padding: 12px;
+    border: 1px solid alpha(@borders, 0.1);
+}
+
+.details-metadata-label {
+    font-size: 12px;
+    color: alpha(@theme_fg_color, 0.6);
+    margin-bottom: 4px;
+}
+
+.details-metadata-value {
+    font-weight: 500;
+    font-size: 14px;
 }
 
 /* Tag chips styling */
