@@ -5,8 +5,8 @@
 }
 
 .tag-badge {
-    background-color: @accent_color;
-    color: @accent_text_color;
+    background-color: alpha(@accent_bg_color, 0.9);
+    color: @accent_fg_color;
     border-radius: 12px;
     padding: 4px 12px;
     margin: 4px;
@@ -20,6 +20,7 @@
 .tag-badge:hover {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     transform: translateY(-1px);
+    background-color: alpha(@accent_bg_color, 1.0);
 }
 
 .tag-badge .circular {
@@ -78,9 +79,59 @@
 
 /* Sidebar styling */
 .sidebar {
-    background-color: @theme_base_color;
+    background-color: alpha(@theme_base_color, 0.95);
     border-right: 1px solid @borders;
     padding: 0;
+    transition: width 0.3s ease;
+    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.05);
+}
+
+.sidebar-section {
+    margin: 8px 0;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    padding: 6px;
+}
+
+.sidebar-section:hover {
+    background-color: alpha(@theme_bg_color, 0.3);
+}
+
+.sidebar-section-title {
+    font-weight: bold;
+    font-size: 14px;
+    color: @theme_selected_bg_color;
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+}
+
+.sidebar-item {
+    padding: 8px 12px;
+    border-radius: 6px;
+    margin: 3px 0;
+    transition: all 0.2s ease;
+}
+
+.sidebar-item:hover {
+    background-color: alpha(@theme_selected_bg_color, 0.1);
+    transform: translateX(2px);
+}
+
+.sidebar-item.active {
+    background-color: alpha(@theme_selected_bg_color, 0.2);
+    border-left: 3px solid @theme_selected_bg_color;
+    font-weight: 500;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-icon {
+    margin-right: 8px;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+.sidebar-item:hover .sidebar-icon {
+    opacity: 1.0;
 }
 
 /* Details panel styling */
@@ -206,29 +257,55 @@
 }
 
 .file-item {
-    transition: background-color 0.2s ease;
+    transition: all 0.2s ease;
     border-radius: 6px;
+    margin: 2px 4px;
+    padding: 8px;
 }
 
 .file-item:hover {
     background-color: alpha(@theme_selected_bg_color, 0.1);
+    transform: translateX(2px);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .selected-file {
     background-color: alpha(@theme_selected_bg_color, 0.2);
     border-left: 3px solid @theme_selected_bg_color;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
 .file-name {
     font-size: 14px;
     font-weight: 600;
     color: @theme_text_color;
+    transition: color 0.2s ease;
 }
 
 .file-details {
     font-size: 12px;
-    color: @theme_text_color;
+    color: alpha(@theme_text_color, 0.8);
     margin-top: 4px;
+    transition: color 0.2s ease;
+}
+
+.file-item:hover .file-name {
+    color: @theme_selected_fg_color;
+}
+
+.file-item:hover .file-details {
+    color: alpha(@theme_selected_fg_color, 0.9);
+}
+
+.file-icon {
+    margin-right: 12px;
+    opacity: 0.8;
+    transition: all 0.2s ease;
+}
+
+.file-item:hover .file-icon {
+    opacity: 1.0;
+    transform: scale(1.05);
 }
 
 /* Card styles */
@@ -236,14 +313,16 @@
     background-color: alpha(@theme_bg_color, 0.5);
     border-radius: 12px;
     padding: 16px;
-    margin: 8px 0;
+    margin: 12px 0;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     transition: all 0.3s ease;
+    border: 1px solid alpha(@borders, 0.3);
 }
 
 .card-container:hover {
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
     background-color: alpha(@theme_bg_color, 0.7);
+    transform: translateY(-2px);
 }
 
 .card-header {
@@ -257,8 +336,15 @@
     background-color: alpha(@theme_bg_color, 0.5);
     border-radius: 12px;
     padding: 16px;
-    margin: 8px 0;
+    margin: 12px 0;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid alpha(@borders, 0.3);
+    transition: all 0.3s ease;
+}
+
+.preview-box:hover {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    background-color: alpha(@theme_bg_color, 0.6);
 }
 
 /* Responsive styles */
@@ -307,10 +393,21 @@
     to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes slide-in-right {
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
 @keyframes pulse {
     0% { transform: scale(1); }
     50% { transform: scale(1.05); }
     100% { transform: scale(1); }
+}
+
+@keyframes subtle-bounce {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+    100% { transform: translateY(0); }
 }
 
 /* Button animations */
@@ -325,4 +422,59 @@ button:active {
 
 .tag-input-box {
     animation: fade-in 0.5s ease-out;
+}
+
+.file-list-item {
+    animation: slide-in-right 0.3s ease-out;
+}
+
+.sidebar-item.active {
+    animation: subtle-bounce 0.5s ease-out;
+}
+
+/* Toolbar styling */
+.toolbar {
+    background-color: alpha(@theme_bg_color, 0.7);
+    border-bottom: 1px solid alpha(@borders, 0.3);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    padding: 8px 12px;
+}
+
+.nav-button {
+    padding: 8px;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.nav-button:hover {
+    background-color: alpha(@theme_selected_bg_color, 0.1);
+    transform: translateY(-1px);
+}
+
+.location-title {
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-left: 8px;
+    color: @theme_selected_fg_color;
+}
+
+/* Scrollbar styling */
+scrollbar {
+    background-color: transparent;
+    border-left: none;
+}
+
+scrollbar slider {
+    min-width: 6px;
+    min-height: 6px;
+    border-radius: 3px;
+    background-color: alpha(@theme_fg_color, 0.2);
+}
+
+scrollbar slider:hover {
+    background-color: alpha(@theme_fg_color, 0.4);
+}
+
+scrollbar slider:active {
+    background-color: alpha(@theme_fg_color, 0.6);
 }

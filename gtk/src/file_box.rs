@@ -1,6 +1,7 @@
 use gtk::prelude::*;
 use relm4::gtk;
 use relm4::prelude::AsyncFactoryComponent;
+use relm4::RelmWidgetExt;
 
 use crate::ui_utils;
 use archive_organizer::api::{File, ReadingStatus};
@@ -55,17 +56,26 @@ impl AsyncFactoryComponent for FileBox {
 
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 10,
+                set_spacing: 12,
+                set_margin_all: 8,
+
+                // File icon
+                gtk::Image {
+                    set_icon_name: Some("text-x-generic-symbolic"),
+                    add_css_class: "file-icon",
+                    set_pixel_size: 24,
+                },
 
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 0,
+                    set_spacing: 2,
 
                     #[name(filename)]
                     gtk::Label {
                         set_label: &self.filename,
                         set_hexpand: true,
                         set_halign: gtk::Align::Start,
+                        add_css_class: "file-name",
                     },
 
                     #[name(folder)]
@@ -73,7 +83,7 @@ impl AsyncFactoryComponent for FileBox {
                         set_label: &self.folder,
                         set_hexpand: true,
                         set_halign: gtk::Align::Start,
-                        add_css_class: "my-path",
+                        add_css_class: "file-details",
                     },
                 },
 
