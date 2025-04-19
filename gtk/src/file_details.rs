@@ -136,14 +136,15 @@ where
 
             // File header with title and open button
             gtk::Box {
+                add_css_class: "details-panel-header",
                 set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 8,
-                set_margin_bottom: 8,
+                set_spacing: 12,
 
                 #[name(title_label)]
                 gtk::Label {
                     set_label: &model.filename,
                     add_css_class: "title-4",
+                    add_css_class: "location-title",
                     set_ellipsize: gtk::pango::EllipsizeMode::End,
                     set_hexpand: true,
                     set_halign: gtk::Align::Start,
@@ -156,6 +157,7 @@ where
                     set_tooltip_text: Some("Open File"),
                     add_css_class: "flat",
                     add_css_class: "circular",
+                    add_css_class: "nav-button",
                     connect_clicked[sender] => move |_| {
                         sender.input(FileDetailsInput::OpenFile);
                     },

@@ -13,9 +13,11 @@ impl FileDetailsSection {
     pub fn new(file: &File) -> Self {
         // Create the main container
         let container = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        container.add_css_class("details-panel-section");
 
         // Create the heading
         let heading = ui_utils::create_heading_label("File Details");
+        heading.add_css_class("details-panel-section-title");
         container.append(&heading);
 
         // Create the list box for details

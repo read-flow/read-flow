@@ -33,20 +33,24 @@ pub fn create_heading_label(text: &str) -> gtk::Label {
 /// Creates a detail row with a label and value
 pub fn create_detail_row(label_text: &str, value_text: &str) -> gtk::ListBoxRow {
     let row = gtk::ListBoxRow::new();
+    row.add_css_class("details-property-row");
+
     let box_container = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     box_container.set_margin_all(8);
 
-    let content_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let content_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
     content_box.set_valign(gtk::Align::Center);
     content_box.set_hexpand(true);
 
     let label = gtk::Label::new(Some(label_text));
     label.add_css_class("heading");
+    label.add_css_class("details-property-label");
     label.set_halign(gtk::Align::Start);
 
     let value = gtk::Label::new(Some(value_text));
     value.set_selectable(true);
     value.set_halign(gtk::Align::Start);
+    value.add_css_class("details-property-value");
 
     if value_text.len() > 50 {
         value.set_wrap(true);

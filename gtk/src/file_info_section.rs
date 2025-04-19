@@ -13,6 +13,7 @@ impl FileInfoSection {
         // Create the main container
         let container = gtk::Box::new(gtk::Orientation::Vertical, 12);
         container.set_margin_bottom(8);
+        container.add_css_class("details-panel-section");
 
         // Create the header with icon and type
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -32,6 +33,7 @@ impl FileInfoSection {
 
         let type_heading = gtk::Label::new(Some("File Information"));
         type_heading.add_css_class("caption-heading");
+        type_heading.add_css_class("details-panel-section-title");
         type_heading.set_halign(gtk::Align::Start);
         type_box.append(&type_heading);
 
@@ -51,8 +53,10 @@ impl FileInfoSection {
 
         // Add filename row
         let filename_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        filename_row.add_css_class("details-property-row");
         let filename_label = gtk::Label::new(Some("Filename:"));
         filename_label.add_css_class("dim-label");
+        filename_label.add_css_class("details-property-label");
         filename_label.set_halign(gtk::Align::Start);
         filename_row.append(&filename_label);
 
@@ -61,14 +65,17 @@ impl FileInfoSection {
         filename_value.set_hexpand(true);
         filename_value.set_selectable(true);
         filename_value.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        filename_value.add_css_class("details-property-value");
         filename_row.append(&filename_value);
 
         details.append(&filename_row);
 
         // Add location row
         let location_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        location_row.add_css_class("details-property-row");
         let location_label = gtk::Label::new(Some("Location:"));
         location_label.add_css_class("dim-label");
+        location_label.add_css_class("details-property-label");
         location_label.set_halign(gtk::Align::Start);
         location_row.append(&location_label);
 
@@ -77,6 +84,7 @@ impl FileInfoSection {
         location_value.set_hexpand(true);
         location_value.set_selectable(true);
         location_value.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        location_value.add_css_class("details-property-value");
         location_row.append(&location_value);
 
         details.append(&location_row);
