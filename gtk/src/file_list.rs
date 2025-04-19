@@ -404,16 +404,24 @@ where
                     // Removed the Filters label to make the collapsed panel smaller
                 },
 
-                // Filter options container (includes everything except the toggle button)
-                #[name(filter_options_container)]
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 12,
-                    set_margin_start: 12,
-                    set_margin_end: 12,
-                    set_margin_top: 12,
-                    set_margin_bottom: 12,
+                // Scrollable container for filter options
+                gtk::ScrolledWindow {
+                    set_policy: (gtk::PolicyType::Never, gtk::PolicyType::Automatic),
+                    set_min_content_height: 300,
+                    set_propagate_natural_height: true,
+                    set_vexpand: true,
                     set_visible: model.filter_section_visible,
+                    add_css_class: "filter-scrolled-window",
+
+                    // Filter options container (includes everything except the toggle button)
+                    #[name(filter_options_container)]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 12,
+                        set_margin_start: 12,
+                        set_margin_end: 12,
+                        set_margin_top: 12,
+                        set_margin_bottom: 12,
 
                     // Reading Status Section
                     gtk::Box {
@@ -557,6 +565,7 @@ where
                             set_column_spacing: 2,  // Reduced spacing
                             set_margin_bottom: 4,  // Reduced margin
                         },
+                    },
                     },
                 },
             },
@@ -911,9 +920,11 @@ where
                 // Toggle the filter section visibility
                 self.filter_section_visible = !self.filter_section_visible;
 
-                // Update the filter options visibility
+                // Update the scrolled window visibility
                 if let Some(container) = &self.filter_options_container {
-                    container.set_visible(self.filter_section_visible);
+                    if let Some(scrolled_window) = container.parent() {
+                        scrolled_window.set_visible(self.filter_section_visible);
+                    }
                 }
 
                 // Update the sidebar width using the outer paned widget

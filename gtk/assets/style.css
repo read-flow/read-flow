@@ -167,6 +167,16 @@
     border-radius: 17px;
 }
 
+.filter-scrolled-window {
+    border: none;
+    background: transparent;
+}
+
+.filter-scrolled-window scrollbar {
+    background-color: transparent;
+    border-left: none;
+}
+
 .filter-section {
     padding: 8px;  /* Reduced padding */
     border-radius: 6px;  /* Reduced border radius */
