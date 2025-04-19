@@ -1502,8 +1502,18 @@ where
 
                 tracing::info!("Added tag '{}' to {} files ({} errors)", tag, success_count, error_count);
 
-                // Refresh the files list
-                sender.input(FileListInput::RefreshFiles);
+                // Update the all_files list with the new tags
+                for file in &mut self.all_files {
+                    if !file.tags.contains(&tag) && displayed_files.iter().any(|df| df.id == file.id) {
+                        file.tags.push(tag.clone());
+                    }
+                }
+
+                // Apply filters to update the displayed files without making a network request
+                self.apply_filters();
+
+                // Also refresh the tags
+                sender.input(FileListInput::LoadTags);
             }
         }
     }
