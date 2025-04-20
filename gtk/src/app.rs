@@ -1,3 +1,4 @@
+use archive_organizer::ApplicationModule;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::datasource::DbClient;
 use gtk::prelude::*;
@@ -11,6 +12,7 @@ use relm4::gtk;
 use relm4::loading_widgets::LoadingWidgets;
 use relm4::once_cell::sync::Lazy;
 use relm4::view;
+use std::sync::Arc;
 use tracing;
 use url::Url;
 
@@ -30,6 +32,7 @@ enum FileListSelector {
 }
 
 pub struct App {
+    application_module: ApplicationModule,
     local_file_list: AsyncController<FileList<DbClient>>,
     remote_file_lists: IndexMap<Url, AsyncController<FileList<FilesClient>>>,
     file_list_selector: FileListSelector,
@@ -53,7 +56,7 @@ impl App {
 
 #[relm4::component(pub, async)]
 impl AsyncComponent for App {
-    type Init = (DbClient, Vec<FilesClient>);
+    type Init = ApplicationModule;
     type Input = AppMessage;
     type Output = ();
     type CommandOutput = ();
@@ -117,7 +120,7 @@ impl AsyncComponent for App {
     }
 
     async fn init(
-        (file_data_source, remote_data_sources): Self::Init,
+        application_module: Self::Init,
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
@@ -127,17 +130,26 @@ impl AsyncComponent for App {
         #[allow(clippy::no_effect)]
         *INITIALIZE_CSS;
 
+        // Get the database client from the application module
+        let db_client = application_module.db_client();
+
+        // Get remote clients from the application module
+        let remote_clients = crate::get_remote_clients(&application_module).unwrap_or_else(|e| {
+            tracing::error!("Failed to get remote clients: {}", e);
+            Vec::new()
+        });
+
         // Initialize local file list with error handling
         tracing::debug!("Initializing local file list");
         let local_file_list = FileList::builder()
-            .launch(file_data_source.clone())
+            .launch(db_client)
             .forward(sender.input_sender(), |_| AppMessage::ChangeFileList);
         tracing::debug!("Successfully initialized local file list");
 
         tracing::debug!("Initializing remote file lists");
         let mut remote_file_lists: IndexMap<Url, AsyncController<FileList<FilesClient>>> =
             IndexMap::new();
-        for remote in remote_data_sources {
+        for remote in remote_clients {
             tracing::debug!("Initializing remote file list for: {}", &remote.base_url);
             let url = remote.base_url.clone();
             let controller = FileList::builder()
@@ -174,6 +186,7 @@ impl AsyncComponent for App {
         notebook.show();
 
         let model = App {
+            application_module,
             local_file_list,
             remote_file_lists,
             file_list_selector: FileListSelector::LocalFiles,
