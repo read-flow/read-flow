@@ -1,7 +1,7 @@
 use archive_organizer::api::ReadingStatus;
 use gtk::prelude::*;
-use relm4::gtk;
 use relm4::RelmWidgetExt;
+use relm4::gtk;
 
 /// A component for displaying and selecting reading status
 pub struct StatusRadioGroup {

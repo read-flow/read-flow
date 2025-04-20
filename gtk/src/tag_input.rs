@@ -160,7 +160,9 @@ impl AsyncComponent for TagInput {
         match msg {
             TagInputInput::AddTag(tag) => {
                 // Emit the tag added event
-                sender.output(TagInputOutput::TagAdded(tag.clone())).unwrap();
+                sender
+                    .output(TagInputOutput::TagAdded(tag.clone()))
+                    .unwrap();
 
                 // Clear the entry field
                 if let Some(entry) = &self.tag_entry {

@@ -1,15 +1,15 @@
 use gtk::prelude::*;
+use regex::Regex;
 use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
+use relm4::component::AsyncComponentController;
 use relm4::component::AsyncComponentParts;
 use relm4::component::AsyncComponentSender;
-use relm4::component::AsyncComponentController;
 use relm4::component::AsyncController;
 use relm4::gtk;
 use relm4::gtk::glib;
 use relm4::once_cell::sync::Lazy;
 use relm4::prelude::*;
-use regex::Regex;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
@@ -140,7 +140,9 @@ where
             if let Some(content_box) = main_content.first_child() {
                 // Get the second child (index 1), which is the error container
                 // The first child (index 0) is the search box
-                if let Some(error_container) = content_box.first_child().and_then(|c| c.next_sibling()) {
+                if let Some(error_container) =
+                    content_box.first_child().and_then(|c| c.next_sibling())
+                {
                     // Update error container visibility
                     error_container.set_visible(self.is_offline);
 
@@ -186,7 +188,7 @@ where
 
             // Check if the file matches the search pattern (if any)
             let search_match = match &self.search_pattern {
-                None => true, // No search pattern, all files match
+                None => true,                                // No search pattern, all files match
                 Some(pattern) if pattern.is_empty() => true, // Empty pattern, all files match
                 Some(pattern) => {
                     if self.regex_search_mode {
@@ -203,9 +205,9 @@ where
                             // Extract filename from path for matching
                             let filename = file.path.split('/').last().unwrap_or("");
                             // Match on filename, path, or tags
-                            regex.is_match(filename) ||
-                            regex.is_match(&file.path) ||
-                            file.tags.iter().any(|tag| regex.is_match(tag))
+                            regex.is_match(filename)
+                                || regex.is_match(&file.path)
+                                || file.tags.iter().any(|tag| regex.is_match(tag))
                         } else {
                             true // Fallback if regex compilation failed
                         }
@@ -215,9 +217,12 @@ where
                         // Extract filename from path for matching
                         let filename = file.path.split('/').last().unwrap_or("").to_lowercase();
                         // Match on filename, path, or tags
-                        filename.contains(&pattern) ||
-                        file.path.to_lowercase().contains(&pattern) ||
-                        file.tags.iter().any(|tag| tag.to_lowercase().contains(&pattern))
+                        filename.contains(&pattern)
+                            || file.path.to_lowercase().contains(&pattern)
+                            || file
+                                .tags
+                                .iter()
+                                .any(|tag| tag.to_lowercase().contains(&pattern))
                     }
                 }
             };
@@ -874,13 +879,19 @@ where
 
         // Create and launch the bulk tag input component
         let bulk_tag_input_controller = TagInput::builder()
-            .launch((Vec::new(), "Add tag to all displayed files".to_string(), "Add to All".to_string()))
+            .launch((
+                Vec::new(),
+                "Add tag to all displayed files".to_string(),
+                "Add to All".to_string(),
+            ))
             .forward(sender.input_sender(), |msg| match msg {
                 TagInputOutput::TagAdded(tag) => FileListInput::AddTagToAllFiles(tag),
             });
 
         // Add the bulk tag input component to the container
-        widgets.bulk_tag_input_container.append(bulk_tag_input_controller.widget());
+        widgets
+            .bulk_tag_input_container
+            .append(bulk_tag_input_controller.widget());
 
         // Store the controller
         model.bulk_tag_input = Some(bulk_tag_input_controller);
@@ -918,8 +929,6 @@ where
             }
         }
 
-
-
         AsyncComponentParts { model, widgets }
     }
 
@@ -930,7 +939,6 @@ where
         _root: &Self::Root,
     ) {
         match msg {
-
             FileListInput::RefreshFiles => {
                 // Reload files from the data source
                 match self.file_data_source.get_files().await {
@@ -949,7 +957,8 @@ where
                         tracing::warn!("Error refreshing files: {}", e);
 
                         // Set the error message and offline state
-                        self.error_message = Some(format!("Could not connect to the file server: {}", e));
+                        self.error_message =
+                            Some(format!("Could not connect to the file server: {}", e));
                         self.is_offline = true;
                     }
                 }
@@ -1048,7 +1057,10 @@ where
 
                             // Update the bulk tag input component
                             if let Some(bulk_tag_input) = &self.bulk_tag_input {
-                                bulk_tag_input.sender().send(TagInputInput::UpdateTags(tags)).unwrap();
+                                bulk_tag_input
+                                    .sender()
+                                    .send(TagInputInput::UpdateTags(tags))
+                                    .unwrap();
                             }
                         }
                         Err(e) => {
@@ -1229,7 +1241,7 @@ where
                     // Refresh the files list
                     sender.input(FileListInput::RefreshFiles);
                 }
-            },
+            }
             FileListInput::FileClicked(file) => {
                 // Store the selected file
                 self.selected_file = Some(file.clone());
@@ -1257,10 +1269,12 @@ where
 
                 // Create a headerbar
                 let headerbar = gtk::HeaderBar::new();
-                headerbar.set_title_widget(Some(&gtk::Label::builder()
-                    .label(filename)
-                    .css_classes(vec!["title"])
-                    .build()));
+                headerbar.set_title_widget(Some(
+                    &gtk::Label::builder()
+                        .label(filename)
+                        .css_classes(vec!["title"])
+                        .build(),
+                ));
                 headerbar.set_show_title_buttons(true);
 
                 // We don't need action buttons in the headerbar as they're already in the file details component
@@ -1326,7 +1340,7 @@ where
 
                 // Send output to notify parent components
                 sender.output(FileBoxOutput::FileClicked(file)).unwrap();
-            },
+            }
             FileListInput::CloseDetailsPanel => {
                 // Close the details dialog
                 if let Some(dialog) = self.details_dialog.take() {
@@ -1343,7 +1357,7 @@ where
 
                 // Apply the updated filters to refresh the file list without selection
                 self.apply_filters();
-            },
+            }
             FileListInput::SearchTextChanged(text) => {
                 tracing::debug!("Search text changed: {}", text);
 
@@ -1360,15 +1374,20 @@ where
                 if let Some(search_entry) = &self.search_entry {
                     if let Some(parent) = search_entry.parent() {
                         if let Some(clear_button) = parent.last_child() {
-                            clear_button.set_visible(self.search_pattern.is_some() &&
-                                self.search_pattern.as_ref().map_or(false, |p| !p.is_empty()));
+                            clear_button.set_visible(
+                                self.search_pattern.is_some()
+                                    && self
+                                        .search_pattern
+                                        .as_ref()
+                                        .map_or(false, |p| !p.is_empty()),
+                            );
                         }
                     }
                 }
 
                 // Apply the updated filters
                 self.apply_filters();
-            },
+            }
             FileListInput::ClearSearch => {
                 tracing::debug!("Clearing search");
 
@@ -1392,7 +1411,7 @@ where
 
                 // Apply the updated filters
                 self.apply_filters();
-            },
+            }
             FileListInput::ToggleRegexMode => {
                 tracing::debug!("Toggling regex search mode");
 
@@ -1418,13 +1437,16 @@ where
                 if self.search_pattern.is_some() {
                     self.apply_filters();
                 }
-            },
+            }
             FileListInput::AddTagToAllFiles(tag) => {
                 tracing::debug!("Adding tag '{}' to all displayed files", tag);
 
                 // Show a loading indicator
                 if let Some(bulk_tag_input) = &self.bulk_tag_input {
-                    bulk_tag_input.sender().send(TagInputInput::SetLoading(true)).unwrap();
+                    bulk_tag_input
+                        .sender()
+                        .send(TagInputInput::SetLoading(true))
+                        .unwrap();
                 }
 
                 // Get all currently displayed files
@@ -1446,7 +1468,10 @@ where
                     let tag_deny_match = if self.tag_deny_filters.is_empty() {
                         true
                     } else {
-                        !file.tags.iter().any(|tag| self.tag_deny_filters.contains(tag))
+                        !file
+                            .tags
+                            .iter()
+                            .any(|tag| self.tag_deny_filters.contains(tag))
                     };
 
                     let search_match = match &self.search_pattern {
@@ -1456,18 +1481,22 @@ where
                             if self.regex_search_mode {
                                 if let Some(regex) = &self.regex_pattern {
                                     let filename = file.path.split('/').last().unwrap_or("");
-                                    regex.is_match(filename) ||
-                                    regex.is_match(&file.path) ||
-                                    file.tags.iter().any(|tag| regex.is_match(tag))
+                                    regex.is_match(filename)
+                                        || regex.is_match(&file.path)
+                                        || file.tags.iter().any(|tag| regex.is_match(tag))
                                 } else {
                                     true
                                 }
                             } else {
                                 let pattern = pattern.to_lowercase();
-                                let filename = file.path.split('/').last().unwrap_or("").to_lowercase();
-                                filename.contains(&pattern) ||
-                                file.path.to_lowercase().contains(&pattern) ||
-                                file.tags.iter().any(|tag| tag.to_lowercase().contains(&pattern))
+                                let filename =
+                                    file.path.split('/').last().unwrap_or("").to_lowercase();
+                                filename.contains(&pattern)
+                                    || file.path.to_lowercase().contains(&pattern)
+                                    || file
+                                        .tags
+                                        .iter()
+                                        .any(|tag| tag.to_lowercase().contains(&pattern))
                             }
                         }
                     };
@@ -1481,8 +1510,14 @@ where
                 if displayed_files.is_empty() {
                     tracing::warn!("No files displayed to add tag to");
                     if let Some(bulk_tag_input) = &self.bulk_tag_input {
-                        bulk_tag_input.sender().send(TagInputInput::SetLoading(false)).unwrap();
-                        bulk_tag_input.sender().send(TagInputInput::ClearEntry).unwrap();
+                        bulk_tag_input
+                            .sender()
+                            .send(TagInputInput::SetLoading(false))
+                            .unwrap();
+                        bulk_tag_input
+                            .sender()
+                            .send(TagInputInput::ClearEntry)
+                            .unwrap();
                     }
                     return;
                 }
@@ -1497,7 +1532,11 @@ where
                     }
 
                     // Add the tag to the file
-                    match self.file_data_source.add_file_tags(file.id, vec![tag.clone()]).await {
+                    match self
+                        .file_data_source
+                        .add_file_tags(file.id, vec![tag.clone()])
+                        .await
+                    {
                         Ok(_) => success_count += 1,
                         Err(e) => {
                             tracing::warn!("Error adding tag to file {}: {}", file.id, e);
@@ -1508,15 +1547,28 @@ where
 
                 // Reset the loading indicator
                 if let Some(bulk_tag_input) = &self.bulk_tag_input {
-                    bulk_tag_input.sender().send(TagInputInput::SetLoading(false)).unwrap();
-                    bulk_tag_input.sender().send(TagInputInput::ClearEntry).unwrap();
+                    bulk_tag_input
+                        .sender()
+                        .send(TagInputInput::SetLoading(false))
+                        .unwrap();
+                    bulk_tag_input
+                        .sender()
+                        .send(TagInputInput::ClearEntry)
+                        .unwrap();
                 }
 
-                tracing::info!("Added tag '{}' to {} files ({} errors)", tag, success_count, error_count);
+                tracing::info!(
+                    "Added tag '{}' to {} files ({} errors)",
+                    tag,
+                    success_count,
+                    error_count
+                );
 
                 // Update the all_files list with the new tags
                 for file in &mut self.all_files {
-                    if !file.tags.contains(&tag) && displayed_files.iter().any(|df| df.id == file.id) {
+                    if !file.tags.contains(&tag)
+                        && displayed_files.iter().any(|df| df.id == file.id)
+                    {
                         file.tags.push(tag.clone());
                     }
                 }

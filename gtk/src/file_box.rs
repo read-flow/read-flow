@@ -1,7 +1,7 @@
 use gtk::prelude::*;
+use relm4::RelmWidgetExt;
 use relm4::gtk;
 use relm4::prelude::AsyncFactoryComponent;
-use relm4::RelmWidgetExt;
 
 use crate::ui_utils;
 use archive_organizer::api::{File, ReadingStatus};

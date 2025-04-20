@@ -11,7 +11,7 @@ pub mod ui_utils;
 
 use url::Url;
 
-use archive_organizer::{client::FilesClient, db::dao::RemoteDao, ApplicationModule};
+use archive_organizer::{ApplicationModule, client::FilesClient, db::dao::RemoteDao};
 
 pub fn get_remote_clients(
     application_module: &ApplicationModule,

@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use gtk::prelude::*;
-use relm4::gtk;
 use relm4::RelmWidgetExt;
+use relm4::gtk;
 
 /// Extracts filename and folder from a file path
 pub fn extract_path_components(path: &str) -> (String, String) {
