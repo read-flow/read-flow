@@ -6,8 +6,6 @@ use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 
 use archive_organizer::ApplicationModule;
 
-#[cfg(feature = "gui")]
-use archive_organizer::gui::UiSettings;
 #[cfg(feature = "server")]
 use archive_organizer::server;
 
@@ -24,8 +22,6 @@ enum Commands {
         path: PathBuf,
     },
     ApplyTags,
-    #[cfg(feature = "gui")]
-    Gui(UiSettings),
     #[cfg(feature = "server")]
     Serve,
     ExtractScanDirectories,
@@ -44,8 +40,6 @@ fn main() -> Result<()> {
         Commands::ExtractScanDirectories => {
             ApplicationModule::instantiate()?.extract_scan_directories()
         }
-        #[cfg(feature = "gui")]
-        Commands::Gui(ui_settings) => ApplicationModule::instantiate_gui(ui_settings)?.gui()?,
         Commands::Scan { path } => ApplicationModule::instantiate()?.scan(path)?,
         #[cfg(feature = "server")]
         Commands::Serve => server::main(),

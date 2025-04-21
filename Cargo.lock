@@ -192,8 +192,6 @@ dependencies = [
  "expanduser",
  "figment",
  "futures",
- "iced",
- "iced_aw",
  "indexmap 2.9.0",
  "itertools",
  "mime",
@@ -201,7 +199,6 @@ dependencies = [
  "rayon",
  "regex",
  "reqwest",
- "rfd",
  "rocket",
  "rocket_cors",
  "rstest",
@@ -221,6 +218,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "archive-organizer",
+ "clap",
  "indexmap 2.9.0",
  "regex",
  "relm4",
@@ -2631,6 +2629,29 @@ dependencies = [
  "rustc-hash 2.1.1",
  "thiserror 1.0.69",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "iced_gui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "archive-organizer",
+ "clap",
+ "futures",
+ "iced",
+ "iced_aw",
+ "indexmap 2.9.0",
+ "itertools",
+ "regex",
+ "rfd",
+ "serde",
+ "strum",
+ "thiserror 2.0.12",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

@@ -8,10 +8,8 @@ use iced::{
     widget::{column, text},
 };
 
-use crate::{
-    api::{File, FileDataSource, ReadingStatus},
-    gui::{self, CurrentTab, IdentifyTab},
-};
+use archive_organizer::api::{File, FileDataSource, ReadingStatus};
+use crate::{CurrentTab, IdentifyTab, Message as GuiMessage};
 
 use super::tag_button;
 
@@ -70,9 +68,9 @@ impl IdentifyTab for Message {
     }
 }
 
-impl From<Message> for gui::Message {
+impl From<Message> for GuiMessage {
     fn from(value: Message) -> Self {
-        gui::Message::Files(value)
+        GuiMessage::Files(value)
     }
 }
 
@@ -121,7 +119,7 @@ pub(super) enum OrderFilesBy {
     // Fingerprint,
 }
 
-fn display_path<P: AsRef<Path>>(path: P, shorten_path: bool) -> Element<'static, gui::Message> {
+fn display_path<P: AsRef<Path>>(path: P, shorten_path: bool) -> Element<'static, GuiMessage> {
     let path = path.as_ref();
     let directory = format!("{}", path.parent().unwrap().display());
     let filename = path.file_name().unwrap();
@@ -167,13 +165,13 @@ impl Dialog {
         Self::EditFile(EditFile::new(tab, file))
     }
 
-    fn init(&self) -> Task<gui::Message> {
+    fn init(&self) -> Task<GuiMessage> {
         match self {
             Dialog::EditFile(dialog) => dialog.init(),
         }
     }
 
-    fn view(&self) -> Element<gui::Message> {
+    fn view(&self) -> Element<GuiMessage> {
         match self {
             Dialog::EditFile(dialog) => dialog.view(),
         }

@@ -10,9 +10,8 @@ license = "MIT"
 maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 
 [features]
-default = ["gui", "server"]
-gui = ["dep:iced", "dep:iced_aw", "dep:rfd"]
-server = ["dep:rocket"]
+default = ["server"]
+server = ["dep:rocket", "dep:rocket_cors"]
 
 [dependencies]
 anyhow.workspace = true
@@ -30,11 +29,6 @@ expanduser.workspace = true
 # libsqlite3-sys = { workspace = true, features = ["bundled"] }
 figment = { workspace = true, default-features = false, features = ["toml"] }
 futures.workspace = true
-iced = { workspace = true, optional = true, features = ["tokio"] }
-iced_aw = { workspace = true, optional = true, default-features = false, features = [
-    "grid",
-    "wrap",
-] }
 indexmap = { workspace = true, features = ["serde"] }
 itertools.workspace = true
 mime.workspace = true
@@ -42,17 +36,17 @@ r2d2.workspace = true
 rayon.workspace = true
 regex.workspace = true
 reqwest = { workspace = true, features = ["json", "stream", "multipart"] }
-rfd = { workspace = true, optional = true }
-rocket = { workspace = true, optional = true, features = ["http2", "json"] }
-rocket_cors = "0.6.0"
 serde = { workspace = true, features = ["derive"] }
 serde_with = { workspace = true, features = ["indexmap"] }
 strum = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "process"] }
-tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
+tracing.workspace = true
 url.workspace = true
+
+rocket = { workspace = true, optional = true, features = ["http2", "json"] }
+rocket_cors = { workspace = true, optional = true }
 
 [dev-dependencies]
 assert4rs.workspace = true

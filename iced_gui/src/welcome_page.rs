@@ -5,7 +5,9 @@ use iced::{
 };
 use rfd::{AsyncFileDialog, FileHandle};
 
-use crate::{ApplicationModule, gui};
+use archive_organizer::ApplicationModule;
+
+use crate::Message as GuiMessage;
 
 #[derive(Debug, Clone)]
 pub(super) enum Message {
@@ -18,19 +20,19 @@ pub(super) enum Message {
     ThemeSelected(Theme),
 }
 
-impl From<Message> for gui::Message {
+impl From<Message> for GuiMessage {
     fn from(message: Message) -> Self {
-        gui::Message::Welcome(message)
+        GuiMessage::Welcome(message)
     }
 }
 
-impl TryFrom<gui::Message> for Message {
-    type Error = gui::InvalidMessage;
-    fn try_from(message: gui::Message) -> Result<Self, Self::Error> {
-        if let gui::Message::Welcome(message) = message {
+impl TryFrom<GuiMessage> for Message {
+    type Error = crate::InvalidMessage;
+    fn try_from(message: GuiMessage) -> Result<Self, Self::Error> {
+        if let GuiMessage::Welcome(message) = message {
             Ok(message)
         } else {
-            Err(gui::InvalidMessage(message))
+            Err(crate::InvalidMessage(message))
         }
     }
 }
@@ -53,11 +55,11 @@ impl Page {
         }
     }
 
-    pub fn init(&self) -> Task<gui::Message> {
+    pub fn init(&self) -> Task<GuiMessage> {
         Task::none()
     }
 
-    pub fn update(&mut self, message: Message) -> iced::Task<gui::Message> {
+    pub fn update(&mut self, message: Message) -> iced::Task<GuiMessage> {
         match message {
             Message::SelectDirectory => Task::perform(select_path(), |result| {
                 Message::SelectedDirectory(result).into()
@@ -92,16 +94,16 @@ impl Page {
             Message::AddNewRemoteUrl => {
                 let mut new_remote_url = Default::default();
                 std::mem::swap(&mut new_remote_url, &mut self.new_remote_url);
-                Task::done(gui::Message::AddNewRemoteUrl(new_remote_url))
+                Task::done(GuiMessage::AddNewRemoteUrl(new_remote_url))
             }
             Message::ThemeSelected(theme) => {
                 self.theme = theme.clone();
-                Task::done(gui::Message::ThemeSelected(theme))
+                Task::done(GuiMessage::ThemeSelected(theme))
             }
         }
     }
 
-    pub fn view_menu(&self) -> Vec<iced::Element<gui::Message>> {
+    pub fn view_menu(&self) -> Vec<iced::Element<GuiMessage>> {
         vec![
             container(
                 column![
@@ -133,7 +135,7 @@ impl Page {
         ]
     }
 
-    pub fn view(&self) -> iced::Element<gui::Message> {
+    pub fn view(&self) -> iced::Element<GuiMessage> {
         container(
             column![
                 text("Welcome"),

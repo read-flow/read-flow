@@ -1,8 +1,6 @@
 pub mod api;
 pub mod client;
 pub mod db;
-#[cfg(feature = "gui")]
-pub mod gui;
 pub mod scan;
 #[cfg(feature = "server")]
 pub mod server;
@@ -30,9 +28,6 @@ use db::{ConnectionPool, datasource::DbClient};
 use scan::{DirectorySettings, FileSystemVisitor};
 use settings::Settings;
 
-#[cfg(feature = "gui")]
-use gui::UiSettings;
-
 #[derive(Clone, Debug)]
 pub struct ApplicationModule {
     pub settings: Arc<Settings>,
@@ -40,13 +35,6 @@ pub struct ApplicationModule {
 }
 
 impl ApplicationModule {
-    #[cfg(feature = "gui")]
-    pub fn instantiate_gui(ui_settings: UiSettings) -> anyhow::Result<Self> {
-        let mut settings = settings::extract()?;
-        settings.ui.merge_in(ui_settings);
-        Ok(Self::from_settings(settings))
-    }
-
     pub fn instantiate() -> anyhow::Result<Self> {
         let settings = settings::extract()?;
         Ok(Self::from_settings(settings))
@@ -57,7 +45,7 @@ impl ApplicationModule {
         Ok(Self::from_settings(settings))
     }
 
-    fn from_settings(settings: Settings) -> Self {
+    pub fn from_settings(settings: Settings) -> Self {
         let connection_pool = db::get_connection_pool(&settings.database);
         Self {
             settings: Arc::new(settings),
@@ -172,7 +160,7 @@ where
     buckets
 }
 
-trait Builder: Sized {
+pub trait Builder: Sized {
     fn apply_if<F>(self, condition: bool, fun: F) -> Self
     where
         F: FnOnce(Self) -> Self;

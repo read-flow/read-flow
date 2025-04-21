@@ -14,14 +14,14 @@ use itertools::Itertools;
 use regex::Regex;
 use strum::IntoEnumIterator;
 
-use crate::{
+use archive_organizer::{
     Builder,
     api::{File, FileDataSource, ReadingStatus},
     client::FilesClient,
-    gui::{self, CurrentTab, IdentifyTab, add_tag_button, delete_tag_button},
     settings::Settings,
     to_buckets,
 };
+use crate::{CurrentTab, IdentifyTab, add_tag_button, delete_tag_button};
 
 use super::{Dialog, Error, Message, OrderDirection, OrderFilesBy, display_path, tag_button};
 
@@ -53,7 +53,7 @@ pub struct Page<FDS> {
     settings: Arc<Settings>,
 }
 
-impl IdentifyTab for Page<gui::DbClient> {
+impl IdentifyTab for Page<crate::DbClient> {
     fn tab(&self) -> CurrentTab {
         CurrentTab::LocalFiles
     }
@@ -108,11 +108,11 @@ where
             .collect()
     }
 
-    pub fn init(&self) -> Task<gui::Message> {
+    pub fn init(&self) -> Task<crate::Message> {
         Task::done(Message::LoadFiles(self.tab()).into())
     }
 
-    pub fn update(&mut self, message: Message) -> Task<gui::Message> {
+    pub fn update(&mut self, message: Message) -> Task<crate::Message> {
         match message {
             Message::LoadFiles(tab) => Task::perform(
                 retrieve_files(self.file_data_source.clone()),
@@ -146,7 +146,7 @@ where
             }
             Message::OpenFile(_, file) => {
                 Task::perform(open_file(self.file_data_source.clone(), file), move |_| {
-                    gui::Message::Noop
+                    crate::Message::Noop
                 })
             }
             Message::FilesLoaded(_, Ok(files)) => {
@@ -247,8 +247,8 @@ where
 
     fn tag_pick_list<'a>(
         &'a self,
-        message: impl Fn(String) -> gui::Message + 'a,
-    ) -> PickList<'a, String, Vec<String>, String, gui::Message> {
+        message: impl Fn(String) -> crate::Message + 'a,
+    ) -> PickList<'a, String, Vec<String>, String, crate::Message> {
         pick_list(
             self.all_tags()
                 .into_iter()
@@ -263,7 +263,7 @@ where
         )
     }
 
-    fn allowed_tags_filter_menu(&self) -> Element<gui::Message> {
+    fn allowed_tags_filter_menu(&self) -> Element<crate::Message> {
         column![text("Allowed tags")]
             .apply_if(!self.filter_options.allow_tags.is_empty(), |col| {
                 col.push(
@@ -292,7 +292,7 @@ where
             .into()
     }
 
-    fn denied_tags_filter_menu(&self) -> Element<gui::Message> {
+    fn denied_tags_filter_menu(&self) -> Element<crate::Message> {
         column![text("Denied tags")]
             .apply_if(!self.filter_options.deny_tags.is_empty(), |col| {
                 col.push(
@@ -321,7 +321,7 @@ where
             .into()
     }
 
-    pub fn view_menu(&self) -> Vec<Element<gui::Message>> {
+    pub fn view_menu(&self) -> Vec<Element<crate::Message>> {
         if self.is_offline {
             vec![
                 container(
@@ -429,7 +429,7 @@ where
         }
     }
 
-    pub fn view(&self) -> Element<gui::Message> {
+    pub fn view(&self) -> Element<crate::Message> {
         if self.is_offline {
             return text("Offline").into();
         }
@@ -512,8 +512,8 @@ where
 
     pub(crate) fn extend_breadcrumb<'a>(
         &'a self,
-        breadcrumb: Row<'a, gui::Message>,
-    ) -> Row<'a, gui::Message> {
+        breadcrumb: Row<'a, crate::Message>,
+    ) -> Row<'a, crate::Message> {
         match &self.dialog {
             Some(Dialog::EditFile(dialog)) => dialog.extend_breadcrumb(breadcrumb),
             None => breadcrumb,

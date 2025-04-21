@@ -3,16 +3,14 @@ mod welcome_page;
 
 use std::sync::Arc;
 
-use clap::Args;
 use iced::{
     Element, Task, Theme, border,
     widget::{self, Row, button, column, container, row, scrollable, text},
 };
 use indexmap::{IndexMap, IndexSet};
-use serde::Deserialize;
 use url::Url;
 
-use crate::{
+use archive_organizer::{
     ApplicationModule,
     api::{File, FileDataSource},
     client::{self, FilesClient},
@@ -24,40 +22,6 @@ use crate::{
     },
     settings::Settings,
 };
-
-#[derive(Debug, Args, Deserialize)]
-pub struct UiSettings {
-    #[clap(long, default_value = "false")]
-    #[serde(default)]
-    /// Enable private mode, which makes all `--private-tags` visible
-    private_mode: bool,
-    #[clap(long)]
-    /// Private tags and tagged files are hidden from the UI by default
-    private_tags: Vec<String>,
-}
-
-impl UiSettings {
-    fn contains_hidden_tag(&self, tags: &[String]) -> bool {
-        if self.private_mode {
-            false
-        } else {
-            tags.iter().any(|tag| self.private_tags.contains(tag))
-        }
-    }
-
-    fn hidden_tags(&self) -> &[String] {
-        if self.private_mode {
-            &[]
-        } else {
-            self.private_tags.as_slice()
-        }
-    }
-
-    pub fn merge_in(&mut self, other: Self) {
-        self.private_mode |= other.private_mode;
-        self.private_tags.extend(other.private_tags);
-    }
-}
 
 #[derive(Debug, thiserror::Error)]
 #[error("invalid message")]
@@ -395,12 +359,11 @@ impl App {
     }
 }
 
-impl ApplicationModule {
-    pub fn gui(self) -> iced::Result {
-        iced::application("ArchiveOrganizer - Files", App::update, App::view)
-            .theme(|app| app.theme.clone())
-            .run_with(|| App::new(self))
-    }
+/// Run the iced GUI application
+pub fn run_gui(application_module: ApplicationModule) -> iced::Result {
+    iced::application("ArchiveOrganizer - Files", App::update, App::view)
+        .theme(|app| app.theme.clone())
+        .run_with(|| App::new(application_module))
 }
 
 fn tag_button(theme: &Theme, status: button::Status) -> button::Style {
