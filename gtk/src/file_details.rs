@@ -8,6 +8,8 @@ use relm4::gtk;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
+use archive_organizer::settings::Settings;
+use std::sync::Arc;
 
 use crate::file_details_section::FileDetailsSection;
 use crate::file_info_section::FileInfoSection;
@@ -40,6 +42,7 @@ pub struct FileDetails<FDS> {
     status_container: Option<gtk::Box>,
     file_info_container: Option<gtk::Box>,
     file_details_container: Option<gtk::Box>,
+    settings: Arc<Settings>,
 }
 
 #[derive(Debug)]
@@ -119,7 +122,7 @@ impl<FDS> AsyncComponent for FileDetails<FDS>
 where
     FDS: FileDataSource + 'static,
 {
-    type Init = (File, FDS);
+    type Init = (File, FDS, Arc<Settings>);
     type Input = FileDetailsInput;
     type Output = FileDetailsOutput;
     type CommandOutput = ();
@@ -373,10 +376,11 @@ where
     }
 
     async fn init(
-        (file, file_data_source): Self::Init,
+        init: Self::Init,
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
+        let (file, file_data_source, settings) = init;
         let (filename, folder) = ui_utils::extract_path_components(&file.path);
 
         let model = FileDetails {
@@ -391,6 +395,7 @@ where
             status_container: None,
             file_info_container: None,
             file_details_container: None,
+            settings,
         };
 
         let widgets = view_output!();
@@ -671,13 +676,16 @@ where
                 if let Ok(tags) = self.file_data_source.get_files_tags().await {
                     self.all_tags = tags.clone();
 
-                    // Filter out tags that are already applied to this file
+                    // Filter out tags that are already applied to this file and hidden tags
                     let current_file_tags: std::collections::HashSet<&String> =
                         self.file.tags.iter().collect();
                     let available_tags: Vec<String> = self
                         .all_tags
                         .iter()
-                        .filter(|tag| !current_file_tags.contains(tag))
+                        .filter(|tag|
+                            !current_file_tags.contains(tag) &&
+                            !self.settings.ui.hidden_tags().contains(tag)
+                        )
                         .cloned()
                         .collect();
 

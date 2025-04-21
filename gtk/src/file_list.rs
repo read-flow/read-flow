@@ -13,6 +13,8 @@ use relm4::prelude::*;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
+use archive_organizer::settings::Settings;
+use std::sync::Arc;
 
 use crate::file_box::FileBox;
 use crate::file_box::FileBoxOutput;
@@ -50,6 +52,8 @@ where
     all_tags: Vec<String>,
     // Store all files to make filtering easier
     all_files: Vec<File>,
+    // Reference to application settings
+    settings: Arc<Settings>,
     // Search pattern for filtering files
     search_pattern: Option<String>,
     // Reference to the search entry
@@ -162,6 +166,14 @@ where
 
         // Apply reading status, tag include filters, tag deny filters, and search pattern
         for file in &self.all_files {
+            // Check if the file has any hidden tags
+            let hidden_tag_match = !self.settings.ui.contains_hidden_tag(&file.tags);
+
+            // Skip files with hidden tags
+            if !hidden_tag_match {
+                continue;
+            }
+
             // Check if the file matches the reading status filter
             let status_match = self.status_filters.contains(&file.status);
 
@@ -215,7 +227,12 @@ where
                         // Use normal string matching
                         let pattern = pattern.to_lowercase();
                         // Extract filename from path for matching
-                        let filename = file.path.split('/').next_back().unwrap_or("").to_lowercase();
+                        let filename = file
+                            .path
+                            .split('/')
+                            .next_back()
+                            .unwrap_or("")
+                            .to_lowercase();
                         // Match on filename, path, or tags
                         filename.contains(&pattern)
                             || file.path.to_lowercase().contains(&pattern)
@@ -228,7 +245,12 @@ where
             };
 
             // Only include files that match all filters
-            if status_match && tag_include_match && tag_deny_match && search_match {
+            if hidden_tag_match
+                && status_match
+                && tag_include_match
+                && tag_deny_match
+                && search_match
+            {
                 mut_files.push_back((file.clone(), self.selected_file_id));
             }
         }
@@ -337,11 +359,15 @@ where
 
     // Helper method to update both tag dropdowns with available tags
     fn update_tag_dropdowns(&self) {
-        // Get available tags (tags that are not in either allow or deny lists)
+        // Get available tags (tags that are not in either allow or deny lists and not hidden)
         let available_tags: Vec<&String> = self
             .all_tags
             .iter()
-            .filter(|tag| !self.tag_filters.contains(*tag) && !self.tag_deny_filters.contains(*tag))
+            .filter(|tag| {
+                !self.tag_filters.contains(*tag)
+                    && !self.tag_deny_filters.contains(*tag)
+                    && !self.settings.ui.hidden_tags().contains(tag)
+            })
             .collect();
 
         // Update the include dropdown
@@ -387,7 +413,7 @@ impl<FDS> AsyncComponent for FileList<FDS>
 where
     FDS: FileDataSource + Clone + 'static,
 {
-    type Init = FDS;
+    type Init = (FDS, Arc<Settings>);
     type Input = FileListInput;
     type Output = FileBoxOutput;
     type CommandOutput = ();
@@ -766,10 +792,11 @@ where
     }
 
     async fn init(
-        file_data_source: Self::Init,
+        init: Self::Init,
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
+        let (file_data_source, settings) = init;
         tracing::debug!("Initializing FileList component");
 
         // Initialize the CSS.
@@ -824,6 +851,7 @@ where
             tag_deny_filters: HashSet::new(),
             all_tags: Vec::new(),
             all_files,
+            settings,
             search_pattern: None,
             search_entry: None,
             regex_search_mode: false,
@@ -1057,9 +1085,16 @@ where
 
                             // Update the bulk tag input component
                             if let Some(bulk_tag_input) = &self.bulk_tag_input {
+                                // Filter out hidden tags
+                                let visible_tags: Vec<String> = tags
+                                    .iter()
+                                    .filter(|tag| !self.settings.ui.hidden_tags().contains(tag))
+                                    .cloned()
+                                    .collect();
+
                                 bulk_tag_input
                                     .sender()
-                                    .send(TagInputInput::UpdateTags(tags))
+                                    .send(TagInputInput::UpdateTags(visible_tags))
                                     .unwrap();
                             }
                         }
@@ -1309,7 +1344,7 @@ where
 
                 // Create and launch the file details component
                 let controller = FileDetails::builder()
-                    .launch((file.clone(), self.file_data_source.clone()))
+                    .launch((file.clone(), self.file_data_source.clone(), self.settings.clone()))
                     .forward(sender.input_sender(), |msg| match msg {
                         FileDetailsOutput::TagsChanged(_) => FileListInput::RefreshFiles,
                         FileDetailsOutput::TagAdded(_) => FileListInput::RefreshFiles,
@@ -1376,10 +1411,7 @@ where
                         if let Some(clear_button) = parent.last_child() {
                             clear_button.set_visible(
                                 self.search_pattern.is_some()
-                                    && self
-                                        .search_pattern
-                                        .as_ref()
-                                        .is_some_and(|p| !p.is_empty()),
+                                    && self.search_pattern.as_ref().is_some_and(|p| !p.is_empty()),
                             );
                         }
                     }
@@ -1489,8 +1521,12 @@ where
                                 }
                             } else {
                                 let pattern = pattern.to_lowercase();
-                                let filename =
-                                    file.path.split('/').next_back().unwrap_or("").to_lowercase();
+                                let filename = file
+                                    .path
+                                    .split('/')
+                                    .next_back()
+                                    .unwrap_or("")
+                                    .to_lowercase();
                                 filename.contains(&pattern)
                                     || file.path.to_lowercase().contains(&pattern)
                                     || file

@@ -63,28 +63,18 @@ pub struct UiSettings {
     private_tags: Vec<String>,
 }
 
+impl From<(bool, Vec<String>)> for UiSettings {
+    fn from((private_mode, private_tags): (bool, Vec<String>)) -> Self {
+        Self::new(private_mode, private_tags)
+    }
+}
+
 impl UiSettings {
     pub fn new(private_mode: bool, private_tags: Vec<String>) -> Self {
         Self {
             private_mode,
             private_tags,
         }
-    }
-
-    pub fn get_private_mode(&self) -> bool {
-        self.private_mode
-    }
-
-    pub fn set_private_mode(&mut self, private_mode: bool) {
-        self.private_mode = private_mode;
-    }
-
-    pub fn get_private_tags(&self) -> &[String] {
-        &self.private_tags
-    }
-
-    pub fn set_private_tags(&mut self, private_tags: Vec<String>) {
-        self.private_tags = private_tags;
     }
 
     pub fn contains_hidden_tag(&self, tags: &[String]) -> bool {

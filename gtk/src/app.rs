@@ -141,7 +141,7 @@ impl AsyncComponent for App {
         // Initialize local file list with error handling
         tracing::debug!("Initializing local file list");
         let local_file_list = FileList::builder()
-            .launch(db_client)
+            .launch((db_client, application_module.settings.clone()))
             .forward(sender.input_sender(), |_| AppMessage::ChangeFileList);
         tracing::debug!("Successfully initialized local file list");
 
@@ -152,7 +152,7 @@ impl AsyncComponent for App {
             tracing::debug!("Initializing remote file list for: {}", &remote.base_url);
             let url = remote.base_url.clone();
             let controller = FileList::builder()
-                .launch(remote.clone())
+                .launch((remote.clone(), application_module.settings.clone()))
                 .forward(sender.input_sender(), |_| AppMessage::ChangeFileList);
             tracing::debug!("Successfully initialized remote file list for: {}", &url);
             remote_file_lists.insert(url, controller);
