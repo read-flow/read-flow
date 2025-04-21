@@ -12,7 +12,6 @@ use relm4::gtk;
 use relm4::loading_widgets::LoadingWidgets;
 use relm4::once_cell::sync::Lazy;
 use relm4::view;
-use std::sync::Arc;
 use tracing;
 use url::Url;
 

@@ -203,7 +203,7 @@ where
 
                         if let Some(regex) = &self.regex_pattern {
                             // Extract filename from path for matching
-                            let filename = file.path.split('/').last().unwrap_or("");
+                            let filename = file.path.split('/').next_back().unwrap_or("");
                             // Match on filename, path, or tags
                             regex.is_match(filename)
                                 || regex.is_match(&file.path)
@@ -215,7 +215,7 @@ where
                         // Use normal string matching
                         let pattern = pattern.to_lowercase();
                         // Extract filename from path for matching
-                        let filename = file.path.split('/').last().unwrap_or("").to_lowercase();
+                        let filename = file.path.split('/').next_back().unwrap_or("").to_lowercase();
                         // Match on filename, path, or tags
                         filename.contains(&pattern)
                             || file.path.to_lowercase().contains(&pattern)
@@ -689,7 +689,7 @@ where
                             connect_clicked[sender] => move |_| {
                                 sender.input(FileListInput::ClearSearch);
                             },
-                            set_visible: model.search_pattern.is_some() && model.search_pattern.as_ref().map_or(false, |p| !p.is_empty()),
+                            set_visible: model.search_pattern.is_some() && model.search_pattern.as_ref().is_some_and(|p| !p.is_empty()),
                         },
                     },
 
@@ -1257,7 +1257,7 @@ where
                 }
 
                 // Extract filename for display
-                let filename = file.path.split('/').last().unwrap_or("File");
+                let filename = file.path.split('/').next_back().unwrap_or("File");
 
                 // Create a new dialog window
                 let dialog = gtk::Window::new();
@@ -1379,7 +1379,7 @@ where
                                     && self
                                         .search_pattern
                                         .as_ref()
-                                        .map_or(false, |p| !p.is_empty()),
+                                        .is_some_and(|p| !p.is_empty()),
                             );
                         }
                     }
@@ -1480,7 +1480,7 @@ where
                         Some(pattern) => {
                             if self.regex_search_mode {
                                 if let Some(regex) = &self.regex_pattern {
-                                    let filename = file.path.split('/').last().unwrap_or("");
+                                    let filename = file.path.split('/').next_back().unwrap_or("");
                                     regex.is_match(filename)
                                         || regex.is_match(&file.path)
                                         || file.tags.iter().any(|tag| regex.is_match(tag))
@@ -1490,7 +1490,7 @@ where
                             } else {
                                 let pattern = pattern.to_lowercase();
                                 let filename =
-                                    file.path.split('/').last().unwrap_or("").to_lowercase();
+                                    file.path.split('/').next_back().unwrap_or("").to_lowercase();
                                 filename.contains(&pattern)
                                     || file.path.to_lowercase().contains(&pattern)
                                     || file

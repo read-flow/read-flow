@@ -1,5 +1,4 @@
 use gtk::prelude::*;
-use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentController;
 use relm4::component::AsyncComponentParts;
