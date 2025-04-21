@@ -12,7 +12,7 @@ use crate::scan::ScanSettings;
 #[cfg(feature = "server")]
 use crate::server::ServerSettings;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     pub database: DbSettings,
     #[cfg(feature = "server")]
@@ -56,7 +56,7 @@ pub fn extract() -> Result<Settings, Error> {
     figment.extract()
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct UiSettings {
     #[serde(default)]
     private_mode: bool,

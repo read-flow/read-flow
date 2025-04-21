@@ -131,6 +131,7 @@ pub enum FileListInput {
     ClearSearch,
     ToggleRegexMode,
     AddTagToAllFiles(String),
+    UpdateSettings(Arc<Settings>),
 }
 
 impl<FDS> FileList<FDS>
@@ -1620,6 +1621,13 @@ where
 
                 // Also refresh the tags
                 sender.input(FileListInput::LoadTags);
+            }
+            FileListInput::UpdateSettings(new_settings) => {
+                // Update the settings
+                self.settings = new_settings;
+
+                // Reload files and tags with the new settings
+                sender.input(FileListInput::RefreshFiles);
             }
         }
     }

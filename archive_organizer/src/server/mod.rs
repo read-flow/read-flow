@@ -27,7 +27,7 @@ use crate::{
 
 use authn::AuthorizedUser;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(crate = "rocket::serde")]
 pub struct ServerSettings {
     download_folder: ExpandedPath,

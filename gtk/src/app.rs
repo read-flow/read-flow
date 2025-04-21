@@ -12,10 +12,13 @@ use relm4::gtk;
 use relm4::loading_widgets::LoadingWidgets;
 use relm4::once_cell::sync::Lazy;
 use relm4::view;
+
+use std::sync::Arc;
 use tracing;
 use url::Url;
 
 use crate::file_list::FileList;
+use crate::settings_dialog::{SettingsDialog, SettingsDialogOutput};
 
 const COMPONENT_CSS: &str = include_str!("../assets/style.css");
 
@@ -35,6 +38,7 @@ pub struct App {
     local_file_list: AsyncController<FileList<DbClient>>,
     remote_file_lists: IndexMap<Url, AsyncController<FileList<FilesClient>>>,
     file_list_selector: FileListSelector,
+    settings_dialog: Option<AsyncController<SettingsDialog>>,
 }
 
 impl App {
@@ -73,6 +77,17 @@ impl AsyncComponent for App {
             set_titlebar = &gtk::HeaderBar {
                 set_show_title_buttons: true,
                 set_title_widget: Some(&gtk::Label::new(Some("Archive Organizer"))),
+
+                pack_end = &gtk::MenuButton {
+                    set_icon_name: "open-menu-symbolic",
+                    set_tooltip_text: Some("Menu"),
+                    set_menu_model: Some(&{
+                        let menu = gtk::gio::Menu::new();
+                        let settings_item = gtk::gio::MenuItem::new(Some("Settings"), Some("app.settings"));
+                        menu.append_item(&settings_item);
+                        menu
+                    }),
+                },
             },
 
             gtk::Box {
@@ -184,11 +199,23 @@ impl AsyncComponent for App {
         tracing::debug!("Showing notebook");
         notebook.show();
 
+        // Create actions
+        let settings_action = gtk::gio::SimpleAction::new("settings", None);
+        let sender_clone = sender.input_sender().clone();
+        settings_action.connect_activate(move |_, _| {
+            sender_clone.send(AppMessage::OpenSettings).unwrap();
+        });
+
+        // Add actions to the application
+        let app = gtk::gio::Application::default().expect("Application not found");
+        app.add_action(&settings_action);
+
         let model = App {
             application_module,
             local_file_list,
             remote_file_lists,
             file_list_selector: FileListSelector::LocalFiles,
+            settings_dialog: None,
         };
 
         let widgets = view_output!();
@@ -200,7 +227,7 @@ impl AsyncComponent for App {
     async fn update(
         &mut self,
         msg: Self::Input,
-        _sender: AsyncComponentSender<Self>,
+        sender: AsyncComponentSender<Self>,
         _root: &Self::Root,
     ) {
         match msg {
@@ -218,6 +245,37 @@ impl AsyncComponent for App {
                     }
                 }
             }
+            AppMessage::OpenSettings => {
+                // Create and show the settings dialog
+                let settings_dialog = SettingsDialog::builder()
+                    .launch(self.application_module.settings.clone())
+                    .forward(sender.input_sender(), |msg| match msg {
+                        SettingsDialogOutput::Closed => AppMessage::SettingsDialogClosed,
+                        SettingsDialogOutput::SettingsSaved(settings) => AppMessage::SettingsSaved(settings),
+                    });
+
+                self.settings_dialog = Some(settings_dialog);
+            }
+            AppMessage::SettingsDialogClosed => {
+                // Clean up the settings dialog
+                self.settings_dialog = None;
+            }
+            AppMessage::SettingsSaved(new_settings) => {
+                // Update the application module with the new settings
+                // Create a new ApplicationModule with the new settings
+                let settings_copy = (*new_settings).clone();
+                self.application_module = ApplicationModule::from_settings(settings_copy);
+
+                // Update the file lists with the new settings
+                self.local_file_list.sender().send(crate::file_list::FileListInput::UpdateSettings(self.application_module.settings.clone())).unwrap();
+
+                for (_, controller) in &self.remote_file_lists {
+                    controller.sender().send(crate::file_list::FileListInput::UpdateSettings(self.application_module.settings.clone())).unwrap();
+                }
+
+                // Clean up the settings dialog
+                self.settings_dialog = None;
+            }
         }
     }
 }
@@ -226,4 +284,7 @@ impl AsyncComponent for App {
 pub enum AppMessage {
     ChangeFileList,
     TabChanged(usize),
+    OpenSettings,
+    SettingsDialogClosed,
+    SettingsSaved(Arc<archive_organizer::settings::Settings>),
 }
