@@ -10,6 +10,7 @@ use relm4::gtk;
 use relm4::gtk::glib;
 use relm4::once_cell::sync::Lazy;
 use relm4::prelude::*;
+use relm4::Sender;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
@@ -131,6 +132,7 @@ pub enum FileListInput {
     ClearSearch,
     ToggleRegexMode,
     AddTagToAllFiles(String),
+    ConfirmAddTagToAllFiles(String),
     UpdateSettings(Arc<Settings>),
 }
 
@@ -138,6 +140,100 @@ impl<FDS> FileList<FDS>
 where
     FDS: FileDataSource + Clone + 'static,
 {
+    /// Shows a confirmation dialog before adding a tag to all displayed files
+    fn show_tag_confirmation_dialog(
+        tag: String,
+        sender: Sender<FileListInput>,
+        tag_input_sender: Option<Sender<TagInputInput>>,
+    ) {
+        // Get the active window to use as parent for the dialog
+        let active_window = gtk::gio::Application::default()
+            .and_then(|app| app.downcast::<gtk::Application>().ok())
+            .and_then(|app| app.active_window());
+        // Create a confirmation dialog with the active window as parent
+        let dialog = gtk::MessageDialog::new(
+            active_window.as_ref(),
+            gtk::DialogFlags::MODAL,
+            gtk::MessageType::Warning,
+            gtk::ButtonsType::None,
+            &format!("Add tag \"{}\" to all displayed files?", tag)
+        );
+
+        // Set dialog title
+        dialog.set_title(Some("Confirm Bulk Tag Addition"));
+
+        // Add secondary text
+        dialog.set_secondary_text(Some("This action will add the tag to all files currently displayed in the list."));
+
+        // Set dialog title
+        dialog.set_title(Some("Confirm Bulk Tag Addition"));
+
+        // Explicitly add a warning icon that works across desktop environments
+        let header_bar = gtk::HeaderBar::new();
+
+        // Create warning icon
+        let warning_icon = gtk::Image::from_icon_name("dialog-warning");
+        warning_icon.set_pixel_size(32);
+        warning_icon.add_css_class("warning-icon");
+
+        // Create title label
+        let title_label = gtk::Label::new(Some("Confirm Bulk Tag Addition"));
+        title_label.add_css_class("title");
+        title_label.set_hexpand(true);
+        title_label.set_halign(gtk::Align::Center);
+
+        // Add icon and title to header bar
+        header_bar.pack_start(&warning_icon);
+        header_bar.set_title_widget(Some(&title_label));
+
+        // Set custom title bar with warning icon
+        dialog.set_titlebar(Some(&header_bar));
+
+        // Add buttons
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+        dialog.add_button("Add Tag", gtk::ResponseType::Accept);
+
+        // Set default response
+        dialog.set_default_response(gtk::ResponseType::Accept);
+
+        // Make the dialog modal
+        dialog.set_modal(true);
+
+        // Show the dialog and handle the response
+        let tag_clone = tag.clone();
+
+        dialog.connect_response(move |dialog, response| {
+            dialog.close();
+
+            if response == gtk::ResponseType::Accept {
+                // User confirmed, proceed with adding the tag
+                tracing::debug!("User confirmed adding tag '{}' to all displayed files", tag_clone);
+
+                // Show a loading indicator
+                if let Some(input_sender) = &tag_input_sender {
+                    input_sender
+                        .send(TagInputInput::SetLoading(true))
+                        .unwrap();
+                }
+
+                // Send a message to actually add the tag
+                sender.send(FileListInput::ConfirmAddTagToAllFiles(tag_clone.clone())).unwrap();
+            } else {
+                // User cancelled
+                tracing::debug!("User cancelled adding tag to files");
+
+                // Clear the tag input field
+                if let Some(input_sender) = &tag_input_sender {
+                    input_sender
+                        .send(TagInputInput::ClearEntry)
+                        .unwrap();
+                }
+            }
+        });
+
+        // Present the dialog
+        dialog.present();
+    }
     // Helper method to update UI visibility based on offline state
     fn update_offline_state(&self) {
         // Update the visibility of the error message and file list
@@ -1472,9 +1568,20 @@ where
                 }
             }
             FileListInput::AddTagToAllFiles(tag) => {
+                tracing::debug!("Preparing to add tag '{}' to all displayed files", tag);
+
+                // Create a confirmation dialog using a helper function
+                Self::show_tag_confirmation_dialog(
+                    tag.clone(),
+                    sender.input_sender().clone(),
+                    self.bulk_tag_input.as_ref().map(|input| input.sender().clone())
+                );
+            }
+
+            FileListInput::ConfirmAddTagToAllFiles(tag) => {
                 tracing::debug!("Adding tag '{}' to all displayed files", tag);
 
-                // Show a loading indicator
+                // Show a loading indicator (should already be showing, but just in case)
                 if let Some(bulk_tag_input) = &self.bulk_tag_input {
                     bulk_tag_input
                         .sender()

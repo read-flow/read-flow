@@ -56,6 +56,7 @@ impl CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for ConnectionOp
 }
 
 pub fn get_connection_pool(settings: &DbSettings) -> ConnectionPool {
+    tracing::debug!("Creating db connection pool for: {}", &settings.url);
     let manager = ConnectionManager::<SqliteConnection>::new(&settings.url);
 
     let pool = Pool::builder()
