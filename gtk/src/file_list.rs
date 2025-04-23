@@ -1829,25 +1829,7 @@ where
                     );
                     sender.output(output).unwrap();
 
-                    // Show a dialog with the number of duplicates
-                    let dialog = gtk::MessageDialog::new(
-                        gtk::gio::Application::default()
-                            .and_then(|app| app.downcast::<gtk::Application>().ok())
-                            .and_then(|app| app.active_window())
-                            .as_ref(),
-                        gtk::DialogFlags::MODAL,
-                        gtk::MessageType::Info,
-                        gtk::ButtonsType::Ok,
-                        format!(
-                            "{} groups of duplicate files found. Opening in a new tab...",
-                            duplicates.len()
-                        ),
-                    );
-                    dialog.set_title(Some("Duplicate Files"));
-                    dialog.connect_response(|dialog, _| {
-                        dialog.close();
-                    });
-                    dialog.show();
+                    // No dialog shown - directly switch to the duplicates tab
                 }
             }
         }
