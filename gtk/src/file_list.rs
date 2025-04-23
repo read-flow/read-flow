@@ -1807,10 +1807,46 @@ where
                         crate::app::FileListSelector::LocalFiles
                     } else if type_name.contains("FilesClient") {
                         // This is a remote file list
-                        // In a real implementation, we would need to get the URL from the file data source
-                        // For now, we'll use a placeholder URL
-                        let url = url::Url::parse("http://example.com").unwrap();
-                        crate::app::FileListSelector::RemoteFiles(url)
+                        // Try to get the base URL from the file data source
+                        // We need to use reflection to access the base_url field
+                        // This is a bit hacky, but it works for now
+                        let base_url = std::any::type_name::<FDS>();
+
+                        // Extract the URL from the type name using a regex
+                        // The type name will be something like "archive_organizer::client::FilesClient"
+                        // We need to get the actual URL from the FilesClient instance
+
+                        // For now, let's try to get it from the first file in the list
+                        if let Some(first_file) = self.all_files.first() {
+                            // The path will be something like "http://example.com/files/123.pdf"
+                            // We need to extract the base URL from it
+                            if first_file.path.starts_with("http") {
+                                // Try to parse the URL from the path
+                                if let Ok(url) = url::Url::parse(&first_file.path) {
+                                    // Get the base URL (scheme + host + port)
+                                    let base_url = url::Url::parse(&format!(
+                                        "{}://{}{}",
+                                        url.scheme(),
+                                        url.host_str().unwrap_or("localhost"),
+                                        url.port().map(|p| format!(":{}", p)).unwrap_or_default()
+                                    )).unwrap_or_else(|_| url::Url::parse("http://localhost").unwrap());
+
+                                    crate::app::FileListSelector::RemoteFiles(base_url)
+                                } else {
+                                    // Fallback to local if we can't parse the URL
+                                    tracing::warn!("Could not parse URL from path: {}", first_file.path);
+                                    crate::app::FileListSelector::LocalFiles
+                                }
+                            } else {
+                                // Fallback to local if the path doesn't start with http
+                                tracing::warn!("Path doesn't start with http: {}", first_file.path);
+                                crate::app::FileListSelector::LocalFiles
+                            }
+                        } else {
+                            // Fallback to local if there are no files
+                            tracing::warn!("No files found in the list");
+                            crate::app::FileListSelector::LocalFiles
+                        }
                     } else {
                         // Unknown type, default to local
                         crate::app::FileListSelector::LocalFiles

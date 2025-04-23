@@ -419,12 +419,37 @@ impl AsyncComponent for App {
                                 FileListSelector::RemoteFiles(url) => {
                                     // Create a new duplicates page for remote files
                                     // Find the remote client
-                                    let remote_client =
-                                        crate::get_remote_clients(&self.application_module)
-                                            .unwrap_or_default()
-                                            .into_iter()
-                                            .find(|c| c.base_url == url)
-                                            .unwrap();
+                                    let remote_clients = crate::get_remote_clients(&self.application_module)
+                                        .unwrap_or_default();
+
+                                    // Try to find the matching remote client
+                                    let remote_client = remote_clients
+                                        .into_iter()
+                                        .find(|c| c.base_url.to_string() == url.to_string());
+
+                                    // If we can't find the remote client, show an error and return
+                                    if remote_client.is_none() {
+                                        tracing::error!("Could not find remote client for URL: {}", url);
+
+                                        // Show an error dialog
+                                        let dialog = gtk::MessageDialog::new(
+                                            gtk::gio::Application::default()
+                                                .and_then(|app| app.downcast::<gtk::Application>().ok())
+                                                .and_then(|app| app.active_window()).as_ref(),
+                                            gtk::DialogFlags::MODAL,
+                                            gtk::MessageType::Error,
+                                            gtk::ButtonsType::Ok,
+                                            &format!("Could not find remote client for URL: {}", url)
+                                        );
+                                        dialog.set_title(Some("Error"));
+                                        dialog.connect_response(|dialog, _| {
+                                            dialog.close();
+                                        });
+                                        dialog.show();
+                                        return;
+                                    }
+
+                                    let remote_client = remote_client.unwrap();
 
                                     let init = DuplicatesPageInit {
                                         duplicates,
