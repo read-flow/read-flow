@@ -88,6 +88,9 @@ where
                                     // File information
                                     let file_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
                                     file_box.set_hexpand(true);
+                                    file_box.set_vexpand(false);
+                                    file_box.set_width_request(300); // Minimum width
+                                    file_box.set_margin_end(8);
 
                                     // Extract filename and directory from path
                                     let (filename, folder) = crate::ui_utils::extract_path_components(&file.path);
@@ -99,18 +102,24 @@ where
                                     let filename_label = gtk::Label::new(Some(&filename));
                                     filename_label.set_halign(gtk::Align::Start);
                                     filename_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-                                    filename_label.set_max_width_chars(50);
+                                    // Don't set max_width_chars to allow dynamic resizing
+                                    filename_label.set_hexpand(true);
+                                    filename_label.set_xalign(0.0); // Left align text
                                     filename_label.add_css_class("heading");
                                     path_box.append(&filename_label);
 
-                                    // Folder label (smaller, dimmed)
-                                    let folder_label = gtk::Label::new(Some(&folder));
-                                    folder_label.set_halign(gtk::Align::Start);
-                                    folder_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-                                    folder_label.set_max_width_chars(50);
-                                    folder_label.add_css_class("dim-label");
-                                    folder_label.add_css_class("caption");
-                                    path_box.append(&folder_label);
+                                    // Full path label (smaller, dimmed)
+                                    let full_path_label = gtk::Label::new(Some(&file.path));
+                                    full_path_label.set_halign(gtk::Align::Start);
+                                    full_path_label.set_ellipsize(gtk::pango::EllipsizeMode::Start);
+                                    // Don't set max_width_chars to allow dynamic resizing
+                                    full_path_label.set_hexpand(true);
+                                    full_path_label.set_xalign(0.0); // Left align text
+                                    full_path_label.set_wrap(true);
+                                    full_path_label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+                                    full_path_label.add_css_class("dim-label");
+                                    full_path_label.add_css_class("caption");
+                                    path_box.append(&full_path_label);
 
                                     file_box.append(&path_box);
 
