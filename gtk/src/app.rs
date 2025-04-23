@@ -404,10 +404,35 @@ impl AsyncComponent for App {
                                             }
                                         });
 
-                                    // Add the page to the notebook
+                                    // Create a tab label with a close button
+                                    let tab_box = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+
+                                    // Add the label
                                     let label = gtk::Label::new(Some("Duplicates: Local Files"));
+                                    tab_box.append(&label);
+
+                                    // Add the close button
+                                    let close_button = gtk::Button::new();
+                                    close_button.set_icon_name("window-close-symbolic");
+                                    close_button.set_tooltip_text(Some("Close"));
+                                    close_button.add_css_class("flat");
+                                    close_button.add_css_class("circular");
+                                    close_button.set_valign(gtk::Align::Center);
+
+                                    // Connect the close button to the CloseDuplicatesTab message
+                                    let sender_clone = sender.clone();
+                                    close_button.connect_clicked(move |_| {
+                                        sender_clone.input(AppMessage::CloseDuplicatesTab(
+                                            FileListSelector::DuplicatesLocal,
+                                        ));
+                                    });
+
+                                    tab_box.append(&close_button);
+                                    tab_box.show();
+
+                                    // Add the page to the notebook with our custom tab label
                                     notebook_widget
-                                        .append_page(duplicates_controller.widget(), Some(&label));
+                                        .append_page(duplicates_controller.widget(), Some(&tab_box));
 
                                     // Store the controller
                                     self.duplicates_local = Some(duplicates_controller);
@@ -487,13 +512,39 @@ impl AsyncComponent for App {
                                             }
                                         });
 
-                                    // Add the page to the notebook
+                                    // Create a tab label with a close button
+                                    let tab_box = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+
+                                    // Add the label
                                     let label = gtk::Label::new(Some(&format!(
                                         "Duplicates: {}",
                                         url.host_str().unwrap_or("Unknown")
                                     )));
+                                    tab_box.append(&label);
+
+                                    // Add the close button
+                                    let close_button = gtk::Button::new();
+                                    close_button.set_icon_name("window-close-symbolic");
+                                    close_button.set_tooltip_text(Some("Close"));
+                                    close_button.add_css_class("flat");
+                                    close_button.add_css_class("circular");
+                                    close_button.set_valign(gtk::Align::Center);
+
+                                    // Connect the close button to the CloseDuplicatesTab message
+                                    let sender_clone = sender.clone();
+                                    let url_clone = url.clone();
+                                    close_button.connect_clicked(move |_| {
+                                        sender_clone.input(AppMessage::CloseDuplicatesTab(
+                                            FileListSelector::DuplicatesRemote(url_clone.clone()),
+                                        ));
+                                    });
+
+                                    tab_box.append(&close_button);
+                                    tab_box.show();
+
+                                    // Add the page to the notebook with our custom tab label
                                     notebook_widget
-                                        .append_page(duplicates_controller.widget(), Some(&label));
+                                        .append_page(duplicates_controller.widget(), Some(&tab_box));
 
                                     // Store the controller
                                     self.duplicates_remote

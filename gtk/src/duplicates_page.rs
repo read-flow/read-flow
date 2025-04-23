@@ -198,16 +198,6 @@ where
                         sender.input(DuplicatesPageInput::RefreshDuplicates);
                     },
                 },
-
-                append = &gtk::Button {
-                    set_icon_name: "window-close-symbolic",
-                    set_tooltip_text: Some("Close"),
-                    add_css_class: "flat",
-                    add_css_class: "circular",
-                    connect_clicked[sender] => move |_| {
-                        sender.output(DuplicatesPageOutput::Close).unwrap();
-                    },
-                },
             },
 
             // Create a scrolled window for the duplicate groups
