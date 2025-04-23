@@ -162,11 +162,30 @@ where
                     let file_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
                     file_box.set_hexpand(true);
 
-                    let path_label = gtk::Label::new(Some(&file.path));
-                    path_label.set_halign(gtk::Align::Start);
-                    path_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-                    path_label.set_max_width_chars(50);
-                    file_box.append(&path_label);
+                    // Extract filename and directory from path
+                    let (filename, folder) = crate::ui_utils::extract_path_components(&file.path);
+
+                    // Create a box for the filename and folder
+                    let path_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
+
+                    // Filename label (bold)
+                    let filename_label = gtk::Label::new(Some(&filename));
+                    filename_label.set_halign(gtk::Align::Start);
+                    filename_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                    filename_label.set_max_width_chars(50);
+                    filename_label.add_css_class("heading");
+                    path_box.append(&filename_label);
+
+                    // Folder label (smaller, dimmed)
+                    let folder_label = gtk::Label::new(Some(&folder));
+                    folder_label.set_halign(gtk::Align::Start);
+                    folder_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                    folder_label.set_max_width_chars(50);
+                    folder_label.add_css_class("dim-label");
+                    folder_label.add_css_class("caption");
+                    path_box.append(&folder_label);
+
+                    file_box.append(&path_box);
 
                     let details_label = gtk::Label::new(Some(&format!(
                         "Type: {}, Size: {} bytes, Status: {:?}",
