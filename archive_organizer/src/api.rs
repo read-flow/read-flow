@@ -134,6 +134,13 @@ impl From<File> for (DbFile, Vec<DbTag>) {
 pub trait FileDataSource {
     type Error: std::error::Error;
 
+    /// Returns a display name for this data source
+    ///
+    /// This is used for UI elements like tab labels and headers.
+    /// For local data sources, this should return "Local Files".
+    /// For remote data sources, this should return "Remote: hostname".
+    fn display_name(&self) -> String;
+
     async fn status(&self) -> Result<Status, Self::Error>;
 
     async fn get_files(&self) -> Result<Vec<File>, Self::Error>;

@@ -109,6 +109,8 @@ where
     error_message: Option<String>,
     // Whether we're in offline mode (can't connect to server)
     is_offline: bool,
+    // The selector for this file list (local or remote)
+    selector: crate::app::FileListSelector,
 }
 
 #[derive(Debug)]
@@ -516,7 +518,7 @@ impl<FDS> AsyncComponent for FileList<FDS>
 where
     FDS: FileDataSource + Clone + 'static,
 {
-    type Init = (FDS, Arc<Settings>);
+    type Init = (FDS, Arc<Settings>, crate::app::FileListSelector);
     type Input = FileListInput;
     type Output = crate::file_box::FileBoxOutput;
     type CommandOutput = ();
@@ -910,8 +912,11 @@ where
         root: Self::Root,
         sender: AsyncComponentSender<Self>,
     ) -> AsyncComponentParts<Self> {
-        let (file_data_source, settings) = init;
-        tracing::debug!("Initializing FileList component");
+        let (file_data_source, settings, selector) = init;
+        tracing::debug!(
+            "Initializing FileList component with selector: {:?}",
+            selector
+        );
 
         // Initialize the CSS.
         #[allow(clippy::no_effect)]
@@ -962,8 +967,10 @@ where
             status_filters.insert(status);
         }
 
+        // We already unpacked init at the beginning of the function
+
         let model = FileList {
-            file_data_source,
+            file_data_source: file_data_source.clone(),
             files: files_deque,
             details: None,
             status_filters,
@@ -971,7 +978,7 @@ where
             tag_deny_filters: HashSet::new(),
             all_tags: Vec::new(),
             all_files,
-            settings,
+            settings: settings.clone(),
             search_pattern: None,
             search_entry: None,
             regex_search_mode: false,
@@ -999,6 +1006,7 @@ where
             selected_file_id: None,
             error_message: error_message.clone(),
             is_offline: error_message.is_some(),
+            selector: selector.clone(),
         };
 
         // Load tags asynchronously
@@ -1798,59 +1806,9 @@ where
                     });
                     dialog.show();
                 } else {
-                    // Determine which file list this is (local or remote)
-                    let type_name = std::any::type_name::<FDS>();
-
-                    // Create the appropriate selector based on the type
-                    let selector = if type_name.contains("DbClient") {
-                        // This is a local file list
-                        crate::app::FileListSelector::LocalFiles
-                    } else if type_name.contains("FilesClient") {
-                        // This is a remote file list
-                        // Try to get the base URL from the file data source
-                        // We need to use reflection to access the base_url field
-                        // This is a bit hacky, but it works for now
-                        let base_url = std::any::type_name::<FDS>();
-
-                        // Extract the URL from the type name using a regex
-                        // The type name will be something like "archive_organizer::client::FilesClient"
-                        // We need to get the actual URL from the FilesClient instance
-
-                        // For now, let's try to get it from the first file in the list
-                        if let Some(first_file) = self.all_files.first() {
-                            // The path will be something like "http://example.com/files/123.pdf"
-                            // We need to extract the base URL from it
-                            if first_file.path.starts_with("http") {
-                                // Try to parse the URL from the path
-                                if let Ok(url) = url::Url::parse(&first_file.path) {
-                                    // Get the base URL (scheme + host + port)
-                                    let base_url = url::Url::parse(&format!(
-                                        "{}://{}{}",
-                                        url.scheme(),
-                                        url.host_str().unwrap_or("localhost"),
-                                        url.port().map(|p| format!(":{}", p)).unwrap_or_default()
-                                    )).unwrap_or_else(|_| url::Url::parse("http://localhost").unwrap());
-
-                                    crate::app::FileListSelector::RemoteFiles(base_url)
-                                } else {
-                                    // Fallback to local if we can't parse the URL
-                                    tracing::warn!("Could not parse URL from path: {}", first_file.path);
-                                    crate::app::FileListSelector::LocalFiles
-                                }
-                            } else {
-                                // Fallback to local if the path doesn't start with http
-                                tracing::warn!("Path doesn't start with http: {}", first_file.path);
-                                crate::app::FileListSelector::LocalFiles
-                            }
-                        } else {
-                            // Fallback to local if there are no files
-                            tracing::warn!("No files found in the list");
-                            crate::app::FileListSelector::LocalFiles
-                        }
-                    } else {
-                        // Unknown type, default to local
-                        crate::app::FileListSelector::LocalFiles
-                    };
+                    // Use the selector that was passed to the FileList when it was created
+                    let selector = self.selector.clone();
+                    tracing::debug!("Using selector for duplicates: {:?}", selector);
 
                     // Create a new output message to send to the parent component
                     let output = crate::file_box::FileBoxOutput::OpenDuplicatesTab(

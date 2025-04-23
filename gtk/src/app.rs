@@ -20,7 +20,7 @@ use url::Url;
 use crate::duplicates_page::{DuplicatesPage, DuplicatesPageInit, DuplicatesPageOutput};
 use crate::file_list::{FileList, FileListInput};
 use crate::settings_dialog::{SettingsDialog, SettingsDialogOutput};
-use archive_organizer::api::File;
+use archive_organizer::api::{File, FileDataSource};
 
 const COMPONENT_CSS: &str = include_str!("../assets/style.css");
 
@@ -177,7 +177,11 @@ impl AsyncComponent for App {
         // Initialize local file list with error handling
         tracing::debug!("Initializing local file list");
         let local_file_list = FileList::builder()
-            .launch((db_client, application_module.settings.clone()))
+            .launch((
+                db_client,
+                application_module.settings.clone(),
+                FileListSelector::LocalFiles,
+            ))
             .forward(sender.input_sender(), |msg| match msg {
                 crate::file_box::FileBoxOutput::OpenDuplicatesTab(selector, duplicates) => {
                     AppMessage::OpenDuplicatesTab(selector, duplicates)
@@ -192,8 +196,13 @@ impl AsyncComponent for App {
         for remote in remote_clients {
             tracing::debug!("Initializing remote file list for: {}", &remote.base_url);
             let url = remote.base_url.clone();
+            let url_clone = url.clone();
             let controller = FileList::builder()
-                .launch((remote.clone(), application_module.settings.clone()))
+                .launch((
+                    remote.clone(),
+                    application_module.settings.clone(),
+                    FileListSelector::RemoteFiles(url_clone),
+                ))
                 .forward(sender.input_sender(), |msg| match msg {
                     crate::file_box::FileBoxOutput::OpenDuplicatesTab(selector, duplicates) => {
                         AppMessage::OpenDuplicatesTab(selector, duplicates)
@@ -353,8 +362,9 @@ impl AsyncComponent for App {
             }
             AppMessage::OpenDuplicatesTab(selector, duplicates) => {
                 tracing::debug!(
-                    "Received OpenDuplicatesTab message with {} duplicate groups",
-                    duplicates.len()
+                    "Received OpenDuplicatesTab message with {} duplicate groups for selector: {:?}",
+                    duplicates.len(),
+                    selector
                 );
                 // Get the notebook widget
                 tracing::debug!("Looking for notebook widget");
@@ -378,11 +388,14 @@ impl AsyncComponent for App {
                             match selector {
                                 FileListSelector::LocalFiles => {
                                     // Create a new duplicates page for local files
+                                    let db_client = self.application_module.db_client();
                                     let init = DuplicatesPageInit {
                                         duplicates,
-                                        file_data_source: self.application_module.db_client(),
-                                        source_name: "Local Files".to_string(),
+                                        file_data_source: db_client.clone(),
                                     };
+
+                                    // Get the display name for the tab label
+                                    let display_name = db_client.display_name();
 
                                     let duplicates_controller = DuplicatesPage::builder()
                                         .launch(init)
@@ -408,7 +421,10 @@ impl AsyncComponent for App {
                                     let tab_box = gtk::Box::new(gtk::Orientation::Horizontal, 4);
 
                                     // Add the label
-                                    let label = gtk::Label::new(Some("Duplicates: Local Files"));
+                                    let label = gtk::Label::new(Some(&format!(
+                                        "Duplicates: {}",
+                                        display_name
+                                    )));
                                     tab_box.append(&label);
 
                                     // Add the close button
@@ -431,8 +447,10 @@ impl AsyncComponent for App {
                                     tab_box.show();
 
                                     // Add the page to the notebook with our custom tab label
-                                    notebook_widget
-                                        .append_page(duplicates_controller.widget(), Some(&tab_box));
+                                    notebook_widget.append_page(
+                                        duplicates_controller.widget(),
+                                        Some(&tab_box),
+                                    );
 
                                     // Store the controller
                                     self.duplicates_local = Some(duplicates_controller);
@@ -444,8 +462,9 @@ impl AsyncComponent for App {
                                 FileListSelector::RemoteFiles(url) => {
                                     // Create a new duplicates page for remote files
                                     // Find the remote client
-                                    let remote_clients = crate::get_remote_clients(&self.application_module)
-                                        .unwrap_or_default();
+                                    let remote_clients =
+                                        crate::get_remote_clients(&self.application_module)
+                                            .unwrap_or_default();
 
                                     // Try to find the matching remote client
                                     let remote_client = remote_clients
@@ -454,17 +473,26 @@ impl AsyncComponent for App {
 
                                     // If we can't find the remote client, show an error and return
                                     if remote_client.is_none() {
-                                        tracing::error!("Could not find remote client for URL: {}", url);
+                                        tracing::error!(
+                                            "Could not find remote client for URL: {}",
+                                            url
+                                        );
 
                                         // Show an error dialog
                                         let dialog = gtk::MessageDialog::new(
                                             gtk::gio::Application::default()
-                                                .and_then(|app| app.downcast::<gtk::Application>().ok())
-                                                .and_then(|app| app.active_window()).as_ref(),
+                                                .and_then(|app| {
+                                                    app.downcast::<gtk::Application>().ok()
+                                                })
+                                                .and_then(|app| app.active_window())
+                                                .as_ref(),
                                             gtk::DialogFlags::MODAL,
                                             gtk::MessageType::Error,
                                             gtk::ButtonsType::Ok,
-                                            &format!("Could not find remote client for URL: {}", url)
+                                            &format!(
+                                                "Could not find remote client for URL: {}",
+                                                url
+                                            ),
                                         );
                                         dialog.set_title(Some("Error"));
                                         dialog.connect_response(|dialog, _| {
@@ -476,13 +504,12 @@ impl AsyncComponent for App {
 
                                     let remote_client = remote_client.unwrap();
 
+                                    // Get the display name for the tab label
+                                    let display_name = remote_client.display_name();
+
                                     let init = DuplicatesPageInit {
                                         duplicates,
                                         file_data_source: remote_client,
-                                        source_name: format!(
-                                            "Remote: {}",
-                                            url.host_str().unwrap_or("Unknown")
-                                        ),
                                     };
 
                                     let url_clone = url.clone();
@@ -518,7 +545,7 @@ impl AsyncComponent for App {
                                     // Add the label
                                     let label = gtk::Label::new(Some(&format!(
                                         "Duplicates: {}",
-                                        url.host_str().unwrap_or("Unknown")
+                                        display_name
                                     )));
                                     tab_box.append(&label);
 
@@ -543,8 +570,10 @@ impl AsyncComponent for App {
                                     tab_box.show();
 
                                     // Add the page to the notebook with our custom tab label
-                                    notebook_widget
-                                        .append_page(duplicates_controller.widget(), Some(&tab_box));
+                                    notebook_widget.append_page(
+                                        duplicates_controller.widget(),
+                                        Some(&tab_box),
+                                    );
 
                                     // Store the controller
                                     self.duplicates_remote
@@ -693,7 +722,9 @@ impl AsyncComponent for App {
                                     }
                                 }
                                 FileListSelector::DuplicatesRemote(url) => {
-                                    if let Some(duplicates_controller) = self.duplicates_remote.get(&url) {
+                                    if let Some(duplicates_controller) =
+                                        self.duplicates_remote.get(&url)
+                                    {
                                         // Find the tab index
                                         for i in 0..notebook_widget.n_pages() {
                                             if let Some(page) = notebook_widget.nth_page(Some(i)) {
@@ -708,7 +739,9 @@ impl AsyncComponent for App {
                                 }
                                 _ => {
                                     // We shouldn't get here
-                                    tracing::warn!("Received refresh message for a non-duplicates tab");
+                                    tracing::warn!(
+                                        "Received refresh message for a non-duplicates tab"
+                                    );
                                 }
                             }
                         }

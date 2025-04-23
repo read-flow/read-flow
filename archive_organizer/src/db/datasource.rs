@@ -28,6 +28,10 @@ impl DbClient {
 impl FileDataSource for DbClient {
     type Error = Error;
 
+    fn display_name(&self) -> String {
+        "Local Files".to_string()
+    }
+
     async fn status(&self) -> Result<Status, Self::Error> {
         tokio::task::block_in_place(|| {
             let mut connection = self.connection_pool.get()?;

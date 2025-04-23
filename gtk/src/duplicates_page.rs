@@ -25,13 +25,11 @@ pub enum DuplicatesPageOutput {
 pub struct DuplicatesPageInit<FDS> {
     pub duplicates: Vec<Vec<File>>,
     pub file_data_source: FDS,
-    pub source_name: String,
 }
 
 pub struct DuplicatesPage<FDS> {
     duplicates: Vec<Vec<File>>,
     file_data_source: FDS,
-    source_name: String,
 }
 
 impl<FDS> DuplicatesPage<FDS>
@@ -54,7 +52,11 @@ where
                         for (i, group) in self.duplicates.iter().enumerate() {
                             if !group.is_empty() {
                                 // Create a frame for this group
-                                let frame = gtk::Frame::new(Some(&format!("Group {} - Fingerprint: {}...", i+1, &group[0].fingerprint[..16])));
+                                let frame = gtk::Frame::new(Some(&format!(
+                                    "Group {} - Fingerprint: {}...",
+                                    i + 1,
+                                    &group[0].fingerprint[..16]
+                                )));
                                 frame.add_css_class("card");
 
                                 // Create a box for the group content
@@ -62,7 +64,10 @@ where
                                 group_box.set_margin_all(12);
 
                                 // Add a label with the number of duplicates
-                                let label = gtk::Label::new(Some(&format!("{} duplicate files found with the same content:", group.len())));
+                                let label = gtk::Label::new(Some(&format!(
+                                    "{} duplicate files found with the same content:",
+                                    group.len()
+                                )));
                                 label.set_halign(gtk::Align::Start);
                                 label.add_css_class("heading");
                                 group_box.append(&label);
@@ -93,7 +98,8 @@ where
                                     file_box.set_margin_end(8);
 
                                     // Extract filename and directory from path
-                                    let (filename, folder) = crate::ui_utils::extract_path_components(&file.path);
+                                    let (filename, folder) =
+                                        crate::ui_utils::extract_path_components(&file.path);
 
                                     // Create a box for the filename and folder
                                     let path_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -145,7 +151,9 @@ where
                                     // Connect the button to the delete action
                                     let sender_clone = sender.clone();
                                     delete_button.connect_clicked(move |_| {
-                                        sender_clone.input(DuplicatesPageInput::DeleteFile(file_clone.clone()));
+                                        sender_clone.input(DuplicatesPageInput::DeleteFile(
+                                            file_clone.clone(),
+                                        ));
                                     });
 
                                     row_box.append(&delete_button);
@@ -193,7 +201,7 @@ where
                 set_margin_bottom: 16,
 
                 append = &gtk::Label {
-                    set_markup: &format!("<b>Duplicate Files from {}</b>", model.source_name),
+                    set_markup: &format!("<b>Duplicate Files from {}</b>", model.file_data_source.display_name()),
                     set_halign: gtk::Align::Start,
                     set_hexpand: true,
                 },
@@ -237,7 +245,6 @@ where
         let model = Self {
             duplicates: init.duplicates.clone(),
             file_data_source: init.file_data_source,
-            source_name: init.source_name,
         };
 
         // Create an empty box for the duplicate groups
@@ -367,7 +374,7 @@ where
                     gtk::DialogFlags::MODAL,
                     gtk::MessageType::Info,
                     gtk::ButtonsType::None,
-                    "Refreshing duplicates list..."
+                    "Refreshing duplicates list...",
                 );
                 dialog.set_title(Some("Refreshing"));
                 dialog.show();
@@ -376,10 +383,9 @@ where
                 match self.file_data_source.get_files().await {
                     Ok(files) => {
                         // Group files by fingerprint
-                        let buckets = archive_organizer::to_buckets(
-                            files.iter(),
-                            |file| file.fingerprint.clone()
-                        );
+                        let buckets = archive_organizer::to_buckets(files.iter(), |file| {
+                            file.fingerprint.clone()
+                        });
 
                         // Filter for buckets with more than one file (duplicates)
                         let new_duplicates: Vec<Vec<File>> = buckets
@@ -413,7 +419,7 @@ where
                             gtk::DialogFlags::MODAL,
                             gtk::MessageType::Error,
                             gtk::ButtonsType::Ok,
-                            &format!("Failed to refresh duplicates list: {}", e)
+                            &format!("Failed to refresh duplicates list: {}", e),
                         );
                         error_dialog.set_title(Some("Error"));
                         error_dialog.connect_response(|dialog, _| {

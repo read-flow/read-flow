@@ -144,6 +144,11 @@ impl FilesClient {
 impl FileDataSource for FilesClient {
     type Error = Error;
 
+    fn display_name(&self) -> String {
+        let host = self.base_url.host_str().unwrap_or("Unknown");
+        format!("Remote: {}", host)
+    }
+
     async fn status(&self) -> Result<Status, Error> {
         self.get_json("status").await
     }
