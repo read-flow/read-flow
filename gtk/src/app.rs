@@ -397,6 +397,11 @@ impl AsyncComponent for App {
                                                     FileListSelector::DuplicatesLocal,
                                                 )
                                             }
+                                            DuplicatesPageOutput::Refreshed => {
+                                                AppMessage::RefreshDuplicatesTab(
+                                                    FileListSelector::DuplicatesLocal,
+                                                )
+                                            }
                                         });
 
                                     // Add the page to the notebook
@@ -443,6 +448,13 @@ impl AsyncComponent for App {
                                             }
                                             DuplicatesPageOutput::FileDeleted => {
                                                 AppMessage::DuplicatesFileDeleted(
+                                                    FileListSelector::DuplicatesRemote(
+                                                        url_clone.clone(),
+                                                    ),
+                                                )
+                                            }
+                                            DuplicatesPageOutput::Refreshed => {
+                                                AppMessage::RefreshDuplicatesTab(
                                                     FileListSelector::DuplicatesRemote(
                                                         url_clone.clone(),
                                                     ),
@@ -575,6 +587,58 @@ impl AsyncComponent for App {
                     }
                 }
             }
+            AppMessage::RefreshDuplicatesTab(selector) => {
+                tracing::debug!("Refreshing duplicates tab: {:?}", selector);
+                // Get the notebook widget
+                let notebook_opt = root.first_child();
+
+                if let Some(first_child) = notebook_opt {
+                    // Try to get the Box inside the ApplicationWindow
+                    if first_child.type_().name() == "GtkBox" {
+                        // If the first child is a Box, look for the Notebook inside it
+                        if let Some(notebook_widget) = first_child
+                            .first_child()
+                            .and_then(|child| child.downcast::<gtk::Notebook>().ok())
+                        {
+                            // Find the tab index for the duplicates page
+                            match selector {
+                                FileListSelector::DuplicatesLocal => {
+                                    if let Some(duplicates_controller) = &self.duplicates_local {
+                                        // Find the tab index
+                                        for i in 0..notebook_widget.n_pages() {
+                                            if let Some(page) = notebook_widget.nth_page(Some(i)) {
+                                                if page == *duplicates_controller.widget() {
+                                                    // Switch to this tab to show the refreshed content
+                                                    notebook_widget.set_current_page(Some(i));
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                FileListSelector::DuplicatesRemote(url) => {
+                                    if let Some(duplicates_controller) = self.duplicates_remote.get(&url) {
+                                        // Find the tab index
+                                        for i in 0..notebook_widget.n_pages() {
+                                            if let Some(page) = notebook_widget.nth_page(Some(i)) {
+                                                if page == *duplicates_controller.widget() {
+                                                    // Switch to this tab to show the refreshed content
+                                                    notebook_widget.set_current_page(Some(i));
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => {
+                                    // We shouldn't get here
+                                    tracing::warn!("Received refresh message for a non-duplicates tab");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -589,4 +653,5 @@ pub enum AppMessage {
     OpenDuplicatesTab(FileListSelector, Vec<Vec<File>>),
     CloseDuplicatesTab(FileListSelector),
     DuplicatesFileDeleted(FileListSelector),
+    RefreshDuplicatesTab(FileListSelector),
 }
