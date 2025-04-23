@@ -1,6 +1,7 @@
 use gtk::prelude::*;
 use regex::Regex;
 use relm4::RelmWidgetExt;
+use relm4::Sender;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentController;
 use relm4::component::AsyncComponentParts;
@@ -10,7 +11,6 @@ use relm4::gtk;
 use relm4::gtk::glib;
 use relm4::once_cell::sync::Lazy;
 use relm4::prelude::*;
-use relm4::Sender;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
@@ -21,6 +21,8 @@ use crate::file_box::FileBox;
 use crate::file_box::FileBoxOutput;
 use crate::file_details::{FileDetails, FileDetailsOutput};
 use crate::tag_input::{TagInput, TagInputInput, TagInputOutput};
+// We'll use this in a future update
+// use crate::duplicates_dialog::{DuplicatesDialog, DuplicatesDialogInit, DuplicatesDialogOutput, FDS};
 
 use std::collections::HashSet;
 
@@ -134,6 +136,7 @@ pub enum FileListInput {
     AddTagToAllFiles(String),
     ConfirmAddTagToAllFiles(String),
     UpdateSettings(Arc<Settings>),
+    FindDuplicates,
 }
 
 impl<FDS> FileList<FDS>
@@ -156,14 +159,16 @@ where
             gtk::DialogFlags::MODAL,
             gtk::MessageType::Warning,
             gtk::ButtonsType::None,
-            &format!("Add tag \"{}\" to all displayed files?", tag)
+            format!("Add tag \"{}\" to all displayed files?", tag),
         );
 
         // Set dialog title
         dialog.set_title(Some("Confirm Bulk Tag Addition"));
 
         // Add secondary text
-        dialog.set_secondary_text(Some("This action will add the tag to all files currently displayed in the list."));
+        dialog.set_secondary_text(Some(
+            "This action will add the tag to all files currently displayed in the list.",
+        ));
 
         // Set dialog title
         dialog.set_title(Some("Confirm Bulk Tag Addition"));
@@ -207,26 +212,27 @@ where
 
             if response == gtk::ResponseType::Accept {
                 // User confirmed, proceed with adding the tag
-                tracing::debug!("User confirmed adding tag '{}' to all displayed files", tag_clone);
+                tracing::debug!(
+                    "User confirmed adding tag '{}' to all displayed files",
+                    tag_clone
+                );
 
                 // Show a loading indicator
                 if let Some(input_sender) = &tag_input_sender {
-                    input_sender
-                        .send(TagInputInput::SetLoading(true))
-                        .unwrap();
+                    input_sender.send(TagInputInput::SetLoading(true)).unwrap();
                 }
 
                 // Send a message to actually add the tag
-                sender.send(FileListInput::ConfirmAddTagToAllFiles(tag_clone.clone())).unwrap();
+                sender
+                    .send(FileListInput::ConfirmAddTagToAllFiles(tag_clone.clone()))
+                    .unwrap();
             } else {
                 // User cancelled
                 tracing::debug!("User cancelled adding tag to files");
 
                 // Clear the tag input field
                 if let Some(input_sender) = &tag_input_sender {
-                    input_sender
-                        .send(TagInputInput::ClearEntry)
-                        .unwrap();
+                    input_sender.send(TagInputInput::ClearEntry).unwrap();
                 }
             }
         });
@@ -813,6 +819,17 @@ where
                                 sender.input(FileListInput::ClearSearch);
                             },
                             set_visible: model.search_pattern.is_some() && model.search_pattern.as_ref().is_some_and(|p| !p.is_empty()),
+                        },
+
+                        // Find Duplicates button
+                        gtk::Button {
+                            set_icon_name: "edit-copy-symbolic",
+                            set_tooltip_text: Some("Find Duplicate Files"),
+                            add_css_class: "flat",
+                            add_css_class: "circular",
+                            connect_clicked[sender] => move |_| {
+                                sender.input(FileListInput::FindDuplicates);
+                            },
                         },
                     },
 
@@ -1441,7 +1458,11 @@ where
 
                 // Create and launch the file details component
                 let controller = FileDetails::builder()
-                    .launch((file.clone(), self.file_data_source.clone(), self.settings.clone()))
+                    .launch((
+                        file.clone(),
+                        self.file_data_source.clone(),
+                        self.settings.clone(),
+                    ))
                     .forward(sender.input_sender(), |msg| match msg {
                         FileDetailsOutput::TagsChanged(_) => FileListInput::RefreshFiles,
                         FileDetailsOutput::TagAdded(_) => FileListInput::RefreshFiles,
@@ -1574,7 +1595,9 @@ where
                 Self::show_tag_confirmation_dialog(
                     tag.clone(),
                     sender.input_sender().clone(),
-                    self.bulk_tag_input.as_ref().map(|input| input.sender().clone())
+                    self.bulk_tag_input
+                        .as_ref()
+                        .map(|input| input.sender().clone()),
                 );
             }
 
@@ -1735,6 +1758,59 @@ where
 
                 // Reload files and tags with the new settings
                 sender.input(FileListInput::RefreshFiles);
+            }
+            FileListInput::FindDuplicates => {
+                tracing::debug!("Finding duplicate files");
+
+                // Use the to_buckets function to group files by fingerprint
+                let buckets = archive_organizer::to_buckets(
+                    self.all_files.iter(),
+                    |file| file.fingerprint.clone()
+                );
+
+                // Filter for buckets with more than one file (duplicates)
+                let duplicates: Vec<Vec<File>> = buckets
+                    .into_iter()
+                    .filter(|(_, files)| files.len() > 1)
+                    .map(|(_, files)| files.into_iter().cloned().collect())
+                    .collect();
+
+                if duplicates.is_empty() {
+                    // Show a message dialog if no duplicates are found
+                    let dialog = gtk::MessageDialog::new(
+                        gtk::gio::Application::default()
+                            .and_then(|app| app.downcast::<gtk::Application>().ok())
+                            .and_then(|app| app.active_window()).as_ref(),
+                        gtk::DialogFlags::MODAL,
+                        gtk::MessageType::Info,
+                        gtk::ButtonsType::Ok,
+                        "No duplicate files found"
+                    );
+                    dialog.set_title(Some("Duplicate Files"));
+                    dialog.connect_response(|dialog, _| {
+                        dialog.close();
+                    });
+                    dialog.show();
+                } else {
+                    // Show a simple message dialog for now
+                    let dialog = gtk::MessageDialog::new(
+                        gtk::gio::Application::default()
+                            .and_then(|app| app.downcast::<gtk::Application>().ok())
+                            .and_then(|app| app.active_window()).as_ref(),
+                        gtk::DialogFlags::MODAL,
+                        gtk::MessageType::Info,
+                        gtk::ButtonsType::Ok,
+                        &format!("{} groups of duplicate files found", duplicates.len())
+                    );
+                    dialog.set_title(Some("Duplicate Files"));
+                    dialog.connect_response(|dialog, _| {
+                        dialog.close();
+                    });
+                    dialog.show();
+
+                    // TODO: Implement the duplicates dialog component
+                    // This will be implemented in a future update
+                }
             }
         }
     }

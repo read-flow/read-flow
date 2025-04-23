@@ -151,4 +151,7 @@ pub trait FileDataSource {
     async fn update_file(&self, file: File) -> Result<(), Self::Error>;
 
     async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error>;
+
+    /// Delete a file both from the database and the filesystem
+    async fn delete_file(&self, file: File) -> Result<(), Self::Error>;
 }

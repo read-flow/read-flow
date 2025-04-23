@@ -1,19 +1,19 @@
 use gtk::prelude::*;
+use indexmap::IndexMap;
+use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentParts;
 use relm4::component::AsyncComponentSender;
 use relm4::gtk;
-use relm4::RelmWidgetExt;
-use std::sync::Arc;
-use std::fs;
-use std::path::PathBuf;
-use std::io::Write;
-use indexmap::IndexMap;
 use std::collections::HashMap;
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
+use std::sync::Arc;
 
-use archive_organizer::settings::{Settings, UiSettings};
-use archive_organizer::scan::DirectorySettings;
 use archive_organizer::ExpandedPath;
+use archive_organizer::scan::DirectorySettings;
+use archive_organizer::settings::{Settings, UiSettings};
 
 #[derive(Debug, Clone)]
 pub struct SettingsDialog {
@@ -58,13 +58,17 @@ pub enum SettingsDialogOutput {
 
 impl SettingsDialog {
     fn get_config_path() -> PathBuf {
-        if std::path::Path::new("Cargo.toml").exists() && std::path::Path::new("archive-organizer.toml").exists() {
+        if std::path::Path::new("Cargo.toml").exists()
+            && std::path::Path::new("archive-organizer.toml").exists()
+        {
             PathBuf::from("archive-organizer.toml")
                 .canonicalize()
                 .expect("should work for valid file")
         } else {
             let home = std::env::var("HOME").expect("HOME environment variable not set");
-            PathBuf::from(format!("{home}/.config/archive-organizer/archive-organizer.toml"))
+            PathBuf::from(format!(
+                "{home}/.config/archive-organizer/archive-organizer.toml"
+            ))
         }
     }
 
@@ -74,7 +78,8 @@ impl SettingsDialog {
         let content = fs::read_to_string(&config_path)?;
 
         // Parse the TOML content
-        let mut doc = content.parse::<toml_edit::Document>()
+        let mut doc = content
+            .parse::<toml_edit::Document>()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
         // Update the database settings
@@ -112,9 +117,12 @@ impl SettingsDialog {
                         // Add new auto_tags
                         for (pattern, tags) in &self.auto_tags {
                             let tags_array = toml_edit::Array::from_iter(
-                                tags.iter().map(|tag| toml_edit::Value::from(tag.clone()))
+                                tags.iter().map(|tag| toml_edit::Value::from(tag.clone())),
                             );
-                            auto_tags_table.insert(pattern, toml_edit::value(toml_edit::Value::Array(tags_array)));
+                            auto_tags_table.insert(
+                                pattern,
+                                toml_edit::value(toml_edit::Value::Array(tags_array)),
+                            );
                         }
                     }
                 } else {
@@ -122,9 +130,12 @@ impl SettingsDialog {
                     let mut auto_tags_table = toml_edit::Table::new();
                     for (pattern, tags) in &self.auto_tags {
                         let tags_array = toml_edit::Array::from_iter(
-                            tags.iter().map(|tag| toml_edit::Value::from(tag.clone()))
+                            tags.iter().map(|tag| toml_edit::Value::from(tag.clone())),
                         );
-                        auto_tags_table.insert(pattern, toml_edit::value(toml_edit::Value::Array(tags_array)));
+                        auto_tags_table.insert(
+                            pattern,
+                            toml_edit::value(toml_edit::Value::Array(tags_array)),
+                        );
                     }
                     table.insert("auto_tags", toml_edit::Item::Table(auto_tags_table));
                 }
@@ -143,9 +154,12 @@ impl SettingsDialog {
 
                             if action == "Scan" {
                                 let tags_array = toml_edit::Array::from_iter(
-                                    tags.iter().map(|tag| toml_edit::Value::from(tag.clone()))
+                                    tags.iter().map(|tag| toml_edit::Value::from(tag.clone())),
                                 );
-                                dir_table.insert("tags", toml_edit::value(toml_edit::Value::Array(tags_array)));
+                                dir_table.insert(
+                                    "tags",
+                                    toml_edit::value(toml_edit::Value::Array(tags_array)),
+                                );
                             }
 
                             directories_table.insert(path, toml_edit::Item::Table(dir_table));
@@ -161,9 +175,12 @@ impl SettingsDialog {
 
                         if action == "Scan" {
                             let tags_array = toml_edit::Array::from_iter(
-                                tags.iter().map(|tag| toml_edit::Value::from(tag.clone()))
+                                tags.iter().map(|tag| toml_edit::Value::from(tag.clone())),
                             );
-                            dir_table.insert("tags", toml_edit::value(toml_edit::Value::Array(tags_array)));
+                            dir_table.insert(
+                                "tags",
+                                toml_edit::value(toml_edit::Value::Array(tags_array)),
+                            );
                         }
 
                         directories_table.insert(path, toml_edit::Item::Table(dir_table));
@@ -180,9 +197,12 @@ impl SettingsDialog {
             let mut auto_tags_table = toml_edit::Table::new();
             for (pattern, tags) in &self.auto_tags {
                 let tags_array = toml_edit::Array::from_iter(
-                    tags.iter().map(|tag| toml_edit::Value::from(tag.clone()))
+                    tags.iter().map(|tag| toml_edit::Value::from(tag.clone())),
                 );
-                auto_tags_table.insert(pattern, toml_edit::value(toml_edit::Value::Array(tags_array)));
+                auto_tags_table.insert(
+                    pattern,
+                    toml_edit::value(toml_edit::Value::Array(tags_array)),
+                );
             }
             scan_table.insert("auto_tags", toml_edit::Item::Table(auto_tags_table));
 
@@ -195,9 +215,12 @@ impl SettingsDialog {
 
                 if action == "Scan" {
                     let tags_array = toml_edit::Array::from_iter(
-                        tags.iter().map(|tag| toml_edit::Value::from(tag.clone()))
+                        tags.iter().map(|tag| toml_edit::Value::from(tag.clone())),
                     );
-                    dir_table.insert("tags", toml_edit::value(toml_edit::Value::Array(tags_array)));
+                    dir_table.insert(
+                        "tags",
+                        toml_edit::value(toml_edit::Value::Array(tags_array)),
+                    );
                 }
 
                 directories_table.insert(path, toml_edit::Item::Table(dir_table));
@@ -219,12 +242,17 @@ impl SettingsDialog {
 
                 // Update private_tags
                 let tags_array = toml_edit::Array::from_iter(
-                    self.private_tags.iter().map(|tag| toml_edit::Value::from(tag.clone()))
+                    self.private_tags
+                        .iter()
+                        .map(|tag| toml_edit::Value::from(tag.clone())),
                 );
                 if let Some(private_tags) = table.get_mut("private_tags") {
                     *private_tags = toml_edit::value(toml_edit::Value::Array(tags_array));
                 } else {
-                    table.insert("private_tags", toml_edit::value(toml_edit::Value::Array(tags_array)));
+                    table.insert(
+                        "private_tags",
+                        toml_edit::value(toml_edit::Value::Array(tags_array)),
+                    );
                 }
             }
         } else {
@@ -233,9 +261,14 @@ impl SettingsDialog {
             ui_table.insert("private_mode", toml_edit::value(self.private_mode));
 
             let tags_array = toml_edit::Array::from_iter(
-                self.private_tags.iter().map(|tag| toml_edit::Value::from(tag.clone()))
+                self.private_tags
+                    .iter()
+                    .map(|tag| toml_edit::Value::from(tag.clone())),
             );
-            ui_table.insert("private_tags", toml_edit::value(toml_edit::Value::Array(tags_array)));
+            ui_table.insert(
+                "private_tags",
+                toml_edit::value(toml_edit::Value::Array(tags_array)),
+            );
 
             doc.insert("ui", toml_edit::Item::Table(ui_table));
         }
@@ -617,7 +650,9 @@ impl AsyncComponent for SettingsDialog {
                 let start = buffer.start_iter();
                 let end = buffer.end_iter();
                 let text = buffer.text(&start, &end, false).to_string();
-                sender_clone.send(SettingsDialogInput::UpdateAutoTags(text)).unwrap();
+                sender_clone
+                    .send(SettingsDialogInput::UpdateAutoTags(text))
+                    .unwrap();
             });
         }
 
@@ -626,7 +661,13 @@ impl AsyncComponent for SettingsDialog {
             let mut directories_text = String::new();
             for (path, (action, inherit, tags)) in &model.directories {
                 if action == "Scan" {
-                    directories_text.push_str(&format!("{} = {}, {}, {}\n", path, action, inherit, tags.join(", ")));
+                    directories_text.push_str(&format!(
+                        "{} = {}, {}, {}\n",
+                        path,
+                        action,
+                        inherit,
+                        tags.join(", ")
+                    ));
                 } else {
                     directories_text.push_str(&format!("{} = {}, {}\n", path, action, inherit));
                 }
@@ -639,7 +680,9 @@ impl AsyncComponent for SettingsDialog {
                 let start = buffer.start_iter();
                 let end = buffer.end_iter();
                 let text = buffer.text(&start, &end, false).to_string();
-                sender_clone.send(SettingsDialogInput::UpdateDirectories(text)).unwrap();
+                sender_clone
+                    .send(SettingsDialogInput::UpdateDirectories(text))
+                    .unwrap();
             });
         }
 
@@ -728,7 +771,9 @@ impl AsyncComponent for SettingsDialog {
             SettingsDialogInput::SaveSettings => {
                 match self.save_settings() {
                     Ok(new_settings) => {
-                        sender.output(SettingsDialogOutput::SettingsSaved(new_settings)).unwrap();
+                        sender
+                            .output(SettingsDialogOutput::SettingsSaved(new_settings))
+                            .unwrap();
                         root.close();
                     }
                     Err(e) => {

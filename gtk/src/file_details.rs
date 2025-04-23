@@ -682,10 +682,10 @@ where
                     let available_tags: Vec<String> = self
                         .all_tags
                         .iter()
-                        .filter(|tag|
-                            !current_file_tags.contains(tag) &&
-                            !self.settings.ui.hidden_tags().contains(tag)
-                        )
+                        .filter(|tag| {
+                            !current_file_tags.contains(tag)
+                                && !self.settings.ui.hidden_tags().contains(tag)
+                        })
                         .cloned()
                         .collect();
 

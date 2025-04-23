@@ -1,12 +1,13 @@
-use std::process::ExitStatus;
+use std::{process::ExitStatus, sync::Arc};
 
-use diesel::RunQueryDsl;
+use diesel::{RunQueryDsl, prelude::*};
 use indexmap::IndexMap;
 use tokio::process::Command;
 
 use crate::{
     api::{File, FileDataSource, Status},
     db::models::{File as DbFile, FileTag as DbFileTag},
+    db::schema::{file_tags, files},
 };
 
 use super::ConnectionPool;
@@ -132,5 +133,27 @@ impl FileDataSource for DbClient {
     async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error> {
         let status = Command::new("xdg-open").arg(file.path).status().await?;
         Ok(status)
+    }
+
+    async fn delete_file(&self, file: File) -> Result<(), Self::Error> {
+        // First delete the file from the filesystem
+        if let Err(e) = tokio::fs::remove_file(&file.path).await {
+            tracing::warn!("Failed to delete file from filesystem: {}", e);
+            return Err(Error::IO(Arc::new(e)));
+        }
+
+        // Then delete the file from the database
+        tokio::task::block_in_place(|| {
+            let mut connection = self.connection_pool.get()?;
+
+            // First delete all tags associated with the file
+            diesel::delete(file_tags::table.filter(file_tags::file_id.eq(file.id)))
+                .execute(&mut connection)?;
+
+            // Then delete the file itself
+            diesel::delete(files::table.filter(files::id.eq(file.id))).execute(&mut connection)?;
+
+            Ok(())
+        })
     }
 }

@@ -229,6 +229,22 @@ impl FileDataSource for FilesClient {
 
         Ok(status)
     }
+
+    async fn delete_file(&self, file: File) -> Result<(), Error> {
+        // Send a DELETE request to the server
+        let response = self
+            .client
+            .delete(self.base_url.join(&format!("files/{}", file.id))?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, "bearer secret")
+            .send()
+            .await?;
+
+        // Check if the request was successful
+        response.error_for_status_ref()?;
+
+        Ok(())
+    }
 }
 
 async fn fingerprint_of(filename: &Path) -> Result<String, Error> {

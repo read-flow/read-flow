@@ -251,7 +251,9 @@ impl AsyncComponent for App {
                     .launch(self.application_module.settings.clone())
                     .forward(sender.input_sender(), |msg| match msg {
                         SettingsDialogOutput::Closed => AppMessage::SettingsDialogClosed,
-                        SettingsDialogOutput::SettingsSaved(settings) => AppMessage::SettingsSaved(settings),
+                        SettingsDialogOutput::SettingsSaved(settings) => {
+                            AppMessage::SettingsSaved(settings)
+                        }
                     });
 
                 self.settings_dialog = Some(settings_dialog);
@@ -267,10 +269,20 @@ impl AsyncComponent for App {
                 self.application_module = ApplicationModule::from_settings(settings_copy);
 
                 // Update the file lists with the new settings
-                self.local_file_list.sender().send(crate::file_list::FileListInput::UpdateSettings(self.application_module.settings.clone())).unwrap();
+                self.local_file_list
+                    .sender()
+                    .send(crate::file_list::FileListInput::UpdateSettings(
+                        self.application_module.settings.clone(),
+                    ))
+                    .unwrap();
 
                 for (_, controller) in &self.remote_file_lists {
-                    controller.sender().send(crate::file_list::FileListInput::UpdateSettings(self.application_module.settings.clone())).unwrap();
+                    controller
+                        .sender()
+                        .send(crate::file_list::FileListInput::UpdateSettings(
+                            self.application_module.settings.clone(),
+                        ))
+                        .unwrap();
                 }
 
                 // Clean up the settings dialog

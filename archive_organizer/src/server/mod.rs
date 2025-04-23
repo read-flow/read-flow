@@ -21,6 +21,7 @@ use crate::{
     db::{
         self,
         dao::{self, FileDao, FileTagDao},
+        datasource::DbClient,
     },
     scan, settings, to_unique_file,
 };
@@ -61,6 +62,9 @@ enum Error {
         #[source]
         scan::Error,
     ),
+    #[error("file with id {0} not found")]
+    #[response(status = 404)]
+    FileNotFound(String),
 }
 
 impl From<dao::Error> for Error {
@@ -113,6 +117,7 @@ pub fn serve() -> _ {
         get_files_tags,
         download_file,
         upload_file,
+        delete_file,
     ];
 
     rocket::custom(figment)
@@ -283,6 +288,26 @@ async fn download_file(
                 .ok()
                 .map(|file| (content_type, file)))
         }
+    }
+}
+
+#[delete("/files/<id>")]
+async fn delete_file(
+    id: i32,
+    application_module: &State<ApplicationModule>,
+    _user: AuthorizedUser,
+) -> Result<()> {
+    let db_client = DbClient::new(application_module.connection_pool.clone());
+    // Get the file to delete
+    let file = db_client.get_file(id).await?;
+
+    if let Some(file) = file {
+        // Delete the file from the database
+        db_client.delete_file(file).await?;
+
+        Ok(())
+    } else {
+        Err(Error::FileNotFound(id.to_string()))
     }
 }
 
