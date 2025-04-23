@@ -1,5 +1,4 @@
 use gtk::prelude::*;
-use indexmap::IndexMap;
 use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentParts;
@@ -11,7 +10,6 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use archive_organizer::ExpandedPath;
 use archive_organizer::scan::DirectorySettings;
 use archive_organizer::settings::{Settings, UiSettings};
 

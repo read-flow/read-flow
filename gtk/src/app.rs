@@ -17,8 +17,10 @@ use std::sync::Arc;
 use tracing;
 use url::Url;
 
-use crate::file_list::FileList;
+use crate::duplicates_page::{DuplicatesPage, DuplicatesPageInit, DuplicatesPageOutput};
+use crate::file_list::{FileList, FileListInput};
 use crate::settings_dialog::{SettingsDialog, SettingsDialogOutput};
+use archive_organizer::api::File;
 
 const COMPONENT_CSS: &str = include_str!("../assets/style.css");
 
@@ -28,9 +30,11 @@ static INITIALIZE_CSS: Lazy<()> = Lazy::new(|| {
 });
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum FileListSelector {
+pub enum FileListSelector {
     LocalFiles,
     RemoteFiles(Url),
+    DuplicatesLocal,
+    DuplicatesRemote(Url),
 }
 
 pub struct App {
@@ -39,6 +43,9 @@ pub struct App {
     remote_file_lists: IndexMap<Url, AsyncController<FileList<FilesClient>>>,
     file_list_selector: FileListSelector,
     settings_dialog: Option<AsyncController<SettingsDialog>>,
+    // Duplicates pages
+    duplicates_local: Option<AsyncController<DuplicatesPage<DbClient>>>,
+    duplicates_remote: IndexMap<Url, AsyncController<DuplicatesPage<FilesClient>>>,
 }
 
 impl App {
@@ -47,6 +54,20 @@ impl App {
             FileListSelector::LocalFiles => self.local_file_list.widget().upcast_ref(),
             FileListSelector::RemoteFiles(url_selector) => self
                 .remote_file_lists
+                .iter()
+                .find(|(base_url, _)| base_url == &url_selector)
+                .unwrap()
+                .1
+                .widget()
+                .upcast_ref(),
+            FileListSelector::DuplicatesLocal => self
+                .duplicates_local
+                .as_ref()
+                .unwrap()
+                .widget()
+                .upcast_ref(),
+            FileListSelector::DuplicatesRemote(url_selector) => self
+                .duplicates_remote
                 .iter()
                 .find(|(base_url, _)| base_url == &url_selector)
                 .unwrap()
@@ -157,7 +178,12 @@ impl AsyncComponent for App {
         tracing::debug!("Initializing local file list");
         let local_file_list = FileList::builder()
             .launch((db_client, application_module.settings.clone()))
-            .forward(sender.input_sender(), |_| AppMessage::ChangeFileList);
+            .forward(sender.input_sender(), |msg| match msg {
+                crate::file_box::FileBoxOutput::OpenDuplicatesTab(selector, duplicates) => {
+                    AppMessage::OpenDuplicatesTab(selector, duplicates)
+                }
+                _ => AppMessage::ChangeFileList,
+            });
         tracing::debug!("Successfully initialized local file list");
 
         tracing::debug!("Initializing remote file lists");
@@ -168,7 +194,12 @@ impl AsyncComponent for App {
             let url = remote.base_url.clone();
             let controller = FileList::builder()
                 .launch((remote.clone(), application_module.settings.clone()))
-                .forward(sender.input_sender(), |_| AppMessage::ChangeFileList);
+                .forward(sender.input_sender(), |msg| match msg {
+                    crate::file_box::FileBoxOutput::OpenDuplicatesTab(selector, duplicates) => {
+                        AppMessage::OpenDuplicatesTab(selector, duplicates)
+                    }
+                    _ => AppMessage::ChangeFileList,
+                });
             tracing::debug!("Successfully initialized remote file list for: {}", &url);
             remote_file_lists.insert(url, controller);
         }
@@ -216,6 +247,8 @@ impl AsyncComponent for App {
             remote_file_lists,
             file_list_selector: FileListSelector::LocalFiles,
             settings_dialog: None,
+            duplicates_local: None,
+            duplicates_remote: IndexMap::new(),
         };
 
         let widgets = view_output!();
@@ -228,7 +261,7 @@ impl AsyncComponent for App {
         &mut self,
         msg: Self::Input,
         sender: AsyncComponentSender<Self>,
-        _root: &Self::Root,
+        root: &Self::Root,
     ) {
         match msg {
             AppMessage::ChangeFileList => {
@@ -239,9 +272,39 @@ impl AsyncComponent for App {
                 if tab_index == 0 {
                     self.file_list_selector = FileListSelector::LocalFiles;
                 } else {
-                    let remote_index = tab_index - 1;
-                    if let Some((url, _)) = self.remote_file_lists.get_index(remote_index) {
-                        self.file_list_selector = FileListSelector::RemoteFiles(url.clone());
+                    // Get the total number of regular tabs (local + remote)
+                    let regular_tabs_count = 1 + self.remote_file_lists.len();
+
+                    // Check if this is a regular tab or a duplicates tab
+                    if tab_index < regular_tabs_count {
+                        // This is a regular file list tab
+                        let remote_index = tab_index - 1;
+                        if let Some((url, _)) = self.remote_file_lists.get_index(remote_index) {
+                            self.file_list_selector = FileListSelector::RemoteFiles(url.clone());
+                        }
+                    } else {
+                        // This is a duplicates tab
+                        // Calculate the index within the duplicates tabs
+                        let duplicates_index = tab_index - regular_tabs_count;
+
+                        // Check if it's the local duplicates tab
+                        if duplicates_index == 0 && self.duplicates_local.is_some() {
+                            self.file_list_selector = FileListSelector::DuplicatesLocal;
+                        } else {
+                            // It's a remote duplicates tab
+                            let remote_duplicates_index = if self.duplicates_local.is_some() {
+                                duplicates_index - 1
+                            } else {
+                                duplicates_index
+                            };
+
+                            if let Some((url, _)) =
+                                self.duplicates_remote.get_index(remote_duplicates_index)
+                            {
+                                self.file_list_selector =
+                                    FileListSelector::DuplicatesRemote(url.clone());
+                            }
+                        }
                     }
                 }
             }
@@ -288,6 +351,230 @@ impl AsyncComponent for App {
                 // Clean up the settings dialog
                 self.settings_dialog = None;
             }
+            AppMessage::OpenDuplicatesTab(selector, duplicates) => {
+                tracing::debug!(
+                    "Received OpenDuplicatesTab message with {} duplicate groups",
+                    duplicates.len()
+                );
+                // Get the notebook widget
+                tracing::debug!("Looking for notebook widget");
+                let notebook_opt = root.first_child();
+                tracing::debug!("First child found: {}", notebook_opt.is_some());
+
+                if let Some(first_child) = notebook_opt {
+                    tracing::debug!("First child type: {}", first_child.type_().name());
+
+                    // Try to get the Box inside the ApplicationWindow
+                    if first_child.type_().name() == "GtkBox" {
+                        // If the first child is a Box, look for the Notebook inside it
+                        let box_children = first_child.first_child();
+                        tracing::debug!("Box has children: {}", box_children.is_some());
+
+                        if let Some(notebook_widget) =
+                            box_children.and_then(|child| child.downcast::<gtk::Notebook>().ok())
+                        {
+                            tracing::debug!("Found notebook widget inside Box");
+                            // We found the notebook
+                            match selector {
+                                FileListSelector::LocalFiles => {
+                                    // Create a new duplicates page for local files
+                                    let init = DuplicatesPageInit {
+                                        duplicates,
+                                        file_data_source: self.application_module.db_client(),
+                                        source_name: "Local Files".to_string(),
+                                    };
+
+                                    let duplicates_controller = DuplicatesPage::builder()
+                                        .launch(init)
+                                        .forward(sender.input_sender(), |msg| match msg {
+                                            DuplicatesPageOutput::Close => {
+                                                AppMessage::CloseDuplicatesTab(
+                                                    FileListSelector::DuplicatesLocal,
+                                                )
+                                            }
+                                            DuplicatesPageOutput::FileDeleted => {
+                                                AppMessage::DuplicatesFileDeleted(
+                                                    FileListSelector::DuplicatesLocal,
+                                                )
+                                            }
+                                        });
+
+                                    // Add the page to the notebook
+                                    let label = gtk::Label::new(Some("Duplicates: Local Files"));
+                                    notebook_widget
+                                        .append_page(duplicates_controller.widget(), Some(&label));
+
+                                    // Store the controller
+                                    self.duplicates_local = Some(duplicates_controller);
+
+                                    // Switch to the new tab
+                                    let new_tab_index = notebook_widget.n_pages() - 1;
+                                    notebook_widget.set_current_page(Some(new_tab_index));
+                                }
+                                FileListSelector::RemoteFiles(url) => {
+                                    // Create a new duplicates page for remote files
+                                    // Find the remote client
+                                    let remote_client =
+                                        crate::get_remote_clients(&self.application_module)
+                                            .unwrap_or_default()
+                                            .into_iter()
+                                            .find(|c| c.base_url == url)
+                                            .unwrap();
+
+                                    let init = DuplicatesPageInit {
+                                        duplicates,
+                                        file_data_source: remote_client,
+                                        source_name: format!(
+                                            "Remote: {}",
+                                            url.host_str().unwrap_or("Unknown")
+                                        ),
+                                    };
+
+                                    let url_clone = url.clone();
+                                    let duplicates_controller = DuplicatesPage::builder()
+                                        .launch(init)
+                                        .forward(sender.input_sender(), move |msg| match msg {
+                                            DuplicatesPageOutput::Close => {
+                                                AppMessage::CloseDuplicatesTab(
+                                                    FileListSelector::DuplicatesRemote(
+                                                        url_clone.clone(),
+                                                    ),
+                                                )
+                                            }
+                                            DuplicatesPageOutput::FileDeleted => {
+                                                AppMessage::DuplicatesFileDeleted(
+                                                    FileListSelector::DuplicatesRemote(
+                                                        url_clone.clone(),
+                                                    ),
+                                                )
+                                            }
+                                        });
+
+                                    // Add the page to the notebook
+                                    let label = gtk::Label::new(Some(&format!(
+                                        "Duplicates: {}",
+                                        url.host_str().unwrap_or("Unknown")
+                                    )));
+                                    notebook_widget
+                                        .append_page(duplicates_controller.widget(), Some(&label));
+
+                                    // Store the controller
+                                    self.duplicates_remote
+                                        .insert(url.clone(), duplicates_controller);
+
+                                    // Switch to the new tab
+                                    let new_tab_index = notebook_widget.n_pages() - 1;
+                                    notebook_widget.set_current_page(Some(new_tab_index));
+                                }
+                                _ => {
+                                    // We shouldn't get here
+                                    tracing::warn!(
+                                        "Attempted to open duplicates tab for a selector that is already a duplicates tab"
+                                    );
+                                }
+                            }
+                        } else {
+                            tracing::warn!("Could not find notebook widget in Box");
+                        }
+                    } else {
+                        tracing::warn!("First child is not a Box: {}", first_child.type_().name());
+                    }
+                } else {
+                    tracing::warn!("Could not find first child of root");
+                }
+            }
+            AppMessage::CloseDuplicatesTab(selector) => {
+                // Get the notebook widget
+                tracing::debug!("Looking for notebook widget to close tab");
+                let notebook_opt = root.first_child();
+
+                if let Some(first_child) = notebook_opt {
+                    // Try to get the Box inside the ApplicationWindow
+                    if first_child.type_().name() == "GtkBox" {
+                        // If the first child is a Box, look for the Notebook inside it
+                        if let Some(notebook_widget) = first_child
+                            .first_child()
+                            .and_then(|child| child.downcast::<gtk::Notebook>().ok())
+                        {
+                            match selector {
+                                FileListSelector::DuplicatesLocal => {
+                                    // Find the tab index
+                                    if let Some(duplicates_controller) = &self.duplicates_local {
+                                        for i in 0..notebook_widget.n_pages() {
+                                            if let Some(page) = notebook_widget.nth_page(Some(i)) {
+                                                if page == *duplicates_controller.widget() {
+                                                    // Remove the page
+                                                    notebook_widget.remove_page(Some(i));
+                                                    break;
+                                                }
+                                            }
+                                        }
+
+                                        // Remove the controller
+                                        self.duplicates_local = None;
+                                    }
+                                }
+                                FileListSelector::DuplicatesRemote(url) => {
+                                    // Find the tab index
+                                    if let Some(duplicates_controller) =
+                                        self.duplicates_remote.get(&url)
+                                    {
+                                        for i in 0..notebook_widget.n_pages() {
+                                            if let Some(page) = notebook_widget.nth_page(Some(i)) {
+                                                if page == *duplicates_controller.widget() {
+                                                    // Remove the page
+                                                    notebook_widget.remove_page(Some(i));
+                                                    break;
+                                                }
+                                            }
+                                        }
+
+                                        // Remove the controller
+                                        self.duplicates_remote.shift_remove(&url);
+                                    }
+                                }
+                                _ => {
+                                    // We shouldn't get here
+                                    tracing::warn!(
+                                        "Attempted to close a tab that is not a duplicates tab"
+                                    );
+                                }
+                            }
+                        } else {
+                            tracing::warn!("Could not find notebook widget in Box");
+                        }
+                    } else {
+                        tracing::warn!("First child is not a Box: {}", first_child.type_().name());
+                    }
+                } else {
+                    tracing::warn!("Could not find first child of root");
+                }
+            }
+            AppMessage::DuplicatesFileDeleted(selector) => {
+                // Refresh the corresponding file list
+                match selector {
+                    FileListSelector::DuplicatesLocal => {
+                        // Refresh the local file list
+                        self.local_file_list
+                            .sender()
+                            .send(FileListInput::RefreshFiles)
+                            .unwrap();
+                    }
+                    FileListSelector::DuplicatesRemote(url) => {
+                        // Refresh the remote file list
+                        if let Some(controller) = self.remote_file_lists.get(&url) {
+                            controller
+                                .sender()
+                                .send(FileListInput::RefreshFiles)
+                                .unwrap();
+                        }
+                    }
+                    _ => {
+                        // We shouldn't get here
+                        tracing::warn!("Received file deleted message for a non-duplicates tab");
+                    }
+                }
+            }
         }
     }
 }
@@ -299,4 +586,7 @@ pub enum AppMessage {
     OpenSettings,
     SettingsDialogClosed,
     SettingsSaved(Arc<archive_organizer::settings::Settings>),
+    OpenDuplicatesTab(FileListSelector, Vec<Vec<File>>),
+    CloseDuplicatesTab(FileListSelector),
+    DuplicatesFileDeleted(FileListSelector),
 }

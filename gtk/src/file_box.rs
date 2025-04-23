@@ -35,6 +35,7 @@ pub enum FileBoxInput {
 #[derive(Debug)]
 pub enum FileBoxOutput {
     FileClicked(File),
+    OpenDuplicatesTab(crate::app::FileListSelector, Vec<Vec<File>>),
 }
 
 #[relm4::factory(pub, async)]

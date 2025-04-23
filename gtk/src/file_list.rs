@@ -518,7 +518,7 @@ where
 {
     type Init = (FDS, Arc<Settings>);
     type Input = FileListInput;
-    type Output = FileBoxOutput;
+    type Output = crate::file_box::FileBoxOutput;
     type CommandOutput = ();
 
     view! {
@@ -940,6 +940,12 @@ where
             .launch(gtk::Box::default())
             .forward(sender.input_sender(), |output| match output {
                 FileBoxOutput::FileClicked(file) => FileListInput::FileClicked(file),
+                // We don't expect to receive this message from the FileBox component
+                // This is only sent from the FileList to the App component
+                FileBoxOutput::OpenDuplicatesTab(_selector, _duplicates) => {
+                    tracing::warn!("Unexpected OpenDuplicatesTab message received from FileBox");
+                    FileListInput::RefreshFiles
+                }
             });
 
         {
@@ -1763,10 +1769,9 @@ where
                 tracing::debug!("Finding duplicate files");
 
                 // Use the to_buckets function to group files by fingerprint
-                let buckets = archive_organizer::to_buckets(
-                    self.all_files.iter(),
-                    |file| file.fingerprint.clone()
-                );
+                let buckets = archive_organizer::to_buckets(self.all_files.iter(), |file| {
+                    file.fingerprint.clone()
+                });
 
                 // Filter for buckets with more than one file (duplicates)
                 let duplicates: Vec<Vec<File>> = buckets
@@ -1780,11 +1785,12 @@ where
                     let dialog = gtk::MessageDialog::new(
                         gtk::gio::Application::default()
                             .and_then(|app| app.downcast::<gtk::Application>().ok())
-                            .and_then(|app| app.active_window()).as_ref(),
+                            .and_then(|app| app.active_window())
+                            .as_ref(),
                         gtk::DialogFlags::MODAL,
                         gtk::MessageType::Info,
                         gtk::ButtonsType::Ok,
-                        "No duplicate files found"
+                        "No duplicate files found",
                     );
                     dialog.set_title(Some("Duplicate Files"));
                     dialog.connect_response(|dialog, _| {
@@ -1792,24 +1798,56 @@ where
                     });
                     dialog.show();
                 } else {
-                    // Show a simple message dialog for now
+                    // Determine which file list this is (local or remote)
+                    let type_name = std::any::type_name::<FDS>();
+
+                    // Create the appropriate selector based on the type
+                    let selector = if type_name.contains("DbClient") {
+                        // This is a local file list
+                        crate::app::FileListSelector::LocalFiles
+                    } else if type_name.contains("FilesClient") {
+                        // This is a remote file list
+                        // In a real implementation, we would need to get the URL from the file data source
+                        // For now, we'll use a placeholder URL
+                        let url = url::Url::parse("http://example.com").unwrap();
+                        crate::app::FileListSelector::RemoteFiles(url)
+                    } else {
+                        // Unknown type, default to local
+                        crate::app::FileListSelector::LocalFiles
+                    };
+
+                    // Create a new output message to send to the parent component
+                    let output = crate::file_box::FileBoxOutput::OpenDuplicatesTab(
+                        selector,
+                        duplicates.clone(),
+                    );
+
+                    // Send the output message to the parent component
+                    tracing::debug!(
+                        "Sending OpenDuplicatesTab message with {} duplicate groups",
+                        duplicates.len()
+                    );
+                    sender.output(output).unwrap();
+
+                    // Show a dialog with the number of duplicates
                     let dialog = gtk::MessageDialog::new(
                         gtk::gio::Application::default()
                             .and_then(|app| app.downcast::<gtk::Application>().ok())
-                            .and_then(|app| app.active_window()).as_ref(),
+                            .and_then(|app| app.active_window())
+                            .as_ref(),
                         gtk::DialogFlags::MODAL,
                         gtk::MessageType::Info,
                         gtk::ButtonsType::Ok,
-                        &format!("{} groups of duplicate files found", duplicates.len())
+                        format!(
+                            "{} groups of duplicate files found. Opening in a new tab...",
+                            duplicates.len()
+                        ),
                     );
                     dialog.set_title(Some("Duplicate Files"));
                     dialog.connect_response(|dialog, _| {
                         dialog.close();
                     });
                     dialog.show();
-
-                    // TODO: Implement the duplicates dialog component
-                    // This will be implemented in a future update
                 }
             }
         }
