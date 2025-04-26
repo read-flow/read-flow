@@ -1,4 +1,5 @@
 pub mod api;
+pub mod auth;
 pub mod client;
 pub mod db;
 pub mod scan;
@@ -24,6 +25,7 @@ use serde::Deserialize;
 use tokio::runtime::Runtime;
 
 use db::{ConnectionPool, datasource::DbClient};
+use auth::{AuthService, JwtService};
 
 use scan::{DirectorySettings, FileSystemVisitor};
 use settings::Settings;
@@ -32,6 +34,7 @@ use settings::Settings;
 pub struct ApplicationModule {
     pub settings: Arc<Settings>,
     pub connection_pool: ConnectionPool,
+    jwt_secret: Arc<Vec<u8>>,
 }
 
 impl ApplicationModule {
@@ -47,14 +50,31 @@ impl ApplicationModule {
 
     pub fn from_settings(settings: Settings) -> Self {
         let connection_pool = db::get_connection_pool(&settings.database);
+
+        // Get JWT secret from server settings
+        #[cfg(feature = "server")]
+        let jwt_secret = Arc::new(settings.server.jwt_secret.as_bytes().to_vec());
+
+        #[cfg(not(feature = "server"))]
+        let jwt_secret = Arc::new(b"archive_organizer_jwt_secret".to_vec());
+
         Self {
             settings: Arc::new(settings),
             connection_pool,
+            jwt_secret,
         }
     }
 
     pub fn db_client(&self) -> DbClient {
         DbClient::new(self.connection_pool.clone())
+    }
+
+    pub fn auth_service(&self) -> AuthService {
+        AuthService::new(self.connection_pool.clone())
+    }
+
+    pub fn jwt_service(&self) -> JwtService {
+        JwtService::new(&self.jwt_secret)
     }
 
     fn visitor(&self) -> FileSystemVisitor {
