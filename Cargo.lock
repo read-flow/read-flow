@@ -223,7 +223,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "archive-organizer",
+ "chrono",
  "clap",
+ "glib",
  "indexmap 2.9.0",
  "regex",
  "relm4",

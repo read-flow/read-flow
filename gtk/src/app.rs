@@ -253,6 +253,7 @@ impl AsyncComponent for App {
         let admin_action = gtk::gio::SimpleAction::new("admin", None);
         let sender_clone = sender.input_sender().clone();
         admin_action.connect_activate(move |_, _| {
+            tracing::info!("Admin menu item clicked");
             sender_clone.send(AppMessage::OpenAuthManagement).unwrap();
         });
 
@@ -373,6 +374,7 @@ impl AsyncComponent for App {
                 self.settings_dialog = None;
             },
             AppMessage::OpenAuthManagement => {
+                tracing::info!("Handling OpenAuthManagement message");
                 // Create and show the authentication management dialog
                 let auth_dialog = AuthManagementDialog::builder()
                     .launch(self.application_module.clone())
@@ -380,6 +382,7 @@ impl AsyncComponent for App {
                         AuthOutput::Closed => AppMessage::AuthManagementClosed,
                     });
 
+                tracing::info!("Auth dialog created: {:?}", auth_dialog);
                 self.auth_dialog = Some(auth_dialog);
             },
             AppMessage::AuthManagementClosed => {

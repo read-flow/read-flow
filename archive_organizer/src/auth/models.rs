@@ -1,8 +1,10 @@
+use std::fmt;
+
+use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
-use chrono::NaiveDateTime;
 
-use crate::db::schema::{users, api_keys};
+use crate::db::schema::{api_keys, users};
 
 // Helper function to convert string to Role enum
 pub fn from_str_role(s: &str) -> Option<Role> {
@@ -19,6 +21,13 @@ pub enum Role {
     Admin,
     Write,
     Read,
+}
+
+// Implement Display for Role to enable string formatting
+impl fmt::Display for Role {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_str())
+    }
 }
 
 impl Role {

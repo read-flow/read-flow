@@ -98,7 +98,7 @@ where
                                     file_box.set_margin_end(8);
 
                                     // Extract filename and directory from path
-                                    let (filename, folder) =
+                                    let (filename, _folder) =
                                         crate::ui_utils::extract_path_components(&file.path);
 
                                     // Create a box for the filename and folder

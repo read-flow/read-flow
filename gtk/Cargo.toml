@@ -11,7 +11,9 @@ maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 
 [dependencies]
 anyhow.workspace = true
+chrono.workspace = true
 clap = { workspace = true, features = ["derive"] }
+glib = { workspace = true }
 indexmap.workspace = true
 regex.workspace = true
 relm4-components.workspace = true
