@@ -1,16 +1,13 @@
+use glib::Propagation;
 use gtk::prelude::*;
 use relm4::{
     component::{AsyncComponent, AsyncComponentParts, AsyncComponentSender},
     gtk, RelmWidgetExt,
 };
-use glib::Propagation;
-use chrono;
-
-
 
 use archive_organizer::{
+    auth::{ApiKey, Role, User},
     ApplicationModule,
-    auth::{User, ApiKey, Role},
 };
 
 #[derive(Debug)]
@@ -185,7 +182,7 @@ impl AsyncComponent for AuthManagementDialog {
                 gtk::Frame {
                     set_label: Some("Administration"),
                     #[watch]
-                    set_visible: model.current_user.as_ref().map_or(false, |u| u.role() == Role::Admin),
+                    set_visible: model.current_user.as_ref().is_some_and(|u| u.role() == Role::Admin),
 
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
@@ -281,8 +278,7 @@ impl AsyncComponent for AuthManagementDialog {
                                         }).to_string();
                                         string_list.append(&user_json);
                                     }
-                                    let model = gtk::NoSelection::new(Some(string_list));
-                                    model
+                                    gtk::NoSelection::new(Some(string_list))
                                 }),
                             }
                         },
@@ -471,8 +467,7 @@ impl AsyncComponent for AuthManagementDialog {
                                         }).to_string();
                                         string_list.append(&api_key_json);
                                     }
-                                    let model = gtk::NoSelection::new(Some(string_list));
-                                    model
+                                    gtk::NoSelection::new(Some(string_list))
                                 }),
                             }
                         },
@@ -609,7 +604,12 @@ impl AsyncComponent for AuthManagementDialog {
                     return;
                 }
 
-                match self.application_module.auth_service().authenticate(&self.login_username, &self.login_password).await {
+                match self
+                    .application_module
+                    .auth_service()
+                    .authenticate(&self.login_username, &self.login_password)
+                    .await
+                {
                     Ok(user) => {
                         self.current_user = Some(user);
 
@@ -620,63 +620,73 @@ impl AsyncComponent for AuthManagementDialog {
                         // Clear login fields
                         self.login_username = String::new();
                         self.login_password = String::new();
-                    },
+                    }
                     Err(_) => {
                         self.login_error = Some("Invalid username or password".to_string());
                     }
                 }
-            },
+            }
             AuthInput::Logout => {
                 self.current_user = None;
                 self.users.clear();
                 self.api_keys.clear();
-            },
+            }
             AuthInput::LoadUsers => {
                 if let Some(user) = &self.current_user {
                     if user.role() == Role::Admin {
                         // Only admins can list all users
-                        match self.application_module.auth_service().list_users(user.id).await {
+                        match self
+                            .application_module
+                            .auth_service()
+                            .list_users(user.id)
+                            .await
+                        {
                             Ok(users) => {
                                 self.users = users;
-                            },
+                            }
                             Err(e) => {
                                 eprintln!("Error loading users: {}", e);
                             }
                         }
                     }
                 }
-            },
+            }
             AuthInput::LoadApiKeys => {
                 if let Some(user) = &self.current_user {
-                    match self.application_module.auth_service().list_api_keys(user.id).await {
+                    match self
+                        .application_module
+                        .auth_service()
+                        .list_api_keys(user.id)
+                        .await
+                    {
                         Ok(api_keys) => {
                             self.api_keys = api_keys;
-                        },
+                        }
                         Err(e) => {
                             eprintln!("Error loading API keys: {}", e);
                         }
                     }
                 }
-            },
+            }
             AuthInput::SetLoginUsername(username) => {
                 self.login_username = username;
-            },
+            }
             AuthInput::SetLoginPassword(password) => {
                 self.login_password = password;
-            },
+            }
             // User management
             AuthInput::SetNewUsername(username) => {
                 self.new_username = username;
-            },
+            }
             AuthInput::SetNewPassword(password) => {
                 self.new_password = password;
-            },
+            }
             AuthInput::SetNewEmail(email) => {
                 self.new_email = email;
-            },
+            }
             AuthInput::SetNewRole(role) => {
                 self.new_role = role;
-            },
+            }
             AuthInput::CreateUser => {
                 self.new_user_error = None;
 
@@ -689,14 +699,23 @@ impl AsyncComponent for AuthManagementDialog {
                 // Create the user
                 if let Some(current_user) = &self.current_user {
                     if current_user.role() == Role::Admin {
-                        let email = if self.new_email.is_empty() { None } else { Some(self.new_email.as_str()) };
+                        let email = if self.new_email.is_empty() {
+                            None
+                        } else {
+                            Some(self.new_email.as_str())
+                        };
 
-                        match self.application_module.auth_service().register_user(
-                            &self.new_username,
-                            &self.new_password,
-                            email,
-                            self.new_role.clone()
-                        ).await {
+                        match self
+                            .application_module
+                            .auth_service()
+                            .register_user(
+                                &self.new_username,
+                                &self.new_password,
+                                email,
+                                self.new_role.clone(),
+                            )
+                            .await
+                        {
                             Ok(_) => {
                                 // Clear form and reload users
                                 self.new_username = String::new();
@@ -704,14 +723,14 @@ impl AsyncComponent for AuthManagementDialog {
                                 self.new_email = String::new();
                                 self.new_role = Role::Read;
                                 sender.input(AuthInput::LoadUsers);
-                            },
+                            }
                             Err(e) => {
                                 self.new_user_error = Some(format!("Error creating user: {}", e));
                             }
                         }
                     }
                 }
-            },
+            }
             AuthInput::UpdateUserRole(user_id, new_role) => {
                 if let Some(current_user) = &self.current_user {
                     if current_user.role() == Role::Admin {
@@ -722,26 +741,32 @@ impl AsyncComponent for AuthManagementDialog {
                         }
 
                         // Update the user's role
-                        match self.application_module.auth_service().update_user_role(user_id, new_role, current_user.id).await {
+                        match self
+                            .application_module
+                            .auth_service()
+                            .update_user_role(user_id, new_role, current_user.id)
+                            .await
+                        {
                             Ok(_) => {
                                 // Reload users
                                 sender.input(AuthInput::LoadUsers);
-                            },
+                            }
                             Err(e) => {
-                                self.new_user_error = Some(format!("Error updating user role: {}", e));
+                                self.new_user_error =
+                                    Some(format!("Error updating user role: {}", e));
                             }
                         }
                     }
                 }
-            },
+            }
 
             // API key management
             AuthInput::SetNewApiKeyName(name) => {
                 self.new_api_key_name = name;
-            },
+            }
             AuthInput::SetNewApiKeyScopes(scopes) => {
                 self.new_api_key_scopes = scopes;
-            },
+            }
             AuthInput::CreateApiKey => {
                 self.new_api_key_error = None;
                 self.new_api_key_result = None;
@@ -755,15 +780,18 @@ impl AsyncComponent for AuthManagementDialog {
                 // Create the API key
                 if let Some(current_user) = &self.current_user {
                     // Convert string scopes to Role enum
-                    let scopes = self.new_api_key_scopes.iter()
+                    let scopes = self
+                        .new_api_key_scopes
+                        .iter()
                         .filter_map(|s| Role::from_str(s))
                         .collect::<Vec<_>>();
 
-                    match self.application_module.auth_service().create_api_key(
-                        current_user.id,
-                        &self.new_api_key_name,
-                        scopes
-                    ).await {
+                    match self
+                        .application_module
+                        .auth_service()
+                        .create_api_key(current_user.id, &self.new_api_key_name, scopes)
+                        .await
+                    {
                         Ok(api_key) => {
                             // Show the API key to the user (this is the only time they'll see it)
                             self.new_api_key_result = Some(api_key.key.clone());
@@ -772,26 +800,31 @@ impl AsyncComponent for AuthManagementDialog {
                             self.new_api_key_name = String::new();
                             self.new_api_key_scopes = vec![];
                             sender.input(AuthInput::LoadApiKeys);
-                        },
+                        }
                         Err(e) => {
                             self.new_api_key_error = Some(format!("Error creating API key: {}", e));
                         }
                     }
                 }
-            },
+            }
             AuthInput::DeleteApiKey(key_id) => {
                 if let Some(current_user) = &self.current_user {
-                    match self.application_module.auth_service().delete_api_key(key_id, current_user.id).await {
+                    match self
+                        .application_module
+                        .auth_service()
+                        .delete_api_key(key_id, current_user.id)
+                        .await
+                    {
                         Ok(_) => {
                             // Reload API keys
                             sender.input(AuthInput::LoadApiKeys);
-                        },
+                        }
                         Err(e) => {
                             self.new_api_key_error = Some(format!("Error deleting API key: {}", e));
                         }
                     }
                 }
-            },
+            }
 
             AuthInput::Close => {
                 tracing::info!("Closing AuthManagementDialog");
@@ -812,20 +845,25 @@ impl AuthManagementDialog {
             Ok(_) => {
                 // Admin user exists and credentials are valid
                 tracing::info!("Default admin user already exists");
-            },
+            }
             Err(_) => {
                 // Either admin doesn't exist or credentials are wrong
                 // Let's try to create a default admin user
                 tracing::info!("Attempting to create default admin user");
-                match auth_service.register_user("admin", "admin", None, Role::Admin).await {
-                    Ok(_) => tracing::info!("Created default admin user with username 'admin' and password 'admin'"),
+                match auth_service
+                    .register_user("admin", "admin", None, Role::Admin)
+                    .await
+                {
+                    Ok(_) => tracing::info!(
+                        "Created default admin user with username 'admin' and password 'admin'"
+                    ),
                     Err(e) => {
                         if e.to_string().contains("already exists") {
                             tracing::info!("Admin user already exists but with different password");
                         } else {
                             tracing::error!("Failed to create default admin user: {}", e);
                         }
-                    },
+                    }
                 }
             }
         }

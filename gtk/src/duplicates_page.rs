@@ -1,9 +1,9 @@
 use gtk::prelude::*;
-use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentParts;
 use relm4::component::AsyncComponentSender;
 use relm4::gtk;
+use relm4::RelmWidgetExt;
 
 use archive_organizer::api::{File, FileDataSource};
 
@@ -419,7 +419,7 @@ where
                             gtk::DialogFlags::MODAL,
                             gtk::MessageType::Error,
                             gtk::ButtonsType::Ok,
-                            &format!("Failed to refresh duplicates list: {}", e),
+                            format!("Failed to refresh duplicates list: {}", e),
                         );
                         error_dialog.set_title(Some("Error"));
                         error_dialog.connect_response(|dialog, _| {

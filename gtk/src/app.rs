@@ -1,6 +1,6 @@
-use archive_organizer::ApplicationModule;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::datasource::DbClient;
+use archive_organizer::ApplicationModule;
 use gtk::prelude::*;
 use indexmap::IndexMap;
 use relm4::component::AsyncComponent;
@@ -17,10 +17,10 @@ use std::sync::Arc;
 use tracing;
 use url::Url;
 
+use crate::auth_management::{AuthManagementDialog, AuthOutput};
 use crate::duplicates_page::{DuplicatesPage, DuplicatesPageInit, DuplicatesPageOutput};
 use crate::file_list::{FileList, FileListInput};
 use crate::settings_dialog::{SettingsDialog, SettingsDialogOutput};
-use crate::auth_management::{AuthManagementDialog, AuthOutput};
 use archive_organizer::api::{File, FileDataSource};
 
 const COMPONENT_CSS: &str = include_str!("../assets/style.css");
@@ -372,7 +372,7 @@ impl AsyncComponent for App {
 
                 // Clean up the settings dialog
                 self.settings_dialog = None;
-            },
+            }
             AppMessage::OpenAuthManagement => {
                 tracing::info!("Handling OpenAuthManagement message");
                 // Create and show the authentication management dialog
@@ -384,11 +384,11 @@ impl AsyncComponent for App {
 
                 tracing::info!("Auth dialog created: {:?}", auth_dialog);
                 self.auth_dialog = Some(auth_dialog);
-            },
+            }
             AppMessage::AuthManagementClosed => {
                 // Clean up the authentication management dialog
                 self.auth_dialog = None;
-            },
+            }
             AppMessage::OpenDuplicatesTab(selector, duplicates) => {
                 tracing::debug!(
                     "Received OpenDuplicatesTab message with {} duplicate groups for selector: {:?}",
@@ -518,7 +518,7 @@ impl AsyncComponent for App {
                                             gtk::DialogFlags::MODAL,
                                             gtk::MessageType::Error,
                                             gtk::ButtonsType::Ok,
-                                            &format!(
+                                            format!(
                                                 "Could not find remote client for URL: {}",
                                                 url
                                             ),

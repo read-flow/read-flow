@@ -1,7 +1,8 @@
+use std::collections::HashSet;
+use std::sync::Arc;
+
 use gtk::prelude::*;
 use regex::Regex;
-use relm4::RelmWidgetExt;
-use relm4::Sender;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentController;
 use relm4::component::AsyncComponentParts;
@@ -11,28 +12,25 @@ use relm4::gtk;
 use relm4::gtk::glib;
 use relm4::once_cell::sync::Lazy;
 use relm4::prelude::*;
+use relm4::RelmWidgetExt;
+use relm4::Sender;
+use tracing;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
 use archive_organizer::settings::Settings;
-use std::sync::Arc;
 
 use crate::file_box::FileBox;
 use crate::file_box::FileBoxOutput;
 use crate::file_details::{FileDetails, FileDetailsOutput};
 use crate::tag_input::{TagInput, TagInputInput, TagInputOutput};
-// We'll use this in a future update
-// use crate::duplicates_dialog::{DuplicatesDialog, DuplicatesDialogInit, DuplicatesDialogOutput, FDS};
-
-use std::collections::HashSet;
-
-use tracing;
 
 const COMPONENT_CSS: &str = include_str!("../assets/style.css");
 
 /// The initializer for the CSS, ensuring it only happens once.
 static INITIALIZE_CSS: Lazy<()> = Lazy::new(|| {
-    relm4::set_global_css_with_priority(COMPONENT_CSS, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+    let css = format!("{}\n.sidebar {{ max-width: 50%; }}", COMPONENT_CSS);
+    relm4::set_global_css_with_priority(&css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 });
 
 use archive_organizer::api::ReadingStatus;
@@ -75,12 +73,8 @@ where
     read_checkbox: Option<gtk::CheckButton>,
     // Track filter section visibility
     filter_section_visible: bool,
-    // Reference to the filter options container
-    filter_options_container: Option<gtk::Box>,
     // Reference to the sidebar container
     sidebar_container: Option<gtk::Box>,
-    // Width of the expanded sidebar
-    expanded_sidebar_width: i32,
     // Reference to the tag dropdown (include)
     tag_dropdown: Option<gtk::DropDown>,
     // Reference to the tag filters container (include)
@@ -95,8 +89,6 @@ where
     selected_deny_tags_label: Option<gtk::Label>,
     // Reference to the main content box
     main_content_box: Option<gtk::Box>,
-    // Reference to the outer paned widget (for resizable left panel)
-    outer_paned: Option<gtk::Paned>,
     // Reference to the details dialog window
     details_dialog: Option<gtk::Window>,
     // Reference to the content area within the details dialog
@@ -525,48 +517,25 @@ where
 
     view! {
         #[root]
-        gtk::Box {
+        #[name(outer_paned)]
+        gtk::Paned {
             set_orientation: gtk::Orientation::Horizontal,
-            set_spacing: 0,
-            set_margin_all: 0,
+            set_resize_start_child: false,
+            set_shrink_start_child: false,
             set_hexpand: true,
             set_vexpand: true,
-            set_halign: gtk::Align::Fill,
-            set_valign: gtk::Align::Fill,
 
             // Left side: sidebar with filters
             #[name(sidebar_container)]
-            gtk::Box {
+            #[wrap(Some)]
+            set_start_child = &gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 0,
                 set_hexpand: false,
                 set_vexpand: true,
-                set_width_request: if model.filter_section_visible { model.expanded_sidebar_width } else { 16 },
-                set_margin_all: 0,
+                set_width_request: 200, // Minimum width when visible
+                set_visible: model.filter_section_visible,
                 add_css_class: "sidebar",
-
-                // Toggle button for sidebar
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 0,
-                    set_margin_bottom: 0,
-                    add_css_class: "toolbar",
-                    set_margin_all: 8,
-                    set_halign: gtk::Align::Start,
-
-                    gtk::Button {
-                        set_icon_name: if model.filter_section_visible { "view-restore-symbolic" } else { "view-more-symbolic" },
-                        set_tooltip_text: Some(if model.filter_section_visible { "Hide filters" } else { "Show filters" }),
-                        add_css_class: "flat",
-                        add_css_class: "circular",
-                        add_css_class: "filter-toggle",
-                        connect_clicked[sender] => move |_| {
-                            sender.input(FileListInput::ToggleFilterSection);
-                        },
-                    },
-
-                    // Removed the Filters label to make the collapsed panel smaller
-                },
 
                 // Scrollable container for filter options
                 gtk::ScrolledWindow {
@@ -758,7 +727,8 @@ where
 
             // Main content area (files list and details panel)
             #[name(main_content_box)]
-            gtk::Box {
+            #[wrap(Some)]
+            set_end_child = &gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_hexpand: true,
                 set_vexpand: true,
@@ -781,6 +751,21 @@ where
                         set_halign: gtk::Align::Fill,
                         set_hexpand: true,
                         add_css_class: "search-container",
+
+                        // Filter toggle button
+                        gtk::Button {
+                            set_icon_name: "sidebar-show-symbolic",
+                            set_tooltip_text: Some(if model.filter_section_visible {
+                                "Hide filters"
+                            } else {
+                                "Show filters"
+                            }),
+                            add_css_class: "flat",
+                            add_css_class: "circular",
+                            connect_clicked[sender] => move |_| {
+                                sender.input(FileListInput::ToggleFilterSection);
+                            },
+                        },
 
                         #[name(search_entry)]
                         gtk::SearchEntry {
@@ -989,9 +974,7 @@ where
             reading_checkbox: None,
             read_checkbox: None,
             filter_section_visible: true,
-            filter_options_container: None,
             sidebar_container: None,
-            expanded_sidebar_width: 200, // Default expanded width
             tag_dropdown: None,
             tag_filters_container: None,
             selected_tags_label: None,
@@ -999,7 +982,6 @@ where
             tag_deny_filters_container: None,
             selected_deny_tags_label: None,
             main_content_box: None,
-            outer_paned: None,
             details_dialog: None,
             details_content_container: None,
             selected_file: None,
@@ -1021,7 +1003,6 @@ where
         model.unread_checkbox = Some(widgets.unread_checkbox.clone());
         model.reading_checkbox = Some(widgets.reading_checkbox.clone());
         model.read_checkbox = Some(widgets.read_checkbox.clone());
-        model.filter_options_container = Some(widgets.filter_options_container.clone());
         model.sidebar_container = Some(widgets.sidebar_container.clone());
         model.tag_dropdown = Some(widgets.tag_dropdown.clone());
         model.tag_filters_container = Some(widgets.tag_filters_container.clone());
@@ -1057,7 +1038,6 @@ where
 
         // Create an outer paned widget to make the left panel resizable
         let outer_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
-        outer_paned.set_position(model.expanded_sidebar_width);
         outer_paned.set_resize_start_child(true);
         outer_paned.set_shrink_start_child(false);
         outer_paned.set_wide_handle(true);
@@ -1065,25 +1045,6 @@ where
         outer_paned.set_vexpand(true);
         outer_paned.set_halign(gtk::Align::Fill);
         outer_paned.set_valign(gtk::Align::Fill);
-
-        // Get the children from the root box
-        if let Some(sidebar) = root.first_child() {
-            if let Some(main_content) = root.last_child() {
-                // Remove them from the box
-                root.remove(&sidebar);
-                root.remove(&main_content);
-
-                // Add them to the paned widget
-                outer_paned.set_start_child(Some(&sidebar));
-                outer_paned.set_end_child(Some(&main_content));
-
-                // Add the paned widget to the root
-                root.append(&outer_paned);
-
-                // Store a reference to the outer paned widget
-                model.outer_paned = Some(outer_paned);
-            }
-        }
 
         AsyncComponentParts { model, widgets }
     }
@@ -1142,57 +1103,23 @@ where
                 // Toggle the filter section visibility
                 self.filter_section_visible = !self.filter_section_visible;
 
-                // Update the scrolled window visibility
-                if let Some(container) = &self.filter_options_container {
-                    if let Some(scrolled_window) = container.parent() {
-                        scrolled_window.set_visible(self.filter_section_visible);
-                    }
-                }
-
-                // Update the sidebar width using the outer paned widget
-                if let Some(paned) = &self.outer_paned {
-                    if self.filter_section_visible {
-                        // Expand the sidebar
-                        paned.set_position(self.expanded_sidebar_width);
-                    } else {
-                        // Collapse the sidebar to just fit the icon button (no label)
-                        paned.set_position(16);
-                    }
-                }
-
-                // Update the width request of the sidebar container
+                // Update the sidebar container visibility
                 if let Some(sidebar) = &self.sidebar_container {
-                    sidebar.set_width_request(if self.filter_section_visible {
-                        self.expanded_sidebar_width
-                    } else {
-                        16
-                    });
+                    sidebar.set_visible(self.filter_section_visible);
                 }
 
-                // Find the toggle button and update its icon
-                if let Some(container) = &self.filter_options_container {
-                    if let Some(parent) = container.parent() {
-                        // The toggle button is in the first child box
-                        if let Some(toggle_box) = parent.first_child() {
-                            // Update the alignment of the toggle box
-                            // No need to update the box widget
-
-                            if let Some(button) = toggle_box.first_child() {
-                                if let Ok(button) = button.downcast::<gtk::Button>() {
-                                    let icon_name = if self.filter_section_visible {
-                                        "view-restore-symbolic"
-                                    } else {
-                                        "view-more-symbolic"
-                                    };
-                                    button.set_icon_name(icon_name);
-
-                                    let tooltip = if self.filter_section_visible {
-                                        "Hide filters"
-                                    } else {
-                                        "Show filters"
-                                    };
-                                    button.set_tooltip_text(Some(tooltip));
-                                }
+                // Find and update the toggle button in the toolbar
+                if let Some(search_entry) = &self.search_entry {
+                    if let Some(parent) = search_entry.parent() {
+                        // The toggle button should be the first child in the toolbar
+                        if let Some(button) = parent.first_child() {
+                            if let Ok(button) = button.downcast::<gtk::Button>() {
+                                let tooltip = if self.filter_section_visible {
+                                    "Hide filters"
+                                } else {
+                                    "Show filters"
+                                };
+                                button.set_tooltip_text(Some(tooltip));
                             }
                         }
                     }
@@ -1536,6 +1463,8 @@ where
                     self.search_pattern = Some(text);
                     self.regex_pattern = None; // Reset compiled regex when search text changes
                 }
+
+                // Position change handler will be connected in update() after widgets are stored
 
                 // Update the clear button visibility
                 if let Some(search_entry) = &self.search_entry {
