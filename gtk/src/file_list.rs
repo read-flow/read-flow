@@ -29,8 +29,7 @@ const COMPONENT_CSS: &str = include_str!("../assets/style.css");
 
 /// The initializer for the CSS, ensuring it only happens once.
 static INITIALIZE_CSS: Lazy<()> = Lazy::new(|| {
-    let css = format!("{}\n.sidebar {{ max-width: 50%; }}", COMPONENT_CSS);
-    relm4::set_global_css_with_priority(&css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+    relm4::set_global_css_with_priority(&COMPONENT_CSS, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 });
 
 use archive_organizer::api::ReadingStatus;

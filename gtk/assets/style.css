@@ -11,15 +11,17 @@
     padding: 4px 12px;
     margin: 4px;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition-property: all;
+    transition-duration: 200ms;
+    transition-timing-function: ease;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+
     min-height: 24px;
-    min-width: 40px;
 }
 
 .tag-badge:hover {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    transform: translateY(-1px);
+    margin-top: 3px;
     background-color: alpha(@accent_bg_color, 1.0);
 }
 
@@ -47,7 +49,6 @@
     margin-top: 4px;
 }
 
-/* GNOME HIG specific styles */
 .file-item {
     padding: 12px;
     border-radius: 8px;
@@ -63,7 +64,6 @@
     background-color: alpha(@theme_selected_bg_color, 0.3);
 }
 
-/* Selected file style */
 .selected-file {
     background-color: alpha(@theme_selected_bg_color, 0.2);
     border-left: 3px solid @theme_selected_bg_color;
@@ -77,13 +77,15 @@
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
 }
 
-/* Sidebar styling */
 .sidebar {
     background-color: alpha(@theme_base_color, 0.95);
     border-right: 1px solid @borders;
     padding: 0;
-    transition: width 0.3s ease;
+    transition-property: all;
+    transition-duration: 300ms;
+    transition-timing-function: ease;
     box-shadow: 1px 0 3px rgba(0, 0, 0, 0.05);
+    min-width: 500px;
 }
 
 .sidebar-section {
@@ -134,7 +136,6 @@
     opacity: 1.0;
 }
 
-/* Details panel styling - Modern Redesign */
 .details-panel {
     background-color: @theme_base_color;
     transition: all 0.3s ease;
@@ -147,13 +148,11 @@
     animation: slide-in-right 0.3s ease-out;
 }
 
-/* Modern header styling */
 .details-header {
     background-color: alpha(@theme_selected_bg_color, 0.9);
     color: @theme_selected_fg_color;
     padding: 24px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    position: relative;
     border-bottom: 1px solid alpha(@theme_selected_bg_color, 0.7);
 }
 
@@ -190,7 +189,6 @@
     padding: 12px;
 }
 
-/* Tab styling */
 .details-tabs {
     background-color: @theme_base_color;
     border-bottom: 1px solid alpha(@borders, 0.3);
@@ -213,12 +211,10 @@
     color: @theme_selected_bg_color;
 }
 
-/* Content area styling */
 .details-content-area {
     background-color: alpha(@theme_bg_color, 0.5);
 }
 
-/* Card styling */
 .details-card {
     background-color: @theme_base_color;
     border-radius: 12px;
@@ -239,7 +235,6 @@
     border-bottom: 1px solid alpha(@borders, 0.2);
     padding-bottom: 16px;
     margin-bottom: 16px;
-    display: flex;
     background-color: alpha(@theme_bg_color, 0.3);
     margin: -20px -20px 16px -20px;
     padding: 16px 20px;
@@ -259,7 +254,6 @@
     opacity: 0.8;
 }
 
-/* Property styling */
 .details-property-row {
     padding: 12px;
     border-radius: 8px;
@@ -289,7 +283,6 @@
     color: @theme_fg_color;
 }
 
-/* Preview area styling */
 .details-preview-area {
     background-color: @theme_bg_color;
     border-radius: 12px;
@@ -298,9 +291,6 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
     border: 1px solid alpha(@borders, 0.1);
     min-height: 200px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
 
 .details-preview-placeholder {
@@ -310,17 +300,11 @@
 }
 
 .details-preview-image {
-    max-width: 100%;
-    max-height: 300px;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-/* Tags styling */
 .details-tags-container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
     margin-top: 16px;
 }
 
@@ -329,6 +313,7 @@
     color: @accent_fg_color;
     border-radius: 16px;
     padding: 6px 12px;
+    margin: 4px;  /* Added margin to replace gap */
     font-size: 12px;
     font-weight: 500;
     transition: all 0.2s ease;
@@ -341,9 +326,8 @@
 
 /* Metadata styling */
 .details-metadata-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
+    /* display and grid-template-columns removed - use GtkGrid with set_column_homogeneous(true) */
+    /* gap removed - use margins instead */
     margin-top: 16px;
 }
 
@@ -351,6 +335,7 @@
     background-color: alpha(@theme_bg_color, 0.5);
     border-radius: 8px;
     padding: 12px;
+    margin: 8px; /* Added margin to replace gap */
     border: 1px solid alpha(@borders, 0.1);
 }
 
