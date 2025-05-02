@@ -804,7 +804,6 @@ where
                             connect_clicked[sender] => move |_| {
                                 sender.input(FileListInput::ClearSearch);
                             },
-                            set_visible: model.search_pattern.is_some() && model.search_pattern.as_ref().is_some_and(|p| !p.is_empty()),
                         },
 
                         // Find Duplicates button
@@ -1463,20 +1462,6 @@ where
                     self.regex_pattern = None; // Reset compiled regex when search text changes
                 }
 
-                // Position change handler will be connected in update() after widgets are stored
-
-                // Update the clear button visibility
-                if let Some(search_entry) = &self.search_entry {
-                    if let Some(parent) = search_entry.parent() {
-                        if let Some(clear_button) = parent.last_child() {
-                            clear_button.set_visible(
-                                self.search_pattern.is_some()
-                                    && self.search_pattern.as_ref().is_some_and(|p| !p.is_empty()),
-                            );
-                        }
-                    }
-                }
-
                 // Apply the updated filters
                 self.apply_filters();
             }
@@ -1490,15 +1475,6 @@ where
                 // Clear the search entry text
                 if let Some(search_entry) = &self.search_entry {
                     search_entry.set_text("");
-                }
-
-                // Update the clear button visibility
-                if let Some(search_entry) = &self.search_entry {
-                    if let Some(parent) = search_entry.parent() {
-                        if let Some(clear_button) = parent.last_child() {
-                            clear_button.set_visible(false);
-                        }
-                    }
                 }
 
                 // Apply the updated filters
