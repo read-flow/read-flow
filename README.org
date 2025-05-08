@@ -45,3 +45,4 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] Allow duplicating files to/from remote, with configuration/input of location.
 - [X] Allow marking files as read/reading/unread
 - [X] Filter files on reading status
+- [ ] Check if cosmic applications work better on chromeos
