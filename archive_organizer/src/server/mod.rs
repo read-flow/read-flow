@@ -1,5 +1,5 @@
-mod authn;
 mod auth;
+mod authn;
 
 use std::{io, path::Path};
 
@@ -125,11 +125,16 @@ async fn create_default_admin_if_needed(application_module: &ApplicationModule) 
         Ok(users) if users.is_empty() => {
             // No users exist, create a default admin
             tracing::info!("No users found, creating default admin user");
-            match auth_service.register_user("admin", "admin", None, crate::auth::Role::Admin).await {
-                Ok(_) => tracing::info!("Created default admin user with username 'admin' and password 'admin'"),
+            match auth_service
+                .register_user("admin", "admin", None, crate::auth::Role::Admin)
+                .await
+            {
+                Ok(_) => tracing::info!(
+                    "Created default admin user with username 'admin' and password 'admin'"
+                ),
                 Err(e) => tracing::error!("Failed to create default admin user: {}", e),
             }
-        },
+        }
         Ok(_) => tracing::info!("Users already exist, skipping default admin creation"),
         Err(e) => tracing::error!("Error checking for existing users: {}", e),
     }

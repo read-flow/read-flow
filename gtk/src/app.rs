@@ -1,6 +1,6 @@
+use archive_organizer::ApplicationModule;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::datasource::DbClient;
-use archive_organizer::ApplicationModule;
 use gtk::prelude::*;
 use indexmap::IndexMap;
 use relm4::component::AsyncComponent;

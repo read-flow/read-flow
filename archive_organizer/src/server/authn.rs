@@ -149,7 +149,9 @@ impl<'r> FromRequest<'r> for AdminUser {
         match AuthorizedUser::from_request(request).await {
             Outcome::Success(authorized) => {
                 if authorized.user.role().can_admin() {
-                    Outcome::Success(AdminUser { user: authorized.user })
+                    Outcome::Success(AdminUser {
+                        user: authorized.user,
+                    })
                 } else {
                     Outcome::Error((Status::Forbidden, Error::InsufficientPermissions))
                 }
@@ -168,7 +170,9 @@ impl<'r> FromRequest<'r> for WriteUser {
         match AuthorizedUser::from_request(request).await {
             Outcome::Success(authorized) => {
                 if authorized.user.role().can_write() {
-                    Outcome::Success(WriteUser { user: authorized.user })
+                    Outcome::Success(WriteUser {
+                        user: authorized.user,
+                    })
                 } else {
                     Outcome::Error((Status::Forbidden, Error::InsufficientPermissions))
                 }
@@ -187,7 +191,9 @@ impl<'r> FromRequest<'r> for ReadUser {
         match AuthorizedUser::from_request(request).await {
             Outcome::Success(authorized) => {
                 if authorized.user.role().can_read() {
-                    Outcome::Success(ReadUser { user: authorized.user })
+                    Outcome::Success(ReadUser {
+                        user: authorized.user,
+                    })
                 } else {
                     Outcome::Error((Status::Forbidden, Error::InsufficientPermissions))
                 }

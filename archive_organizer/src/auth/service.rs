@@ -1,13 +1,16 @@
-use argon2::{self, password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString}, Argon2};
+use argon2::{
+    self, Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
+};
 use chrono::Utc;
 use diesel::prelude::*;
-use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
-use thiserror::Error;
+use rand::{Rng, thread_rng};
 use serde_json;
+use thiserror::Error;
 
+use super::models::{ApiKey, NewApiKey, NewUser, Role, Scope, User};
 use crate::db::ConnectionPool;
-use super::models::{User, NewUser, ApiKey, NewApiKey, Role, Scope};
 
 #[derive(Debug, Error)]
 pub enum AuthError {
@@ -39,7 +42,13 @@ impl AuthService {
     }
 
     // Register a new user
-    pub async fn register_user(&self, username_str: &str, password: &str, email_str: Option<&str>, new_role: Role) -> Result<User, AuthError> {
+    pub async fn register_user(
+        &self,
+        username_str: &str,
+        password: &str,
+        email_str: Option<&str>,
+        new_role: Role,
+    ) -> Result<User, AuthError> {
         use crate::db::schema::users::dsl::*;
 
         let mut conn = self.pool.get()?;
@@ -74,7 +83,11 @@ impl AuthService {
     }
 
     // Authenticate a user
-    pub async fn authenticate(&self, username_str: &str, password: &str) -> Result<User, AuthError> {
+    pub async fn authenticate(
+        &self,
+        username_str: &str,
+        password: &str,
+    ) -> Result<User, AuthError> {
         use crate::db::schema::users::dsl::*;
 
         let mut conn = self.pool.get()?;
@@ -100,7 +113,12 @@ impl AuthService {
     }
 
     // Create a new API key for a user
-    pub async fn create_api_key(&self, user_id_param: i32, name_str: &str, scopes_vec: Vec<Scope>) -> Result<ApiKey, AuthError> {
+    pub async fn create_api_key(
+        &self,
+        user_id_param: i32,
+        name_str: &str,
+        scopes_vec: Vec<Scope>,
+    ) -> Result<ApiKey, AuthError> {
         use crate::db::schema::api_keys::dsl::*;
 
         let mut conn = self.pool.get()?;
@@ -113,7 +131,8 @@ impl AuthService {
             .collect();
 
         // Convert scopes to strings and serialize to JSON
-        let scope_strings: Vec<String> = scopes_vec.iter().map(|s| s.to_str().to_string()).collect();
+        let scope_strings: Vec<String> =
+            scopes_vec.iter().map(|s| s.to_str().to_string()).collect();
         let scopes_json = serde_json::to_string(&scope_strings)?;
 
         // Create new API key
@@ -159,9 +178,7 @@ impl AuthService {
             .execute(&mut conn)?;
 
         // Get the associated user
-        let user = users
-            .find(api_key.user_id)
-            .first::<User>(&mut conn)?;
+        let user = users.find(api_key.user_id).first::<User>(&mut conn)?;
 
         Ok((api_key, user))
     }
@@ -180,29 +197,28 @@ impl AuthService {
     }
 
     // Delete an API key
-    pub async fn delete_api_key(&self, key_id: i32, requesting_user_id: i32) -> Result<(), AuthError> {
+    pub async fn delete_api_key(
+        &self,
+        key_id: i32,
+        requesting_user_id: i32,
+    ) -> Result<(), AuthError> {
         use crate::db::schema::api_keys::dsl::*;
         use crate::db::schema::users::dsl::users;
 
         let mut conn = self.pool.get()?;
 
         // Get the API key
-        let api_key = api_keys
-            .find(key_id)
-            .first::<ApiKey>(&mut conn)?;
+        let api_key = api_keys.find(key_id).first::<ApiKey>(&mut conn)?;
 
         // Check if the user owns this key or is an admin
-        let requesting_user = users
-            .find(requesting_user_id)
-            .first::<User>(&mut conn)?;
+        let requesting_user = users.find(requesting_user_id).first::<User>(&mut conn)?;
 
         if api_key.user_id != requesting_user_id && !requesting_user.role().can_admin() {
             return Err(AuthError::InsufficientPermissions);
         }
 
         // Delete the key
-        diesel::delete(api_keys.find(key_id))
-            .execute(&mut conn)?;
+        diesel::delete(api_keys.find(key_id)).execute(&mut conn)?;
 
         Ok(())
     }
@@ -214,31 +230,31 @@ impl AuthService {
         let mut conn = self.pool.get()?;
 
         // Check if requesting user is admin
-        let requesting_user = users
-            .find(requesting_user_id)
-            .first::<User>(&mut conn)?;
+        let requesting_user = users.find(requesting_user_id).first::<User>(&mut conn)?;
 
         if !requesting_user.role().can_admin() {
             return Err(AuthError::InsufficientPermissions);
         }
 
         // Get all users
-        let all_users = users
-            .load::<User>(&mut conn)?;
+        let all_users = users.load::<User>(&mut conn)?;
 
         Ok(all_users)
     }
 
     // Update user role (admin only)
-    pub async fn update_user_role(&self, user_id: i32, new_role: Role, requesting_user_id: i32) -> Result<User, AuthError> {
+    pub async fn update_user_role(
+        &self,
+        user_id: i32,
+        new_role: Role,
+        requesting_user_id: i32,
+    ) -> Result<User, AuthError> {
         use crate::db::schema::users::dsl::*;
 
         let mut conn = self.pool.get()?;
 
         // Check if requesting user is admin
-        let requesting_user = users
-            .find(requesting_user_id)
-            .first::<User>(&mut conn)?;
+        let requesting_user = users.find(requesting_user_id).first::<User>(&mut conn)?;
 
         if !requesting_user.role().can_admin() {
             return Err(AuthError::InsufficientPermissions);
@@ -257,15 +273,17 @@ impl AuthService {
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
 
-        argon2.hash_password(password.as_bytes(), &salt)
+        argon2
+            .hash_password(password.as_bytes(), &salt)
             .map(|hash| hash.to_string())
             .map_err(|_| AuthError::PasswordHashingFailed)
     }
 
     fn verify_password(&self, password: &str, hash: &str) -> Result<bool, AuthError> {
-        let parsed_hash = PasswordHash::new(hash)
-            .map_err(|_| AuthError::PasswordHashingFailed)?;
+        let parsed_hash = PasswordHash::new(hash).map_err(|_| AuthError::PasswordHashingFailed)?;
 
-        Ok(Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok())
+        Ok(Argon2::default()
+            .verify_password(password.as_bytes(), &parsed_hash)
+            .is_ok())
     }
 }

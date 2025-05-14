@@ -1,8 +1,8 @@
 use clap::Parser;
 
 use archive_organizer::{
-    settings::{self, UiSettings},
     ApplicationModule,
+    settings::{self, UiSettings},
 };
 use iced_gui::run_gui;
 

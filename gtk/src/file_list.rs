@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use gtk::prelude::*;
 use regex::Regex;
+use relm4::RelmWidgetExt;
+use relm4::Sender;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentController;
 use relm4::component::AsyncComponentParts;
@@ -12,8 +14,6 @@ use relm4::gtk;
 use relm4::gtk::glib;
 use relm4::once_cell::sync::Lazy;
 use relm4::prelude::*;
-use relm4::RelmWidgetExt;
-use relm4::Sender;
 use tracing;
 
 use archive_organizer::api::File;

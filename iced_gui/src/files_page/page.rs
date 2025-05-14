@@ -14,6 +14,7 @@ use itertools::Itertools;
 use regex::Regex;
 use strum::IntoEnumIterator;
 
+use crate::{CurrentTab, IdentifyTab, add_tag_button, delete_tag_button};
 use archive_organizer::{
     Builder,
     api::{File, FileDataSource, ReadingStatus},
@@ -21,7 +22,6 @@ use archive_organizer::{
     settings::Settings,
     to_buckets,
 };
-use crate::{CurrentTab, IdentifyTab, add_tag_button, delete_tag_button};
 
 use super::{Dialog, Error, Message, OrderDirection, OrderFilesBy, display_path, tag_button};
 

@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation, Algorithm};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -7,10 +7,10 @@ use super::models::User;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,     // Subject (user ID)
-    pub exp: usize,      // Expiration time
-    pub iat: usize,      // Issued at
-    pub role: String,    // User role
+    pub sub: String,      // Subject (user ID)
+    pub exp: usize,       // Expiration time
+    pub iat: usize,       // Issued at
+    pub role: String,     // User role
     pub username: String, // Username
 }
 
@@ -47,8 +47,7 @@ impl JwtService {
             username: user.username.clone(),
         };
 
-        encode(&Header::default(), &claims, &self.encoding_key)
-            .map_err(JwtError::from)
+        encode(&Header::default(), &claims, &self.encoding_key).map_err(JwtError::from)
     }
 
     pub fn validate_token(&self, token: &str) -> Result<Claims, JwtError> {

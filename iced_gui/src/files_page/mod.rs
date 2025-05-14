@@ -8,8 +8,8 @@ use iced::{
     widget::{column, text},
 };
 
-use archive_organizer::api::{File, FileDataSource, ReadingStatus};
 use crate::{CurrentTab, IdentifyTab, Message as GuiMessage};
+use archive_organizer::api::{File, FileDataSource, ReadingStatus};
 
 use super::tag_button;
 

@@ -1,13 +1,14 @@
 use glib::Propagation;
 use gtk::prelude::*;
 use relm4::{
+    RelmWidgetExt,
     component::{AsyncComponent, AsyncComponentParts, AsyncComponentSender},
-    gtk, RelmWidgetExt,
+    gtk,
 };
 
 use archive_organizer::{
-    auth::{ApiKey, Role, User},
     ApplicationModule,
+    auth::{ApiKey, Role, User},
 };
 
 #[derive(Debug)]

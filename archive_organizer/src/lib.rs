@@ -24,8 +24,8 @@ use itertools::Itertools;
 use serde::Deserialize;
 use tokio::runtime::Runtime;
 
-use db::{ConnectionPool, datasource::DbClient};
 use auth::{AuthService, JwtService};
+use db::{ConnectionPool, datasource::DbClient};
 
 use scan::{DirectorySettings, FileSystemVisitor};
 use settings::Settings;

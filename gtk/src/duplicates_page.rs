@@ -1,9 +1,9 @@
 use gtk::prelude::*;
+use relm4::RelmWidgetExt;
 use relm4::component::AsyncComponent;
 use relm4::component::AsyncComponentParts;
 use relm4::component::AsyncComponentSender;
 use relm4::gtk;
-use relm4::RelmWidgetExt;
 
 use archive_organizer::api::{File, FileDataSource};
 
