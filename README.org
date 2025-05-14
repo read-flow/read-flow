@@ -2,7 +2,7 @@
 
 This is a tool to help discover and organize files locally and on remote servers.
 
-* TODO: Implement the following items [21/37]
+* TODO: Implement the following items [22/39]
 
 - [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
 - [X] Make database URL configurable (using ~figment~)
@@ -46,3 +46,6 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] Allow marking files as read/reading/unread
 - [X] Filter files on reading status
 - [ ] Check if cosmic applications work better on chromeos
+- [X] Server downloads files into file specific folder: "{download_folder}/{filename}/{filename}.{extension}"
+      This way related books, with the same name, but different extension will be stored in the same folder,
+      Calibre can then import them as related to the same book.

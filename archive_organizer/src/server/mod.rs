@@ -375,11 +375,17 @@ async fn upload_file(
     }
 
     let filename = file.name().unwrap(); // sanitized filename, safe to use
-    let mut target_file = application_module
+    let target_dir = application_module
         .settings
         .server
         .download_folder
-        .join(format!("{filename}.{extension}"));
+        .join(filename);
+
+    if !target_dir.exists() {
+        tokio::fs::create_dir(&target_dir).await?;
+    }
+
+    let mut target_file = target_dir.join(format!("{filename}.{extension}"));
 
     to_unique_file(&mut target_file, &extension);
 
