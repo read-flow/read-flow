@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Archive Organizer Cosmic
+Comment=Manage Documents Accross Multiple Machines
+Type=Application
+Icon=com.github.peterpaul.archive-organizer-cosmic
+Exec=archive-organizer-cosmic %F
+Terminal=false
+StartupNotify=true
+Categories=COSMIC
+Keywords=COSMIC
+MimeType=

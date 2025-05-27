@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.github.peterpaul.archive-organizer-cosmic</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Archive Organizer Cosmic</name>
+  <summary>Manage Documents Accross Multiple Machines</summary>
+  <icon type="remote" width="64" height="64" scale="1">
+    https://github.com/peterpaul/archive-organizer/raw/main/resources/icons/hicolor/scalable/apps/icon.svg
+  </icon>
+  <url type="vcs-browser">https://github.com/peterpaul/archive-organizer</url>
+  <launchable type="desktop-id">com.github.peterpaul.archive-organizer-cosmic.desktop</launchable>
+  <provides>
+    <id>com.github.peterpaul.archive-organizer-cosmic</id>
+    <binaries>
+      <binary>archive-organizer-cosmic</binary>
+    </binaries>
+  </provides>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+  <categories>
+    <category>COSMIC</category>
+  </categories>
+  <keywords>
+    <keyword>COSMIC</keyword>
+  </keywords>
+  <content_rating type="oars-1.1" />
+</component>
+
