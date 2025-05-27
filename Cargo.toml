@@ -1,58 +1,44 @@
-[package]
-name = "archive-organizer"
-version = "0.1.0"
-edition = "2024"
-
-authors = ["Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"]
-license = "MIT"
-
-[package.metadata.deb]
-maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
-
 [profile.release]
 lto = true
 
-[features]
-default = ["gui", "server"]
-gui = ["dep:iced", "dep:libcosmic", "dep:rfd"]
-server = ["dep:rocket"]
+[workspace]
+members = ["archive_organizer", "gtk", "iced_gui"]
+resolver = "3"
 
-[dependencies]
-anyhow = "1.0.97"
-async-trait = "0.1.87"
-clap = { version = "4.5.32", features = ["derive"] }
-diesel = { version = "2.2.8", features = [
-    "sqlite",
-    "r2d2",
-    "returning_clauses_for_sqlite_3_35",
-] }
-diesel_migrations = { version = "2.2.0", features = ["sqlite"] }
-expanduser = "1.2.2"
-# build libsqlite3 as part of the build process
-# uncomment this line if you run into setup issues
-# libsqlite3-sys = { version = "0.30", features = ["bundled"] }
-figment = { version = "0.10.19", default-features = false, features = ["toml"] }
-futures = "0.3.31"
-iced = { version = "0.13.1", optional = true, features = ["tokio"] }
-indexmap = { version = "2.8.0", features = ["serde"] }
-itertools = "0.14.0"
-libcosmic = { git = "https://github.com/pop-os/libcosmic", optional = true }
-mime = "0.3.17"
-r2d2 = "0.8.10"
-rayon = "1.10.0"
-regex = "1.11.1"
-reqwest = { version = "0.12.14", features = ["json", "stream", "multipart"] }
-rfd = { version = "0.15.2", optional = true }
-rocket = { version = "0.5.1", optional = true, features = ["http2", "json"] }
-serde = { version = "1.0.219", features = ["derive"] }
-serde_with = { version = "3.12.0", features = ["indexmap"] }
-strum = { version = "0.27.1", features = ["derive"] }
-thiserror = "2.0.12"
-tokio = { version = "1.44.0", features = ["rt-multi-thread", "process"] }
-tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["std", "env-filter"] }
-url = "2.5.4"
-
-[dev-dependencies]
-assert4rs = "0.1.0"
-rstest = "0.25.0"
+[workspace.dependencies]
+anyhow = { version = "1.0.98" }
+assert4rs = { version = "0.1.0" }
+async-trait = { version = "0.1.88" }
+chrono = { version = "0.4.35" }
+clap = { version = "4.5.37" }
+diesel = { version = "2.2.9", features = ["chrono"] }
+diesel_migrations = { version = "2.2.0" }
+expanduser = { version = "1.2.2" }
+figment = { version = "0.10.19", default-features = false }
+futures = { version = "0.3.31" }
+glib = { version = "0.20.9" }
+iced = { version = "0.13.1" }
+iced_aw = { version = "0.12.2", default-features = false }
+indexmap = { version = "2.9.0" }
+itertools = { version = "0.14.0" }
+mime = { version = "0.3.17" }
+r2d2 = { version = "0.8.10" }
+rayon = { version = "1.10.0" }
+regex = { version = "1.11.1" }
+relm4 = "0.9.1"
+relm4-components = "0.9.1"
+reqwest = { version = "0.12.15" }
+rfd = { version = "0.15.3" }
+rocket = { version = "0.5.1" }
+rocket_cors = "0.6.0"
+rstest = { version = "0.25.0" }
+serde = { version = "1.0.219" }
+serde_json = "1.0.140"
+serde_with = { version = "3.12.0" }
+strum = { version = "0.27.1" }
+thiserror = { version = "2.0.12" }
+tokio = { version = "1.44.2" }
+tracing = { version = "0.1.41" }
+tracing-subscriber = { version = "0.3.19" }
+tracker = "0.2.2"
+url = { version = "2.5.4" }

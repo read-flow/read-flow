@@ -1,0 +1,31 @@
+[package]
+name = "archive-organizer-gtk"
+version = "0.1.0"
+edition = "2024"
+
+authors = ["Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"]
+license = "MIT"
+
+[package.metadata.deb]
+maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+clap = { workspace = true, features = ["derive"] }
+glib = { workspace = true }
+indexmap.workspace = true
+regex.workspace = true
+relm4-components.workspace = true
+relm4.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+strum.workspace = true
+tokio = { workspace = true, features = ["macros"] }
+tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
+tracing.workspace = true
+tracker.workspace = true
+toml_edit = "0.21.0"
+url.workspace = true
+
+archive-organizer = { path = "../archive_organizer", default-features = false }

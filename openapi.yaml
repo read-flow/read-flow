@@ -1,0 +1,313 @@
+openapi: 3.0.3
+info:
+  title: Archive Organizer API
+  version: 1.0.0
+  description: REST API for managing files in the archive organizer system
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+components:
+  schemas:
+    File:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the file
+        path:
+          type: string
+          description: Full path to the file
+        type_:
+          type: string
+          description: File type (e.g., pdf, epub, mobi)
+        size:
+          type: integer
+          description: File size in bytes
+        fingerprint:
+          type: string
+          description: Unique file fingerprint
+        tags:
+          type: array
+          items:
+            type: string
+          description: List of tags associated with the file
+        status:
+          type: string
+          enum:
+            - Unread
+            - Reading
+            - Read
+          description: Reading status of the file
+      required:
+        - id
+        - path
+        - type_
+        - size
+        - fingerprint
+        - tags
+        - status
+
+    Status:
+      type: object
+      description: Server status information
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+          description: Error code
+        message:
+          type: string
+          description: Error message
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+paths:
+  /status:
+    get:
+      summary: Get server status
+      description: Returns the current status of the server
+      responses:
+        '200':
+          description: Server status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+
+  /files:
+    get:
+      summary: List all files
+      description: Retrieve a list of all files in the archive
+      responses:
+        '200':
+          description: List of files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/File'
+
+    post:
+      summary: Upload a new file
+      description: Upload a new file to the archive
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Created file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+
+  /files/{id}:
+    get:
+      summary: Get file details
+      description: Retrieve details of a specific file
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: File ID
+      responses:
+        '200':
+          description: File details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      summary: Update file
+      description: Update file information
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: File ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/File'
+      responses:
+        '200':
+          description: Updated file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+
+    delete:
+      summary: Delete file
+      description: Delete a file from the archive
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: File ID
+      responses:
+        '204':
+          description: File deleted
+
+  /files/{id}/tags:
+    get:
+      summary: Get file tags
+      description: Retrieve all tags associated with a file
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: File ID
+      responses:
+        '200':
+          description: List of tags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+    post:
+      summary: Add tags to file
+      description: Add new tags to a file
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: File ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+      responses:
+        '200':
+          description: Updated list of tags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+    delete:
+      summary: Remove tags from file
+      description: Remove tags from a file
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: File ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+      responses:
+        '200':
+          description: Updated list of tags
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /files/{id}/download-as/{file_name}:
+    get:
+      summary: Download file
+      description: Download a file from the archive with the specified file name
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: File ID
+        - in: path
+          name: file_name
+          required: true
+          schema:
+            type: string
+          description: Desired file name for the download
+      responses:
+        '200':
+          description: File content
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '400':
+          description: Invalid file name extension
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

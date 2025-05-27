@@ -1,0 +1,60 @@
+[package]
+name = "archive-organizer"
+version = "0.1.0"
+edition = "2024"
+
+authors = ["Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"]
+license = "MIT"
+
+[package.metadata.deb]
+maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
+
+[features]
+default = ["server"]
+server = ["dep:rocket", "dep:rocket_cors"]
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+clap = { workspace = true, features = ["derive"] }
+diesel = { workspace = true, features = [
+    "sqlite",
+    "r2d2",
+    "returning_clauses_for_sqlite_3_35",
+] }
+diesel_migrations = { workspace = true, features = ["sqlite"] }
+expanduser.workspace = true
+# build libsqlite3 as part of the build process
+# uncomment this line if you run into setup issues
+# libsqlite3-sys = { workspace = true, features = ["bundled"] }
+figment = { workspace = true, default-features = false, features = ["toml"] }
+futures.workspace = true
+indexmap = { workspace = true, features = ["serde"] }
+itertools.workspace = true
+mime.workspace = true
+r2d2.workspace = true
+rayon.workspace = true
+regex.workspace = true
+reqwest = { workspace = true, features = ["json", "stream", "multipart"] }
+serde = { workspace = true, features = ["derive"] }
+serde_with = { workspace = true, features = ["indexmap"] }
+strum = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "process"] }
+tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
+tracing.workspace = true
+url.workspace = true
+
+# Auth dependencies
+argon2 = "0.5.3"
+jsonwebtoken = "9.2.0"
+rand = "0.8.5"
+chrono = { version = "0.4.31", features = ["serde"] }
+serde_json = "1.0.114"
+
+rocket = { workspace = true, optional = true, features = ["http2", "json"] }
+rocket_cors = { workspace = true, optional = true }
+
+[dev-dependencies]
+assert4rs.workspace = true
+rstest.workspace = true
