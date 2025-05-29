@@ -1,12 +1,14 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 mod app;
 mod config;
+mod cosmic_ext;
 mod i18n;
+mod page;
 
 use archive_organizer::{
-    settings::{self},
     ApplicationModule,
+    settings::{self},
 };
 
 fn main() -> cosmic::iced::Result {
@@ -16,6 +18,7 @@ fn main() -> cosmic::iced::Result {
     // Enable localizations to be applied.
     i18n::init(&requested_languages);
 
+    // Extract settings from the application's configuration.
     let settings = settings::extract().expect("settings are present");
     let application_module = ApplicationModule::from_settings(settings);
 

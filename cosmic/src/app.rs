@@ -1,11 +1,12 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 use crate::config::Config;
 use crate::fl;
-use archive_organizer::api::FileDataSource;
-use archive_organizer::client::FilesClient;
-use archive_organizer::db::dao::RemoteDao;
+use crate::page::PageMessage;
+use crate::page::PageSelector;
+use crate::page::Pages;
 use archive_organizer::ApplicationModule;
+use crate::cosmic_ext::ActionExt;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
@@ -15,7 +16,6 @@ use cosmic::widget::{self, icon, menu, nav_bar};
 use cosmic::{cosmic_theme, theme};
 use futures_util::SinkExt;
 use std::collections::HashMap;
-use url::Url;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
@@ -35,6 +35,8 @@ pub struct AppModel {
     config: Config,
     /// Application Module
     application_module: ApplicationModule,
+    /// Pages
+    pages: Pages,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -45,6 +47,13 @@ pub enum Message {
     ToggleContextPage(ContextPage),
     UpdateConfig(Config),
     LaunchUrl(String),
+    Page(PageMessage),
+}
+
+impl From<PageMessage> for Message {
+    fn from(source: PageMessage) -> Self {
+        Message::Page(source)
+    }
 }
 
 /// Create a COSMIC application from the app model
@@ -76,37 +85,19 @@ impl cosmic::Application for AppModel {
     ) -> (Self, Task<cosmic::Action<Self::Message>>) {
         // Create a nav bar with three page items.
         let mut nav = nav_bar::Model::default();
-        // Get the database client from the application module
-        let db_client = application_module.db_client();
 
-        // Get remote clients from the application module
-        let remote_clients = application_module
-            .connection_pool
-            .select_all_remotes()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|remote| {
-                let remote_connection: Url = remote.base_url.parse()?;
-                let client = FilesClient::new(remote_connection.clone())?;
-                Ok(client)
-            })
-            .collect::<anyhow::Result<_>>()
-            .unwrap_or_else(|_e| {
-                // tracing::error!("Failed to get remote clients: {}", e);
-                Vec::new()
-            });
+        let pages = Pages::new(&application_module);
 
-        nav.insert()
-            .text(db_client.display_name())
-            .data::<Page>(Page::Page1)
-            .icon(icon::from_name("applications-science-symbolic"))
-            .activate();
-
-        for client in remote_clients {
-            nav.insert()
-                .text(client.display_name())
-                .data::<Page>(Page::Page2)
+        for (index, selector) in pages.all_selectors().iter().enumerate() {
+            let nav = nav
+                .insert()
+                .text(pages.display_name(selector))
+                .data::<PageSelector>(selector.clone())
                 .icon(icon::from_name("applications-system-symbolic"));
+
+            if index == 0 {
+                nav.activate();
+            }
         }
 
         // Construct the app model with the runtime's core.
@@ -129,6 +120,7 @@ impl cosmic::Application for AppModel {
                 })
                 .unwrap_or_default(),
             application_module,
+            pages,
         };
 
         // Create a startup command that sets the window title.
@@ -175,7 +167,13 @@ impl cosmic::Application for AppModel {
     /// Application events will be processed through the view. Any messages emitted by
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<Self::Message> {
-        widget::text::title1(fl!("welcome"))
+        let content = if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
+            self.pages.view(page).map(Self::Message::Page)
+        } else {
+            widget::text::title1(fl!("welcome")).into()
+        };
+
+        content
             .apply(widget::container)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -223,12 +221,12 @@ impl cosmic::Application for AppModel {
         match message {
             Message::OpenRepositoryUrl => {
                 _ = open::that_detached(REPOSITORY);
+                Task::none()
             }
-
             Message::SubscriptionChannel => {
                 // For example purposes only.
+                Task::none()
             }
-
             Message::ToggleContextPage(context_page) => {
                 if self.context_page == context_page {
                     // Close the context drawer if the toggled context page is the same.
@@ -238,20 +236,21 @@ impl cosmic::Application for AppModel {
                     self.context_page = context_page;
                     self.core.window.show_context = true;
                 }
+                Task::none()
             }
-
             Message::UpdateConfig(config) => {
                 self.config = config;
+                Task::none()
             }
-
             Message::LaunchUrl(url) => match open::that_detached(&url) {
-                Ok(()) => {}
+                Ok(()) => Task::none(),
                 Err(err) => {
                     eprintln!("failed to open {url:?}: {err}");
+                    Task::none()
                 }
             },
+            Message::Page(page_message) => self.pages.update(page_message).map(|action| action.map(Into::into)),
         }
-        Task::none()
     }
 
     /// Called when a nav item is selected.
@@ -313,13 +312,6 @@ impl AppModel {
             Task::none()
         }
     }
-}
-
-/// The page to display in the application.
-pub enum Page {
-    Page1,
-    Page2,
-    Page3,
 }
 
 /// The context page to display in the context drawer.
