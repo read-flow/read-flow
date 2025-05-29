@@ -33,7 +33,9 @@ pub enum PageMessage {
 }
 
 impl Pages {
-    pub fn new(application_module: &ApplicationModule) -> Self {
+    pub fn new(
+        application_module: &ApplicationModule,
+    ) -> (Self, Task<cosmic::Action<PageMessage>>) {
         // Get the database client from the application module
         let db_client = application_module.db_client();
 
@@ -54,10 +56,27 @@ impl Pages {
                 Vec::new()
             });
 
-        Self {
-            local: Files::new(db_client),
-            remotes: remote_clients.into_iter().map(Files::new).collect(),
-        }
+        let (local, local_task) = Files::new(db_client);
+
+        let mut tasks = vec![local_task.map(|action| action.map(PageMessage::LocalFiles))];
+
+        let (remotes, remote_tasks): (_, Vec<Task<cosmic::Action<PageMessage>>>) = remote_clients
+            .into_iter()
+            .map(|remote_client| {
+                let (remote, task) = Files::new(remote_client);
+                let base_url = remote.client.base_url.clone();
+                (
+                    remote,
+                    task.map(move |action| {
+                        action.map(|msg| PageMessage::RemoteFiles(base_url.clone(), msg))
+                    }),
+                )
+            })
+            .unzip();
+
+        tasks.extend(remote_tasks);
+
+        (Self { local, remotes }, cosmic::task::batch(tasks))
     }
 
     pub fn all_selectors(&self) -> Vec<PageSelector> {

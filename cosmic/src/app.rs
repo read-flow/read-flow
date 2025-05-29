@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use crate::config::Config;
+use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::page::PageMessage;
 use crate::page::PageSelector;
 use crate::page::Pages;
 use archive_organizer::ApplicationModule;
-use crate::cosmic_ext::ActionExt;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
@@ -86,7 +86,7 @@ impl cosmic::Application for AppModel {
         // Create a nav bar with three page items.
         let mut nav = nav_bar::Model::default();
 
-        let pages = Pages::new(&application_module);
+        let (pages, page_action) = Pages::new(&application_module);
 
         for (index, selector) in pages.all_selectors().iter().enumerate() {
             let nav = nav
@@ -126,7 +126,10 @@ impl cosmic::Application for AppModel {
         // Create a startup command that sets the window title.
         let command = app.update_title();
 
-        (app, command)
+        (
+            app,
+            cosmic::task::batch(vec![command, page_action.map(|msg| msg.map(Into::into))]),
+        )
     }
 
     /// Elements to pack at the start of the header bar.
@@ -167,19 +170,17 @@ impl cosmic::Application for AppModel {
     /// Application events will be processed through the view. Any messages emitted by
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<Self::Message> {
-        let content = if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
+        if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
             self.pages.view(page).map(Self::Message::Page)
         } else {
-            widget::text::title1(fl!("welcome")).into()
-        };
-
-        content
-            .apply(widget::container)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Horizontal::Center)
-            .align_y(Vertical::Center)
-            .into()
+            widget::text::title1(fl!("welcome"))
+                .apply(widget::container)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Center)
+                .into()
+        }
     }
 
     /// Register subscriptions for this application.
@@ -249,7 +250,10 @@ impl cosmic::Application for AppModel {
                     Task::none()
                 }
             },
-            Message::Page(page_message) => self.pages.update(page_message).map(|action| action.map(Into::into)),
+            Message::Page(page_message) => self
+                .pages
+                .update(page_message)
+                .map(|action| action.map(Into::into)),
         }
     }
 
