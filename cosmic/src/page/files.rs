@@ -2,29 +2,45 @@
 use archive_organizer::api::{File, FileDataSource};
 use cosmic::iced::Length;
 use cosmic::iced::alignment::{Horizontal, Vertical};
+use cosmic::iced_widget::list::Content;
 use cosmic::widget;
 use cosmic::{Apply, Element, Task};
-use tokio::time::Duration;
+use std::path::Path;
 
 pub enum ArchiveStatus {
     New,
     Loading,
     Failed(String),
-    Loaded(Vec<File>),
+    Loaded(Content<File>),
+}
+
+fn view_file<'a>(file: &'a File) -> Element<'a, FilesMessage> {
+    display_path(&file.path)
+}
+
+fn display_path<'a>(path: &'a str) -> Element<'a, FilesMessage> {
+    let path: &Path = path.as_ref();
+    let directory = format!("{}", path.parent().unwrap().display());
+    let filename = path.file_name().unwrap();
+    cosmic::iced_widget::column![
+        widget::text(format!("{}", filename.to_string_lossy())),
+        widget::text(directory).size(11),
+    ]
+    .spacing(5)
+    .into()
 }
 
 impl ArchiveStatus {
     pub fn view(&self) -> Element<FilesMessage> {
         match self {
+            ArchiveStatus::New => widget::text("New").into(),
+            ArchiveStatus::Loading => widget::text("Loading").into(),
+            ArchiveStatus::Failed(error) => widget::text(format!("Error: {error}")).into(),
             ArchiveStatus::Loaded(files) => {
-		let column = files.iter()
-		    .fold(widget::column(), |col, file| {
-			col.push(widget::text(file.path.clone()))
-		    });
-		let column = column.push(widget::text("Loaded"));
-		column.into()
-	    }
-            _ => widget::text("Loading").into(),
+                let list =
+                    cosmic::iced::widget::list(files, |_index, file| view_file(file)).spacing(10);
+                list.apply(widget::scrollable::vertical).into()
+            }
         }
     }
 }
@@ -41,7 +57,7 @@ pub enum FilesMessage {
     LoadingFailed(String),
 }
 
-impl<C: FileDataSource + Send + Sync + Clone + 'static > Files<C> {
+impl<C: FileDataSource + Send + Sync + Clone + 'static> Files<C> {
     pub fn new(client: C) -> (Self, Task<cosmic::Action<FilesMessage>>) {
         (
             Self {
@@ -89,7 +105,7 @@ impl<C: FileDataSource + Send + Sync + Clone + 'static > Files<C> {
                 })
             }
             FilesMessage::Loaded(files) => {
-                self.archive = ArchiveStatus::Loaded(files);
+                self.archive = ArchiveStatus::Loaded(Content::with_items(files));
                 cosmic::task::none()
             }
             FilesMessage::LoadingFailed(error) => {
