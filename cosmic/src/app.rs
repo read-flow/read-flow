@@ -4,6 +4,7 @@ use crate::config::Config;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::page::PageMessage;
+use crate::page::PageOutput;
 use crate::page::PageSelector;
 use crate::page::Pages;
 use archive_organizer::ApplicationModule;
@@ -48,11 +49,24 @@ pub enum Message {
     UpdateConfig(Config),
     LaunchUrl(String),
     Page(PageMessage),
+    PageAdded(PageSelector),
+    // TODO: add message here to add another page and connect to PageMessage::OpenFileDetails
+}
+
+impl From<PageOutput> for Message {
+    fn from(source: PageOutput) -> Self {
+        match source {
+            PageOutput::PageAdded(page) => Message::PageAdded(page),
+        }
+    }
 }
 
 impl From<PageMessage> for Message {
     fn from(source: PageMessage) -> Self {
-        Message::Page(source)
+        match source {
+            PageMessage::Out(page) => page.into(),
+            source => Message::Page(source),
+        }
     }
 }
 
@@ -254,6 +268,16 @@ impl cosmic::Application for AppModel {
                 .pages
                 .update(page_message)
                 .map(|action| action.map(Into::into)),
+            Message::PageAdded(selector) => {
+                let nav = self
+                    .nav
+                    .insert()
+                    .text(self.pages.display_name(&selector))
+                    .data::<PageSelector>(selector.clone())
+                    .icon(icon::from_name("applications-system-symbolic"));
+                nav.activate();
+                Task::none()
+            }
         }
     }
 

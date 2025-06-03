@@ -16,6 +16,11 @@ pub enum ArchiveStatus {
 
 fn view_file<'a>(file: &'a File) -> Element<'a, FilesMessage> {
     display_path(&file.path)
+        .apply(cosmic::iced_widget::button)
+        .on_press(FilesMessage::Out(FilesOutput::OpenFileDetails(
+            file.clone(),
+        )))
+        .into()
 }
 
 fn display_path<'a>(path: &'a str) -> Element<'a, FilesMessage> {
@@ -27,6 +32,8 @@ fn display_path<'a>(path: &'a str) -> Element<'a, FilesMessage> {
         widget::text(directory).size(11),
     ]
     .spacing(5)
+    .apply(widget::container)
+    .width(Length::Fill)
     .into()
 }
 
@@ -45,9 +52,15 @@ impl ArchiveStatus {
     }
 }
 
+// TODO: experiment with dynamic dispatch here to simplify code
 pub struct Files<C: FileDataSource> {
     pub client: C,
     pub archive: ArchiveStatus,
+}
+
+#[derive(Debug, Clone)]
+pub enum FilesOutput {
+    OpenFileDetails(File),
 }
 
 #[derive(Debug, Clone)]
@@ -55,6 +68,7 @@ pub enum FilesMessage {
     LoadArchive,
     Loaded(Vec<File>),
     LoadingFailed(String),
+    Out(FilesOutput),
 }
 
 impl<C: FileDataSource + Send + Sync + Clone + 'static> Files<C> {
@@ -66,6 +80,10 @@ impl<C: FileDataSource + Send + Sync + Clone + 'static> Files<C> {
             },
             cosmic::task::message(FilesMessage::LoadArchive),
         )
+    }
+
+    pub fn display_name(&self) -> String {
+        self.client.display_name()
     }
 
     pub fn view(&self) -> Element<FilesMessage> {
@@ -86,8 +104,8 @@ impl<C: FileDataSource + Send + Sync + Clone + 'static> Files<C> {
                 .apply(widget::container)
                 .width(Length::Fill)
                 .height(Length::Fill)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center),
+                .align_x(Horizontal::Left)
+                .align_y(Vertical::Top),
         );
 
         column.into()
@@ -111,6 +129,9 @@ impl<C: FileDataSource + Send + Sync + Clone + 'static> Files<C> {
             FilesMessage::LoadingFailed(error) => {
                 self.archive = ArchiveStatus::Failed(error);
                 cosmic::task::none()
+            }
+            FilesMessage::Out(_) => {
+                panic!("should be handled by the parent component")
             }
         }
     }
