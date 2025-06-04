@@ -784,7 +784,7 @@ impl AsyncComponent for AuthManagementDialog {
                     let scopes = self
                         .new_api_key_scopes
                         .iter()
-                        .filter_map(|s| Role::from_str(s))
+                        .filter_map(|s| Role::from_name(s))
                         .collect::<Vec<_>>();
 
                     match self

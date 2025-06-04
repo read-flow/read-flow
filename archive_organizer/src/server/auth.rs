@@ -154,7 +154,7 @@ pub async fn create_api_key(
     let scopes = request
         .scopes
         .iter()
-        .filter_map(|s| Role::from_str(s))
+        .filter_map(|s| Role::from_name(s))
         .collect::<Vec<_>>();
 
     // Create the API key

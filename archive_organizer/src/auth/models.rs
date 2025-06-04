@@ -31,7 +31,7 @@ impl fmt::Display for Role {
 }
 
 impl Role {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_name(s: &str) -> Option<Self> {
         from_str_role(s)
     }
 
@@ -73,7 +73,7 @@ pub struct User {
 
 impl User {
     pub fn role(&self) -> Role {
-        Role::from_str(&self.role).unwrap_or(Role::Read)
+        Role::from_name(&self.role).unwrap_or(Role::Read)
     }
 }
 
