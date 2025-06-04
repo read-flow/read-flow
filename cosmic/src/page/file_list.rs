@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+use crate::client::Client;
 use archive_organizer::api::{File, FileDataSource};
 use cosmic::iced::Length;
 use cosmic::iced::alignment::{Horizontal, Vertical};
@@ -6,6 +7,7 @@ use cosmic::iced_widget::list::Content;
 use cosmic::widget;
 use cosmic::{Apply, Element, Task};
 use std::path::Path;
+use url::Url;
 
 pub enum ArchiveStatus {
     New,
@@ -14,16 +16,16 @@ pub enum ArchiveStatus {
     Loaded(Content<File>),
 }
 
-fn view_file<'a>(file: &'a File) -> Element<'a, FilesMessage> {
+fn view_file<'a>(file: &'a File) -> Element<'a, FileListMessage> {
     display_path(&file.path)
         .apply(cosmic::iced_widget::button)
-        .on_press(FilesMessage::Out(FilesOutput::OpenFileDetails(
+        .on_press(FileListMessage::Out(FileListOutput::OpenFileDetails(
             file.clone(),
         )))
         .into()
 }
 
-fn display_path<'a>(path: &'a str) -> Element<'a, FilesMessage> {
+fn display_path<'a>(path: &'a str) -> Element<'a, FileListMessage> {
     let path: &Path = path.as_ref();
     let directory = format!("{}", path.parent().unwrap().display());
     let filename = path.file_name().unwrap();
@@ -38,7 +40,7 @@ fn display_path<'a>(path: &'a str) -> Element<'a, FilesMessage> {
 }
 
 impl ArchiveStatus {
-    pub fn view(&self) -> Element<FilesMessage> {
+    pub fn view(&self) -> Element<FileListMessage> {
         match self {
             ArchiveStatus::New => widget::text("New").into(), // TODO: Show spinner
             ArchiveStatus::Loading => widget::text("Loading").into(), // TODO: Show spinner
@@ -52,33 +54,38 @@ impl ArchiveStatus {
     }
 }
 
-// TODO: experiment with dynamic dispatch here to simplify code
-pub struct Files<C: FileDataSource> {
-    pub client: C,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum FileListSelector {
+    Local,
+    Remote(Url),
+}
+
+pub struct FileList {
+    pub client: Client,
     pub archive: ArchiveStatus,
 }
 
 #[derive(Debug, Clone)]
-pub enum FilesOutput {
+pub enum FileListOutput {
     OpenFileDetails(File),
 }
 
 #[derive(Debug, Clone)]
-pub enum FilesMessage {
+pub enum FileListMessage {
     LoadArchive,
     Loaded(Vec<File>),
     LoadingFailed(String),
-    Out(FilesOutput),
+    Out(FileListOutput),
 }
 
-impl<C: FileDataSource + Send + Sync + Clone + 'static> Files<C> {
-    pub fn new(client: C) -> (Self, Task<cosmic::Action<FilesMessage>>) {
+impl FileList {
+    pub fn new(client: Client) -> (Self, Task<cosmic::Action<FileListMessage>>) {
         (
             Self {
                 client,
                 archive: ArchiveStatus::New,
             },
-            cosmic::task::message(FilesMessage::LoadArchive),
+            cosmic::task::message(FileListMessage::LoadArchive),
         )
     }
 
@@ -86,7 +93,14 @@ impl<C: FileDataSource + Send + Sync + Clone + 'static> Files<C> {
         self.client.display_name()
     }
 
-    pub fn view(&self) -> Element<FilesMessage> {
+    pub fn selector(&self) -> FileListSelector {
+        match &self.client {
+            Client::Local(_) => FileListSelector::Local,
+            Client::Remote(client) => FileListSelector::Remote(client.base_url.clone()),
+        }
+    }
+
+    pub fn view(&self) -> Element<FileListMessage> {
         let column = widget::column();
 
         let column = column.push(
@@ -111,27 +125,27 @@ impl<C: FileDataSource + Send + Sync + Clone + 'static> Files<C> {
         column.into()
     }
 
-    pub fn update(&mut self, message: FilesMessage) -> Task<cosmic::Action<FilesMessage>> {
+    pub fn update(&mut self, message: FileListMessage) -> Task<cosmic::Action<FileListMessage>> {
         match message {
-            FilesMessage::LoadArchive => {
+            FileListMessage::LoadArchive => {
                 self.archive = ArchiveStatus::Loading;
                 let client = self.client.clone();
                 cosmic::task::future(async move {
                     match client.get_files().await {
-                        Ok(files) => FilesMessage::Loaded(files),
-                        Err(error) => FilesMessage::LoadingFailed(format!("{error}")),
+                        Ok(files) => FileListMessage::Loaded(files),
+                        Err(error) => FileListMessage::LoadingFailed(format!("{error}")),
                     }
                 })
             }
-            FilesMessage::Loaded(files) => {
+            FileListMessage::Loaded(files) => {
                 self.archive = ArchiveStatus::Loaded(Content::with_items(files));
                 cosmic::task::none()
             }
-            FilesMessage::LoadingFailed(error) => {
+            FileListMessage::LoadingFailed(error) => {
                 self.archive = ArchiveStatus::Failed(error);
                 cosmic::task::none()
             }
-            FilesMessage::Out(_) => {
+            FileListMessage::Out(_) => {
                 panic!("should be handled by the parent component")
             }
         }

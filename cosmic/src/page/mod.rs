@@ -1,23 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 mod file_details;
-mod files;
+mod file_list;
 
 use crate::cosmic_ext::ActionExt;
-use crate::fl;
 use archive_organizer::ApplicationModule;
 use archive_organizer::api::File;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::dao::RemoteDao;
-use archive_organizer::db::datasource::DbClient;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::widget;
 use file_details::FileDetails;
 use file_details::FileDetailsMessage;
 use file_details::FileDetailsOutput;
-use files::Files;
-use files::FilesMessage;
-use files::FilesOutput;
+use file_list::FileList;
+use file_list::FileListMessage;
+use file_list::FileListOutput;
+use file_list::FileListSelector;
 use indexmap::IndexMap;
 use rand::Rng;
 use rand::rngs::ThreadRng;
@@ -25,16 +24,20 @@ use url::Url;
 
 pub struct Pages {
     rng: ThreadRng,
-    local: Files<DbClient>,
-    remotes: Vec<Files<FilesClient>>,
+    file_lists: IndexMap<FileListSelector, FileList>,
     file_details: IndexMap<i32, FileDetails>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PageSelector {
-    LocalFiles,
-    RemoteFiles(Url),
+    FileList(FileListSelector),
     FileDetails(i32),
+}
+
+impl From<FileListSelector> for PageSelector {
+    fn from(value: FileListSelector) -> Self {
+	Self::FileList(value)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -45,8 +48,7 @@ pub enum PageOutput {
 
 #[derive(Debug, Clone)]
 pub enum PageMessage {
-    LocalFiles(FilesMessage),
-    RemoteFiles(Url, FilesMessage),
+    Files(FileListSelector, FileListMessage),
     FileDetails(i32, FileDetailsMessage),
     OpenFileDetails(File),
     CloseFileDetails(i32),
@@ -77,99 +79,81 @@ impl Pages {
                 Vec::new()
             });
 
-        let (local, local_task) = Files::new(db_client);
+        let (local, local_task) = FileList::new(db_client.into());
 
-        let mut tasks = vec![local_task.map(|action| action.map(PageMessage::LocalFiles))];
+        let mut tasks = vec![
+            local_task
+                .map(|action| action.map(|msg| map_file_list_message(FileListSelector::Local, msg))),
+        ];
 
-        let (remotes, remote_tasks): (_, Vec<Task<cosmic::Action<PageMessage>>>) = remote_clients
-            .into_iter()
-            .map(|remote_client| {
-                let (remote, task) = Files::new(remote_client);
-                let base_url = remote.client.base_url.clone();
-                (
-                    remote,
-                    task.map(move |action| {
-                        action.map(|msg| PageMessage::RemoteFiles(base_url.clone(), msg))
-                    }),
-                )
-            })
-            .unzip();
+        let (mut remotes, remote_tasks): (Vec<FileList>, Vec<Task<cosmic::Action<PageMessage>>>) =
+            remote_clients
+                .into_iter()
+                .map(|remote_client| {
+                    let base_url = remote_client.base_url.clone();
+                    let (remote, task) = FileList::new(remote_client.into());
+                    (
+                        remote,
+                        task.map(move |action| {
+                            action.map(|msg| {
+                                map_file_list_message(FileListSelector::Remote(base_url.clone()), msg)
+                            })
+                        }),
+                    )
+                })
+                .unzip();
 
         tasks.extend(remote_tasks);
+
+        let mut file_lists = vec![local];
+        file_lists.append(&mut remotes);
 
         (
             Self {
                 rng: rand::rng(),
-                local,
-                remotes,
+                file_lists: file_lists.into_iter().map(|e| (e.selector(), e)).collect(),
                 file_details: Default::default(),
             },
             cosmic::task::batch(tasks),
         )
     }
 
-    pub fn all_selectors(&self) -> Vec<PageSelector> {
-        let mut selectors = vec![PageSelector::LocalFiles];
-        for remote in &self.remotes {
-            selectors.push(PageSelector::RemoteFiles(remote.client.base_url.clone()))
-        }
-        selectors
+    pub fn all_file_list_selectors(&self) -> Vec<PageSelector> {
+        self.file_lists.keys().cloned().map(Into::into).collect()
     }
 
     pub fn display_name<'a>(&'a self, page_selector: &'a PageSelector) -> String {
         match &page_selector {
-            PageSelector::LocalFiles => self.local.display_name(),
-            PageSelector::RemoteFiles(base_url) => match self
-                .remotes
-                .iter()
-                .find(|remote| remote.client.base_url == *base_url)
-            {
-                Some(remote) => remote.display_name(),
-                None => fl!("unknown-remote", url = base_url.to_string()),
-            },
+            PageSelector::FileList(selector) => {
+                self.file_lists[selector].display_name()
+            }
             PageSelector::FileDetails(id) => self.file_details[id].display_name(),
         }
     }
 
     pub fn view<'a>(&'a self, active_page: &'a PageSelector) -> Element<'a, PageMessage> {
         match &active_page {
-            PageSelector::LocalFiles => self.local.view().map(map_local_files_message),
-            PageSelector::RemoteFiles(base_url) => match self
-                .remotes
-                .iter()
-                .find(|remote| remote.client.base_url == *base_url)
-            {
-                Some(remote) => remote
-                    .view()
-                    .map(|msg| map_remote_files_message(remote.client.base_url.clone(), msg)),
-                None => {
-                    widget::text::title1(fl!("unknown-remote", url = base_url.to_string())).into()
-                }
-            },
+            PageSelector::FileList(selector) => self.file_lists[selector]
+                .view()
+                .map(|msg| map_file_list_message(selector.clone(), msg)),
             PageSelector::FileDetails(id) => self
                 .file_details
                 .get(id)
-                .map(|details| details.view().map(|msg| map_file_details_message(*id, msg)))
-                .unwrap_or(cosmic::widget::text("Not found").into()),
+                .map(|page| page.view().map(|msg| map_file_details_message(*id, msg)))
+                .unwrap_or_else(|| widget::text::title1("Not found").into()),
         }
     }
 
     pub fn update(&mut self, message: PageMessage) -> Task<cosmic::Action<PageMessage>> {
         match message {
-            PageMessage::LocalFiles(message) => self
-                .local
-                .update(message)
-                .map(|action| action.map(map_local_files_message)),
-            PageMessage::RemoteFiles(base_url, message) => match self
-                .remotes
-                .iter_mut()
-                .find(|files| files.client.base_url == base_url)
-            {
-                Some(ref mut remote) => remote.update(message).map(move |action| {
-                    action.map(|msg| map_remote_files_message(base_url.clone(), msg))
-                }),
-                None => Task::none(), // TODO: log
-            },
+            PageMessage::Files(selector, message) => {
+                match self.file_lists.get_mut(&selector) {
+                    Some(page) => page.update(message).map(move |action| {
+                        action.map(|msg| map_file_list_message(selector.clone(), msg))
+                    }),
+                    None => Task::none(), // TODO log
+                }
+            }
             PageMessage::FileDetails(id, message) => self.file_details[&id]
                 .update(message)
                 .map(move |action| action.map(|msg| map_file_details_message(id, msg))),
@@ -197,21 +181,12 @@ impl Pages {
     }
 }
 
-fn map_remote_files_message(base_url: Url, msg: FilesMessage) -> PageMessage {
+fn map_file_list_message(selector: FileListSelector, msg: FileListMessage) -> PageMessage {
     match msg {
-        FilesMessage::Out(message) => match message {
-            FilesOutput::OpenFileDetails(file) => PageMessage::OpenFileDetails(file),
+        FileListMessage::Out(message) => match message {
+            FileListOutput::OpenFileDetails(file) => PageMessage::OpenFileDetails(file),
         },
-        msg => PageMessage::RemoteFiles(base_url, msg),
-    }
-}
-
-fn map_local_files_message(msg: FilesMessage) -> PageMessage {
-    match msg {
-        FilesMessage::Out(message) => match message {
-            FilesOutput::OpenFileDetails(file) => PageMessage::OpenFileDetails(file),
-        },
-        msg => PageMessage::LocalFiles(msg),
+        msg => PageMessage::Files(selector, msg),
     }
 }
 

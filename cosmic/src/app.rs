@@ -103,7 +103,7 @@ impl cosmic::Application for AppModel {
 
         let (pages, page_action) = Pages::new(&application_module);
 
-        for (index, selector) in pages.all_selectors().iter().enumerate() {
+        for (index, selector) in pages.all_file_list_selectors().iter().enumerate() {
             let nav = nav
                 .insert()
                 .text(pages.display_name(selector))

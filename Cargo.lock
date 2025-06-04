@@ -327,6 +327,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "archive-organizer",
+ "async-trait",
  "futures-util",
  "i18n-embed",
  "i18n-embed-fl",
@@ -335,6 +336,7 @@ dependencies = [
  "open",
  "rand 0.9.1",
  "rust-embed",
+ "thiserror 2.0.12",
  "tokio",
  "url",
  "vergen",

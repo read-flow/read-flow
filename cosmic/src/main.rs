@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 mod app;
+mod client;
 mod config;
 mod cosmic_ext;
 mod i18n;
