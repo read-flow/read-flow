@@ -50,13 +50,14 @@ pub enum Message {
     LaunchUrl(String),
     Page(PageMessage),
     PageAdded(PageSelector),
-    // TODO: add message here to add another page and connect to PageMessage::OpenFileDetails
+    ActivePageRemoved(PageSelector),
 }
 
 impl From<PageOutput> for Message {
     fn from(source: PageOutput) -> Self {
         match source {
             PageOutput::PageAdded(page) => Message::PageAdded(page),
+            PageOutput::PageRemoved(page) => Message::ActivePageRemoved(page),
         }
     }
 }
@@ -276,6 +277,17 @@ impl cosmic::Application for AppModel {
                     .data::<PageSelector>(selector.clone())
                     .icon(icon::from_name("applications-system-symbolic"));
                 nav.activate();
+                Task::none()
+            }
+            Message::ActivePageRemoved(removed_page) => {
+                // Get selector for active page
+                let active_page = self.nav.data::<PageSelector>(self.nav.active());
+                // Verify that the active page is to be removed
+                if active_page == Some(&removed_page) {
+                    self.nav.remove(self.nav.active());
+                } else {
+                    // TODO: log
+                }
                 Task::none()
             }
         }

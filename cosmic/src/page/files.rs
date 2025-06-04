@@ -40,8 +40,8 @@ fn display_path<'a>(path: &'a str) -> Element<'a, FilesMessage> {
 impl ArchiveStatus {
     pub fn view(&self) -> Element<FilesMessage> {
         match self {
-            ArchiveStatus::New => widget::text("New").into(),
-            ArchiveStatus::Loading => widget::text("Loading").into(),
+            ArchiveStatus::New => widget::text("New").into(), // TODO: Show spinner
+            ArchiveStatus::Loading => widget::text("Loading").into(), // TODO: Show spinner
             ArchiveStatus::Failed(error) => widget::text(format!("Error: {error}")).into(),
             ArchiveStatus::Loaded(files) => {
                 let list =
@@ -114,6 +114,7 @@ impl<C: FileDataSource + Send + Sync + Clone + 'static> Files<C> {
     pub fn update(&mut self, message: FilesMessage) -> Task<cosmic::Action<FilesMessage>> {
         match message {
             FilesMessage::LoadArchive => {
+                self.archive = ArchiveStatus::Loading;
                 let client = self.client.clone();
                 cosmic::task::future(async move {
                     match client.get_files().await {

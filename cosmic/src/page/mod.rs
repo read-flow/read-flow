@@ -14,6 +14,7 @@ use cosmic::Task;
 use cosmic::widget;
 use file_details::FileDetails;
 use file_details::FileDetailsMessage;
+use file_details::FileDetailsOutput;
 use files::Files;
 use files::FilesMessage;
 use files::FilesOutput;
@@ -29,7 +30,7 @@ pub struct Pages {
     file_details: IndexMap<i32, FileDetails>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PageSelector {
     LocalFiles,
     RemoteFiles(Url),
@@ -39,6 +40,7 @@ pub enum PageSelector {
 #[derive(Debug, Clone)]
 pub enum PageOutput {
     PageAdded(PageSelector),
+    PageRemoved(PageSelector),
 }
 
 #[derive(Debug, Clone)]
@@ -144,9 +146,11 @@ impl Pages {
                     widget::text::title1(fl!("unknown-remote", url = base_url.to_string())).into()
                 }
             },
-            PageSelector::FileDetails(id) => self.file_details[id]
-                .view()
-                .map(|msg| PageMessage::FileDetails(*id, msg)),
+            PageSelector::FileDetails(id) => self
+                .file_details
+                .get(id)
+                .map(|details| details.view().map(|msg| map_file_details_message(*id, msg)))
+                .unwrap_or(cosmic::widget::text("Not found").into()),
         }
     }
 
@@ -168,22 +172,23 @@ impl Pages {
             },
             PageMessage::FileDetails(id, message) => self.file_details[&id]
                 .update(message)
-                .map(move |action| action.map(|msg| PageMessage::FileDetails(id, msg))),
+                .map(move |action| action.map(|msg| map_file_details_message(id, msg))),
             PageMessage::OpenFileDetails(file) => {
                 // TODO: only create new file_details if it does not yet exist
                 let id = self.rng.random();
                 let (file_details, initialization) = FileDetails::new(id, file);
                 self.file_details.insert(id, file_details);
                 let action = initialization
-                    .map(move |action| action.map(|msg| PageMessage::FileDetails(id, msg)));
+                    .map(move |action| action.map(|msg| map_file_details_message(id, msg)));
                 action.chain(cosmic::task::message(PageMessage::Out(
                     PageOutput::PageAdded(PageSelector::FileDetails(id)),
                 )))
             }
             PageMessage::CloseFileDetails(id) => {
                 let _ = self.file_details.swap_remove(&id);
-                // TODO: update App to change the active PageSelector
-                cosmic::task::none()
+                cosmic::task::message(PageMessage::Out(PageOutput::PageRemoved(
+                    PageSelector::FileDetails(id),
+                )))
             }
             PageMessage::Out(_) => {
                 panic!("should be handled by the parent component")
@@ -207,5 +212,14 @@ fn map_local_files_message(msg: FilesMessage) -> PageMessage {
             FilesOutput::OpenFileDetails(file) => PageMessage::OpenFileDetails(file),
         },
         msg => PageMessage::LocalFiles(msg),
+    }
+}
+
+fn map_file_details_message(id: i32, msg: FileDetailsMessage) -> PageMessage {
+    match msg {
+        FileDetailsMessage::Out(message) => match message {
+            FileDetailsOutput::Close(id) => PageMessage::CloseFileDetails(id),
+        },
+        msg => PageMessage::FileDetails(id, msg),
     }
 }
