@@ -36,7 +36,7 @@ pub enum PageSelector {
 
 impl From<FileListSelector> for PageSelector {
     fn from(value: FileListSelector) -> Self {
-	Self::FileList(value)
+        Self::FileList(value)
     }
 }
 
@@ -50,7 +50,7 @@ pub enum PageOutput {
 pub enum PageMessage {
     Files(FileListSelector, FileListMessage),
     FileDetails(i32, FileDetailsMessage),
-    OpenFileDetails(File),
+    OpenFileDetails(FileListSelector, File),
     CloseFileDetails(i32),
     Out(PageOutput),
 }
@@ -81,10 +81,10 @@ impl Pages {
 
         let (local, local_task) = FileList::new(db_client.into());
 
-        let mut tasks = vec![
-            local_task
-                .map(|action| action.map(|msg| map_file_list_message(FileListSelector::Local, msg))),
-        ];
+        let mut tasks =
+            vec![local_task.map(|action| {
+                action.map(|msg| map_file_list_message(FileListSelector::Local, msg))
+            })];
 
         let (mut remotes, remote_tasks): (Vec<FileList>, Vec<Task<cosmic::Action<PageMessage>>>) =
             remote_clients
@@ -96,7 +96,10 @@ impl Pages {
                         remote,
                         task.map(move |action| {
                             action.map(|msg| {
-                                map_file_list_message(FileListSelector::Remote(base_url.clone()), msg)
+                                map_file_list_message(
+                                    FileListSelector::Remote(base_url.clone()),
+                                    msg,
+                                )
                             })
                         }),
                     )
@@ -124,9 +127,7 @@ impl Pages {
 
     pub fn display_name<'a>(&'a self, page_selector: &'a PageSelector) -> String {
         match &page_selector {
-            PageSelector::FileList(selector) => {
-                self.file_lists[selector].display_name()
-            }
+            PageSelector::FileList(selector) => self.file_lists[selector].display_name(),
             PageSelector::FileDetails(id) => self.file_details[id].display_name(),
         }
     }
@@ -157,10 +158,12 @@ impl Pages {
             PageMessage::FileDetails(id, message) => self.file_details[&id]
                 .update(message)
                 .map(move |action| action.map(|msg| map_file_details_message(id, msg))),
-            PageMessage::OpenFileDetails(file) => {
+            PageMessage::OpenFileDetails(selector, file) => {
                 // TODO: only create new file_details if it does not yet exist
                 let id = self.rng.random();
-                let (file_details, initialization) = FileDetails::new(id, file);
+                let file_list = &self.file_lists[&selector];
+                let (file_details, initialization) =
+                    FileDetails::new(id, file, file_list.client.clone());
                 self.file_details.insert(id, file_details);
                 let action = initialization
                     .map(move |action| action.map(|msg| map_file_details_message(id, msg)));
@@ -184,7 +187,7 @@ impl Pages {
 fn map_file_list_message(selector: FileListSelector, msg: FileListMessage) -> PageMessage {
     match msg {
         FileListMessage::Out(message) => match message {
-            FileListOutput::OpenFileDetails(file) => PageMessage::OpenFileDetails(file),
+            FileListOutput::OpenFileDetails(file) => PageMessage::OpenFileDetails(selector, file),
         },
         msg => PageMessage::Files(selector, msg),
     }

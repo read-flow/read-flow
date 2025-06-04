@@ -1,3 +1,4 @@
+use crate::client::Client;
 use archive_organizer::api::File;
 use cosmic::iced_widget::Column;
 use cosmic::iced_widget::Row;
@@ -12,10 +13,10 @@ use cosmic::{
 use std::borrow::Cow;
 use std::path::Path;
 
-// TODO: store client in FileDetails, to allow operations on the [`file`]
 pub struct FileDetails {
     id: i32,
     file: File,
+    client: Client,
 }
 
 #[derive(Debug, Clone)]
@@ -29,8 +30,8 @@ pub enum FileDetailsMessage {
 }
 
 impl FileDetails {
-    pub fn new(id: i32, file: File) -> (Self, Task<Action<FileDetailsMessage>>) {
-        (FileDetails { id, file }, cosmic::task::none())
+    pub fn new(id: i32, file: File, client: Client) -> (Self, Task<Action<FileDetailsMessage>>) {
+        (FileDetails { id, file, client }, cosmic::task::none())
     }
 
     pub fn display_name(&self) -> String {
