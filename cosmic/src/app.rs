@@ -35,7 +35,7 @@ pub struct AppModel {
     // Configuration data that persists between application runs.
     config: Config,
     /// Application Module
-    application_module: ApplicationModule,
+    _application_module: ApplicationModule,
     /// Pages
     pages: Pages,
 }
@@ -134,7 +134,7 @@ impl cosmic::Application for AppModel {
                     }
                 })
                 .unwrap_or_default(),
-            application_module,
+            _application_module: application_module,
             pages,
         };
 
@@ -261,7 +261,7 @@ impl cosmic::Application for AppModel {
             Message::LaunchUrl(url) => match open::that_detached(&url) {
                 Ok(()) => Task::none(),
                 Err(err) => {
-                    eprintln!("failed to open {url:?}: {err}");
+                    tracing::warn!("failed to open {url:?}: {err}");
                     Task::none()
                 }
             },

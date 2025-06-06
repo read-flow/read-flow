@@ -7,10 +7,17 @@ members = [
 ]
 resolver = "3"
 
+
 [workspace.dependencies]
+futures-util = "0.3.31"
+i18n-embed = "0.15.4"
+i18n-embed-fl = "0.9.4"
+open = "5.3.2"
+rand = "0.9.1"
 relm4 = "0.9.1"
 relm4-components = "0.9.1"
 rocket_cors = "0.6.0"
+rust-embed = "8.7.2"
 serde_json = "1.0.140"
 tracker = "0.2.2"
 
@@ -24,13 +31,13 @@ version = "0.1.0"
 version = "0.1.88"
 
 [workspace.dependencies.chrono]
-version = "0.4.35"
+version = "0.4.41"
 
 [workspace.dependencies.clap]
-version = "4.5.37"
+version = "4.5.39"
 
 [workspace.dependencies.diesel]
-version = "2.2.9"
+version = "2.2.10"
 features = ["chrono"]
 
 [workspace.dependencies.diesel_migrations]
@@ -47,7 +54,7 @@ default-features = false
 version = "0.3.31"
 
 [workspace.dependencies.glib]
-version = "0.20.9"
+version = "0.20.10"
 
 [workspace.dependencies.iced]
 version = "0.13.1"
@@ -75,7 +82,7 @@ version = "1.10.0"
 version = "1.11.1"
 
 [workspace.dependencies.reqwest]
-version = "0.12.15"
+version = "0.12.19"
 
 [workspace.dependencies.rfd]
 version = "0.15.3"
@@ -99,7 +106,7 @@ version = "0.27.1"
 version = "2.0.12"
 
 [workspace.dependencies.tokio]
-version = "1.44.2"
+version = "1.45.1"
 
 [workspace.dependencies.tracing]
 version = "0.1.41"
