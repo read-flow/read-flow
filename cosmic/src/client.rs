@@ -1,5 +1,3 @@
-use std::process::ExitStatus;
-
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
 use archive_organizer::api::Status;
@@ -7,6 +5,8 @@ use archive_organizer::client;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::dao;
 use archive_organizer::db::datasource::DbClient;
+use std::process::ExitStatus;
+use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FilesClientError {
@@ -28,10 +28,25 @@ impl From<client::Error> for FilesClientError {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum FileListSelector {
+    Local,
+    Remote(Url),
+}
+
 #[derive(Clone)]
 pub enum Client {
     Local(DbClient),
     Remote(FilesClient),
+}
+
+impl Client {
+    pub fn selector(&self) -> FileListSelector {
+        match self {
+            Client::Local(_) => FileListSelector::Local,
+            Client::Remote(client) => FileListSelector::Remote(client.base_url.clone()),
+        }
+    }
 }
 
 impl From<DbClient> for Client {

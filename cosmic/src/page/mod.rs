@@ -2,6 +2,7 @@
 mod file_details;
 mod file_list;
 
+use crate::client::FileListSelector;
 use crate::cosmic_ext::ActionExt;
 use archive_organizer::ApplicationModule;
 use archive_organizer::api::File;
@@ -16,7 +17,6 @@ use file_details::FileDetailsOutput;
 use file_list::FileList;
 use file_list::FileListMessage;
 use file_list::FileListOutput;
-use file_list::FileListSelector;
 use indexmap::IndexMap;
 use rand::Rng;
 use rand::rngs::ThreadRng;
@@ -114,7 +114,10 @@ impl Pages {
         (
             Self {
                 rng: rand::rng(),
-                file_lists: file_lists.into_iter().map(|e| (e.selector(), e)).collect(),
+                file_lists: file_lists
+                    .into_iter()
+                    .map(|e| (e.client.selector(), e))
+                    .collect(),
                 file_details: Default::default(),
             },
             cosmic::task::batch(tasks),

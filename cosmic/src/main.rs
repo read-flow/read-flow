@@ -6,6 +6,7 @@ mod config;
 mod cosmic_ext;
 mod i18n;
 mod page;
+mod state;
 
 use archive_organizer::{
     ApplicationModule,
@@ -13,6 +14,9 @@ use archive_organizer::{
 };
 
 fn main() -> cosmic::iced::Result {
+    // Initialize tracing
+    tracing_subscriber::fmt::init();
+
     // Get the system's preferred languages.
     let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
 

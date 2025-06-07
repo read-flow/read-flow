@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 use crate::client::Client;
+use crate::state::LoadedState;
 use archive_organizer::api::{File, FileDataSource};
 use cosmic::iced::Length;
 use cosmic::iced::alignment::{Horizontal, Vertical};
@@ -7,14 +8,8 @@ use cosmic::iced_widget::list::Content;
 use cosmic::widget;
 use cosmic::{Apply, Element, Task};
 use std::path::Path;
-use url::Url;
 
-pub enum ArchiveStatus {
-    New,
-    Loading,
-    Failed(String),
-    Loaded(Content<File>),
-}
+type ArchiveState = LoadedState<Content<File>>;
 
 fn view_file<'a>(file: &'a File) -> Element<'a, FileListMessage> {
     display_path(&file.path)
@@ -39,13 +34,13 @@ fn display_path<'a>(path: &'a str) -> Element<'a, FileListMessage> {
     .into()
 }
 
-impl ArchiveStatus {
+impl ArchiveState {
     pub fn view(&self) -> Element<FileListMessage> {
         match self {
-            ArchiveStatus::New => widget::text("New").into(), // TODO: Show spinner
-            ArchiveStatus::Loading => widget::text("Loading").into(), // TODO: Show spinner
-            ArchiveStatus::Failed(error) => widget::text(format!("Error: {error}")).into(),
-            ArchiveStatus::Loaded(files) => {
+            ArchiveState::New => widget::text("New").into(), // TODO: Show spinner
+            ArchiveState::Loading => widget::text("Loading").into(), // TODO: Show spinner
+            ArchiveState::Failed(error) => widget::text(format!("Error: {error}")).into(),
+            ArchiveState::Loaded(files) => {
                 let list =
                     cosmic::iced::widget::list(files, |_index, file| view_file(file)).spacing(10);
                 list.apply(widget::scrollable::vertical).into()
@@ -54,15 +49,9 @@ impl ArchiveStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum FileListSelector {
-    Local,
-    Remote(Url),
-}
-
 pub struct FileList {
     pub client: Client,
-    pub archive: ArchiveStatus,
+    pub archive: ArchiveState,
 }
 
 #[derive(Debug, Clone)]
@@ -83,7 +72,7 @@ impl FileList {
         (
             Self {
                 client,
-                archive: ArchiveStatus::New,
+                archive: ArchiveState::default(),
             },
             cosmic::task::message(FileListMessage::LoadArchive),
         )
@@ -91,13 +80,6 @@ impl FileList {
 
     pub fn display_name(&self) -> String {
         self.client.display_name()
-    }
-
-    pub fn selector(&self) -> FileListSelector {
-        match &self.client {
-            Client::Local(_) => FileListSelector::Local,
-            Client::Remote(client) => FileListSelector::Remote(client.base_url.clone()),
-        }
     }
 
     pub fn view(&self) -> Element<FileListMessage> {
@@ -128,7 +110,7 @@ impl FileList {
     pub fn update(&mut self, message: FileListMessage) -> Task<cosmic::Action<FileListMessage>> {
         match message {
             FileListMessage::LoadArchive => {
-                self.archive = ArchiveStatus::Loading;
+                self.archive = ArchiveState::Loading;
                 let client = self.client.clone();
                 cosmic::task::future(async move {
                     match client.get_files().await {
@@ -138,11 +120,11 @@ impl FileList {
                 })
             }
             FileListMessage::Loaded(files) => {
-                self.archive = ArchiveStatus::Loaded(Content::with_items(files));
+                self.archive = ArchiveState::Loaded(Content::with_items(files));
                 cosmic::task::none()
             }
             FileListMessage::LoadingFailed(error) => {
-                self.archive = ArchiveStatus::Failed(error);
+                self.archive = ArchiveState::Failed(error);
                 cosmic::task::none()
             }
             FileListMessage::Out(_) => {

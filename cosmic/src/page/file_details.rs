@@ -1,4 +1,5 @@
 use crate::client::Client;
+use crate::state::LoadedState;
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
 use cosmic::iced_widget::Column;
@@ -15,14 +16,19 @@ use cosmic::{
 use std::borrow::Cow;
 use std::path::Path;
 
+struct Tags {
+    all_tags: Vec<String>,
+    available_tags: combo_box::State<String>,
+}
+
+type TagsState = LoadedState<Tags>;
+
 pub struct FileDetails {
     id: i32,
     file: File,
     client: Client,
     new_tag: String,
-    all_tags: Vec<String>,
-    available_tags: combo_box::State<String>,
-    tags_loading: bool,
+    tags: TagsState,
 }
 
 #[derive(Debug, Clone)]
@@ -51,9 +57,7 @@ impl FileDetails {
             file,
             client,
             new_tag: String::new(),
-	    all_tags: Vec::new(),
-            available_tags: combo_box::State::default(),
-            tags_loading: false,
+            tags: TagsState::default(),
         };
 
         (
@@ -149,7 +153,7 @@ impl FileDetails {
                 panic!("should be handled by the parent component")
             }
             FileDetailsMessage::LoadAllTags => {
-                self.tags_loading = true;
+                self.tags = TagsState::Loading;
                 let client = self.client.clone();
                 cosmic::task::future(async move {
                     match client.get_files_tags().await {
@@ -159,20 +163,23 @@ impl FileDetails {
                 })
             }
             FileDetailsMessage::AllTagsLoaded(result) => {
-                self.tags_loading = false;
                 match result {
                     Ok(tags) => {
-			self.all_tags = tags;
                         // Remove existing tags from options
-                        let tags = self.all_tags
+                        let tags = tags
                             .iter()
                             .filter(|tag| !self.file.tags.contains(tag))
                             .cloned()
-                            .collect();
-                        self.available_tags = combo_box::State::new(tags);
+                            .collect::<Vec<_>>();
+                        let available_tags = combo_box::State::new(tags.clone());
+                        self.tags = TagsState::Loaded(Tags {
+                            all_tags: tags,
+                            available_tags,
+                        });
                     }
                     Err(err) => {
-                        tracing::warn!("Failed to load tags: {}", err);
+                        tracing::warn!("Failed to load tags: {}", &err);
+                        self.tags = TagsState::Failed(err);
                     }
                 }
                 cosmic::task::none()
@@ -201,7 +208,11 @@ impl FileDetails {
             }
             FileDetailsMessage::TagsAdded(result) => {
                 match result {
-                    Ok(_) => {
+                    Ok(tags) => {
+                        if let TagsState::Loaded(Tags { all_tags, .. }) = &mut self.tags {
+                            all_tags.extend(tags);
+                            all_tags.dedup();
+                        }
                         // Refresh the file to get updated tags
                         return cosmic::task::message(FileDetailsMessage::RefreshFile);
                     }
@@ -258,7 +269,7 @@ impl FileDetails {
                         tracing::warn!("Failed to refresh file: {}", err);
                     }
                 }
-                cosmic::task::message(FileDetailsMessage::LoadAllTags)
+                Task::none()
             }
         }
     }
@@ -302,27 +313,29 @@ impl FileDetails {
         // Add a divider
         column = column.push(cosmic::iced_widget::horizontal_rule(1).width(Length::Fill));
 
-        // Show a loading indicator if needed
-        if self.tags_loading {
-            column = column.push(text("Loading tags..."));
-        }
+        column = match &self.tags {
+            TagsState::Loaded(Tags { available_tags, .. }) => {
+                // Add combo box for tag selection
+                let combo = combo_box(
+                    available_tags,
+                    "Select a tag",
+                    Some(&self.new_tag),
+                    FileDetailsMessage::UpdateNewTag,
+                )
+                .width(Length::Fill);
 
-        // Add combo box for tag selection
-        let combo = combo_box(
-            &self.available_tags,
-            "Select a tag",
-            Some(&self.new_tag),
-            FileDetailsMessage::UpdateNewTag,
-        )
-        .width(Length::Fill);
+                let add_button = widget::button::standard("Add")
+                    .on_press(FileDetailsMessage::AddTag)
+                    .width(Length::Shrink);
 
-        let add_button = widget::button::standard("Add")
-            .on_press(FileDetailsMessage::AddTag)
-            .width(Length::Shrink);
-
-        let input_row = Row::new().push(combo).push(add_button).spacing(10);
-
-        column = column.push(input_row);
+                let input_row = Row::new().push(combo).push(add_button).spacing(10);
+                column.push(input_row)
+            }
+            _ => {
+                // Show a loading indicator if needed
+                column.push(text("Loading tags..."))
+            }
+        };
 
         column.into()
     }
