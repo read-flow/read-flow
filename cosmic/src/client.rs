@@ -29,7 +29,7 @@ impl From<client::Error> for FilesClientError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum FileListSelector {
+pub enum ClientSelector {
     Local,
     Remote(Url),
 }
@@ -41,10 +41,10 @@ pub enum Client {
 }
 
 impl Client {
-    pub fn selector(&self) -> FileListSelector {
+    pub fn selector(&self) -> ClientSelector {
         match self {
-            Client::Local(_) => FileListSelector::Local,
-            Client::Remote(client) => FileListSelector::Remote(client.base_url.clone()),
+            Client::Local(_) => ClientSelector::Local,
+            Client::Remote(client) => ClientSelector::Remote(client.base_url.clone()),
         }
     }
 }

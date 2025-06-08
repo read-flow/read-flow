@@ -9,7 +9,7 @@ use cosmic::widget;
 use cosmic::{Apply, Element, Task};
 use std::path::Path;
 
-type ArchiveState = LoadedState<Content<File>>;
+type FileState = LoadedState<Content<File>>;
 
 fn view_file<'a>(file: &'a File) -> Element<'a, FileListMessage> {
     display_path(&file.path)
@@ -34,13 +34,13 @@ fn display_path<'a>(path: &'a str) -> Element<'a, FileListMessage> {
     .into()
 }
 
-impl ArchiveState {
+impl FileState {
     pub fn view(&self) -> Element<FileListMessage> {
         match self {
-            ArchiveState::New => widget::text("New").into(), // TODO: Show spinner
-            ArchiveState::Loading => widget::text("Loading").into(), // TODO: Show spinner
-            ArchiveState::Failed(error) => widget::text(format!("Error: {error}")).into(),
-            ArchiveState::Loaded(files) => {
+            FileState::New => widget::text("New").into(), // TODO: Show spinner
+            FileState::Loading => widget::text("Loading").into(), // TODO: Show spinner
+            FileState::Failed(error) => widget::text(format!("Error: {error}")).into(),
+            FileState::Loaded(files) => {
                 let list =
                     cosmic::iced::widget::list(files, |_index, file| view_file(file)).spacing(10);
                 list.apply(widget::scrollable::vertical).into()
@@ -51,7 +51,7 @@ impl ArchiveState {
 
 pub struct FileList {
     pub client: Client,
-    pub archive: ArchiveState,
+    pub archive: FileState,
 }
 
 #[derive(Debug, Clone)]
@@ -72,7 +72,7 @@ impl FileList {
         (
             Self {
                 client,
-                archive: ArchiveState::default(),
+                archive: FileState::default(),
             },
             cosmic::task::message(FileListMessage::LoadArchive),
         )
@@ -110,7 +110,7 @@ impl FileList {
     pub fn update(&mut self, message: FileListMessage) -> Task<cosmic::Action<FileListMessage>> {
         match message {
             FileListMessage::LoadArchive => {
-                self.archive = ArchiveState::Loading;
+                self.archive = FileState::Loading;
                 let client = self.client.clone();
                 cosmic::task::future(async move {
                     match client.get_files().await {
@@ -120,11 +120,11 @@ impl FileList {
                 })
             }
             FileListMessage::Loaded(files) => {
-                self.archive = ArchiveState::Loaded(Content::with_items(files));
+                self.archive = FileState::Loaded(Content::with_items(files));
                 cosmic::task::none()
             }
             FileListMessage::LoadingFailed(error) => {
-                self.archive = ArchiveState::Failed(error);
+                self.archive = FileState::Failed(error);
                 cosmic::task::none()
             }
             FileListMessage::Out(_) => {

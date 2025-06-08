@@ -2,7 +2,7 @@
 mod file_details;
 mod file_list;
 
-use crate::client::FileListSelector;
+use crate::client::ClientSelector;
 use crate::cosmic_ext::ActionExt;
 use archive_organizer::ApplicationModule;
 use archive_organizer::api::File;
@@ -24,18 +24,18 @@ use url::Url;
 
 pub struct Pages {
     rng: ThreadRng,
-    file_lists: IndexMap<FileListSelector, FileList>,
+    file_lists: IndexMap<ClientSelector, FileList>,
     file_details: IndexMap<i32, FileDetails>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PageSelector {
-    FileList(FileListSelector),
+    FileList(ClientSelector),
     FileDetails(i32),
 }
 
-impl From<FileListSelector> for PageSelector {
-    fn from(value: FileListSelector) -> Self {
+impl From<ClientSelector> for PageSelector {
+    fn from(value: ClientSelector) -> Self {
         Self::FileList(value)
     }
 }
@@ -48,9 +48,9 @@ pub enum PageOutput {
 
 #[derive(Debug, Clone)]
 pub enum PageMessage {
-    Files(FileListSelector, FileListMessage),
+    Files(ClientSelector, FileListMessage),
     FileDetails(i32, FileDetailsMessage),
-    OpenFileDetails(FileListSelector, File),
+    OpenFileDetails(ClientSelector, File),
     CloseFileDetails(i32),
     Out(PageOutput),
 }
@@ -81,10 +81,10 @@ impl Pages {
 
         let (local, local_task) = FileList::new(db_client.into());
 
-        let mut tasks =
-            vec![local_task.map(|action| {
-                action.map(|msg| map_file_list_message(FileListSelector::Local, msg))
-            })];
+        let mut tasks = vec![
+            local_task
+                .map(|action| action.map(|msg| map_file_list_message(ClientSelector::Local, msg))),
+        ];
 
         let (mut remotes, remote_tasks): (Vec<FileList>, Vec<Task<cosmic::Action<PageMessage>>>) =
             remote_clients
@@ -96,10 +96,7 @@ impl Pages {
                         remote,
                         task.map(move |action| {
                             action.map(|msg| {
-                                map_file_list_message(
-                                    FileListSelector::Remote(base_url.clone()),
-                                    msg,
-                                )
+                                map_file_list_message(ClientSelector::Remote(base_url.clone()), msg)
                             })
                         }),
                     )
@@ -187,7 +184,7 @@ impl Pages {
     }
 }
 
-fn map_file_list_message(selector: FileListSelector, msg: FileListMessage) -> PageMessage {
+fn map_file_list_message(selector: ClientSelector, msg: FileListMessage) -> PageMessage {
     match msg {
         FileListMessage::Out(message) => match message {
             FileListOutput::OpenFileDetails(file) => PageMessage::OpenFileDetails(selector, file),
