@@ -6,10 +6,12 @@ page-id = Page { $num }
 git-description = Git commit {$hash} le {$date}
 unknown-remote = ⚠ Source distante inconnue: { $url }
 
+# Generic messages
+generic-error = 🛑 Error: { $error }
+
 # File list states
 file-list-new = Nouveau
 file-list-loading = Chargement
-file-list-error = Erreur: { $error }
 
 # File details
 file-details-unknown = Inconnu
@@ -29,6 +31,7 @@ file-details-select-tag = Sélectionner une étiquette
 file-details-add = Ajouter
 file-details-loading-tags = Chargement des étiquettes...
 file-details-size-bytes = { $size } octets
+file-details-select-status = Select status
 
 # Page messages
 page-not-found = Non trouvé

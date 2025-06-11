@@ -25,7 +25,7 @@ pub struct NewFile {
     pub status: i32,
 }
 
-#[derive(Default, Identifiable, AsChangeset)]
+#[derive(Debug, Default, Identifiable, AsChangeset)]
 #[diesel(table_name = files)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct UpdateFile {

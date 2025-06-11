@@ -12,7 +12,6 @@ generic-error = 🛑 Fout: { $error }
 # File list states
 file-list-new = Nieuw
 file-list-loading = Laden
-file-list-error = Fout: { $error }
 
 # File details
 file-details-unknown = Onbekend
@@ -32,6 +31,7 @@ file-details-select-tag = Selecteer een tag
 file-details-add = Toevoegen
 file-details-loading-tags = Tags laden...
 file-details-size-bytes = { $size } bytes
+file-details-select-status = Selecteer status
 
 # Page messages
 page-not-found = ⚠ Niet gevonden

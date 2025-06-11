@@ -1,10 +1,7 @@
 use crate::client::Client;
 use crate::fl;
 use crate::state::LoadedState;
-use archive_organizer::api::File;
-use archive_organizer::api::FileDataSource;
-use cosmic::iced_widget::Column;
-use cosmic::iced_widget::Row;
+use archive_organizer::api::{File, FileDataSource, ReadingStatus};
 use cosmic::{
     Action, Apply, Element, Task,
     iced::{
@@ -12,6 +9,7 @@ use cosmic::{
         alignment::{Horizontal, Vertical},
         widget::combo_box,
     },
+    iced_widget::{Column, Row},
     widget::{self, text},
 };
 use std::borrow::Cow;
@@ -49,6 +47,8 @@ pub enum FileDetailsMessage {
     TagsRemoved(Result<(), String>),
     RefreshFile,
     FileRefreshed(Result<Option<File>, String>),
+    UpdateReadingStatus(ReadingStatus),
+    ReadingStatusUpdated(Result<(), String>),
 }
 
 impl FileDetails {
@@ -116,7 +116,28 @@ impl FileDetails {
                     fl!("file-details-size"),
                     fl!("file-details-size-bytes", size = self.file.size),
                 ),
-                row_with_label(fl!("file-details-status"), format!("{}", self.file.status)),
+                // Reading status dropdown
+                Row::new()
+                    .push(
+                        text(fl!("file-details-status"))
+                            .width(Length::FillPortion(1))
+                    )
+                    .push(
+                        cosmic::iced::widget::pick_list(
+                            [
+                                ReadingStatus::Unread,
+                                ReadingStatus::Reading,
+                                ReadingStatus::Read,
+                            ],
+                            Some(self.file.status),
+                            FileDetailsMessage::UpdateReadingStatus,
+                        )
+                        .width(Length::FillPortion(2))
+                        .placeholder(fl!("file-details-select-status")),
+                    )
+                    .spacing(10)
+                    .padding([0, 0, 10, 0])
+                    .into(),
             ]))
             .padding(10)
             .into(),
@@ -155,6 +176,32 @@ impl FileDetails {
         match message {
             FileDetailsMessage::Out(_) => {
                 panic!("should be handled by the parent component")
+            }
+            FileDetailsMessage::UpdateReadingStatus(status) => {
+                let mut updated_file = self.file.clone();
+                updated_file.status = status;
+                let client = self.client.clone();
+
+                cosmic::task::future(async move {
+                    match client.update_file(updated_file).await {
+                        Ok(()) => FileDetailsMessage::ReadingStatusUpdated(Ok(())),
+                        Err(err) => {
+                            FileDetailsMessage::ReadingStatusUpdated(Err(format!("{}", err)))
+                        }
+                    }
+                })
+            }
+            FileDetailsMessage::ReadingStatusUpdated(result) => {
+                match result {
+                    Ok(()) => {
+                        // Refresh the file to get updated status
+                        cosmic::task::message(FileDetailsMessage::RefreshFile)
+                    }
+                    Err(err) => {
+                        tracing::error!("Failed to update reading status: {}", err);
+                        cosmic::task::none()
+                    }
+                }
             }
             FileDetailsMessage::LoadAllTags => {
                 self.tags = TagsState::Loading;

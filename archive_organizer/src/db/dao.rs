@@ -124,6 +124,8 @@ impl FileDao for ConnectionPool {
                 status: get_update(&original_file.status, &file.status),
             };
 
+            tracing::debug!("Updating file: {update_file:?}");
+
             diesel::update(files::table)
                 .filter(files::id.eq(file.id))
                 .set(update_file)
