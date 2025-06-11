@@ -1,4 +1,5 @@
 use crate::client::Client;
+use crate::fl;
 use crate::state::LoadedState;
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
@@ -106,27 +107,30 @@ impl FileDetails {
 
         let details = Column::with_children(vec![
             // Basic info section
-            text("Basic Information").size(20).into(),
+            text(fl!("file-details-basic-info")).size(20).into(),
             cosmic::widget::container(Column::with_children(vec![
-                row_with_label("Folder", folder),
-                row_with_label("Filename", filename),
-                row_with_label("Type", &self.file.type_),
-                row_with_label("Size", format!("{} bytes", self.file.size)),
-                row_with_label("Status", format!("{}", self.file.status)),
+                row_with_label(fl!("file-details-folder"), folder),
+                row_with_label(fl!("file-details-filename"), filename),
+                row_with_label(fl!("file-details-type"), &self.file.type_),
+                row_with_label(
+                    fl!("file-details-size"),
+                    fl!("file-details-size-bytes", size = self.file.size),
+                ),
+                row_with_label(fl!("file-details-status"), format!("{}", self.file.status)),
             ]))
             .padding(10)
             .into(),
             // Technical details section
-            text("Technical Details").size(20).into(),
+            text(fl!("file-details-technical")).size(20).into(),
             cosmic::widget::container(Column::with_children(vec![
-                row_with_label("ID", format!("{}", self.file.id)),
-                row_with_label("Full Path", &self.file.path),
-                row_with_label("Fingerprint", &self.file.fingerprint),
+                row_with_label(fl!("file-details-id"), format!("{}", self.file.id)),
+                row_with_label(fl!("file-details-full-path"), &self.file.path),
+                row_with_label(fl!("file-details-fingerprint"), &self.file.fingerprint),
             ]))
             .padding(10)
             .into(),
             // Tags section
-            text("Tags").size(20).into(),
+            text(fl!("file-details-tags")).size(20).into(),
             cosmic::widget::container(self.tags_view())
                 .padding(10)
                 .into(),
@@ -277,7 +281,7 @@ impl FileDetails {
 
 /// Helper function to create a row with a label and value
 fn row_with_label<'a>(
-    label: &'a str,
+    label: impl Into<Cow<'a, str>> + 'a,
     value: impl Into<Cow<'a, str>> + 'a,
 ) -> Element<'a, FileDetailsMessage> {
     Row::with_children(vec![
@@ -296,7 +300,7 @@ impl FileDetails {
 
         // Show existing tags with a remove button
         if self.file.tags.is_empty() {
-            column = column.push(text("No tags"));
+            column = column.push(text(fl!("file-details-no-tags")));
         } else {
             // Create a flow container for the tags
             let mut tag_row = Row::new().spacing(5).width(Length::Fill);
@@ -318,13 +322,13 @@ impl FileDetails {
                 // Add combo box for tag selection
                 let combo = combo_box(
                     available_tags,
-                    "Select a tag",
+                    &fl!("file-details-select-tag"),
                     Some(&self.new_tag),
                     FileDetailsMessage::UpdateNewTag,
                 )
                 .width(Length::Fill);
 
-                let add_button = widget::button::standard("Add")
+                let add_button = widget::button::standard(fl!("file-details-add"))
                     .on_press(FileDetailsMessage::AddTag)
                     .width(Length::Shrink);
 
@@ -333,7 +337,7 @@ impl FileDetails {
             }
             _ => {
                 // Show a loading indicator if needed
-                column.push(text("Loading tags..."))
+                column.push(text(fl!("file-details-loading-tags")))
             }
         };
 

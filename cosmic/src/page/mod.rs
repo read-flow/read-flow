@@ -4,12 +4,17 @@ mod file_list;
 
 use crate::client::ClientSelector;
 use crate::cosmic_ext::ActionExt;
+use crate::fl;
 use archive_organizer::ApplicationModule;
 use archive_organizer::api::File;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::dao::RemoteDao;
+use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
+use cosmic::iced::Length;
+use cosmic::iced::alignment::Horizontal;
+use cosmic::iced::alignment::Vertical;
 use cosmic::widget;
 use file_details::FileDetails;
 use file_details::FileDetailsMessage;
@@ -141,7 +146,15 @@ impl Pages {
                 .file_details
                 .get(id)
                 .map(|page| page.view().map(|msg| map_file_details_message(*id, msg)))
-                .unwrap_or_else(|| widget::text::title1("Not found").into()),
+                .unwrap_or_else(|| {
+                    widget::text::title1(fl!("page-not-found"))
+                        .apply(cosmic::widget::container)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_x(Horizontal::Center)
+                        .align_y(Vertical::Center)
+                        .into()
+                }),
         }
     }
 

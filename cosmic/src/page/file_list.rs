@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 use crate::client::Client;
+use crate::fl;
 use crate::state::LoadedState;
 use archive_organizer::api::{File, FileDataSource};
 use cosmic::iced::Length;
@@ -37,9 +38,11 @@ fn display_path<'a>(path: &'a str) -> Element<'a, FileListMessage> {
 impl FileState {
     pub fn view(&self) -> Element<FileListMessage> {
         match self {
-            FileState::New => widget::text("New").into(), // TODO: Show spinner
-            FileState::Loading => widget::text("Loading").into(), // TODO: Show spinner
-            FileState::Failed(error) => widget::text(format!("Error: {error}")).into(),
+            FileState::New => widget::text(fl!("file-list-new")).into(), // TODO: Show spinner
+            FileState::Loading => widget::text(fl!("file-list-loading")).into(), // TODO: Show spinner
+            FileState::Failed(error) => {
+                widget::text(fl!("generic-error", error = error.as_str())).into()
+            }
             FileState::Loaded(files) => {
                 let list =
                     cosmic::iced::widget::list(files, |_index, file| view_file(file)).spacing(10);
