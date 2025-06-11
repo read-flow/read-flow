@@ -16,6 +16,7 @@ use cosmic::prelude::*;
 use cosmic::widget::{self, icon, menu, nav_bar};
 use cosmic::{cosmic_theme, theme};
 use futures_util::SinkExt;
+use i18n_embed::unic_langid::LanguageIdentifier;
 use std::collections::HashMap;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -51,6 +52,7 @@ pub enum Message {
     Page(PageMessage),
     PageAdded(PageSelector),
     ActivePageRemoved(PageSelector),
+    SwitchLanguage(LanguageIdentifier),
 }
 
 impl From<PageOutput> for Message {
@@ -149,13 +151,34 @@ impl cosmic::Application for AppModel {
 
     /// Elements to pack at the start of the header bar.
     fn header_start(&self) -> Vec<Element<Self::Message>> {
-        let menu_bar = menu::bar(vec![menu::Tree::with_children(
-            menu::root(fl!("view")),
-            menu::items(
-                &self.key_binds,
-                vec![menu::Item::Button(fl!("about"), None, MenuAction::About)],
+        let menu_bar = menu::bar(vec![
+            menu::Tree::with_children(
+                menu::root(fl!("view")),
+                menu::items(
+                    &self.key_binds,
+                    vec![menu::Item::Button(fl!("about"), None, MenuAction::About)],
+                ),
             ),
-        )]);
+            menu::Tree::with_children(
+                menu::root(fl!("language")),
+                menu::items(
+                    &self.key_binds,
+                    vec![
+                        menu::Item::Button(
+                            fl!("language-english"),
+                            None,
+                            MenuAction::SwitchTo("en"),
+                        ),
+                        menu::Item::Button(fl!("language-dutch"), None, MenuAction::SwitchTo("nl")),
+                        menu::Item::Button(
+                            fl!("language-french"),
+                            None,
+                            MenuAction::SwitchTo("fr"),
+                        ),
+                    ],
+                ),
+            ),
+        ]);
 
         vec![menu_bar.into()]
     }
@@ -290,6 +313,13 @@ impl cosmic::Application for AppModel {
                 }
                 Task::none()
             }
+            Message::SwitchLanguage(language) => {
+                // Switch the language
+                crate::i18n::localizer().select(&[language]).ok();
+
+                // Update the window title to reflect the new language
+                self.update_title()
+            }
         }
     }
 
@@ -364,6 +394,7 @@ pub enum ContextPage {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MenuAction {
     About,
+    SwitchTo(&'static str),
 }
 
 impl menu::action::MenuAction for MenuAction {
@@ -372,6 +403,7 @@ impl menu::action::MenuAction for MenuAction {
     fn message(&self) -> Self::Message {
         match self {
             MenuAction::About => Message::ToggleContextPage(ContextPage::About),
+            MenuAction::SwitchTo(language) => Message::SwitchLanguage(language.parse().unwrap()),
         }
     }
 }

@@ -34,3 +34,9 @@ file-details-size-bytes = { $size } bytes
 
 # Page messages
 page-not-found = ⚠ Not found
+
+# Language menu
+language = Language
+language-english = English
+language-dutch = Nederlands
+language-french = Français
