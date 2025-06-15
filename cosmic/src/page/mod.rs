@@ -120,7 +120,7 @@ impl Pages {
                 rng: rand::rng(),
                 file_lists: file_lists
                     .into_iter()
-                    .map(|e| (e.client.selector(), e))
+                    .map(|file_list| (file_list.selector(), file_list))
                     .collect(),
                 file_details: Default::default(),
             },
@@ -207,7 +207,7 @@ impl Pages {
                 let id = self.rng.random();
                 let file_list = &self.file_lists[&selector];
                 let (file_details, initialization) =
-                    FileDetails::new(id, file, file_list.client.clone());
+                    FileDetails::new(id, file, file_list.client().clone());
                 self.file_details.insert(id, file_details);
                 let action = initialization
                     .map(move |action| action.map(|msg| map_file_details_message(id, msg)));
