@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-use crate::client::Client;
+
+use crate::app::ContextView;
+use crate::client::{Client, ClientSelector};
 use crate::fl;
 use crate::state::LoadedState;
 use archive_organizer::api::{File, FileDataSource};
@@ -60,6 +62,7 @@ pub struct FileList {
 #[derive(Debug, Clone)]
 pub enum FileListOutput {
     OpenFileDetails(File),
+    ToggleContextPage(ClientSelector),
 }
 
 #[derive(Debug, Clone)]
@@ -88,8 +91,31 @@ impl FileList {
     pub fn view(&self) -> Element<FileListMessage> {
         let column = widget::column();
 
-        let column = column.push(
+        let header_row = widget::row();
+
+        let header_row = header_row.push(
+            widget::button::icon(widget::icon::from_name("open-menu-symbolic"))
+                .on_press(FileListMessage::Out(FileListOutput::ToggleContextPage(
+                    self.client.selector(),
+                )))
+                .apply(widget::container)
+                .width(Length::Shrink)
+                .height(Length::Shrink)
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Center),
+        );
+
+        let header_row = header_row.push(
             widget::text(self.client.display_name())
+                .apply(widget::container)
+                .width(Length::Fill)
+                .height(Length::Shrink)
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Center),
+        );
+
+        let column = column.push(
+            header_row
                 .apply(widget::container)
                 .width(Length::Fill)
                 .height(Length::Shrink)
@@ -110,7 +136,15 @@ impl FileList {
         column.into()
     }
 
+    pub fn view_context(&self) -> ContextView<FileListMessage> {
+        ContextView {
+            title: "File List".to_string(),
+            content: widget::text("TODO").into(),
+        }
+    }
+
     pub fn update(&mut self, message: FileListMessage) -> Task<cosmic::Action<FileListMessage>> {
+        tracing::debug!("received: {message:?}");
         match message {
             FileListMessage::LoadArchive => {
                 self.archive = FileState::Loading;

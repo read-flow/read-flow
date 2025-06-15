@@ -2,6 +2,7 @@
 mod file_details;
 mod file_list;
 
+use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
@@ -49,6 +50,7 @@ impl From<ClientSelector> for PageSelector {
 pub enum PageOutput {
     PageAdded(PageSelector),
     PageRemoved(PageSelector),
+    ToggleContextPage(PageSelector),
 }
 
 #[derive(Debug, Clone)]
@@ -158,7 +160,36 @@ impl Pages {
         }
     }
 
+    pub fn view_context<'a>(
+        &'a self,
+        active_page: &'a PageSelector,
+    ) -> ContextView<'a, PageMessage> {
+        match &active_page {
+            PageSelector::FileList(selector) => self.file_lists[selector]
+                .view_context()
+                .map(|msg| map_file_list_message(selector.clone(), msg)),
+            PageSelector::FileDetails(id) => self
+                .file_details
+                .get(id)
+                .map(|page| {
+                    page.view_context()
+                        .map(|msg| map_file_details_message(*id, msg))
+                })
+                .unwrap_or_else(|| ContextView {
+                    title: fl!("page-not-found"),
+                    content: widget::text::title1(fl!("page-not-found"))
+                        .apply(cosmic::widget::container)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_x(Horizontal::Center)
+                        .align_y(Vertical::Center)
+                        .into(),
+                }),
+        }
+    }
+
     pub fn update(&mut self, message: PageMessage) -> Task<cosmic::Action<PageMessage>> {
+        tracing::debug!("received: {message:?}");
         match message {
             PageMessage::Files(selector, message) => {
                 match self.file_lists.get_mut(&selector) {
@@ -201,6 +232,9 @@ fn map_file_list_message(selector: ClientSelector, msg: FileListMessage) -> Page
     match msg {
         FileListMessage::Out(message) => match message {
             FileListOutput::OpenFileDetails(file) => PageMessage::OpenFileDetails(selector, file),
+            FileListOutput::ToggleContextPage(client_selector) => {
+                PageMessage::Out(PageOutput::ToggleContextPage(client_selector.into()))
+            }
         },
         msg => PageMessage::Files(selector, msg),
     }

@@ -60,6 +60,9 @@ impl From<PageOutput> for Message {
         match source {
             PageOutput::PageAdded(page) => Message::PageAdded(page),
             PageOutput::PageRemoved(page) => Message::ActivePageRemoved(page),
+            PageOutput::ToggleContextPage(page_selector) => {
+                Message::ToggleContextPage(ContextPage::PageContext(page_selector))
+            }
         }
     }
 }
@@ -67,7 +70,7 @@ impl From<PageOutput> for Message {
 impl From<PageMessage> for Message {
     fn from(source: PageMessage) -> Self {
         match source {
-            PageMessage::Out(page) => page.into(),
+            PageMessage::Out(output_message) => output_message.into(),
             source => Message::Page(source),
         }
     }
@@ -194,12 +197,20 @@ impl cosmic::Application for AppModel {
             return None;
         }
 
-        Some(match self.context_page {
+        Some(match &self.context_page {
             ContextPage::About => context_drawer::context_drawer(
                 self.about(),
                 Message::ToggleContextPage(ContextPage::About),
             )
             .title(fl!("about")),
+            ContextPage::PageContext(page) => {
+                let ContextView { title, content } = self.pages.view_context(page).map(Into::into);
+                context_drawer::context_drawer(
+                    content,
+                    Message::ToggleContextPage(ContextPage::PageContext(page.clone())),
+                )
+                .title(title)
+            }
         })
     }
 
@@ -209,7 +220,7 @@ impl cosmic::Application for AppModel {
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<Self::Message> {
         if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
-            self.pages.view(page).map(Self::Message::Page)
+            self.pages.view(page).map(Into::into)
         } else {
             widget::text::title1(fl!("welcome"))
                 .apply(widget::container)
@@ -257,6 +268,7 @@ impl cosmic::Application for AppModel {
     /// Tasks may be returned for asynchronous execution of code in the background
     /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
+        tracing::debug!("received: {message:?}");
         match message {
             Message::OpenRepositoryUrl => {
                 _ = open::that_detached(REPOSITORY);
@@ -385,10 +397,30 @@ impl AppModel {
 }
 
 /// The context page to display in the context drawer.
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub enum ContextPage {
     #[default]
     About,
+    PageContext(PageSelector),
+}
+
+pub struct ContextView<'a, M> {
+    pub(crate) title: String,
+    pub(crate) content: Element<'a, M>,
+}
+
+impl<'a, M: 'a> ContextView<'a, M> {
+    pub fn map<F, N>(self, mapper: F) -> ContextView<'a, N>
+    where
+        F: Fn(M) -> N + 'a,
+        N: 'a,
+    {
+        let ContextView { title, content } = self;
+        ContextView {
+            title,
+            content: content.map(mapper),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

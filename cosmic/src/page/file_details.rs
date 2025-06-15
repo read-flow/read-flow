@@ -1,6 +1,6 @@
-use crate::client::Client;
 use crate::fl;
 use crate::state::LoadedState;
+use crate::{app::ContextView, client::Client};
 use archive_organizer::api::{File, FileDataSource, ReadingStatus};
 use cosmic::{
     Action, Apply, Element, Task,
@@ -118,10 +118,7 @@ impl FileDetails {
                 ),
                 // Reading status dropdown
                 Row::new()
-                    .push(
-                        text(fl!("file-details-status"))
-                            .width(Length::FillPortion(1))
-                    )
+                    .push(text(fl!("file-details-status")).width(Length::FillPortion(1)))
                     .push(
                         cosmic::iced::widget::pick_list(
                             [
@@ -172,7 +169,15 @@ impl FileDetails {
             .into()
     }
 
+    pub fn view_context(&self) -> ContextView<FileDetailsMessage> {
+        ContextView {
+            title: "FileDetails".to_string(),
+            content: text("TODO").into(),
+        }
+    }
+
     pub fn update(&mut self, message: FileDetailsMessage) -> Task<Action<FileDetailsMessage>> {
+        tracing::debug!("received: {message:?}");
         match message {
             FileDetailsMessage::Out(_) => {
                 panic!("should be handled by the parent component")
