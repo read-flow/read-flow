@@ -25,6 +25,7 @@ file-list-select-tag = Sélectionner une étiquette
 file-list-add-tag = Ajouter
 file-list-clear-all-tag-filters = Effacer Tous les Filtres d'Étiquettes
 file-list-all-tags-in-use = Toutes les étiquettes sont déjà utilisées
+file-list-no-tags-available = Aucune étiquette disponible dans le système
 
 # File details
 file-details-unknown = Inconnu

@@ -25,6 +25,7 @@ file-list-select-tag = Select a tag
 file-list-add-tag = Add
 file-list-clear-all-tag-filters = Clear All Tag Filters
 file-list-all-tags-in-use = All tags are already in use
+file-list-no-tags-available = No tags available in the system
 
 # File details
 file-details-unknown = Unknown

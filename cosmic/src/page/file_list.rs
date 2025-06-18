@@ -472,33 +472,40 @@ impl FileList {
                 all_tags,
                 available_tags,
             }) => {
-                // Check if there are any tags available that aren't already in use
-                let has_available_tags = all_tags
-                    .iter()
-                    .any(|tag| !self.allow_tags.contains(tag) && !self.deny_tags.contains(tag));
-
-                if !has_available_tags {
-                    // No tags available to add
-                    column.push(widget::text(fl!("file-list-all-tags-in-use")))
+                if all_tags.is_empty() {
+                    // No tags exist in the system at all
+                    column.push(widget::text(fl!("file-list-no-tags-available")))
                 } else {
-                    // Use the original combo box state - filtering will be handled in the update logic
-                    let combo = combo_box(
-                        available_tags,
-                        &fl!("file-list-select-tag"),
-                        Some(new_tag_input),
-                        update_message,
-                    )
-                    .width(Length::Fill);
+                    // Check if there are any tags available that aren't already in use
+                    let has_available_tags = all_tags
+                        .iter()
+                        .any(|tag| !self.allow_tags.contains(tag) && !self.deny_tags.contains(tag));
 
-                    let add_button = widget::button::standard(fl!("file-list-add-tag"))
-                        .on_press(add_message)
-                        .width(Length::Shrink);
+                    if !has_available_tags {
+                        // All existing tags are already in use
+                        column.push(widget::text(fl!("file-list-all-tags-in-use")))
+                    } else {
+                        // Show combo box with available tags
+                        let combo = combo_box(
+                            available_tags,
+                            &fl!("file-list-select-tag"),
+                            Some(new_tag_input),
+                            update_message,
+                        )
+                        .width(Length::Fill);
 
-                    let input_row = widget::row().push(combo).push(add_button).spacing(5);
-                    column.push(input_row)
+                        let add_button = widget::button::standard(fl!("file-list-add-tag"))
+                            .on_press(add_message)
+                            .width(Length::Shrink);
+
+                        let input_row = widget::row().push(combo).push(add_button).spacing(5);
+                        column.push(input_row)
+                    }
                 }
             }
-            _ => column.push(widget::text("Loading tags...")),
+            TagsState::Loading => column.push(widget::text("Loading tags...")),
+            TagsState::Failed(_) => column.push(widget::text("Failed to load tags")),
+            TagsState::New => column.push(widget::text("Loading tags...")),
         }
     }
 

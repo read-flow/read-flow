@@ -25,6 +25,7 @@ file-list-select-tag = Selecteer een tag
 file-list-add-tag = Toevoegen
 file-list-clear-all-tag-filters = Alle Tag Filters Wissen
 file-list-all-tags-in-use = Alle tags zijn al in gebruik
+file-list-no-tags-available = Geen tags beschikbaar in het systeem
 
 # File details
 file-details-unknown = Onbekend
