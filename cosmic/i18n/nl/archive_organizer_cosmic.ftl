@@ -12,6 +12,8 @@ generic-error = 🛑 Fout: { $error }
 # File list states
 file-list-new = Nieuw
 file-list-loading = Laden
+file-list-search-placeholder = Bestanden zoeken...
+file-list-filtering = Filteren...
 
 # File details
 file-details-unknown = Onbekend
