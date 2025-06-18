@@ -18,6 +18,13 @@ file-list-options-title = Bestandslijst Opties
 file-list-filter-by-status = Filteren op Leesstatus
 file-list-all-statuses = Alle statussen
 file-list-clear-filter = Filter Wissen
+file-list-filter-by-tags = Filteren op Tags
+file-list-allow-tags = Tags Insluiten (moet ALLE hebben)
+file-list-deny-tags = Tags Uitsluiten (mag GEEN hebben)
+file-list-select-tag = Selecteer een tag
+file-list-add-tag = Toevoegen
+file-list-clear-all-tag-filters = Alle Tag Filters Wissen
+file-list-all-tags-in-use = Alle tags zijn al in gebruik
 
 # File details
 file-details-unknown = Onbekend

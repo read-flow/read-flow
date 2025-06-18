@@ -18,6 +18,13 @@ file-list-options-title = File List Options
 file-list-filter-by-status = Filter by Reading Status
 file-list-all-statuses = All statuses
 file-list-clear-filter = Clear Filter
+file-list-filter-by-tags = Filter by Tags
+file-list-allow-tags = Include Tags (must have ALL)
+file-list-deny-tags = Exclude Tags (must have NONE)
+file-list-select-tag = Select a tag
+file-list-add-tag = Add
+file-list-clear-all-tag-filters = Clear All Tag Filters
+file-list-all-tags-in-use = All tags are already in use
 
 # File details
 file-details-unknown = Unknown
