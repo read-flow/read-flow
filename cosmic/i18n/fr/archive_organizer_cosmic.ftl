@@ -14,6 +14,10 @@ file-list-new = Nouveau
 file-list-loading = Chargement
 file-list-search-placeholder = Rechercher des fichiers...
 file-list-filtering = Filtrage...
+file-list-options-title = Options de Liste de Fichiers
+file-list-filter-by-status = Filtrer par Statut de Lecture
+file-list-all-statuses = Tous les statuts
+file-list-clear-filter = Effacer le Filtre
 
 # File details
 file-details-unknown = Inconnu

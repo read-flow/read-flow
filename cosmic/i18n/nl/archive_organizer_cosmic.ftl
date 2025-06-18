@@ -14,6 +14,10 @@ file-list-new = Nieuw
 file-list-loading = Laden
 file-list-search-placeholder = Bestanden zoeken...
 file-list-filtering = Filteren...
+file-list-options-title = Bestandslijst Opties
+file-list-filter-by-status = Filteren op Leesstatus
+file-list-all-statuses = Alle statussen
+file-list-clear-filter = Filter Wissen
 
 # File details
 file-details-unknown = Onbekend

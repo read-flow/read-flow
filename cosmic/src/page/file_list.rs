@@ -4,7 +4,7 @@ use crate::app::ContextView;
 use crate::client::{Client, ClientSelector};
 use crate::fl;
 use crate::state::LoadedState;
-use archive_organizer::api::{File, FileDataSource};
+use archive_organizer::api::{File, FileDataSource, ReadingStatus};
 use cosmic::iced::Length;
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced_widget::list::Content;
@@ -29,27 +29,30 @@ impl Files {
         self.visible_files = Content::with_items(files);
     }
 
-    /// Filter files based on the search query (synchronous version for initial load only)
-    fn filtered_by(mut self, search_query: &str) -> Self {
-        // unwraps on self.archive are safe because of check above
-        if search_query.is_empty() {
-            // noop
-        } else {
-            let query = search_query.to_lowercase();
-            let filtered_files = self
-                .all_files
-                .iter()
-                .filter(|file| {
-                    // Search in file path and tags
+    /// Filter files based on the search query and reading status (synchronous version for initial load only)
+    fn filtered_by(mut self, search_query: &str, status_filter: Option<ReadingStatus>) -> Self {
+        let filtered_files = self
+            .all_files
+            .iter()
+            .filter(|file| {
+                // Filter by search query
+                let matches_search = if search_query.is_empty() {
+                    true
+                } else {
+                    let query = search_query.to_lowercase();
                     let path_lower = file.path.to_lowercase();
                     let tags_lower = file.tags.join(" ").to_lowercase();
-
                     path_lower.contains(&query) || tags_lower.contains(&query)
-                })
-                .cloned()
-                .collect();
-            self.set_visible(filtered_files);
-        }
+                };
+
+                // Filter by reading status
+                let matches_status = status_filter.map_or(true, |status| file.status == status);
+
+                matches_search && matches_status
+            })
+            .cloned()
+            .collect();
+        self.set_visible(filtered_files);
         self
     }
 }
@@ -87,6 +90,7 @@ pub struct FileList {
     search_input_id: cosmic::widget::Id, // Unique ID for focus management
     search_input_is_focussed: bool,      // Flag to indicate search input should be focused
     debounce_counter: u32,               // Counter to track debounce state
+    status_filter: Option<ReadingStatus>, // Optional reading status filter
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +109,8 @@ pub enum FileListMessage {
     FilteringComplete(Vec<File>),
     FocusSearchInput,
     DebounceTimeout(u32, String), // (counter, query) - triggers filtering after delay
+    StatusFilterChanged(Option<ReadingStatus>),
+    ClearStatusFilter,
     Out(FileListOutput),
 }
 
@@ -140,26 +146,31 @@ impl FileList {
     fn start_background_filtering(
         &self,
         query: String,
+        status_filter: Option<ReadingStatus>,
         all_files: Vec<File>,
     ) -> Task<cosmic::Action<FileListMessage>> {
         cosmic::task::future(async move {
             // Perform filtering in background after debounce timeout
             // This runs only when user has paused typing for 250ms
-            let filtered_files = if query.is_empty() {
-                all_files
-            } else {
-                let query_lower = query.to_lowercase();
-                all_files
-                    .into_iter()
-                    .filter(|file| {
-                        // Search in file path and tags
+            let filtered_files = all_files
+                .into_iter()
+                .filter(|file| {
+                    // Filter by search query
+                    let matches_search = if query.is_empty() {
+                        true
+                    } else {
+                        let query_lower = query.to_lowercase();
                         let path_lower = file.path.to_lowercase();
                         let tags_lower = file.tags.join(" ").to_lowercase();
-
                         path_lower.contains(&query_lower) || tags_lower.contains(&query_lower)
-                    })
-                    .collect()
-            };
+                    };
+
+                    // Filter by reading status
+                    let matches_status = status_filter.map_or(true, |status| file.status == status);
+
+                    matches_search && matches_status
+                })
+                .collect();
 
             FileListMessage::FilteringComplete(filtered_files)
         })
@@ -175,6 +186,7 @@ impl FileList {
                 search_input_id: cosmic::widget::Id::unique(),
                 search_input_is_focussed: false,
                 debounce_counter: 0,
+                status_filter: None,
             },
             Task::batch(vec![
                 cosmic::task::message(FileListMessage::LoadArchive),
@@ -276,9 +288,36 @@ impl FileList {
     }
 
     pub fn view_context(&self) -> ContextView<FileListMessage> {
+        let column = widget::column().spacing(10);
+
+        // Reading Status Filter Section
+        let status_section = widget::column()
+            .spacing(5)
+            .push(widget::text(fl!("file-list-filter-by-status")).size(16))
+            .push(
+                cosmic::iced::widget::pick_list(
+                    [
+                        ReadingStatus::Unread,
+                        ReadingStatus::Reading,
+                        ReadingStatus::Read,
+                    ],
+                    self.status_filter,
+                    |status| FileListMessage::StatusFilterChanged(Some(status)),
+                )
+                .width(Length::Fill)
+                .placeholder(fl!("file-list-all-statuses")),
+            )
+            .push(
+                widget::button::standard(fl!("file-list-clear-filter"))
+                    .on_press(FileListMessage::ClearStatusFilter)
+                    .width(Length::Fill),
+            );
+
+        let column = column.push(status_section);
+
         ContextView {
-            title: "File List".to_string(),
-            content: widget::text("TODO").into(),
+            title: fl!("file-list-options-title"),
+            content: column.into(),
         }
     }
 
@@ -297,7 +336,7 @@ impl FileList {
             }
             FileListMessage::Loaded(files) => {
                 // For initial load, use synchronous filtering since it's typically fast
-                let files = Files::new(files).filtered_by(&self.search_query);
+                let files = Files::new(files).filtered_by(&self.search_query, self.status_filter);
                 self.archive = FileState::Loaded(files);
                 Task::none()
             }
@@ -327,6 +366,7 @@ impl FileList {
                     self.is_filtering = true;
                     self.start_background_filtering(
                         String::new(),
+                        self.status_filter,
                         self.archive.unwrap().all_files.clone(),
                     )
                 } else {
@@ -351,6 +391,7 @@ impl FileList {
                     Task::batch(vec![
                         self.start_background_filtering(
                             query,
+                            self.status_filter,
                             self.archive.unwrap().all_files.clone(),
                         ),
                         cosmic::task::message(FileListMessage::FocusSearchInput),
@@ -364,6 +405,40 @@ impl FileList {
                 self.search_input_is_focussed = false;
                 // Use the helper method that contains all the focus approaches to try
                 self.try_focus_search_input()
+            }
+            FileListMessage::StatusFilterChanged(status) => {
+                self.status_filter = status;
+                // Increment debounce counter to invalidate previous timers
+                self.debounce_counter += 1;
+
+                // Immediately filter with new status (no debounce needed for status changes)
+                if self.archive.is_loaded() && !self.is_filtering {
+                    self.is_filtering = true;
+                    self.start_background_filtering(
+                        self.search_query.clone(),
+                        self.status_filter,
+                        self.archive.unwrap().all_files.clone(),
+                    )
+                } else {
+                    Task::none()
+                }
+            }
+            FileListMessage::ClearStatusFilter => {
+                self.status_filter = None;
+                // Increment debounce counter to invalidate previous timers
+                self.debounce_counter += 1;
+
+                // Immediately filter to show all statuses (no debounce needed for clearing)
+                if self.archive.is_loaded() && !self.is_filtering {
+                    self.is_filtering = true;
+                    self.start_background_filtering(
+                        self.search_query.clone(),
+                        None,
+                        self.archive.unwrap().all_files.clone(),
+                    )
+                } else {
+                    Task::none()
+                }
             }
             FileListMessage::Out(_) => {
                 panic!("should be handled by the parent component")
