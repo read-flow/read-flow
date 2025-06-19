@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+// pages
 mod file_details;
 mod file_list;
+
+// utilities
+mod component;
+mod state;
+
+use core::panic;
 
 use crate::app::ContextView;
 use crate::client::ClientSelector;
