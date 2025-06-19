@@ -4,7 +4,13 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-2"
 description = "Manage Documents Accross Multiple Machines"
-repository = "https://github.com/peterpaul/archive-organizer"
+repository = "raspberrypi:~/git/archive-organizer.git"
+# repository = "https://github.com/peterpaul/archive-organizer"
+
+authors = ["Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"]
+
+[package.metadata.deb]
+maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 
 [build-dependencies]
 vergen = { version = "8", features = ["git", "gitcl"] }
