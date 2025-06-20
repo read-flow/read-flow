@@ -2,6 +2,7 @@
 
 mod app;
 mod client;
+mod component;
 mod config;
 mod cosmic_ext;
 mod i18n;

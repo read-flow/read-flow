@@ -1,3 +1,6 @@
+pub mod files;
+pub mod tags;
+
 #[derive(Default)]
 pub enum LoadedState<T> {
     #[default]

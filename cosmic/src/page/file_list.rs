@@ -2,10 +2,12 @@
 
 use crate::app::ContextView;
 use crate::client::{Client, ClientSelector};
+use crate::component::tag_filter::TagFilterOutput;
+use crate::component::tag_filter::{TagFilter, TagFilterMessage};
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
-use crate::page::component::tag_filter::TagFilterOutput;
-use crate::page::state::files::Files;
+use crate::state::files::FileState;
+use crate::state::files::Files;
 use archive_organizer::api::{File, FileDataSource, ReadingStatus};
 use cosmic::iced;
 use cosmic::iced::Length;
@@ -15,9 +17,6 @@ use cosmic::task;
 use cosmic::{Action, widget};
 use cosmic::{Apply, Element, Task};
 use std::collections::HashSet;
-
-use super::component::tag_filter::{TagFilter, TagFilterMessage};
-use super::state::files::FileState;
 
 pub struct FileList {
     client: Client,

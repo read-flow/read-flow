@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // pages
 mod file_details;
-mod file_list;
-
-// utilities
-mod component;
-mod state;
+pub(crate) mod file_list;
 
 use core::panic;
 
@@ -13,19 +9,19 @@ use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
+use archive_organizer::ApplicationModule;
 use archive_organizer::api::File;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::dao::RemoteDao;
-use archive_organizer::ApplicationModule;
-use cosmic::iced::alignment::Horizontal;
-use cosmic::iced::alignment::Vertical;
-use cosmic::iced::Length;
-use cosmic::task;
-use cosmic::widget;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
+use cosmic::iced::Length;
+use cosmic::iced::alignment::Horizontal;
+use cosmic::iced::alignment::Vertical;
+use cosmic::task;
+use cosmic::widget;
 use file_details::FileDetails;
 use file_details::FileDetailsMessage;
 use file_details::FileDetailsOutput;
@@ -33,8 +29,8 @@ use file_list::FileList;
 use file_list::FileListMessage;
 use file_list::FileListOutput;
 use indexmap::IndexMap;
-use rand::rngs::ThreadRng;
 use rand::Rng;
+use rand::rngs::ThreadRng;
 use url::Url;
 
 pub struct Pages {
@@ -95,8 +91,10 @@ impl Pages {
 
         let (local, local_task) = FileList::new(db_client.into());
 
-        let mut tasks = vec![local_task
-            .map(|action| action.map(|msg| map_file_list_message(ClientSelector::Local, msg)))];
+        let mut tasks = vec![
+            local_task
+                .map(|action| action.map(|msg| map_file_list_message(ClientSelector::Local, msg))),
+        ];
 
         let (mut remotes, remote_tasks): (Vec<FileList>, Vec<Task<Action<PageMessage>>>) =
             remote_clients

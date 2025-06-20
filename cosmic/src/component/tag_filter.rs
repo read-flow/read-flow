@@ -2,7 +2,7 @@
 
 use crate::client::Client;
 use crate::fl;
-use crate::page::state::tags::{Tags, TagsState};
+use crate::state::tags::{Tags, TagsState};
 use archive_organizer::api::FileDataSource;
 use cosmic::iced::Length;
 use cosmic::iced::widget::combo_box;
