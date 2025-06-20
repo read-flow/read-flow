@@ -44,34 +44,38 @@ impl Files {
             .all_files
             .iter()
             .filter(|file| {
-                // Filter by search query
-                let matches_search = if search_query.is_empty() {
-                    true
-                } else {
-                    let query = search_query.to_lowercase();
-                    let path_lower = file.path.to_lowercase();
-                    let tags_lower = file.tags.join(" ").to_lowercase();
-                    path_lower.contains(&query) || tags_lower.contains(&query)
-                };
-
-                // Filter by reading status
-                let matches_status = status_filter.is_none_or(|status| file.status == status);
-
-                // Filter by allowed tags (file must have ALL allowed tags)
-                let matches_allow_tags =
-                    allow_tags.is_empty() || allow_tags.iter().all(|tag| file.tags.contains(tag));
-
-                // Filter by denied tags (file must have NONE of the denied tags)
-                let matches_deny_tags =
-                    deny_tags.is_empty() || !file.tags.iter().any(|tag| deny_tags.contains(tag));
-
-                matches_search && matches_status && matches_allow_tags && matches_deny_tags
+                filter_file(search_query, status_filter, allow_tags, deny_tags, file)
             })
             .cloned()
             .collect();
         self.set_visible(filtered_files);
         self
     }
+}
+
+pub fn filter_file(search_query: &str, status_filter: Option<ReadingStatus>, allow_tags: &HashSet<String>, deny_tags: &HashSet<String>, file: &&File) -> bool {
+    // Filter by search query
+    let matches_search = if search_query.is_empty() {
+        true
+    } else {
+        let query = search_query.to_lowercase();
+        let path_lower = file.path.to_lowercase();
+        let tags_lower = file.tags.join(" ").to_lowercase();
+        path_lower.contains(&query) || tags_lower.contains(&query)
+    };
+
+    // Filter by reading status
+    let matches_status = status_filter.is_none_or(|status| file.status == status);
+
+    // Filter by allowed tags (file must have ALL allowed tags)
+    let matches_allow_tags =
+        allow_tags.is_empty() || allow_tags.iter().all(|tag| file.tags.contains(tag));
+
+    // Filter by denied tags (file must have NONE of the denied tags)
+    let matches_deny_tags =
+        deny_tags.is_empty() || !file.tags.iter().any(|tag| deny_tags.contains(tag));
+
+    matches_search && matches_status && matches_allow_tags && matches_deny_tags
 }
 
 pub type FileState = LoadedState<Files>;

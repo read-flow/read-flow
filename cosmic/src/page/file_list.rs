@@ -6,7 +6,7 @@ use crate::component::tag_filter::TagFilterOutput;
 use crate::component::tag_filter::{TagFilter, TagFilterMessage};
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
-use crate::state::files::FileState;
+use crate::state::files::{filter_file, FileState};
 use crate::state::files::Files;
 use archive_organizer::api::{File, FileDataSource, ReadingStatus};
 use cosmic::iced;
@@ -97,28 +97,7 @@ impl FileList {
             let filtered_files = all_files
                 .into_iter()
                 .filter(|file| {
-                    // Filter by search query
-                    let matches_search = if query.is_empty() {
-                        true
-                    } else {
-                        let query_lower = query.to_lowercase();
-                        let path_lower = file.path.to_lowercase();
-                        let tags_lower = file.tags.join(" ").to_lowercase();
-                        path_lower.contains(&query_lower) || tags_lower.contains(&query_lower)
-                    };
-
-                    // Filter by reading status
-                    let matches_status = status_filter.is_none_or(|status| file.status == status);
-
-                    // Filter by allowed tags (file must have ALL allowed tags)
-                    let matches_allow_tags = allow_tags.is_empty()
-                        || allow_tags.iter().all(|tag| file.tags.contains(tag));
-
-                    // Filter by denied tags (file must have NONE of the denied tags)
-                    let matches_deny_tags = deny_tags.is_empty()
-                        || !file.tags.iter().any(|tag| deny_tags.contains(tag));
-
-                    matches_search && matches_status && matches_allow_tags && matches_deny_tags
+                    filter_file(&query, status_filter, &allow_tags, &deny_tags, &file)
                 })
                 .collect();
 
