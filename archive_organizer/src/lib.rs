@@ -28,7 +28,7 @@ use auth::{AuthService, JwtService};
 use db::{ConnectionPool, datasource::DbClient};
 
 use scan::{DirectorySettings, FileSystemVisitor};
-use settings::Settings;
+use settings::{Settings, SettingsError};
 
 #[derive(Clone, Debug)]
 pub struct ApplicationModule {
@@ -43,7 +43,7 @@ impl ApplicationModule {
         Ok(Self::from_settings(settings))
     }
 
-    pub fn from_figment(figment: &Figment) -> Result<Self, figment::Error> {
+    pub fn from_figment(figment: &Figment) -> Result<Self, SettingsError> {
         let settings = figment.extract()?;
         Ok(Self::from_settings(settings))
     }

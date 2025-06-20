@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use figment::{
-    Error, Figment,
+    Figment,
     providers::{Format, Toml},
 };
 use serde::Deserialize;
@@ -19,6 +19,18 @@ pub struct Settings {
     pub server: ServerSettings,
     pub scan: ScanSettings,
     pub ui: UiSettings,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SettingsError {
+    #[error("configuration error: {0}")]
+    Figment(#[source] Box<figment::Error>),
+}
+
+impl From<figment::Error> for SettingsError {
+    fn from(source: figment::Error) -> Self {
+	SettingsError::Figment(Box::new(source))
+    }
 }
 
 pub fn decorate(figment: Figment) -> Figment {
@@ -51,9 +63,10 @@ pub fn decorate(figment: Figment) -> Figment {
     figment.merge(Toml::file(path))
 }
 
-pub fn extract() -> Result<Settings, Error> {
+pub fn extract() -> Result<Settings, SettingsError> {
     let figment = decorate(Figment::new());
-    figment.extract()
+    let settings = figment.extract()?;
+    Ok(settings)
 }
 
 #[derive(Debug, Deserialize, Clone)]

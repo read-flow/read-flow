@@ -15,13 +15,13 @@ impl<T> LoadedState<T> {
         matches!(self, LoadedState::Loaded(_))
     }
 
-    pub fn get_loaded(&self) -> Option<&T> {
-        if let LoadedState::Loaded(state) = self {
-            Some(state)
-        } else {
-            None
-        }
-    }
+    // pub fn get_loaded(&self) -> Option<&T> {
+    //     if let LoadedState::Loaded(state) = self {
+    //         Some(state)
+    //     } else {
+    //         None
+    //     }
+    // }
 
     pub fn unwrap(&self) -> &T {
         if let LoadedState::Loaded(state) = self {
