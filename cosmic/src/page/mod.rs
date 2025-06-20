@@ -13,17 +13,19 @@ use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
-use archive_organizer::ApplicationModule;
 use archive_organizer::api::File;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::dao::RemoteDao;
+use archive_organizer::ApplicationModule;
+use cosmic::iced::alignment::Horizontal;
+use cosmic::iced::alignment::Vertical;
+use cosmic::iced::Length;
+use cosmic::task;
+use cosmic::widget;
+use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
-use cosmic::iced::Length;
-use cosmic::iced::alignment::Horizontal;
-use cosmic::iced::alignment::Vertical;
-use cosmic::widget;
 use file_details::FileDetails;
 use file_details::FileDetailsMessage;
 use file_details::FileDetailsOutput;
@@ -31,8 +33,8 @@ use file_list::FileList;
 use file_list::FileListMessage;
 use file_list::FileListOutput;
 use indexmap::IndexMap;
-use rand::Rng;
 use rand::rngs::ThreadRng;
+use rand::Rng;
 use url::Url;
 
 pub struct Pages {
@@ -70,9 +72,7 @@ pub enum PageMessage {
 }
 
 impl Pages {
-    pub fn new(
-        application_module: &ApplicationModule,
-    ) -> (Self, Task<cosmic::Action<PageMessage>>) {
+    pub fn new(application_module: &ApplicationModule) -> (Self, Task<Action<PageMessage>>) {
         // Get the database client from the application module
         let db_client = application_module.db_client();
 
@@ -95,12 +95,10 @@ impl Pages {
 
         let (local, local_task) = FileList::new(db_client.into());
 
-        let mut tasks = vec![
-            local_task
-                .map(|action| action.map(|msg| map_file_list_message(ClientSelector::Local, msg))),
-        ];
+        let mut tasks = vec![local_task
+            .map(|action| action.map(|msg| map_file_list_message(ClientSelector::Local, msg)))];
 
-        let (mut remotes, remote_tasks): (Vec<FileList>, Vec<Task<cosmic::Action<PageMessage>>>) =
+        let (mut remotes, remote_tasks): (Vec<FileList>, Vec<Task<Action<PageMessage>>>) =
             remote_clients
                 .into_iter()
                 .map(|remote_client| {
@@ -131,7 +129,7 @@ impl Pages {
                     .collect(),
                 file_details: Default::default(),
             },
-            cosmic::task::batch(tasks),
+            task::batch(tasks),
         )
     }
 
@@ -157,7 +155,7 @@ impl Pages {
                 .map(|page| page.view().map(|msg| map_file_details_message(*id, msg)))
                 .unwrap_or_else(|| {
                     widget::text::title1(fl!("page-not-found"))
-                        .apply(cosmic::widget::container)
+                        .apply(widget::container)
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .align_x(Horizontal::Center)
@@ -185,7 +183,7 @@ impl Pages {
                 .unwrap_or_else(|| ContextView {
                     title: fl!("page-not-found"),
                     content: widget::text::title1(fl!("page-not-found"))
-                        .apply(cosmic::widget::container)
+                        .apply(widget::container)
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .align_x(Horizontal::Center)
@@ -195,7 +193,7 @@ impl Pages {
         }
     }
 
-    pub fn update(&mut self, message: PageMessage) -> Task<cosmic::Action<PageMessage>> {
+    pub fn update(&mut self, message: PageMessage) -> Task<Action<PageMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
             PageMessage::Files(selector, message) => {
@@ -218,13 +216,13 @@ impl Pages {
                 self.file_details.insert(id, file_details);
                 let action = initialization
                     .map(move |action| action.map(|msg| map_file_details_message(id, msg)));
-                action.chain(cosmic::task::message(PageMessage::Out(
-                    PageOutput::PageAdded(PageSelector::FileDetails(id)),
-                )))
+                action.chain(task::message(PageMessage::Out(PageOutput::PageAdded(
+                    PageSelector::FileDetails(id),
+                ))))
             }
             PageMessage::CloseFileDetails(id) => {
                 let _ = self.file_details.swap_remove(&id);
-                cosmic::task::message(PageMessage::Out(PageOutput::PageRemoved(
+                task::message(PageMessage::Out(PageOutput::PageRemoved(
                     PageSelector::FileDetails(id),
                 )))
             }

@@ -7,9 +7,12 @@ use crate::fl;
 use crate::page::component::tag_filter::TagFilterOutput;
 use crate::page::state::files::Files;
 use archive_organizer::api::{File, FileDataSource, ReadingStatus};
+use cosmic::iced;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::widget;
+use cosmic::iced_widget;
+use cosmic::task;
+use cosmic::{Action, widget};
 use cosmic::{Apply, Element, Task};
 use std::collections::HashSet;
 
@@ -21,7 +24,7 @@ pub struct FileList {
     archive: FileState,
     is_filtering: bool,                   // Track if filtering is in progress
     search_query: String,                 // The search query string
-    search_input_id: cosmic::widget::Id,  // Unique ID for focus management
+    search_input_id: widget::Id,          // Unique ID for focus management
     search_input_is_focussed: bool,       // Flag to indicate search input should be focused
     debounce_counter: u32,                // Counter to track debounce state
     status_filter: Option<ReadingStatus>, // Optional reading status filter
@@ -67,17 +70,13 @@ impl FileList {
 
     /// Attempt to focus the search input using various cosmic framework approaches
     /// This method contains multiple approaches that could work depending on cosmic's API
-    fn try_focus_search_input(&self) -> Task<cosmic::Action<FileListMessage>> {
-        cosmic::widget::text_input::focus(self.search_input_id.clone())
+    fn try_focus_search_input(&self) -> Task<Action<FileListMessage>> {
+        widget::text_input::focus(self.search_input_id.clone())
     }
 
     /// Start debounce timer - waits for user to stop typing before filtering
-    fn start_debounce_timer(
-        &self,
-        counter: u32,
-        query: String,
-    ) -> Task<cosmic::Action<FileListMessage>> {
-        cosmic::task::future(async move {
+    fn start_debounce_timer(&self, counter: u32, query: String) -> Task<Action<FileListMessage>> {
+        task::future(async move {
             // Wait 250ms for user to stop typing
             tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
             FileListMessage::DebounceTimeout(counter, query)
@@ -92,8 +91,8 @@ impl FileList {
         allow_tags: HashSet<String>,
         deny_tags: HashSet<String>,
         all_files: Vec<File>,
-    ) -> Task<cosmic::Action<FileListMessage>> {
-        cosmic::task::future(async move {
+    ) -> Task<Action<FileListMessage>> {
+        task::future(async move {
             // Perform filtering in background after debounce timeout
             // This runs only when user has paused typing for 250ms
             let filtered_files = all_files
@@ -128,7 +127,7 @@ impl FileList {
         })
     }
 
-    pub fn new(client: Client) -> (Self, Task<cosmic::Action<FileListMessage>>) {
+    pub fn new(client: Client) -> (Self, Task<Action<FileListMessage>>) {
         let (tag_filter, tag_filter_init) = TagFilter::new(client.clone());
         (
             Self {
@@ -136,7 +135,7 @@ impl FileList {
                 archive: FileState::default(),
                 search_query: String::new(),
                 is_filtering: false,
-                search_input_id: cosmic::widget::Id::unique(),
+                search_input_id: widget::Id::unique(),
                 search_input_is_focussed: false,
                 debounce_counter: 0,
                 status_filter: None,
@@ -144,8 +143,8 @@ impl FileList {
             },
             Task::batch(vec![
                 tag_filter_init.map(|action| action.map(Into::into)),
-                cosmic::task::message(FileListMessage::LoadArchive),
-                cosmic::task::message(FileListMessage::FocusSearchInput),
+                task::message(FileListMessage::LoadArchive),
+                task::message(FileListMessage::FocusSearchInput),
             ]),
         )
     }
@@ -172,7 +171,7 @@ impl FileList {
         );
 
         let search_input =
-            cosmic::widget::text_input(fl!("file-list-search-placeholder"), &self.search_query)
+            widget::text_input(fl!("file-list-search-placeholder"), &self.search_query)
                 .id(self.search_input_id.clone())
                 .always_active()
                 .on_input(FileListMessage::SearchChanged)
@@ -250,7 +249,7 @@ impl FileList {
             .spacing(5)
             .push(widget::text(fl!("file-list-filter-by-status")).size(16))
             .push(
-                cosmic::iced::widget::pick_list(
+                iced::widget::pick_list(
                     [
                         ReadingStatus::Unread,
                         ReadingStatus::Reading,
@@ -271,7 +270,7 @@ impl FileList {
         column = column.push(status_section);
 
         // Add divider
-        column = column.push(cosmic::iced_widget::horizontal_rule(1).width(Length::Fill));
+        column = column.push(iced_widget::horizontal_rule(1).width(Length::Fill));
 
         column = column.push(self.tag_filter.view().map(Into::into));
 
@@ -281,13 +280,13 @@ impl FileList {
         }
     }
 
-    pub fn update(&mut self, message: FileListMessage) -> Task<cosmic::Action<FileListMessage>> {
+    pub fn update(&mut self, message: FileListMessage) -> Task<Action<FileListMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
             FileListMessage::LoadArchive => {
                 self.archive = FileState::Loading;
                 let client = self.client.clone();
-                cosmic::task::future(async move {
+                task::future(async move {
                     match client.get_files().await {
                         Ok(files) => FileListMessage::Loaded(files),
                         Err(error) => FileListMessage::LoadingFailed(format!("{error}")),
@@ -345,7 +344,7 @@ impl FileList {
                 self.archive.set_visible(filtered_files);
                 // Set flag to focus search input after re-render
                 self.search_input_is_focussed = true;
-                cosmic::task::message(FileListMessage::FocusSearchInput)
+                task::message(FileListMessage::FocusSearchInput)
             }
             FileListMessage::DebounceTimeout(counter, query) => {
                 // Only proceed if this timeout matches the current counter (not superseded by newer typing)
@@ -362,7 +361,7 @@ impl FileList {
                             self.tag_filter.deny_tags.clone(),
                             self.archive.unwrap().all_files(),
                         ),
-                        cosmic::task::message(FileListMessage::FocusSearchInput),
+                        task::message(FileListMessage::FocusSearchInput),
                     ])
                 } else {
                     // This timeout was superseded by newer typing, ignore it

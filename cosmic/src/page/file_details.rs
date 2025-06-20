@@ -9,7 +9,8 @@ use cosmic::{
         alignment::{Horizontal, Vertical},
         widget::combo_box,
     },
-    iced_widget::{Column, Row},
+    iced_widget::{self, Column, Row},
+    task,
     widget::{self, text},
 };
 use std::borrow::Cow;
@@ -61,10 +62,7 @@ impl FileDetails {
             tags: TagsState::default(),
         };
 
-        (
-            file_details,
-            cosmic::task::message(FileDetailsMessage::LoadAllTags),
-        )
+        (file_details, task::message(FileDetailsMessage::LoadAllTags))
     }
 
     pub fn display_name(&self) -> String {
@@ -98,7 +96,7 @@ impl FileDetails {
                 .size(24)
                 .width(Length::Fill)
                 .into(),
-            cosmic::widget::button::icon(widget::icon::from_name("window-close-symbolic"))
+            widget::button::icon(widget::icon::from_name("window-close-symbolic"))
                 .on_press(FileDetailsMessage::Out(FileDetailsOutput::Close(self.id)))
                 .into(),
         ]);
@@ -108,7 +106,7 @@ impl FileDetails {
         let details = Column::with_children(vec![
             // Basic info section
             text(fl!("file-details-basic-info")).size(20).into(),
-            cosmic::widget::container(Column::with_children(vec![
+            widget::container(Column::with_children(vec![
                 row_with_label(fl!("file-details-folder"), folder),
                 row_with_label(fl!("file-details-filename"), filename),
                 row_with_label(fl!("file-details-type"), &self.file.type_),
@@ -140,7 +138,7 @@ impl FileDetails {
             .into(),
             // Technical details section
             text(fl!("file-details-technical")).size(20).into(),
-            cosmic::widget::container(Column::with_children(vec![
+            widget::container(Column::with_children(vec![
                 row_with_label(fl!("file-details-id"), format!("{}", self.file.id)),
                 row_with_label(fl!("file-details-full-path"), &self.file.path),
                 row_with_label(fl!("file-details-fingerprint"), &self.file.fingerprint),
@@ -149,9 +147,7 @@ impl FileDetails {
             .into(),
             // Tags section
             text(fl!("file-details-tags")).size(20).into(),
-            cosmic::widget::container(self.tags_view())
-                .padding(10)
-                .into(),
+            widget::container(self.tags_view()).padding(10).into(),
         ]);
 
         let content = Column::with_children(vec![title.into(), details.into()])
@@ -160,8 +156,8 @@ impl FileDetails {
 
         // Wrap content in a container
         content
-            .apply(cosmic::widget::scrollable)
-            .apply(cosmic::widget::container)
+            .apply(widget::scrollable)
+            .apply(widget::container)
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Horizontal::Center)
@@ -187,7 +183,7 @@ impl FileDetails {
                 updated_file.status = status;
                 let client = self.client.clone();
 
-                cosmic::task::future(async move {
+                task::future(async move {
                     match client.update_file(updated_file).await {
                         Ok(()) => FileDetailsMessage::ReadingStatusUpdated(Ok(())),
                         Err(err) => {
@@ -200,18 +196,18 @@ impl FileDetails {
                 match result {
                     Ok(()) => {
                         // Refresh the file to get updated status
-                        cosmic::task::message(FileDetailsMessage::RefreshFile)
+                        task::message(FileDetailsMessage::RefreshFile)
                     }
                     Err(err) => {
                         tracing::error!("Failed to update reading status: {}", err);
-                        cosmic::task::none()
+                        task::none()
                     }
                 }
             }
             FileDetailsMessage::LoadAllTags => {
                 self.tags = TagsState::Loading;
                 let client = self.client.clone();
-                cosmic::task::future(async move {
+                task::future(async move {
                     match client.get_files_tags().await {
                         Ok(tags) => FileDetailsMessage::AllTagsLoaded(Ok(tags)),
                         Err(err) => FileDetailsMessage::AllTagsLoaded(Err(format!("{}", err))),
@@ -238,15 +234,15 @@ impl FileDetails {
                         self.tags = TagsState::Failed(err);
                     }
                 }
-                cosmic::task::none()
+                task::none()
             }
             FileDetailsMessage::UpdateNewTag(text) => {
                 self.new_tag = text;
-                cosmic::task::none()
+                task::none()
             }
             FileDetailsMessage::AddTag => {
                 if self.new_tag.trim().is_empty() {
-                    return cosmic::task::none();
+                    return task::none();
                 }
 
                 let id = self.file.id;
@@ -255,7 +251,7 @@ impl FileDetails {
 
                 self.new_tag = String::new();
 
-                cosmic::task::future(async move {
+                task::future(async move {
                     match client.add_file_tags(id, vec![tag]).await {
                         Ok(tags) => FileDetailsMessage::TagsAdded(Ok(tags)),
                         Err(err) => FileDetailsMessage::TagsAdded(Err(format!("{}", err))),
@@ -270,20 +266,20 @@ impl FileDetails {
                             all_tags.dedup();
                         }
                         // Refresh the file to get updated tags
-                        return cosmic::task::message(FileDetailsMessage::RefreshFile);
+                        return task::message(FileDetailsMessage::RefreshFile);
                     }
                     Err(err) => {
                         tracing::warn!("Failed to add tag: {}", err);
                     }
                 }
-                cosmic::task::none()
+                task::none()
             }
             FileDetailsMessage::RemoveTag(tag) => {
                 let id = self.file.id;
                 let tag = tag.clone();
                 let client = self.client.clone();
 
-                cosmic::task::future(async move {
+                task::future(async move {
                     match client.delete_file_tags(id, vec![tag]).await {
                         Ok(()) => FileDetailsMessage::TagsRemoved(Ok(())),
                         Err(err) => FileDetailsMessage::TagsRemoved(Err(format!("{}", err))),
@@ -294,19 +290,19 @@ impl FileDetails {
                 match result {
                     Ok(_) => {
                         // Refresh the file to get updated tags
-                        return cosmic::task::message(FileDetailsMessage::RefreshFile);
+                        return task::message(FileDetailsMessage::RefreshFile);
                     }
                     Err(err) => {
                         tracing::warn!("Failed to remove tag: {}", err);
                     }
                 }
-                cosmic::task::none()
+                task::none()
             }
             FileDetailsMessage::RefreshFile => {
                 let id = self.file.id;
                 let client = self.client.clone();
 
-                cosmic::task::future(async move {
+                task::future(async move {
                     match client.get_file(id).await {
                         Ok(file) => FileDetailsMessage::FileRefreshed(Ok(file)),
                         Err(err) => FileDetailsMessage::FileRefreshed(Err(format!("{}", err))),
@@ -357,7 +353,7 @@ impl FileDetails {
             // Create a flow container for the tags
             let mut tag_row = Row::new().spacing(5).width(Length::Fill);
             for tag in &self.file.tags {
-                let tag_button = cosmic::widget::button::text(tag.clone())
+                let tag_button = widget::button::text(tag.clone())
                     .trailing_icon(widget::icon::from_name("edit-delete-symbolic"))
                     .on_press(FileDetailsMessage::RemoveTag(tag.clone()));
 
@@ -367,7 +363,7 @@ impl FileDetails {
         }
 
         // Add a divider
-        column = column.push(cosmic::iced_widget::horizontal_rule(1).width(Length::Fill));
+        column = column.push(iced_widget::horizontal_rule(1).width(Length::Fill));
 
         column = match &self.tags {
             TagsState::Loaded(Tags { available_tags, .. }) => {
