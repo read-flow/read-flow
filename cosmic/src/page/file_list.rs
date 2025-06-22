@@ -6,8 +6,8 @@ use crate::component::tag_filter::TagFilterOutput;
 use crate::component::tag_filter::{TagFilter, TagFilterMessage};
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
-use crate::state::files::{filter_file, FileState};
 use crate::state::files::Files;
+use crate::state::files::{FileState, filter_file};
 use archive_organizer::api::{File, FileDataSource, ReadingStatus};
 use cosmic::iced;
 use cosmic::iced::Length;
@@ -96,9 +96,7 @@ impl FileList {
             // This runs only when user has paused typing for 250ms
             let filtered_files = all_files
                 .into_iter()
-                .filter(|file| {
-                    filter_file(&query, status_filter, &allow_tags, &deny_tags, &file)
-                })
+                .filter(|file| filter_file(&query, status_filter, &allow_tags, &deny_tags, &file))
                 .collect();
 
             FileListMessage::FilteringComplete(filtered_files)

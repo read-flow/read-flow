@@ -43,9 +43,7 @@ impl Files {
         let filtered_files = self
             .all_files
             .iter()
-            .filter(|file| {
-                filter_file(search_query, status_filter, allow_tags, deny_tags, file)
-            })
+            .filter(|file| filter_file(search_query, status_filter, allow_tags, deny_tags, file))
             .cloned()
             .collect();
         self.set_visible(filtered_files);
@@ -53,7 +51,13 @@ impl Files {
     }
 }
 
-pub fn filter_file(search_query: &str, status_filter: Option<ReadingStatus>, allow_tags: &HashSet<String>, deny_tags: &HashSet<String>, file: &&File) -> bool {
+pub fn filter_file(
+    search_query: &str,
+    status_filter: Option<ReadingStatus>,
+    allow_tags: &HashSet<String>,
+    deny_tags: &HashSet<String>,
+    file: &&File,
+) -> bool {
     // Filter by search query
     let matches_search = if search_query.is_empty() {
         true
