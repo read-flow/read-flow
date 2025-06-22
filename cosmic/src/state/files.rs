@@ -109,7 +109,7 @@ impl FileState {
 
 fn view_file<'a>(file: &'a File) -> Element<'a, FileListMessage> {
     display_path(&file.path)
-        .apply(cosmic::iced_widget::button)
+        .apply(widget::button::custom)
         .on_press(FileListMessage::Out(FileListOutput::OpenFileDetails(
             // TODO: should be output message of component.
             file.clone(),
