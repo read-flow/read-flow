@@ -132,7 +132,7 @@ impl FileList {
     pub fn view(&self) -> Element<FileListMessage> {
         let column = widget::column().spacing(10);
 
-        let header_row = widget::row().align_y(Vertical::Center);
+        let header_row = widget::row().align_y(Vertical::Center).spacing(10);
 
         let header_row = header_row.push(
             widget::button::icon(widget::icon::from_name("open-menu-symbolic"))
