@@ -2,6 +2,7 @@
 
 use crate::app::ContextView;
 use crate::client::{Client, ClientSelector};
+use crate::component::files::{FilesComponent, FilesMessage, FilesOutput};
 use crate::component::tag_filter::TagFilterOutput;
 use crate::component::tag_filter::{TagFilter, TagFilterMessage};
 use crate::cosmic_ext::ActionExt;
@@ -20,7 +21,7 @@ use std::collections::HashSet;
 
 pub struct FileList {
     client: Client,
-    archive: FileState,
+    archive: FilesComponent,
     is_filtering: bool,                   // Track if filtering is in progress
     search_query: String,                 // The search query string
     search_input_id: widget::Id,          // Unique ID for focus management
@@ -49,12 +50,19 @@ pub enum FileListMessage {
     StatusFilterChanged(Option<ReadingStatus>),
     ClearStatusFilter,
     TagFilter(TagFilterMessage),
+    FilesComponent(FilesMessage),
     Out(FileListOutput),
 }
 
 impl From<TagFilterMessage> for FileListMessage {
     fn from(value: TagFilterMessage) -> Self {
         Self::TagFilter(value)
+    }
+}
+
+impl From<FilesMessage> for FileListMessage {
+    fn from(value: FilesMessage) -> Self {
+        Self::FilesComponent(value)
     }
 }
 
@@ -108,7 +116,7 @@ impl FileList {
         (
             Self {
                 client,
-                archive: FileState::default(),
+                archive: FilesComponent::default(),
                 search_query: String::new(),
                 is_filtering: false,
                 search_input_id: widget::Id::unique(),
@@ -207,6 +215,7 @@ impl FileList {
         let column = column.push(
             self.archive
                 .view()
+                .map(Into::into)
                 .apply(widget::container)
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -260,7 +269,7 @@ impl FileList {
         tracing::debug!("received: {message:?}");
         match message {
             FileListMessage::LoadArchive => {
-                self.archive = FileState::Loading;
+                self.archive.files = FileState::Loading;
                 let client = self.client.clone();
                 task::future(async move {
                     match client.get_files().await {
@@ -277,11 +286,11 @@ impl FileList {
                     &self.tag_filter.allow_tags,
                     &self.tag_filter.deny_tags,
                 );
-                self.archive = FileState::Loaded(files);
+                self.archive.files = FileState::Loaded(files);
                 Task::none()
             }
             FileListMessage::LoadingFailed(error) => {
-                self.archive = FileState::Failed(error);
+                self.archive.files = FileState::Failed(error);
                 Task::none()
             }
             FileListMessage::SearchChanged(query) => {
@@ -290,7 +299,7 @@ impl FileList {
                 self.debounce_counter += 1;
 
                 // Only start debounce timer if files have been loaded
-                if self.archive.is_loaded() {
+                if self.archive.files.is_loaded() {
                     self.start_debounce_timer(self.debounce_counter, query)
                 } else {
                     Task::none()
@@ -302,14 +311,14 @@ impl FileList {
                 self.debounce_counter += 1;
 
                 // Immediately filter to show all files (no debounce needed for clearing)
-                if self.archive.is_loaded() && !self.is_filtering {
+                if self.archive.files.is_loaded() && !self.is_filtering {
                     self.is_filtering = true;
                     self.start_background_filtering(
                         String::new(),
                         self.status_filter,
                         self.tag_filter.allow_tags.clone(),
                         self.tag_filter.deny_tags.clone(),
-                        self.archive.unwrap().all_files(),
+                        self.archive.files.unwrap().all_files(),
                     )
                 } else {
                     Task::none()
@@ -324,7 +333,7 @@ impl FileList {
             }
             FileListMessage::DebounceTimeout(counter, query) => {
                 // Only proceed if this timeout matches the current counter (not superseded by newer typing)
-                if self.archive.is_loaded()
+                if self.archive.files.is_loaded()
                     && counter == self.debounce_counter
                     && !self.is_filtering
                 {
@@ -335,7 +344,7 @@ impl FileList {
                             self.status_filter,
                             self.tag_filter.allow_tags.clone(),
                             self.tag_filter.deny_tags.clone(),
-                            self.archive.unwrap().all_files(),
+                            self.archive.files.unwrap().all_files(),
                         ),
                         task::message(FileListMessage::FocusSearchInput),
                     ])
@@ -355,14 +364,14 @@ impl FileList {
                 self.debounce_counter += 1;
 
                 // Immediately filter with new status (no debounce needed for status changes)
-                if self.archive.is_loaded() && !self.is_filtering {
+                if self.archive.files.is_loaded() && !self.is_filtering {
                     self.is_filtering = true;
                     self.start_background_filtering(
                         self.search_query.clone(),
                         self.status_filter,
                         self.tag_filter.allow_tags.clone(),
                         self.tag_filter.deny_tags.clone(),
-                        self.archive.unwrap().all_files(),
+                        self.archive.files.unwrap().all_files(),
                     )
                 } else {
                     Task::none()
@@ -374,14 +383,14 @@ impl FileList {
                 self.debounce_counter += 1;
 
                 // Immediately filter to show all statuses (no debounce needed for clearing)
-                if self.archive.is_loaded() && !self.is_filtering {
+                if self.archive.files.is_loaded() && !self.is_filtering {
                     self.is_filtering = true;
                     self.start_background_filtering(
                         self.search_query.clone(),
                         None,
                         self.tag_filter.allow_tags.clone(),
                         self.tag_filter.deny_tags.clone(),
-                        self.archive.unwrap().all_files(),
+                        self.archive.files.unwrap().all_files(),
                     )
                 } else {
                     Task::none()
@@ -394,14 +403,14 @@ impl FileList {
                         self.debounce_counter += 1;
 
                         // Immediately filter to show all statuses (no debounce needed for clearing)
-                        if self.archive.is_loaded() && !self.is_filtering {
+                        if self.archive.files.is_loaded() && !self.is_filtering {
                             self.is_filtering = true;
                             self.start_background_filtering(
                                 self.search_query.clone(),
                                 None,
                                 self.tag_filter.allow_tags.clone(),
                                 self.tag_filter.deny_tags.clone(),
-                                self.archive.unwrap().all_files(),
+                                self.archive.files.unwrap().all_files(),
                             )
                         } else {
                             Task::none()
@@ -412,6 +421,13 @@ impl FileList {
                     .tag_filter
                     .update(msg)
                     .map(move |action| action.map(Into::into)),
+            },
+            FileListMessage::FilesComponent(msg) => match msg {
+                FilesMessage::Out(msg) => match msg {
+                    FilesOutput::FileClicked(file) => cosmic::task::message(FileListMessage::Out(
+                        FileListOutput::OpenFileDetails(file),
+                    )),
+                },
             },
             FileListMessage::Out(_) => {
                 panic!("should be handled by the parent component")
