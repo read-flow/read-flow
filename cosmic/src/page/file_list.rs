@@ -25,7 +25,6 @@ pub struct FileList {
     is_filtering: bool,                   // Track if filtering is in progress
     search_query: String,                 // The search query string
     search_input_id: widget::Id,          // Unique ID for focus management
-    search_input_is_focussed: bool,       // Flag to indicate search input should be focused
     debounce_counter: u32,                // Counter to track debounce state
     status_filter: Option<ReadingStatus>, // Optional reading status filter
     tag_filter: TagFilter,                // Tag Filter component
@@ -75,12 +74,6 @@ impl FileList {
         &self.client
     }
 
-    /// Attempt to focus the search input using various cosmic framework approaches
-    /// This method contains multiple approaches that could work depending on cosmic's API
-    fn try_focus_search_input(&self) -> Task<Action<FileListMessage>> {
-        widget::text_input::focus(self.search_input_id.clone())
-    }
-
     /// Start debounce timer - waits for user to stop typing before filtering
     fn start_debounce_timer(&self, counter: u32, query: String) -> Task<Action<FileListMessage>> {
         task::future(async move {
@@ -120,7 +113,6 @@ impl FileList {
                 search_query: String::new(),
                 is_filtering: false,
                 search_input_id: widget::Id::unique(),
-                search_input_is_focussed: false,
                 debounce_counter: 0,
                 status_filter: None,
                 tag_filter,
@@ -307,29 +299,13 @@ impl FileList {
             }
             FileListMessage::ClearSearch => {
                 self.search_query.clear();
-                // Reset debounce counter to cancel any pending timers
-                self.debounce_counter += 1;
-
                 // Immediately filter to show all files (no debounce needed for clearing)
-                if self.archive.files.is_loaded() && !self.is_filtering {
-                    self.is_filtering = true;
-                    self.start_background_filtering(
-                        String::new(),
-                        self.status_filter,
-                        self.tag_filter.allow_tags.clone(),
-                        self.tag_filter.deny_tags.clone(),
-                        self.archive.files.unwrap().all_files(),
-                    )
-                } else {
-                    Task::none()
-                }
+                self.filter_now()
             }
             FileListMessage::FilteringComplete(filtered_files) => {
                 self.is_filtering = false;
                 self.archive.set_visible(filtered_files);
-                // Set flag to focus search input after re-render
-                self.search_input_is_focussed = true;
-                task::message(FileListMessage::FocusSearchInput)
+                Task::none()
             }
             FileListMessage::DebounceTimeout(counter, query) => {
                 // Only proceed if this timeout matches the current counter (not superseded by newer typing)
@@ -354,67 +330,23 @@ impl FileList {
                 }
             }
             FileListMessage::FocusSearchInput => {
-                self.search_input_is_focussed = false;
-                // Use the helper method that contains all the focus approaches to try
-                self.try_focus_search_input()
+                widget::text_input::focus(self.search_input_id.clone())
             }
             FileListMessage::StatusFilterChanged(status) => {
                 self.status_filter = status;
-                // Increment debounce counter to invalidate previous timers
-                self.debounce_counter += 1;
-
                 // Immediately filter with new status (no debounce needed for status changes)
-                if self.archive.files.is_loaded() && !self.is_filtering {
-                    self.is_filtering = true;
-                    self.start_background_filtering(
-                        self.search_query.clone(),
-                        self.status_filter,
-                        self.tag_filter.allow_tags.clone(),
-                        self.tag_filter.deny_tags.clone(),
-                        self.archive.files.unwrap().all_files(),
-                    )
-                } else {
-                    Task::none()
-                }
+                self.filter_now()
             }
             FileListMessage::ClearStatusFilter => {
                 self.status_filter = None;
-                // Increment debounce counter to invalidate previous timers
-                self.debounce_counter += 1;
-
                 // Immediately filter to show all statuses (no debounce needed for clearing)
-                if self.archive.files.is_loaded() && !self.is_filtering {
-                    self.is_filtering = true;
-                    self.start_background_filtering(
-                        self.search_query.clone(),
-                        None,
-                        self.tag_filter.allow_tags.clone(),
-                        self.tag_filter.deny_tags.clone(),
-                        self.archive.files.unwrap().all_files(),
-                    )
-                } else {
-                    Task::none()
-                }
+                self.filter_now()
             }
             FileListMessage::TagFilter(msg) => match msg {
                 TagFilterMessage::Out(msg) => match msg {
                     TagFilterOutput::TagFiltersUpdated => {
-                        // Increment debounce counter to invalidate previous timers
-                        self.debounce_counter += 1;
-
-                        // Immediately filter to show all statuses (no debounce needed for clearing)
-                        if self.archive.files.is_loaded() && !self.is_filtering {
-                            self.is_filtering = true;
-                            self.start_background_filtering(
-                                self.search_query.clone(),
-                                None,
-                                self.tag_filter.allow_tags.clone(),
-                                self.tag_filter.deny_tags.clone(),
-                                self.archive.files.unwrap().all_files(),
-                            )
-                        } else {
-                            Task::none()
-                        }
+                        // Immediately filter to show all statuses (no debounce needed for tag filter changes)
+                        self.filter_now()
                     }
                 },
                 msg => self
@@ -432,6 +364,24 @@ impl FileList {
             FileListMessage::Out(_) => {
                 panic!("should be handled by the parent component")
             }
+        }
+    }
+
+    fn filter_now(&mut self) -> Task<Action<FileListMessage>> {
+        // Increment debounce counter to invalidate previous timers
+        self.debounce_counter += 1;
+
+        if self.archive.files.is_loaded() && !self.is_filtering {
+            self.is_filtering = true;
+            self.start_background_filtering(
+                self.search_query.clone(),
+                self.status_filter,
+                self.tag_filter.allow_tags.clone(),
+                self.tag_filter.deny_tags.clone(),
+                self.archive.files.unwrap().all_files(),
+            )
+        } else {
+            Task::none()
         }
     }
 }

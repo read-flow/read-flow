@@ -2,11 +2,11 @@
 
 use std::path::Path;
 
-use cosmic::iced::Length;
-use cosmic::widget;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
+use cosmic::iced::Length;
+use cosmic::widget;
 
 use archive_organizer::api::File;
 use cosmic::Task;
