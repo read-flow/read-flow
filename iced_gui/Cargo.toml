@@ -12,14 +12,11 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap = { workspace = true, features = ["derive"] }
-futures.workspace = true
 iced = { workspace = true, features = ["tokio"] }
-iced_aw = { workspace = true, default-features = false, features = ["grid", "wrap"] }
 indexmap = { workspace = true, features = ["serde"] }
 itertools.workspace = true
 regex.workspace = true
 rfd.workspace = true
-serde = { workspace = true, features = ["derive"] }
 strum = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "process"] }
