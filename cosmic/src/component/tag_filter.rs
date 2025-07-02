@@ -116,7 +116,7 @@ impl TagFilter {
                 .iter()
                 .fold(widget::row().spacing(5), |row, tag| {
                     row.push(
-                        widget::button::standard(format!("✕ {}", tag))
+                        widget::button::standard(format!("✕ {tag}"))
                             .on_press(remove_message_fn(tag.clone())),
                     )
                 });
@@ -202,7 +202,7 @@ impl TagFilter {
                 cosmic::task::future(async move {
                     match client.get_files_tags().await {
                         Ok(tags) => TagFilterMessage::AllTagsLoaded(Ok(tags)),
-                        Err(err) => TagFilterMessage::AllTagsLoaded(Err(format!("{}", err))),
+                        Err(err) => TagFilterMessage::AllTagsLoaded(Err(format!("{err}"))),
                     }
                 })
             }

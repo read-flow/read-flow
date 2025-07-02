@@ -34,23 +34,14 @@ itertools.workspace = true
 mime.workspace = true
 r2d2.workspace = true
 rayon.workspace = true
-regex.workspace = true
 reqwest = { workspace = true, features = ["json", "stream", "multipart"] }
 serde = { workspace = true, features = ["derive"] }
-serde_with = { workspace = true, features = ["indexmap"] }
 strum = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "process"] }
 tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
 tracing.workspace = true
 url.workspace = true
-
-# Auth dependencies
-argon2 = "0.5.3"
-jsonwebtoken = "9.2.0"
-rand = "0.8.5"
-chrono = { version = "0.4.31", features = ["serde"] }
-serde_json = "1.0.114"
 
 rocket = { workspace = true, optional = true, features = ["http2", "json"] }
 rocket_cors = { workspace = true, optional = true }

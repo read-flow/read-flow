@@ -29,7 +29,7 @@ pub enum SettingsError {
 
 impl From<figment::Error> for SettingsError {
     fn from(source: figment::Error) -> Self {
-	SettingsError::Figment(Box::new(source))
+        SettingsError::Figment(Box::new(source))
     }
 }
 

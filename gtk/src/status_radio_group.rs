@@ -83,7 +83,7 @@ impl StatusRadioGroup {
         container.append(&radio_container);
 
         // Create the status label
-        let status_label = gtk::Label::new(Some(&format!("Current status: {:?}", current_status)));
+        let status_label = gtk::Label::new(Some(&format!("Current status: {current_status:?}")));
         status_label.set_margin_top(4);
         status_label.add_css_class("caption");
         status_label.add_css_class("dim-label");
@@ -134,7 +134,7 @@ impl StatusRadioGroup {
             ReadingStatus::Read => self.read_radio.set_active(true),
         }
         self.status_label
-            .set_label(&format!("Current status: {:?}", status));
+            .set_label(&format!("Current status: {status:?}"));
     }
 
     /// Get the current status

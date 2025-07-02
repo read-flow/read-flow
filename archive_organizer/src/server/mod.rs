@@ -1,4 +1,3 @@
-mod auth;
 mod authn;
 
 use std::{io, path::Path};
@@ -105,50 +104,11 @@ pub fn create_cors() -> Cors {
     cors.to_cors().unwrap()
 }
 
-async fn create_default_admin_if_needed(application_module: &ApplicationModule) {
-    // Check if any users exist
-    let auth_service = application_module.auth_service();
-
-    // Create a temporary admin user to check if any users exist
-    let temp_admin = crate::auth::User {
-        id: 0,
-        username: "temp_admin".to_string(),
-        password_hash: "".to_string(),
-        email: None,
-        role: "admin".to_string(),
-        created_at: chrono::Utc::now().naive_utc(),
-        last_login: None,
-    };
-
-    // Try to list users
-    match auth_service.list_users(temp_admin.id).await {
-        Ok(users) if users.is_empty() => {
-            // No users exist, create a default admin
-            tracing::info!("No users found, creating default admin user");
-            match auth_service
-                .register_user("admin", "admin", None, crate::auth::Role::Admin)
-                .await
-            {
-                Ok(_) => tracing::info!(
-                    "Created default admin user with username 'admin' and password 'admin'"
-                ),
-                Err(e) => tracing::error!("Failed to create default admin user: {}", e),
-            }
-        }
-        Ok(_) => tracing::info!("Users already exist, skipping default admin creation"),
-        Err(e) => tracing::error!("Error checking for existing users: {}", e),
-    }
-}
-
 #[rocket::launch]
 pub fn serve() -> _ {
     let figment = settings::decorate(rocket::Config::figment());
 
     let application_module = ApplicationModule::from_figment(&figment).unwrap();
-
-    // Create a Tokio runtime for async operations
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(create_default_admin_if_needed(&application_module));
 
     let cors = create_cors();
 
@@ -163,12 +123,6 @@ pub fn serve() -> _ {
         get_files_tags,
         download_file,
         upload_file,
-        // Auth routes
-        auth::login,
-        auth::register,
-        auth::create_api_key,
-        auth::list_api_keys,
-        auth::list_users,
         delete_file,
     ];
 

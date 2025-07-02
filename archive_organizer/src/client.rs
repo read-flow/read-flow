@@ -146,7 +146,7 @@ impl FileDataSource for FilesClient {
 
     fn display_name(&self) -> String {
         let host = self.base_url.host_str().unwrap_or("Unknown");
-        format!("Remote: {}", host)
+        format!("Remote: {host}")
     }
 
     async fn status(&self) -> Result<Status, Error> {

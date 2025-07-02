@@ -187,7 +187,7 @@ impl FileDetails {
                     match client.update_file(updated_file).await {
                         Ok(()) => FileDetailsMessage::ReadingStatusUpdated(Ok(())),
                         Err(err) => {
-                            FileDetailsMessage::ReadingStatusUpdated(Err(format!("{}", err)))
+                            FileDetailsMessage::ReadingStatusUpdated(Err(format!("{err}")))
                         }
                     }
                 })
@@ -199,7 +199,7 @@ impl FileDetails {
                         task::message(FileDetailsMessage::RefreshFile)
                     }
                     Err(err) => {
-                        tracing::error!("Failed to update reading status: {}", err);
+                        tracing::error!("Failed to update reading status: {err}");
                         task::none()
                     }
                 }
@@ -210,7 +210,7 @@ impl FileDetails {
                 task::future(async move {
                     match client.get_files_tags().await {
                         Ok(tags) => FileDetailsMessage::AllTagsLoaded(Ok(tags)),
-                        Err(err) => FileDetailsMessage::AllTagsLoaded(Err(format!("{}", err))),
+                        Err(err) => FileDetailsMessage::AllTagsLoaded(Err(format!("{err}"))),
                     }
                 })
             }
@@ -254,7 +254,7 @@ impl FileDetails {
                 task::future(async move {
                     match client.add_file_tags(id, vec![tag]).await {
                         Ok(tags) => FileDetailsMessage::TagsAdded(Ok(tags)),
-                        Err(err) => FileDetailsMessage::TagsAdded(Err(format!("{}", err))),
+                        Err(err) => FileDetailsMessage::TagsAdded(Err(format!("{err}"))),
                     }
                 })
             }
@@ -282,7 +282,7 @@ impl FileDetails {
                 task::future(async move {
                     match client.delete_file_tags(id, vec![tag]).await {
                         Ok(()) => FileDetailsMessage::TagsRemoved(Ok(())),
-                        Err(err) => FileDetailsMessage::TagsRemoved(Err(format!("{}", err))),
+                        Err(err) => FileDetailsMessage::TagsRemoved(Err(format!("{err}"))),
                     }
                 })
             }
@@ -305,7 +305,7 @@ impl FileDetails {
                 task::future(async move {
                     match client.get_file(id).await {
                         Ok(file) => FileDetailsMessage::FileRefreshed(Ok(file)),
-                        Err(err) => FileDetailsMessage::FileRefreshed(Err(format!("{}", err))),
+                        Err(err) => FileDetailsMessage::FileRefreshed(Err(format!("{err}"))),
                     }
                 })
             }

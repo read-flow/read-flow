@@ -352,7 +352,7 @@ where
                             gtk::DialogFlags::MODAL,
                             gtk::MessageType::Error,
                             gtk::ButtonsType::Ok,
-                            format!("Failed to delete file: {}", e),
+                            format!("Failed to delete file: {e}"),
                         );
                         error_dialog.set_title(Some("Error"));
                         error_dialog.connect_response(|dialog, _| {
@@ -419,7 +419,7 @@ where
                             gtk::DialogFlags::MODAL,
                             gtk::MessageType::Error,
                             gtk::ButtonsType::Ok,
-                            format!("Failed to refresh duplicates list: {}", e),
+                            format!("Failed to refresh duplicates list: {e}"),
                         );
                         error_dialog.set_title(Some("Error"));
                         error_dialog.connect_response(|dialog, _| {

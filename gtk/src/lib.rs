@@ -1,7 +1,4 @@
 pub mod app;
-// We'll implement this in a future update
-// pub mod duplicates_dialog;
-pub mod auth_management;
 pub mod duplicates_page;
 pub mod file_box;
 pub mod file_details;

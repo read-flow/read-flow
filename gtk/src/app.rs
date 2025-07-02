@@ -17,7 +17,6 @@ use std::sync::Arc;
 use tracing;
 use url::Url;
 
-use crate::auth_management::{AuthManagementDialog, AuthOutput};
 use crate::duplicates_page::{DuplicatesPage, DuplicatesPageInit, DuplicatesPageOutput};
 use crate::file_list::{FileList, FileListInput};
 use crate::settings_dialog::{SettingsDialog, SettingsDialogOutput};
@@ -44,7 +43,6 @@ pub struct App {
     remote_file_lists: IndexMap<Url, AsyncController<FileList<FilesClient>>>,
     file_list_selector: FileListSelector,
     settings_dialog: Option<AsyncController<SettingsDialog>>,
-    auth_dialog: Option<AsyncController<AuthManagementDialog>>,
     // Duplicates pages
     duplicates_local: Option<AsyncController<DuplicatesPage<DbClient>>>,
     duplicates_remote: IndexMap<Url, AsyncController<DuplicatesPage<FilesClient>>>,
@@ -108,8 +106,6 @@ impl AsyncComponent for App {
                         let menu = gtk::gio::Menu::new();
                         let settings_item = gtk::gio::MenuItem::new(Some("Settings"), Some("app.settings"));
                         menu.append_item(&settings_item);
-                        let admin_item = gtk::gio::MenuItem::new(Some("Admin"), Some("app.admin"));
-                        menu.append_item(&admin_item);
                         menu
                     }),
                 },
@@ -250,17 +246,9 @@ impl AsyncComponent for App {
             sender_clone.send(AppMessage::OpenSettings).unwrap();
         });
 
-        let admin_action = gtk::gio::SimpleAction::new("admin", None);
-        let sender_clone = sender.input_sender().clone();
-        admin_action.connect_activate(move |_, _| {
-            tracing::info!("Admin menu item clicked");
-            sender_clone.send(AppMessage::OpenAuthManagement).unwrap();
-        });
-
         // Add actions to the application
         let app = gtk::gio::Application::default().expect("Application not found");
         app.add_action(&settings_action);
-        app.add_action(&admin_action);
 
         let model = App {
             application_module,
@@ -268,7 +256,6 @@ impl AsyncComponent for App {
             remote_file_lists,
             file_list_selector: FileListSelector::LocalFiles,
             settings_dialog: None,
-            auth_dialog: None,
             duplicates_local: None,
             duplicates_remote: IndexMap::new(),
         };
@@ -373,22 +360,6 @@ impl AsyncComponent for App {
                 // Clean up the settings dialog
                 self.settings_dialog = None;
             }
-            AppMessage::OpenAuthManagement => {
-                tracing::info!("Handling OpenAuthManagement message");
-                // Create and show the authentication management dialog
-                let auth_dialog = AuthManagementDialog::builder()
-                    .launch(self.application_module.clone())
-                    .forward(sender.input_sender(), |msg| match msg {
-                        AuthOutput::Closed => AppMessage::AuthManagementClosed,
-                    });
-
-                tracing::info!("Auth dialog created: {:?}", auth_dialog);
-                self.auth_dialog = Some(auth_dialog);
-            }
-            AppMessage::AuthManagementClosed => {
-                // Clean up the authentication management dialog
-                self.auth_dialog = None;
-            }
             AppMessage::OpenDuplicatesTab(selector, duplicates) => {
                 tracing::debug!(
                     "Received OpenDuplicatesTab message with {} duplicate groups for selector: {:?}",
@@ -451,8 +422,7 @@ impl AsyncComponent for App {
 
                                     // Add the label
                                     let label = gtk::Label::new(Some(&format!(
-                                        "Duplicates: {}",
-                                        display_name
+                                        "Duplicates: {display_name}",
                                     )));
                                     tab_box.append(&label);
 
@@ -519,8 +489,7 @@ impl AsyncComponent for App {
                                             gtk::MessageType::Error,
                                             gtk::ButtonsType::Ok,
                                             format!(
-                                                "Could not find remote client for URL: {}",
-                                                url
+                                                "Could not find remote client for URL: {url}",
                                             ),
                                         );
                                         dialog.set_title(Some("Error"));
@@ -573,8 +542,7 @@ impl AsyncComponent for App {
 
                                     // Add the label
                                     let label = gtk::Label::new(Some(&format!(
-                                        "Duplicates: {}",
-                                        display_name
+                                        "Duplicates: {display_name}",
                                     )));
                                     tab_box.append(&label);
 
@@ -788,8 +756,6 @@ pub enum AppMessage {
     OpenSettings,
     SettingsDialogClosed,
     SettingsSaved(Arc<archive_organizer::settings::Settings>),
-    OpenAuthManagement,
-    AuthManagementClosed,
     OpenDuplicatesTab(FileListSelector, Vec<Vec<File>>),
     CloseDuplicatesTab(FileListSelector),
     DuplicatesFileDeleted(FileListSelector),

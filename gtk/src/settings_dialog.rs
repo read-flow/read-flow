@@ -667,7 +667,7 @@ impl AsyncComponent for SettingsDialog {
                         tags.join(", ")
                     ));
                 } else {
-                    directories_text.push_str(&format!("{} = {}, {}\n", path, action, inherit));
+                    directories_text.push_str(&format!("{path} = {action}, {inherit}\n"));
                 }
             }
             buffer.set_text(&directories_text);

@@ -21,7 +21,7 @@ pub enum ReadingStatus {
 
 impl Display for ReadingStatus {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -33,7 +33,7 @@ impl FromStr for ReadingStatus {
             "unread" => Ok(Self::Unread),
             "reading" => Ok(Self::Reading),
             "read" => Ok(Self::Read),
-            _ => Err(format!("Invalid reading status: {}", s)),
+            _ => Err(format!("Invalid reading status: {s}")),
         }
     }
 }

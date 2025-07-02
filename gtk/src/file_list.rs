@@ -152,7 +152,7 @@ where
             gtk::DialogFlags::MODAL,
             gtk::MessageType::Warning,
             gtk::ButtonsType::None,
-            format!("Add tag \"{}\" to all displayed files?", tag),
+            format!("Add tag \"{tag}\" to all displayed files?"),
         );
 
         // Set dialog title
@@ -915,7 +915,7 @@ where
             Err(e) => {
                 tracing::error!("Error loading files: {}", e);
                 // Create a user-friendly error message
-                let error_msg = format!("Could not connect to the file server: {}", e);
+                let error_msg = format!("Could not connect to the file server: {e}");
                 (Vec::new(), Some(error_msg))
             }
         };
@@ -1073,7 +1073,7 @@ where
 
                         // Set the error message and offline state
                         self.error_message =
-                            Some(format!("Could not connect to the file server: {}", e));
+                            Some(format!("Could not connect to the file server: {e}"));
                         self.is_offline = true;
                     }
                 }
