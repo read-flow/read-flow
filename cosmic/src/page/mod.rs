@@ -247,6 +247,9 @@ fn map_file_details_message(id: i32, msg: FileDetailsMessage) -> PageMessage {
     match msg {
         FileDetailsMessage::Out(message) => match message {
             FileDetailsOutput::Close(id) => PageMessage::CloseFileDetails(id),
+            FileDetailsOutput::RefreshFile(selector, file) => {
+                PageMessage::Files(selector, FileListMessage::RefreshFile(file))
+            }
         },
         msg => PageMessage::FileDetails(id, msg),
     }

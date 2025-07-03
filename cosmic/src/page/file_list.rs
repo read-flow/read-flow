@@ -41,6 +41,7 @@ pub enum FileListMessage {
     LoadArchive,
     Loaded(Vec<File>),
     LoadingFailed(String),
+    RefreshFile(File),
     SearchChanged(String),
     ClearSearch,
     FilteringComplete(Vec<File>),
@@ -284,6 +285,10 @@ impl FileList {
             FileListMessage::LoadingFailed(error) => {
                 self.archive.files = FileState::Failed(error);
                 Task::none()
+            }
+            FileListMessage::RefreshFile(file) => {
+                self.archive.files.unwrap_mut().update_file_by_id(file);
+                self.filter_now()
             }
             FileListMessage::SearchChanged(query) => {
                 self.search_query = query.clone();

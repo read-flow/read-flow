@@ -1,3 +1,4 @@
+use crate::client::ClientSelector;
 use crate::fl;
 use crate::state::LoadedState;
 use crate::{app::ContextView, client::Client};
@@ -34,11 +35,11 @@ pub struct FileDetails {
 #[derive(Debug, Clone)]
 pub enum FileDetailsOutput {
     Close(i32),
+    RefreshFile(ClientSelector, File),
 }
 
 #[derive(Debug, Clone)]
 pub enum FileDetailsMessage {
-    Out(FileDetailsOutput),
     LoadAllTags,
     AllTagsLoaded(Result<Vec<String>, String>),
     UpdateNewTag(String),
@@ -51,6 +52,9 @@ pub enum FileDetailsMessage {
     UpdateReadingStatus(ReadingStatus),
     ReadingStatusUpdated(Result<(), String>),
     OpenFile,
+
+    // Message intended for the parent module
+    Out(FileDetailsOutput),
 }
 
 impl FileDetails {
@@ -328,20 +332,23 @@ impl FileDetails {
                     }
                 })
             }
-            FileDetailsMessage::FileRefreshed(result) => {
-                match result {
-                    Ok(Some(file)) => {
-                        self.file = file;
-                    }
-                    Ok(None) => {
-                        tracing::warn!("File not found during refresh");
-                    }
-                    Err(err) => {
-                        tracing::warn!("Failed to refresh file: {}", err);
-                    }
+            FileDetailsMessage::FileRefreshed(result) => match result {
+                Ok(Some(file)) => {
+                    self.file = file.clone();
+                    task::message(FileDetailsMessage::Out(FileDetailsOutput::RefreshFile(
+                        self.client.selector(),
+                        file,
+                    )))
                 }
-                Task::none()
-            }
+                Ok(None) => {
+                    tracing::warn!("File not found during refresh");
+                    Task::none()
+                }
+                Err(err) => {
+                    tracing::warn!("Failed to refresh file: {}", err);
+                    Task::none()
+                }
+            },
         }
     }
 }

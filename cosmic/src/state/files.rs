@@ -24,6 +24,16 @@ impl Files {
         self.visible_files = Content::with_items(files);
     }
 
+    pub fn update_file_by_id(&mut self, updated_file: File) {
+        if let Some(file) = self
+            .all_files
+            .iter_mut()
+            .find(|file| file.id == updated_file.id)
+        {
+            *file = updated_file;
+        }
+    }
+
     pub fn all_files(&self) -> Vec<File> {
         self.all_files.clone()
     }
