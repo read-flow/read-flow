@@ -107,6 +107,7 @@ impl FileDetails {
                 .push(
                     widget::button::icon(widget::icon::from_name("window-close-symbolic"))
                         .on_press(FileDetailsMessage::Out(FileDetailsOutput::Close(self.id)))
+                        .tooltip(fl!("file-details-close")),
                 )
                 .into(),
         ]);
@@ -375,7 +376,8 @@ impl FileDetails {
             for tag in &self.file.tags {
                 let tag_button = widget::button::text(tag.clone())
                     .trailing_icon(widget::icon::from_name("edit-delete-symbolic"))
-                    .on_press(FileDetailsMessage::RemoveTag(tag.clone()));
+                    .on_press(FileDetailsMessage::RemoveTag(tag.clone()))
+                    .tooltip(fl!("file-details-remove-tag"));
 
                 tag_row = tag_row.push(tag_button);
             }

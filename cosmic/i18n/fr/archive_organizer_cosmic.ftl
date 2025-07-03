@@ -47,6 +47,8 @@ file-details-loading-tags = Chargement des étiquettes...
 file-details-size-bytes = { $size } octets
 file-details-select-status = Sélectionner le statut
 file-details-open-file = Ouvrir le Fichier
+file-details-close = Fermer
+file-details-remove-tag = Supprimer l'étiquette
 
 # Page messages
 page-not-found = ⚠ Non trouvé

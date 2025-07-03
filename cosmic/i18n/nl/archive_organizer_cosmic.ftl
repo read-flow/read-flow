@@ -47,6 +47,8 @@ file-details-loading-tags = Tags laden...
 file-details-size-bytes = { $size } bytes
 file-details-select-status = Selecteer status
 file-details-open-file = Bestand Openen
+file-details-close = Sluiten
+file-details-remove-tag = Tag verwijderen
 
 # Page messages
 page-not-found = ⚠ Niet gevonden

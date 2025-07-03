@@ -47,6 +47,8 @@ file-details-loading-tags = Loading tags...
 file-details-size-bytes = { $size } bytes
 file-details-select-status = Select status
 file-details-open-file = Open File
+file-details-close = Close
+file-details-remove-tag = Remove tag
 
 # Page messages
 page-not-found = ⚠ Not found
