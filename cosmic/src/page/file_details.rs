@@ -197,9 +197,7 @@ impl FileDetails {
                 task::future(async move {
                     match client.update_file(updated_file).await {
                         Ok(()) => FileDetailsMessage::ReadingStatusUpdated(Ok(())),
-                        Err(err) => {
-                            FileDetailsMessage::ReadingStatusUpdated(Err(format!("{err}")))
-                        }
+                        Err(err) => FileDetailsMessage::ReadingStatusUpdated(Err(format!("{err}"))),
                     }
                 })
             }
