@@ -50,6 +50,7 @@ pub enum FileDetailsMessage {
     FileRefreshed(Result<Option<File>, String>),
     UpdateReadingStatus(ReadingStatus),
     ReadingStatusUpdated(Result<(), String>),
+    OpenFile,
 }
 
 impl FileDetails {
@@ -96,8 +97,17 @@ impl FileDetails {
                 .size(24)
                 .width(Length::Fill)
                 .into(),
-            widget::button::icon(widget::icon::from_name("window-close-symbolic"))
-                .on_press(FileDetailsMessage::Out(FileDetailsOutput::Close(self.id)))
+            Row::new()
+                .spacing(8)
+                .push(
+                    widget::button::icon(widget::icon::from_name("document-open-symbolic"))
+                        .on_press(FileDetailsMessage::OpenFile)
+                        .tooltip(fl!("file-details-open-file")),
+                )
+                .push(
+                    widget::button::icon(widget::icon::from_name("window-close-symbolic"))
+                        .on_press(FileDetailsMessage::Out(FileDetailsOutput::Close(self.id)))
+                )
                 .into(),
         ]);
 
@@ -203,6 +213,16 @@ impl FileDetails {
                         task::none()
                     }
                 }
+            }
+            FileDetailsMessage::OpenFile => {
+                let file = self.file.clone();
+                let client = self.client.clone();
+                task::future(async move {
+                    if let Err(e) = client.xdg_open_file(file).await {
+                        tracing::error!("Failed to open file: {e}");
+                    }
+                    FileDetailsMessage::RefreshFile
+                })
             }
             FileDetailsMessage::LoadAllTags => {
                 self.tags = TagsState::Loading;

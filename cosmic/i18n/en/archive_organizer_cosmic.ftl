@@ -46,6 +46,7 @@ file-details-add = Add
 file-details-loading-tags = Loading tags...
 file-details-size-bytes = { $size } bytes
 file-details-select-status = Select status
+file-details-open-file = Open File
 
 # Page messages
 page-not-found = ⚠ Not found
