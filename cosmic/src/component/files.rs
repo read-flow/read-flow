@@ -2,11 +2,12 @@
 
 use std::path::Path;
 
+use cosmic::iced::Length;
+use cosmic::widget;
+use cosmic::widget::Row;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
-use cosmic::iced::Length;
-use cosmic::widget;
 
 use archive_organizer::api::File;
 use cosmic::Task;
@@ -61,13 +62,21 @@ impl FilesComponent {
 }
 
 fn view_file<'a>(file: &'a File) -> Element<'a, FilesMessage> {
-    display_path(&file.path)
-        .apply(widget::button::custom)
-        .on_press(FilesMessage::Out(FilesOutput::FileClicked(
-            // TODO: should be output message of component.
-            file.clone(),
-        )))
-        .into()
+    let button = widget::button::custom(
+        Row::new()
+            .push(
+                widget::icon::from_name("x-office-document-symbolic")
+                    .size(16)
+                    .icon(),
+            )
+            .push(display_path(&file.path))
+            .padding([0, 10])
+            .spacing(10)
+            .align_y(cosmic::iced::Alignment::Center),
+    )
+    .on_press(FilesMessage::Out(FilesOutput::FileClicked(file.clone())));
+
+    button.into()
 }
 
 fn display_path<'a>(path: &'a str) -> Element<'a, FilesMessage> {
