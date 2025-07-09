@@ -16,6 +16,7 @@ use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::task;
 use cosmic::{Action, widget};
 use cosmic::{Apply, Element, Task};
+use cosmic::{cosmic_theme, theme};
 use std::collections::HashSet;
 
 pub struct FileList {
@@ -130,9 +131,11 @@ impl FileList {
     }
 
     pub fn view(&self) -> Element<FileListMessage> {
-        let column = widget::column().spacing(10);
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
-        let header_row = widget::row().align_y(Vertical::Center).spacing(10);
+        let column = widget::column().spacing(space_s);
+
+        let header_row = widget::row().align_y(Vertical::Center).spacing(space_s);
 
         let header_row = header_row.push(
             widget::button::icon(widget::icon::from_name("open-menu-symbolic"))
@@ -219,16 +222,20 @@ impl FileList {
     }
 
     pub fn view_context(&self) -> ContextView<FileListMessage> {
-        let mut column = widget::column().spacing(10);
+        let cosmic_theme::Spacing {
+            space_s, space_xs, ..
+        } = theme::active().cosmic().spacing;
+
+        let mut column = widget::column().spacing(space_s);
 
         // Filters Section
         let mut filters_section = widget::column()
-            .spacing(10)
+            .spacing(space_s)
             .push(widget::text(fl!("file-list-filters-section")).size(18));
 
         // Reading Status Filter Subsection
         let status_subsection = widget::column()
-            .spacing(5)
+            .spacing(space_xs)
             .push(widget::text(fl!("file-list-filter-by-status")).size(16))
             .push(
                 iced::widget::pick_list(
@@ -252,7 +259,8 @@ impl FileList {
         filters_section = filters_section.push(status_subsection);
 
         // Add spacing between subsections
-        filters_section = filters_section.push(widget::Space::with_height(Length::Fixed(10.0)));
+        filters_section =
+            filters_section.push(widget::Space::with_height(Length::Fixed(space_s as f32)));
 
         // Tag Filter Subsection
         filters_section = filters_section.push(self.tag_filter.view().map(Into::into));

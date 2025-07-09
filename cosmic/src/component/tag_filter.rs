@@ -8,6 +8,7 @@ use cosmic::iced::Length;
 use cosmic::iced::widget::combo_box;
 use cosmic::widget;
 use cosmic::{Element, Task};
+use cosmic::{cosmic_theme, theme};
 use std::collections::HashSet;
 
 pub struct TagFilter {
@@ -55,9 +56,13 @@ impl TagFilter {
     }
 
     pub fn view(&self) -> Element<TagFilterMessage> {
+        let cosmic_theme::Spacing {
+            space_xs, space_s, ..
+        } = theme::active().cosmic().spacing;
+
         // Tag Filter Section
         let mut column = widget::column()
-            .spacing(5)
+            .spacing(space_xs)
             .push(widget::text(fl!("file-list-filter-by-tags")).size(16));
 
         // Allow Tags Section
@@ -72,7 +77,7 @@ impl TagFilter {
         );
 
         // Add spacing
-        column = column.push(widget::Space::with_height(Length::Fixed(10.0)));
+        column = column.push(widget::Space::with_height(Length::Fixed(space_s as f32)));
 
         // Deny Tags Section
         column = self.view_tag_filter_section(
@@ -107,6 +112,8 @@ impl TagFilter {
         add_message: TagFilterMessage,
         remove_message_fn: fn(String) -> TagFilterMessage,
     ) -> widget::Column<'a, TagFilterMessage> {
+        let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
+
         // Section title
         column = column.push(widget::text(section_title));
 
@@ -114,7 +121,7 @@ impl TagFilter {
         if !current_tags.is_empty() {
             let tags_row = current_tags
                 .iter()
-                .fold(widget::row().spacing(5), |row, tag| {
+                .fold(widget::row().spacing(space_xs), |row, tag| {
                     row.push(
                         widget::button::standard(format!("✕ {tag}"))
                             .on_press(remove_message_fn(tag.clone())),
@@ -136,6 +143,7 @@ impl TagFilter {
         update_message: fn(String) -> TagFilterMessage,
         add_message: TagFilterMessage,
     ) -> widget::Column<'a, TagFilterMessage> {
+        let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
         match &self.tags {
             TagsState::Loaded(Tags {
                 all_tags,
@@ -167,7 +175,8 @@ impl TagFilter {
                             .on_press(add_message)
                             .width(Length::Shrink);
 
-                        let input_row = widget::row().push(combo).push(add_button).spacing(5);
+                        let input_row =
+                            widget::row().push(combo).push(add_button).spacing(space_xs);
                         column.push(input_row)
                     }
                 }
