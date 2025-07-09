@@ -15,6 +15,7 @@ file-list-loading = Loading
 file-list-search-placeholder = Search files...
 file-list-filtering = Filtering...
 file-list-options-title = File List Options
+file-list-filters-section = Filters
 file-list-filter-by-status = Filter by Reading Status
 file-list-all-statuses = All statuses
 file-list-clear-filter = Clear Filter

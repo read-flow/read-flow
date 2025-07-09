@@ -13,7 +13,6 @@ use archive_organizer::api::{File, FileDataSource, ReadingStatus};
 use cosmic::iced;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced_widget;
 use cosmic::task;
 use cosmic::{Action, widget};
 use cosmic::{Apply, Element, Task};
@@ -222,8 +221,13 @@ impl FileList {
     pub fn view_context(&self) -> ContextView<FileListMessage> {
         let mut column = widget::column().spacing(10);
 
-        // Reading Status Filter Section
-        let status_section = widget::column()
+        // Filters Section
+        let mut filters_section = widget::column()
+            .spacing(10)
+            .push(widget::text(fl!("file-list-filters-section")).size(18));
+
+        // Reading Status Filter Subsection
+        let status_subsection = widget::column()
             .spacing(5)
             .push(widget::text(fl!("file-list-filter-by-status")).size(16))
             .push(
@@ -245,12 +249,20 @@ impl FileList {
                     .width(Length::Fill),
             );
 
-        column = column.push(status_section);
+        filters_section = filters_section.push(status_subsection);
 
-        // Add divider
-        column = column.push(iced_widget::horizontal_rule(1).width(Length::Fill));
+        // Add spacing between subsections
+        filters_section = filters_section.push(widget::Space::with_height(Length::Fixed(10.0)));
 
-        column = column.push(self.tag_filter.view().map(Into::into));
+        // Tag Filter Subsection
+        filters_section = filters_section.push(self.tag_filter.view().map(Into::into));
+
+        column = column.push(filters_section);
+
+        // Future sections can be added here with dividers
+        // Example:
+        // column = column.push(widget::horizontal_rule(1).width(Length::Fill));
+        // column = column.push(future_section);
 
         ContextView {
             title: fl!("file-list-options-title"),
