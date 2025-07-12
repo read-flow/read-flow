@@ -71,7 +71,11 @@ impl FileDetails {
     }
 
     pub fn display_name(&self) -> String {
-        self.file.path.clone()
+        Path::new(&self.file.path)
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Unknown")
+            .to_string()
     }
 
     pub fn view(&self) -> Element<FileDetailsMessage> {
