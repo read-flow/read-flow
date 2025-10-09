@@ -848,27 +848,46 @@ async function updateFileList() {
       const emptyStateCard = document.createElement("div");
       emptyStateCard.className =
         "bg-white rounded-lg shadow-md p-6 text-center hover:shadow-lg transition-shadow duration-300";
+
+      // Determine the type of empty state
+      const hasTagFilters = allowedTags.size > 0 || deniedTags.size > 0;
+      const hasSearchTerm = fileState.searchTerm.trim();
+
+      let title,
+        message,
+        buttons = "";
+
+      if (hasSearchTerm) {
+        title = "No files found";
+        message = `Try adjusting your search term '${fileState.searchTerm}' or clear filters`;
+        buttons = `
+          <button onclick="clearSearch()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors mr-2">
+            Clear Search
+          </button>
+        `;
+      } else if (hasTagFilters) {
+        title = "No files match your filters";
+        message =
+          "No files have the selected tag combination. Try adjusting your tag filters";
+        buttons = `
+          <button onclick="clearAll()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
+            Clear Tag Filters
+          </button>
+        `;
+      } else {
+        title = "No files available";
+        message = "Upload some files to get started";
+      }
+
       emptyStateCard.innerHTML = `
         <div class='text-gray-400 text-6xl mb-4'>📁</div>
         <h3 class='text-lg font-medium text-gray-900 mb-2'>
-          ${fileState.searchTerm.trim() ? "No files found" : "No files available"}
+          ${title}
         </h3>
         <p class='text-gray-600 mb-4'>
-          ${
-            fileState.searchTerm.trim()
-              ? `Try adjusting your search term '${fileState.searchTerm}' or clear filters`
-              : "Upload some files to get started"
-          }
+          ${message}
         </p>
-        ${
-          fileState.searchTerm.trim()
-            ? `
-                <button onclick="clearSearch()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
-                  Clear Search
-                </button>
-                `
-            : ""
-        }
+        ${buttons}
       `;
       fileListDiv.appendChild(emptyStateCard);
       return;
