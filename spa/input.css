@@ -1,3 +1,106 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Custom resize handle styles */
+#resize-handle {
+    position: relative;
+    z-index: 20;
+}
+
+#resize-handle:hover {
+    background-color: #3b82f6;
+}
+
+#resize-handle::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 3px;
+    height: 40px;
+    background: currentColor;
+    border-radius: 1px;
+    opacity: 0.7;
+}
+
+#resize-handle:hover::after {
+    opacity: 1;
+}
+
+/* Active resize state */
+body.resizing {
+    cursor: col-resize !important;
+    user-select: none !important;
+}
+
+body.resizing * {
+    cursor: col-resize !important;
+}
+
+/* Resize handle active state */
+#resize-handle.active {
+    background-color: #3b82f6 !important;
+}
+
+/* Details pane transition */
+#details-pane {
+    transition: width 0.2s ease-out;
+}
+
+/* Disable transitions during resize */
+body.resizing #details-pane {
+    transition: none !important;
+}
+
+/* Ensure details pane header has proper spacing */
+#details-pane .details-header {
+    flex-shrink: 0;
+    min-height: 60px;
+}
+
+/* Ensure close button stays visible */
+#close-details-pane {
+    flex-shrink: 0;
+    min-width: 32px;
+    min-height: 32px;
+}
+
+/* Improve resize handle visibility */
+#resize-handle {
+    border-left: 1px solid transparent;
+    border-right: 1px solid transparent;
+}
+
+#resize-handle:hover {
+    border-left: 1px solid #3b82f6;
+    border-right: 1px solid #3b82f6;
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+}
+
+/* Add subtle pulse animation when pane is first opened */
+@keyframes pulse-resize-hint {
+    0%,
+    100% {
+        opacity: 0.7;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+#resize-handle.hint {
+    animation: pulse-resize-hint 2s ease-in-out 3;
+}
+
+/* Better hover area */
+#resize-handle::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -4px;
+    right: -4px;
+    bottom: 0;
+    z-index: 1;
+}

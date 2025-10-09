@@ -224,7 +224,15 @@ async function removeFileTag(fileId, tag) {
 }
 
 // === DOM Elements ===
-const fileListDiv = document.getElementById("file-list");
+const fileTableBody = document.getElementById("file-table-body");
+const controlPanel = document.getElementById("control-panel");
+const fileCountSpan = document.getElementById("file-count");
+const filteredCountSpan = document.getElementById("filtered-count");
+const detailsPane = document.getElementById("details-pane");
+const detailsContent = document.getElementById("details-content");
+const tableContainer = document.getElementById("table-container");
+const closeDetailsPaneBtn = document.getElementById("close-details-pane");
+const resizeHandle = document.getElementById("resize-handle");
 
 // === File Operations ===
 /**
@@ -334,113 +342,77 @@ function createTagButtonHTML(file, tag) {
 }
 
 /**
+ * Creates the desktop-style control panel
  * @returns {HTMLDivElement}
  */
 function createControlSection() {
   const controlSection = document.createElement("div");
-  controlSection.className = "bg-gray-50 p-4 mb-6 rounded-lg shadow-sm";
+  controlSection.className = "flex flex-wrap items-center gap-4";
 
-  // Create search input section
-  const searchSection = document.createElement("div");
-  searchSection.className = "mb-4";
+  // Search section
+  const searchContainer = document.createElement("div");
+  searchContainer.className = "flex items-center space-x-2";
 
   const searchLabel = document.createElement("label");
-  searchLabel.className = "block text-sm font-medium text-gray-700 mb-2";
-  searchLabel.textContent = "Search files by name:";
+  searchLabel.className = "text-sm font-medium text-gray-700";
+  searchLabel.textContent = "Search:";
 
-  const searchInputContainer = document.createElement("div");
-  searchInputContainer.className = "relative";
-
-  // Add search icon
-  const searchIcon = document.createElement("div");
-  searchIcon.className = "absolute left-3 top-2.5 text-gray-400";
-  searchIcon.innerHTML = "🔍";
-  searchInputContainer.appendChild(searchIcon);
+  const searchInputWrapper = document.createElement("div");
+  searchInputWrapper.className = "relative";
 
   const searchInput = document.createElement("input");
   searchInput.type = "text";
   searchInput.id = "file-search";
-  searchInput.placeholder =
-    "Type to search filenames... (Press " / " to focus, Esc to clear)";
+  searchInput.placeholder = "Type to search files... (Press '/' to focus)";
   searchInput.className =
-    "w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
+    "w-64 px-3 py-1 pl-8 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500";
   searchInput.value = fileState.searchTerm;
 
-  const clearSearchButton = document.createElement("button");
-  clearSearchButton.className =
-    "absolute right-2 top-2 text-gray-400 hover:text-gray-600";
-  clearSearchButton.innerHTML = "✕";
-  clearSearchButton.onclick = () => {
+  const searchIcon = document.createElement("div");
+  searchIcon.className = "absolute left-2 top-1.5 text-gray-400 text-sm";
+  searchIcon.innerHTML = "🔍";
+
+  const clearButton = document.createElement("button");
+  clearButton.className =
+    "absolute right-2 top-1.5 text-gray-400 hover:text-gray-600 text-sm";
+  clearButton.innerHTML = "✕";
+  clearButton.onclick = () => {
     clearSearch();
     searchInput.focus();
   };
 
-  searchInputContainer.appendChild(searchInput);
-  searchInputContainer.appendChild(clearSearchButton);
-  searchSection.appendChild(searchLabel);
-  searchSection.appendChild(searchInputContainer);
+  searchInputWrapper.appendChild(searchIcon);
+  searchInputWrapper.appendChild(searchInput);
+  searchInputWrapper.appendChild(clearButton);
 
-  // Add search results display
+  // Search results display
   const searchResultsDiv = document.createElement("div");
   searchResultsDiv.id = "search-results-display";
-  searchResultsDiv.className = "mt-2";
-  searchSection.appendChild(searchResultsDiv);
+  searchResultsDiv.className = "text-sm text-gray-600";
 
-  // Add debounced search functionality
-  const debouncedSearch = debounce((searchTerm) => {
-    fileState.searchTerm = searchTerm;
-    updateFileList();
-  }, 300);
+  searchContainer.appendChild(searchLabel);
+  searchContainer.appendChild(searchInputWrapper);
+  searchContainer.appendChild(searchResultsDiv);
 
-  searchInput.addEventListener("input", (e) => {
-    debouncedSearch(e.target.value);
-  });
-
-  // Add keyboard shortcuts
-  searchInput.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      clearSearch();
-      searchInput.blur();
-    } else if (
-      e.key === "Enter" &&
-      filteredFiles &&
-      filteredFiles.length === 1
-    ) {
-      // If only one result, open it
-      showFileDetails(filteredFiles[0]);
-    }
-  });
-
-  // Focus search input when '/' key is pressed
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      // Only if not focused on an input element
-      if (
-        document.activeElement.tagName !== "INPUT" &&
-        document.activeElement.tagName !== "TEXTAREA"
-      ) {
-        e.preventDefault();
-        searchInput.focus();
-      }
-    }
-  });
-
-  controlSection.appendChild(searchSection);
-
-  // Create tag filters container
+  // Tag filters section
   const tagFiltersContainer = document.createElement("div");
-  tagFiltersContainer.className = "mb-4 flex flex-wrap gap-2";
+  tagFiltersContainer.className = "flex items-center space-x-2 flex-wrap";
 
-  // Add buttons for each tag
+  const tagLabel = document.createElement("span");
+  tagLabel.className = "text-sm font-medium text-gray-700";
+  tagLabel.textContent = "Tags:";
+  tagFiltersContainer.appendChild(tagLabel);
+
+  // All tags buttons
   allTags.forEach((tag) => {
     const button = document.createElement("button");
-    button.className = `px-4 py-2 rounded-lg ${
+    button.className = `px-2 py-1 text-xs rounded ${
       allowedTags.has(tag)
         ? "bg-green-500 text-white"
         : deniedTags.has(tag)
           ? "bg-red-500 text-white"
-          : "bg-gray-200 text-gray-700"
-    } hover:bg-blue-600 transition-colors`;
+          : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+    } transition-colors`;
     button.textContent = tag;
     button.onclick = () => {
       if (allowedTags.has(tag)) {
@@ -456,82 +428,212 @@ function createControlSection() {
     tagFiltersContainer.appendChild(button);
   });
 
-  // Create selected tags container
-  const selectedTagsContainer = document.createElement("div");
-  selectedTagsContainer.className = "mb-4";
-
-  // Create allowed tags section
-  const allowedSection = document.createElement("div");
-  allowedSection.className = "mb-4";
-
-  const allowedLabel = document.createElement("div");
-  allowedLabel.className = "text-sm font-medium text-gray-700 mb-2";
-  allowedLabel.textContent = "Show files with all of these tags:";
-  allowedSection.appendChild(allowedLabel);
-
-  const allowedTagsContainer = document.createElement("div");
-  allowedTagsContainer.className = "flex flex-wrap gap-2";
-
-  Array.from(allowedTags).forEach((tag) => {
-    const tagButton = document.createElement("button");
-    tagButton.className =
-      "px-3 py-1 rounded-full text-sm font-medium bg-green-500 text-white hover:bg-green-600 transition-colors";
-    tagButton.textContent = tag;
-
-    tagButton.onclick = (e) => {
-      e.stopPropagation();
-      allowedTags.delete(tag);
-      updateFileList();
-    };
-
-    allowedTagsContainer.appendChild(tagButton);
-  });
-
-  allowedSection.appendChild(allowedTagsContainer);
-  selectedTagsContainer.appendChild(allowedSection);
-
-  // Create denied tags section
-  const deniedSection = document.createElement("div");
-
-  const deniedLabel = document.createElement("div");
-  deniedLabel.className = "text-sm font-medium text-gray-700 mb-2";
-  deniedLabel.textContent = "Hide files with any of these tags:";
-  deniedSection.appendChild(deniedLabel);
-
-  const deniedTagsContainer = document.createElement("div");
-  deniedTagsContainer.className = "flex flex-wrap gap-2";
-
-  Array.from(deniedTags).forEach((tag) => {
-    const tagButton = document.createElement("button");
-    tagButton.className =
-      "px-3 py-1 rounded-full text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors";
-    tagButton.textContent = tag;
-
-    tagButton.onclick = (e) => {
-      e.stopPropagation();
-      deniedTags.delete(tag);
-      updateFileList();
-    };
-
-    deniedTagsContainer.appendChild(tagButton);
-  });
-
-  deniedSection.appendChild(deniedTagsContainer);
-  selectedTagsContainer.appendChild(deniedSection);
-
-  // Add clear all button at the bottom
+  // Clear all button
   const clearAllButton = document.createElement("button");
   clearAllButton.className =
-    "px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors";
+    "px-3 py-1 text-xs bg-gray-400 text-white rounded hover:bg-gray-500 transition-colors ml-2";
   clearAllButton.textContent = "Clear All";
   clearAllButton.onclick = () => {
     clearAll();
   };
-  selectedTagsContainer.appendChild(clearAllButton);
+  tagFiltersContainer.appendChild(clearAllButton);
 
+  // Add debounced search functionality
+  const debouncedSearch = debounce((searchTerm) => {
+    fileState.searchTerm = searchTerm;
+    updateFileList();
+  }, 300);
+
+  searchInput.addEventListener("input", (e) => {
+    debouncedSearch(e.target.value);
+  });
+
+  // Keyboard shortcuts
+  searchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      clearSearch();
+      searchInput.blur();
+    } else if (
+      e.key === "Enter" &&
+      fileState.filteredFiles &&
+      fileState.filteredFiles.length === 1
+    ) {
+      showFileDetailsPane(fileState.filteredFiles[0]);
+    }
+  });
+
+  // Global keyboard shortcut
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (
+        document.activeElement.tagName !== "INPUT" &&
+        document.activeElement.tagName !== "TEXTAREA"
+      ) {
+        e.preventDefault();
+        searchInput.focus();
+      }
+    }
+  });
+
+  controlSection.appendChild(searchContainer);
   controlSection.appendChild(tagFiltersContainer);
-  controlSection.appendChild(selectedTagsContainer);
   return controlSection;
+}
+
+/**
+ * Creates a table row for a file
+ * @param {File} file
+ * @returns {HTMLDivElement}
+ */
+function createFileRow(file) {
+  const { name, directory } = parseFilePath(file.path);
+  const row = document.createElement("div");
+  row.className =
+    "flex border-b border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors";
+  row.onclick = () => showFileDetailsPane(file);
+
+  // Name column
+  const nameCell = document.createElement("div");
+  nameCell.className = "flex-1 px-4 py-3 border-r border-gray-200";
+
+  // Highlight search terms if searching
+  if (
+    fileState.searchTerm.trim() &&
+    name.toLowerCase().includes(fileState.searchTerm.toLowerCase())
+  ) {
+    const searchTerm = fileState.searchTerm.toLowerCase();
+    const lowerName = name.toLowerCase();
+    const startIndex = lowerName.indexOf(searchTerm);
+    const endIndex = startIndex + searchTerm.length;
+    const beforeMatch = name.substring(0, startIndex);
+    const match = name.substring(startIndex, endIndex);
+    const afterMatch = name.substring(endIndex);
+    nameCell.innerHTML = `<span class="font-medium text-gray-900">${beforeMatch}<mark class="bg-yellow-200 px-1 rounded">${match}</mark>${afterMatch}</span>`;
+  } else {
+    nameCell.innerHTML = `<span class="font-medium text-gray-900">${name}</span>`;
+  }
+
+  // Type column
+  const typeCell = document.createElement("div");
+  typeCell.className =
+    "w-32 px-4 py-3 text-sm text-gray-600 border-r border-gray-200";
+  typeCell.textContent = file.type_ || "Unknown";
+
+  // Size column
+  const sizeCell = document.createElement("div");
+  sizeCell.className =
+    "w-24 px-4 py-3 text-sm text-gray-600 text-right border-r border-gray-200";
+  sizeCell.textContent = formatFileSize(file.size || 0);
+
+  // Directory column
+  const dirCell = document.createElement("div");
+  dirCell.className =
+    "w-40 px-4 py-3 text-sm text-gray-500 truncate border-r border-gray-200";
+  dirCell.textContent = directory;
+  dirCell.title = directory; // Full path on hover
+
+  // Tags column
+  const tagsCell = document.createElement("div");
+  tagsCell.className = "w-60 px-4 py-3";
+
+  const tagsContainer = document.createElement("div");
+  tagsContainer.className = "flex flex-wrap gap-1";
+
+  file.tags.forEach((tag) => {
+    const tagSpan = document.createElement("span");
+    tagSpan.className = `px-2 py-1 text-xs rounded ${
+      allowedTags.has(tag)
+        ? "bg-green-100 text-green-800 border border-green-200"
+        : deniedTags.has(tag)
+          ? "bg-red-100 text-red-800 border border-red-200"
+          : "bg-blue-100 text-blue-800 border border-blue-200"
+    }`;
+    tagSpan.textContent = tag;
+    tagSpan.onclick = (e) => {
+      e.stopPropagation();
+      if (allowedTags.has(tag)) {
+        allowedTags.delete(tag);
+        deniedTags.add(tag);
+      } else if (deniedTags.has(tag)) {
+        deniedTags.delete(tag);
+      } else {
+        allowedTags.add(tag);
+      }
+      updateFileList();
+    };
+    tagsContainer.appendChild(tagSpan);
+  });
+
+  tagsCell.appendChild(tagsContainer);
+
+  row.appendChild(nameCell);
+  row.appendChild(typeCell);
+  row.appendChild(sizeCell);
+  row.appendChild(dirCell);
+  row.appendChild(tagsCell);
+
+  return row;
+}
+
+/**
+ * Creates empty state row for the table
+ * @returns {HTMLDivElement}
+ */
+function createEmptyStateRow() {
+  const hasTagFilters = allowedTags.size > 0 || deniedTags.size > 0;
+  const hasSearchTerm = fileState.searchTerm.trim();
+
+  let title,
+    message,
+    buttons = "";
+
+  if (hasSearchTerm && hasTagFilters) {
+    title = "No files found";
+    message = `No files match both your search term '${fileState.searchTerm}' and your tag filters.`;
+    buttons = `
+      <button onclick="clearSearch()" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors mr-2 text-sm">
+        Clear Search
+      </button>
+      <button onclick="clearAll()" class="px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors text-sm">
+        Clear All Filters
+      </button>
+    `;
+  } else if (hasSearchTerm) {
+    title = "No files found";
+    message = `Try adjusting your search term '${fileState.searchTerm}' or clear filters.`;
+    buttons = `
+      <button onclick="clearSearch()" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm">
+        Clear Search
+      </button>
+    `;
+  } else if (hasTagFilters) {
+    title = "No files match your filters";
+    message =
+      "No files have the selected tag combination. Try adjusting your tag filters.";
+    buttons = `
+      <button onclick="clearAll()" class="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm">
+        Clear Tag Filters
+      </button>
+    `;
+  } else {
+    title = "No files available";
+    message = "Upload some files to get started.";
+  }
+
+  const row = document.createElement("div");
+  row.className = "flex border-b border-gray-200";
+
+  const emptyCell = document.createElement("div");
+  emptyCell.className = "w-full px-4 py-12 text-center";
+  emptyCell.innerHTML = `
+    <div class="text-gray-400 text-4xl mb-4">📁</div>
+    <h3 class="text-lg font-medium text-gray-900 mb-2">${title}</h3>
+    <p class="text-gray-600 mb-4">${message}</p>
+    ${buttons}
+  `;
+
+  row.appendChild(emptyCell);
+  return row;
 }
 
 // === Helper Functions ===
@@ -562,12 +664,10 @@ async function updateTagState(fileId, tag) {
     deniedTags.delete(tag);
   }
 
-  // Update the details card if it's currently open
+  // Update the details pane if it's currently open
   if (currentFile && currentFile.id === fileId) {
-    const detailsContainer = document.getElementById("file-details");
-    if (detailsContainer) {
-      detailsContainer.remove();
-      showFileDetails(updatedFile);
+    if (detailsPane && !detailsPane.classList.contains("hidden")) {
+      showFileDetailsPane(updatedFile);
     }
   }
 
@@ -630,140 +730,173 @@ async function deleteTag(fileId, tag) {
 }
 
 /**
+ * Shows file details in the collapsible right pane
  * @param {File} file
  * @returns {void}
  */
-function showFileDetails(file) {
+function showFileDetailsPane(file) {
   currentFile = file;
+
+  if (!detailsPane || !detailsContent) {
+    console.error("Details pane elements not found");
+    return;
+  }
 
   const fileName = file.path.split("/").pop();
   const fileDirectory = file.path.substring(0, file.path.lastIndexOf("/"));
 
-  // Create details container if it doesn't exist
-  let detailsContainer = document.getElementById("file-details");
-  if (!detailsContainer) {
-    detailsContainer = document.createElement("div");
-    detailsContainer.id = "file-details";
-    detailsContainer.className =
-      "fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50";
-    document.body.appendChild(detailsContainer);
+  // Show the details pane and resize handle
+  detailsPane.classList.remove("hidden");
+  if (resizeHandle) {
+    resizeHandle.classList.remove("hidden");
+    // Add hint animation for first-time users
+    resizeHandle.classList.add("hint");
+    setTimeout(() => {
+      resizeHandle.classList.remove("hint");
+    }, 6000);
   }
 
-  const modalContent = document.createElement("div");
-  modalContent.className =
-    "bg-white rounded-lg p-8 w-full max-w-4xl mx-4 flex flex-col";
+  // Adjust table container width
+  if (tableContainer) {
+    tableContainer.style.marginRight = "0";
+  }
 
-  modalContent.innerHTML = `
-        <div class='flex justify-between items-start mb-6'>
-            <h2 class='text-2xl font-bold'>${fileName}</h2>
-            <button
-                class='text-gray-400 hover:text-gray-500'
-                onclick='document.getElementById('file-details').remove()'
-            >
-                <svg class='w-6 h-6' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
-                    <path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 18L18 6M6 6l12 12'></path>
-                </svg>
-            </button>
+  // Populate the details content
+  detailsContent.innerHTML = `
+    <div class="space-y-6">
+      <!-- File Header -->
+      <div>
+        <h3 class="text-xl font-bold text-gray-900 mb-2">${fileName}</h3>
+        <p class="text-sm text-gray-600">${fileDirectory}</p>
+      </div>
+
+      <!-- Basic Info -->
+      <div>
+        <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Basic Info</h4>
+        <div class="space-y-2 text-sm">
+          <div class="flex justify-between py-1">
+            <span class="text-gray-600">Type:</span>
+            <span class="font-medium">${file.type_ || "Unknown"}</span>
+          </div>
+          <div class="flex justify-between py-1">
+            <span class="text-gray-600">Size:</span>
+            <span class="font-medium">${formatFileSize(file.size || 0)}</span>
+          </div>
+          <div class="flex justify-between py-1">
+            <span class="text-gray-600">Status:</span>
+            <span class="font-medium">${file.status || "Unknown"}</span>
+          </div>
+          <div class="flex justify-between py-1">
+            <span class="text-gray-600">ID:</span>
+            <span class="font-medium">#${file.id}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- File Path -->
+      <div>
+        <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">File Path</h4>
+        <div class="bg-gray-50 p-3 rounded text-sm">
+          <code class="break-all">${file.path}</code>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div>
+        <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Actions</h4>
+        <button
+          class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+          onclick="downloadFile(${file.id}, '${fileName}')"
+        >
+          Download File
+        </button>
+      </div>
+
+      <!-- Tags Section -->
+      <div>
+        <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Tags</h4>
+        <div class="flex flex-wrap gap-1 mb-3" data-file-id="${file.id}">
+          ${file.tags
+            .map(
+              (tag) => `
+            <span class="px-2 py-1 text-xs rounded ${
+              allowedTags.has(tag)
+                ? "bg-green-100 text-green-800 border border-green-200"
+                : deniedTags.has(tag)
+                  ? "bg-red-100 text-red-800 border border-red-200"
+                  : "bg-blue-100 text-blue-800 border border-blue-200"
+            }">${tag}</span>
+          `,
+            )
+            .join("")}
         </div>
 
-        <div class='grid grid-cols-1 md:grid-cols-2 gap-6 mb-8'>
-            <!-- Left column - Basic Info -->
-            <div>
-                <h3 class='text-lg font-semibold mb-4'>Basic Info</h3>
-                <div class='space-y-2'>
-                    <div class='flex justify-between'>
-                        <span class='text-gray-600'>Type</span>
-                        <span class='font-medium'>${file.type_}</span>
-                    </div>
-                    <div class='flex justify-between'>
-                        <span class='text-gray-600'>Size</span>
-                        <span class='font-medium'>${formatFileSize(file.size)}</span>
-                    </div>
-                    <div class='flex justify-between'>
-                        <span class='text-gray-600'>Status</span>
-                        <span class='font-medium'>${file.status}</span>
-                    </div>
-                    <div class='flex justify-between'>
-                        <span class='text-gray-600'>ID</span>
-                        <span class='font-medium'>#${file.id}</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right column - File Path -->
-            <div>
-                <h3 class='text-lg font-semibold mb-4'>File Details</h3>
-                <div class='space-y-4'>
-                    <div>
-                        <h4 class='text-sm font-medium text-gray-600 mb-1'>File Path</h4>
-                        <div class='bg-gray-50 p-3 rounded'>
-                            <code class='text-sm'>${file.path}</code>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <!-- Add Tag Form -->
+        <div class="space-y-2">
+          <input
+            type="text"
+            placeholder="Enter new tag"
+            class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+            id="tag-input-${file.id}"
+            onkeypress="handleTagKeyPress(event, ${file.id})"
+          >
+          <button
+            class="w-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-sm font-medium transition-colors"
+            onclick="addTag(${file.id})"
+          >
+            Add Tag
+          </button>
         </div>
+      </div>
 
-        <!-- Actions -->
-        <div class='mb-8'>
-            <h3 class='text-lg font-semibold mb-4'>Actions</h3>
-            <button
-                class='w-full bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors'
-                onclick='downloadFile(${file.id}, '${fileName}')'
-            >
-                Download
-            </button>
+      <!-- Technical Details -->
+      <div>
+        <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Technical Details</h4>
+        <div>
+          <p class="text-xs text-gray-600 mb-2">Fingerprint:</p>
+          <div class="bg-gray-50 p-3 rounded text-xs">
+            <code class="break-all">${file.fingerprint || "N/A"}</code>
+          </div>
         </div>
+      </div>
+    </div>
+  `;
+}
 
-        <!-- Tags Section -->
-        <div class='mb-8'>
-            <h3 class='text-lg font-semibold mb-4'>Tags</h3>
-            <div class='flex flex-wrap gap-2' data-file-id='${file.id}'>
-                ${file.tags.map((tag) => createTagButtonHTML(file, tag)).join("")}
-            </div>
+/**
+ * Hides the file details pane
+ * @returns {void}
+ */
+function hideFileDetailsPane() {
+  if (!detailsPane || !tableContainer) {
+    return;
+  }
 
-            <!-- Add Tag Form -->
-            <div class='mt-4'>
-                <div class='flex gap-2'>
-                    <input
-                        type='text'
-                        placeholder='Enter new tag'
-                        class='flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500'
-                        id='tag-input-${file.id}'
-                        onkeypress='handleTagKeyPress(event, ${file.id})'
-                    >
-                    <button
-                        class='bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors'
-                        onclick='addTag(${file.id})'
-                    >
-                        Add Tag
-                    </button>
-                </div>
-            </div>
-        </div>
+  // Hide the details pane and resize handle
+  detailsPane.classList.add("hidden");
+  if (resizeHandle) {
+    resizeHandle.classList.add("hidden");
+  }
 
-        <!-- Fingerprint Section -->
-        <div class='border-t pt-6'>
-            <h3 class='text-lg font-semibold mb-4'>Technical Details</h3>
-            <div class='space-y-4'>
-                <div>
-                    <h4 class='text-sm font-medium text-gray-600 mb-1'>Fingerprint</h4>
-                    <div class='bg-gray-50 p-3 rounded'>
-                        <code class='text-sm'>${file.fingerprint}</code>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
+  // Reset table container
+  tableContainer.style.marginRight = "";
 
-  detailsContainer.onclick = (e) => {
-    if (e.target === detailsContainer) {
-      detailsContainer.remove();
-      currentFile = null;
-    }
-  };
+  // Clear current file
+  currentFile = null;
 
-  detailsContainer.appendChild(modalContent);
+  // Clear details content
+  if (detailsContent) {
+    detailsContent.innerHTML = "";
+  }
+}
+
+/**
+ * Legacy function for backward compatibility
+ * @param {File} file
+ * @returns {void}
+ */
+function showFileDetails(file) {
+  showFileDetailsPane(file);
 }
 
 /**
@@ -775,16 +908,9 @@ async function updateFileList() {
     fileState.loading = true;
     fileState.error = null;
 
-    // Update UI to show loading
-    if (fileListDiv) {
-      const loadingDiv = document.createElement("div");
-      loadingDiv.id = "loading-indicator";
-      loadingDiv.className = "flex justify-center items-center py-8";
-      loadingDiv.innerHTML = `
-        <div class='animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500'></div>
-        <span class='ml-3 text-gray-600'>Loading files...</span>
-      `;
-      fileListDiv.appendChild(loadingDiv);
+    // Initialize details pane close button if not already done
+    if (closeDetailsPaneBtn && !closeDetailsPaneBtn.onclick) {
+      closeDetailsPaneBtn.onclick = hideFileDetailsPane;
     }
 
     const response = await fetch(`${CONFIG.API_URL}/files`, {
@@ -795,7 +921,7 @@ async function updateFileList() {
 
     if (!response.ok) {
       throw new Error(
-        `Failed to fetch files: ${response.status} ${response.statusText}`,
+        `Failed to fetch files: ${response.status} ${response.statusStatus}`,
       );
     }
 
@@ -812,11 +938,28 @@ async function updateFileList() {
       fileState.searchTerm,
     );
 
+    // Store filtered files for global access
+    fileState.filteredFiles = filteredFiles;
+
     // Clear loading state
     fileState.loading = false;
-    fileListDiv.innerHTML = "";
 
-    // Update search results display in control section
+    // Update file counts in header
+    if (fileCountSpan) {
+      const fileText = files.length === 1 ? "file" : "files";
+      fileCountSpan.textContent = `${files.length} ${fileText}`;
+    }
+    if (filteredCountSpan) {
+      const showingText = filteredFiles.length === 1 ? "showing" : "showing";
+      filteredCountSpan.textContent = `${filteredFiles.length} ${showingText}`;
+    }
+
+    // Update control panel
+    controlPanel.innerHTML = "";
+    const controlSection = createControlSection();
+    controlPanel.appendChild(controlSection);
+
+    // Update search results display
     const searchResultsDisplay = document.getElementById(
       "search-results-display",
     );
@@ -824,187 +967,48 @@ async function updateFileList() {
       if (fileState.searchTerm.trim()) {
         const resultText = filteredFiles.length === 1 ? "result" : "results";
         const hasTagFilters = allowedTags.size > 0 || deniedTags.size > 0;
-        const filterText = hasTagFilters ? " (after applying tag filters)" : "";
-
-        searchResultsDisplay.innerHTML = `
-              <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <div class="flex items-center justify-between">
-                  <span class="text-sm text-blue-800">
-                    <strong>${filteredFiles.length}</strong> ${resultText} found for "<em>${fileState.searchTerm}</em>"${filterText}
-                  </span>
-                  <button onclick="document.getElementById('file-search').focus()"
-                          class="text-xs text-blue-600 hover:text-blue-800 underline">
-                    Refine search
-                  </button>
-                </div>
-              </div>
-            `;
+        const filterText = hasTagFilters ? " (with tag filters)" : "";
+        searchResultsDisplay.textContent = `${filteredFiles.length} ${resultText} found${filterText}`;
       } else {
-        searchResultsDisplay.innerHTML = "";
+        searchResultsDisplay.textContent = "";
       }
     }
 
-    // Always add control section first
-    const controlSection = createControlSection();
-    fileListDiv.appendChild(controlSection);
+    // Update table body
+    fileTableBody.innerHTML = "";
 
-    // Show empty state as a card if no files found
     if (filteredFiles.length === 0) {
-      const emptyStateCard = document.createElement("div");
-      emptyStateCard.className =
-        "bg-white rounded-lg shadow-md p-6 text-center hover:shadow-lg transition-shadow duration-300";
-
-      // Determine the type of empty state
-      const hasTagFilters = allowedTags.size > 0 || deniedTags.size > 0;
-      const hasSearchTerm = fileState.searchTerm.trim();
-
-      let title,
-        message,
-        buttons = "";
-
-      if (hasSearchTerm && hasTagFilters) {
-        title = "No files found";
-        message = `No files match both your search term '${fileState.searchTerm}' and your tag filters. Try adjusting either.`;
-        buttons = `
-          <button onclick="clearSearch()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors mr-2">
-            Clear Search
-          </button>
-          <button onclick="clearAll()" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors">
-            Clear All Filters
-          </button>
-        `;
-      } else if (hasSearchTerm) {
-        title = "No files found";
-        message = `Try adjusting your search term '${fileState.searchTerm}' or clear filters`;
-        buttons = `
-          <button onclick="clearSearch()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors mr-2">
-            Clear Search
-          </button>
-        `;
-      } else if (hasTagFilters) {
-        title = "No files match your filters";
-        message =
-          "No files have the selected tag combination. Try adjusting your tag filters";
-        buttons = `
-          <button onclick="clearAll()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
-            Clear Tag Filters
-          </button>
-        `;
-      } else {
-        title = "No files available";
-        message = "Upload some files to get started";
-      }
-
-      emptyStateCard.innerHTML = `
-        <div class='text-gray-400 text-6xl mb-4'>📁</div>
-        <h3 class='text-lg font-medium text-gray-900 mb-2'>
-          ${title}
-        </h3>
-        <p class='text-gray-600 mb-4'>
-          ${message}
-        </p>
-        ${buttons}
-      `;
-      fileListDiv.appendChild(emptyStateCard);
-      return;
-    }
-
-    filteredFiles.forEach((file) => {
-      const fileItemDiv = document.createElement("div");
-      fileItemDiv.className =
-        "bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow duration-300 cursor-pointer";
-      fileItemDiv.onclick = () => showFileDetails(file);
-      fileItemDiv.setAttribute("data-file-id", file.id);
-
-      const { name, directory } = parseFilePath(file.path);
-
-      const fileNameElement = document.createElement("p");
-      fileNameElement.className = "text-xl font-semibold mb-2";
-
-      // Highlight search terms in filename if searching
-      if (
-        fileState.searchTerm.trim() &&
-        name.toLowerCase().includes(fileState.searchTerm.toLowerCase())
-      ) {
-        const searchTerm = fileState.searchTerm.toLowerCase();
-        const lowerName = name.toLowerCase();
-        const startIndex = lowerName.indexOf(searchTerm);
-        const endIndex = startIndex + searchTerm.length;
-
-        const beforeMatch = name.substring(0, startIndex);
-        const match = name.substring(startIndex, endIndex);
-        const afterMatch = name.substring(endIndex);
-
-        fileNameElement.innerHTML = `${beforeMatch}<mark class='bg-yellow-200 px-1 rounded'>${match}</mark>${afterMatch}`;
-      } else {
-        fileNameElement.textContent = name;
-      }
-
-      const fileDirectoryElement = document.createElement("p");
-      fileDirectoryElement.className = "text-gray-600 text-sm mb-4";
-      fileDirectoryElement.textContent = directory;
-
-      fileItemDiv.appendChild(fileNameElement);
-      fileItemDiv.appendChild(fileDirectoryElement);
-
-      // Add tags
-      const tagsContainer = document.createElement("div");
-      tagsContainer.className = "flex flex-wrap gap-2 tags";
-      tagsContainer.setAttribute("data-file-id", file.id);
-
-      file.tags.forEach((tag) => {
-        const tagButton = document.createElement("button");
-        tagButton.className = `px-3 py-1 rounded-full text-sm font-medium ${
-          allowedTags.has(tag)
-            ? "bg-green-500 text-white"
-            : deniedTags.has(tag)
-              ? "bg-red-500 text-white"
-              : "bg-blue-500 text-white"
-        } hover:bg-blue-600 transition-colors`;
-        tagButton.textContent = tag;
-
-        tagButton.onclick = (e) => {
-          e.stopPropagation();
-          if (allowedTags.has(tag)) {
-            allowedTags.delete(tag);
-            deniedTags.add(tag);
-          } else if (deniedTags.has(tag)) {
-            deniedTags.delete(tag);
-          } else {
-            allowedTags.add(tag);
-          }
-          updateFileList();
-        };
-
-        tagsContainer.appendChild(tagButton);
+      // Show empty state row
+      const emptyRow = createEmptyStateRow();
+      fileTableBody.appendChild(emptyRow);
+    } else {
+      // Show file rows
+      filteredFiles.forEach((file) => {
+        const fileRow = createFileRow(file);
+        fileTableBody.appendChild(fileRow);
       });
-
-      fileItemDiv.appendChild(tagsContainer);
-      fileListDiv.appendChild(fileItemDiv);
-    });
+    }
   } catch (error) {
     console.error("Error updating file list:", error);
     fileState.loading = false;
     fileState.error = error.message;
 
     // Show error state
-    fileListDiv.innerHTML = "";
-    const errorDiv = document.createElement("div");
-    errorDiv.className = "col-span-full text-center py-12";
-    errorDiv.innerHTML = `
-      <div class='text-red-400 text-6xl mb-4'>⚠️</div>
-      <h3 class='text-lg font-medium text-gray-900 mb-2'>
-        Failed to load files
-      </h3>
-      <p class='text-gray-600 mb-4'>
-        ${error.message}
-      </p>
-      <button onclick='updateFileList()'
-              class='px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600'>
+    fileTableBody.innerHTML = "";
+    const errorRow = document.createElement("div");
+    errorRow.className = "flex border-b border-gray-200";
+    const errorCell = document.createElement("div");
+    errorCell.className = "w-full px-4 py-12 text-center";
+    errorCell.innerHTML = `
+      <div class="text-red-400 text-4xl mb-4">⚠️</div>
+      <h3 class="text-lg font-medium text-gray-900 mb-2">Failed to load files</h3>
+      <p class="text-gray-600 mb-4">${error.message}</p>
+      <button onclick="updateFileList()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
         Try Again
       </button>
     `;
-    fileListDiv.appendChild(errorDiv);
+    errorRow.appendChild(errorCell);
+    fileTableBody.appendChild(errorRow);
   }
 }
 
@@ -1073,5 +1077,172 @@ if (typeof window !== "undefined") {
   window.clearAll = window.clearAll;
 }
 
+// === Resize Functionality ===
+let isResizing = false;
+let startX = 0;
+let startWidth = 0;
+const PANE_MIN_WIDTH = 300;
+const PANE_MAX_WIDTH_PX = 800;
+const PANE_MAX_WIDTH_VW = 0.4; // 40% of viewport width
+const PANE_DEFAULT_WIDTH = 384;
+
+/**
+ * Initialize resize functionality for the details pane
+ */
+function initializeResize() {
+  if (!resizeHandle || !detailsPane) {
+    return;
+  }
+
+  // Mouse down on resize handle
+  resizeHandle.addEventListener("mousedown", startResize);
+
+  // Double-click to reset to default width
+  resizeHandle.addEventListener("dblclick", resetPaneWidth);
+}
+
+/**
+ * Start resizing the details pane
+ */
+function startResize(e) {
+  isResizing = true;
+  startX = e.clientX;
+  startWidth = parseInt(window.getComputedStyle(detailsPane).width, 10);
+
+  // Add visual feedback
+  document.body.classList.add("resizing");
+  resizeHandle.classList.add("active");
+
+  // Disable transitions during resize
+  detailsPane.style.transition = "none";
+
+  // Add event listeners
+  document.addEventListener("mousemove", handleResize);
+  document.addEventListener("mouseup", stopResize);
+  document.addEventListener("keydown", handleResizeKeydown);
+
+  e.preventDefault();
+}
+
+/**
+ * Handle mouse move during resize
+ */
+function handleResize(e) {
+  if (!isResizing) return;
+
+  const deltaX = e.clientX - startX;
+  const newWidth = startWidth - deltaX;
+  const maxWidth = Math.min(
+    PANE_MAX_WIDTH_PX,
+    window.innerWidth * PANE_MAX_WIDTH_VW,
+  );
+  const clampedWidth = Math.max(PANE_MIN_WIDTH, Math.min(maxWidth, newWidth));
+
+  detailsPane.style.width = clampedWidth + "px";
+
+  // Store the width for persistence
+  localStorage.setItem("detailsPaneWidth", clampedWidth);
+
+  e.preventDefault();
+}
+
+/**
+ * Stop resizing
+ */
+function stopResize() {
+  if (!isResizing) return;
+
+  isResizing = false;
+
+  // Remove visual feedback
+  document.body.classList.remove("resizing");
+  resizeHandle.classList.remove("active");
+
+  // Re-enable transitions
+  detailsPane.style.transition = "";
+
+  // Remove event listeners
+  document.removeEventListener("mousemove", handleResize);
+  document.removeEventListener("mouseup", stopResize);
+  document.removeEventListener("keydown", handleResizeKeydown);
+}
+
+/**
+ * Handle keyboard events during resize
+ */
+function handleResizeKeydown(e) {
+  if (e.key === "Escape") {
+    stopResize();
+  }
+}
+
+/**
+ * Reset pane width to default
+ */
+function resetPaneWidth() {
+  if (detailsPane) {
+    detailsPane.style.width = PANE_DEFAULT_WIDTH + "px";
+    localStorage.setItem("detailsPaneWidth", PANE_DEFAULT_WIDTH);
+  }
+}
+
+/**
+ * Load saved pane width from localStorage
+ */
+function loadPaneWidth() {
+  const savedWidth = localStorage.getItem("detailsPaneWidth");
+  if (savedWidth && detailsPane) {
+    const width = parseInt(savedWidth, 10);
+    const maxWidth = Math.min(
+      PANE_MAX_WIDTH_PX,
+      window.innerWidth * PANE_MAX_WIDTH_VW,
+    );
+    if (width >= PANE_MIN_WIDTH && width <= maxWidth) {
+      detailsPane.style.width = width + "px";
+    } else {
+      // Reset to default if saved width is invalid for current screen
+      detailsPane.style.width = Math.min(PANE_DEFAULT_WIDTH, maxWidth) + "px";
+    }
+  }
+}
+
+/**
+ * Handle window resize to maintain proper pane constraints
+ */
+function handleWindowResize() {
+  if (detailsPane && !detailsPane.classList.contains("hidden")) {
+    const currentWidth = parseInt(
+      window.getComputedStyle(detailsPane).width,
+      10,
+    );
+    const maxWidth = Math.min(
+      PANE_MAX_WIDTH_PX,
+      window.innerWidth * PANE_MAX_WIDTH_VW,
+    );
+
+    // If current width exceeds new maximum, resize to fit
+    if (currentWidth > maxWidth) {
+      detailsPane.style.width = maxWidth + "px";
+      localStorage.setItem("detailsPaneWidth", maxWidth);
+    }
+  }
+}
+
 // === Initialization ===
-getAllTags().then(() => updateFileList());
+getAllTags().then(() => {
+  updateFileList();
+
+  // Set up details pane close button
+  if (closeDetailsPaneBtn) {
+    closeDetailsPaneBtn.onclick = hideFileDetailsPane;
+  }
+
+  // Initialize resize functionality
+  initializeResize();
+
+  // Load saved pane width
+  loadPaneWidth();
+
+  // Handle window resize
+  window.addEventListener("resize", debounce(handleWindowResize, 250));
+});
