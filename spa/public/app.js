@@ -291,13 +291,15 @@ function filterFilesByTags(files, allowedTags, deniedTags) {
  * @returns {File[]}
  */
 function filterFiles(files, allowedTags, deniedTags, searchTerm) {
-  // First apply tag filters
-  let filteredFiles = filterFilesByTags(files, allowedTags, deniedTags);
+  let filteredFiles = files;
 
-  // Then apply fuzzy search if there's a search term
+  // First apply fuzzy search if there's a search term
   if (searchTerm && searchTerm.trim()) {
     filteredFiles = fuzzySearchFiles(searchTerm, filteredFiles);
   }
+
+  // Then apply tag filters on top of search results
+  filteredFiles = filterFilesByTags(filteredFiles, allowedTags, deniedTags);
 
   return filteredFiles;
 }
@@ -821,11 +823,14 @@ async function updateFileList() {
     if (searchResultsDisplay) {
       if (fileState.searchTerm.trim()) {
         const resultText = filteredFiles.length === 1 ? "result" : "results";
+        const hasTagFilters = allowedTags.size > 0 || deniedTags.size > 0;
+        const filterText = hasTagFilters ? " (after applying tag filters)" : "";
+
         searchResultsDisplay.innerHTML = `
               <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                 <div class="flex items-center justify-between">
                   <span class="text-sm text-blue-800">
-                    <strong>${filteredFiles.length}</strong> ${resultText} found for "<em>${fileState.searchTerm}</em>"
+                    <strong>${filteredFiles.length}</strong> ${resultText} found for "<em>${fileState.searchTerm}</em>"${filterText}
                   </span>
                   <button onclick="document.getElementById('file-search').focus()"
                           class="text-xs text-blue-600 hover:text-blue-800 underline">
@@ -857,7 +862,18 @@ async function updateFileList() {
         message,
         buttons = "";
 
-      if (hasSearchTerm) {
+      if (hasSearchTerm && hasTagFilters) {
+        title = "No files found";
+        message = `No files match both your search term '${fileState.searchTerm}' and your tag filters. Try adjusting either.`;
+        buttons = `
+          <button onclick="clearSearch()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors mr-2">
+            Clear Search
+          </button>
+          <button onclick="clearAll()" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 transition-colors">
+            Clear All Filters
+          </button>
+        `;
+      } else if (hasSearchTerm) {
         title = "No files found";
         message = `Try adjusting your search term '${fileState.searchTerm}' or clear filters`;
         buttons = `
