@@ -131,9 +131,9 @@ impl FileList {
     }
 
     pub fn view(&self) -> Element<FileListMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing { space_xxs, space_s, .. } = theme::active().cosmic().spacing;
 
-        let column = widget::column().spacing(space_s);
+        let column = widget::column().spacing(space_xxs);
 
         let header_row = widget::row().align_y(Vertical::Center).spacing(space_s);
 

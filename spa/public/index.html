@@ -1,41 +1,50 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-    <title>Archive Organizer</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body class="min-h-screen bg-gray-50">
-    <header class="bg-gray-800 text-white">
-        <div class="container mx-auto px-4 py-4">
-            <h1 class="text-3xl font-bold text-center">Archive Files</h1>
-        </div>
-    </header>
-
-    <main class="container mx-auto px-4 py-8">
-        <div id="file-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        </div>
-        
-        <!-- PDF Viewer Container -->
-        <div id="pdf-viewer-container" class="hidden fixed inset-0 bg-white z-50 p-4 overflow-auto">
-            <div class="flex justify-end mb-4">
-                <button id="close-pdf-viewer" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
-                    Close
-                </button>
+    <head>
+        <title>Archive Organizer</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body class="min-h-screen bg-gray-50">
+        <header class="bg-gray-800 text-white">
+            <div class="container mx-auto px-4 py-4">
+                <h1 class="text-3xl font-bold text-center">Archive Files</h1>
             </div>
-            <div id="pdf-viewer" class="w-full h-[80vh]">
-                <!-- PDF.js viewer will be injected here -->
+        </header>
+
+        <main class="container mx-auto px-4 py-8">
+            <div
+                id="file-list"
+                class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+            ></div>
+
+            <!-- PDF Viewer Container -->
+            <div
+                id="pdf-viewer-container"
+                class="hidden fixed inset-0 bg-white z-50 p-4 overflow-auto"
+            >
+                <div class="flex justify-end mb-4">
+                    <button
+                        id="close-pdf-viewer"
+                        class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                    >
+                        Close
+                    </button>
+                </div>
+                <div id="pdf-viewer" class="w-full h-[80vh]">
+                    <!-- PDF.js viewer will be injected here -->
+                </div>
             </div>
-        </div>
-    </main>
+        </main>
 
-    <footer class="bg-gray-800 text-white mt-8">
-        <div class="container mx-auto px-4 py-4">
-            <p class="text-center">&copy; 2025 Archive Organizer</p>
-        </div>
-    </footer>
+        <footer class="bg-gray-800 text-white mt-8">
+            <div class="container mx-auto px-4 py-4">
+                <p class="text-center">&copy; 2025 Archive Organizer</p>
+            </div>
+        </footer>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="app.js"></script>
-</body>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/fuse.js/6.6.2/fuse.min.js"></script>
+        <script src="app.js"></script>
+    </body>
 </html>

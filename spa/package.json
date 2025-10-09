@@ -20,6 +20,7 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2",
+    "fuse.js": "^7.1.0",
     "pdfjs-dist": "^5.1.91"
   },
   "devDependencies": {
