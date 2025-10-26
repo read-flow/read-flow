@@ -82,15 +82,14 @@ impl AsyncComponent for TagInput {
                 connect_selected_notify[sender, tag_entry] => move |dropdown| {
                     if dropdown.selected() != gtk::INVALID_LIST_POSITION && dropdown.selected() > 0 {
                         // Only process selection if it's not the placeholder (index 0)
-                        if let Some(selected_item) = dropdown.selected_item() {
-                            if let Some(string_object) = selected_item.downcast_ref::<gtk::StringObject>() {
+                        if let Some(selected_item) = dropdown.selected_item()
+                            && let Some(string_object) = selected_item.downcast_ref::<gtk::StringObject>() {
                                 let selected_tag = string_object.string();
                                 // Don't set text if it's the placeholder
                                 if selected_tag != "Select a tag..." {
                                     tag_entry.set_text(&selected_tag);
                                 }
                             }
-                        }
                         // Reset selection to the placeholder after using it
                         dropdown.set_selected(0);
                     }

@@ -236,20 +236,19 @@ where
     // Helper method to update UI visibility based on offline state
     fn update_offline_state(&self) {
         // Update the visibility of the error message and file list
-        if let Some(main_content) = &self.main_content_box {
-            if let Some(content_box) = main_content.first_child() {
-                // Get the second child (index 1), which is the error container
-                // The first child (index 0) is the search box
-                if let Some(error_container) =
-                    content_box.first_child().and_then(|c| c.next_sibling())
-                {
-                    // Update error container visibility
-                    error_container.set_visible(self.is_offline);
+        if let Some(main_content) = &self.main_content_box
+            && let Some(content_box) = main_content.first_child()
+        {
+            // Get the second child (index 1), which is the error container
+            // The first child (index 0) is the search box
+            if let Some(error_container) = content_box.first_child().and_then(|c| c.next_sibling())
+            {
+                // Update error container visibility
+                error_container.set_visible(self.is_offline);
 
-                    // Update file list visibility (should be the next sibling)
-                    if let Some(file_list) = error_container.next_sibling() {
-                        file_list.set_visible(!self.is_offline);
-                    }
+                // Update file list visibility (should be the next sibling)
+                if let Some(file_list) = error_container.next_sibling() {
+                    file_list.set_visible(!self.is_offline);
                 }
             }
         }
@@ -1107,19 +1106,19 @@ where
                 }
 
                 // Find and update the toggle button in the toolbar
-                if let Some(search_entry) = &self.search_entry {
-                    if let Some(parent) = search_entry.parent() {
-                        // The toggle button should be the first child in the toolbar
-                        if let Some(button) = parent.first_child() {
-                            if let Ok(button) = button.downcast::<gtk::Button>() {
-                                let tooltip = if self.filter_section_visible {
-                                    "Hide filters"
-                                } else {
-                                    "Show filters"
-                                };
-                                button.set_tooltip_text(Some(tooltip));
-                            }
-                        }
+                if let Some(search_entry) = &self.search_entry
+                    && let Some(parent) = search_entry.parent()
+                {
+                    // The toggle button should be the first child in the toolbar
+                    if let Some(button) = parent.first_child()
+                        && let Ok(button) = button.downcast::<gtk::Button>()
+                    {
+                        let tooltip = if self.filter_section_visible {
+                            "Hide filters"
+                        } else {
+                            "Show filters"
+                        };
+                        button.set_tooltip_text(Some(tooltip));
                     }
                 }
             }
@@ -1165,20 +1164,19 @@ where
                     let selected = dropdown.selected();
                     if selected > 0 {
                         // Skip the first item ("Select a tag...")
-                        if let Some(model) = dropdown.model() {
-                            if let Ok(string_list) = model.downcast::<gtk::StringList>() {
-                                if let Some(tag_item) = string_list.string(selected) {
-                                    let tag = tag_item.to_string();
+                        if let Some(model) = dropdown.model()
+                            && let Ok(string_list) = model.downcast::<gtk::StringList>()
+                            && let Some(tag_item) = string_list.string(selected)
+                        {
+                            let tag = tag_item.to_string();
 
-                                    // Add the tag to filters if it's not already there
-                                    if !self.tag_filters.contains(&tag) {
-                                        sender.input(FileListInput::AddTagFilter(tag));
-                                    }
-
-                                    // Reset dropdown selection to the first item
-                                    dropdown.set_selected(0);
-                                }
+                            // Add the tag to filters if it's not already there
+                            if !self.tag_filters.contains(&tag) {
+                                sender.input(FileListInput::AddTagFilter(tag));
                             }
+
+                            // Reset dropdown selection to the first item
+                            dropdown.set_selected(0);
                         }
                     }
                 }
@@ -1219,20 +1217,19 @@ where
                     let selected = dropdown.selected();
                     if selected > 0 {
                         // Skip the first item ("Select a tag to exclude...")
-                        if let Some(model) = dropdown.model() {
-                            if let Ok(string_list) = model.downcast::<gtk::StringList>() {
-                                if let Some(tag_item) = string_list.string(selected) {
-                                    let tag = tag_item.to_string();
+                        if let Some(model) = dropdown.model()
+                            && let Ok(string_list) = model.downcast::<gtk::StringList>()
+                            && let Some(tag_item) = string_list.string(selected)
+                        {
+                            let tag = tag_item.to_string();
 
-                                    // Add the tag to deny filters if it's not already there
-                                    if !self.tag_deny_filters.contains(&tag) {
-                                        sender.input(FileListInput::AddTagDenyFilter(tag));
-                                    }
-
-                                    // Reset dropdown selection to the first item
-                                    dropdown.set_selected(0);
-                                }
+                            // Add the tag to deny filters if it's not already there
+                            if !self.tag_deny_filters.contains(&tag) {
+                                sender.input(FileListInput::AddTagDenyFilter(tag));
                             }
+
+                            // Reset dropdown selection to the first item
+                            dropdown.set_selected(0);
                         }
                     }
                 }
@@ -1278,42 +1275,42 @@ where
             }
             FileListInput::OpenSelectedFile => {
                 // Open the selected file
-                if let Some(file) = &self.selected_file {
-                    if let Err(e) = self.file_data_source.xdg_open_file(file.clone()).await {
-                        tracing::warn!("Error opening file: {}", e);
-                    }
+                if let Some(file) = &self.selected_file
+                    && let Err(e) = self.file_data_source.xdg_open_file(file.clone()).await
+                {
+                    tracing::warn!("Error opening file: {}", e);
                 }
             }
             FileListInput::AddTagToFile(tag) => {
                 // Add the tag to the selected file
-                if let Some(file) = &mut self.selected_file {
-                    if !file.tags.contains(&tag) {
-                        file.tags.push(tag.clone());
+                if let Some(file) = &mut self.selected_file
+                    && !file.tags.contains(&tag)
+                {
+                    file.tags.push(tag.clone());
 
-                        // Update the file in the data source
-                        if let Err(e) = self.file_data_source.update_file(file.clone()).await {
-                            tracing::warn!("Error updating file: {}", e);
-                        }
-
-                        // Refresh the files list
-                        sender.input(FileListInput::RefreshFiles);
+                    // Update the file in the data source
+                    if let Err(e) = self.file_data_source.update_file(file.clone()).await {
+                        tracing::warn!("Error updating file: {}", e);
                     }
+
+                    // Refresh the files list
+                    sender.input(FileListInput::RefreshFiles);
                 }
             }
             FileListInput::RemoveTagFromFile(tag) => {
                 // Remove the tag from the selected file
-                if let Some(file) = &mut self.selected_file {
-                    if let Some(index) = file.tags.iter().position(|t| t == &tag) {
-                        file.tags.remove(index);
+                if let Some(file) = &mut self.selected_file
+                    && let Some(index) = file.tags.iter().position(|t| t == &tag)
+                {
+                    file.tags.remove(index);
 
-                        // Update the file in the data source
-                        if let Err(e) = self.file_data_source.update_file(file.clone()).await {
-                            tracing::warn!("Error updating file: {}", e);
-                        }
-
-                        // Refresh the files list
-                        sender.input(FileListInput::RefreshFiles);
+                    // Update the file in the data source
+                    if let Err(e) = self.file_data_source.update_file(file.clone()).await {
+                        tracing::warn!("Error updating file: {}", e);
                     }
+
+                    // Refresh the files list
+                    sender.input(FileListInput::RefreshFiles);
                 }
             }
             FileListInput::UpdateFileReadingStatus(status) => {

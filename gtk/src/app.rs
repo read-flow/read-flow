@@ -488,9 +488,7 @@ impl AsyncComponent for App {
                                             gtk::DialogFlags::MODAL,
                                             gtk::MessageType::Error,
                                             gtk::ButtonsType::Ok,
-                                            format!(
-                                                "Could not find remote client for URL: {url}",
-                                            ),
+                                            format!("Could not find remote client for URL: {url}",),
                                         );
                                         dialog.set_title(Some("Error"));
                                         dialog.connect_response(|dialog, _| {
@@ -615,12 +613,12 @@ impl AsyncComponent for App {
                                     // Find the tab index
                                     if let Some(duplicates_controller) = &self.duplicates_local {
                                         for i in 0..notebook_widget.n_pages() {
-                                            if let Some(page) = notebook_widget.nth_page(Some(i)) {
-                                                if page == *duplicates_controller.widget() {
-                                                    // Remove the page
-                                                    notebook_widget.remove_page(Some(i));
-                                                    break;
-                                                }
+                                            if let Some(page) = notebook_widget.nth_page(Some(i))
+                                                && page == *duplicates_controller.widget()
+                                            {
+                                                // Remove the page
+                                                notebook_widget.remove_page(Some(i));
+                                                break;
                                             }
                                         }
 
@@ -634,12 +632,12 @@ impl AsyncComponent for App {
                                         self.duplicates_remote.get(&url)
                                     {
                                         for i in 0..notebook_widget.n_pages() {
-                                            if let Some(page) = notebook_widget.nth_page(Some(i)) {
-                                                if page == *duplicates_controller.widget() {
-                                                    // Remove the page
-                                                    notebook_widget.remove_page(Some(i));
-                                                    break;
-                                                }
+                                            if let Some(page) = notebook_widget.nth_page(Some(i))
+                                                && page == *duplicates_controller.widget()
+                                            {
+                                                // Remove the page
+                                                notebook_widget.remove_page(Some(i));
+                                                break;
                                             }
                                         }
 
@@ -708,12 +706,12 @@ impl AsyncComponent for App {
                                     if let Some(duplicates_controller) = &self.duplicates_local {
                                         // Find the tab index
                                         for i in 0..notebook_widget.n_pages() {
-                                            if let Some(page) = notebook_widget.nth_page(Some(i)) {
-                                                if page == *duplicates_controller.widget() {
-                                                    // Switch to this tab to show the refreshed content
-                                                    notebook_widget.set_current_page(Some(i));
-                                                    break;
-                                                }
+                                            if let Some(page) = notebook_widget.nth_page(Some(i))
+                                                && page == *duplicates_controller.widget()
+                                            {
+                                                // Switch to this tab to show the refreshed content
+                                                notebook_widget.set_current_page(Some(i));
+                                                break;
                                             }
                                         }
                                     }
@@ -724,12 +722,12 @@ impl AsyncComponent for App {
                                     {
                                         // Find the tab index
                                         for i in 0..notebook_widget.n_pages() {
-                                            if let Some(page) = notebook_widget.nth_page(Some(i)) {
-                                                if page == *duplicates_controller.widget() {
-                                                    // Switch to this tab to show the refreshed content
-                                                    notebook_widget.set_current_page(Some(i));
-                                                    break;
-                                                }
+                                            if let Some(page) = notebook_widget.nth_page(Some(i))
+                                                && page == *duplicates_controller.widget()
+                                            {
+                                                // Switch to this tab to show the refreshed content
+                                                notebook_widget.set_current_page(Some(i));
+                                                break;
                                             }
                                         }
                                     }

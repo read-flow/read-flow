@@ -39,139 +39,138 @@ where
     /// Rebuilds the duplicate groups UI with the current duplicates data
     fn rebuild_duplicate_groups(&self, root: &gtk::Box, sender: &AsyncComponentSender<Self>) {
         // Find the scrolled window that contains the duplicate groups
-        if let Some(scrolled_window) = root.last_child() {
-            if let Some(scrolled) = scrolled_window.downcast_ref::<gtk::ScrolledWindow>() {
-                // Get the viewport inside the scrolled window
-                if let Some(viewport) = scrolled.child() {
-                    if let Some(viewport_widget) = viewport.downcast_ref::<gtk::Viewport>() {
-                        // Create a new box for the duplicate groups
-                        let duplicate_groups = gtk::Box::new(gtk::Orientation::Vertical, 16);
-                        duplicate_groups.set_margin_all(8);
+        if let Some(scrolled_window) = root.last_child()
+            && let Some(scrolled) = scrolled_window.downcast_ref::<gtk::ScrolledWindow>()
+        {
+            // Get the viewport inside the scrolled window
+            if let Some(viewport) = scrolled.child()
+                && let Some(viewport_widget) = viewport.downcast_ref::<gtk::Viewport>()
+            {
+                // Create a new box for the duplicate groups
+                let duplicate_groups = gtk::Box::new(gtk::Orientation::Vertical, 16);
+                duplicate_groups.set_margin_all(8);
 
-                        // Create the duplicate groups dynamically
-                        for (i, group) in self.duplicates.iter().enumerate() {
-                            if !group.is_empty() {
-                                // Create a frame for this group
-                                let frame = gtk::Frame::new(Some(&format!(
-                                    "Group {} - Fingerprint: {}...",
-                                    i + 1,
-                                    &group[0].fingerprint[..16]
-                                )));
-                                frame.add_css_class("card");
+                // Create the duplicate groups dynamically
+                for (i, group) in self.duplicates.iter().enumerate() {
+                    if !group.is_empty() {
+                        // Create a frame for this group
+                        let frame = gtk::Frame::new(Some(&format!(
+                            "Group {} - Fingerprint: {}...",
+                            i + 1,
+                            &group[0].fingerprint[..16]
+                        )));
+                        frame.add_css_class("card");
 
-                                // Create a box for the group content
-                                let group_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
-                                group_box.set_margin_all(12);
+                        // Create a box for the group content
+                        let group_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
+                        group_box.set_margin_all(12);
 
-                                // Add a label with the number of duplicates
-                                let label = gtk::Label::new(Some(&format!(
-                                    "{} duplicate files found with the same content:",
-                                    group.len()
-                                )));
-                                label.set_halign(gtk::Align::Start);
-                                label.add_css_class("heading");
-                                group_box.append(&label);
+                        // Add a label with the number of duplicates
+                        let label = gtk::Label::new(Some(&format!(
+                            "{} duplicate files found with the same content:",
+                            group.len()
+                        )));
+                        label.set_halign(gtk::Align::Start);
+                        label.add_css_class("heading");
+                        group_box.append(&label);
 
-                                // Add a separator
-                                let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
-                                separator.set_margin_top(4);
-                                separator.set_margin_bottom(8);
-                                group_box.append(&separator);
+                        // Add a separator
+                        let separator = gtk::Separator::new(gtk::Orientation::Horizontal);
+                        separator.set_margin_top(4);
+                        separator.set_margin_bottom(8);
+                        group_box.append(&separator);
 
-                                // Create a list box for the files
-                                let list_box = gtk::ListBox::new();
-                                list_box.add_css_class("boxed-list");
-                                list_box.set_selection_mode(gtk::SelectionMode::None);
+                        // Create a list box for the files
+                        let list_box = gtk::ListBox::new();
+                        list_box.add_css_class("boxed-list");
+                        list_box.set_selection_mode(gtk::SelectionMode::None);
 
-                                // Add each file to the list
-                                for file in group {
-                                    let row = gtk::ListBoxRow::new();
+                        // Add each file to the list
+                        for file in group {
+                            let row = gtk::ListBoxRow::new();
 
-                                    let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                                    row_box.set_margin_all(8);
+                            let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                            row_box.set_margin_all(8);
 
-                                    // File information
-                                    let file_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
-                                    file_box.set_hexpand(true);
-                                    file_box.set_vexpand(false);
-                                    file_box.set_width_request(300); // Minimum width
-                                    file_box.set_margin_end(8);
+                            // File information
+                            let file_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+                            file_box.set_hexpand(true);
+                            file_box.set_vexpand(false);
+                            file_box.set_width_request(300); // Minimum width
+                            file_box.set_margin_end(8);
 
-                                    // Extract filename and directory from path
-                                    let (filename, _folder) =
-                                        crate::ui_utils::extract_path_components(&file.path);
+                            // Extract filename and directory from path
+                            let (filename, _folder) =
+                                crate::ui_utils::extract_path_components(&file.path);
 
-                                    // Create a box for the filename and folder
-                                    let path_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
+                            // Create a box for the filename and folder
+                            let path_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
 
-                                    // Filename label (bold)
-                                    let filename_label = gtk::Label::new(Some(&filename));
-                                    filename_label.set_halign(gtk::Align::Start);
-                                    filename_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-                                    // Don't set max_width_chars to allow dynamic resizing
-                                    filename_label.set_hexpand(true);
-                                    filename_label.set_xalign(0.0); // Left align text
-                                    filename_label.add_css_class("heading");
-                                    path_box.append(&filename_label);
+                            // Filename label (bold)
+                            let filename_label = gtk::Label::new(Some(&filename));
+                            filename_label.set_halign(gtk::Align::Start);
+                            filename_label.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+                            // Don't set max_width_chars to allow dynamic resizing
+                            filename_label.set_hexpand(true);
+                            filename_label.set_xalign(0.0); // Left align text
+                            filename_label.add_css_class("heading");
+                            path_box.append(&filename_label);
 
-                                    // Full path label (smaller, dimmed)
-                                    let full_path_label = gtk::Label::new(Some(&file.path));
-                                    full_path_label.set_halign(gtk::Align::Start);
-                                    full_path_label.set_ellipsize(gtk::pango::EllipsizeMode::Start);
-                                    // Don't set max_width_chars to allow dynamic resizing
-                                    full_path_label.set_hexpand(true);
-                                    full_path_label.set_xalign(0.0); // Left align text
-                                    full_path_label.set_wrap(true);
-                                    full_path_label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
-                                    full_path_label.add_css_class("dim-label");
-                                    full_path_label.add_css_class("caption");
-                                    path_box.append(&full_path_label);
+                            // Full path label (smaller, dimmed)
+                            let full_path_label = gtk::Label::new(Some(&file.path));
+                            full_path_label.set_halign(gtk::Align::Start);
+                            full_path_label.set_ellipsize(gtk::pango::EllipsizeMode::Start);
+                            // Don't set max_width_chars to allow dynamic resizing
+                            full_path_label.set_hexpand(true);
+                            full_path_label.set_xalign(0.0); // Left align text
+                            full_path_label.set_wrap(true);
+                            full_path_label.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+                            full_path_label.add_css_class("dim-label");
+                            full_path_label.add_css_class("caption");
+                            path_box.append(&full_path_label);
 
-                                    file_box.append(&path_box);
+                            file_box.append(&path_box);
 
-                                    let details_label = gtk::Label::new(Some(&format!(
-                                        "Type: {}, Size: {} bytes, Status: {:?}",
-                                        file.type_, file.size, file.status
-                                    )));
-                                    details_label.set_halign(gtk::Align::Start);
-                                    details_label.add_css_class("dim-label");
-                                    file_box.append(&details_label);
+                            let details_label = gtk::Label::new(Some(&format!(
+                                "Type: {}, Size: {} bytes, Status: {:?}",
+                                file.type_, file.size, file.status
+                            )));
+                            details_label.set_halign(gtk::Align::Start);
+                            details_label.add_css_class("dim-label");
+                            file_box.append(&details_label);
 
-                                    row_box.append(&file_box);
+                            row_box.append(&file_box);
 
-                                    // Delete button
-                                    let delete_button = gtk::Button::new();
-                                    delete_button.set_icon_name("user-trash-symbolic");
-                                    delete_button.set_tooltip_text(Some("Delete this file"));
-                                    delete_button.add_css_class("destructive-action");
+                            // Delete button
+                            let delete_button = gtk::Button::new();
+                            delete_button.set_icon_name("user-trash-symbolic");
+                            delete_button.set_tooltip_text(Some("Delete this file"));
+                            delete_button.add_css_class("destructive-action");
 
-                                    // Create a clone of the file for the closure
-                                    let file_clone = file.clone();
+                            // Create a clone of the file for the closure
+                            let file_clone = file.clone();
 
-                                    // Connect the button to the delete action
-                                    let sender_clone = sender.clone();
-                                    delete_button.connect_clicked(move |_| {
-                                        sender_clone.input(DuplicatesPageInput::DeleteFile(
-                                            file_clone.clone(),
-                                        ));
-                                    });
+                            // Connect the button to the delete action
+                            let sender_clone = sender.clone();
+                            delete_button.connect_clicked(move |_| {
+                                sender_clone
+                                    .input(DuplicatesPageInput::DeleteFile(file_clone.clone()));
+                            });
 
-                                    row_box.append(&delete_button);
+                            row_box.append(&delete_button);
 
-                                    row.set_child(Some(&row_box));
-                                    list_box.append(&row);
-                                }
-
-                                group_box.append(&list_box);
-                                frame.set_child(Some(&group_box));
-                                duplicate_groups.append(&frame);
-                            }
+                            row.set_child(Some(&row_box));
+                            list_box.append(&row);
                         }
 
-                        // Add the new duplicate groups box to the viewport
-                        viewport_widget.set_child(Some(&duplicate_groups));
+                        group_box.append(&list_box);
+                        frame.set_child(Some(&group_box));
+                        duplicate_groups.append(&frame);
                     }
                 }
+
+                // Add the new duplicate groups box to the viewport
+                viewport_widget.set_child(Some(&duplicate_groups));
             }
         }
     }
