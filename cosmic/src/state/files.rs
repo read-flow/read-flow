@@ -3,25 +3,24 @@
 use std::collections::HashSet;
 
 use archive_organizer::api::{File, ReadingStatus};
-use cosmic::iced_widget::list::Content;
 
 use crate::state::LoadedState;
 
 pub struct Files {
     pub all_files: Vec<File>,
-    pub visible_files: Content<File>,
+    pub visible_files: Vec<File>,
 }
 
 impl Files {
     pub fn new(files: Vec<File>) -> Self {
         Self {
             all_files: files.clone(),
-            visible_files: Content::with_items(files),
+            visible_files: files,
         }
     }
 
     pub fn set_visible(&mut self, files: Vec<File>) {
-        self.visible_files = Content::with_items(files);
+        self.visible_files = files;
     }
 
     pub fn update_file_by_id(&mut self, updated_file: File) {
@@ -46,12 +45,14 @@ impl Files {
         allow_tags: &HashSet<String>,
         deny_tags: &HashSet<String>,
     ) -> Self {
+        // Only show current selection
         let filtered_files = self
             .all_files
             .iter()
             .filter(|file| filter_file(search_query, status_filter, allow_tags, deny_tags, file))
             .cloned()
-            .collect();
+            .collect::<Vec<_>>();
+
         self.set_visible(filtered_files);
         self
     }

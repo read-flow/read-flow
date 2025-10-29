@@ -5,14 +5,19 @@ use std::path::Path;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
+use cosmic::Task;
+use cosmic::cosmic_theme;
 use cosmic::iced::Length;
+use cosmic::theme;
 use cosmic::widget;
+use cosmic::widget::Column;
 use cosmic::widget::Row;
-use cosmic::{cosmic_theme, theme};
 
 use archive_organizer::api::File;
-use cosmic::Task;
 
+use crate::component::pagination::Pagination;
+use crate::component::pagination::PaginationMessage;
+use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::state::files::FileState;
 
@@ -23,12 +28,20 @@ pub enum FilesOutput {
 
 #[derive(Debug, Clone)]
 pub enum FilesMessage {
+    Pagination(PaginationMessage),
     Out(FilesOutput),
+}
+
+impl From<PaginationMessage> for FilesMessage {
+    fn from(value: PaginationMessage) -> Self {
+        FilesMessage::Pagination(value)
+    }
 }
 
 #[derive(Default)]
 pub struct FilesComponent {
     pub files: FileState,
+    pub pagination: Pagination,
 }
 
 impl FilesComponent {
@@ -42,17 +55,29 @@ impl FilesComponent {
                 widget::text(fl!("generic-error", error = error.as_str())).into()
             }
             FileState::Loaded(files) => {
-                let list = cosmic::iced::widget::list(&files.visible_files, |_index, file| {
-                    view_file(file)
-                })
-                .spacing(space_s);
-                list.apply(widget::scrollable::vertical).into()
+                let file_content = self
+                    .pagination
+                    .filter_visible(files.visible_files.as_slice())
+                    .map(|file| view_file(file))
+                    .apply(Column::with_children)
+                    .push(self.pagination.view().map(Into::into))
+                    .spacing(space_s)
+                    .apply(widget::scrollable::vertical);
+
+                Column::new()
+                    .push(self.pagination.view().map(Into::into))
+                    .push(file_content)
+                    .into()
             }
         }
     }
 
     pub fn update(&mut self, message: FilesMessage) -> Task<Action<FilesMessage>> {
         match message {
+            FilesMessage::Pagination(message) => self
+                .pagination
+                .update(message)
+                .map(|action| action.map(Into::into)),
             FilesMessage::Out(_) => {
                 panic!("should be handled by the parent component")
             }

@@ -59,3 +59,7 @@ language = Language
 language-english = English
 language-dutch = Nederlands
 language-french = Français
+
+# Pagination
+pagination-page = Page
+pagination-of = of

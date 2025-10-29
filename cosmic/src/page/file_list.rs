@@ -3,6 +3,7 @@
 use crate::app::ContextView;
 use crate::client::{Client, ClientSelector};
 use crate::component::files::{FilesComponent, FilesMessage, FilesOutput};
+use crate::component::pagination::PaginationMessage;
 use crate::component::tag_filter::TagFilterOutput;
 use crate::component::tag_filter::{TagFilter, TagFilterMessage};
 use crate::cosmic_ext::ActionExt;
@@ -131,7 +132,9 @@ impl FileList {
     }
 
     pub fn view(&self) -> Element<FileListMessage> {
-        let cosmic_theme::Spacing { space_xxs, space_s, .. } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing {
+            space_xxs, space_s, ..
+        } = theme::active().cosmic().spacing;
 
         let column = widget::column().spacing(space_xxs);
 
@@ -299,8 +302,11 @@ impl FileList {
                     &self.tag_filter.allow_tags,
                     &self.tag_filter.deny_tags,
                 );
+                let collection_size = files.visible_files.len();
                 self.archive.files = FileState::Loaded(files);
-                Task::none()
+                task::message(FileListMessage::FilesComponent(FilesMessage::Pagination(
+                    PaginationMessage::SetCollectionSize(collection_size),
+                )))
             }
             FileListMessage::LoadingFailed(error) => {
                 self.archive.files = FileState::Failed(error);
@@ -328,9 +334,12 @@ impl FileList {
                 self.filter_now()
             }
             FileListMessage::FilteringComplete(filtered_files) => {
+                let collection_size = filtered_files.len();
                 self.is_filtering = false;
                 self.archive.set_visible(filtered_files);
-                Task::none()
+                task::message(FileListMessage::FilesComponent(FilesMessage::Pagination(
+                    PaginationMessage::SetCollectionSize(collection_size),
+                )))
             }
             FileListMessage::DebounceTimeout(counter, query) => {
                 // Only proceed if this timeout matches the current counter (not superseded by newer typing)
@@ -385,6 +394,10 @@ impl FileList {
                         FileListOutput::OpenFileDetails(file),
                     )),
                 },
+                msg => self
+                    .archive
+                    .update(msg)
+                    .map(|action| action.map(Into::into)),
             },
             FileListMessage::Out(_) => {
                 panic!("should be handled by the parent component")

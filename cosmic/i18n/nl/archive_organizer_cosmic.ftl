@@ -59,3 +59,7 @@ language = Taal
 language-english = English
 language-dutch = Nederlands
 language-french = Français
+
+# Pagination
+pagination-page = Pagina
+pagination-of = van
