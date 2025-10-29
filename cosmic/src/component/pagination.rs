@@ -15,6 +15,8 @@ use cosmic::widget;
 use cosmic::widget::button;
 use cosmic::widget::icon;
 
+use archive_organizer::Builder;
+
 use crate::fl;
 
 pub struct Pagination {
@@ -80,10 +82,14 @@ impl Pagination {
                     .push(icon::from_name("go-previous-symbolic"))
                     .push(icon::from_name("go-previous-symbolic")),
             )
-            .on_press(PaginationMessage::NavigateToFirstPage)
+            .apply_if(self.page() > 1, |button| {
+                button.on_press(PaginationMessage::NavigateToFirstPage)
+            })
             .into(),
             button::custom(widget::row().push(icon::from_name("go-previous-symbolic")))
-                .on_press(PaginationMessage::NavigateToPreviousPage)
+                .apply_if(self.page() > 1, |button| {
+                    button.on_press(PaginationMessage::NavigateToPreviousPage)
+                })
                 .into(),
             widget::text(format!(
                 "{} {} {} {}",
@@ -102,14 +108,18 @@ impl Pagination {
             )
             .into(),
             button::custom(widget::row().push(icon::from_name("go-next-symbolic")))
-                .on_press(PaginationMessage::NavigateToNextPage)
+                .apply_if(self.page() < self.total_pages(), |button| {
+                    button.on_press(PaginationMessage::NavigateToNextPage)
+                })
                 .into(),
             button::custom(
                 widget::row()
                     .push(icon::from_name("go-next-symbolic"))
                     .push(icon::from_name("go-next-symbolic")),
             )
-            .on_press(PaginationMessage::NavigateToLastPage)
+            .apply_if(self.page() < self.total_pages(), |button| {
+                button.on_press(PaginationMessage::NavigateToLastPage)
+            })
             .into(),
         ]
         .apply(widget::Row::with_children)
