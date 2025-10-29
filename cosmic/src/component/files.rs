@@ -45,7 +45,7 @@ pub struct FilesComponent {
 }
 
 impl FilesComponent {
-    pub fn view(&self) -> Element<FilesMessage> {
+    pub fn view(&self) -> Element<'_, FilesMessage> {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
         match &self.files {

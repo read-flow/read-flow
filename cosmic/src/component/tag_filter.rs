@@ -55,7 +55,7 @@ impl TagFilter {
         )
     }
 
-    pub fn view(&self) -> Element<TagFilterMessage> {
+    pub fn view(&self) -> Element<'_, TagFilterMessage> {
         let cosmic_theme::Spacing {
             space_xs, space_s, ..
         } = theme::active().cosmic().spacing;
@@ -102,6 +102,7 @@ impl TagFilter {
         column.into()
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn view_tag_filter_section<'a>(
         &'a self,
         mut column: widget::Column<'a, TagFilterMessage>,

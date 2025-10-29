@@ -6,7 +6,7 @@ use archive_organizer::api::{File, FileDataSource, ReadingStatus};
 use cosmic::{
     Action, Apply, Element, Task, cosmic_theme,
     iced::{
-        Color, Length,
+        Length,
         alignment::{Horizontal, Vertical},
         widget::combo_box,
     },
@@ -14,7 +14,6 @@ use cosmic::{
     task, theme,
     widget::{self, text},
 };
-use std::borrow::Cow;
 use std::path::Path;
 
 struct Tags {
@@ -78,7 +77,7 @@ impl FileDetails {
             .to_string()
     }
 
-    pub fn view(&self) -> Element<FileDetailsMessage> {
+    pub fn view(&self) -> Element<'_, FileDetailsMessage> {
         let cosmic_theme::Spacing {
             space_xxs,
             space_xs,
@@ -297,7 +296,7 @@ impl FileDetails {
             .into()
     }
 
-    pub fn view_context(&self) -> ContextView<FileDetailsMessage> {
+    pub fn view_context(&self) -> ContextView<'_, FileDetailsMessage> {
         ContextView {
             title: "FileDetails".to_string(),
             content: text("TODO").into(),
@@ -470,24 +469,6 @@ impl FileDetails {
     }
 }
 
-/// Helper function to create a row with a label and value (legacy - use create_info_row instead)
-fn row_with_label<'a>(
-    label: impl Into<Cow<'a, str>> + 'a,
-    value: impl Into<Cow<'a, str>> + 'a,
-) -> Element<'a, FileDetailsMessage> {
-    let cosmic_theme::Spacing {
-        space_xs, space_s, ..
-    } = theme::active().cosmic().spacing;
-
-    Row::with_children(vec![
-        text(label).width(Length::FillPortion(1)).into(),
-        text(value).width(Length::FillPortion(3)).into(),
-    ])
-    .spacing(space_s)
-    .padding(space_xs)
-    .into()
-}
-
 impl FileDetails {
     // Get appropriate file type icon based on extension
     fn get_file_type_icon(&self, extension: &str) -> &'static str {
@@ -504,15 +485,6 @@ impl FileDetails {
             "html" | "htm" | "css" | "js" | "json" => "text-html-symbolic",
             "py" | "rs" | "c" | "cpp" | "java" | "go" => "text-x-script-symbolic",
             _ => "text-x-generic-symbolic",
-        }
-    }
-
-    // Get status color for visual indicators
-    fn get_status_color(&self) -> Color {
-        match self.file.status {
-            ReadingStatus::Unread => Color::from_rgb(0.8, 0.4, 0.4), // Red-ish
-            ReadingStatus::Reading => Color::from_rgb(0.8, 0.6, 0.2), // Orange-ish
-            ReadingStatus::Read => Color::from_rgb(0.4, 0.8, 0.4),   // Green-ish
         }
     }
 
@@ -535,7 +507,7 @@ impl FileDetails {
     }
 
     // Create a styled info row
-    fn create_info_row(&self, label: String, value: String) -> Element<FileDetailsMessage> {
+    fn create_info_row(&self, label: String, value: String) -> Element<'_, FileDetailsMessage> {
         let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
 
         Row::new()
@@ -547,7 +519,7 @@ impl FileDetails {
     }
 
     // Enhanced tags view with better styling
-    fn enhanced_tags_view(&self) -> Element<FileDetailsMessage> {
+    fn enhanced_tags_view(&self) -> Element<'_, FileDetailsMessage> {
         let cosmic_theme::Spacing {
             space_xs, space_s, ..
         } = theme::active().cosmic().spacing;

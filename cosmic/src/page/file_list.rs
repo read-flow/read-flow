@@ -131,7 +131,7 @@ impl FileList {
         self.client.display_name()
     }
 
-    pub fn view(&self) -> Element<FileListMessage> {
+    pub fn view(&self) -> Element<'_, FileListMessage> {
         let cosmic_theme::Spacing {
             space_xxs, space_s, ..
         } = theme::active().cosmic().spacing;
@@ -224,7 +224,7 @@ impl FileList {
         column.into()
     }
 
-    pub fn view_context(&self) -> ContextView<FileListMessage> {
+    pub fn view_context(&self) -> ContextView<'_, FileListMessage> {
         let cosmic_theme::Spacing {
             space_s, space_xs, ..
         } = theme::active().cosmic().spacing;

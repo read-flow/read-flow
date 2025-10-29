@@ -60,10 +60,7 @@ impl Pagination {
 
     pub fn filter_visible<'a, T>(&'a self, items: &'a [T]) -> Take<Skip<Iter<'a, T>>> {
         let first_visible = (self.index / self.page_size) * self.page_size;
-        items
-            .iter()
-            .skip(first_visible)
-            .take(self.page_size as usize)
+        items.iter().skip(first_visible).take(self.page_size)
     }
 
     fn page(&self) -> usize {
@@ -74,10 +71,8 @@ impl Pagination {
         self.collection_size / self.page_size + 1
     }
 
-    pub fn view(&self) -> Element<PaginationMessage> {
-        let cosmic_theme::Spacing {
-            space_xxs, space_s, ..
-        } = theme::active().cosmic().spacing;
+    pub fn view(&self) -> Element<'_, PaginationMessage> {
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
         vec![
             button::custom(
@@ -85,10 +80,10 @@ impl Pagination {
                     .push(icon::from_name("go-previous-symbolic"))
                     .push(icon::from_name("go-previous-symbolic")),
             )
-            .on_press(PaginationMessage::NavigateToFirstPage.into())
+            .on_press(PaginationMessage::NavigateToFirstPage)
             .into(),
             button::custom(widget::row().push(icon::from_name("go-previous-symbolic")))
-                .on_press(PaginationMessage::NavigateToPreviousPage.into())
+                .on_press(PaginationMessage::NavigateToPreviousPage)
                 .into(),
             widget::text(format!(
                 "{} {} {} {}",
@@ -107,14 +102,14 @@ impl Pagination {
             )
             .into(),
             button::custom(widget::row().push(icon::from_name("go-next-symbolic")))
-                .on_press(PaginationMessage::NavigateToNextPage.into())
+                .on_press(PaginationMessage::NavigateToNextPage)
                 .into(),
             button::custom(
                 widget::row()
                     .push(icon::from_name("go-next-symbolic"))
                     .push(icon::from_name("go-next-symbolic")),
             )
-            .on_press(PaginationMessage::NavigateToLastPage.into())
+            .on_press(PaginationMessage::NavigateToLastPage)
             .into(),
         ]
         .apply(widget::Row::with_children)
