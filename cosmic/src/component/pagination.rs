@@ -77,19 +77,17 @@ impl Pagination {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
         vec![
-            button::custom(
-                widget::row()
-                    .push(icon::from_name("go-previous-symbolic"))
-                    .push(icon::from_name("go-previous-symbolic")),
-            )
-            .apply_if(self.page() > 1, |button| {
-                button.on_press(PaginationMessage::NavigateToFirstPage)
-            })
-            .into(),
-            button::custom(widget::row().push(icon::from_name("go-previous-symbolic")))
+            button::icon(icon::from_name("go-first-symbolic"))
+                .apply_if(self.page() > 1, |button| {
+                    button.on_press(PaginationMessage::NavigateToFirstPage)
+                })
+                .tooltip(fl!("pagination-first"))
+                .into(),
+            button::icon(icon::from_name("go-previous-symbolic"))
                 .apply_if(self.page() > 1, |button| {
                     button.on_press(PaginationMessage::NavigateToPreviousPage)
                 })
+                .tooltip(fl!("pagination-prev"))
                 .into(),
             widget::text(format!(
                 "{} {} {} {}",
@@ -107,20 +105,18 @@ impl Pagination {
                 PaginationMessage::ChangePageSize,
             )
             .into(),
-            button::custom(widget::row().push(icon::from_name("go-next-symbolic")))
+            button::icon(icon::from_name("go-next-symbolic"))
                 .apply_if(self.page() < self.total_pages(), |button| {
                     button.on_press(PaginationMessage::NavigateToNextPage)
                 })
+                .tooltip(fl!("pagination-next"))
                 .into(),
-            button::custom(
-                widget::row()
-                    .push(icon::from_name("go-next-symbolic"))
-                    .push(icon::from_name("go-next-symbolic")),
-            )
-            .apply_if(self.page() < self.total_pages(), |button| {
-                button.on_press(PaginationMessage::NavigateToLastPage)
-            })
-            .into(),
+            button::icon(icon::from_name("go-last-symbolic"))
+                .apply_if(self.page() < self.total_pages(), |button| {
+                    button.on_press(PaginationMessage::NavigateToLastPage)
+                })
+                .tooltip(fl!("pagination-last"))
+                .into(),
         ]
         .apply(widget::Row::with_children)
         // .padding([0, space_s])

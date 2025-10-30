@@ -63,3 +63,7 @@ language-french = Français
 # Pagination
 pagination-page = Page
 pagination-of = of
+pagination-first = First
+pagination-prev = Previous
+pagination-next = Next
+pagination-last = Last
