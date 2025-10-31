@@ -74,10 +74,9 @@ impl FilesComponent {
 
     pub fn update(&mut self, message: FilesMessage) -> Task<Action<FilesMessage>> {
         match message {
-            FilesMessage::Pagination(message) => self
-                .pagination
-                .update(message)
-                .map(|action| action.map(Into::into)),
+            FilesMessage::Pagination(message) => {
+                self.pagination.update(message).map(ActionExt::map_into)
+            }
             FilesMessage::Out(_) => {
                 panic!("should be handled by the parent component")
             }

@@ -120,7 +120,7 @@ impl FileList {
                 tag_filter,
             },
             Task::batch(vec![
-                tag_filter_init.map(|action| action.map(Into::into)),
+                tag_filter_init.map(ActionExt::map_into),
                 task::message(FileListMessage::LoadArchive),
                 task::message(FileListMessage::FocusSearchInput),
             ]),
@@ -383,10 +383,7 @@ impl FileList {
                         self.filter_now()
                     }
                 },
-                msg => self
-                    .tag_filter
-                    .update(msg)
-                    .map(move |action| action.map(Into::into)),
+                msg => self.tag_filter.update(msg).map(ActionExt::map_into),
             },
             FileListMessage::FilesComponent(msg) => match msg {
                 FilesMessage::Out(msg) => match msg {
@@ -394,10 +391,7 @@ impl FileList {
                         FileListOutput::OpenFileDetails(file),
                     )),
                 },
-                msg => self
-                    .archive
-                    .update(msg)
-                    .map(|action| action.map(Into::into)),
+                msg => self.archive.update(msg).map(ActionExt::map_into),
             },
             FileListMessage::Out(_) => {
                 panic!("should be handled by the parent component")

@@ -148,7 +148,7 @@ impl cosmic::Application for AppModel {
 
         (
             app,
-            cosmic::task::batch(vec![command, page_action.map(|msg| msg.map(Into::into))]),
+            cosmic::task::batch(vec![command, page_action.map(ActionExt::map_into)]),
         )
     }
 
@@ -300,10 +300,7 @@ impl cosmic::Application for AppModel {
                     Task::none()
                 }
             },
-            Message::Page(page_message) => self
-                .pages
-                .update(page_message)
-                .map(|action| action.map(Into::into)),
+            Message::Page(page_message) => self.pages.update(page_message).map(ActionExt::map_into),
             Message::PageAdded(selector) => {
                 let nav = self
                     .nav

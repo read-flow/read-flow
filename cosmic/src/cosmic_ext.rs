@@ -5,6 +5,10 @@ pub trait ActionExt<T> {
     fn map<U, F>(self, f: F) -> Action<U>
     where
         F: FnOnce(T) -> U;
+
+    fn map_into<U>(self) -> Action<U>
+    where
+        T: Into<U>;
 }
 
 impl<T> ActionExt<T> for Action<T> {
@@ -14,6 +18,18 @@ impl<T> ActionExt<T> for Action<T> {
     {
         match self {
             Action::App(msg) => Action::App(f(msg)),
+            Action::Cosmic(action) => Action::Cosmic(action),
+            Action::DbusActivation(message) => Action::DbusActivation(message),
+            Action::None => Action::None,
+        }
+    }
+
+    fn map_into<U>(self) -> Action<U>
+    where
+        T: Into<U>,
+    {
+        match self {
+            Action::App(msg) => Action::App(msg.into()),
             Action::Cosmic(action) => Action::Cosmic(action),
             Action::DbusActivation(message) => Action::DbusActivation(message),
             Action::None => Action::None,
