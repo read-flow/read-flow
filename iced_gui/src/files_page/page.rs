@@ -261,7 +261,7 @@ where
         )
     }
 
-    fn allowed_tags_filter_menu(&self) -> Element<crate::Message> {
+    fn allowed_tags_filter_menu(&self) -> Element<'_, crate::Message> {
         column![text("Allowed tags")]
             .apply_if(!self.filter_options.allow_tags.is_empty(), |col| {
                 col.push(
@@ -289,7 +289,7 @@ where
             .into()
     }
 
-    fn denied_tags_filter_menu(&self) -> Element<crate::Message> {
+    fn denied_tags_filter_menu(&self) -> Element<'_, crate::Message> {
         column![text("Denied tags")]
             .apply_if(!self.filter_options.deny_tags.is_empty(), |col| {
                 col.push(
@@ -317,7 +317,7 @@ where
             .into()
     }
 
-    pub fn view_menu(&self) -> Vec<Element<crate::Message>> {
+    pub fn view_menu(&self) -> Vec<Element<'_, crate::Message>> {
         if self.is_offline {
             vec![
                 container(
@@ -425,7 +425,7 @@ where
         }
     }
 
-    pub fn view(&self) -> Element<crate::Message> {
+    pub fn view(&self) -> Element<'_ ,crate::Message> {
         if self.is_offline {
             return text("Offline").into();
         }

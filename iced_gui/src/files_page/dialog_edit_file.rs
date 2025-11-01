@@ -73,7 +73,7 @@ impl EditFile {
         ])
     }
 
-    pub(crate) fn view(&self) -> Element<crate::Message> {
+    pub(crate) fn view(&self) -> Element<'_, crate::Message> {
         let tags_to_add = self
             .all_tags
             .iter()

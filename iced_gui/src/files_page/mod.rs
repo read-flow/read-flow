@@ -171,7 +171,7 @@ impl Dialog {
         }
     }
 
-    fn view(&self) -> Element<GuiMessage> {
+    fn view(&self) -> Element<'_, GuiMessage> {
         match self {
             Dialog::EditFile(dialog) => dialog.view(),
         }

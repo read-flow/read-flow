@@ -103,7 +103,7 @@ impl Page {
         }
     }
 
-    pub fn view_menu(&self) -> Vec<iced::Element<GuiMessage>> {
+    pub fn view_menu(&self) -> Vec<iced::Element<'_, GuiMessage>> {
         vec![
             container(
                 column![
@@ -135,7 +135,7 @@ impl Page {
         ]
     }
 
-    pub fn view(&self) -> iced::Element<GuiMessage> {
+    pub fn view(&self) -> iced::Element<'_, GuiMessage> {
         container(
             column![
                 text("Welcome"),

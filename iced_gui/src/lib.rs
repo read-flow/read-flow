@@ -191,7 +191,7 @@ impl Tabs {
         }
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         match &self.current_tab {
             CurrentTab::Welcome => self.welcome_page.view(),
             CurrentTab::LocalFiles => self.local_files.view(),
@@ -226,7 +226,7 @@ impl Tabs {
         side_bar
     }
 
-    fn view_sub_menu(&self) -> Vec<Element<Message>> {
+    fn view_sub_menu(&self) -> Vec<Element<'_, Message>> {
         match &self.current_tab {
             CurrentTab::Welcome => self.welcome_page.view_menu(),
             CurrentTab::LocalFiles => self.local_files.view_menu(),
@@ -339,7 +339,7 @@ impl App {
         }
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view(&self) -> Element<'_, Message> {
         let header_bar = row![container(text("ArchiveOrganizer"))];
         let header_bar = self.tabs.extend_breadcrumb(header_bar).spacing(10);
 
@@ -396,11 +396,11 @@ fn layout<'a>(
     column![header(head), row![sidebar(bar), content(main)]]
 }
 
-fn header(row: widget::Row<Message>) -> widget::Container<'_, Message> {
+fn header(row: widget::Row<'_, Message>) -> widget::Container<'_, Message> {
     container(row.padding(10).align_y(iced::Center))
 }
 
-fn sidebar(column: widget::Column<Message>) -> widget::Container<'_, Message> {
+fn sidebar(column: widget::Column<'_, Message>) -> widget::Container<'_, Message> {
     container(
         scrollable(column.spacing(5).padding(10).width(200).align_x(iced::Left))
             .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new()))
@@ -409,7 +409,7 @@ fn sidebar(column: widget::Column<Message>) -> widget::Container<'_, Message> {
     .center_y(iced::Fill)
 }
 
-fn content(column: widget::Column<Message>) -> widget::Container<'_, Message> {
+fn content(column: widget::Column<'_, Message>) -> widget::Container<'_, Message> {
     container(
         scrollable(column.spacing(40).align_x(iced::Left))
             .direction(scrollable::Direction::Both {
