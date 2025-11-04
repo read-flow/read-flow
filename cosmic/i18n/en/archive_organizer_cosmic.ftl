@@ -1,5 +1,6 @@
 app-title = Archive Organizer Cosmic
 about = About
+repository = Repository
 view = View
 welcome = Welcome to Archive Organizer Cosmic! ✨
 page-id = Page { $num }
