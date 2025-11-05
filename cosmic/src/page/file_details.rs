@@ -3,6 +3,7 @@ use crate::fl;
 use crate::page::get_file_type_icon;
 use crate::state::LoadedState;
 use crate::{app::ContextView, client::Client};
+use archive_organizer::Builder;
 use archive_organizer::api::{File, FileDataSource, ReadingStatus};
 use cosmic::{
     Action, Apply, Element, Task, cosmic_theme,
@@ -542,7 +543,11 @@ impl FileDetails {
                 .width(Length::Fill);
 
                 let add_button = widget::button::standard(fl!("file-details-add"))
-                    .on_press(FileDetailsMessage::AddTag)
+                    .apply_if(!self.new_tag.is_empty(), |button| {
+                        button
+                            .on_press(FileDetailsMessage::AddTag)
+                            .class(widget::button::ButtonClass::Suggested)
+                    })
                     .width(Length::Shrink);
 
                 let input_row = Row::new()

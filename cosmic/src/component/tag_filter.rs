@@ -3,6 +3,7 @@
 use crate::client::Client;
 use crate::fl;
 use crate::state::tags::{Tags, TagsState};
+use archive_organizer::Builder;
 use archive_organizer::api::FileDataSource;
 use cosmic::iced::Length;
 use cosmic::iced::widget::combo_box;
@@ -93,7 +94,7 @@ impl TagFilter {
         // Clear all tag filters button
         if !self.allow_tags.is_empty() || !self.deny_tags.is_empty() {
             column = column.push(
-                widget::button::standard(fl!("file-list-clear-all-tag-filters"))
+                widget::button::destructive(fl!("file-list-clear-all-tag-filters"))
                     .on_press(TagFilterMessage::ClearAllTagFilters)
                     .width(Length::Fill),
             );
@@ -173,7 +174,11 @@ impl TagFilter {
                         .width(Length::Fill);
 
                         let add_button = widget::button::standard(fl!("file-list-add-tag"))
-                            .on_press(add_message)
+                            .apply_if(!new_tag_input.is_empty(), |button| {
+                                button
+                                    .on_press(add_message)
+                                    .class(widget::button::ButtonClass::Suggested)
+                            })
                             .width(Length::Shrink);
 
                         let input_row =

@@ -114,7 +114,7 @@ impl cosmic::Application for AppModel {
                 .insert()
                 .text(pages.display_name(selector))
                 .data::<PageSelector>(selector.clone())
-                .icon(icon::from_name("folder-documents-symbolic"));
+                .icon(icon::from_name("package-x-generic-symbolic"));
 
             if index == 0 {
                 nav.activate();

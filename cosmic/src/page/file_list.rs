@@ -253,11 +253,11 @@ impl FileList {
                 .width(Length::Fill)
                 .placeholder(fl!("file-list-all-statuses")),
             )
-            .push(
-                widget::button::standard(fl!("file-list-clear-filter"))
+            .push_maybe(self.status_filter.map(|_| {
+                widget::button::destructive(fl!("file-list-clear-filter"))
                     .on_press(FileListMessage::ClearStatusFilter)
-                    .width(Length::Fill),
-            );
+                    .width(Length::Fill)
+            }));
 
         filters_section = filters_section.push(status_subsection);
 
