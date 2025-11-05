@@ -74,8 +74,6 @@ impl ApplicationModule {
             .map(|(dir, _)| dir.as_ref())
             .collect::<Vec<_>>();
 
-        // dbg!(&scan_directories);
-
         // Execute the future, blocking the current thread until completion
         rt.block_on(async {
             let files: Vec<PathBuf> = self
@@ -96,13 +94,10 @@ impl ApplicationModule {
                 .sorted()
                 .collect();
 
-            // dbg!(&directories);
 
             for dir in directories.into_iter().fold(Vec::new(), |mut acc, dir| {
                 if !acc.iter().any(|d| dir.starts_with(d)) {
                     acc.push(dir);
-                } else {
-                    // dbg!(&dir);
                 }
                 acc
             }) {

@@ -127,7 +127,6 @@ impl Pagination {
     pub fn update(&mut self, message: PaginationMessage) -> Task<Action<PaginationMessage>> {
         match message {
             PaginationMessage::ChangePageSize(new_size) => {
-                dbg!(&new_size);
                 self.page_size = match new_size {
                     0 => 10,
                     1 => 20,
