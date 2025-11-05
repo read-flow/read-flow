@@ -13,7 +13,8 @@ use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
-use cosmic::widget::{self, about::About, icon, menu, nav_bar};
+use cosmic::widget::segmented_button::Entity;
+use cosmic::widget::{self, about::About, menu, nav_bar};
 use futures_util::SinkExt;
 use i18n_embed::unic_langid::LanguageIdentifier;
 use std::collections::HashMap;
@@ -113,7 +114,7 @@ impl cosmic::Application for AppModel {
                 .insert()
                 .text(pages.display_name(selector))
                 .data::<PageSelector>(selector.clone())
-                .icon(icon::from_name("applications-system-symbolic"));
+                .icon(selector.icon());
 
             if index == 0 {
                 nav.activate();
@@ -307,21 +308,31 @@ impl cosmic::Application for AppModel {
             },
             Message::Page(page_message) => self.pages.update(page_message).map(ActionExt::map_into),
             Message::PageAdded(selector) => {
-                let nav = self
-                    .nav
+                let parent = self.nav.active();
+                self.nav
                     .insert()
                     .text(self.pages.display_name(&selector))
                     .data::<PageSelector>(selector.clone())
-                    .icon(icon::from_name("applications-system-symbolic"));
-                nav.activate();
+                    .data::<Entity>(parent)
+                    .icon(selector.icon())
+                    .activate();
                 Task::none()
             }
             Message::ActivePageRemoved(removed_page) => {
+                let id = self.nav.active();
+
+                // Get parent of the active page
+                let parent = self.nav.data::<Entity>(id);
+                // If the active page has a parent, set that as the new active pagen
+                if let Some(parent) = parent {
+                    self.nav.activate(*parent);
+                }
+
                 // Get selector for active page
-                let active_page = self.nav.data::<PageSelector>(self.nav.active());
+                let active_page = self.nav.data::<PageSelector>(id);
                 // Verify that the active page is to be removed
                 if active_page == Some(&removed_page) {
-                    self.nav.remove(self.nav.active());
+                    self.nav.remove(id);
                 } else {
                     // TODO: log
                 }

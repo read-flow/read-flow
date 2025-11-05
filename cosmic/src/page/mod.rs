@@ -22,6 +22,7 @@ use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::task;
 use cosmic::widget;
+use cosmic::widget::icon;
 use file_details::FileDetails;
 use file_details::FileDetailsMessage;
 use file_details::FileDetailsOutput;
@@ -43,6 +44,15 @@ pub struct Pages {
 pub enum PageSelector {
     FileList(ClientSelector),
     FileDetails(i32),
+}
+
+impl PageSelector {
+    pub fn icon(&self) -> icon::Named {
+        match self {
+            PageSelector::FileList(_) => icon::from_name("package-x-generic-symbolic"),
+            PageSelector::FileDetails(_) => icon::from_name("application-pdf-symbolic"),
+        }
+    }
 }
 
 impl From<ClientSelector> for PageSelector {
@@ -212,11 +222,11 @@ impl Pages {
                 let (file_details, initialization) =
                     FileDetails::new(id, file, file_list.client().clone());
                 self.file_details.insert(id, file_details);
-                let action = initialization
-                    .map(move |action| action.map(|msg| map_file_details_message(id, msg)));
-                action.chain(task::message(PageMessage::Out(PageOutput::PageAdded(
-                    PageSelector::FileDetails(id),
-                ))))
+                initialization
+                    .map(move |action| action.map(|msg| map_file_details_message(id, msg)))
+                    .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
+                        PageSelector::FileDetails(id),
+                    ))))
             }
             PageMessage::CloseFileDetails(id) => {
                 let _ = self.file_details.swap_remove(&id);
