@@ -29,7 +29,8 @@ pub struct FileDetails {
     id: i32,
     file: File,
     client: Client,
-    new_tag: String,
+    selected_tag: String,
+    entered_tag: String,
     tags: TagsState,
 }
 
@@ -43,8 +44,10 @@ pub enum FileDetailsOutput {
 pub enum FileDetailsMessage {
     LoadAllTags,
     AllTagsLoaded(Result<Vec<String>, String>),
-    UpdateNewTag(String),
-    AddTag,
+    UpdateSelectedTag(String),
+    AddSelectedTag,
+    UpdateEnteredTag(String),
+    AddEnteredTag(String),
     TagsAdded(Result<Vec<String>, String>),
     RemoveTag(String),
     TagsRemoved(Result<(), String>),
@@ -64,7 +67,8 @@ impl FileDetails {
             id,
             file,
             client,
-            new_tag: String::new(),
+            selected_tag: String::new(),
+            entered_tag: String::new(),
             tags: TagsState::default(),
         };
 
@@ -374,27 +378,19 @@ impl FileDetails {
                 }
                 task::none()
             }
-            FileDetailsMessage::UpdateNewTag(text) => {
-                self.new_tag = text;
+            FileDetailsMessage::UpdateSelectedTag(text) => {
+                self.selected_tag = text;
                 task::none()
             }
-            FileDetailsMessage::AddTag => {
-                if self.new_tag.trim().is_empty() {
+            FileDetailsMessage::AddSelectedTag => {
+                if self.selected_tag.trim().is_empty() {
                     return task::none();
                 }
 
-                let id = self.file.id;
-                let tag = self.new_tag.clone();
-                let client = self.client.clone();
+                let tag = self.selected_tag.clone();
+                self.selected_tag = String::new();
 
-                self.new_tag = String::new();
-
-                task::future(async move {
-                    match client.add_file_tags(id, vec![tag]).await {
-                        Ok(tags) => FileDetailsMessage::TagsAdded(Ok(tags)),
-                        Err(err) => FileDetailsMessage::TagsAdded(Err(format!("{err}"))),
-                    }
-                })
+                self.add_tag(tag)
             }
             FileDetailsMessage::TagsAdded(result) => {
                 match result {
@@ -464,7 +460,27 @@ impl FileDetails {
                     Task::none()
                 }
             },
+            FileDetailsMessage::UpdateEnteredTag(tag) => {
+                self.entered_tag = tag;
+                Task::none()
+            }
+            FileDetailsMessage::AddEnteredTag(tag) => {
+                self.entered_tag.clear();
+                self.add_tag(tag)
+            }
         }
+    }
+
+    fn add_tag(&mut self, tag: String) -> Task<Action<FileDetailsMessage>> {
+        let id = self.file.id;
+        let client = self.client.clone();
+
+        task::future(async move {
+            match client.add_file_tags(id, vec![tag]).await {
+                Ok(tags) => FileDetailsMessage::TagsAdded(Ok(tags)),
+                Err(err) => FileDetailsMessage::TagsAdded(Err(format!("{err}"))),
+            }
+        })
     }
 }
 
@@ -537,15 +553,15 @@ impl FileDetails {
                 let combo = combo_box(
                     available_tags,
                     &fl!("file-details-select-tag"),
-                    Some(&self.new_tag),
-                    FileDetailsMessage::UpdateNewTag,
+                    Some(&self.selected_tag),
+                    FileDetailsMessage::UpdateSelectedTag,
                 )
                 .width(Length::Fill);
 
                 let add_button = widget::button::standard(fl!("file-details-add"))
-                    .apply_if(!self.new_tag.is_empty(), |button| {
+                    .apply_if(!self.selected_tag.is_empty(), |button| {
                         button
-                            .on_press(FileDetailsMessage::AddTag)
+                            .on_press(FileDetailsMessage::AddSelectedTag)
                             .class(widget::button::ButtonClass::Suggested)
                     })
                     .width(Length::Shrink);
@@ -553,6 +569,18 @@ impl FileDetails {
                 let input_row = Row::new()
                     .push(combo)
                     .push(add_button)
+                    .spacing(space_s)
+                    .align_y(Vertical::Center);
+
+                column = column.push(input_row);
+
+                let input = widget::text_input(fl!("file-details-enter"), &self.entered_tag)
+                    .on_input(FileDetailsMessage::UpdateEnteredTag)
+                    .on_submit(FileDetailsMessage::AddEnteredTag)
+                    .width(Length::Fill);
+
+                let input_row = Row::new()
+                    .push(input)
                     .spacing(space_s)
                     .align_y(Vertical::Center);
 

@@ -45,6 +45,7 @@ file-details-tags = Tags
 file-details-no-tags = No tags
 file-details-select-tag = Select a tag
 file-details-add = Add
+file-details-enter = Enter a new tag
 file-details-loading-tags = Loading tags...
 file-details-size-bytes = { $size } bytes
 file-details-select-status = Select status
