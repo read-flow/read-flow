@@ -22,7 +22,6 @@ use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::task;
 use cosmic::widget;
-use cosmic::widget::icon;
 use file_details::FileDetails;
 use file_details::FileDetailsMessage;
 use file_details::FileDetailsOutput;
@@ -46,15 +45,6 @@ pub enum PageSelector {
     FileDetails(i32),
 }
 
-impl PageSelector {
-    pub fn icon(&self) -> icon::Named {
-        match self {
-            PageSelector::FileList(_) => icon::from_name("package-x-generic-symbolic"),
-            PageSelector::FileDetails(_) => icon::from_name("application-pdf-symbolic"),
-        }
-    }
-}
-
 impl From<ClientSelector> for PageSelector {
     fn from(value: ClientSelector) -> Self {
         Self::FileList(value)
@@ -63,7 +53,7 @@ impl From<ClientSelector> for PageSelector {
 
 #[derive(Debug, Clone)]
 pub enum PageOutput {
-    PageAdded(PageSelector),
+    PageAdded(PageSelector, &'static str),
     PageRemoved(PageSelector),
     ToggleContextPage(PageSelector),
 }
@@ -219,6 +209,7 @@ impl Pages {
                 // TODO: only create new file_details if it does not yet exist
                 let id = self.rng.random();
                 let file_list = &self.file_lists[&selector];
+                let file_icon = get_file_type_icon(&file.type_);
                 let (file_details, initialization) =
                     FileDetails::new(id, file, file_list.client().clone());
                 self.file_details.insert(id, file_details);
@@ -226,6 +217,7 @@ impl Pages {
                     .map(move |action| action.map(|msg| map_file_details_message(id, msg)))
                     .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
                         PageSelector::FileDetails(id),
+                        file_icon,
                     ))))
             }
             PageMessage::CloseFileDetails(id) => {
@@ -262,5 +254,15 @@ fn map_file_details_message(id: i32, msg: FileDetailsMessage) -> PageMessage {
             }
         },
         msg => PageMessage::FileDetails(id, msg),
+    }
+}
+
+// Get appropriate file type icon based on extension
+pub fn get_file_type_icon(extension: &str) -> &'static str {
+    match extension.to_lowercase().as_str() {
+        "pdf" => "application-pdf",
+        "epub" => "application-epub+zip",
+        "mobi" => "application-x-mobipocket-ebook",
+        _ => panic!("Unsupported file extension: `{extension}`"),
     }
 }

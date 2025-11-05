@@ -19,6 +19,7 @@ use crate::component::pagination::Pagination;
 use crate::component::pagination::PaginationMessage;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
+use crate::page::get_file_type_icon;
 use crate::state::files::FileState;
 
 #[derive(Debug, Clone)]
@@ -91,13 +92,11 @@ impl FilesComponent {
 fn view_file<'a>(file: &'a File) -> Element<'a, FilesMessage> {
     let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
+    let icon_name = get_file_type_icon(&file.type_);
+
     let button = widget::button::custom(
         Row::new()
-            .push(
-                widget::icon::from_name("x-office-document-symbolic")
-                    .size(16)
-                    .icon(),
-            )
+            .push(widget::icon::from_name(icon_name).size(16).icon())
             .push(display_path(&file.path))
             .padding([0, space_s])
             .spacing(space_s)

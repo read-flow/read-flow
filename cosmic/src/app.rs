@@ -14,7 +14,7 @@ use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
 use cosmic::widget::segmented_button::Entity;
-use cosmic::widget::{self, about::About, menu, nav_bar};
+use cosmic::widget::{self, about::About, icon, menu, nav_bar};
 use futures_util::SinkExt;
 use i18n_embed::unic_langid::LanguageIdentifier;
 use std::collections::HashMap;
@@ -51,7 +51,7 @@ pub enum Message {
     UpdateConfig(Config),
     LaunchUrl(String),
     Page(PageMessage),
-    PageAdded(PageSelector),
+    PageAdded(PageSelector, &'static str),
     ActivePageRemoved(PageSelector),
     SwitchLanguage(LanguageIdentifier),
 }
@@ -59,7 +59,7 @@ pub enum Message {
 impl From<PageOutput> for Message {
     fn from(source: PageOutput) -> Self {
         match source {
-            PageOutput::PageAdded(page) => Message::PageAdded(page),
+            PageOutput::PageAdded(page, icon_name) => Message::PageAdded(page, icon_name),
             PageOutput::PageRemoved(page) => Message::ActivePageRemoved(page),
             PageOutput::ToggleContextPage(page_selector) => {
                 Message::ToggleContextPage(ContextPage::PageContext(page_selector))
@@ -114,7 +114,7 @@ impl cosmic::Application for AppModel {
                 .insert()
                 .text(pages.display_name(selector))
                 .data::<PageSelector>(selector.clone())
-                .icon(selector.icon());
+                .icon(icon::from_name("folder-documents-symbolic"));
 
             if index == 0 {
                 nav.activate();
@@ -307,14 +307,14 @@ impl cosmic::Application for AppModel {
                 }
             },
             Message::Page(page_message) => self.pages.update(page_message).map(ActionExt::map_into),
-            Message::PageAdded(selector) => {
+            Message::PageAdded(selector, icon_name) => {
                 let parent = self.nav.active();
                 self.nav
                     .insert()
                     .text(self.pages.display_name(&selector))
                     .data::<PageSelector>(selector.clone())
                     .data::<Entity>(parent)
-                    .icon(selector.icon())
+                    .icon(icon::from_name(icon_name))
                     .activate();
                 Task::none()
             }

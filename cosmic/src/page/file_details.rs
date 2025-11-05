@@ -1,5 +1,6 @@
 use crate::client::ClientSelector;
 use crate::fl;
+use crate::page::get_file_type_icon;
 use crate::state::LoadedState;
 use crate::{app::ContextView, client::Client};
 use archive_organizer::api::{File, FileDataSource, ReadingStatus};
@@ -106,11 +107,8 @@ impl FileDetails {
             .and_then(|parent| parent.to_str())
             .unwrap_or("");
 
-        // Get file extension for icon selection
-        let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-
         // Header with file icon, name, and actions
-        let file_icon = self.get_file_type_icon(extension);
+        let file_icon = get_file_type_icon(&self.file.type_);
 
         let header_card = widget::container(
             Column::new()
@@ -470,24 +468,6 @@ impl FileDetails {
 }
 
 impl FileDetails {
-    // Get appropriate file type icon based on extension
-    fn get_file_type_icon(&self, extension: &str) -> &'static str {
-        match extension.to_lowercase().as_str() {
-            "pdf" => "application-pdf-symbolic",
-            "doc" | "docx" => "x-office-document-symbolic",
-            "xls" | "xlsx" => "x-office-spreadsheet-symbolic",
-            "ppt" | "pptx" => "x-office-presentation-symbolic",
-            "txt" | "md" | "rst" => "text-x-generic-symbolic",
-            "jpg" | "jpeg" | "png" | "gif" | "bmp" | "svg" => "image-x-generic-symbolic",
-            "mp3" | "wav" | "flac" | "ogg" => "audio-x-generic-symbolic",
-            "mp4" | "avi" | "mkv" | "mov" => "video-x-generic-symbolic",
-            "zip" | "tar" | "gz" | "rar" | "7z" => "package-x-generic-symbolic",
-            "html" | "htm" | "css" | "js" | "json" => "text-html-symbolic",
-            "py" | "rs" | "c" | "cpp" | "java" | "go" => "text-x-script-symbolic",
-            _ => "text-x-generic-symbolic",
-        }
-    }
-
     // Format file size in human-readable format
     fn format_file_size(&self, size: i64) -> String {
         const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
