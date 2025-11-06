@@ -45,7 +45,7 @@ pub enum FileListMessage {
     RefreshFile(File),
     SearchChanged(String),
     ClearSearch,
-    FilteringComplete(Vec<File>),
+    FilteringComplete(Vec<usize>),
     FocusSearchInput,
     DebounceTimeout(u32, String), // (counter, query) - triggers filtering after delay
     StatusFilterChanged(Option<ReadingStatus>),
@@ -98,8 +98,9 @@ impl FileList {
             // Perform filtering in background after debounce timeout
             // This runs only when user has paused typing for 250ms
             let filtered_files = all_files
-                .into_iter()
-                .filter(|file| filter_file(&query, status_filter, &allow_tags, &deny_tags, &file))
+                .iter()
+                .enumerate()
+                .filter_map(|(index, file)| filter_file(&query, status_filter, &allow_tags, &deny_tags, &file).then_some(index))
                 .collect();
 
             FileListMessage::FilteringComplete(filtered_files)
@@ -302,7 +303,7 @@ impl FileList {
                     &self.tag_filter.allow_tags,
                     &self.tag_filter.deny_tags,
                 );
-                let collection_size = files.visible_files.len();
+                let collection_size = files.filtered_indices.len();
                 self.archive.files = FileState::Loaded(files);
                 task::message(FileListMessage::FilesComponent(FilesMessage::Pagination(
                     PaginationMessage::SetCollectionSize(collection_size),

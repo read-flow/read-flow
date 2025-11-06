@@ -58,7 +58,7 @@ impl FilesComponent {
             FileState::Loaded(files) => {
                 let file_content = self
                     .pagination
-                    .filter_visible(files.visible_files.as_slice())
+                    .filter_visible(files.filtered_files().as_slice())
                     .map(|file| view_file(file))
                     .apply(Column::with_children)
                     .push(self.pagination.view().map(Into::into))
@@ -84,7 +84,7 @@ impl FilesComponent {
         }
     }
 
-    pub fn set_visible(&mut self, files: Vec<File>) {
+    pub fn set_visible(&mut self, files: Vec<usize>) {
         self.files.unwrap_mut().set_visible(files);
     }
 }

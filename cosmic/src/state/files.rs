@@ -8,19 +8,19 @@ use crate::state::LoadedState;
 
 pub struct Files {
     pub all_files: Vec<File>,
-    pub visible_files: Vec<File>,
+    pub filtered_indices: Vec<usize>,
 }
 
 impl Files {
     pub fn new(files: Vec<File>) -> Self {
         Self {
-            all_files: files.clone(),
-            visible_files: files,
+            filtered_indices: files.iter().enumerate().map(|(index, _)| index).collect(),
+            all_files: files,
         }
     }
 
-    pub fn set_visible(&mut self, files: Vec<File>) {
-        self.visible_files = files;
+    pub fn set_visible(&mut self, files: Vec<usize>) {
+        self.filtered_indices = files;
     }
 
     pub fn update_file_by_id(&mut self, updated_file: File) {
@@ -37,6 +37,13 @@ impl Files {
         self.all_files.clone()
     }
 
+    pub fn filtered_files(&self) -> Vec<&File> {
+	self.filtered_indices
+	    .iter()
+	    .map(|index| &self.all_files[*index])
+	    .collect()
+    }
+
     /// Filter files based on the search query, reading status, and tags (synchronous version for initial load only)
     pub fn filtered_by(
         mut self,
@@ -49,8 +56,8 @@ impl Files {
         let filtered_files = self
             .all_files
             .iter()
-            .filter(|file| filter_file(search_query, status_filter, allow_tags, deny_tags, file))
-            .cloned()
+            .enumerate()
+            .filter_map(|(index, file)| filter_file(search_query, status_filter, allow_tags, deny_tags, &file).then_some(index))
             .collect::<Vec<_>>();
 
         self.set_visible(filtered_files);
