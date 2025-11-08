@@ -38,10 +38,10 @@ impl Files {
     }
 
     pub fn filtered_files(&self) -> Vec<&File> {
-	self.filtered_indices
-	    .iter()
-	    .map(|index| &self.all_files[*index])
-	    .collect()
+        self.filtered_indices
+            .iter()
+            .map(|index| &self.all_files[*index])
+            .collect()
     }
 
     /// Filter files based on the search query, reading status, and tags (synchronous version for initial load only)
@@ -57,7 +57,10 @@ impl Files {
             .all_files
             .iter()
             .enumerate()
-            .filter_map(|(index, file)| filter_file(search_query, status_filter, allow_tags, deny_tags, &file).then_some(index))
+            .filter_map(|(index, file)| {
+                filter_file(search_query, status_filter, allow_tags, deny_tags, &file)
+                    .then_some(index)
+            })
             .collect::<Vec<_>>();
 
         self.set_visible(filtered_files);

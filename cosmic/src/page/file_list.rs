@@ -100,7 +100,10 @@ impl FileList {
             let filtered_files = all_files
                 .iter()
                 .enumerate()
-                .filter_map(|(index, file)| filter_file(&query, status_filter, &allow_tags, &deny_tags, &file).then_some(index))
+                .filter_map(|(index, file)| {
+                    filter_file(&query, status_filter, &allow_tags, &deny_tags, &file)
+                        .then_some(index)
+                })
                 .collect();
 
             FileListMessage::FilteringComplete(filtered_files)

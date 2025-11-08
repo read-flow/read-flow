@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
 use iced::{
-    widget::{button, column, radio, row, text, text_input, Column, Row},
     Element, Task,
+    widget::{Column, Row, button, column, radio, row, text, text_input},
 };
 use itertools::Itertools;
 use strum::IntoEnumIterator;
 
-use crate::{add_tag_button, delete_tag_button, tag_button, CurrentTabRef, IdentifyTab};
+use crate::{CurrentTabRef, IdentifyTab, add_tag_button, delete_tag_button, tag_button};
 use archive_organizer::api::{FileDataSource, ReadingStatus};
 
-use super::{display_path, CurrentTab, File};
+use super::{CurrentTab, File, display_path};
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone)]
@@ -115,22 +115,25 @@ impl EditFile {
             row![text("fingerprint"), text(&self.file.fingerprint)],
             row![
                 text("tags"),
-                column![self
-                    .file
-                    .tags
-                    .iter()
-                    .sorted()
-                    .fold(Column::new(), |column, tag| {
-                        column.push(row![
-                            button(text(tag).size(11)).padding(4).style(tag_button),
-                            button(text(" X ").size(15))
-                                .padding(1)
-                                .style(delete_tag_button)
-                                .on_press(Message::DeleteTag(self.tab.clone(), tag.clone()).into())
-                        ])
-                    })
-                    .max_width(580.0)
-                    .spacing(10),]
+                column![
+                    self.file
+                        .tags
+                        .iter()
+                        .sorted()
+                        .fold(Column::new(), |column, tag| {
+                            column.push(row![
+                                button(text(tag).size(11)).padding(4).style(tag_button),
+                                button(text(" X ").size(15))
+                                    .padding(1)
+                                    .style(delete_tag_button)
+                                    .on_press(
+                                        Message::DeleteTag(self.tab.clone(), tag.clone()).into()
+                                    )
+                            ])
+                        })
+                        .max_width(580.0)
+                        .spacing(10),
+                ]
                 .spacing(10),
             ],
             row![

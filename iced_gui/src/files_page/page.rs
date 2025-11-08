@@ -425,7 +425,7 @@ where
         }
     }
 
-    pub fn view(&self) -> Element<'_ ,crate::Message> {
+    pub fn view(&self) -> Element<'_, crate::Message> {
         if self.is_offline {
             return text("Offline").into();
         }
