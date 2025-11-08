@@ -6,6 +6,8 @@ page-id = Pagina { $num }
 git-description = Git commit {$hash} op {$date}
 unknown-remote = ⚠ Onbekende externe bron: { $url }
 
+app-file-sources = Document Bronnen
+
 # Generic messages
 generic-error = 🛑 Fout: { $error }
 
@@ -68,3 +70,8 @@ pagination-first = Eerste
 pagination-prev = Vorige
 pagination-next = Volgende
 pagination-last = Laatste
+
+# Sources
+sources-loading-state-new = Initialiseren
+sources-loading-state-loading = Laden...
+sources-enter-url = Voer URL in

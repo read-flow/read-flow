@@ -54,7 +54,7 @@ impl From<io::Error> for Error {
 }
 
 impl FilesClient {
-    pub fn new<U: Into<Url>>(base_url: U) -> Result<Self, Error> {
+    pub fn new<U: Into<Url>>(base_url: U) -> Result<Self, Infallible> {
         let result = Self {
             base_url: base_url.into(),
             client: Client::new(),

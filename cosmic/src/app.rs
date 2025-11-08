@@ -109,6 +109,11 @@ impl cosmic::Application for AppModel {
 
         let (pages, page_action) = Pages::new(&application_module);
 
+        nav.insert()
+            .text(pages.display_name(&PageSelector::Sources))
+            .data::<PageSelector>(PageSelector::Sources)
+            .icon(icon::from_name("resources-symbolic"));
+
         for (index, selector) in pages.all_file_list_selectors().iter().enumerate() {
             let nav = nav
                 .insert()

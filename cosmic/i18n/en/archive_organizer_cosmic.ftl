@@ -7,6 +7,8 @@ page-id = Page { $num }
 git-description = Git commit {$hash} on {$date}
 unknown-remote = ⚠ Unknown Remote: { $url }
 
+app-file-sources = Document Sources
+
 # Generic messages
 generic-error = 🛑 Error: { $error }
 
@@ -69,3 +71,8 @@ pagination-first = First
 pagination-prev = Previous
 pagination-next = Next
 pagination-last = Last
+
+# Sources
+sources-loading-state-new = Initializing
+sources-loading-state-loading = Loading...
+sources-enter-url = Enter URL

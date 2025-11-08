@@ -68,7 +68,7 @@ pub fn get_update<T: PartialEq + Clone>(original: &T, updated: &T) -> Option<T> 
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Status {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]

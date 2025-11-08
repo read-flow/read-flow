@@ -2,6 +2,7 @@
 // pages
 mod file_details;
 pub(crate) mod file_list;
+pub(crate) mod sources;
 
 use core::panic;
 
@@ -9,19 +10,21 @@ use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
-use archive_organizer::ApplicationModule;
+use crate::page::sources::SourcesMessage;
+use crate::page::sources::SourcesPage;
 use archive_organizer::api::File;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::dao::RemoteDao;
+use archive_organizer::ApplicationModule;
+use cosmic::iced::alignment::Horizontal;
+use cosmic::iced::alignment::Vertical;
+use cosmic::iced::Length;
+use cosmic::task;
+use cosmic::widget;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
-use cosmic::iced::Length;
-use cosmic::iced::alignment::Horizontal;
-use cosmic::iced::alignment::Vertical;
-use cosmic::task;
-use cosmic::widget;
 use file_details::FileDetails;
 use file_details::FileDetailsMessage;
 use file_details::FileDetailsOutput;
@@ -29,20 +32,22 @@ use file_list::FileList;
 use file_list::FileListMessage;
 use file_list::FileListOutput;
 use indexmap::IndexMap;
-use rand::Rng;
 use rand::rngs::ThreadRng;
+use rand::Rng;
 use url::Url;
 
 pub struct Pages {
     rng: ThreadRng,
     file_lists: IndexMap<ClientSelector, FileList>,
     file_details: IndexMap<i32, FileDetails>,
+    sources: SourcesPage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PageSelector {
     FileList(ClientSelector),
     FileDetails(i32),
+    Sources,
 }
 
 impl From<ClientSelector> for PageSelector {
@@ -62,15 +67,24 @@ pub enum PageOutput {
 pub enum PageMessage {
     Files(ClientSelector, FileListMessage),
     FileDetails(i32, FileDetailsMessage),
+    Sources(SourcesMessage),
     OpenFileDetails(ClientSelector, File),
     CloseFileDetails(i32),
     Out(PageOutput),
+}
+
+impl From<SourcesMessage> for PageMessage {
+    fn from(source: SourcesMessage) -> Self {
+        Self::Sources(source)
+    }
 }
 
 impl Pages {
     pub fn new(application_module: &ApplicationModule) -> (Self, Task<Action<PageMessage>>) {
         // Get the database client from the application module
         let db_client = application_module.db_client();
+
+        let (sources, init_sources) = SourcesPage::new(application_module.connection_pool.clone());
 
         // Get remote clients from the application module
         let remote_clients = application_module
@@ -91,10 +105,8 @@ impl Pages {
 
         let (local, local_task) = FileList::new(db_client.into());
 
-        let mut tasks = vec![
-            local_task
-                .map(|action| action.map(|msg| map_file_list_message(ClientSelector::Local, msg))),
-        ];
+        let mut tasks = vec![local_task
+            .map(|action| action.map(|msg| map_file_list_message(ClientSelector::Local, msg)))];
 
         let (mut remotes, remote_tasks): (Vec<FileList>, Vec<Task<Action<PageMessage>>>) =
             remote_clients
@@ -114,6 +126,7 @@ impl Pages {
                 .unzip();
 
         tasks.extend(remote_tasks);
+        tasks.push(init_sources.map(ActionExt::map_into));
 
         let mut file_lists = vec![local];
         file_lists.append(&mut remotes);
@@ -126,6 +139,7 @@ impl Pages {
                     .map(|file_list| (file_list.selector(), file_list))
                     .collect(),
                 file_details: Default::default(),
+                sources,
             },
             task::batch(tasks),
         )
@@ -139,6 +153,7 @@ impl Pages {
         match &page_selector {
             PageSelector::FileList(selector) => self.file_lists[selector].display_name(),
             PageSelector::FileDetails(id) => self.file_details[id].display_name(),
+            PageSelector::Sources => fl!("app-file-sources"),
         }
     }
 
@@ -160,6 +175,7 @@ impl Pages {
                         .align_y(Vertical::Center)
                         .into()
                 }),
+            PageSelector::Sources => self.sources.view().map(Into::into),
         }
     }
 
@@ -188,6 +204,7 @@ impl Pages {
                         .align_y(Vertical::Center)
                         .into(),
                 }),
+            PageSelector::Sources => self.sources.view_context().map(Into::into),
         }
     }
 
@@ -205,6 +222,10 @@ impl Pages {
             PageMessage::FileDetails(id, message) => self.file_details[&id]
                 .update(message)
                 .map(move |action| action.map(|msg| map_file_details_message(id, msg))),
+            PageMessage::Sources(sources_message) => self
+                .sources
+                .update(sources_message)
+                .map(ActionExt::map_into),
             PageMessage::OpenFileDetails(selector, file) => {
                 // TODO: only create new file_details if it does not yet exist
                 let id = self.rng.random();

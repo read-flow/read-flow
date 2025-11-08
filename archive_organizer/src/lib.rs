@@ -94,7 +94,6 @@ impl ApplicationModule {
                 .sorted()
                 .collect();
 
-
             for dir in directories.into_iter().fold(Vec::new(), |mut acc, dir| {
                 if !acc.iter().any(|d| dir.starts_with(d)) {
                     acc.push(dir);
