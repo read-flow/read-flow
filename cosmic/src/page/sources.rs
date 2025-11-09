@@ -6,7 +6,7 @@ use archive_organizer::db::dao::RemoteDao;
 use archive_organizer::db::models::{NewRemote, Remote};
 use cosmic::iced::Length;
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::widget::{Column, Row, container, icon, row};
+use cosmic::widget::{column, container, icon, row};
 use cosmic::{Action, widget};
 use cosmic::{Apply, Element, Task};
 use cosmic::{cosmic_theme, task, theme};
@@ -23,6 +23,7 @@ pub struct SourcesPage {
     connection_pool: ConnectionPool,
     sources_state: SourcesState,
     entered_url: String,
+    entered_url_id: widget::Id, // Unique ID for focus management
     url_state: UrlState,
 }
 
@@ -53,6 +54,7 @@ impl SourcesPage {
                 connection_pool,
                 sources_state: Default::default(),
                 entered_url: Default::default(),
+                entered_url_id: widget::Id::unique(),
                 url_state: Default::default(),
             },
             task::message(SourcesMessage::LoadSources),
@@ -61,12 +63,15 @@ impl SourcesPage {
 
     pub fn view(&self) -> Element<'_, SourcesMessage> {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-        let mut col = Column::new();
+
+        let mut col = column();
 
         col = match &self.sources_state {
             LoadedState::New => col.push(widget::text(fl!("sources-loading-state-new"))),
             LoadedState::Loading => col.push(widget::text(fl!("sources-loading-state-loading"))),
-            LoadedState::Failed(error) => col.push(widget::text(format!("error: {error}"))), // TODO i18n
+            LoadedState::Failed(error) => {
+                col.push(widget::text(fl!("generic-error", error = error.as_str())))
+            }
             LoadedState::Loaded(sources) => {
                 let content = sources.iter().map(|source| self.view_source(source));
 
@@ -74,7 +79,7 @@ impl SourcesPage {
             }
         };
 
-        let input = Row::new()
+        let input = row()
             .push(
                 icon::from_name("network-server-symbolic")
                     .size(24)
@@ -84,12 +89,23 @@ impl SourcesPage {
                     .width(Length::FillPortion(1)),
             )
             .push(
-                widget::text_input(fl!("sources-enter-url"), &self.entered_url)
-                    .on_input(SourcesMessage::UpdateEnteredUrl)
-                    .apply_if(self.url_state.is_loaded(), |input| {
-                        input.on_submit(SourcesMessage::AddSource)
-                    })
-                    .width(Length::FillPortion(10)),
+                column()
+                    .push(
+                        widget::text_input(fl!("sources-enter-url"), &self.entered_url)
+                            .id(self.entered_url_id.clone())
+                            .always_active()
+                            .on_input(SourcesMessage::UpdateEnteredUrl)
+                            .apply_if(self.url_state.is_loaded(), |input| {
+                                input.on_submit(SourcesMessage::AddSource)
+                            })
+                            .width(Length::FillPortion(10)),
+                    )
+                    .apply_if(matches!(self.url_state, LoadedState::Failed(_)), |col| {
+                        let LoadedState::Failed(ref error) = self.url_state else {
+                            unreachable!()
+                        };
+                        col.push(widget::text(fl!("generic-error", error = error.as_str())))
+                    }),
             )
             .push(
                 match self.url_state {
@@ -106,7 +122,7 @@ impl SourcesPage {
             )
             .padding([0, space_s])
             .spacing(space_s)
-            .align_y(Vertical::Center)
+            .align_y(Vertical::Top)
             .height(Length::Shrink);
 
         col.push(input).spacing(space_s).into()
@@ -150,25 +166,28 @@ impl SourcesPage {
             }
             SourcesMessage::InvalidUrl => {
                 self.url_state = UrlState::Failed(String::from("invalid-url"));
-                task::none()
+                widget::text_input::focus(self.entered_url_id.clone())
             }
             SourcesMessage::TestEnteredUrl { url, do_submit } => {
                 self.url_state = UrlState::Loading;
                 let client = FilesClient::new(url.clone()).expect("valid url");
-                task::future(async move {
-                    let result = client.status().await.map_err(|e| format!("error: {e}"));
-                    match result {
-                        Ok(_status) if do_submit => SourcesMessage::SubmitSource(url),
-                        result => SourcesMessage::UrlTestResult(result),
-                    }
-                })
+                Task::batch(vec![
+                    widget::text_input::focus(self.entered_url_id.clone()),
+                    task::future(async move {
+                        let result = client.status().await.map_err(|error| format!("{error}"));
+                        match result {
+                            Ok(_status) if do_submit => SourcesMessage::SubmitSource(url),
+                            result => SourcesMessage::UrlTestResult(result),
+                        }
+                    }),
+                ])
             }
             SourcesMessage::UrlTestResult(result) => {
                 match result {
                     Ok(status) => self.url_state = UrlState::Loaded(status),
                     Err(error) => self.url_state = UrlState::Failed(error),
                 }
-                task::none()
+                widget::text_input::focus(self.entered_url_id.clone())
             }
             SourcesMessage::AddSource(url) => {
                 self.entered_url = url;
@@ -187,7 +206,7 @@ impl SourcesPage {
                         base_url: url.to_string(),
                     }) {
                         Ok(_) => SourcesMessage::SubmittedSource,
-                        Err(error) => SourcesMessage::UrlTestResult(Err(format!("error {error}"))),
+                        Err(error) => SourcesMessage::UrlTestResult(Err(format!("{error}"))),
                     }
                 })
             }
