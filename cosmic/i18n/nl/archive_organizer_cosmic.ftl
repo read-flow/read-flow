@@ -75,3 +75,6 @@ pagination-last = Laatste
 sources-loading-state-new = Initialiseren
 sources-loading-state-loading = Laden...
 sources-enter-url = Voer URL in
+sources-invalid-url = Geen valide URL
+sources-error-card = Er is een fout opgetreden
+sources-error-card-close = Sluiten

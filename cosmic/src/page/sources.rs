@@ -6,8 +6,8 @@ use archive_organizer::db::dao::RemoteDao;
 use archive_organizer::db::models::{NewRemote, Remote};
 use cosmic::iced::Length;
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced_widget::Row;
-use cosmic::widget::{column, container, icon, row};
+use cosmic::theme::Container;
+use cosmic::widget::{column, container, icon, row, Column, Row};
 use cosmic::{Action, widget};
 use cosmic::{Apply, Element, Task};
 use cosmic::{cosmic_theme, task, theme};
@@ -17,15 +17,16 @@ use crate::app::ContextView;
 use crate::fl;
 use crate::state::LoadedState;
 
-pub type SourcesState = LoadedState<Vec<Remote>>;
-pub type UrlState = LoadedState<Status>;
+pub type RemotesState = LoadedState<Vec<Remote>>;
+pub type UrlVerificationState = LoadedState<Status>;
 
 pub struct SourcesPage {
     connection_pool: ConnectionPool,
-    sources_state: SourcesState,
+    remotes_state: RemotesState,
     entered_url: String,
     entered_url_id: widget::Id, // Unique ID for focus management
-    url_state: UrlState,
+    url_verification_state: UrlVerificationState,
+    operation_error: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,18 +34,22 @@ pub enum SourcesOutput {}
 
 #[derive(Debug, Clone)]
 pub enum SourcesMessage {
-    LoadSources,
-    Loaded(Vec<Remote>),
-    LoadingFailed(String),
+    LoadRemotes,
+    SetRemotesStateFailed(String),
+    SetRemotesStateLoaded(Vec<Remote>),
 
     UpdateEnteredUrl(String),
-    TestEnteredUrl { url: Url, do_submit: bool },
-    InvalidUrl,
-    UrlTestResult(Result<Status, String>),
+    VerifyEnteredUrl { url: Url, do_submit: bool },
+    SetUrlVerificationStateFailed(String),
+    SetUrlVerificationStateLoaded(Status),
+
     AddSource(String),
     SubmitSource(Url),
-    SubmittedSource,
+    ClearUrlEntries,
     DeleteSource(i32),
+
+    SetOperationError(String),
+    ClearOperationError,
 
     Out(SourcesOutput),
 }
@@ -54,12 +59,13 @@ impl SourcesPage {
         (
             Self {
                 connection_pool,
-                sources_state: Default::default(),
+                remotes_state: Default::default(),
                 entered_url: Default::default(),
                 entered_url_id: widget::Id::unique(),
-                url_state: Default::default(),
+                url_verification_state: Default::default(),
+                operation_error: None,
             },
-            task::message(SourcesMessage::LoadSources),
+            task::message(SourcesMessage::LoadRemotes),
         )
     }
 
@@ -68,7 +74,33 @@ impl SourcesPage {
 
         let mut col = column();
 
-        col = match &self.sources_state {
+        col = col.push_maybe(self.operation_error.as_ref().map(|error| {
+            let card = column()
+                .push(widget::text::heading(fl!("sources-error-card")))
+                .push(widget::divider::horizontal::default())
+                .push(widget::text::body(error))
+                .push(widget::divider::horizontal::default())
+                .push(
+                    Column::new()
+                        .push(
+                            widget::button::text(fl!("sources-error-card-close"))
+                                .on_press(SourcesMessage::ClearOperationError),
+                        )
+                        .width(Length::Fill)
+                        .align_x(Horizontal::Right),
+                )
+                .padding([0, space_s])
+                .spacing(space_s)
+                .apply(container)
+                .class(Container::Dialog)
+                .padding([0, space_s]);
+            row()
+                .push(widget::text("").width(Length::FillPortion(1)))
+                .push(card.width(Length::FillPortion(10)))
+                .push(widget::text("").width(Length::FillPortion(1)))
+        }));
+
+        col = match &self.remotes_state {
             LoadedState::New => col.push(widget::text(fl!("sources-loading-state-new"))),
             LoadedState::Loading => col.push(widget::text(fl!("sources-loading-state-loading"))),
             LoadedState::Failed(error) => {
@@ -97,20 +129,23 @@ impl SourcesPage {
                             .id(self.entered_url_id.clone())
                             .always_active()
                             .on_input(SourcesMessage::UpdateEnteredUrl)
-                            .apply_if(self.url_state.is_loaded(), |input| {
+                            .apply_if(self.url_verification_state.is_loaded(), |input| {
                                 input.on_submit(SourcesMessage::AddSource)
                             })
                             .width(Length::FillPortion(10)),
                     )
-                    .apply_if(matches!(self.url_state, LoadedState::Failed(_)), |col| {
-                        let LoadedState::Failed(ref error) = self.url_state else {
-                            unreachable!()
-                        };
-                        col.push(widget::text(fl!("generic-error", error = error.as_str())))
-                    }),
+                    .apply_if(
+                        matches!(self.url_verification_state, LoadedState::Failed(_)),
+                        |col| {
+                            let LoadedState::Failed(ref error) = self.url_verification_state else {
+                                unreachable!()
+                            };
+                            col.push(widget::text(fl!("generic-error", error = error.as_str())))
+                        },
+                    ),
             )
             .push(
-                match self.url_state {
+                match self.url_verification_state {
                     LoadedState::New => icon::from_name("dialog-information-symbolic"),
                     LoadedState::Loading => icon::from_name("dialog-question-symbolic"),
                     LoadedState::Failed(_) => icon::from_name("dialog-error-symbolic"),
@@ -139,66 +174,70 @@ impl SourcesPage {
 
     pub fn update(&mut self, message: SourcesMessage) -> Task<Action<SourcesMessage>> {
         match message {
-            SourcesMessage::LoadSources => {
+            SourcesMessage::LoadRemotes => {
+                self.remotes_state = RemotesState::Loading;
                 let connection_pool = self.connection_pool.clone();
                 task::future(async move {
                     match connection_pool.select_all_remotes() {
-                        Ok(remotes) => SourcesMessage::Loaded(remotes),
-                        Err(error) => SourcesMessage::LoadingFailed(format!("{error}")),
+                        Ok(remotes) => SourcesMessage::SetRemotesStateLoaded(remotes),
+                        Err(error) => SourcesMessage::SetRemotesStateFailed(format!("{error}")),
                     }
                 })
             }
-            SourcesMessage::Loaded(remotes) => {
-                self.sources_state = SourcesState::Loaded(remotes);
+            SourcesMessage::SetRemotesStateLoaded(remotes) => {
+                self.remotes_state = RemotesState::Loaded(remotes);
                 task::none()
             }
-            SourcesMessage::LoadingFailed(error) => {
-                self.sources_state = SourcesState::Failed(error);
+            SourcesMessage::SetRemotesStateFailed(error) => {
+                self.remotes_state = RemotesState::Failed(error);
                 task::none()
             }
             SourcesMessage::UpdateEnteredUrl(url) => {
                 self.entered_url = url;
                 match self.entered_url.parse::<Url>() {
-                    Ok(url) => task::message(SourcesMessage::TestEnteredUrl {
+                    Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
                         url,
                         do_submit: false,
                     }),
-                    Err(_) => task::message(SourcesMessage::InvalidUrl),
+                    Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(fl!(
+                        "sources-invalid-url"
+                    ))),
                 }
             }
-            SourcesMessage::InvalidUrl => {
-                self.url_state = UrlState::Failed(String::from("invalid-url"));
+            SourcesMessage::SetUrlVerificationStateFailed(error) => {
+                self.url_verification_state = UrlVerificationState::Failed(error);
                 widget::text_input::focus(self.entered_url_id.clone())
             }
-            SourcesMessage::TestEnteredUrl { url, do_submit } => {
-                self.url_state = UrlState::Loading;
+            SourcesMessage::VerifyEnteredUrl { url, do_submit } => {
+                self.url_verification_state = UrlVerificationState::Loading;
                 let client = FilesClient::new(url.clone()).expect("valid url");
                 Task::batch(vec![
                     widget::text_input::focus(self.entered_url_id.clone()),
                     task::future(async move {
-                        let result = client.status().await.map_err(|error| format!("{error}"));
-                        match result {
+                        match client.status().await {
                             Ok(_status) if do_submit => SourcesMessage::SubmitSource(url),
-                            result => SourcesMessage::UrlTestResult(result),
+                            Ok(status) => SourcesMessage::SetUrlVerificationStateLoaded(status),
+                            Err(error) => {
+                                SourcesMessage::SetUrlVerificationStateFailed(format!("{error}"))
+                            }
                         }
                     }),
                 ])
             }
-            SourcesMessage::UrlTestResult(result) => {
-                match result {
-                    Ok(status) => self.url_state = UrlState::Loaded(status),
-                    Err(error) => self.url_state = UrlState::Failed(error),
-                }
+            SourcesMessage::SetUrlVerificationStateLoaded(status) => {
+                self.url_verification_state = UrlVerificationState::Loaded(status);
                 widget::text_input::focus(self.entered_url_id.clone())
             }
             SourcesMessage::AddSource(url) => {
                 self.entered_url = url;
                 match self.entered_url.parse::<Url>() {
-                    Ok(url) => task::message(SourcesMessage::TestEnteredUrl {
+                    Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
                         url,
                         do_submit: true,
                     }),
-                    Err(_) => task::message(SourcesMessage::InvalidUrl),
+                    Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
+                        String::from("invalid-url"),
+                    )),
                 }
             }
             SourcesMessage::SubmitSource(url) => {
@@ -207,24 +246,32 @@ impl SourcesPage {
                     match connection_pool.insert_remote(NewRemote {
                         base_url: url.to_string(),
                     }) {
-                        Ok(_) => SourcesMessage::SubmittedSource,
-                        Err(error) => SourcesMessage::UrlTestResult(Err(format!("{error}"))),
+                        Ok(_) => SourcesMessage::ClearUrlEntries,
+                        Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }
                 })
             }
-            SourcesMessage::SubmittedSource => {
+            SourcesMessage::ClearUrlEntries => {
                 self.entered_url.clear();
-                self.url_state = Default::default();
-                task::message(SourcesMessage::LoadSources)
+                self.url_verification_state = Default::default();
+                task::message(SourcesMessage::LoadRemotes)
             }
             SourcesMessage::DeleteSource(id) => {
                 let connection_pool = self.connection_pool.clone();
                 task::future(async move {
                     match connection_pool.delete_remote_by_id(id) {
-                        Ok(_) => SourcesMessage::LoadSources,
-                        Err(error) => SourcesMessage::UrlTestResult(Err(format!("{error}"))),
+                        Ok(_) => SourcesMessage::LoadRemotes,
+                        Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }
                 })
+            }
+            SourcesMessage::SetOperationError(error) => {
+                self.operation_error = Some(error);
+                task::none()
+            }
+            SourcesMessage::ClearOperationError => {
+                self.operation_error = None;
+                task::none()
             }
             SourcesMessage::Out(_) => {
                 panic!("should be handled by the parent component")

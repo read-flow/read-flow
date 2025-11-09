@@ -76,3 +76,6 @@ pagination-last = Last
 sources-loading-state-new = Initializing
 sources-loading-state-loading = Loading...
 sources-enter-url = Enter URL
+sources-invalid-url = Not a valid URL
+sources-error-card = An error occurred
+sources-error-card-close = Close
