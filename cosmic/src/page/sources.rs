@@ -6,6 +6,7 @@ use archive_organizer::db::dao::RemoteDao;
 use archive_organizer::db::models::{NewRemote, Remote};
 use cosmic::iced::Length;
 use cosmic::iced::alignment::{Horizontal, Vertical};
+use cosmic::iced_widget::Row;
 use cosmic::widget::{column, container, icon, row};
 use cosmic::{Action, widget};
 use cosmic::{Apply, Element, Task};
@@ -43,6 +44,7 @@ pub enum SourcesMessage {
     AddSource(String),
     SubmitSource(Url),
     SubmittedSource,
+    DeleteSource(i32),
 
     Out(SourcesOutput),
 }
@@ -215,6 +217,15 @@ impl SourcesPage {
                 self.url_state = Default::default();
                 task::message(SourcesMessage::LoadSources)
             }
+            SourcesMessage::DeleteSource(id) => {
+                let connection_pool = self.connection_pool.clone();
+                task::future(async move {
+                    match connection_pool.delete_remote_by_id(id) {
+                        Ok(_) => SourcesMessage::LoadSources,
+                        Err(error) => SourcesMessage::UrlTestResult(Err(format!("{error}"))),
+                    }
+                })
+            }
             SourcesMessage::Out(_) => {
                 panic!("should be handled by the parent component")
             }
@@ -224,19 +235,28 @@ impl SourcesPage {
     fn view_source<'a>(&self, source: &'a Remote) -> Element<'a, SourcesMessage> {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
-        row()
-            .push(
-                icon::from_name("network-server-symbolic")
-                    .size(24)
-                    .apply(container)
-                    .align_x(Horizontal::Center)
-                    .align_y(Vertical::Center)
-                    .width(Length::FillPortion(1)),
-            )
-            .push(widget::text(&source.base_url).width(Length::FillPortion(11)))
-            .padding([0, space_s])
-            .spacing(space_s)
-            .align_y(Vertical::Center)
-            .into()
+        Row::with_children([
+            icon::from_name("network-server-symbolic")
+                .size(24)
+                .apply(container)
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Center)
+                .width(Length::FillPortion(1))
+                .into(),
+            widget::text(&source.base_url)
+                .width(Length::FillPortion(10))
+                .into(),
+            widget::button::icon(icon::from_name("edit-delete-symbolic").size(24))
+                .on_press(SourcesMessage::DeleteSource(source.id))
+                .apply(container)
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Center)
+                .width(Length::FillPortion(1))
+                .into(),
+        ])
+        .padding([0, space_s])
+        .spacing(space_s)
+        .align_y(Vertical::Center)
+        .into()
     }
 }

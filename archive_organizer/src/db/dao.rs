@@ -54,6 +54,7 @@ pub trait RemoteDao {
     type Error;
     fn insert_remote(&self, remote: NewRemote) -> Result<Remote, Self::Error>;
     fn select_all_remotes(&self) -> Result<Vec<Remote>, Self::Error>;
+    fn delete_remote_by_id(&self, id: i32) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -360,5 +361,11 @@ impl RemoteDao for ConnectionPool {
         let mut connection = self.get()?;
         let remotes = remotes::table.load(&mut connection)?;
         Ok(remotes)
+    }
+
+    fn delete_remote_by_id(&self, id: i32) -> Result<(), Self::Error> {
+        let mut connection = self.get()?;
+        diesel::delete(remotes::table.filter(remotes::id.eq(id))).execute(&mut connection)?;
+        Ok(())
     }
 }
