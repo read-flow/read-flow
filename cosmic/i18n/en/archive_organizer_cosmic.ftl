@@ -1,4 +1,5 @@
 app-title = Archive Organizer Cosmic
+context = Context
 about = About
 repository = Repository
 view = View

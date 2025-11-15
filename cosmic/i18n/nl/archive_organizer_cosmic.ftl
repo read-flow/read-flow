@@ -1,5 +1,7 @@
 app-title = Archief Organizer Cosmic
+context = Context
 about = Over
+repository = Repository
 view = Weergave
 welcome = Welkom bij Archief Organizer Cosmic! ✨
 page-id = Pagina { $num }

@@ -13,6 +13,7 @@ use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
+use cosmic::task;
 use cosmic::widget::segmented_button::Entity;
 use cosmic::widget::{self, about::About, icon, menu, nav_bar};
 use futures_util::SinkExt;
@@ -48,6 +49,7 @@ pub struct AppModel {
 pub enum Message {
     SubscriptionChannel,
     ToggleContextPage(ContextPage),
+    ToggleActivePageContext,
     UpdateConfig(Config),
     LaunchUrl(String),
     Page(PageMessage),
@@ -174,7 +176,10 @@ impl cosmic::Application for AppModel {
                 menu::root(fl!("view")).apply(Element::from),
                 menu::items(
                     &self.key_binds,
-                    vec![menu::Item::Button(fl!("about"), None, MenuAction::About)],
+                    vec![
+                        menu::Item::Button(fl!("context"), None, MenuAction::Context),
+                        menu::Item::Button(fl!("about"), None, MenuAction::About),
+                    ],
                 ),
             ),
             menu::Tree::with_children(
@@ -300,6 +305,15 @@ impl cosmic::Application for AppModel {
                 }
                 Task::none()
             }
+            Message::ToggleActivePageContext => self
+                .nav
+                .data::<PageSelector>(self.nav.active())
+                .map(|selector| {
+                    task::message(Message::ToggleContextPage(ContextPage::PageContext(
+                        selector.clone(),
+                    )))
+                })
+                .unwrap_or_else(Task::none),
             Message::UpdateConfig(config) => {
                 self.config = config;
                 Task::none()
@@ -410,6 +424,7 @@ impl<'a, M: 'a> ContextView<'a, M> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MenuAction {
     About,
+    Context,
     SwitchTo(&'static str),
 }
 
@@ -419,6 +434,7 @@ impl menu::action::MenuAction for MenuAction {
     fn message(&self) -> Self::Message {
         match self {
             MenuAction::About => Message::ToggleContextPage(ContextPage::About),
+            MenuAction::Context => Message::ToggleActivePageContext,
             MenuAction::SwitchTo(language) => Message::SwitchLanguage(language.parse().unwrap()),
         }
     }
