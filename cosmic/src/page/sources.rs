@@ -7,7 +7,7 @@ use archive_organizer::db::models::{NewRemote, Remote};
 use cosmic::iced::Length;
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::theme::Container;
-use cosmic::widget::{column, container, icon, row, Column, Row};
+use cosmic::widget::{Column, Row, column, container, icon, row};
 use cosmic::{Action, widget};
 use cosmic::{Apply, Element, Task};
 use cosmic::{cosmic_theme, task, theme};
@@ -30,7 +30,10 @@ pub struct SourcesPage {
 }
 
 #[derive(Debug, Clone)]
-pub enum SourcesOutput {}
+pub enum SourcesOutput {
+    AddedSource(Url),
+    DeletedSource(Url),
+}
 
 #[derive(Debug, Clone)]
 pub enum SourcesMessage {
@@ -42,11 +45,13 @@ pub enum SourcesMessage {
     VerifyEnteredUrl { url: Url, do_submit: bool },
     SetUrlVerificationStateFailed(String),
     SetUrlVerificationStateLoaded(Status),
+    ClearUrlEntries,
 
     AddSource(String),
     SubmitSource(Url),
-    ClearUrlEntries,
+    SubmittedSource(Url),
     DeleteSource(i32),
+    DeletedSource(i32),
 
     SetOperationError(String),
     ClearOperationError,
@@ -173,6 +178,7 @@ impl SourcesPage {
     }
 
     pub fn update(&mut self, message: SourcesMessage) -> Task<Action<SourcesMessage>> {
+        tracing::debug!("received: {message:?}");
         match message {
             SourcesMessage::LoadRemotes => {
                 self.remotes_state = RemotesState::Loading;
@@ -246,10 +252,14 @@ impl SourcesPage {
                     match connection_pool.insert_remote(NewRemote {
                         base_url: url.to_string(),
                     }) {
-                        Ok(_) => SourcesMessage::ClearUrlEntries,
+                        Ok(_) => SourcesMessage::SubmittedSource(url),
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }
                 })
+            }
+            SourcesMessage::SubmittedSource(url) => {
+                task::message(SourcesMessage::Out(SourcesOutput::AddedSource(url)))
+                    .chain(task::message(SourcesMessage::ClearUrlEntries))
             }
             SourcesMessage::ClearUrlEntries => {
                 self.entered_url.clear();
@@ -260,10 +270,23 @@ impl SourcesPage {
                 let connection_pool = self.connection_pool.clone();
                 task::future(async move {
                     match connection_pool.delete_remote_by_id(id) {
-                        Ok(_) => SourcesMessage::LoadRemotes,
+                        Ok(_) => SourcesMessage::DeletedSource(id),
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }
                 })
+            }
+            SourcesMessage::DeletedSource(id) => {
+                let remote = self
+                    .remotes_state
+                    .unwrap() // should be safe, because otherwise `DeleteSource` message cannot be generated.
+                    .iter()
+                    .find(|a| a.id == id)
+                    .unwrap(); // should be safe, because the source should exist.
+
+                task::message(SourcesMessage::Out(SourcesOutput::DeletedSource(
+                    remote.base_url.parse().unwrap(),
+                )))
+                .chain(task::message(SourcesMessage::LoadRemotes))
             }
             SourcesMessage::SetOperationError(error) => {
                 self.operation_error = Some(error);

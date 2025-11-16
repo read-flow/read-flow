@@ -8,6 +8,7 @@ use crate::page::PageOutput;
 use crate::page::PageSelector;
 use crate::page::Pages;
 use archive_organizer::ApplicationModule;
+use archive_organizer::Builder;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
@@ -15,6 +16,7 @@ use cosmic::iced::{Length, Subscription};
 use cosmic::prelude::*;
 use cosmic::task;
 use cosmic::widget::segmented_button::Entity;
+use cosmic::widget::segmented_button::EntityMut;
 use cosmic::widget::{self, about::About, icon, menu, nav_bar};
 use futures_util::SinkExt;
 use i18n_embed::unic_langid::LanguageIdentifier;
@@ -34,6 +36,8 @@ pub struct AppModel {
     about: About,
     /// Contains items assigned to the nav bar panel.
     nav: nav_bar::Model,
+    /// Mappings for nav_bar items.
+    nav_mappings: HashMap<PageSelector, Entity>,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     // Configuration data that persists between application runs.
@@ -108,24 +112,27 @@ impl cosmic::Application for AppModel {
     ) -> (Self, Task<cosmic::Action<Self::Message>>) {
         // Create a nav bar with three page items.
         let mut nav = nav_bar::Model::default();
+        let mut nav_mappings = HashMap::new();
 
         let (pages, page_action) = Pages::new(&application_module);
 
         nav.insert()
             .text(pages.display_name(&PageSelector::Sources))
             .data::<PageSelector>(PageSelector::Sources)
-            .icon(icon::from_name("resources-symbolic"));
+            .icon(icon::from_name("resources-symbolic"))
+            .with_id(|nav_id| {
+                nav_mappings.insert(PageSelector::Sources, nav_id);
+            });
 
         for (index, selector) in pages.all_file_list_selectors().iter().enumerate() {
-            let nav = nav
-                .insert()
+            nav.insert()
                 .text(pages.display_name(selector))
                 .data::<PageSelector>(selector.clone())
-                .icon(icon::from_name("package-x-generic-symbolic"));
-
-            if index == 0 {
-                nav.activate();
-            }
+                .icon(icon::from_name("package-x-generic-symbolic"))
+                .apply_if(index == 0, EntityMut::activate)
+                .with_id(|nav_id| {
+                    nav_mappings.insert(selector.clone(), nav_id);
+                });
         }
 
         // Create the about widget
@@ -142,6 +149,7 @@ impl cosmic::Application for AppModel {
             context_page: ContextPage::default(),
             about,
             nav,
+            nav_mappings,
             key_binds: HashMap::new(),
             // Optional configuration file for an application.
             config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
@@ -334,11 +342,18 @@ impl cosmic::Application for AppModel {
                     .data::<PageSelector>(selector.clone())
                     .data::<Entity>(parent)
                     .icon(icon::from_name(icon_name))
-                    .activate();
+                    .activate()
+                    .with_id(|nav_id| {
+                        self.nav_mappings.insert(selector.clone(), nav_id);
+                    });
                 Task::none()
             }
             Message::ActivePageRemoved(removed_page) => {
-                let id = self.nav.active();
+                let id = self
+                    .nav_mappings
+                    .get(&removed_page)
+                    .cloned()
+                    .unwrap_or_else(|| self.nav.active());
 
                 // Get parent of the active page
                 let parent = self.nav.data::<Entity>(id);
@@ -353,7 +368,8 @@ impl cosmic::Application for AppModel {
                 if active_page == Some(&removed_page) {
                     self.nav.remove(id);
                 } else {
-                    // TODO: log
+                    tracing::warn!("cannot (yet) remove page which isn't active");
+                    // TODO: when inserting pages, capture the id using `with_id(|entity| store(entity))`
                 }
                 Task::none()
             }

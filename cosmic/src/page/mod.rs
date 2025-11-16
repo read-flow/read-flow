@@ -7,10 +7,12 @@ pub(crate) mod sources;
 use core::panic;
 
 use crate::app::ContextView;
+use crate::client::Client;
 use crate::client::ClientSelector;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::page::sources::SourcesMessage;
+use crate::page::sources::SourcesOutput;
 use crate::page::sources::SourcesPage;
 use archive_organizer::ApplicationModule;
 use archive_organizer::api::File;
@@ -70,6 +72,8 @@ pub enum PageMessage {
     Sources(SourcesMessage),
     OpenFileDetails(ClientSelector, File),
     CloseFileDetails(i32),
+    AddRemote(Url),
+    DeleteRemote(Url),
     Out(PageOutput),
 }
 
@@ -224,10 +228,31 @@ impl Pages {
             PageMessage::FileDetails(id, message) => self.file_details[&id]
                 .update(message)
                 .map(move |action| action.map(|msg| map_file_details_message(id, msg))),
+            PageMessage::AddRemote(url) => {
+                let client_selector = ClientSelector::Remote(url.clone());
+                let client = Client::Remote(FilesClient::new(url.clone()).unwrap());
+                let (file_list, initialize_task) = FileList::new(client);
+                self.file_lists.insert(client_selector.clone(), file_list);
+                initialize_task
+                    .map(move |action| {
+                        action.map(|msg| map_file_list_message(client_selector.clone(), msg))
+                    })
+                    .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
+                        PageSelector::FileList(ClientSelector::Remote(url)),
+                        "package-x-generic-symbolic",
+                    ))))
+            }
+            PageMessage::DeleteRemote(url) => {
+                let client_selector = ClientSelector::Remote(url.clone());
+                self.file_lists.shift_remove(&client_selector);
+                task::message(PageMessage::Out(PageOutput::PageRemoved(
+                    PageSelector::FileList(ClientSelector::Remote(url)),
+                )))
+            }
             PageMessage::Sources(sources_message) => self
                 .sources
                 .update(sources_message)
-                .map(ActionExt::map_into),
+                .map(move |action| action.map(map_sources_message)),
             PageMessage::OpenFileDetails(selector, file) => {
                 // TODO: only create new file_details if it does not yet exist
                 let id = self.rng.random();
@@ -277,6 +302,16 @@ fn map_file_details_message(id: i32, msg: FileDetailsMessage) -> PageMessage {
             }
         },
         msg => PageMessage::FileDetails(id, msg),
+    }
+}
+
+fn map_sources_message(msg: SourcesMessage) -> PageMessage {
+    match msg {
+        SourcesMessage::Out(message) => match message {
+            SourcesOutput::AddedSource(url) => PageMessage::AddRemote(url),
+            SourcesOutput::DeletedSource(url) => PageMessage::DeleteRemote(url),
+        },
+        msg => msg.into(),
     }
 }
 
