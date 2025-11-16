@@ -80,3 +80,7 @@ sources-enter-url = Enter URL
 sources-invalid-url = Not a valid URL
 sources-error-card = An error occurred
 sources-error-card-close = Close
+sources-delete-confirm-title = Delete Source
+sources-delete-confirm-body = Are you sure you want to delete this source? This action cannot be undone.
+sources-delete-confirm-delete = Delete
+sources-delete-confirm-cancel = Cancel

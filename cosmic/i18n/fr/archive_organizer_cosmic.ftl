@@ -67,3 +67,15 @@ pagination-first = First
 pagination-prev = Previous
 pagination-next = Next
 pagination-last = Last
+
+# Sources
+sources-loading-state-new = Initialisation
+sources-loading-state-loading = Chargement...
+sources-enter-url = Entrer l'URL
+sources-invalid-url = URL non valide
+sources-error-card = Une erreur s'est produite
+sources-error-card-close = Fermer
+sources-delete-confirm-title = Supprimer la source
+sources-delete-confirm-body = Êtes-vous sûr de vouloir supprimer cette source ? Cette action ne peut pas être annulée.
+sources-delete-confirm-delete = Supprimer
+sources-delete-confirm-cancel = Annuler

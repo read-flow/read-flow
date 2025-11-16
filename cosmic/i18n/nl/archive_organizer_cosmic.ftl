@@ -80,3 +80,7 @@ sources-enter-url = Voer URL in
 sources-invalid-url = Geen valide URL
 sources-error-card = Er is een fout opgetreden
 sources-error-card-close = Sluiten
+sources-delete-confirm-title = Bron verwijderen
+sources-delete-confirm-body = Weet je zeker dat je deze bron wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.
+sources-delete-confirm-delete = Verwijderen
+sources-delete-confirm-cancel = Annuleren

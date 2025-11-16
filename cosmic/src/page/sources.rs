@@ -27,6 +27,7 @@ pub struct SourcesPage {
     entered_url_id: widget::Id, // Unique ID for focus management
     url_verification_state: UrlVerificationState,
     operation_error: Option<String>,
+    pending_deletion: Option<Remote>,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +51,9 @@ pub enum SourcesMessage {
     AddSource(String),
     SubmitSource(Url),
     SubmittedSource(Url),
+    RequestDeleteSource(Remote),
+    ConfirmDeleteSource,
+    CancelDeleteSource,
     DeleteSource(i32),
     DeletedSource(i32),
 
@@ -69,6 +73,7 @@ impl SourcesPage {
                 entered_url_id: widget::Id::unique(),
                 url_verification_state: Default::default(),
                 operation_error: None,
+                pending_deletion: None,
             },
             task::message(SourcesMessage::LoadRemotes),
         )
@@ -78,6 +83,35 @@ impl SourcesPage {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
         let mut col = column();
+
+        // Show confirmation dialog if there's a pending deletion
+        col = col.push_maybe(self.pending_deletion.as_ref().map(|remote| {
+            let dialog = widget::dialog()
+                .title(fl!("sources-delete-confirm-title"))
+                .body(fl!("sources-delete-confirm-body"))
+                .icon(icon::from_name("dialog-warning-symbolic").size(64))
+                .control(
+                    widget::text(&remote.base_url)
+                        .font(cosmic::font::Font::MONOSPACE)
+                        .apply(widget::container)
+                        .class(cosmic::theme::Container::Card)
+                        .padding(space_s)
+                        .width(Length::Fill)
+                )
+                .primary_action(
+                    widget::button::destructive(fl!("sources-delete-confirm-delete"))
+                        .on_press(SourcesMessage::ConfirmDeleteSource),
+                )
+                .secondary_action(
+                    widget::button::standard(fl!("sources-delete-confirm-cancel"))
+                        .on_press(SourcesMessage::CancelDeleteSource),
+                );
+
+            row()
+                .push(widget::text("").width(Length::FillPortion(1)))
+                .push(dialog.width(Length::FillPortion(10)))
+                .push(widget::text("").width(Length::FillPortion(1)))
+        }));
 
         col = col.push_maybe(self.operation_error.as_ref().map(|error| {
             let card = column()
@@ -266,6 +300,21 @@ impl SourcesPage {
                 self.url_verification_state = Default::default();
                 task::message(SourcesMessage::LoadRemotes)
             }
+            SourcesMessage::RequestDeleteSource(remote) => {
+                self.pending_deletion = Some(remote);
+                task::none()
+            }
+            SourcesMessage::ConfirmDeleteSource => {
+                if let Some(remote) = self.pending_deletion.take() {
+                    task::message(SourcesMessage::DeleteSource(remote.id))
+                } else {
+                    task::none()
+                }
+            }
+            SourcesMessage::CancelDeleteSource => {
+                self.pending_deletion = None;
+                task::none()
+            }
             SourcesMessage::DeleteSource(id) => {
                 let connection_pool = self.connection_pool.clone();
                 task::future(async move {
@@ -317,7 +366,7 @@ impl SourcesPage {
                 .width(Length::FillPortion(10))
                 .into(),
             widget::button::icon(icon::from_name("edit-delete-symbolic").size(24))
-                .on_press(SourcesMessage::DeleteSource(source.id))
+                .on_press(SourcesMessage::RequestDeleteSource(source.clone()))
                 .apply(container)
                 .align_x(Horizontal::Center)
                 .align_y(Vertical::Center)
