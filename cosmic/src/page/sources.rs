@@ -6,8 +6,7 @@ use archive_organizer::db::dao::RemoteDao;
 use archive_organizer::db::models::{NewRemote, Remote};
 use cosmic::iced::Length;
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::theme::Container;
-use cosmic::widget::{Column, Row, column, container, icon, row};
+use cosmic::widget::{Row, column, container, icon, row};
 use cosmic::{Action, widget};
 use cosmic::{Apply, Element, Task};
 use cosmic::{cosmic_theme, task, theme};
@@ -96,7 +95,7 @@ impl SourcesPage {
                         .apply(widget::container)
                         .class(cosmic::theme::Container::Card)
                         .padding(space_s)
-                        .width(Length::Fill)
+                        .width(Length::Fill),
                 )
                 .primary_action(
                     widget::button::destructive(fl!("sources-delete-confirm-delete"))
@@ -114,25 +113,21 @@ impl SourcesPage {
         }));
 
         col = col.push_maybe(self.operation_error.as_ref().map(|error| {
-            let card = column()
-                .push(widget::text::heading(fl!("sources-error-card")))
-                .push(widget::divider::horizontal::default())
-                .push(widget::text::body(error))
-                .push(widget::divider::horizontal::default())
-                .push(
-                    Column::new()
-                        .push(
-                            widget::button::text(fl!("sources-error-card-close"))
-                                .on_press(SourcesMessage::ClearOperationError),
-                        )
-                        .width(Length::Fill)
-                        .align_x(Horizontal::Right),
+            let card = widget::dialog()
+                .title(fl!("sources-error-title"))
+                .control(
+                    widget::text(error)
+                        .font(cosmic::font::Font::MONOSPACE)
+                        .apply(widget::container)
+                        .class(cosmic::theme::Container::Card)
+                        .padding(space_s)
+                        .width(Length::Fill),
                 )
-                .padding([0, space_s])
-                .spacing(space_s)
-                .apply(container)
-                .class(Container::Dialog)
-                .padding([0, space_s]);
+                .icon(icon::from_name("dialog-error-symbolic").size(64))
+                .primary_action(
+                    widget::button::suggested(fl!("sources-error-close"))
+                        .on_press(SourcesMessage::ClearOperationError),
+                );
             row()
                 .push(widget::text("").width(Length::FillPortion(1)))
                 .push(card.width(Length::FillPortion(10)))
