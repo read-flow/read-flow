@@ -14,6 +14,7 @@ use url::Url;
 
 use crate::app::ContextView;
 use crate::fl;
+use crate::iter::{find_with_next, find_with_previous};
 use crate::state::LoadedState;
 
 pub type RemotesState = LoadedState<Vec<Remote>>;
@@ -58,6 +59,10 @@ pub enum SourcesMessage {
 
     SetOperationError(String),
     ClearOperationError,
+
+    MoveSourceUp(Remote),
+    MoveSourceDown(Remote),
+    SwapOrderOfRemotes(Remote, Remote),
 
     Out(SourcesOutput),
 }
@@ -141,7 +146,9 @@ impl SourcesPage {
                 col.push(widget::text(fl!("generic-error", error = error.as_str())))
             }
             LoadedState::Loaded(sources) => {
-                let content = sources.iter().map(|source| self.view_source(source));
+                let content = sources.iter().enumerate().map(|(index, source)| {
+                    self.view_source(source, index == 0, index == sources.len() - 1)
+                });
 
                 col.extend(content)
             }
@@ -277,9 +284,11 @@ impl SourcesPage {
             }
             SourcesMessage::SubmitSource(url) => {
                 let connection_pool = self.connection_pool.clone();
+                let order = self.remotes_state.unwrap().len() + 1;
                 task::future(async move {
                     match connection_pool.insert_remote(NewRemote {
                         base_url: url.to_string(),
+                        order: order as i32,
                     }) {
                         Ok(_) => SourcesMessage::SubmittedSource(url),
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
@@ -340,16 +349,54 @@ impl SourcesPage {
                 self.operation_error = None;
                 task::none()
             }
+            SourcesMessage::MoveSourceUp(remote) => {
+                find_with_previous(self.remotes_state.unwrap().iter(), |current| {
+                    current.id == remote.id
+                })
+                .map(|(prev, current)| {
+                    task::message(SourcesMessage::SwapOrderOfRemotes(
+                        prev.clone(),
+                        current.clone(),
+                    ))
+                })
+                .unwrap_or_else(task::none)
+            }
+            SourcesMessage::MoveSourceDown(remote) => {
+                find_with_next(self.remotes_state.unwrap().iter(), |current| {
+                    current.id == remote.id
+                })
+                .map(|(current, next)| {
+                    task::message(SourcesMessage::SwapOrderOfRemotes(
+                        current.clone(),
+                        next.clone(),
+                    ))
+                })
+                .unwrap_or_else(task::none)
+            }
+            SourcesMessage::SwapOrderOfRemotes(first, second) => {
+                let connection_pool = self.connection_pool.clone();
+                task::future(async move {
+                    match connection_pool.swap_order_of_remotes(&first, &second) {
+                        Ok(_) => SourcesMessage::LoadRemotes,
+                        Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
+                    }
+                })
+            }
             SourcesMessage::Out(_) => {
                 panic!("should be handled by the parent component")
             }
         }
     }
 
-    fn view_source<'a>(&self, source: &'a Remote) -> Element<'a, SourcesMessage> {
+    fn view_source<'a>(
+        &self,
+        source: &'a Remote,
+        is_first: bool,
+        is_last: bool,
+    ) -> Element<'a, SourcesMessage> {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
-        Row::with_children([
+        vec![
             icon::from_name("network-server-symbolic")
                 .size(24)
                 .apply(container)
@@ -357,17 +404,33 @@ impl SourcesPage {
                 .align_y(Vertical::Center)
                 .width(Length::FillPortion(1))
                 .into(),
-            widget::text(&source.base_url)
-                .width(Length::FillPortion(10))
-                .into(),
+            vec![
+                widget::text(&source.base_url).width(Length::Fill).into(),
+                widget::button::icon(icon::from_name("go-up-symbolic").size(8))
+                    .apply_if(!is_first, |button| {
+                        button.on_press(SourcesMessage::MoveSourceUp(source.clone()))
+                    })
+                    .into(),
+                widget::button::icon(icon::from_name("go-down-symbolic").size(8))
+                    .apply_if(!is_last, |button| {
+                        button.on_press(SourcesMessage::MoveSourceDown(source.clone()))
+                    })
+                    .into(),
+            ]
+            .apply(Row::with_children)
+            .align_y(Vertical::Center)
+            .width(Length::FillPortion(10))
+            .into(),
             widget::button::icon(icon::from_name("edit-delete-symbolic").size(24))
+                .class(theme::Button::Destructive)
                 .on_press(SourcesMessage::RequestDeleteSource(source.clone()))
                 .apply(container)
                 .align_x(Horizontal::Center)
                 .align_y(Vertical::Center)
                 .width(Length::FillPortion(1))
                 .into(),
-        ])
+        ]
+        .apply(Row::with_children)
         .padding([0, space_s])
         .spacing(space_s)
         .align_y(Vertical::Center)

@@ -1,6 +1,8 @@
 use std::{io, sync::Arc};
 
 use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::Integer;
 
 use crate::{
     api::get_update,
@@ -55,6 +57,7 @@ pub trait RemoteDao {
     fn insert_remote(&self, remote: NewRemote) -> Result<Remote, Self::Error>;
     fn select_all_remotes(&self) -> Result<Vec<Remote>, Self::Error>;
     fn delete_remote_by_id(&self, id: i32) -> Result<(), Self::Error>;
+    fn swap_order_of_remotes(&self, a: &Remote, b: &Remote) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -359,13 +362,74 @@ impl RemoteDao for ConnectionPool {
 
     fn select_all_remotes(&self) -> Result<Vec<Remote>, Self::Error> {
         let mut connection = self.get()?;
-        let remotes = remotes::table.load(&mut connection)?;
+        let remotes = remotes::table
+            .order_by(remotes::columns::order)
+            .load(&mut connection)?;
         Ok(remotes)
     }
 
     fn delete_remote_by_id(&self, id: i32) -> Result<(), Self::Error> {
         let mut connection = self.get()?;
+
+        sql_query("BEGIN TRANSACTION").execute(&mut connection)?;
+
         diesel::delete(remotes::table.filter(remotes::id.eq(id))).execute(&mut connection)?;
+
+	// ensure that there are no gaps in the `order`
+	sql_query(
+	    r#"
+                UPDATE remotes
+                SET "order" = updated_values.new_order - 1
+                FROM (SELECT rowid, ROW_NUMBER() OVER (ORDER BY "order") AS new_order FROM remotes) AS updated_values
+                WHERE remotes.rowid = updated_values.rowid
+            "#).execute(&mut connection)?;
+
+        sql_query("COMMIT").execute(&mut connection)?;
+
+        Ok(())
+    }
+
+    fn swap_order_of_remotes(&self, a: &Remote, b: &Remote) -> Result<(), Self::Error> {
+        let mut connection = self.get()?;
+
+        sql_query("BEGIN TRANSACTION").execute(&mut connection)?;
+
+        sql_query(
+            r#"
+                UPDATE remotes SET "order" = CASE id
+                    WHEN ? THEN ?
+                    WHEN ? THEN ?
+                END
+                WHERE id IN (?, ?)
+            "#,
+        )
+        .bind::<Integer, _>(a.id)
+        .bind::<Integer, _>(-b.order - 1)
+        .bind::<Integer, _>(b.id)
+        .bind::<Integer, _>(-a.order - 1)
+        .bind::<Integer, _>(a.id)
+        .bind::<Integer, _>(b.id)
+        .execute(&mut connection)?;
+
+        sql_query(
+            r#"
+                UPDATE remotes SET "order" = CASE id
+                    WHEN ? THEN ?
+                    WHEN ? THEN ?
+                END
+                WHERE id IN (?, ?)
+            "#,
+        )
+        .bind::<Integer, _>(a.id)
+        .bind::<Integer, _>(b.order)
+        .bind::<Integer, _>(b.id)
+        .bind::<Integer, _>(a.order)
+        .bind::<Integer, _>(a.id)
+        .bind::<Integer, _>(b.id)
+        .execute(&mut connection)?;
+
+        sql_query("COMMIT").execute(&mut connection)?;
+
         Ok(())
     }
 }

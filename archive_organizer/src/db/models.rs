@@ -84,6 +84,7 @@ pub struct DirectoryTag {
 pub struct Remote {
     pub id: i32,
     pub base_url: String,
+    pub order: i32,
 }
 
 #[derive(Insertable)]
@@ -91,4 +92,5 @@ pub struct Remote {
 #[diesel(check_for_backend(Sqlite))]
 pub struct NewRemote {
     pub base_url: String,
+    pub order: i32,
 }

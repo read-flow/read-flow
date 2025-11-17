@@ -39,6 +39,7 @@ diesel::table! {
     remotes (id) {
         id -> Integer,
         base_url -> Text,
+        order -> Integer,
     }
 }
 
