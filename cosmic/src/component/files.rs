@@ -47,8 +47,6 @@ pub struct FilesComponent {
 
 impl FilesComponent {
     pub fn view(&self) -> Element<'_, FilesMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
         match &self.files {
             FileState::New => widget::text(fl!("file-list-new")).into(), // TODO: Show spinner
             FileState::Loading => widget::text(fl!("file-list-loading")).into(), // TODO: Show spinner
@@ -56,13 +54,34 @@ impl FilesComponent {
                 widget::text(fl!("generic-error", error = error.as_str())).into()
             }
             FileState::Loaded(files) => {
-                let file_content = self
+                let filtered_files = files.filtered_files();
+                let visible_files: Vec<_> = self
                     .pagination
-                    .filter_visible(files.filtered_files().as_slice())
-                    .map(|file| view_file(file))
-                    .apply(Column::with_children)
+                    .filter_visible(filtered_files.as_slice())
+                    .collect();
+
+                // Handle empty state
+                if visible_files.is_empty() {
+                    return Column::new()
+                        .push(self.pagination.view().map(Into::into))
+                        .push(
+                            widget::container(widget::text(fl!("file-list-no-files")))
+                                .width(Length::Fill)
+                                .center_x(Length::Fill)
+                                .padding(32),
+                        )
+                        .into();
+                }
+
+                // Build the settings section with files
+                let files_section = visible_files
+                    .into_iter()
+                    .fold(widget::settings::section(), |section, file| {
+                        section.add(view_file(file))
+                    });
+
+                let file_content = widget::settings::view_column(vec![files_section.into()])
                     .push(self.pagination.view().map(Into::into))
-                    .spacing(space_s)
                     .apply(widget::scrollable::vertical);
 
                 Column::new()
@@ -94,14 +113,17 @@ fn view_file<'a>(file: &'a File) -> Element<'a, FilesMessage> {
 
     let icon_name = get_file_type_icon(&file.type_);
 
+    // Create a button with icon and file path that fills the width
     let button = widget::button::custom(
         Row::new()
             .push(widget::icon::from_name(icon_name).size(16).icon())
             .push(display_path(&file.path))
-            .padding([0, space_s])
             .spacing(space_s)
-            .align_y(cosmic::iced::Alignment::Center),
+            .align_y(cosmic::iced::Alignment::Center)
+            .width(Length::Fill),
     )
+    .width(Length::Fill)
+    .class(widget::button::ButtonClass::Icon)
     .on_press(FilesMessage::Out(FilesOutput::FileClicked(file.clone())));
 
     button.into()

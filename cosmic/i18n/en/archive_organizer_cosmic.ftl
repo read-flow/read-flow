@@ -16,6 +16,8 @@ generic-error = 🛑 Error: { $error }
 # File list states
 file-list-new = New
 file-list-loading = Loading
+file-list-no-files = No files match the current filters
+file-list-files-section = Files
 file-list-search-placeholder = Search files...
 file-list-filtering = Filtering...
 file-list-options-title = File List Options
