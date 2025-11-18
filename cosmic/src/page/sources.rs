@@ -5,8 +5,8 @@ use archive_organizer::db::ConnectionPool;
 use archive_organizer::db::dao::RemoteDao;
 use archive_organizer::db::models::{NewRemote, Remote};
 use cosmic::iced::Length;
-use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::widget::{Row, column, container, icon, row};
+use cosmic::iced::alignment::Vertical;
+use cosmic::widget::{container, icon, row, settings};
 use cosmic::{Action, widget};
 use cosmic::{Apply, Element, Task};
 use cosmic::{cosmic_theme, task, theme};
@@ -84,12 +84,14 @@ impl SourcesPage {
     }
 
     pub fn view(&self) -> Element<'_, SourcesMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing {
+            space_s, space_xs, ..
+        } = theme::active().cosmic().spacing;
 
-        let mut col = column();
+        let mut content = Vec::new();
 
         // Show confirmation dialog if there's a pending deletion
-        col = col.push_maybe(self.pending_deletion.as_ref().map(|remote| {
+        if let Some(remote) = &self.pending_deletion {
             let dialog = widget::dialog()
                 .title(fl!("sources-delete-confirm-title"))
                 .body(fl!("sources-delete-confirm-body"))
@@ -111,14 +113,18 @@ impl SourcesPage {
                         .on_press(SourcesMessage::CancelDeleteSource),
                 );
 
-            row()
-                .push(widget::text("").width(Length::FillPortion(1)))
-                .push(dialog.width(Length::FillPortion(10)))
-                .push(widget::text("").width(Length::FillPortion(1)))
-        }));
+            content.push(
+                row()
+                    .push(widget::horizontal_space())
+                    .push(dialog.width(Length::FillPortion(10)))
+                    .push(widget::horizontal_space())
+                    .into(),
+            );
+        }
 
-        col = col.push_maybe(self.operation_error.as_ref().map(|error| {
-            let card = widget::dialog()
+        // Show error dialog if there's an operation error
+        if let Some(error) = &self.operation_error {
+            let dialog = widget::dialog()
                 .title(fl!("sources-error-title"))
                 .control(
                     widget::text(error)
@@ -133,77 +139,96 @@ impl SourcesPage {
                     widget::button::suggested(fl!("sources-error-close"))
                         .on_press(SourcesMessage::ClearOperationError),
                 );
-            row()
-                .push(widget::text("").width(Length::FillPortion(1)))
-                .push(card.width(Length::FillPortion(10)))
-                .push(widget::text("").width(Length::FillPortion(1)))
-        }));
 
-        col = match &self.remotes_state {
-            LoadedState::New => col.push(widget::text(fl!("sources-loading-state-new"))),
-            LoadedState::Loading => col.push(widget::text(fl!("sources-loading-state-loading"))),
-            LoadedState::Failed(error) => {
-                col.push(widget::text(fl!("generic-error", error = error.as_str())))
-            }
+            content.push(
+                row()
+                    .push(widget::horizontal_space())
+                    .push(dialog.width(Length::FillPortion(10)))
+                    .push(widget::horizontal_space())
+                    .into(),
+            );
+        }
+
+        // Sources list section
+        let sources_section = match &self.remotes_state {
+            LoadedState::New => settings::section()
+                .title(fl!("sources-section-title"))
+                .add(widget::text(fl!("sources-loading-state-new")))
+                .into(),
+            LoadedState::Loading => settings::section()
+                .title(fl!("sources-section-title"))
+                .add(widget::text(fl!("sources-loading-state-loading")))
+                .into(),
+            LoadedState::Failed(error) => settings::section()
+                .title(fl!("sources-section-title"))
+                .add(widget::text(fl!("generic-error", error = error.as_str())))
+                .into(),
             LoadedState::Loaded(sources) => {
-                let content = sources.iter().enumerate().map(|(index, source)| {
-                    self.view_source(source, index == 0, index == sources.len() - 1)
-                });
-
-                col.extend(content)
+                if sources.is_empty() {
+                    settings::section()
+                        .title(fl!("sources-section-title"))
+                        .add(widget::text(fl!("sources-empty-state")))
+                        .into()
+                } else {
+                    sources
+                        .iter()
+                        .enumerate()
+                        .fold(
+                            settings::section().title(fl!("sources-section-title")),
+                            |section, (index, source)| {
+                                section.add(self.view_source(
+                                    source,
+                                    index == 0,
+                                    index == sources.len() - 1,
+                                ))
+                            },
+                        )
+                        .into()
+                }
             }
         };
 
-        let input = row()
-            .push(
-                icon::from_name("network-server-symbolic")
-                    .size(24)
-                    .apply(container)
-                    .align_x(Horizontal::Center)
-                    .align_y(Vertical::Center)
-                    .width(Length::FillPortion(1)),
-            )
-            .push(
-                column()
+        content.push(sources_section);
+
+        // Add source input section
+        let add_section = settings::section()
+            .title(fl!("sources-add-section-title"))
+            .add(
+                row()
                     .push(
                         widget::text_input(fl!("sources-enter-url"), &self.entered_url)
                             .id(self.entered_url_id.clone())
-                            .always_active()
                             .on_input(SourcesMessage::UpdateEnteredUrl)
                             .apply_if(self.url_verification_state.is_loaded(), |input| {
                                 input.on_submit(SourcesMessage::AddSource)
                             })
-                            .width(Length::FillPortion(10)),
+                            .width(Length::Fill),
                     )
-                    .apply_if(
-                        matches!(self.url_verification_state, LoadedState::Failed(_)),
-                        |col| {
-                            let LoadedState::Failed(ref error) = self.url_verification_state else {
-                                unreachable!()
-                            };
-                            col.push(widget::text(fl!("generic-error", error = error.as_str())))
-                        },
-                    ),
+                    .push(widget::horizontal_space().width(space_xs))
+                    .push(
+                        match self.url_verification_state {
+                            LoadedState::New => icon::from_name("dialog-information-symbolic"),
+                            LoadedState::Loading => icon::from_name("dialog-question-symbolic"),
+                            LoadedState::Failed(_) => icon::from_name("dialog-error-symbolic"),
+                            LoadedState::Loaded(_) => icon::from_name("emblem-ok-symbolic"),
+                        }
+                        .size(16),
+                    )
+                    .spacing(space_xs)
+                    .align_y(Vertical::Center),
             )
-            .push(
-                match self.url_verification_state {
-                    LoadedState::New => icon::from_name("dialog-information-symbolic"),
-                    LoadedState::Loading => icon::from_name("dialog-question-symbolic"),
-                    LoadedState::Failed(_) => icon::from_name("dialog-error-symbolic"),
-                    LoadedState::Loaded(_) => icon::from_name("emblem-ok-symbolic"),
-                }
-                .size(24)
-                .apply(container)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center)
-                .width(Length::FillPortion(1)),
-            )
-            .padding([0, space_s])
-            .spacing(space_s)
-            .align_y(Vertical::Top)
-            .height(Length::Shrink);
+            .add_maybe(
+                matches!(self.url_verification_state, LoadedState::Failed(_)).then(|| {
+                    let LoadedState::Failed(ref error) = self.url_verification_state else {
+                        unreachable!()
+                    };
+                    widget::text::caption(error)
+                }),
+            );
 
-        col.push(input).spacing(space_s).into()
+        content.push(add_section.into());
+
+        settings::view_column(content).into()
     }
 
     pub fn view_context(&self) -> ContextView<'_, SourcesMessage> {
@@ -394,46 +419,48 @@ impl SourcesPage {
         is_first: bool,
         is_last: bool,
     ) -> Element<'a, SourcesMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing {
+            space_xxs,
+            space_xs,
+            ..
+        } = theme::active().cosmic().spacing;
 
-        vec![
-            icon::from_name("network-server-symbolic")
-                .size(24)
-                .apply(container)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center)
-                .width(Length::FillPortion(1))
-                .into(),
-            vec![
-                widget::text(&source.base_url).width(Length::Fill).into(),
-                widget::button::icon(icon::from_name("go-up-symbolic").size(8))
-                    .apply_if(!is_first, |button| {
-                        button.on_press(SourcesMessage::MoveSourceUp(source.clone()))
-                    })
-                    .into(),
-                widget::button::icon(icon::from_name("go-down-symbolic").size(8))
-                    .apply_if(!is_last, |button| {
-                        button.on_press(SourcesMessage::MoveSourceDown(source.clone()))
-                    })
-                    .into(),
-            ]
-            .apply(Row::with_children)
+        row()
+            .push(
+                icon::from_name("network-server-symbolic")
+                    .size(16)
+                    .apply(container)
+                    .padding([0, space_xs, 0, 0]),
+            )
+            .push(widget::text(&source.base_url).width(Length::Fill))
+            .push(
+                row()
+                    .push(
+                        widget::button::icon(icon::from_name("go-up-symbolic").size(16))
+                            .padding(space_xxs)
+                            .class(theme::Button::Icon)
+                            .apply_if(!is_first, |button| {
+                                button.on_press(SourcesMessage::MoveSourceUp(source.clone()))
+                            }),
+                    )
+                    .push(
+                        widget::button::icon(icon::from_name("go-down-symbolic").size(16))
+                            .padding(space_xxs)
+                            .class(theme::Button::Icon)
+                            .apply_if(!is_last, |button| {
+                                button.on_press(SourcesMessage::MoveSourceDown(source.clone()))
+                            }),
+                    )
+                    .push(
+                        widget::button::icon(icon::from_name("edit-delete-symbolic").size(16))
+                            .padding(space_xxs)
+                            .class(theme::Button::Destructive)
+                            .on_press(SourcesMessage::RequestDeleteSource(source.clone())),
+                    )
+                    .spacing(space_xxs),
+            )
+            .spacing(space_xs)
             .align_y(Vertical::Center)
-            .width(Length::FillPortion(10))
-            .into(),
-            widget::button::icon(icon::from_name("edit-delete-symbolic").size(24))
-                .class(theme::Button::Destructive)
-                .on_press(SourcesMessage::RequestDeleteSource(source.clone()))
-                .apply(container)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center)
-                .width(Length::FillPortion(1))
-                .into(),
-        ]
-        .apply(Row::with_children)
-        .padding([0, space_s])
-        .spacing(space_s)
-        .align_y(Vertical::Center)
-        .into()
+            .into()
     }
 }

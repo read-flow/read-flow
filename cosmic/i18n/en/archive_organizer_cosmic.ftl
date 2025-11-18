@@ -74,9 +74,12 @@ pagination-next = Next
 pagination-last = Last
 
 # Sources
+sources-section-title = Remote Sources
+sources-add-section-title = Add New Source
 sources-loading-state-new = Initializing
 sources-loading-state-loading = Loading...
-sources-enter-url = Enter URL
+sources-empty-state = No remote sources configured
+sources-enter-url = Enter remote URL
 sources-invalid-url = Not a valid URL
 sources-error-title = An error occurred
 sources-error-close = Close

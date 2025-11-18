@@ -74,9 +74,12 @@ pagination-next = Volgende
 pagination-last = Laatste
 
 # Sources
+sources-section-title = Externe bronnen
+sources-add-section-title = Nieuwe bron toevoegen
 sources-loading-state-new = Initialiseren
 sources-loading-state-loading = Laden...
-sources-enter-url = Voer URL in
+sources-empty-state = Geen externe bronnen geconfigureerd
+sources-enter-url = Voer externe URL in
 sources-invalid-url = Geen valide URL
 sources-error-title = Er is een fout opgetreden
 sources-error-close = Sluiten

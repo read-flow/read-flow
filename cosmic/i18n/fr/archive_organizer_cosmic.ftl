@@ -69,9 +69,12 @@ pagination-next = Next
 pagination-last = Last
 
 # Sources
+sources-section-title = Sources distantes
+sources-add-section-title = Ajouter une nouvelle source
 sources-loading-state-new = Initialisation
 sources-loading-state-loading = Chargement...
-sources-enter-url = Entrer l'URL
+sources-empty-state = Aucune source distante configurée
+sources-enter-url = Entrer l'URL distante
 sources-invalid-url = URL non valide
 sources-error-title = Une erreur s'est produite
 sources-error-close = Fermer
