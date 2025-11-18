@@ -15,6 +15,7 @@ use cosmic::iced;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::task;
+use cosmic::widget::settings;
 use cosmic::{Action, widget};
 use cosmic::{Apply, Element, Task};
 use cosmic::{cosmic_theme, theme};
@@ -229,22 +230,10 @@ impl FileList {
     }
 
     pub fn view_context(&self) -> ContextView<'_, FileListMessage> {
-        let cosmic_theme::Spacing {
-            space_s, space_xs, ..
-        } = theme::active().cosmic().spacing;
-
-        let mut column = widget::column().spacing(space_s);
-
-        // Filters Section
-        let mut filters_section = widget::column()
-            .spacing(space_s)
-            .push(widget::text(fl!("file-list-filters-section")).size(18));
-
-        // Reading Status Filter Subsection
-        let status_subsection = widget::column()
-            .spacing(space_xs)
-            .push(widget::text(fl!("file-list-filter-by-status")).size(16))
-            .push(
+        // Reading Status Filter Section
+        let status_section = settings::section()
+            .title(fl!("file-list-filter-by-status"))
+            .add(
                 iced::widget::pick_list(
                     [
                         ReadingStatus::Unread,
@@ -257,31 +246,18 @@ impl FileList {
                 .width(Length::Fill)
                 .placeholder(fl!("file-list-all-statuses")),
             )
-            .push_maybe(self.status_filter.map(|_| {
-                widget::button::destructive(fl!("file-list-clear-filter"))
+            .add_maybe(self.status_filter.map(|_| {
+                widget::button::text(fl!("file-list-clear-filter"))
                     .on_press(FileListMessage::ClearStatusFilter)
-                    .width(Length::Fill)
             }));
-
-        filters_section = filters_section.push(status_subsection);
-
-        // Add spacing between subsections
-        filters_section =
-            filters_section.push(widget::Space::with_height(Length::Fixed(space_s as f32)));
-
-        // Tag Filter Subsection
-        filters_section = filters_section.push(self.tag_filter.view().map(Into::into));
-
-        column = column.push(filters_section);
-
-        // Future sections can be added here with dividers
-        // Example:
-        // column = column.push(widget::horizontal_rule(1).width(Length::Fill));
-        // column = column.push(future_section);
 
         ContextView {
             title: fl!("file-list-options-title"),
-            content: column.into(),
+            content: settings::view_column(vec![
+                status_section.into(),
+                self.tag_filter.view().map(Into::into),
+            ])
+            .into(),
         }
     }
 

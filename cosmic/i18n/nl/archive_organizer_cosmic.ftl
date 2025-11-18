@@ -26,6 +26,7 @@ file-list-clear-filter = Filter Wissen
 file-list-filter-by-tags = Filteren op Tags
 file-list-allow-tags = Tags Insluiten (moet ALLE hebben)
 file-list-deny-tags = Tags Uitsluiten (mag GEEN hebben)
+file-list-no-tags-selected = Geen tags geselecteerd
 file-list-select-tag = Selecteer een tag
 file-list-add-tag = Toevoegen
 file-list-clear-all-tag-filters = Alle Tag Filters Wissen

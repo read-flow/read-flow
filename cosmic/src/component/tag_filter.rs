@@ -8,6 +8,7 @@ use archive_organizer::api::FileDataSource;
 use cosmic::iced::Length;
 use cosmic::iced::widget::combo_box;
 use cosmic::widget;
+use cosmic::widget::settings;
 use cosmic::{Element, Task};
 use cosmic::{cosmic_theme, theme};
 use std::collections::HashSet;
@@ -57,18 +58,10 @@ impl TagFilter {
     }
 
     pub fn view(&self) -> Element<'_, TagFilterMessage> {
-        let cosmic_theme::Spacing {
-            space_xs, space_s, ..
-        } = theme::active().cosmic().spacing;
-
-        // Tag Filter Section
-        let mut column = widget::column()
-            .spacing(space_xs)
-            .push(widget::text(fl!("file-list-filter-by-tags")).size(16));
+        let mut content = Vec::new();
 
         // Allow Tags Section
-        column = self.view_tag_filter_section(
-            column,
+        let allow_section = self.view_tag_filter_section(
             fl!("file-list-allow-tags"),
             &self.allow_tags,
             &self.new_allow_tag,
@@ -76,13 +69,10 @@ impl TagFilter {
             TagFilterMessage::AddAllowTag,
             TagFilterMessage::RemoveAllowTag,
         );
-
-        // Add spacing
-        column = column.push(widget::Space::with_height(Length::Fixed(space_s as f32)));
+        content.push(allow_section.into());
 
         // Deny Tags Section
-        column = self.view_tag_filter_section(
-            column,
+        let deny_section = self.view_tag_filter_section(
             fl!("file-list-deny-tags"),
             &self.deny_tags,
             &self.new_deny_tag,
@@ -90,61 +80,67 @@ impl TagFilter {
             TagFilterMessage::AddDenyTag,
             TagFilterMessage::RemoveDenyTag,
         );
+        content.push(deny_section.into());
 
         // Clear all tag filters button
         if !self.allow_tags.is_empty() || !self.deny_tags.is_empty() {
-            column = column.push(
-                widget::button::destructive(fl!("file-list-clear-all-tag-filters"))
-                    .on_press(TagFilterMessage::ClearAllTagFilters)
-                    .width(Length::Fill),
+            let clear_section = settings::section().add(
+                widget::button::text(fl!("file-list-clear-all-tag-filters"))
+                    .on_press(TagFilterMessage::ClearAllTagFilters),
             );
+            content.push(clear_section.into());
         }
 
-        column.into()
+        settings::view_column(content).into()
     }
 
     #[allow(clippy::too_many_arguments)]
     fn view_tag_filter_section<'a>(
         &'a self,
-        mut column: widget::Column<'a, TagFilterMessage>,
         section_title: String,
         current_tags: &HashSet<String>,
         new_tag_input: &String,
         update_message: fn(String) -> TagFilterMessage,
         add_message: TagFilterMessage,
         remove_message_fn: fn(String) -> TagFilterMessage,
-    ) -> widget::Column<'a, TagFilterMessage> {
+    ) -> settings::Section<'a, TagFilterMessage> {
         let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
 
-        // Section title
-        column = column.push(widget::text(section_title));
+        let mut section = settings::section().title(section_title);
 
-        // Show current tags
+        // Show current tags as removable chips
         if !current_tags.is_empty() {
-            let tags_row = current_tags
+            let tags: Vec<_> = current_tags
                 .iter()
-                .fold(widget::row().spacing(space_xs), |row, tag| {
-                    row.push(
-                        widget::button::standard(format!("✕ {tag}"))
-                            .on_press(remove_message_fn(tag.clone())),
-                    )
-                });
-            column = column.push(tags_row);
+                .map(|tag| {
+                    widget::button::text(format!("✕ {tag}"))
+                        .on_press(remove_message_fn(tag.clone()))
+                        .into()
+                })
+                .collect();
+
+            let tags_flex = widget::flex_row(tags)
+                .row_spacing(space_xs)
+                .column_spacing(space_xs);
+
+            section = section.add(tags_flex);
+        } else {
+            section = section.add(widget::text::caption(fl!("file-list-no-tags-selected")));
         }
 
         // Add tag input
-        column = self.view_tag_input(column, new_tag_input, update_message, add_message);
+        section = self.view_tag_input(section, new_tag_input, update_message, add_message);
 
-        column
+        section
     }
 
     fn view_tag_input<'a>(
         &'a self,
-        column: widget::Column<'a, TagFilterMessage>,
+        section: settings::Section<'a, TagFilterMessage>,
         new_tag_input: &String,
         update_message: fn(String) -> TagFilterMessage,
         add_message: TagFilterMessage,
-    ) -> widget::Column<'a, TagFilterMessage> {
+    ) -> settings::Section<'a, TagFilterMessage> {
         let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
         match &self.tags {
             TagsState::Loaded(Tags {
@@ -153,7 +149,7 @@ impl TagFilter {
             }) => {
                 if all_tags.is_empty() {
                     // No tags exist in the system at all
-                    column.push(widget::text(fl!("file-list-no-tags-available")))
+                    section.add(widget::text::caption(fl!("file-list-no-tags-available")))
                 } else {
                     // Check if there are any tags available that aren't already in use
                     let has_available_tags = all_tags
@@ -162,7 +158,7 @@ impl TagFilter {
 
                     if !has_available_tags {
                         // All existing tags are already in use
-                        column.push(widget::text(fl!("file-list-all-tags-in-use")))
+                        section.add(widget::text::caption(fl!("file-list-all-tags-in-use")))
                     } else {
                         // Show combo box with available tags
                         let combo = combo_box(
@@ -173,23 +169,24 @@ impl TagFilter {
                         )
                         .width(Length::Fill);
 
-                        let add_button = widget::button::standard(fl!("file-list-add-tag"))
-                            .apply_if(!new_tag_input.is_empty(), |button| {
+                        let add_button = widget::button::text(fl!("file-list-add-tag")).apply_if(
+                            !new_tag_input.is_empty(),
+                            |button| {
                                 button
                                     .on_press(add_message)
                                     .class(widget::button::ButtonClass::Suggested)
-                            })
-                            .width(Length::Shrink);
+                            },
+                        );
 
                         let input_row =
                             widget::row().push(combo).push(add_button).spacing(space_xs);
-                        column.push(input_row)
+                        section.add(input_row)
                     }
                 }
             }
-            TagsState::Loading => column.push(widget::text("Loading tags...")),
-            TagsState::Failed(_) => column.push(widget::text("Failed to load tags")),
-            TagsState::New => column.push(widget::text("Loading tags...")),
+            TagsState::Loading => section.add(widget::text::caption("Loading tags...")),
+            TagsState::Failed(_) => section.add(widget::text::caption("Failed to load tags")),
+            TagsState::New => section.add(widget::text::caption("Loading tags...")),
         }
     }
 

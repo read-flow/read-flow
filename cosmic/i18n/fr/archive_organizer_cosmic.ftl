@@ -22,6 +22,7 @@ file-list-clear-filter = Effacer le Filtre
 file-list-filter-by-tags = Filtrer par Étiquettes
 file-list-allow-tags = Inclure Étiquettes (doit avoir TOUTES)
 file-list-deny-tags = Exclure Étiquettes (ne doit avoir AUCUNE)
+file-list-no-tags-selected = Aucune étiquette sélectionnée
 file-list-select-tag = Sélectionner une étiquette
 file-list-add-tag = Ajouter
 file-list-clear-all-tag-filters = Effacer Tous les Filtres d'Étiquettes

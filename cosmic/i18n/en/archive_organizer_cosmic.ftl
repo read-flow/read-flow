@@ -26,6 +26,7 @@ file-list-clear-filter = Clear Filter
 file-list-filter-by-tags = Filter by Tags
 file-list-allow-tags = Include Tags (must have ALL)
 file-list-deny-tags = Exclude Tags (must have NONE)
+file-list-no-tags-selected = No tags selected
 file-list-select-tag = Select a tag
 file-list-add-tag = Add
 file-list-clear-all-tag-filters = Clear All Tag Filters
