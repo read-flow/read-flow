@@ -88,7 +88,6 @@ impl FileDetails {
             space_xxs,
             space_xs,
             space_s,
-            space_m,
             ..
         } = theme::active().cosmic().spacing;
 
@@ -115,188 +114,111 @@ impl FileDetails {
         // Header with file icon, name, and actions
         let file_icon = get_file_type_icon(&self.file.type_);
 
-        let header_card = widget::container(
-            Column::new()
-                .spacing(space_s)
-                .push(
-                    Row::new()
-                        .spacing(space_s)
-                        .align_y(Vertical::Center)
-                        .push(widget::icon::from_name(file_icon).size(48).icon())
-                        .push(
-                            Column::new()
-                                .spacing(space_xxs)
-                                .push(
-                                    text(filename_without_extension)
-                                        .size(24)
-                                        .width(Length::Fill),
-                                )
-                                .push(text(folder).size(14))
-                                .width(Length::Fill),
-                        )
-                        .push(
-                            Row::new()
-                                .spacing(space_xs)
-                                .push(
-                                    widget::button::icon(widget::icon::from_name(
-                                        "document-open-symbolic",
-                                    ))
-                                    .on_press(FileDetailsMessage::OpenFile)
-                                    .tooltip(fl!("file-details-open-file")),
-                                )
-                                .push(
-                                    widget::button::icon(widget::icon::from_name(
-                                        "window-close-symbolic",
-                                    ))
-                                    .on_press(FileDetailsMessage::Out(FileDetailsOutput::Close(
-                                        self.id,
-                                    )))
-                                    .tooltip(fl!("file-details-close")),
-                                ),
-                        ),
-                )
-                .push(
-                    // Status indicator bar
-                    Row::new()
-                        .spacing(space_xs)
-                        .align_y(Vertical::Center)
-                        .push(text(format!("Status: {:?}", self.file.status)).size(14))
-                        .push(text("•"))
-                        .push(text(self.format_file_size(self.file.size.into())).size(14)),
-                ),
-        )
-        .padding(space_m);
-
-        // Main content with cards
-        let main_content = Column::new()
+        let header = Row::new()
             .spacing(space_s)
+            .align_y(Vertical::Center)
+            .push(widget::icon::from_name(file_icon).size(48).icon())
             .push(
-                // File Information Card
-                widget::container(
-                    Column::new()
-                        .spacing(space_s)
-                        .push(
-                            Row::new()
-                                .spacing(space_xs)
-                                .align_y(Vertical::Center)
-                                .push(
-                                    widget::icon::from_name("document-properties-symbolic")
-                                        .size(20)
-                                        .icon(),
-                                )
-                                .push(text(fl!("file-details-basic-info")).size(18)),
-                        )
-                        .push(
-                            Column::new()
-                                .spacing(space_xs)
-                                .push(self.create_info_row(
-                                    fl!("file-details-filename"),
-                                    filename.to_string(),
-                                ))
-                                .push(self.create_info_row(
-                                    fl!("file-details-type"),
-                                    self.file.type_.clone(),
-                                ))
-                                .push(self.create_info_row(
-                                    fl!("file-details-size"),
-                                    self.format_file_size(self.file.size.into()),
-                                ))
-                                .push(
-                                    // Reading status with visual picker
-                                    Row::new()
-                                        .spacing(space_s)
-                                        .align_y(Vertical::Center)
-                                        .push(
-                                            text(fl!("file-details-status"))
-                                                .width(Length::Fixed(120.0)),
-                                        )
-                                        .push(
-                                            cosmic::iced::widget::pick_list(
-                                                [
-                                                    ReadingStatus::Unread,
-                                                    ReadingStatus::Reading,
-                                                    ReadingStatus::Read,
-                                                ],
-                                                Some(self.file.status),
-                                                FileDetailsMessage::UpdateReadingStatus,
-                                            )
-                                            .width(Length::Fill)
-                                            .placeholder(fl!("file-details-select-status")),
-                                        ),
-                                ),
-                        ),
-                )
-                .padding(space_m),
+                Column::new()
+                    .spacing(space_xxs)
+                    .push(
+                        text(filename_without_extension)
+                            .size(24)
+                            .width(Length::Fill),
+                    )
+                    .push(text(folder).size(14))
+                    .width(Length::Fill),
             )
             .push(
-                // Technical Details Card
-                widget::container(
-                    Column::new()
-                        .spacing(space_s)
-                        .push(
-                            Row::new()
-                                .spacing(space_xs)
-                                .align_y(Vertical::Center)
-                                .push(
-                                    widget::icon::from_name("applications-engineering-symbolic")
-                                        .size(20)
-                                        .icon(),
-                                )
-                                .push(text(fl!("file-details-technical")).size(18)),
-                        )
-                        .push(
-                            Column::new()
-                                .spacing(space_xs)
-                                .push(self.create_info_row(
-                                    fl!("file-details-id"),
-                                    format!("{}", self.file.id),
-                                ))
-                                .push(self.create_info_row(
-                                    fl!("file-details-full-path"),
-                                    self.file.path.clone(),
-                                ))
-                                .push(self.create_info_row(
-                                    fl!("file-details-fingerprint"),
-                                    self.file.fingerprint.clone(),
-                                )),
-                        ),
-                )
-                .padding(space_m),
-            )
-            .push(
-                // Tags Card
-                widget::container(
-                    Column::new()
-                        .spacing(space_s)
-                        .push(
-                            Row::new()
-                                .spacing(space_xs)
-                                .align_y(Vertical::Center)
-                                .push(widget::icon::from_name("tag-symbolic").size(20).icon())
-                                .push(text(fl!("file-details-tags")).size(18)),
-                        )
-                        .push(self.enhanced_tags_view()),
-                )
-                .padding(space_m),
+                Row::new()
+                    .spacing(space_xs)
+                    .push(
+                        widget::button::icon(widget::icon::from_name("document-open-symbolic"))
+                            .on_press(FileDetailsMessage::OpenFile)
+                            .tooltip(fl!("file-details-open-file")),
+                    )
+                    .push(
+                        widget::button::icon(widget::icon::from_name("window-close-symbolic"))
+                            .on_press(FileDetailsMessage::Out(FileDetailsOutput::Close(self.id)))
+                            .tooltip(fl!("file-details-close")),
+                    ),
             );
 
-        // Main layout
-        let content = Column::new()
-            .spacing(space_s)
-            .push(header_card)
-            .push(main_content)
-            .padding(space_m)
-            .width(Length::Fill);
+        // Build settings sections
+        let basic_info_section = widget::settings::section()
+            .title(fl!("file-details-basic-info"))
+            .add(widget::settings::item(
+                fl!("file-details-filename"),
+                text(filename),
+            ))
+            .add(widget::settings::item(
+                fl!("file-details-folder"),
+                text(folder),
+            ))
+            .add(widget::settings::item(
+                fl!("file-details-type"),
+                text(&self.file.type_),
+            ))
+            .add(widget::settings::item(
+                fl!("file-details-size"),
+                text(self.format_file_size(self.file.size.into())),
+            ))
+            .add(widget::settings::item(
+                fl!("file-details-status"),
+                cosmic::iced::widget::pick_list(
+                    [
+                        ReadingStatus::Unread,
+                        ReadingStatus::Reading,
+                        ReadingStatus::Read,
+                    ],
+                    Some(self.file.status),
+                    FileDetailsMessage::UpdateReadingStatus,
+                )
+                .placeholder(fl!("file-details-select-status")),
+            ));
+
+        let technical_section = widget::settings::section()
+            .title(fl!("file-details-technical"))
+            .add(widget::settings::item(
+                fl!("file-details-id"),
+                text(format!("{}", self.file.id)),
+            ))
+            .add(widget::settings::item(
+                fl!("file-details-full-path"),
+                text(&self.file.path),
+            ))
+            .add(widget::settings::item(
+                fl!("file-details-fingerprint"),
+                text(&self.file.fingerprint),
+            ));
+
+        let tags_section = widget::settings::section()
+            .title(fl!("file-details-tags"))
+            .add(self.tags_view());
+
+        // Main layout using settings view_column
+        let content = widget::settings::view_column(vec![
+            header.into(),
+            basic_info_section.into(),
+            technical_section.into(),
+            tags_section.into(),
+        ]);
 
         // Wrap content in a scrollable container
-        content
-            .apply(widget::scrollable::vertical)
-            .apply(widget::container)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Horizontal::Center)
-            .align_y(Vertical::Top)
-            .into()
+        vec![
+            widget::horizontal_space().into(),
+            content
+                .apply(widget::scrollable::vertical)
+                .apply(widget::container)
+                .width(Length::FillPortion(4))
+                .height(Length::Fill)
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Top)
+                .into(),
+            widget::horizontal_space().into(),
+        ]
+        .apply(Row::with_children)
+        .into()
     }
 
     pub fn view_context(&self) -> ContextView<'_, FileDetailsMessage> {
@@ -503,34 +425,18 @@ impl FileDetails {
         }
     }
 
-    // Create a styled info row
-    fn create_info_row(&self, label: String, value: String) -> Element<'_, FileDetailsMessage> {
-        let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
-
-        Row::new()
-            .spacing(space_xs)
-            .align_y(Vertical::Center)
-            .push(text(label).width(Length::Fixed(120.0)))
-            .push(text(value).width(Length::Fill))
-            .into()
-    }
-
-    // Enhanced tags view with better styling
-    fn enhanced_tags_view(&self) -> Element<'_, FileDetailsMessage> {
+    // Tags view for settings section
+    fn tags_view(&self) -> Element<'_, FileDetailsMessage> {
         let cosmic_theme::Spacing {
             space_xs, space_s, ..
         } = theme::active().cosmic().spacing;
         let mut column = Column::new().spacing(space_s);
 
-        // Show existing tags with enhanced styling
+        // Show existing tags
         if self.file.tags.is_empty() {
-            column = column.push(
-                widget::container(text(fl!("file-details-no-tags")))
-                    .padding(space_s)
-                    .width(Length::Fill),
-            );
+            column = column.push(text(fl!("file-details-no-tags")));
         } else {
-            // Create a flow container for the tags with enhanced styling
+            // Create a flow container for the tags
             let mut tag_row = Row::new().spacing(space_xs).width(Length::Fill);
             for tag in &self.file.tags {
                 let tag_button = widget::button::text(tag.clone())
@@ -544,12 +450,11 @@ impl FileDetails {
         }
 
         // Add tag input section
-        column =
-            column.push(widget::container(iced_widget::horizontal_rule(1)).padding([space_s, 0]));
+        column = column.push(iced_widget::horizontal_rule(1));
 
         column = match &self.tags {
             TagsState::Loaded(Tags { available_tags, .. }) => {
-                // Add combo box for tag selection with enhanced styling
+                // Add combo box for tag selection
                 let combo = combo_box(
                     available_tags,
                     &fl!("file-details-select-tag"),
@@ -587,20 +492,17 @@ impl FileDetails {
                 column.push(input_row)
             }
             TagsState::Loading => column.push(
-                widget::container(
-                    Row::new()
-                        .spacing(space_xs)
-                        .align_y(Vertical::Center)
-                        .push(
-                            widget::icon::from_name("content-loading-symbolic")
-                                .size(16)
-                                .icon(),
-                        )
-                        .push(text(fl!("file-details-loading-tags"))),
-                )
-                .padding(space_s),
+                Row::new()
+                    .spacing(space_xs)
+                    .align_y(Vertical::Center)
+                    .push(
+                        widget::icon::from_name("content-loading-symbolic")
+                            .size(16)
+                            .icon(),
+                    )
+                    .push(text(fl!("file-details-loading-tags"))),
             ),
-            _ => column.push(widget::container(text("Failed to load tags")).padding(space_s)),
+            _ => column.push(text("Failed to load tags")),
         };
 
         column.into()
