@@ -152,6 +152,7 @@ impl Pagination {
             PaginationMessage::NavigateToLastPage => self.index = self.collection_size - 1,
             PaginationMessage::SetCollectionSize(new_size) => {
                 self.collection_size = new_size;
+		self.index = cmp::min(self.index, new_size);
             }
             PaginationMessage::Out(_) => panic!("should be handled by the parent component"),
         }

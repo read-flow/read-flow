@@ -63,7 +63,6 @@ impl FilesComponent {
                 // Handle empty state
                 if visible_files.is_empty() {
                     return Column::new()
-                        .push(self.pagination.view().map(Into::into))
                         .push(
                             widget::container(widget::text(fl!("file-list-no-files")))
                                 .width(Length::Fill)
@@ -74,20 +73,17 @@ impl FilesComponent {
                 }
 
                 // Build the settings section with files
+                let files_section =
+                    widget::settings::section().add(self.pagination.view().map(Into::into));
                 let files_section = visible_files
                     .into_iter()
-                    .fold(widget::settings::section(), |section, file| {
-                        section.add(view_file(file))
-                    });
+                    .fold(files_section, |section, file| section.add(view_file(file)))
+                    .add(self.pagination.view().map(Into::into));
 
                 let file_content = widget::settings::view_column(vec![files_section.into()])
-                    .push(self.pagination.view().map(Into::into))
                     .apply(widget::scrollable::vertical);
 
-                Column::new()
-                    .push(self.pagination.view().map(Into::into))
-                    .push(file_content)
-                    .into()
+                Column::new().push(file_content).into()
             }
         }
     }
