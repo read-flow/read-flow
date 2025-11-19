@@ -1,6 +1,9 @@
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet}, str::FromStr
+    collections::{HashMap, HashSet, hash_map::Entry},
+    str::FromStr,
 };
+
+use futures_util::stream::{self, StreamExt};
 
 use archive_organizer::api::{File, FileDataSource, ReadingStatus};
 
@@ -24,14 +27,29 @@ impl Aggregator {
         self.clients.insert(client.selector(), client)
     }
 
-    pub async  fn aggregate(&self) -> Result<Documents, FilesClientError> {
-	let mut documents = Documents::default();
-	for (selector, client) in &self.clients {
-	    for file in client.get_files().await? {
-		documents.push((selector.clone(), file).into());
-	    }
-	}
-	Ok(documents)
+    pub async fn aggregate(&self) -> Result<Documents, FilesClientError> {
+        let mut documents = Documents::default();
+
+        // Create a stream of futures that fetch files from each client in parallel
+        let results: Vec<Result<(ClientSelector, Vec<File>), FilesClientError>> =
+            stream::iter(self.clients.iter())
+                .map(|(selector, client)| async move {
+                    let files = client.get_files().await?;
+                    Ok((selector.clone(), files))
+                })
+                .buffer_unordered(self.clients.len())
+                .collect()
+                .await;
+
+        // Process results and aggregate documents
+        for result in results {
+            let (selector, files) = result?;
+            for file in files {
+                documents.push((selector.clone(), file).into());
+            }
+        }
+
+        Ok(documents)
     }
 }
 
