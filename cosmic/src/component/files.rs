@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use archive_organizer::api::File;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
@@ -12,8 +13,6 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Row;
-
-use archive_organizer::api::File;
 
 use crate::component::pagination::Pagination;
 use crate::component::pagination::PaginationMessage;

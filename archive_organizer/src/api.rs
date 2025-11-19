@@ -1,14 +1,15 @@
-use std::{
-    fmt::{Display, Formatter},
-    process::ExitStatus,
-    result::Result,
-    str::FromStr,
-};
+use std::fmt::Display;
+use std::fmt::Formatter;
+use std::process::ExitStatus;
+use std::result::Result;
+use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use strum::EnumIter;
 
-use crate::db::models::{File as DbFile, FileTag as DbTag};
+use crate::db::models::File as DbFile;
+use crate::db::models::FileTag as DbTag;
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, PartialOrd, Ord, EnumIter, Hash,

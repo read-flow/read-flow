@@ -1,13 +1,13 @@
-use itertools::{Itertools, concat};
+use itertools::Itertools;
+use itertools::concat;
 
-use crate::{
-    ApplicationModule,
-    db::{
-        dao::{Error, FileDao, FileTagDao},
-        models::{File, FileTag},
-    },
-    scan::ScanSettings,
-};
+use crate::ApplicationModule;
+use crate::db::dao::Error;
+use crate::db::dao::FileDao;
+use crate::db::dao::FileTagDao;
+use crate::db::models::File;
+use crate::db::models::FileTag;
+use crate::scan::ScanSettings;
 
 impl ApplicationModule {
     pub fn apply_tags(&self) -> Result<(), Error> {

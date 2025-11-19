@@ -1,14 +1,13 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 
-use figment::{
-    Figment,
-    providers::{Format, Toml},
-};
+use figment::Figment;
+use figment::providers::Format;
+use figment::providers::Toml;
 use serde::Deserialize;
 
 use crate::db::DbSettings;
 use crate::scan::ScanSettings;
-
 #[cfg(feature = "server")]
 use crate::server::ServerSettings;
 

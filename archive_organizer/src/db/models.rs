@@ -1,6 +1,11 @@
-use diesel::{prelude::*, sqlite::Sqlite};
+use diesel::prelude::*;
+use diesel::sqlite::Sqlite;
 
-use crate::db::schema::{directories, directory_tags, file_tags, files, remotes};
+use crate::db::schema::directories;
+use crate::db::schema::directory_tags;
+use crate::db::schema::file_tags;
+use crate::db::schema::files;
+use crate::db::schema::remotes;
 
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Selectable)]
 #[diesel(table_name = files)]

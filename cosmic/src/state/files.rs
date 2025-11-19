@@ -2,7 +2,8 @@
 
 use std::collections::HashSet;
 
-use archive_organizer::api::{File, ReadingStatus};
+use archive_organizer::api::File;
+use archive_organizer::api::ReadingStatus;
 
 use crate::state::LoadedState;
 

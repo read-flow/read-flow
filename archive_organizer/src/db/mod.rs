@@ -5,12 +5,14 @@ pub mod schema;
 
 use std::time::Duration;
 
-use diesel::{
-    connection::SimpleConnection,
-    prelude::*,
-    r2d2::{ConnectionManager, CustomizeConnection, Pool},
-};
-use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+use diesel::connection::SimpleConnection;
+use diesel::prelude::*;
+use diesel::r2d2::ConnectionManager;
+use diesel::r2d2::CustomizeConnection;
+use diesel::r2d2::Pool;
+use diesel_migrations::EmbeddedMigrations;
+use diesel_migrations::MigrationHarness;
+use diesel_migrations::embed_migrations;
 
 #[derive(Debug, serde::Deserialize, Clone)]
 pub struct DbSettings {

@@ -1,22 +1,36 @@
+use std::path::Path;
+
+use archive_organizer::Builder;
+use archive_organizer::api::File;
+use archive_organizer::api::FileDataSource;
+use archive_organizer::api::ReadingStatus;
+use cosmic::Action;
+use cosmic::Apply;
+use cosmic::Element;
+use cosmic::Task;
+use cosmic::cosmic_theme;
+use cosmic::iced::Length;
+use cosmic::iced::alignment::Horizontal;
+use cosmic::iced::alignment::Vertical;
+use cosmic::iced::widget::combo_box;
+use cosmic::iced_widget::Column;
+use cosmic::iced_widget::Row;
+use cosmic::iced_widget::{
+    self,
+};
+use cosmic::task;
+use cosmic::theme;
+use cosmic::widget::text;
+use cosmic::widget::{
+    self,
+};
+
+use crate::app::ContextView;
+use crate::client::Client;
 use crate::client::ClientSelector;
 use crate::fl;
 use crate::page::get_file_type_icon;
 use crate::state::LoadedState;
-use crate::{app::ContextView, client::Client};
-use archive_organizer::Builder;
-use archive_organizer::api::{File, FileDataSource, ReadingStatus};
-use cosmic::{
-    Action, Apply, Element, Task, cosmic_theme,
-    iced::{
-        Length,
-        alignment::{Horizontal, Vertical},
-        widget::combo_box,
-    },
-    iced_widget::{self, Column, Row},
-    task, theme,
-    widget::{self, text},
-};
-use std::path::Path;
 
 struct Tags {
     all_tags: Vec<String>,

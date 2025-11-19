@@ -6,14 +6,6 @@ pub(crate) mod sources;
 
 use core::panic;
 
-use crate::app::ContextView;
-use crate::client::Client;
-use crate::client::ClientSelector;
-use crate::cosmic_ext::ActionExt;
-use crate::fl;
-use crate::page::sources::SourcesMessage;
-use crate::page::sources::SourcesOutput;
-use crate::page::sources::SourcesPage;
 use archive_organizer::ApplicationModule;
 use archive_organizer::api::File;
 use archive_organizer::client::FilesClient;
@@ -37,6 +29,15 @@ use indexmap::IndexMap;
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use url::Url;
+
+use crate::app::ContextView;
+use crate::client::Client;
+use crate::client::ClientSelector;
+use crate::cosmic_ext::ActionExt;
+use crate::fl;
+use crate::page::sources::SourcesMessage;
+use crate::page::sources::SourcesOutput;
+use crate::page::sources::SourcesPage;
 
 pub struct Pages {
     rng: ThreadRng,

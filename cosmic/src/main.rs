@@ -11,9 +11,9 @@ mod iter;
 mod page;
 mod state;
 
-use archive_organizer::{
-    ApplicationModule,
-    settings::{self},
+use archive_organizer::ApplicationModule;
+use archive_organizer::settings::{
+    self,
 };
 
 fn main() -> cosmic::iced::Result {

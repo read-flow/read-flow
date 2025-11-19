@@ -1,3 +1,5 @@
+use std::process::ExitStatus;
+
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
 use archive_organizer::api::Status;
@@ -5,7 +7,6 @@ use archive_organizer::client;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::dao;
 use archive_organizer::db::datasource::DbClient;
-use std::process::ExitStatus;
 use url::Url;
 
 #[derive(Debug, thiserror::Error)]

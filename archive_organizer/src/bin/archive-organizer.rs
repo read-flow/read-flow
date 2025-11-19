@@ -1,13 +1,14 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
-use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
-
 use archive_organizer::ApplicationModule;
-
 #[cfg(feature = "server")]
 use archive_organizer::server;
+use clap::Parser;
+use clap::Subcommand;
+use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::fmt;
+use tracing_subscriber::prelude::*;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

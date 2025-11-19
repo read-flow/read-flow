@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use crate::client::Client;
-use crate::fl;
-use crate::state::tags::{Tags, TagsState};
+use std::collections::HashSet;
+
 use archive_organizer::Builder;
 use archive_organizer::api::FileDataSource;
+use cosmic::Element;
+use cosmic::Task;
+use cosmic::cosmic_theme;
 use cosmic::iced::Length;
 use cosmic::iced::widget::combo_box;
+use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
-use cosmic::{Element, Task};
-use cosmic::{cosmic_theme, theme};
-use std::collections::HashSet;
+
+use crate::client::Client;
+use crate::fl;
+use crate::state::tags::Tags;
+use crate::state::tags::TagsState;
 
 pub struct TagFilter {
     client: Client,

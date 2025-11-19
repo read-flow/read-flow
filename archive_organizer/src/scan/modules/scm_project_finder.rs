@@ -1,8 +1,10 @@
 use std::path::Path;
 
-use crate::db::{ConnectionPool, dao::DirectoryDao, models::NewDirectory};
-
-use super::{DirectoryError, DirectoryModule};
+use super::DirectoryError;
+use super::DirectoryModule;
+use crate::db::ConnectionPool;
+use crate::db::dao::DirectoryDao;
+use crate::db::models::NewDirectory;
 
 pub struct ScmProjectFinder {
     /// The hidden SCM directory, e.g. `.git`, `.hg`

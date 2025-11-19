@@ -4,11 +4,12 @@
 
 use std::sync::LazyLock;
 
-use i18n_embed::{
-    DefaultLocalizer, LanguageLoader, Localizer,
-    fluent::{FluentLanguageLoader, fluent_language_loader},
-    unic_langid::LanguageIdentifier,
-};
+use i18n_embed::DefaultLocalizer;
+use i18n_embed::LanguageLoader;
+use i18n_embed::Localizer;
+use i18n_embed::fluent::FluentLanguageLoader;
+use i18n_embed::fluent::fluent_language_loader;
+use i18n_embed::unic_langid::LanguageIdentifier;
 use rust_embed::RustEmbed;
 
 /// Applies the requested language(s) to requested translations from the `fl!()` macro.

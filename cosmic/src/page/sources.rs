@@ -1,20 +1,31 @@
 use archive_organizer::Builder;
-use archive_organizer::api::{FileDataSource, Status};
+use archive_organizer::api::FileDataSource;
+use archive_organizer::api::Status;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::ConnectionPool;
 use archive_organizer::db::dao::RemoteDao;
-use archive_organizer::db::models::{NewRemote, Remote};
+use archive_organizer::db::models::NewRemote;
+use archive_organizer::db::models::Remote;
+use cosmic::Action;
+use cosmic::Apply;
+use cosmic::Element;
+use cosmic::Task;
+use cosmic::cosmic_theme;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Vertical;
-use cosmic::widget::{container, icon, row, settings};
-use cosmic::{Action, widget};
-use cosmic::{Apply, Element, Task};
-use cosmic::{cosmic_theme, task, theme};
+use cosmic::task;
+use cosmic::theme;
+use cosmic::widget;
+use cosmic::widget::container;
+use cosmic::widget::icon;
+use cosmic::widget::row;
+use cosmic::widget::settings;
 use url::Url;
 
 use crate::app::ContextView;
 use crate::fl;
-use crate::iter::{find_with_next, find_with_previous};
+use crate::iter::find_with_next;
+use crate::iter::find_with_previous;
 use crate::state::LoadedState;
 
 pub type RemotesState = LoadedState<Vec<Remote>>;

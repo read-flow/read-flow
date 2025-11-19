@@ -1,25 +1,39 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use crate::app::ContextView;
-use crate::client::{Client, ClientSelector};
-use crate::component::files::{FilesComponent, FilesMessage, FilesOutput};
-use crate::component::pagination::PaginationMessage;
-use crate::component::tag_filter::TagFilterOutput;
-use crate::component::tag_filter::{TagFilter, TagFilterMessage};
-use crate::cosmic_ext::ActionExt;
-use crate::fl;
-use crate::state::files::Files;
-use crate::state::files::{FileState, filter_file};
-use archive_organizer::api::{File, FileDataSource, ReadingStatus};
+use std::collections::HashSet;
+
+use archive_organizer::api::File;
+use archive_organizer::api::FileDataSource;
+use archive_organizer::api::ReadingStatus;
+use cosmic::Action;
+use cosmic::Apply;
+use cosmic::Element;
+use cosmic::Task;
+use cosmic::cosmic_theme;
 use cosmic::iced;
 use cosmic::iced::Length;
-use cosmic::iced::alignment::{Horizontal, Vertical};
+use cosmic::iced::alignment::Horizontal;
+use cosmic::iced::alignment::Vertical;
 use cosmic::task;
+use cosmic::theme;
+use cosmic::widget;
 use cosmic::widget::settings;
-use cosmic::{Action, widget};
-use cosmic::{Apply, Element, Task};
-use cosmic::{cosmic_theme, theme};
-use std::collections::HashSet;
+
+use crate::app::ContextView;
+use crate::client::Client;
+use crate::client::ClientSelector;
+use crate::component::files::FilesComponent;
+use crate::component::files::FilesMessage;
+use crate::component::files::FilesOutput;
+use crate::component::pagination::PaginationMessage;
+use crate::component::tag_filter::TagFilter;
+use crate::component::tag_filter::TagFilterMessage;
+use crate::component::tag_filter::TagFilterOutput;
+use crate::cosmic_ext::ActionExt;
+use crate::fl;
+use crate::state::files::FileState;
+use crate::state::files::Files;
+use crate::state::files::filter_file;
 
 pub struct FileList {
     client: Client,

@@ -1,8 +1,12 @@
-use std::{io, path::Path};
+use std::io;
+use std::path::Path;
 
 use rayon::prelude::*;
 
-use super::modules::{DirectoryError, DirectoryModule, FileError, FileModule};
+use super::modules::DirectoryError;
+use super::modules::DirectoryModule;
+use super::modules::FileError;
+use super::modules::FileModule;
 
 fn is_not_hidden(file: &Path) -> bool {
     file.file_name()

@@ -1,32 +1,45 @@
 mod authn;
 
-use std::{io, path::Path};
-
-use indexmap::IndexMap;
-use rocket::{
-    Responder, State, delete,
-    form::Form,
-    fs::{NamedFile, TempFile},
-    get,
-    http::ContentType,
-    http::Method,
-    post, put, routes,
-    serde::{Deserialize, json::Json},
-};
-use rocket_cors::{AllowedOrigins, Cors, CorsOptions};
-
-use crate::{
-    ApplicationModule, ExpandedPath,
-    api::{File, FileDataSource, Status},
-    db::{
-        self,
-        dao::{self, FileDao, FileTagDao},
-        datasource::DbClient,
-    },
-    scan, settings, to_unique_file,
-};
+use std::io;
+use std::path::Path;
 
 use authn::AuthorizedUser;
+use indexmap::IndexMap;
+use rocket::Responder;
+use rocket::State;
+use rocket::delete;
+use rocket::form::Form;
+use rocket::fs::NamedFile;
+use rocket::fs::TempFile;
+use rocket::get;
+use rocket::http::ContentType;
+use rocket::http::Method;
+use rocket::post;
+use rocket::put;
+use rocket::routes;
+use rocket::serde::Deserialize;
+use rocket::serde::json::Json;
+use rocket_cors::AllowedOrigins;
+use rocket_cors::Cors;
+use rocket_cors::CorsOptions;
+
+use crate::ApplicationModule;
+use crate::ExpandedPath;
+use crate::api::File;
+use crate::api::FileDataSource;
+use crate::api::Status;
+use crate::db::dao::FileDao;
+use crate::db::dao::FileTagDao;
+use crate::db::dao::{
+    self,
+};
+use crate::db::datasource::DbClient;
+use crate::db::{
+    self,
+};
+use crate::scan;
+use crate::settings;
+use crate::to_unique_file;
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(crate = "rocket::serde")]

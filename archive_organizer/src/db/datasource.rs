@@ -1,17 +1,22 @@
-use std::{process::ExitStatus, sync::Arc};
+use std::process::ExitStatus;
+use std::sync::Arc;
 
-use diesel::{RunQueryDsl, prelude::*};
+use diesel::RunQueryDsl;
+use diesel::prelude::*;
 use indexmap::IndexMap;
 use tokio::process::Command;
 
-use crate::{
-    api::{File, FileDataSource, Status},
-    db::models::{File as DbFile, FileTag as DbFileTag},
-    db::schema::{file_tags, files},
-};
-
 use super::ConnectionPool;
-use super::dao::{Error, FileDao, FileTagDao};
+use super::dao::Error;
+use super::dao::FileDao;
+use super::dao::FileTagDao;
+use crate::api::File;
+use crate::api::FileDataSource;
+use crate::api::Status;
+use crate::db::models::File as DbFile;
+use crate::db::models::FileTag as DbFileTag;
+use crate::db::schema::file_tags;
+use crate::db::schema::files;
 
 #[derive(Clone)]
 pub struct DbClient {

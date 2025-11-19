@@ -7,25 +7,26 @@ pub mod server;
 pub mod settings;
 pub mod tag;
 
-use std::{
-    hash::Hash,
-    ops::Deref,
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Arc,
-};
+use std::hash::Hash;
+use std::ops::Deref;
+use std::path::Path;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::Arc;
 
 use api::FileDataSource;
+use db::ConnectionPool;
+use db::datasource::DbClient;
 use expanduser::expanduser;
 use figment::Figment;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use scan::DirectorySettings;
+use scan::FileSystemVisitor;
 use serde::Deserialize;
+use settings::Settings;
+use settings::SettingsError;
 use tokio::runtime::Runtime;
-
-use db::{ConnectionPool, datasource::DbClient};
-use scan::{DirectorySettings, FileSystemVisitor};
-use settings::{Settings, SettingsError};
 
 #[derive(Clone, Debug)]
 pub struct ApplicationModule {

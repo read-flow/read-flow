@@ -1,13 +1,19 @@
-use std::{
-    collections::{HashMap, HashSet, hash_map::Entry},
-    str::FromStr,
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::collections::hash_map::Entry;
+use std::str::FromStr;
+
+use archive_organizer::api::File;
+use archive_organizer::api::FileDataSource;
+use archive_organizer::api::ReadingStatus;
+use futures_util::stream::StreamExt;
+use futures_util::stream::{
+    self,
 };
 
-use futures_util::stream::{self, StreamExt};
-
-use archive_organizer::api::{File, FileDataSource, ReadingStatus};
-
-use crate::client::{Client, ClientSelector, FilesClientError};
+use crate::client::Client;
+use crate::client::ClientSelector;
+use crate::client::FilesClientError;
 
 pub struct Aggregator {
     clients: HashMap<ClientSelector, Client>,

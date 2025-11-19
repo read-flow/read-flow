@@ -1,16 +1,20 @@
 pub mod file_system_visitor;
 pub mod modules;
-use std::{path::Path, sync::Arc};
+use std::path::Path;
+use std::sync::Arc;
 
 use anyhow::Result;
+pub use file_system_visitor::Error;
+pub use file_system_visitor::FileSystemVisitor;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use modules::file_extension_finder::FileExtensionFinder;
+use modules::scm_project_finder::ScmProjectFinder;
 use serde::Deserialize;
 
-use crate::{ApplicationModule, ExpandedPath, db::ConnectionPool};
-
-pub use file_system_visitor::{Error, FileSystemVisitor};
-use modules::{file_extension_finder::FileExtensionFinder, scm_project_finder::ScmProjectFinder};
+use crate::ApplicationModule;
+use crate::ExpandedPath;
+use crate::db::ConnectionPool;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ScanSettings {
@@ -119,7 +123,8 @@ impl ApplicationModule {
 
 #[cfg(test)]
 mod tests {
-    use assert4rs::{Assert, AssertEquals};
+    use assert4rs::Assert;
+    use assert4rs::AssertEquals;
     use rstest::rstest;
 
     use super::*;

@@ -1,0 +1,14 @@
+# Enable unstable features required for nightly-only options
+unstable_features = true
+
+# Format imports with one per line, vertically stacked
+imports_layout = "Vertical"
+
+# Optional: ensures every use path is fully expanded and listed individually.
+imports_granularity = "Item"
+
+# Optional: Group imports by std, external, and self/crate
+group_imports = "StdExternalCrate"
+
+# Optional: Set edition if not inferred from Cargo.toml
+edition = "2024"

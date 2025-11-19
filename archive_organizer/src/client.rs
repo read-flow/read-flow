@@ -1,21 +1,24 @@
-use std::{
-    convert::Infallible,
-    env,
-    ffi::OsStr,
-    io,
-    path::{Path, PathBuf},
-    process::ExitStatus,
-    sync::Arc,
-};
+use std::convert::Infallible;
+use std::env;
+use std::ffi::OsStr;
+use std::io;
+use std::path::Path;
+use std::path::PathBuf;
+use std::process::ExitStatus;
+use std::sync::Arc;
 
 use futures::StreamExt;
-use reqwest::{Client, Url, header};
-use tokio::{fs, process::Command};
+use reqwest::Client;
+use reqwest::Url;
+use reqwest::header;
+use tokio::fs;
+use tokio::process::Command;
 
-use crate::{
-    api::{File, FileDataSource, Status},
-    extension_of, to_unique_file,
-};
+use crate::api::File;
+use crate::api::FileDataSource;
+use crate::api::Status;
+use crate::extension_of;
+use crate::to_unique_file;
 
 #[derive(Clone)]
 pub struct FilesClient {

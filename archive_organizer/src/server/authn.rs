@@ -1,8 +1,8 @@
 use itertools::Itertools;
-use rocket::{
-    http::Status,
-    request::{FromRequest, Outcome, Request},
-};
+use rocket::http::Status;
+use rocket::request::FromRequest;
+use rocket::request::Outcome;
+use rocket::request::Request;
 
 use crate::ApplicationModule;
 

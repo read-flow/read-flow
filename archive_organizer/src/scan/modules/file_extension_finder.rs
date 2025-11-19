@@ -1,16 +1,18 @@
-use std::{os::unix::fs::MetadataExt, path::Path, process::Command, sync::Arc};
+use std::os::unix::fs::MetadataExt;
+use std::path::Path;
+use std::process::Command;
+use std::sync::Arc;
 
-use crate::{
-    api::ReadingStatus,
-    db::{
-        ConnectionPool,
-        dao::{FileDao, FileTagDao},
-        models::{FileTag, NewFile},
-    },
-    scan::{DirectorySettings, ScanSettings},
-};
-
-use super::{FileError, FileModule};
+use super::FileError;
+use super::FileModule;
+use crate::api::ReadingStatus;
+use crate::db::ConnectionPool;
+use crate::db::dao::FileDao;
+use crate::db::dao::FileTagDao;
+use crate::db::models::FileTag;
+use crate::db::models::NewFile;
+use crate::scan::DirectorySettings;
+use crate::scan::ScanSettings;
 
 pub struct FileExtensionFinder {
     extension: String,

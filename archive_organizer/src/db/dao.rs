@@ -1,17 +1,24 @@
-use std::{io, sync::Arc};
+use std::io;
+use std::sync::Arc;
 
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::Integer;
 
-use crate::{
-    api::get_update,
-    db::{
-        ConnectionPool,
-        models::{Directory, File, FileTag, NewDirectory, NewFile, NewRemote, Remote, UpdateFile},
-        schema::{directories, file_tags, files, remotes},
-    },
-};
+use crate::api::get_update;
+use crate::db::ConnectionPool;
+use crate::db::models::Directory;
+use crate::db::models::File;
+use crate::db::models::FileTag;
+use crate::db::models::NewDirectory;
+use crate::db::models::NewFile;
+use crate::db::models::NewRemote;
+use crate::db::models::Remote;
+use crate::db::models::UpdateFile;
+use crate::db::schema::directories;
+use crate::db::schema::file_tags;
+use crate::db::schema::files;
+use crate::db::schema::remotes;
 
 pub trait FileDao {
     type Error;
@@ -375,8 +382,8 @@ impl RemoteDao for ConnectionPool {
 
         diesel::delete(remotes::table.filter(remotes::id.eq(id))).execute(&mut connection)?;
 
-	// ensure that there are no gaps in the `order`
-	sql_query(
+        // ensure that there are no gaps in the `order`
+        sql_query(
 	    r#"
                 UPDATE remotes
                 SET "order" = updated_values.new_order - 1
