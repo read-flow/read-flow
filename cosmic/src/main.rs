@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+mod aggregator;
 mod app;
 mod client;
 mod component;
