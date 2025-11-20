@@ -13,17 +13,13 @@ use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::iced::widget::combo_box;
+use cosmic::iced_widget;
 use cosmic::iced_widget::Column;
 use cosmic::iced_widget::Row;
-use cosmic::iced_widget::{
-    self,
-};
 use cosmic::task;
 use cosmic::theme;
+use cosmic::widget;
 use cosmic::widget::text;
-use cosmic::widget::{
-    self,
-};
 
 use crate::app::ContextView;
 use crate::client::Client;

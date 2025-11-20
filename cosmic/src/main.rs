@@ -12,9 +12,7 @@ mod page;
 mod state;
 
 use archive_organizer::ApplicationModule;
-use archive_organizer::settings::{
-    self,
-};
+use archive_organizer::settings;
 
 fn main() -> cosmic::iced::Result {
     // Initialize tracing

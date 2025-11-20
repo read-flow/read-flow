@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // pages
 mod file_details;
-pub(crate) mod file_list;
-pub(crate) mod sources;
+mod file_list;
+mod sources;
 
 use core::panic;
 
@@ -138,13 +138,15 @@ impl Pages {
         let mut file_lists = vec![local];
         file_lists.append(&mut remotes);
 
+        let file_lists: IndexMap<_, _> = file_lists
+            .into_iter()
+            .map(|file_list| (file_list.selector(), file_list))
+            .collect();
+
         (
             Self {
                 rng: rand::rng(),
-                file_lists: file_lists
-                    .into_iter()
-                    .map(|file_list| (file_list.selector(), file_list))
-                    .collect(),
+                file_lists,
                 file_details: Default::default(),
                 sources,
             },

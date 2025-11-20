@@ -1,6 +1,7 @@
 app-title = Archief Organizer Cosmic
-context = Context
 about = Over
+context = Context
+documents = Documenten
 repository = Repository
 view = Weergave
 welcome = Welkom bij Archief Organizer Cosmic! ✨

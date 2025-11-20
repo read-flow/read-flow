@@ -5,25 +5,21 @@ use std::collections::HashMap;
 use archive_organizer::ApplicationModule;
 use archive_organizer::Builder;
 use cosmic::app::context_drawer;
+use cosmic::cosmic_config;
 use cosmic::cosmic_config::CosmicConfigEntry;
-use cosmic::cosmic_config::{
-    self,
-};
 use cosmic::iced::Length;
 use cosmic::iced::Subscription;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::prelude::*;
 use cosmic::task;
+use cosmic::widget;
 use cosmic::widget::about::About;
 use cosmic::widget::icon;
 use cosmic::widget::menu;
 use cosmic::widget::nav_bar;
 use cosmic::widget::segmented_button::Entity;
 use cosmic::widget::segmented_button::EntityMut;
-use cosmic::widget::{
-    self,
-};
 use futures_util::SinkExt;
 use i18n_embed::unic_langid::LanguageIdentifier;
 

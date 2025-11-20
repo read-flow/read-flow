@@ -6,15 +6,14 @@ use std::str::FromStr;
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
 use archive_organizer::api::ReadingStatus;
+use futures_util::stream;
 use futures_util::stream::StreamExt;
-use futures_util::stream::{
-    self,
-};
 
 use crate::client::Client;
 use crate::client::ClientSelector;
 use crate::client::FilesClientError;
 
+#[derive(Clone)]
 pub struct Aggregator {
     clients: HashMap<ClientSelector, Client>,
 }
@@ -59,6 +58,7 @@ impl Aggregator {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum DocumentType {
     Pdf,
     Epub,
@@ -82,6 +82,7 @@ impl FromStr for DocumentType {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct DocumentMetadata {
     pub type_: DocumentType,
     pub size: i32,
@@ -97,12 +98,13 @@ pub struct DocumentSource {
     pub client: ClientSelector,
 }
 
+#[derive(Debug, Clone)]
 pub struct Document {
     pub metadata: DocumentMetadata,
     pub sources: HashSet<DocumentSource>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Documents(HashMap<String, Document>);
 
 impl Documents {

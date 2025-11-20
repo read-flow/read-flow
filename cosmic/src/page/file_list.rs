@@ -22,6 +22,7 @@ use cosmic::widget::settings;
 use crate::app::ContextView;
 use crate::client::Client;
 use crate::client::ClientSelector;
+use crate::component::files::FileState;
 use crate::component::files::FilesComponent;
 use crate::component::files::FilesMessage;
 use crate::component::files::FilesOutput;
@@ -31,9 +32,7 @@ use crate::component::tag_filter::TagFilterMessage;
 use crate::component::tag_filter::TagFilterOutput;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
-use crate::state::files::FileState;
-use crate::state::files::Files;
-use crate::state::files::filter_file;
+use crate::state::filtered::Filtered;
 
 pub struct FileList {
     client: Client,
@@ -290,13 +289,18 @@ impl FileList {
             }
             FileListMessage::Loaded(files) => {
                 // For initial load, use synchronous filtering since it's typically fast
-                let files = Files::new(files).filtered_by(
-                    &self.search_query,
-                    self.status_filter,
-                    &self.tag_filter.allow_tags,
-                    &self.tag_filter.deny_tags,
-                );
-                let collection_size = files.filtered_indices.len();
+                let mut files = Filtered::new(files);
+                files.filter(|file| {
+                    filter_file(
+                        &self.search_query,
+                        self.status_filter,
+                        &self.tag_filter.allow_tags,
+                        &self.tag_filter.deny_tags,
+                        &file,
+                    )
+                });
+
+                let collection_size = files.filtered_len();
                 self.archive.files = FileState::Loaded(files);
                 task::message(FileListMessage::FilesComponent(FilesMessage::Pagination(
                     PaginationMessage::SetCollectionSize(collection_size),
@@ -307,8 +311,11 @@ impl FileList {
                 Task::none()
             }
             FileListMessage::RefreshFile(file) => {
-                self.archive.files.unwrap_mut().update_file_by_id(file);
-                self.filter_now()
+                self.archive
+                    .files
+                    .unwrap_mut()
+                    .update_item(move |old_file| old_file.id == file.id, file);
+                Task::none()
             }
             FileListMessage::SearchChanged(query) => {
                 self.search_query = query.clone();
@@ -330,7 +337,7 @@ impl FileList {
             FileListMessage::FilteringComplete(filtered_files) => {
                 let collection_size = filtered_files.len();
                 self.is_filtering = false;
-                self.archive.set_visible(filtered_files);
+                self.archive.set_filtered_indices(filtered_files);
                 task::message(FileListMessage::FilesComponent(FilesMessage::Pagination(
                     PaginationMessage::SetCollectionSize(collection_size),
                 )))
@@ -348,7 +355,7 @@ impl FileList {
                             self.status_filter,
                             self.tag_filter.allow_tags.clone(),
                             self.tag_filter.deny_tags.clone(),
-                            self.archive.files.unwrap().all_files(),
+                            self.archive.files.unwrap().unfiltered().to_vec(),
                         ),
                         task::message(FileListMessage::FocusSearchInput),
                     ])
@@ -404,10 +411,41 @@ impl FileList {
                 self.status_filter,
                 self.tag_filter.allow_tags.clone(),
                 self.tag_filter.deny_tags.clone(),
-                self.archive.files.unwrap().all_files(),
+                self.archive.files.unwrap().unfiltered().to_vec(),
             )
         } else {
             Task::none()
         }
     }
+}
+
+fn filter_file(
+    search_query: &str,
+    status_filter: Option<ReadingStatus>,
+    allow_tags: &HashSet<String>,
+    deny_tags: &HashSet<String>,
+    file: &&File,
+) -> bool {
+    // Filter by search query
+    let matches_search = if search_query.is_empty() {
+        true
+    } else {
+        let query = search_query.to_lowercase();
+        let path_lower = file.path.to_lowercase();
+        let tags_lower = file.tags.join(" ").to_lowercase();
+        path_lower.contains(&query) || tags_lower.contains(&query)
+    };
+
+    // Filter by reading status
+    let matches_status = status_filter.is_none_or(|status| file.status == status);
+
+    // Filter by allowed tags (file must have ALL allowed tags)
+    let matches_allow_tags =
+        allow_tags.is_empty() || allow_tags.iter().all(|tag| file.tags.contains(tag));
+
+    // Filter by denied tags (file must have NONE of the denied tags)
+    let matches_deny_tags =
+        deny_tags.is_empty() || !file.tags.iter().any(|tag| deny_tags.contains(tag));
+
+    matches_search && matches_status && matches_allow_tags && matches_deny_tags
 }

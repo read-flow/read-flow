@@ -19,7 +19,10 @@ use crate::component::pagination::PaginationMessage;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::page::get_file_type_icon;
-use crate::state::files::FileState;
+use crate::state::LoadedState;
+use crate::state::filtered::Filtered;
+
+pub type FileState = LoadedState<Filtered<File>>;
 
 #[derive(Debug, Clone)]
 pub enum FilesOutput {
@@ -53,7 +56,7 @@ impl FilesComponent {
                 widget::text(fl!("generic-error", error = error.as_str())).into()
             }
             FileState::Loaded(files) => {
-                let filtered_files = files.filtered_files();
+                let filtered_files = files.filtered_items();
                 let visible_files: Vec<_> = self
                     .pagination
                     .filter_visible(filtered_files.as_slice())
@@ -98,8 +101,8 @@ impl FilesComponent {
         }
     }
 
-    pub fn set_visible(&mut self, files: Vec<usize>) {
-        self.files.unwrap_mut().set_visible(files);
+    pub fn set_filtered_indices(&mut self, files: Vec<usize>) {
+        self.files.unwrap_mut().set_filtered_indices(files);
     }
 }
 
