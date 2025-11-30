@@ -55,7 +55,7 @@ pub enum DocumentListMessage {
     LoadArchive,
     Loaded(Documents),
     LoadingFailed(String),
-    RefreshFile(Document),
+    RefreshDocument(Document),
     SearchChanged(String),
     ClearSearch,
     FilteringComplete(Vec<usize>),
@@ -314,11 +314,12 @@ impl DocumentList {
                 self.archive.documents = DocumentState::Failed(error);
                 Task::none()
             }
-            DocumentListMessage::RefreshFile(_file) => {
-                // self.archive
-                //     .documents
-                //     .unwrap_mut()
-                //     .update_item(move |old_file| old_file.id == file.id, file);
+            DocumentListMessage::RefreshDocument(document) => {
+                let document_fingerprint = document.metadata.fingerprint.clone();
+                self.archive.documents.unwrap_mut().update_item(
+                    move |doc| doc.metadata.fingerprint == document_fingerprint,
+                    document,
+                );
                 Task::none()
             }
             DocumentListMessage::SearchChanged(query) => {

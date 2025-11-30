@@ -469,7 +469,7 @@ fn map_document_details_message(
                 PageMessage::CloseDocumentDetails(fingerprint)
             }
             DocumentDetailsOutput::RefreshDocument(document) => {
-                PageMessage::Documents(DocumentListMessage::RefreshFile(document))
+                PageMessage::Documents(DocumentListMessage::RefreshDocument(document))
             }
         },
         msg => PageMessage::DocumentDetails(fingerprint, msg),
