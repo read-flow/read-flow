@@ -60,6 +60,11 @@ file-details-open-file = Bestand Openen
 file-details-close = Sluiten
 file-details-remove-tag = Tag verwijderen
 
+# Document details
+document-details-sources = Bronnen
+document-details-source-local = Lokaal
+document-details-no-sources = Geen bronnen beschikbaar
+
 # Page messages
 page-not-found = ⚠ Niet gevonden
 

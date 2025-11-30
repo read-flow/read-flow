@@ -60,6 +60,11 @@ file-details-open-file = Open File
 file-details-close = Close
 file-details-remove-tag = Remove tag
 
+# Document details
+document-details-sources = Sources
+document-details-source-local = Local
+document-details-no-sources = No sources available
+
 # Page messages
 page-not-found = ⚠ Not found
 

@@ -201,12 +201,17 @@ impl DocumentDetails {
             .title(fl!("file-details-tags"))
             .add(self.tags_view());
 
+        let sources_section = widget::settings::section()
+            .title(fl!("document-details-sources"))
+            .add(self.sources_view());
+
         // Main layout using settings view_column
         let content = widget::settings::view_column(vec![
             header.into(),
             basic_info_section.into(),
             technical_section.into(),
             tags_section.into(),
+            sources_section.into(),
         ]);
 
         // Wrap content in a scrollable container
@@ -512,6 +517,80 @@ impl DocumentDetails {
             ),
             _ => column.push(text("Failed to load tags")),
         };
+
+        column.into()
+    }
+
+    // Sources view showing all locations where this document exists
+    fn sources_view(&self) -> Element<'_, DocumentDetailsMessage> {
+        let cosmic_theme::Spacing {
+            space_xxs,
+            space_xs,
+            space_s,
+            ..
+        } = theme::active().cosmic().spacing;
+
+        let mut column = Column::new().spacing(space_s);
+
+        // Sort sources to show local first, then remotes
+        let mut sources: Vec<_> = self.document.sources.iter().collect();
+        sources.sort_by(|a, b| match (&a.client, &b.client) {
+            (crate::client::ClientSelector::Local, crate::client::ClientSelector::Local) => {
+                a.path.cmp(&b.path)
+            }
+            (crate::client::ClientSelector::Local, _) => std::cmp::Ordering::Less,
+            (_, crate::client::ClientSelector::Local) => std::cmp::Ordering::Greater,
+            (
+                crate::client::ClientSelector::Remote(url_a),
+                crate::client::ClientSelector::Remote(url_b),
+            ) => url_a.cmp(url_b).then(a.path.cmp(&b.path)),
+        });
+
+        for source in sources {
+            let (icon_name, source_label) = match &source.client {
+                crate::client::ClientSelector::Local => {
+                    ("computer-symbolic", fl!("document-details-source-local"))
+                }
+                crate::client::ClientSelector::Remote(url) => (
+                    "network-server-symbolic",
+                    url.host_str().unwrap_or("Remote").to_string(),
+                ),
+            };
+
+            let source_path = Path::new(&source.path);
+            let folder = source_path.parent().and_then(|p| p.to_str()).unwrap_or("");
+            let filename = source_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&source.path);
+
+            let source_row = Row::new()
+                .spacing(space_s)
+                .align_y(Vertical::Center)
+                .push(widget::icon::from_name(icon_name).size(24).icon())
+                .push(
+                    Column::new()
+                        .spacing(space_xxs)
+                        .push(
+                            Row::new()
+                                .spacing(space_xs)
+                                .push(
+                                    widget::container(text(source_label).size(12))
+                                        .class(theme::Container::Primary)
+                                        .padding([2, 6]),
+                                )
+                                .push(text(filename).width(Length::Fill)),
+                        )
+                        .push(text(folder).size(12))
+                        .width(Length::Fill),
+                );
+
+            column = column.push(source_row);
+        }
+
+        if self.document.sources.is_empty() {
+            column = column.push(text(fl!("document-details-no-sources")));
+        }
 
         column.into()
     }

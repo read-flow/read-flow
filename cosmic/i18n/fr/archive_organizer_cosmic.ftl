@@ -55,6 +55,11 @@ file-details-open-file = Ouvrir le Fichier
 file-details-close = Fermer
 file-details-remove-tag = Supprimer l'étiquette
 
+# Document details
+document-details-sources = Sources
+document-details-source-local = Local
+document-details-no-sources = Aucune source disponible
+
 # Page messages
 page-not-found = ⚠ Non trouvé
 
