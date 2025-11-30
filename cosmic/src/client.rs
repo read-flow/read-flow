@@ -35,6 +35,12 @@ pub enum ClientSelector {
     Remote(Url),
 }
 
+impl ClientSelector {
+    pub fn is_local(&self) -> bool {
+        matches!(self, ClientSelector::Local)
+    }
+}
+
 #[derive(Clone)]
 pub enum Client {
     Local(DbClient),

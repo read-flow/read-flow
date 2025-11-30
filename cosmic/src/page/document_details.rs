@@ -1,8 +1,6 @@
 use std::path::Path;
 
 use archive_organizer::Builder;
-use archive_organizer::api::File;
-use archive_organizer::api::FileDataSource;
 use archive_organizer::api::ReadingStatus;
 use cosmic::Action;
 use cosmic::Apply;
@@ -21,11 +19,10 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::text;
 
+use crate::aggregator::Aggregator;
+use crate::aggregator::Document;
 use crate::app::ContextView;
-use crate::client::Client;
-use crate::client::ClientSelector;
 use crate::fl;
-use crate::page::get_file_type_icon;
 use crate::state::LoadedState;
 
 struct Tags {
@@ -35,23 +32,22 @@ struct Tags {
 
 type TagsState = LoadedState<Tags>;
 
-pub struct FileDetails {
-    id: i32,
-    file: File,
-    client: Client,
+pub struct DocumentDetails {
+    document: Document,
+    aggregator: Aggregator,
     selected_tag: String,
     entered_tag: String,
     tags: TagsState,
 }
 
 #[derive(Debug, Clone)]
-pub enum FileDetailsOutput {
-    Close(i32),
-    RefreshFile(ClientSelector, File),
+pub enum DocumentDetailsOutput {
+    Close(String), // Fingerprint
+    RefreshDocument(Document),
 }
 
 #[derive(Debug, Clone)]
-pub enum FileDetailsMessage {
+pub enum DocumentDetailsMessage {
     LoadAllTags,
     AllTagsLoaded(Result<Vec<String>, String>),
     UpdateSelectedTag(String),
@@ -61,39 +57,44 @@ pub enum FileDetailsMessage {
     TagsAdded(Result<Vec<String>, String>),
     RemoveTag(String),
     TagsRemoved(Result<(), String>),
-    RefreshFile,
-    FileRefreshed(Result<Option<File>, String>),
+    RefreshDocument,
+    DocumentRefreshed(Result<Document, String>),
     UpdateReadingStatus(ReadingStatus),
     ReadingStatusUpdated(Result<(), String>),
-    OpenFile,
+    OpenDocument,
 
     // Message intended for the parent module
-    Out(FileDetailsOutput),
+    Out(DocumentDetailsOutput),
 }
 
-impl FileDetails {
-    pub fn new(id: i32, file: File, client: Client) -> (Self, Task<Action<FileDetailsMessage>>) {
-        let file_details = FileDetails {
-            id,
-            file,
-            client,
+impl DocumentDetails {
+    pub fn new(
+        document: Document,
+        aggregator: Aggregator,
+    ) -> (Self, Task<Action<DocumentDetailsMessage>>) {
+        let file_details = DocumentDetails {
+            document,
+            aggregator,
             selected_tag: String::new(),
             entered_tag: String::new(),
             tags: TagsState::default(),
         };
 
-        (file_details, task::message(FileDetailsMessage::LoadAllTags))
+        (
+            file_details,
+            task::message(DocumentDetailsMessage::LoadAllTags),
+        )
     }
 
     pub fn display_name(&self) -> String {
-        Path::new(&self.file.path)
+        Path::new(&self.document.sources.iter().next().unwrap().path)
             .file_stem()
             .and_then(|name| name.to_str())
             .unwrap_or("Unknown")
             .to_string()
     }
 
-    pub fn view(&self) -> Element<'_, FileDetailsMessage> {
+    pub fn view(&self) -> Element<'_, DocumentDetailsMessage> {
         let cosmic_theme::Spacing {
             space_xxs,
             space_xs,
@@ -102,7 +103,7 @@ impl FileDetails {
         } = theme::active().cosmic().spacing;
 
         // Extract filename and folder using std::path
-        let path = Path::new(&self.file.path);
+        let path = Path::new(&self.document.sources.iter().next().unwrap().path);
 
         // Get filename without extension
         let filename = path
@@ -122,7 +123,7 @@ impl FileDetails {
             .unwrap_or("");
 
         // Header with file icon, name, and actions
-        let file_icon = get_file_type_icon(&self.file.type_);
+        let file_icon = self.document.metadata.type_.get_file_type_icon();
 
         let header = Row::new()
             .spacing(space_s)
@@ -144,12 +145,14 @@ impl FileDetails {
                     .spacing(space_xs)
                     .push(
                         widget::button::icon(widget::icon::from_name("document-open-symbolic"))
-                            .on_press(FileDetailsMessage::OpenFile)
+                            .on_press(DocumentDetailsMessage::OpenDocument)
                             .tooltip(fl!("file-details-open-file")),
                     )
                     .push(
                         widget::button::icon(widget::icon::from_name("window-close-symbolic"))
-                            .on_press(FileDetailsMessage::Out(FileDetailsOutput::Close(self.id)))
+                            .on_press(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
+                                self.document.metadata.fingerprint.clone(),
+                            )))
                             .tooltip(fl!("file-details-close")),
                     ),
             );
@@ -167,11 +170,11 @@ impl FileDetails {
             ))
             .add(widget::settings::item(
                 fl!("file-details-type"),
-                text(&self.file.type_),
+                text(self.document.metadata.type_.as_str()),
             ))
             .add(widget::settings::item(
                 fl!("file-details-size"),
-                text(self.format_file_size(self.file.size.into())),
+                text(self.format_file_size(self.document.metadata.size.into())),
             ))
             .add(widget::settings::item(
                 fl!("file-details-status"),
@@ -181,8 +184,8 @@ impl FileDetails {
                         ReadingStatus::Reading,
                         ReadingStatus::Read,
                     ],
-                    Some(self.file.status),
-                    FileDetailsMessage::UpdateReadingStatus,
+                    Some(self.document.metadata.status),
+                    DocumentDetailsMessage::UpdateReadingStatus,
                 )
                 .placeholder(fl!("file-details-select-status")),
             ));
@@ -190,16 +193,8 @@ impl FileDetails {
         let technical_section = widget::settings::section()
             .title(fl!("file-details-technical"))
             .add(widget::settings::item(
-                fl!("file-details-id"),
-                text(format!("{}", self.file.id)),
-            ))
-            .add(widget::settings::item(
-                fl!("file-details-full-path"),
-                text(&self.file.path),
-            ))
-            .add(widget::settings::item(
                 fl!("file-details-fingerprint"),
-                text(&self.file.fingerprint),
+                text(&self.document.metadata.fingerprint),
             ));
 
         let tags_section = widget::settings::section()
@@ -231,36 +226,40 @@ impl FileDetails {
         .into()
     }
 
-    pub fn view_context(&self) -> ContextView<'_, FileDetailsMessage> {
+    pub fn view_context(&self) -> ContextView<'_, DocumentDetailsMessage> {
         ContextView {
             title: "FileDetails".to_string(),
             content: text("TODO").into(),
         }
     }
 
-    pub fn update(&mut self, message: FileDetailsMessage) -> Task<Action<FileDetailsMessage>> {
+    pub fn update(
+        &mut self,
+        message: DocumentDetailsMessage,
+    ) -> Task<Action<DocumentDetailsMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
-            FileDetailsMessage::Out(_) => {
+            DocumentDetailsMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }
-            FileDetailsMessage::UpdateReadingStatus(status) => {
-                let mut updated_file = self.file.clone();
-                updated_file.status = status;
-                let client = self.client.clone();
+            DocumentDetailsMessage::UpdateReadingStatus(status) => {
+                let mut updated_document = self.document.clone();
+                updated_document.metadata.status = status;
+                let aggregator = self.aggregator.clone();
 
                 task::future(async move {
-                    match client.update_file(updated_file).await {
-                        Ok(()) => FileDetailsMessage::ReadingStatusUpdated(Ok(())),
-                        Err(err) => FileDetailsMessage::ReadingStatusUpdated(Err(format!("{err}"))),
-                    }
+                    let result = aggregator
+                        .update_document(updated_document)
+                        .await
+                        .map_err(|err| format!("{err}"));
+                    DocumentDetailsMessage::ReadingStatusUpdated(result)
                 })
             }
-            FileDetailsMessage::ReadingStatusUpdated(result) => {
+            DocumentDetailsMessage::ReadingStatusUpdated(result) => {
                 match result {
                     Ok(()) => {
                         // Refresh the file to get updated status
-                        task::message(FileDetailsMessage::RefreshFile)
+                        task::message(DocumentDetailsMessage::RefreshDocument)
                     }
                     Err(err) => {
                         tracing::error!("Failed to update reading status: {err}");
@@ -268,33 +267,34 @@ impl FileDetails {
                     }
                 }
             }
-            FileDetailsMessage::OpenFile => {
-                let file = self.file.clone();
-                let client = self.client.clone();
+            DocumentDetailsMessage::OpenDocument => {
+                let document = self.document.clone();
+                let aggregator = self.aggregator.clone();
                 task::future(async move {
-                    if let Err(e) = client.xdg_open_file(file).await {
+                    if let Err(e) = aggregator.xdg_open_file(document).await {
                         tracing::error!("Failed to open file: {e}");
                     }
-                    FileDetailsMessage::RefreshFile
+                    DocumentDetailsMessage::RefreshDocument
                 })
             }
-            FileDetailsMessage::LoadAllTags => {
+            DocumentDetailsMessage::LoadAllTags => {
                 self.tags = TagsState::Loading;
-                let client = self.client.clone();
+                let aggregator = self.aggregator.clone();
                 task::future(async move {
-                    match client.get_files_tags().await {
-                        Ok(tags) => FileDetailsMessage::AllTagsLoaded(Ok(tags)),
-                        Err(err) => FileDetailsMessage::AllTagsLoaded(Err(format!("{err}"))),
-                    }
+                    let result = aggregator
+                        .get_file_tags()
+                        .await
+                        .map_err(|err| format!("{err}"));
+                    DocumentDetailsMessage::AllTagsLoaded(result)
                 })
             }
-            FileDetailsMessage::AllTagsLoaded(result) => {
+            DocumentDetailsMessage::AllTagsLoaded(result) => {
                 match result {
                     Ok(tags) => {
                         // Remove existing tags from options
                         let tags = tags
                             .iter()
-                            .filter(|tag| !self.file.tags.contains(tag))
+                            .filter(|tag| !self.document.metadata.tags.contains(tag))
                             .cloned()
                             .collect::<Vec<_>>();
                         let available_tags = combo_box::State::new(tags.clone());
@@ -310,11 +310,11 @@ impl FileDetails {
                 }
                 task::none()
             }
-            FileDetailsMessage::UpdateSelectedTag(text) => {
+            DocumentDetailsMessage::UpdateSelectedTag(text) => {
                 self.selected_tag = text;
                 task::none()
             }
-            FileDetailsMessage::AddSelectedTag => {
+            DocumentDetailsMessage::AddSelectedTag => {
                 if self.selected_tag.trim().is_empty() {
                     return task::none();
                 }
@@ -324,7 +324,7 @@ impl FileDetails {
 
                 self.add_tag(tag)
             }
-            FileDetailsMessage::TagsAdded(result) => {
+            DocumentDetailsMessage::TagsAdded(result) => {
                 match result {
                     Ok(tags) => {
                         if let TagsState::Loaded(Tags { all_tags, .. }) = &mut self.tags {
@@ -332,7 +332,7 @@ impl FileDetails {
                             all_tags.dedup();
                         }
                         // Refresh the file to get updated tags
-                        return task::message(FileDetailsMessage::RefreshFile);
+                        return task::message(DocumentDetailsMessage::RefreshDocument);
                     }
                     Err(err) => {
                         tracing::warn!("Failed to add tag: {}", err);
@@ -340,23 +340,25 @@ impl FileDetails {
                 }
                 task::none()
             }
-            FileDetailsMessage::RemoveTag(tag) => {
-                let id = self.file.id;
+            DocumentDetailsMessage::RemoveTag(tag) => {
                 let tag = tag.clone();
-                let client = self.client.clone();
+                let document = self.document.clone();
+                let aggregator = self.aggregator.clone();
 
                 task::future(async move {
-                    match client.delete_file_tags(id, vec![tag]).await {
-                        Ok(()) => FileDetailsMessage::TagsRemoved(Ok(())),
-                        Err(err) => FileDetailsMessage::TagsRemoved(Err(format!("{err}"))),
-                    }
+                    // TODO: extract map_err and creation of message for result into extension function
+                    let result = aggregator
+                        .delete_document_tags(document, vec![tag])
+                        .await
+                        .map_err(|err| format!("{err}"));
+                    DocumentDetailsMessage::TagsRemoved(result)
                 })
             }
-            FileDetailsMessage::TagsRemoved(result) => {
+            DocumentDetailsMessage::TagsRemoved(result) => {
                 match result {
                     Ok(_) => {
                         // Refresh the file to get updated tags
-                        return task::message(FileDetailsMessage::RefreshFile);
+                        return task::message(DocumentDetailsMessage::RefreshDocument);
                     }
                     Err(err) => {
                         tracing::warn!("Failed to remove tag: {}", err);
@@ -364,59 +366,55 @@ impl FileDetails {
                 }
                 task::none()
             }
-            FileDetailsMessage::RefreshFile => {
-                let id = self.file.id;
-                let client = self.client.clone();
+            DocumentDetailsMessage::RefreshDocument => {
+                let document = self.document.clone();
+                let aggregator = self.aggregator.clone();
 
                 task::future(async move {
-                    match client.get_file(id).await {
-                        Ok(file) => FileDetailsMessage::FileRefreshed(Ok(file)),
-                        Err(err) => FileDetailsMessage::FileRefreshed(Err(format!("{err}"))),
-                    }
+                    let result = aggregator
+                        .reload_document(document)
+                        .await
+                        .map_err(|err| format!("{err}"));
+                    DocumentDetailsMessage::DocumentRefreshed(result)
                 })
             }
-            FileDetailsMessage::FileRefreshed(result) => match result {
-                Ok(Some(file)) => {
-                    self.file = file.clone();
-                    task::message(FileDetailsMessage::Out(FileDetailsOutput::RefreshFile(
-                        self.client.selector(),
-                        file,
-                    )))
-                }
-                Ok(None) => {
-                    tracing::warn!("File not found during refresh");
-                    Task::none()
+            DocumentDetailsMessage::DocumentRefreshed(result) => match result {
+                Ok(document) => {
+                    self.document = document.clone();
+                    task::message(DocumentDetailsMessage::Out(
+                        DocumentDetailsOutput::RefreshDocument(document),
+                    ))
                 }
                 Err(err) => {
                     tracing::warn!("Failed to refresh file: {}", err);
                     Task::none()
                 }
             },
-            FileDetailsMessage::UpdateEnteredTag(tag) => {
+            DocumentDetailsMessage::UpdateEnteredTag(tag) => {
                 self.entered_tag = tag;
                 Task::none()
             }
-            FileDetailsMessage::AddEnteredTag(tag) => {
+            DocumentDetailsMessage::AddEnteredTag(tag) => {
                 self.entered_tag.clear();
                 self.add_tag(tag)
             }
         }
     }
 
-    fn add_tag(&mut self, tag: String) -> Task<Action<FileDetailsMessage>> {
-        let id = self.file.id;
-        let client = self.client.clone();
+    fn add_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
+        let document = self.document.clone();
+        let client = self.aggregator.clone();
 
         task::future(async move {
-            match client.add_file_tags(id, vec![tag]).await {
-                Ok(tags) => FileDetailsMessage::TagsAdded(Ok(tags)),
-                Err(err) => FileDetailsMessage::TagsAdded(Err(format!("{err}"))),
+            match client.add_document_tags(document, vec![tag]).await {
+                Ok(tags) => DocumentDetailsMessage::TagsAdded(Ok(tags)),
+                Err(err) => DocumentDetailsMessage::TagsAdded(Err(format!("{err}"))),
             }
         })
     }
 }
 
-impl FileDetails {
+impl DocumentDetails {
     // Format file size in human-readable format
     fn format_file_size(&self, size: i64) -> String {
         const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
@@ -436,22 +434,22 @@ impl FileDetails {
     }
 
     // Tags view for settings section
-    fn tags_view(&self) -> Element<'_, FileDetailsMessage> {
+    fn tags_view(&self) -> Element<'_, DocumentDetailsMessage> {
         let cosmic_theme::Spacing {
             space_xs, space_s, ..
         } = theme::active().cosmic().spacing;
         let mut column = Column::new().spacing(space_s);
 
         // Show existing tags
-        if self.file.tags.is_empty() {
+        if self.document.metadata.tags.is_empty() {
             column = column.push(text(fl!("file-details-no-tags")));
         } else {
             // Create a flow container for the tags
             let mut tag_row = Row::new().spacing(space_xs).width(Length::Fill);
-            for tag in &self.file.tags {
+            for tag in &self.document.metadata.tags {
                 let tag_button = widget::button::text(tag.clone())
                     .trailing_icon(widget::icon::from_name("edit-delete-symbolic"))
-                    .on_press(FileDetailsMessage::RemoveTag(tag.clone()))
+                    .on_press(DocumentDetailsMessage::RemoveTag(tag.clone()))
                     .tooltip(fl!("file-details-remove-tag"));
 
                 tag_row = tag_row.push(tag_button);
@@ -469,14 +467,14 @@ impl FileDetails {
                     available_tags,
                     &fl!("file-details-select-tag"),
                     Some(&self.selected_tag),
-                    FileDetailsMessage::UpdateSelectedTag,
+                    DocumentDetailsMessage::UpdateSelectedTag,
                 )
                 .width(Length::Fill);
 
                 let add_button = widget::button::standard(fl!("file-details-add"))
                     .apply_if(!self.selected_tag.is_empty(), |button| {
                         button
-                            .on_press(FileDetailsMessage::AddSelectedTag)
+                            .on_press(DocumentDetailsMessage::AddSelectedTag)
                             .class(widget::button::ButtonClass::Suggested)
                     })
                     .width(Length::Shrink);
@@ -490,8 +488,8 @@ impl FileDetails {
                 column = column.push(input_row);
 
                 let input = widget::text_input(fl!("file-details-enter"), &self.entered_tag)
-                    .on_input(FileDetailsMessage::UpdateEnteredTag)
-                    .on_submit(FileDetailsMessage::AddEnteredTag)
+                    .on_input(DocumentDetailsMessage::UpdateEnteredTag)
+                    .on_submit(DocumentDetailsMessage::AddEnteredTag)
                     .width(Length::Fill);
 
                 let input_row = Row::new()

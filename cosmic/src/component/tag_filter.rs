@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::HashSet;
+use std::future::Future;
+use std::pin::Pin;
 
 use archive_organizer::Builder;
-use archive_organizer::api::FileDataSource;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
@@ -13,13 +14,16 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
 
-use crate::client::Client;
 use crate::fl;
 use crate::state::tags::Tags;
 use crate::state::tags::TagsState;
 
+/// A function that fetches tags asynchronously
+pub type TagsFetcher =
+    Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<Vec<String>, String>> + Send>> + Send>;
+
 pub struct TagFilter {
-    client: Client,
+    tags_fetcher: TagsFetcher,
     pub allow_tags: HashSet<String>, // Tags that files must have (whitelist)
     pub deny_tags: HashSet<String>,  // Tags that files must not have (blacklist)
     tags: TagsState,                 // Available tags for selection
@@ -48,10 +52,10 @@ pub enum TagFilterMessage {
 }
 
 impl TagFilter {
-    pub fn new(client: Client) -> (Self, Task<cosmic::Action<TagFilterMessage>>) {
+    pub fn new(tags_fetcher: TagsFetcher) -> (Self, Task<cosmic::Action<TagFilterMessage>>) {
         (
             Self {
-                client,
+                tags_fetcher,
                 allow_tags: HashSet::new(),
                 deny_tags: HashSet::new(),
                 tags: TagsState::default(),
@@ -215,13 +219,8 @@ impl TagFilter {
         match message {
             TagFilterMessage::LoadAllTags => {
                 self.tags = TagsState::Loading;
-                let client = self.client.clone();
-                cosmic::task::future(async move {
-                    match client.get_files_tags().await {
-                        Ok(tags) => TagFilterMessage::AllTagsLoaded(Ok(tags)),
-                        Err(err) => TagFilterMessage::AllTagsLoaded(Err(format!("{err}"))),
-                    }
-                })
+                let future = (self.tags_fetcher)();
+                cosmic::task::future(async move { TagFilterMessage::AllTagsLoaded(future.await) })
             }
             TagFilterMessage::AllTagsLoaded(result) => {
                 match result {
@@ -326,7 +325,7 @@ impl TagFilter {
                 }
             }
             TagFilterMessage::Out(_) => {
-                panic!("should be handled by the parent component")
+                panic!("{message:?} should be handled by the parent component")
             }
         }
     }

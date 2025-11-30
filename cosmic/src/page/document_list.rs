@@ -2,8 +2,6 @@
 
 use std::collections::HashSet;
 
-use archive_organizer::api::File;
-use archive_organizer::api::FileDataSource;
 use archive_organizer::api::ReadingStatus;
 use cosmic::Action;
 use cosmic::Apply;
@@ -19,13 +17,14 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
 
+use crate::aggregator::Aggregator;
+use crate::aggregator::Document;
+use crate::aggregator::Documents;
 use crate::app::ContextView;
-use crate::client::Client;
-use crate::client::ClientSelector;
-use crate::component::files::FileState;
-use crate::component::files::FilesComponent;
-use crate::component::files::FilesMessage;
-use crate::component::files::FilesOutput;
+use crate::component::documents::DocumentState;
+use crate::component::documents::DocumentsComponent;
+use crate::component::documents::DocumentsMessage;
+use crate::component::documents::DocumentsOutput;
 use crate::component::pagination::PaginationMessage;
 use crate::component::tag_filter::TagFilter;
 use crate::component::tag_filter::TagFilterMessage;
@@ -34,9 +33,9 @@ use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::state::filtered::Filtered;
 
-pub struct FileList {
-    client: Client,
-    archive: FilesComponent,
+pub struct DocumentList {
+    pub(super) aggregator: Aggregator,
+    archive: DocumentsComponent,
     is_filtering: bool,                   // Track if filtering is in progress
     search_query: String,                 // The search query string
     search_input_id: widget::Id,          // Unique ID for focus management
@@ -46,17 +45,17 @@ pub struct FileList {
 }
 
 #[derive(Debug, Clone)]
-pub enum FileListOutput {
-    OpenFileDetails(File),
-    ToggleContextPage(ClientSelector),
+pub enum DocumentListOutput {
+    OpenDetails(Document),
+    ToggleContextPage,
 }
 
 #[derive(Debug, Clone)]
-pub enum FileListMessage {
+pub enum DocumentListMessage {
     LoadArchive,
-    Loaded(Vec<File>),
+    Loaded(Documents),
     LoadingFailed(String),
-    RefreshFile(File),
+    RefreshFile(Document),
     SearchChanged(String),
     ClearSearch,
     FilteringComplete(Vec<usize>),
@@ -65,37 +64,33 @@ pub enum FileListMessage {
     StatusFilterChanged(Option<ReadingStatus>),
     ClearStatusFilter,
     TagFilter(TagFilterMessage),
-    FilesComponent(FilesMessage),
-    Out(FileListOutput),
+    DocumentsComponent(DocumentsMessage),
+    Out(DocumentListOutput),
 }
 
-impl From<TagFilterMessage> for FileListMessage {
+impl From<TagFilterMessage> for DocumentListMessage {
     fn from(value: TagFilterMessage) -> Self {
         Self::TagFilter(value)
     }
 }
 
-impl From<FilesMessage> for FileListMessage {
-    fn from(value: FilesMessage) -> Self {
-        Self::FilesComponent(value)
+impl From<DocumentsMessage> for DocumentListMessage {
+    fn from(value: DocumentsMessage) -> Self {
+        Self::DocumentsComponent(value)
     }
 }
 
-impl FileList {
-    pub fn selector(&self) -> ClientSelector {
-        self.client.selector()
-    }
-
-    pub fn client(&self) -> &Client {
-        &self.client
-    }
-
+impl DocumentList {
     /// Start debounce timer - waits for user to stop typing before filtering
-    fn start_debounce_timer(&self, counter: u32, query: String) -> Task<Action<FileListMessage>> {
+    fn start_debounce_timer(
+        &self,
+        counter: u32,
+        query: String,
+    ) -> Task<Action<DocumentListMessage>> {
         task::future(async move {
             // Wait 250ms for user to stop typing
             tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
-            FileListMessage::DebounceTimeout(counter, query)
+            DocumentListMessage::DebounceTimeout(counter, query)
         })
     }
 
@@ -106,8 +101,8 @@ impl FileList {
         status_filter: Option<ReadingStatus>,
         allow_tags: HashSet<String>,
         deny_tags: HashSet<String>,
-        all_files: Vec<File>,
-    ) -> Task<Action<FileListMessage>> {
+        all_files: Vec<Document>,
+    ) -> Task<Action<DocumentListMessage>> {
         task::future(async move {
             // Perform filtering in background after debounce timeout
             // This runs only when user has paused typing for 250ms
@@ -115,20 +110,20 @@ impl FileList {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, file)| {
-                    filter_file(&query, status_filter, &allow_tags, &deny_tags, &file)
+                    filter_document(&query, status_filter, &allow_tags, &deny_tags, &file)
                         .then_some(index)
                 })
                 .collect();
 
-            FileListMessage::FilteringComplete(filtered_files)
+            DocumentListMessage::FilteringComplete(filtered_files)
         })
     }
 
-    pub fn new(client: Client) -> (Self, Task<Action<FileListMessage>>) {
-        let client_clone = client.clone();
+    pub fn new(aggregator: Aggregator) -> (Self, Task<Action<DocumentListMessage>>) {
+        let aggregator_clone = aggregator.clone();
         let tags_fetcher = Box::new(move || {
-            let c = client_clone.clone();
-            Box::pin(async move { c.get_files_tags().await.map_err(|e| format!("{e}")) })
+            let agg = aggregator_clone.clone();
+            Box::pin(async move { agg.get_file_tags().await.map_err(|e| format!("{e}")) })
                 as std::pin::Pin<
                     Box<dyn std::future::Future<Output = Result<Vec<String>, String>> + Send>,
                 >
@@ -136,8 +131,8 @@ impl FileList {
         let (tag_filter, tag_filter_init) = TagFilter::new(tags_fetcher);
         (
             Self {
-                client,
-                archive: FilesComponent::default(),
+                aggregator,
+                archive: DocumentsComponent::default(),
                 search_query: String::new(),
                 is_filtering: false,
                 search_input_id: widget::Id::unique(),
@@ -147,17 +142,13 @@ impl FileList {
             },
             Task::batch(vec![
                 tag_filter_init.map(ActionExt::map_into),
-                task::message(FileListMessage::LoadArchive),
-                task::message(FileListMessage::FocusSearchInput),
+                task::message(DocumentListMessage::LoadArchive),
+                task::message(DocumentListMessage::FocusSearchInput),
             ]),
         )
     }
 
-    pub fn display_name(&self) -> String {
-        self.client.display_name()
-    }
-
-    pub fn view(&self) -> Element<'_, FileListMessage> {
+    pub fn view(&self) -> Element<'_, DocumentListMessage> {
         let cosmic_theme::Spacing {
             space_xxs, space_s, ..
         } = theme::active().cosmic().spacing;
@@ -168,9 +159,9 @@ impl FileList {
 
         let header_row = header_row.push(
             widget::button::icon(widget::icon::from_name("open-menu-symbolic"))
-                .on_press(FileListMessage::Out(FileListOutput::ToggleContextPage(
-                    self.client.selector(),
-                )))
+                .on_press(DocumentListMessage::Out(
+                    DocumentListOutput::ToggleContextPage,
+                ))
                 .apply(widget::container)
                 .width(Length::Shrink)
                 .height(Length::Shrink)
@@ -182,7 +173,7 @@ impl FileList {
             widget::text_input(fl!("file-list-search-placeholder"), &self.search_query)
                 .id(self.search_input_id.clone())
                 .always_active()
-                .on_input(FileListMessage::SearchChanged)
+                .on_input(DocumentListMessage::SearchChanged)
                 .width(Length::FillPortion(2));
 
         let header_row = header_row.push(
@@ -195,7 +186,7 @@ impl FileList {
 
         let header_row = header_row.push(
             widget::button::icon(widget::icon::from_name("edit-clear-symbolic"))
-                .on_press(FileListMessage::ClearSearch)
+                .on_press(DocumentListMessage::ClearSearch)
                 .apply(widget::container)
                 .width(Length::Shrink)
                 .height(Length::Shrink)
@@ -219,7 +210,7 @@ impl FileList {
         };
 
         let header_row = header_row.push(
-            widget::text(self.client.display_name())
+            widget::horizontal_space()
                 .apply(widget::container)
                 .width(Length::FillPortion(1))
                 .height(Length::Shrink)
@@ -250,7 +241,7 @@ impl FileList {
         column.into()
     }
 
-    pub fn view_context(&self) -> ContextView<'_, FileListMessage> {
+    pub fn view_context(&self) -> ContextView<'_, DocumentListMessage> {
         // Reading Status Filter Section
         let status_section = settings::section()
             .title(fl!("file-list-filter-by-status"))
@@ -262,14 +253,14 @@ impl FileList {
                         ReadingStatus::Read,
                     ],
                     self.status_filter,
-                    |status| FileListMessage::StatusFilterChanged(Some(status)),
+                    |status| DocumentListMessage::StatusFilterChanged(Some(status)),
                 )
                 .width(Length::Fill)
                 .placeholder(fl!("file-list-all-statuses")),
             )
             .add_maybe(self.status_filter.map(|_| {
                 widget::button::text(fl!("file-list-clear-filter"))
-                    .on_press(FileListMessage::ClearStatusFilter)
+                    .on_press(DocumentListMessage::ClearStatusFilter)
             }));
 
         ContextView {
@@ -282,24 +273,27 @@ impl FileList {
         }
     }
 
-    pub fn update(&mut self, message: FileListMessage) -> Task<Action<FileListMessage>> {
+    pub fn update(&mut self, message: DocumentListMessage) -> Task<Action<DocumentListMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
-            FileListMessage::LoadArchive => {
-                self.archive.files = FileState::Loading;
-                let client = self.client.clone();
-                task::future(async move {
-                    match client.get_files().await {
-                        Ok(files) => FileListMessage::Loaded(files),
-                        Err(error) => FileListMessage::LoadingFailed(format!("{error}")),
+            DocumentListMessage::LoadArchive => {
+                self.archive.documents = DocumentState::Loading;
+                let aggregator = self.aggregator.clone();
+                task::future({
+                    let aggregator = aggregator.clone();
+                    async move {
+                        match aggregator.aggregate().await {
+                            Ok(documents) => DocumentListMessage::Loaded(documents),
+                            Err(error) => DocumentListMessage::LoadingFailed(format!("{error}")),
+                        }
                     }
                 })
             }
-            FileListMessage::Loaded(files) => {
+            DocumentListMessage::Loaded(files) => {
                 // For initial load, use synchronous filtering since it's typically fast
-                let mut files = Filtered::new(files);
+                let mut files = Filtered::new(files.into_iter().collect());
                 files.filter(|file| {
-                    filter_file(
+                    filter_document(
                         &self.search_query,
                         self.status_filter,
                         &self.tag_filter.allow_tags,
@@ -309,50 +303,54 @@ impl FileList {
                 });
 
                 let collection_size = files.filtered_len();
-                self.archive.files = FileState::Loaded(files);
-                task::message(FileListMessage::FilesComponent(FilesMessage::Pagination(
-                    PaginationMessage::SetCollectionSize(collection_size),
-                )))
+                self.archive.documents = DocumentState::Loaded(files);
+                task::message(DocumentListMessage::DocumentsComponent(
+                    DocumentsMessage::Pagination(PaginationMessage::SetCollectionSize(
+                        collection_size,
+                    )),
+                ))
             }
-            FileListMessage::LoadingFailed(error) => {
-                self.archive.files = FileState::Failed(error);
+            DocumentListMessage::LoadingFailed(error) => {
+                self.archive.documents = DocumentState::Failed(error);
                 Task::none()
             }
-            FileListMessage::RefreshFile(file) => {
-                self.archive
-                    .files
-                    .unwrap_mut()
-                    .update_item(move |old_file| old_file.id == file.id, file);
+            DocumentListMessage::RefreshFile(_file) => {
+                // self.archive
+                //     .documents
+                //     .unwrap_mut()
+                //     .update_item(move |old_file| old_file.id == file.id, file);
                 Task::none()
             }
-            FileListMessage::SearchChanged(query) => {
+            DocumentListMessage::SearchChanged(query) => {
                 self.search_query = query.clone();
                 // Increment debounce counter to invalidate previous timers
                 self.debounce_counter += 1;
 
                 // Only start debounce timer if files have been loaded
-                if self.archive.files.is_loaded() {
+                if self.archive.documents.is_loaded() {
                     self.start_debounce_timer(self.debounce_counter, query)
                 } else {
                     Task::none()
                 }
             }
-            FileListMessage::ClearSearch => {
+            DocumentListMessage::ClearSearch => {
                 self.search_query.clear();
                 // Immediately filter to show all files (no debounce needed for clearing)
                 self.filter_now()
             }
-            FileListMessage::FilteringComplete(filtered_files) => {
+            DocumentListMessage::FilteringComplete(filtered_files) => {
                 let collection_size = filtered_files.len();
                 self.is_filtering = false;
                 self.archive.set_filtered_indices(filtered_files);
-                task::message(FileListMessage::FilesComponent(FilesMessage::Pagination(
-                    PaginationMessage::SetCollectionSize(collection_size),
-                )))
+                task::message(DocumentListMessage::DocumentsComponent(
+                    DocumentsMessage::Pagination(PaginationMessage::SetCollectionSize(
+                        collection_size,
+                    )),
+                ))
             }
-            FileListMessage::DebounceTimeout(counter, query) => {
+            DocumentListMessage::DebounceTimeout(counter, query) => {
                 // Only proceed if this timeout matches the current counter (not superseded by newer typing)
-                if self.archive.files.is_loaded()
+                if self.archive.documents.is_loaded()
                     && counter == self.debounce_counter
                     && !self.is_filtering
                 {
@@ -363,29 +361,29 @@ impl FileList {
                             self.status_filter,
                             self.tag_filter.allow_tags.clone(),
                             self.tag_filter.deny_tags.clone(),
-                            self.archive.files.unwrap().unfiltered().to_vec(),
+                            self.archive.documents.unwrap().unfiltered().to_vec(),
                         ),
-                        task::message(FileListMessage::FocusSearchInput),
+                        task::message(DocumentListMessage::FocusSearchInput),
                     ])
                 } else {
                     // This timeout was superseded by newer typing, ignore it
                     Task::none()
                 }
             }
-            FileListMessage::FocusSearchInput => {
+            DocumentListMessage::FocusSearchInput => {
                 widget::text_input::focus(self.search_input_id.clone())
             }
-            FileListMessage::StatusFilterChanged(status) => {
+            DocumentListMessage::StatusFilterChanged(status) => {
                 self.status_filter = status;
                 // Immediately filter with new status (no debounce needed for status changes)
                 self.filter_now()
             }
-            FileListMessage::ClearStatusFilter => {
+            DocumentListMessage::ClearStatusFilter => {
                 self.status_filter = None;
                 // Immediately filter to show all statuses (no debounce needed for clearing)
                 self.filter_now()
             }
-            FileListMessage::TagFilter(msg) => match msg {
+            DocumentListMessage::TagFilter(msg) => match msg {
                 TagFilterMessage::Out(msg) => match msg {
                     TagFilterOutput::TagFiltersUpdated => {
                         // Immediately filter to show all statuses (no debounce needed for tag filter changes)
@@ -394,32 +392,32 @@ impl FileList {
                 },
                 msg => self.tag_filter.update(msg).map(ActionExt::map_into),
             },
-            FileListMessage::FilesComponent(msg) => match msg {
-                FilesMessage::Out(msg) => match msg {
-                    FilesOutput::FileClicked(file) => cosmic::task::message(FileListMessage::Out(
-                        FileListOutput::OpenFileDetails(file),
-                    )),
+            DocumentListMessage::DocumentsComponent(msg) => match msg {
+                DocumentsMessage::Out(msg) => match msg {
+                    DocumentsOutput::DocumentClicked(file) => cosmic::task::message(
+                        DocumentListMessage::Out(DocumentListOutput::OpenDetails(file)),
+                    ),
                 },
                 msg => self.archive.update(msg).map(ActionExt::map_into),
             },
-            FileListMessage::Out(_) => {
+            DocumentListMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }
         }
     }
 
-    fn filter_now(&mut self) -> Task<Action<FileListMessage>> {
+    fn filter_now(&mut self) -> Task<Action<DocumentListMessage>> {
         // Increment debounce counter to invalidate previous timers
         self.debounce_counter += 1;
 
-        if self.archive.files.is_loaded() && !self.is_filtering {
+        if self.archive.documents.is_loaded() && !self.is_filtering {
             self.is_filtering = true;
             self.start_background_filtering(
                 self.search_query.clone(),
                 self.status_filter,
                 self.tag_filter.allow_tags.clone(),
                 self.tag_filter.deny_tags.clone(),
-                self.archive.files.unwrap().unfiltered().to_vec(),
+                self.archive.documents.unwrap().unfiltered().to_vec(),
             )
         } else {
             Task::none()
@@ -427,33 +425,44 @@ impl FileList {
     }
 }
 
-fn filter_file(
+fn filter_document(
     search_query: &str,
     status_filter: Option<ReadingStatus>,
     allow_tags: &HashSet<String>,
     deny_tags: &HashSet<String>,
-    file: &&File,
+    document: &&Document,
 ) -> bool {
     // Filter by search query
     let matches_search = if search_query.is_empty() {
         true
     } else {
         let query = search_query.to_lowercase();
-        let path_lower = file.path.to_lowercase();
-        let tags_lower = file.tags.join(" ").to_lowercase();
-        path_lower.contains(&query) || tags_lower.contains(&query)
+        let path_matches = document
+            .sources
+            .iter()
+            .map(|source| source.path.to_lowercase())
+            .filter(|path| path.contains(&query))
+            .count();
+        let tags_lower = document.metadata.tags.join(" ").to_lowercase();
+        path_matches > 0 || tags_lower.contains(&query)
     };
 
     // Filter by reading status
-    let matches_status = status_filter.is_none_or(|status| file.status == status);
+    let matches_status = status_filter.is_none_or(|status| document.metadata.status == status);
 
     // Filter by allowed tags (file must have ALL allowed tags)
-    let matches_allow_tags =
-        allow_tags.is_empty() || allow_tags.iter().all(|tag| file.tags.contains(tag));
+    let matches_allow_tags = allow_tags.is_empty()
+        || allow_tags
+            .iter()
+            .all(|tag| document.metadata.tags.contains(tag));
 
     // Filter by denied tags (file must have NONE of the denied tags)
-    let matches_deny_tags =
-        deny_tags.is_empty() || !file.tags.iter().any(|tag| deny_tags.contains(tag));
+    let matches_deny_tags = deny_tags.is_empty()
+        || !document
+            .metadata
+            .tags
+            .iter()
+            .any(|tag| deny_tags.contains(tag));
 
     matches_search && matches_status && matches_allow_tags && matches_deny_tags
 }

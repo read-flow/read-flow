@@ -153,7 +153,9 @@ impl Pagination {
                 self.collection_size = new_size;
                 self.index = cmp::min(self.index, new_size);
             }
-            PaginationMessage::Out(_) => panic!("should be handled by the parent component"),
+            PaginationMessage::Out(_) => {
+                panic!("{message:?} should be handled by the parent component")
+            }
         }
         Task::none()
     }

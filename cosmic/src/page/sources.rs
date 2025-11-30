@@ -419,7 +419,7 @@ impl SourcesPage {
                 })
             }
             SourcesMessage::Out(_) => {
-                panic!("should be handled by the parent component")
+                panic!("{message:?} should be handled by the parent component")
             }
         }
     }

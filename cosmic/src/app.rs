@@ -133,6 +133,14 @@ impl cosmic::Application for AppModel {
                 nav_mappings.insert(PageSelector::Sources, nav_id);
             });
 
+        nav.insert()
+            .text(pages.display_name(&PageSelector::Documents))
+            .data::<PageSelector>(PageSelector::Documents)
+            .icon(icon::from_name("resources-symbolic"))
+            .with_id(|nav_id| {
+                nav_mappings.insert(PageSelector::Documents, nav_id);
+            });
+
         for (index, selector) in pages.all_file_list_selectors().iter().enumerate() {
             nav.insert()
                 .text(pages.display_name(selector))
