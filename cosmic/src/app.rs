@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 
 use archive_organizer::ApplicationModule;
-use archive_organizer::Builder;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config;
 use cosmic::cosmic_config::CosmicConfigEntry;
@@ -19,7 +18,6 @@ use cosmic::widget::icon;
 use cosmic::widget::menu;
 use cosmic::widget::nav_bar;
 use cosmic::widget::segmented_button::Entity;
-use cosmic::widget::segmented_button::EntityMut;
 use futures_util::SinkExt;
 use i18n_embed::unic_langid::LanguageIdentifier;
 
@@ -128,31 +126,21 @@ impl cosmic::Application for AppModel {
         let (pages, page_action) = Pages::new(&application_module);
 
         nav.insert()
+            .text(pages.display_name(&PageSelector::Documents))
+            .data::<PageSelector>(PageSelector::Documents)
+            .icon(icon::from_name("resources-symbolic"))
+            .with_id(|nav_id| {
+                nav_mappings.insert(PageSelector::Documents, nav_id);
+            })
+            .activate();
+
+        nav.insert()
             .text(pages.display_name(&PageSelector::Sources))
             .data::<PageSelector>(PageSelector::Sources)
             .icon(icon::from_name("resources-symbolic"))
             .with_id(|nav_id| {
                 nav_mappings.insert(PageSelector::Sources, nav_id);
             });
-
-        nav.insert()
-            .text(pages.display_name(&PageSelector::Documents))
-            .data::<PageSelector>(PageSelector::Documents)
-            .icon(icon::from_name("resources-symbolic"))
-            .with_id(|nav_id| {
-                nav_mappings.insert(PageSelector::Documents, nav_id);
-            });
-
-        for (index, selector) in pages.all_file_list_selectors().iter().enumerate() {
-            nav.insert()
-                .text(pages.display_name(selector))
-                .data::<PageSelector>(selector.clone())
-                .icon(icon::from_name("package-x-generic-symbolic"))
-                .apply_if(index == 0, EntityMut::activate)
-                .with_id(|nav_id| {
-                    nav_mappings.insert(selector.clone(), nav_id);
-                });
-        }
 
         nav.insert()
             .text(pages.display_name(&PageSelector::Settings))
