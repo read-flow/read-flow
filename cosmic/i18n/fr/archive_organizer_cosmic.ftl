@@ -107,7 +107,7 @@ sources-delete-confirm-cancel = Annuler
 
 # Settings page
 settings-page-title = Paramètres
-settings-context-title = Options des paramètres
+settings-context-title = Paramètres de confidentialité
 settings-context-placeholder = Les options des paramètres apparaîtront ici
 settings-database-section = Base de données
 settings-database-location = Emplacement de la base de données
@@ -116,7 +116,7 @@ settings-scan-dry-run = Mode simulation
 settings-scan-directories-section = Répertoires d'analyse
 settings-directory-action-ignore = Ignorer
 settings-directory-action-scan = Analyser
-settings-ui-section = Interface utilisateur
+settings-ui-section = Confidentialité
 settings-ui-private-mode = Mode privé
 settings-ui-private-tags = Tags privés
 settings-ui-private-tags-placeholder = tag1, tag2, tag3
@@ -126,3 +126,8 @@ settings-save = Enregistrer les paramètres
 settings-saving = Enregistrement...
 settings-saved = Paramètres enregistrés avec succès
 settings-save-error = Erreur lors de l'enregistrement des paramètres
+settings-no-private-tags = Aucun tag privé configuré
+settings-remove-private-tag = Supprimer le tag privé
+settings-select-private-tag = Sélectionner un tag...
+settings-enter-private-tag = Entrer un nouveau tag...
+settings-failed-to-load-tags = Échec du chargement des tags

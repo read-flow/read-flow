@@ -126,7 +126,6 @@ impl Pages {
         let db_client = application_module.db_client();
 
         let (sources, init_sources) = SourcesPage::new(application_module.connection_pool.clone());
-        let (settings, init_settings) = SettingsPage::new(application_module.settings.clone());
 
         // Get remote clients from the application module
         let remote_clients = application_module
@@ -160,6 +159,9 @@ impl Pages {
             .collect::<Vec<_>>();
 
         let aggregator = Aggregator::new(clients);
+
+        let (settings, init_settings) =
+            SettingsPage::new(application_module.settings.clone(), aggregator.clone());
 
         let (documents, init_documents) = DocumentList::new(aggregator);
 

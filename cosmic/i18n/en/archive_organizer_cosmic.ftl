@@ -112,7 +112,7 @@ sources-delete-confirm-cancel = Cancel
 
 # Settings page
 settings-page-title = Settings
-settings-context-title = Settings Options
+settings-context-title = Privacy Settings
 settings-context-placeholder = Settings options will appear here
 settings-database-section = Database
 settings-database-location = Database Location
@@ -121,7 +121,7 @@ settings-scan-dry-run = Dry Run Mode
 settings-scan-directories-section = Scan Directories
 settings-directory-action-ignore = Ignore
 settings-directory-action-scan = Scan
-settings-ui-section = User Interface
+settings-ui-section = Privacy
 settings-ui-private-mode = Private Mode
 settings-ui-private-tags = Private Tags
 settings-ui-private-tags-placeholder = tag1, tag2, tag3
@@ -131,3 +131,8 @@ settings-save = Save Settings
 settings-saving = Saving...
 settings-saved = Settings saved successfully
 settings-save-error = Error saving settings
+settings-no-private-tags = No private tags configured
+settings-remove-private-tag = Remove private tag
+settings-select-private-tag = Select a tag...
+settings-enter-private-tag = Enter a new tag...
+settings-failed-to-load-tags = Failed to load tags

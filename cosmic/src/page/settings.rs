@@ -7,12 +7,17 @@ use cosmic::Action;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
-use cosmic::iced::Length;
+use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
 
+use crate::aggregator::Aggregator;
 use crate::app::ContextView;
+use crate::component::tag_editor::TagEditor;
+use crate::component::tag_editor::TagEditorMessage;
+use crate::component::tag_editor::TagEditorOutput;
+use crate::cosmic_ext::ActionExt;
 use crate::fl;
 
 /// State for tracking save status
@@ -29,8 +34,8 @@ pub struct SettingsPage {
     original_settings: Arc<Settings>,
     /// Editable copy of settings
     settings: Settings,
-    /// Private tags as editable string
-    private_tags_input: String,
+    /// Tag editor for private tags
+    tag_editor: TagEditor,
     /// Save state
     save_state: SaveState,
 }
@@ -44,8 +49,8 @@ pub enum SettingsMessage {
     ToggleDryRun(bool),
     /// Toggle private mode
     TogglePrivateMode(bool),
-    /// Update private tags input
-    UpdatePrivateTags(String),
+    /// Tag editor message
+    TagEditor(TagEditorMessage),
     /// Save settings to file
     Save,
     /// Settings saved successfully
@@ -57,16 +62,35 @@ pub enum SettingsMessage {
 }
 
 impl SettingsPage {
-    pub fn new(settings: Arc<Settings>) -> (Self, Task<Action<SettingsMessage>>) {
-        let private_tags_input = settings.ui.private_tags().join(", ");
+    pub fn new(
+        settings: Arc<Settings>,
+        aggregator: Aggregator,
+    ) -> (Self, Task<Action<SettingsMessage>>) {
+        let (tag_editor, tag_editor_task) = TagEditor::new(
+            Box::new(move || {
+                let aggregator = aggregator.clone();
+                Box::pin(async move {
+                    aggregator
+                        .get_file_tags()
+                        .await
+                        .map_err(|err| format!("{err}"))
+                })
+            }),
+            settings.ui.private_tags().to_vec(),
+            fl!("settings-select-private-tag"),
+            fl!("settings-enter-private-tag"),
+            fl!("settings-no-private-tags"),
+            fl!("settings-remove-private-tag"),
+        );
+
         (
             Self {
                 original_settings: settings.clone(),
                 settings: (*settings).clone(),
-                private_tags_input,
+                tag_editor,
                 save_state: SaveState::Idle,
             },
-            Task::none(),
+            tag_editor_task.map(|action| action.map(SettingsMessage::TagEditor)),
         )
     }
 
@@ -74,7 +98,7 @@ impl SettingsPage {
     fn is_modified(&self) -> bool {
         self.settings.scan.dry_run != self.original_settings.scan.dry_run
             || self.settings.ui.private_mode() != self.original_settings.ui.private_mode()
-            || self.private_tags_input != self.original_settings.ui.private_tags().join(", ")
+            || self.settings.ui.private_tags() != self.original_settings.ui.private_tags()
     }
 
     pub fn view(&self) -> Element<'_, SettingsMessage> {
@@ -163,15 +187,7 @@ impl SettingsPage {
                 widget::toggler(self.settings.ui.private_mode())
                     .on_toggle(SettingsMessage::TogglePrivateMode),
             ))
-            .add(settings::item(
-                fl!("settings-ui-private-tags"),
-                widget::text_input(
-                    fl!("settings-ui-private-tags-placeholder"),
-                    &self.private_tags_input,
-                )
-                .on_input(SettingsMessage::UpdatePrivateTags)
-                .width(Length::Fill),
-            ));
+            .add(self.tag_editor.view().map(SettingsMessage::TagEditor));
 
         let content = widget::column().push(ui_section).spacing(space_s).into();
 
@@ -194,23 +210,30 @@ impl SettingsPage {
                 self.save_state = SaveState::Idle;
                 Task::none()
             }
-            SettingsMessage::UpdatePrivateTags(value) => {
-                self.private_tags_input = value;
-                // Parse the comma-separated tags
-                let tags: Vec<String> = self
-                    .private_tags_input
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                self.settings.ui.set_private_tags(tags);
-                self.save_state = SaveState::Idle;
-                Task::none()
+            SettingsMessage::TagEditor(tag_msg) => {
+                // Handle output messages from tag editor
+                match tag_msg {
+                    TagEditorMessage::Out(message) => match message {
+                        TagEditorOutput::TagsUpdated(tags) => {
+                            self.settings.ui.set_private_tags(tags);
+                            self.save_state = SaveState::Idle;
+                            Task::none()
+                        }
+                        TagEditorOutput::TagAdded(_) | TagEditorOutput::TagRemoved(_) => {
+                            // These are handled via TagsUpdated
+                            Task::none()
+                        }
+                    },
+                    tag_msg => self
+                        .tag_editor
+                        .update(tag_msg)
+                        .map(|action| action.map(SettingsMessage::TagEditor)),
+                }
             }
             SettingsMessage::Save => {
                 self.save_state = SaveState::Saving;
                 let settings = self.settings.clone();
-                cosmic::task::future(async move {
+                task::future(async move {
                     match archive_organizer::settings::save(&settings) {
                         Ok(()) => SettingsMessage::SaveComplete,
                         Err(e) => SettingsMessage::SaveError(e.to_string()),

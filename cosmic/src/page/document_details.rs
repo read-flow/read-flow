@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use archive_organizer::Builder;
 use archive_organizer::api::ReadingStatus;
 use cosmic::Action;
 use cosmic::Apply;
@@ -10,34 +9,26 @@ use cosmic::cosmic_theme;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
-use cosmic::iced::widget::combo_box;
-use cosmic::iced_widget;
-use cosmic::iced_widget::Column;
-use cosmic::iced_widget::Row;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
+use cosmic::widget::Column;
+use cosmic::widget::Row;
 use cosmic::widget::text;
 
 use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
 use crate::app::ContextView;
+use crate::component::tag_editor::TagEditor;
+use crate::component::tag_editor::TagEditorMessage;
+use crate::component::tag_editor::TagEditorOutput;
+use crate::cosmic_ext::ActionExt;
 use crate::fl;
-use crate::state::LoadedState;
-
-struct Tags {
-    all_tags: Vec<String>,
-    available_tags: combo_box::State<String>,
-}
-
-type TagsState = LoadedState<Tags>;
 
 pub struct DocumentDetails {
     document: Document,
     aggregator: Aggregator,
-    selected_tag: String,
-    entered_tag: String,
-    tags: TagsState,
+    tag_editor: TagEditor,
 }
 
 #[derive(Debug, Clone)]
@@ -48,14 +39,8 @@ pub enum DocumentDetailsOutput {
 
 #[derive(Debug, Clone)]
 pub enum DocumentDetailsMessage {
-    LoadAllTags,
-    AllTagsLoaded(Result<Vec<String>, String>),
-    UpdateSelectedTag(String),
-    AddSelectedTag,
-    UpdateEnteredTag(String),
-    AddEnteredTag(String),
+    TagEditor(TagEditorMessage),
     TagsAdded(Result<Vec<String>, String>),
-    RemoveTag(String),
     TagsRemoved(Result<(), String>),
     RefreshDocument,
     DocumentRefreshed(Result<Document, String>),
@@ -72,17 +57,35 @@ impl DocumentDetails {
         document: Document,
         aggregator: Aggregator,
     ) -> (Self, Task<Action<DocumentDetailsMessage>>) {
+        let initial_tags = document.metadata.tags.clone();
+        let aggregator_clone = aggregator.clone();
+
+        let (tag_editor, tag_editor_task) = TagEditor::new(
+            Box::new(move || {
+                let aggregator = aggregator_clone.clone();
+                Box::pin(async move {
+                    aggregator
+                        .get_file_tags()
+                        .await
+                        .map_err(|err| format!("{err}"))
+                })
+            }),
+            initial_tags,
+            fl!("file-details-select-tag"),
+            fl!("file-details-enter"),
+            fl!("file-details-no-tags"),
+            fl!("file-details-remove-tag"),
+        );
+
         let file_details = DocumentDetails {
             document,
             aggregator,
-            selected_tag: String::new(),
-            entered_tag: String::new(),
-            tags: TagsState::default(),
+            tag_editor,
         };
 
         (
             file_details,
-            task::message(DocumentDetailsMessage::LoadAllTags),
+            tag_editor_task.map(|action| action.map(DocumentDetailsMessage::TagEditor)),
         )
     }
 
@@ -199,7 +202,11 @@ impl DocumentDetails {
 
         let tags_section = widget::settings::section()
             .title(fl!("file-details-tags"))
-            .add(self.tags_view());
+            .add(
+                self.tag_editor
+                    .view()
+                    .map(DocumentDetailsMessage::TagEditor),
+            );
 
         let sources_section = widget::settings::section()
             .title(fl!("document-details-sources"))
@@ -247,6 +254,23 @@ impl DocumentDetails {
             DocumentDetailsMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }
+            DocumentDetailsMessage::TagEditor(tag_msg) => {
+                // Handle output messages from tag editor
+                match tag_msg {
+                    TagEditorMessage::Out(message) => match message {
+                        TagEditorOutput::TagAdded(tag) => self.add_tag(tag),
+                        TagEditorOutput::TagRemoved(tag) => self.remove_tag(tag),
+                        TagEditorOutput::TagsUpdated(_) => {
+                            // This is handled via TagAdded/TagRemoved
+                            Task::none()
+                        }
+                    },
+                    tag_msg => self
+                        .tag_editor
+                        .update(tag_msg)
+                        .map(|action| action.map(DocumentDetailsMessage::TagEditor)),
+                }
+            }
             DocumentDetailsMessage::UpdateReadingStatus(status) => {
                 let mut updated_document = self.document.clone();
                 updated_document.metadata.status = status;
@@ -282,60 +306,9 @@ impl DocumentDetails {
                     DocumentDetailsMessage::RefreshDocument
                 })
             }
-            DocumentDetailsMessage::LoadAllTags => {
-                self.tags = TagsState::Loading;
-                let aggregator = self.aggregator.clone();
-                task::future(async move {
-                    let result = aggregator
-                        .get_file_tags()
-                        .await
-                        .map_err(|err| format!("{err}"));
-                    DocumentDetailsMessage::AllTagsLoaded(result)
-                })
-            }
-            DocumentDetailsMessage::AllTagsLoaded(result) => {
-                match result {
-                    Ok(tags) => {
-                        // Remove existing tags from options
-                        let tags = tags
-                            .iter()
-                            .filter(|tag| !self.document.metadata.tags.contains(tag))
-                            .cloned()
-                            .collect::<Vec<_>>();
-                        let available_tags = combo_box::State::new(tags.clone());
-                        self.tags = TagsState::Loaded(Tags {
-                            all_tags: tags,
-                            available_tags,
-                        });
-                    }
-                    Err(err) => {
-                        tracing::warn!("Failed to load tags: {}", &err);
-                        self.tags = TagsState::Failed(err);
-                    }
-                }
-                task::none()
-            }
-            DocumentDetailsMessage::UpdateSelectedTag(text) => {
-                self.selected_tag = text;
-                task::none()
-            }
-            DocumentDetailsMessage::AddSelectedTag => {
-                if self.selected_tag.trim().is_empty() {
-                    return task::none();
-                }
-
-                let tag = self.selected_tag.clone();
-                self.selected_tag = String::new();
-
-                self.add_tag(tag)
-            }
             DocumentDetailsMessage::TagsAdded(result) => {
                 match result {
-                    Ok(tags) => {
-                        if let TagsState::Loaded(Tags { all_tags, .. }) = &mut self.tags {
-                            all_tags.extend(tags);
-                            all_tags.dedup();
-                        }
+                    Ok(_tags) => {
                         // Refresh the file to get updated tags
                         return task::message(DocumentDetailsMessage::RefreshDocument);
                     }
@@ -344,20 +317,6 @@ impl DocumentDetails {
                     }
                 }
                 task::none()
-            }
-            DocumentDetailsMessage::RemoveTag(tag) => {
-                let tag = tag.clone();
-                let document = self.document.clone();
-                let aggregator = self.aggregator.clone();
-
-                task::future(async move {
-                    // TODO: extract map_err and creation of message for result into extension function
-                    let result = aggregator
-                        .delete_document_tags(document, vec![tag])
-                        .await
-                        .map_err(|err| format!("{err}"));
-                    DocumentDetailsMessage::TagsRemoved(result)
-                })
             }
             DocumentDetailsMessage::TagsRemoved(result) => {
                 match result {
@@ -386,23 +345,23 @@ impl DocumentDetails {
             DocumentDetailsMessage::DocumentRefreshed(result) => match result {
                 Ok(document) => {
                     self.document = document.clone();
-                    task::message(DocumentDetailsMessage::Out(
-                        DocumentDetailsOutput::RefreshDocument(document),
-                    ))
+                    // Update the tag editor with the new tags
+                    let set_tags_task = self
+                        .tag_editor
+                        .update(TagEditorMessage::SetTags(document.metadata.tags.clone()))
+                        .map(|action| action.map(DocumentDetailsMessage::TagEditor));
+                    task::batch(vec![
+                        set_tags_task,
+                        task::message(DocumentDetailsMessage::Out(
+                            DocumentDetailsOutput::RefreshDocument(document),
+                        )),
+                    ])
                 }
                 Err(err) => {
                     tracing::warn!("Failed to refresh file: {}", err);
                     Task::none()
                 }
             },
-            DocumentDetailsMessage::UpdateEnteredTag(tag) => {
-                self.entered_tag = tag;
-                Task::none()
-            }
-            DocumentDetailsMessage::AddEnteredTag(tag) => {
-                self.entered_tag.clear();
-                self.add_tag(tag)
-            }
         }
     }
 
@@ -415,6 +374,19 @@ impl DocumentDetails {
                 Ok(tags) => DocumentDetailsMessage::TagsAdded(Ok(tags)),
                 Err(err) => DocumentDetailsMessage::TagsAdded(Err(format!("{err}"))),
             }
+        })
+    }
+
+    fn remove_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
+        let document = self.document.clone();
+        let aggregator = self.aggregator.clone();
+
+        task::future(async move {
+            let result = aggregator
+                .delete_document_tags(document, vec![tag])
+                .await
+                .map_err(|err| format!("{err}"));
+            DocumentDetailsMessage::TagsRemoved(result)
         })
     }
 }
@@ -436,89 +408,6 @@ impl DocumentDetails {
         } else {
             format!("{:.1} {}", size, UNITS[unit_index])
         }
-    }
-
-    // Tags view for settings section
-    fn tags_view(&self) -> Element<'_, DocumentDetailsMessage> {
-        let cosmic_theme::Spacing {
-            space_xs, space_s, ..
-        } = theme::active().cosmic().spacing;
-        let mut column = Column::new().spacing(space_s);
-
-        // Show existing tags
-        if self.document.metadata.tags.is_empty() {
-            column = column.push(text(fl!("file-details-no-tags")));
-        } else {
-            // Create a flow container for the tags
-            let mut tag_row = Row::new().spacing(space_xs).width(Length::Fill);
-            for tag in &self.document.metadata.tags {
-                let tag_button = widget::button::text(tag.clone())
-                    .trailing_icon(widget::icon::from_name("edit-delete-symbolic"))
-                    .on_press(DocumentDetailsMessage::RemoveTag(tag.clone()))
-                    .tooltip(fl!("file-details-remove-tag"));
-
-                tag_row = tag_row.push(tag_button);
-            }
-            column = column.push(tag_row);
-        }
-
-        // Add tag input section
-        column = column.push(iced_widget::horizontal_rule(1));
-
-        column = match &self.tags {
-            TagsState::Loaded(Tags { available_tags, .. }) => {
-                // Add combo box for tag selection
-                let combo = combo_box(
-                    available_tags,
-                    &fl!("file-details-select-tag"),
-                    Some(&self.selected_tag),
-                    DocumentDetailsMessage::UpdateSelectedTag,
-                )
-                .width(Length::Fill);
-
-                let add_button = widget::button::standard(fl!("file-details-add"))
-                    .apply_if(!self.selected_tag.is_empty(), |button| {
-                        button
-                            .on_press(DocumentDetailsMessage::AddSelectedTag)
-                            .class(widget::button::ButtonClass::Suggested)
-                    })
-                    .width(Length::Shrink);
-
-                let input_row = Row::new()
-                    .push(combo)
-                    .push(add_button)
-                    .spacing(space_s)
-                    .align_y(Vertical::Center);
-
-                column = column.push(input_row);
-
-                let input = widget::text_input(fl!("file-details-enter"), &self.entered_tag)
-                    .on_input(DocumentDetailsMessage::UpdateEnteredTag)
-                    .on_submit(DocumentDetailsMessage::AddEnteredTag)
-                    .width(Length::Fill);
-
-                let input_row = Row::new()
-                    .push(input)
-                    .spacing(space_s)
-                    .align_y(Vertical::Center);
-
-                column.push(input_row)
-            }
-            TagsState::Loading => column.push(
-                Row::new()
-                    .spacing(space_xs)
-                    .align_y(Vertical::Center)
-                    .push(
-                        widget::icon::from_name("content-loading-symbolic")
-                            .size(16)
-                            .icon(),
-                    )
-                    .push(text(fl!("file-details-loading-tags"))),
-            ),
-            _ => column.push(text("Failed to load tags")),
-        };
-
-        column.into()
     }
 
     // Sources view showing all locations where this document exists

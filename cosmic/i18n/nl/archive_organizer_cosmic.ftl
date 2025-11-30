@@ -112,7 +112,7 @@ sources-delete-confirm-cancel = Annuleren
 
 # Settings page
 settings-page-title = Instellingen
-settings-context-title = Instellingen Opties
+settings-context-title = Privacy Instellingen
 settings-context-placeholder = Instellingen opties verschijnen hier
 settings-database-section = Database
 settings-database-location = Database Locatie
@@ -121,7 +121,7 @@ settings-scan-dry-run = Droog Uitvoeren Modus
 settings-scan-directories-section = Scan Mappen
 settings-directory-action-ignore = Negeren
 settings-directory-action-scan = Scannen
-settings-ui-section = Gebruikersinterface
+settings-ui-section = Privacy
 settings-ui-private-mode = Privé Modus
 settings-ui-private-tags = Privé Tags
 settings-ui-private-tags-placeholder = tag1, tag2, tag3
@@ -131,3 +131,8 @@ settings-save = Instellingen Opslaan
 settings-saving = Opslaan...
 settings-saved = Instellingen succesvol opgeslagen
 settings-save-error = Fout bij opslaan van instellingen
+settings-no-private-tags = Geen privé tags geconfigureerd
+settings-remove-private-tag = Privé tag verwijderen
+settings-select-private-tag = Selecteer een tag...
+settings-enter-private-tag = Voer een nieuwe tag in...
+settings-failed-to-load-tags = Tags laden mislukt
