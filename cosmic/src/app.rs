@@ -154,6 +154,14 @@ impl cosmic::Application for AppModel {
                 });
         }
 
+        nav.insert()
+            .text(pages.display_name(&PageSelector::Settings))
+            .data::<PageSelector>(PageSelector::Settings)
+            .icon(icon::from_name("preferences-system-symbolic"))
+            .with_id(|nav_id| {
+                nav_mappings.insert(PageSelector::Settings, nav_id);
+            });
+
         // Create the about widget
         let about = About::default()
             .name(fl!("app-title"))

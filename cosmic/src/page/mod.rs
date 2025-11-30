@@ -4,6 +4,7 @@ mod document_details;
 mod document_list;
 mod file_details;
 mod file_list;
+mod settings;
 mod sources;
 
 use core::panic;
@@ -43,6 +44,8 @@ use crate::page::document_details::DocumentDetailsOutput;
 use crate::page::document_list::DocumentList;
 use crate::page::document_list::DocumentListMessage;
 use crate::page::document_list::DocumentListOutput;
+use crate::page::settings::SettingsMessage;
+use crate::page::settings::SettingsPage;
 use crate::page::sources::SourcesMessage;
 use crate::page::sources::SourcesOutput;
 use crate::page::sources::SourcesPage;
@@ -55,6 +58,7 @@ pub struct Pages {
     sources: SourcesPage,
     documents: DocumentList,
     document_details: IndexMap<Fingerprint, DocumentDetails>,
+    settings: SettingsPage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -64,6 +68,7 @@ pub enum PageSelector {
     Sources,
     Documents,
     DocumentDetails(Fingerprint),
+    Settings,
 }
 
 impl From<ClientSelector> for PageSelector {
@@ -93,6 +98,7 @@ pub enum PageMessage {
     DocumentDetails(Fingerprint, DocumentDetailsMessage),
     OpenDocumentDetails(Document),
     CloseDocumentDetails(Fingerprint),
+    Settings(SettingsMessage),
     Out(PageOutput),
 }
 
@@ -108,12 +114,19 @@ impl From<DocumentListMessage> for PageMessage {
     }
 }
 
+impl From<SettingsMessage> for PageMessage {
+    fn from(source: SettingsMessage) -> Self {
+        Self::Settings(source)
+    }
+}
+
 impl Pages {
     pub fn new(application_module: &ApplicationModule) -> (Self, Task<Action<PageMessage>>) {
         // Get the database client from the application module
         let db_client = application_module.db_client();
 
         let (sources, init_sources) = SourcesPage::new(application_module.connection_pool.clone());
+        let (settings, init_settings) = SettingsPage::new(application_module.settings.clone());
 
         // Get remote clients from the application module
         let remote_clients = application_module
@@ -170,6 +183,7 @@ impl Pages {
         tasks.extend(remote_tasks);
         tasks.push(init_sources.map(ActionExt::map_into));
         tasks.push(init_documents.map(ActionExt::map_into));
+        tasks.push(init_settings.map(ActionExt::map_into));
 
         let mut file_lists = vec![local];
         file_lists.append(&mut remotes);
@@ -186,6 +200,7 @@ impl Pages {
                 sources,
                 documents,
                 document_details: Default::default(),
+                settings,
             },
             task::batch(tasks),
         )
@@ -204,6 +219,7 @@ impl Pages {
             PageSelector::DocumentDetails(fingerprint) => {
                 self.document_details[fingerprint].display_name()
             }
+            PageSelector::Settings => fl!("settings-page-title"),
         }
     }
 
@@ -243,6 +259,7 @@ impl Pages {
                         .align_y(Vertical::Center)
                         .into()
                 }),
+            PageSelector::Settings => self.settings.view().map(Into::into),
         }
     }
 
@@ -290,6 +307,7 @@ impl Pages {
                         .align_y(Vertical::Center)
                         .into(),
                 }),
+            PageSelector::Settings => self.settings.view_context().map(Into::into),
         }
     }
 
@@ -343,6 +361,10 @@ impl Pages {
                 .documents
                 .update(document_list_message)
                 .map(move |action| action.map(map_document_list_message)),
+            PageMessage::Settings(settings_message) => self
+                .settings
+                .update(settings_message)
+                .map(move |action| action.map(map_settings_message)),
             PageMessage::OpenFileDetails(selector, file) => {
                 let id = file.id;
                 let file_icon = get_file_type_icon(&file.type_);
@@ -473,6 +495,15 @@ fn map_document_details_message(
             }
         },
         msg => PageMessage::DocumentDetails(fingerprint, msg),
+    }
+}
+
+fn map_settings_message(msg: SettingsMessage) -> PageMessage {
+    match msg {
+        SettingsMessage::Out(_message) => {
+            // No output messages yet, but this is where they would be handled
+            unreachable!("No settings output messages defined yet")
+        }
     }
 }
 

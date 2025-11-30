@@ -109,3 +109,19 @@ sources-delete-confirm-title = Delete Source
 sources-delete-confirm-body = Are you sure you want to delete this source? This action cannot be undone.
 sources-delete-confirm-delete = Delete
 sources-delete-confirm-cancel = Cancel
+
+# Settings page
+settings-page-title = Settings
+settings-context-title = Settings Options
+settings-context-placeholder = Settings options will appear here
+settings-database-section = Database
+settings-database-location = Database Location
+settings-scan-section = Scan
+settings-scan-dry-run = Dry Run Mode
+settings-scan-directories-section = Scan Directories
+settings-directory-action-ignore = Ignore
+settings-directory-action-scan = Scan
+settings-ui-section = User Interface
+settings-ui-private-tags = Private Tags
+settings-enabled = Enabled
+settings-disabled = Disabled

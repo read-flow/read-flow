@@ -104,3 +104,19 @@ sources-delete-confirm-title = Supprimer la source
 sources-delete-confirm-body = Êtes-vous sûr de vouloir supprimer cette source ? Cette action ne peut pas être annulée.
 sources-delete-confirm-delete = Supprimer
 sources-delete-confirm-cancel = Annuler
+
+# Settings page
+settings-page-title = Paramètres
+settings-context-title = Options des paramètres
+settings-context-placeholder = Les options des paramètres apparaîtront ici
+settings-database-section = Base de données
+settings-database-location = Emplacement de la base de données
+settings-scan-section = Analyse
+settings-scan-dry-run = Mode simulation
+settings-scan-directories-section = Répertoires d'analyse
+settings-directory-action-ignore = Ignorer
+settings-directory-action-scan = Analyser
+settings-ui-section = Interface utilisateur
+settings-ui-private-tags = Tags privés
+settings-enabled = Activé
+settings-disabled = Désactivé

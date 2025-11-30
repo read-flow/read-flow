@@ -19,6 +19,12 @@ pub struct DbSettings {
     url: String,
 }
 
+impl DbSettings {
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+}
+
 pub type ConnectionPool = Pool<ConnectionManager<SqliteConnection>>;
 
 #[derive(Debug)]

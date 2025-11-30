@@ -109,3 +109,19 @@ sources-delete-confirm-title = Bron verwijderen
 sources-delete-confirm-body = Weet je zeker dat je deze bron wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.
 sources-delete-confirm-delete = Verwijderen
 sources-delete-confirm-cancel = Annuleren
+
+# Settings page
+settings-page-title = Instellingen
+settings-context-title = Instellingen Opties
+settings-context-placeholder = Instellingen opties verschijnen hier
+settings-database-section = Database
+settings-database-location = Database Locatie
+settings-scan-section = Scannen
+settings-scan-dry-run = Droog Uitvoeren Modus
+settings-scan-directories-section = Scan Mappen
+settings-directory-action-ignore = Negeren
+settings-directory-action-scan = Scannen
+settings-ui-section = Gebruikersinterface
+settings-ui-private-tags = Privé Tags
+settings-enabled = Ingeschakeld
+settings-disabled = Uitgeschakeld
