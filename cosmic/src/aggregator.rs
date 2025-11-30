@@ -44,6 +44,10 @@ impl Aggregator {
         self.clients.get(selector)
     }
 
+    pub fn client_selectors(&self) -> Vec<ClientSelector> {
+        self.clients.keys().cloned().collect()
+    }
+
     pub async fn aggregate(&self) -> Result<Documents, FilesClientError> {
         let mut documents = Documents::default();
 

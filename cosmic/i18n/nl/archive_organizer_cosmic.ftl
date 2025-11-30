@@ -65,6 +65,10 @@ document-details-sources = Bronnen
 document-details-source-local = Lokaal
 document-details-no-sources = Geen bronnen beschikbaar
 
+# Document list
+document-list-filter-by-source = Filteren op Bron
+document-list-all-sources = Alle bronnen
+
 # Page messages
 page-not-found = ⚠ Niet gevonden
 

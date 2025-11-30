@@ -118,16 +118,16 @@ impl DocumentsComponent {
     }
 }
 
-fn view_document<'a>(file: &'a Document) -> Element<'a, DocumentsMessage> {
+fn view_document<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
     let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
-    let icon_name = file.metadata.type_.get_file_type_icon();
+    let icon_name = document.metadata.type_.get_file_type_icon();
 
     // Create a button with icon and file path that fills the width
     let button = widget::button::custom(
         Row::new()
             .push(widget::icon::from_name(icon_name).size(16).icon())
-            .push(display_path(&file.sources.iter().next().unwrap().path))
+            .push(display_path(&document.local_or_any_source().path))
             .spacing(space_s)
             .align_y(cosmic::iced::Alignment::Center)
             .width(Length::Fill),
@@ -135,7 +135,7 @@ fn view_document<'a>(file: &'a Document) -> Element<'a, DocumentsMessage> {
     .width(Length::Fill)
     .class(widget::button::ButtonClass::Icon)
     .on_press(DocumentsMessage::Out(DocumentsOutput::DocumentClicked(
-        file.clone(),
+        document.clone(),
     )));
 
     button.into()

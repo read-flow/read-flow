@@ -21,6 +21,7 @@ use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
 use crate::aggregator::Documents;
 use crate::app::ContextView;
+use crate::client::ClientSelector;
 use crate::component::documents::DocumentState;
 use crate::component::documents::DocumentsComponent;
 use crate::component::documents::DocumentsMessage;
@@ -36,12 +37,14 @@ use crate::state::filtered::Filtered;
 pub struct DocumentList {
     pub(super) aggregator: Aggregator,
     archive: DocumentsComponent,
-    is_filtering: bool,                   // Track if filtering is in progress
-    search_query: String,                 // The search query string
-    search_input_id: widget::Id,          // Unique ID for focus management
-    debounce_counter: u32,                // Counter to track debounce state
-    status_filter: Option<ReadingStatus>, // Optional reading status filter
-    tag_filter: TagFilter,                // Tag Filter component
+    is_filtering: bool,                     // Track if filtering is in progress
+    search_query: String,                   // The search query string
+    search_input_id: widget::Id,            // Unique ID for focus management
+    debounce_counter: u32,                  // Counter to track debounce state
+    status_filter: Option<ReadingStatus>,   // Optional reading status filter
+    tag_filter: TagFilter,                  // Tag Filter component
+    source_filter: Option<ClientSelector>,  // Optional source filter
+    available_sources: Vec<ClientSelector>, // Available sources for filtering
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +66,8 @@ pub enum DocumentListMessage {
     DebounceTimeout(u32, String), // (counter, query) - triggers filtering after delay
     StatusFilterChanged(Option<ReadingStatus>),
     ClearStatusFilter,
+    SourceFilterChanged(Option<ClientSelector>),
+    ClearSourceFilter,
     TagFilter(TagFilterMessage),
     DocumentsComponent(DocumentsMessage),
     Out(DocumentListOutput),
@@ -99,6 +104,7 @@ impl DocumentList {
         &self,
         query: String,
         status_filter: Option<ReadingStatus>,
+        source_filter: Option<ClientSelector>,
         allow_tags: HashSet<String>,
         deny_tags: HashSet<String>,
         all_files: Vec<Document>,
@@ -110,8 +116,15 @@ impl DocumentList {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, file)| {
-                    filter_document(&query, status_filter, &allow_tags, &deny_tags, &file)
-                        .then_some(index)
+                    filter_document(
+                        &query,
+                        status_filter,
+                        source_filter.as_ref(),
+                        &allow_tags,
+                        &deny_tags,
+                        &file,
+                    )
+                    .then_some(index)
                 })
                 .collect();
 
@@ -129,6 +142,7 @@ impl DocumentList {
                 >
         });
         let (tag_filter, tag_filter_init) = TagFilter::new(tags_fetcher);
+        let available_sources = aggregator.client_selectors();
         (
             Self {
                 aggregator,
@@ -139,6 +153,8 @@ impl DocumentList {
                 debounce_counter: 0,
                 status_filter: None,
                 tag_filter,
+                source_filter: None,
+                available_sources,
             },
             Task::batch(vec![
                 tag_filter_init.map(ActionExt::map_into),
@@ -242,6 +258,23 @@ impl DocumentList {
     }
 
     pub fn view_context(&self) -> ContextView<'_, DocumentListMessage> {
+        // Source Filter Section
+        let source_section = settings::section()
+            .title(fl!("document-list-filter-by-source"))
+            .add(
+                iced::widget::pick_list(
+                    self.available_sources.clone(),
+                    self.source_filter.clone(),
+                    |source| DocumentListMessage::SourceFilterChanged(Some(source)),
+                )
+                .width(Length::Fill)
+                .placeholder(fl!("document-list-all-sources")),
+            )
+            .add_maybe(self.source_filter.as_ref().map(|_| {
+                widget::button::text(fl!("file-list-clear-filter"))
+                    .on_press(DocumentListMessage::ClearSourceFilter)
+            }));
+
         // Reading Status Filter Section
         let status_section = settings::section()
             .title(fl!("file-list-filter-by-status"))
@@ -266,6 +299,7 @@ impl DocumentList {
         ContextView {
             title: fl!("file-list-options-title"),
             content: settings::view_column(vec![
+                source_section.into(),
                 status_section.into(),
                 self.tag_filter.view().map(Into::into),
             ])
@@ -296,6 +330,7 @@ impl DocumentList {
                     filter_document(
                         &self.search_query,
                         self.status_filter,
+                        self.source_filter.as_ref(),
                         &self.tag_filter.allow_tags,
                         &self.tag_filter.deny_tags,
                         &file,
@@ -360,6 +395,7 @@ impl DocumentList {
                         self.start_background_filtering(
                             query,
                             self.status_filter,
+                            self.source_filter.clone(),
                             self.tag_filter.allow_tags.clone(),
                             self.tag_filter.deny_tags.clone(),
                             self.archive.documents.unwrap().unfiltered().to_vec(),
@@ -382,6 +418,16 @@ impl DocumentList {
             DocumentListMessage::ClearStatusFilter => {
                 self.status_filter = None;
                 // Immediately filter to show all statuses (no debounce needed for clearing)
+                self.filter_now()
+            }
+            DocumentListMessage::SourceFilterChanged(source) => {
+                self.source_filter = source;
+                // Immediately filter with new source (no debounce needed for source changes)
+                self.filter_now()
+            }
+            DocumentListMessage::ClearSourceFilter => {
+                self.source_filter = None;
+                // Immediately filter to show all sources (no debounce needed for clearing)
                 self.filter_now()
             }
             DocumentListMessage::TagFilter(msg) => match msg {
@@ -416,6 +462,7 @@ impl DocumentList {
             self.start_background_filtering(
                 self.search_query.clone(),
                 self.status_filter,
+                self.source_filter.clone(),
                 self.tag_filter.allow_tags.clone(),
                 self.tag_filter.deny_tags.clone(),
                 self.archive.documents.unwrap().unfiltered().to_vec(),
@@ -429,6 +476,7 @@ impl DocumentList {
 fn filter_document(
     search_query: &str,
     status_filter: Option<ReadingStatus>,
+    source_filter: Option<&ClientSelector>,
     allow_tags: &HashSet<String>,
     deny_tags: &HashSet<String>,
     document: &&Document,
@@ -451,6 +499,14 @@ fn filter_document(
     // Filter by reading status
     let matches_status = status_filter.is_none_or(|status| document.metadata.status == status);
 
+    // Filter by source (document must exist on the selected source)
+    let matches_source = source_filter.is_none_or(|source| {
+        document
+            .sources
+            .iter()
+            .any(|doc_source| &doc_source.client == source)
+    });
+
     // Filter by allowed tags (file must have ALL allowed tags)
     let matches_allow_tags = allow_tags.is_empty()
         || allow_tags
@@ -465,5 +521,5 @@ fn filter_document(
             .iter()
             .any(|tag| deny_tags.contains(tag));
 
-    matches_search && matches_status && matches_allow_tags && matches_deny_tags
+    matches_search && matches_status && matches_source && matches_allow_tags && matches_deny_tags
 }

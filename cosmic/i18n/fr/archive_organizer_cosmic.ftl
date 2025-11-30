@@ -60,6 +60,10 @@ document-details-sources = Sources
 document-details-source-local = Local
 document-details-no-sources = Aucune source disponible
 
+# Document list
+document-list-filter-by-source = Filtrer par Source
+document-list-all-sources = Toutes les sources
+
 # Page messages
 page-not-found = ⚠ Non trouvé
 

@@ -43,6 +43,17 @@ impl ClientSelector {
     }
 }
 
+impl std::fmt::Display for ClientSelector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ClientSelector::Local => write!(f, "Local"),
+            ClientSelector::Remote(url) => {
+                write!(f, "{}", url.host_str().unwrap_or("Remote"))
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum Client {
     Local(DbClient),
