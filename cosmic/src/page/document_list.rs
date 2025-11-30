@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::cmp::Ordering;
 use std::collections::HashSet;
 
 use archive_organizer::api::ReadingStatus;
@@ -34,6 +35,49 @@ use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::state::filtered::Filtered;
 
+/// Sort options for the document list
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DocumentSortOption {
+    #[default]
+    FilenameAsc,
+    FilenameDesc,
+    SizeAsc,
+    SizeDesc,
+    TypeAsc,
+    TypeDesc,
+    StatusAsc,
+    StatusDesc,
+}
+
+impl DocumentSortOption {
+    pub const ALL: &'static [Self] = &[
+        Self::FilenameAsc,
+        Self::FilenameDesc,
+        Self::SizeAsc,
+        Self::SizeDesc,
+        Self::TypeAsc,
+        Self::TypeDesc,
+        Self::StatusAsc,
+        Self::StatusDesc,
+    ];
+}
+
+impl std::fmt::Display for DocumentSortOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            Self::FilenameAsc => fl!("document-list-sort-filename-asc"),
+            Self::FilenameDesc => fl!("document-list-sort-filename-desc"),
+            Self::SizeAsc => fl!("document-list-sort-size-asc"),
+            Self::SizeDesc => fl!("document-list-sort-size-desc"),
+            Self::TypeAsc => fl!("document-list-sort-type-asc"),
+            Self::TypeDesc => fl!("document-list-sort-type-desc"),
+            Self::StatusAsc => fl!("document-list-sort-status-asc"),
+            Self::StatusDesc => fl!("document-list-sort-status-desc"),
+        };
+        write!(f, "{}", label)
+    }
+}
+
 pub struct DocumentList {
     pub(super) aggregator: Aggregator,
     archive: DocumentsComponent,
@@ -41,6 +85,7 @@ pub struct DocumentList {
     search_query: String,                   // The search query string
     search_input_id: widget::Id,            // Unique ID for focus management
     debounce_counter: u32,                  // Counter to track debounce state
+    sort_option: DocumentSortOption,        // Current sort option
     status_filter: Option<ReadingStatus>,   // Optional reading status filter
     tag_filter: TagFilter,                  // Tag Filter component
     source_filter: Option<ClientSelector>,  // Optional source filter
@@ -64,6 +109,7 @@ pub enum DocumentListMessage {
     FilteringComplete(Vec<usize>),
     FocusSearchInput,
     DebounceTimeout(u32, String), // (counter, query) - triggers filtering after delay
+    SortChanged(DocumentSortOption),
     StatusFilterChanged(Option<ReadingStatus>),
     ClearStatusFilter,
     SourceFilterChanged(Option<ClientSelector>),
@@ -151,6 +197,7 @@ impl DocumentList {
                 is_filtering: false,
                 search_input_id: widget::Id::unique(),
                 debounce_counter: 0,
+                sort_option: DocumentSortOption::default(),
                 status_filter: None,
                 tag_filter,
                 source_filter: None,
@@ -258,6 +305,16 @@ impl DocumentList {
     }
 
     pub fn view_context(&self) -> ContextView<'_, DocumentListMessage> {
+        // Sort Section
+        let sort_section = settings::section().title(fl!("document-list-sort-by")).add(
+            iced::widget::pick_list(
+                DocumentSortOption::ALL,
+                Some(self.sort_option),
+                DocumentListMessage::SortChanged,
+            )
+            .width(Length::Fill),
+        );
+
         // Source Filter Section
         let source_section = settings::section()
             .title(fl!("document-list-filter-by-source"))
@@ -299,6 +356,7 @@ impl DocumentList {
         ContextView {
             title: fl!("file-list-options-title"),
             content: settings::view_column(vec![
+                sort_section.into(),
                 source_section.into(),
                 status_section.into(),
                 self.tag_filter.view().map(Into::into),
@@ -324,8 +382,11 @@ impl DocumentList {
                 })
             }
             DocumentListMessage::Loaded(files) => {
-                // For initial load, use synchronous filtering since it's typically fast
-                let mut files = Filtered::new(files.into_iter().collect());
+                // For initial load, use synchronous filtering and sorting since it's typically fast
+                let mut documents: Vec<Document> = files.into_iter().collect();
+                // Sort documents
+                sort_documents(&mut documents, self.sort_option);
+                let mut files = Filtered::new(documents);
                 files.filter(|file| {
                     filter_document(
                         &self.search_query,
@@ -410,6 +471,11 @@ impl DocumentList {
             DocumentListMessage::FocusSearchInput => {
                 widget::text_input::focus(self.search_input_id.clone())
             }
+            DocumentListMessage::SortChanged(sort_option) => {
+                self.sort_option = sort_option;
+                // Re-sort the documents immediately
+                self.sort_now()
+            }
             DocumentListMessage::StatusFilterChanged(status) => {
                 self.status_filter = status;
                 // Immediately filter with new status (no debounce needed for status changes)
@@ -470,6 +536,62 @@ impl DocumentList {
         } else {
             Task::none()
         }
+    }
+
+    fn sort_now(&mut self) -> Task<Action<DocumentListMessage>> {
+        if self.archive.documents.is_loaded() {
+            // Sort the unfiltered documents in place
+            self.archive
+                .documents
+                .unwrap_mut()
+                .sort_unfiltered(|docs| sort_documents(docs, self.sort_option));
+            // Re-apply the current filter to update the filtered view
+            self.filter_now()
+        } else {
+            Task::none()
+        }
+    }
+}
+
+/// Sort documents based on the selected sort option
+fn sort_documents(documents: &mut [Document], sort_option: DocumentSortOption) {
+    documents.sort_by(|a, b| compare_documents(a, b, sort_option));
+}
+
+/// Compare two documents based on the sort option
+fn compare_documents(a: &Document, b: &Document, sort_option: DocumentSortOption) -> Ordering {
+    match sort_option {
+        DocumentSortOption::FilenameAsc => get_filename(a)
+            .to_lowercase()
+            .cmp(&get_filename(b).to_lowercase()),
+        DocumentSortOption::FilenameDesc => get_filename(b)
+            .to_lowercase()
+            .cmp(&get_filename(a).to_lowercase()),
+        DocumentSortOption::SizeAsc => a.metadata.size.cmp(&b.metadata.size),
+        DocumentSortOption::SizeDesc => b.metadata.size.cmp(&a.metadata.size),
+        DocumentSortOption::TypeAsc => a.metadata.type_.as_str().cmp(b.metadata.type_.as_str()),
+        DocumentSortOption::TypeDesc => b.metadata.type_.as_str().cmp(a.metadata.type_.as_str()),
+        DocumentSortOption::StatusAsc => {
+            status_order(&a.metadata.status).cmp(&status_order(&b.metadata.status))
+        }
+        DocumentSortOption::StatusDesc => {
+            status_order(&b.metadata.status).cmp(&status_order(&a.metadata.status))
+        }
+    }
+}
+
+/// Get the filename from a document (uses local source if available, otherwise any source)
+fn get_filename(doc: &Document) -> &str {
+    let source = doc.local_or_any_source();
+    source.path.rsplit('/').next().unwrap_or(&source.path)
+}
+
+/// Convert reading status to a sortable order (Unread=0, Reading=1, Read=2)
+fn status_order(status: &ReadingStatus) -> u8 {
+    match status {
+        ReadingStatus::Unread => 0,
+        ReadingStatus::Reading => 1,
+        ReadingStatus::Read => 2,
     }
 }
 

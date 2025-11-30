@@ -68,6 +68,15 @@ document-details-no-sources = Geen bronnen beschikbaar
 # Document list
 document-list-filter-by-source = Filteren op Bron
 document-list-all-sources = Alle bronnen
+document-list-sort-by = Sorteren op
+document-list-sort-filename-asc = Bestandsnaam (A-Z)
+document-list-sort-filename-desc = Bestandsnaam (Z-A)
+document-list-sort-size-asc = Grootte (Kleinste)
+document-list-sort-size-desc = Grootte (Grootste)
+document-list-sort-type-asc = Type (A-Z)
+document-list-sort-type-desc = Type (Z-A)
+document-list-sort-status-asc = Status (Ongelezen eerst)
+document-list-sort-status-desc = Status (Gelezen eerst)
 
 # Page messages
 page-not-found = ⚠ Niet gevonden

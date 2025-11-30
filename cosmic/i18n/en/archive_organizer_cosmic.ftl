@@ -68,6 +68,15 @@ document-details-no-sources = No sources available
 # Document list
 document-list-filter-by-source = Filter by Source
 document-list-all-sources = All sources
+document-list-sort-by = Sort by
+document-list-sort-filename-asc = Filename (A-Z)
+document-list-sort-filename-desc = Filename (Z-A)
+document-list-sort-size-asc = Size (Smallest)
+document-list-sort-size-desc = Size (Largest)
+document-list-sort-type-asc = Type (A-Z)
+document-list-sort-type-desc = Type (Z-A)
+document-list-sort-status-asc = Status (Unread first)
+document-list-sort-status-desc = Status (Read first)
 
 # Page messages
 page-not-found = ⚠ Not found

@@ -56,4 +56,13 @@ impl<T> Filtered<T> {
             *element = item
         }
     }
+
+    pub fn sort_unfiltered<F>(&mut self, sort_fn: F)
+    where
+        F: FnOnce(&mut [T]),
+    {
+        sort_fn(&mut self.unfiltered);
+        // Reset filtered indices to include all items after sorting
+        self.filtered_indices = (0..self.unfiltered.len()).collect();
+    }
 }
