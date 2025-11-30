@@ -125,7 +125,7 @@ impl TagEditor {
             // Create a flow container for the tags
             let mut tag_row = Row::new().spacing(space_xs).width(Length::Fill);
             for tag in &self.selected_tags {
-                let tag_button = widget::button::text(tag.clone())
+                let tag_button = widget::button::text(tag)
                     .trailing_icon(widget::icon::from_name("edit-delete-symbolic"))
                     .on_press(TagEditorMessage::RemoveTag(tag.clone()))
                     .tooltip(&self.remove_tooltip);
@@ -267,8 +267,8 @@ impl TagEditor {
                 if self.combo_selection.trim().is_empty() {
                     return Task::none();
                 }
-                let tag = self.combo_selection.clone();
-                self.combo_selection = String::new();
+
+                let tag = std::mem::take(&mut self.combo_selection);
                 self.add_tag(tag)
             }
             TagEditorMessage::UpdateEnteredTag(tag) => {

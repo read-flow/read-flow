@@ -2,6 +2,7 @@
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use archive_organizer::api::ReadingStatus;
 use cosmic::Action;
@@ -79,7 +80,7 @@ impl std::fmt::Display for DocumentSortOption {
 }
 
 pub struct DocumentList {
-    pub(super) aggregator: Aggregator,
+    pub(super) aggregator: Arc<Aggregator>,
     archive: DocumentsComponent,
     is_filtering: bool,                     // Track if filtering is in progress
     search_query: String,                   // The search query string
@@ -178,7 +179,7 @@ impl DocumentList {
         })
     }
 
-    pub fn new(aggregator: Aggregator) -> (Self, Task<Action<DocumentListMessage>>) {
+    pub fn new(aggregator: Arc<Aggregator>) -> (Self, Task<Action<DocumentListMessage>>) {
         let aggregator_clone = aggregator.clone();
         let tags_fetcher = Box::new(move || {
             let agg = aggregator_clone.clone();

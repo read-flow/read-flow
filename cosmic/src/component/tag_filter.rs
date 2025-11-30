@@ -242,8 +242,8 @@ impl TagFilter {
             TagFilterMessage::AddAllowTag => {
                 if !self.new_allow_tag.is_empty() && !self.allow_tags.contains(&self.new_allow_tag)
                 {
-                    self.allow_tags.insert(self.new_allow_tag.clone());
-                    self.new_allow_tag.clear();
+                    self.allow_tags
+                        .insert(std::mem::take(&mut self.new_allow_tag));
 
                     // Update available tags to reflect the change
                     if let TagsState::Loaded(Tags { all_tags, .. }) = &self.tags {
@@ -279,8 +279,8 @@ impl TagFilter {
             }
             TagFilterMessage::AddDenyTag => {
                 if !self.new_deny_tag.is_empty() && !self.deny_tags.contains(&self.new_deny_tag) {
-                    self.deny_tags.insert(self.new_deny_tag.clone());
-                    self.new_deny_tag.clear();
+                    self.deny_tags
+                        .insert(std::mem::take(&mut self.new_deny_tag));
 
                     // Update available tags to reflect the change
                     if let TagsState::Loaded(Tags { all_tags, .. }) = &self.tags {

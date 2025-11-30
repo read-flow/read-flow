@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use archive_organizer::api::ReadingStatus;
 use cosmic::Action;
@@ -27,7 +28,7 @@ use crate::fl;
 
 pub struct DocumentDetails {
     document: Document,
-    aggregator: Aggregator,
+    aggregator: Arc<Aggregator>,
     tag_editor: TagEditor,
 }
 
@@ -55,7 +56,7 @@ pub enum DocumentDetailsMessage {
 impl DocumentDetails {
     pub fn new(
         document: Document,
-        aggregator: Aggregator,
+        aggregator: Arc<Aggregator>,
     ) -> (Self, Task<Action<DocumentDetailsMessage>>) {
         let initial_tags = document.metadata.tags.clone();
         let aggregator_clone = aggregator.clone();

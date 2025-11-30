@@ -64,7 +64,7 @@ pub enum SettingsMessage {
 impl SettingsPage {
     pub fn new(
         settings: Arc<Settings>,
-        aggregator: Aggregator,
+        aggregator: Arc<Aggregator>,
     ) -> (Self, Task<Action<SettingsMessage>>) {
         let (tag_editor, tag_editor_task) = TagEditor::new(
             Box::new(move || {

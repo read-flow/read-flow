@@ -6,6 +6,7 @@ mod settings;
 mod sources;
 
 use core::panic;
+use std::sync::Arc;
 
 use archive_organizer::ApplicationModule;
 use archive_organizer::client::FilesClient;
@@ -126,7 +127,7 @@ impl Pages {
             .chain(Some(db_client.into()))
             .collect::<Vec<_>>();
 
-        let aggregator = Aggregator::new(clients);
+        let aggregator = Arc::new(Aggregator::new(clients));
 
         let (settings, init_settings) =
             SettingsPage::new(application_module.settings.clone(), aggregator.clone());
