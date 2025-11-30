@@ -8,6 +8,7 @@ use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
 use cosmic::iced::Length;
+use cosmic::iced::alignment::Vertical;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::Column;
@@ -48,9 +49,19 @@ pub struct DocumentsComponent {
 
 impl DocumentsComponent {
     pub fn view(&self) -> Element<'_, DocumentsMessage> {
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+
         match &self.documents {
-            DocumentState::New => widget::text(fl!("file-list-new")).into(), // TODO: Show spinner
-            DocumentState::Loading => widget::text(fl!("file-list-loading")).into(), // TODO: Show spinner
+            DocumentState::New | DocumentState::Loading => Row::new()
+                .spacing(space_s)
+                .align_y(Vertical::Center)
+                .push(
+                    widget::icon::from_name("content-loading-symbolic")
+                        .size(24)
+                        .icon(),
+                )
+                .push(widget::text(fl!("file-list-loading")))
+                .into(),
             DocumentState::Failed(error) => {
                 widget::text(fl!("generic-error", error = error.as_str())).into()
             }

@@ -15,6 +15,8 @@ pub enum FilesClientError {
     Local(dao::Error),
     #[error("remote files error: {0}")]
     Remote(client::Error),
+    #[error("client not found: {0:?}")]
+    ClientNotFound(ClientSelector),
 }
 
 impl From<dao::Error> for FilesClientError {

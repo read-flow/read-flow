@@ -112,7 +112,9 @@ impl Aggregator {
 
     pub async fn xdg_open_file(&self, document: Document) -> Result<ExitStatus, FilesClientError> {
         let source = document.local_or_any_source().clone();
-        let client = self.client_for(&source.client).unwrap(); // TODO: error
+        let client = self
+            .client_for(&source.client)
+            .ok_or_else(|| FilesClientError::ClientNotFound(source.client.clone()))?;
         let file = File::from(SingleDocumentSource(source, document.metadata));
 
         client.xdg_open_file(file).await
@@ -189,8 +191,10 @@ impl Aggregator {
             retval.extend(result?);
         }
 
-        // TODO: sort alphabetically?
-        Ok(retval.into_iter().collect())
+        // Sort alphabetically for consistent ordering
+        let mut tags: Vec<_> = retval.into_iter().collect();
+        tags.sort();
+        Ok(tags)
     }
 }
 

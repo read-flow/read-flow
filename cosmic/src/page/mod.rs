@@ -28,8 +28,6 @@ use file_list::FileList;
 use file_list::FileListMessage;
 use file_list::FileListOutput;
 use indexmap::IndexMap;
-use rand::Rng;
-use rand::rngs::ThreadRng;
 use url::Url;
 
 use crate::aggregator::Aggregator;
@@ -52,7 +50,6 @@ use crate::page::sources::SourcesPage;
 type Fingerprint = String;
 
 pub struct Pages {
-    rng: ThreadRng,
     file_lists: IndexMap<ClientSelector, FileList>,
     file_details: IndexMap<i32, FileDetails>,
     sources: SourcesPage,
@@ -183,7 +180,6 @@ impl Pages {
 
         (
             Self {
-                rng: rand::rng(),
                 file_lists,
                 file_details: Default::default(),
                 sources,
@@ -299,14 +295,15 @@ impl Pages {
     pub fn update(&mut self, message: PageMessage) -> Task<Action<PageMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
-            PageMessage::Files(selector, message) => {
-                match self.file_lists.get_mut(&selector) {
-                    Some(page) => page.update(message).map(move |action| {
-                        action.map(|msg| map_file_list_message(selector.clone(), msg))
-                    }),
-                    None => Task::none(), // TODO log
+            PageMessage::Files(selector, message) => match self.file_lists.get_mut(&selector) {
+                Some(page) => page.update(message).map(move |action| {
+                    action.map(|msg| map_file_list_message(selector.clone(), msg))
+                }),
+                None => {
+                    tracing::warn!("File list not found for selector: {:?}", selector);
+                    Task::none()
                 }
-            }
+            },
             PageMessage::FileDetails(id, message) => self.file_details[&id]
                 .update(message)
                 .map(move |action| action.map(|msg| map_file_details_message(id, msg))),
@@ -346,19 +343,28 @@ impl Pages {
                 .update(document_list_message)
                 .map(move |action| action.map(map_document_list_message)),
             PageMessage::OpenFileDetails(selector, file) => {
-                // TODO: only create new file_details if it does not yet exist
-                let id = self.rng.random();
-                let file_list = &self.file_lists[&selector];
+                let id = file.id;
                 let file_icon = get_file_type_icon(&file.type_);
-                let (file_details, initialization) =
-                    FileDetails::new(id, file, file_list.client().clone());
-                self.file_details.insert(id, file_details);
-                initialization
-                    .map(move |action| action.map(|msg| map_file_details_message(id, msg)))
-                    .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
+
+                // Only create new file_details if it does not yet exist
+                if self.file_details.contains_key(&id) {
+                    // Page already exists, just navigate to it
+                    task::message(PageMessage::Out(PageOutput::PageAdded(
                         PageSelector::FileDetails(id),
                         file_icon,
-                    ))))
+                    )))
+                } else {
+                    let file_list = &self.file_lists[&selector];
+                    let (file_details, initialization) =
+                        FileDetails::new(id, file, file_list.client().clone());
+                    self.file_details.insert(id, file_details);
+                    initialization
+                        .map(move |action| action.map(|msg| map_file_details_message(id, msg)))
+                        .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
+                            PageSelector::FileDetails(id),
+                            file_icon,
+                        ))))
+                }
             }
             PageMessage::CloseFileDetails(id) => {
                 let _ = self.file_details.swap_remove(&id);
@@ -373,22 +379,33 @@ impl Pages {
                 )))
             }
             PageMessage::OpenDocumentDetails(document) => {
-                let fingerprint_1 = document.metadata.fingerprint.clone();
-                let fingerprint_2 = fingerprint_1.clone();
+                let fingerprint = document.metadata.fingerprint.clone();
                 let document_icon = document.metadata.type_.get_file_type_icon();
-                let (document_details, initialization) =
-                    DocumentDetails::new(document, self.documents.aggregator.clone());
-                self.document_details
-                    .insert(fingerprint_1.clone(), document_details);
-                initialization
-                    .map(move |action| {
-                        let fingerprint = fingerprint_1.clone();
-                        action.map(move |msg| map_document_details_message(fingerprint, msg))
-                    })
-                    .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
-                        PageSelector::DocumentDetails(fingerprint_2),
+
+                // Only create new document_details if it does not yet exist
+                if self.document_details.contains_key(&fingerprint) {
+                    // Page already exists, just navigate to it
+                    task::message(PageMessage::Out(PageOutput::PageAdded(
+                        PageSelector::DocumentDetails(fingerprint),
                         document_icon,
-                    ))))
+                    )))
+                } else {
+                    let fingerprint_1 = fingerprint.clone();
+                    let fingerprint_2 = fingerprint.clone();
+                    let (document_details, initialization) =
+                        DocumentDetails::new(document, self.documents.aggregator.clone());
+                    self.document_details
+                        .insert(fingerprint.clone(), document_details);
+                    initialization
+                        .map(move |action| {
+                            let fingerprint = fingerprint_1.clone();
+                            action.map(move |msg| map_document_details_message(fingerprint, msg))
+                        })
+                        .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
+                            PageSelector::DocumentDetails(fingerprint_2),
+                            document_icon,
+                        ))))
+                }
             }
             PageMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
