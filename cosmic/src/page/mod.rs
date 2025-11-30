@@ -75,6 +75,7 @@ impl From<ClientSelector> for PageSelector {
 #[derive(Debug, Clone)]
 pub enum PageOutput {
     PageAdded(PageSelector, &'static str),
+    TogglePage(PageSelector),
     PageRemoved(PageSelector),
     ToggleContextPage(PageSelector),
 }
@@ -349,9 +350,8 @@ impl Pages {
                 // Only create new file_details if it does not yet exist
                 if self.file_details.contains_key(&id) {
                     // Page already exists, just navigate to it
-                    task::message(PageMessage::Out(PageOutput::PageAdded(
+                    task::message(PageMessage::Out(PageOutput::TogglePage(
                         PageSelector::FileDetails(id),
-                        file_icon,
                     )))
                 } else {
                     let file_list = &self.file_lists[&selector];
@@ -385,9 +385,8 @@ impl Pages {
                 // Only create new document_details if it does not yet exist
                 if self.document_details.contains_key(&fingerprint) {
                     // Page already exists, just navigate to it
-                    task::message(PageMessage::Out(PageOutput::PageAdded(
+                    task::message(PageMessage::Out(PageOutput::TogglePage(
                         PageSelector::DocumentDetails(fingerprint),
-                        document_icon,
                     )))
                 } else {
                     let fingerprint_1 = fingerprint.clone();

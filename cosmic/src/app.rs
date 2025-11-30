@@ -67,6 +67,7 @@ pub enum Message {
     LaunchUrl(String),
     Page(PageMessage),
     PageAdded(PageSelector, &'static str),
+    ActivatePage(PageSelector),
     ActivePageRemoved(PageSelector),
     SwitchLanguage(LanguageIdentifier),
 }
@@ -75,6 +76,7 @@ impl From<PageOutput> for Message {
     fn from(source: PageOutput) -> Self {
         match source {
             PageOutput::PageAdded(page, icon_name) => Message::PageAdded(page, icon_name),
+            PageOutput::TogglePage(page_selector) => Message::ActivatePage(page_selector),
             PageOutput::PageRemoved(page) => Message::ActivePageRemoved(page),
             PageOutput::ToggleContextPage(page_selector) => {
                 Message::ToggleContextPage(ContextPage::PageContext(page_selector))
@@ -351,6 +353,12 @@ impl cosmic::Application for AppModel {
                 }
             },
             Message::Page(page_message) => self.pages.update(page_message).map(ActionExt::map_into),
+            Message::ActivatePage(selector) => {
+                if let Some(id) = self.nav_mappings.get(&selector).cloned() {
+                    self.nav.activate(id);
+                }
+                Task::none()
+            }
             Message::PageAdded(selector, icon_name) => {
                 let parent = self.nav.active();
                 self.nav
