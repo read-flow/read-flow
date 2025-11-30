@@ -11,19 +11,20 @@ use itertools::Itertools;
 use modules::file_extension_finder::FileExtensionFinder;
 use modules::scm_project_finder::ScmProjectFinder;
 use serde::Deserialize;
+use serde::Serialize;
 
 use crate::ApplicationModule;
 use crate::ExpandedPath;
 use crate::db::ConnectionPool;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ScanSettings {
     pub dry_run: bool,
     pub auto_tags: IndexMap<String, Vec<String>>,
     pub directories: IndexMap<ExpandedPath, DirectorySettings>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "action")]
 pub enum DirectorySettings {
     Ignore { inherit: bool },
@@ -77,6 +78,10 @@ impl ScanSettings {
             .map(|(_key, value)| value)
             .cloned()
             .reduce(|acc, item| acc.merge(item))
+    }
+
+    pub fn set_dry_run(&mut self, dry_run: bool) {
+        self.dry_run = dry_run;
     }
 }
 

@@ -504,6 +504,8 @@ fn map_settings_message(msg: SettingsMessage) -> PageMessage {
             // No output messages yet, but this is where they would be handled
             unreachable!("No settings output messages defined yet")
         }
+        // All other messages are handled by the settings page itself
+        msg => PageMessage::Settings(msg),
     }
 }
 

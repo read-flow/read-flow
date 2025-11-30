@@ -5,13 +5,14 @@ use figment::Figment;
 use figment::providers::Format;
 use figment::providers::Toml;
 use serde::Deserialize;
+use serde::Serialize;
 
 use crate::db::DbSettings;
 use crate::scan::ScanSettings;
 #[cfg(feature = "server")]
 use crate::server::ServerSettings;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Settings {
     pub database: DbSettings,
     #[cfg(feature = "server")]
@@ -24,6 +25,10 @@ pub struct Settings {
 pub enum SettingsError {
     #[error("configuration error: {0}")]
     Figment(#[source] Box<figment::Error>),
+    #[error("serialization error: {0}")]
+    Toml(#[from] toml::ser::Error),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 impl From<figment::Error> for SettingsError {
@@ -32,33 +37,36 @@ impl From<figment::Error> for SettingsError {
     }
 }
 
-pub fn decorate(figment: Figment) -> Figment {
-    let path = if Path::new("Cargo.toml").exists() && Path::new("archive-organizer.toml").exists() {
-        let path = PathBuf::from("archive-organizer.toml")
+/// Get the path to the configuration file
+pub fn config_path() -> PathBuf {
+    if Path::new("Cargo.toml").exists() && Path::new("archive-organizer.toml").exists() {
+        PathBuf::from("archive-organizer.toml")
             .canonicalize()
-            .expect("should work for valid file");
+            .expect("should work for valid file")
+    } else {
+        expanduser::expanduser("~/.config/archive-organizer/archive-organizer.toml")
+            .expect("could not expand user home")
+    }
+}
+
+pub fn decorate(figment: Figment) -> Figment {
+    let path = config_path();
+
+    if Path::new("Cargo.toml").exists() && Path::new("archive-organizer.toml").exists() {
         tracing::warn!(
             "detected `archive-organizer.toml` and `Cargo.toml` in current directory, loading `{}`",
             path.display()
         );
-
-        path
+    } else if !path.exists() {
+        tracing::error!(
+            "No configuration file found, please create one in: `{}`",
+            path.display()
+        );
+        panic!("No configuration file found");
     } else {
-        let path = expanduser::expanduser("~/.config/archive-organizer/archive-organizer.toml")
-            .expect("could not expand user home");
+        tracing::info!("using configuration from `{}`", path.display());
+    }
 
-        if !path.exists() {
-            tracing::error!(
-                "No configuration file found, please create one in: `{}`",
-                path.display()
-            );
-            panic!("No configuration file found");
-        } else {
-            tracing::info!("using configuration from `{}`", path.display());
-        }
-
-        path
-    };
     figment.merge(Toml::file(path))
 }
 
@@ -68,7 +76,15 @@ pub fn extract() -> Result<Settings, SettingsError> {
     Ok(settings)
 }
 
-#[derive(Debug, Deserialize, Clone)]
+/// Save settings to the configuration file
+pub fn save(settings: &Settings) -> Result<(), SettingsError> {
+    let path = config_path();
+    let toml_string = toml::to_string_pretty(settings)?;
+    std::fs::write(path, toml_string)?;
+    Ok(())
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct UiSettings {
     #[serde(default)]
     private_mode: bool,
@@ -87,6 +103,22 @@ impl UiSettings {
             private_mode,
             private_tags,
         }
+    }
+
+    pub fn private_mode(&self) -> bool {
+        self.private_mode
+    }
+
+    pub fn set_private_mode(&mut self, private_mode: bool) {
+        self.private_mode = private_mode;
+    }
+
+    pub fn private_tags(&self) -> &[String] {
+        &self.private_tags
+    }
+
+    pub fn set_private_tags(&mut self, private_tags: Vec<String>) {
+        self.private_tags = private_tags;
     }
 
     pub fn contains_hidden_tag(&self, tags: &[String]) -> bool {

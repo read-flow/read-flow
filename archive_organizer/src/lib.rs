@@ -24,6 +24,7 @@ use itertools::Itertools;
 use scan::DirectorySettings;
 use scan::FileSystemVisitor;
 use serde::Deserialize;
+use serde::Serialize;
 use settings::Settings;
 use settings::SettingsError;
 use tokio::runtime::Runtime;
@@ -170,9 +171,15 @@ impl<T> Builder for T {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
-#[serde(try_from = "PathBuf")]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[serde(try_from = "PathBuf", into = "PathBuf")]
 pub struct ExpandedPath(PathBuf);
+
+impl From<ExpandedPath> for PathBuf {
+    fn from(value: ExpandedPath) -> Self {
+        value.0
+    }
+}
 
 // impl ExpandedPath {
 //     fn into_inner(self) -> PathBuf {

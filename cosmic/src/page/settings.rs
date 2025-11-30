@@ -7,6 +7,7 @@ use cosmic::Action;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
+use cosmic::iced::Length;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
@@ -14,8 +15,24 @@ use cosmic::widget::settings;
 use crate::app::ContextView;
 use crate::fl;
 
+/// State for tracking save status
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SaveState {
+    Idle,
+    Saving,
+    Saved,
+    Error(String),
+}
+
 pub struct SettingsPage {
-    settings: Arc<Settings>,
+    /// Original settings (for comparison)
+    original_settings: Arc<Settings>,
+    /// Editable copy of settings
+    settings: Settings,
+    /// Private tags as editable string
+    private_tags_input: String,
+    /// Save state
+    save_state: SaveState,
 }
 
 #[derive(Debug, Clone)]
@@ -23,50 +40,72 @@ pub enum SettingsOutput {}
 
 #[derive(Debug, Clone)]
 pub enum SettingsMessage {
-    // Future messages for editing settings will go here
+    /// Toggle dry run mode
+    ToggleDryRun(bool),
+    /// Toggle private mode
+    TogglePrivateMode(bool),
+    /// Update private tags input
+    UpdatePrivateTags(String),
+    /// Save settings to file
+    Save,
+    /// Settings saved successfully
+    SaveComplete,
+    /// Settings save failed
+    SaveError(String),
+    /// Output message (for parent component)
     Out(SettingsOutput),
 }
 
 impl SettingsPage {
     pub fn new(settings: Arc<Settings>) -> (Self, Task<Action<SettingsMessage>>) {
-        (Self { settings }, Task::none())
+        let private_tags_input = settings.ui.private_tags().join(", ");
+        (
+            Self {
+                original_settings: settings.clone(),
+                settings: (*settings).clone(),
+                private_tags_input,
+                save_state: SaveState::Idle,
+            },
+            Task::none(),
+        )
+    }
+
+    /// Check if settings have been modified
+    fn is_modified(&self) -> bool {
+        self.settings.scan.dry_run != self.original_settings.scan.dry_run
+            || self.settings.ui.private_mode() != self.original_settings.ui.private_mode()
+            || self.private_tags_input != self.original_settings.ui.private_tags().join(", ")
     }
 
     pub fn view(&self) -> Element<'_, SettingsMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing {
+            space_s, space_m, ..
+        } = theme::active().cosmic().spacing;
 
         let mut content = Vec::new();
 
-        // Database section
+        // Database section (read-only)
         let database_section = settings::section()
             .title(fl!("settings-database-section"))
-            .add(
-                widget::row()
-                    .push(widget::text::body(fl!("settings-database-location")))
-                    .push(widget::horizontal_space())
-                    .push(
-                        widget::text::body(self.settings.database.url())
-                            .font(cosmic::font::Font::MONOSPACE),
-                    )
-                    .spacing(space_s),
-            );
+            .add(settings::item(
+                fl!("settings-database-location"),
+                widget::text::body(self.settings.database.url())
+                    .font(cosmic::font::Font::MONOSPACE),
+            ));
         content.push(database_section.into());
 
         // Scan section
-        let scan_section = settings::section().title(fl!("settings-scan-section")).add(
-            widget::row()
-                .push(widget::text::body(fl!("settings-scan-dry-run")))
-                .push(widget::horizontal_space())
-                .push(widget::text::body(if self.settings.scan.dry_run {
-                    fl!("settings-enabled")
-                } else {
-                    fl!("settings-disabled")
-                }))
-                .spacing(space_s),
-        );
+        let scan_section =
+            settings::section()
+                .title(fl!("settings-scan-section"))
+                .add(settings::item(
+                    fl!("settings-scan-dry-run"),
+                    widget::toggler(self.settings.scan.dry_run)
+                        .on_toggle(SettingsMessage::ToggleDryRun),
+                ));
         content.push(scan_section.into());
 
-        // Scan directories section
+        // Scan directories section (read-only for now)
         let directories_section = self.settings.scan.directories.iter().fold(
             settings::section().title(fl!("settings-scan-directories-section")),
             |section, (path, dir_settings)| {
@@ -78,46 +117,116 @@ impl SettingsPage {
                         fl!("settings-directory-action-scan")
                     }
                 };
-                section.add(
-                    widget::row()
-                        .push(
-                            widget::text::body(format!("{}", path.display()))
-                                .font(cosmic::font::Font::MONOSPACE),
-                        )
-                        .push(widget::horizontal_space())
-                        .push(widget::text::body(action))
-                        .spacing(space_s),
-                )
+                section.add(settings::item(
+                    format!("{}", path.display()),
+                    widget::text::body(action),
+                ))
             },
         );
         content.push(directories_section.into());
 
-        // UI section
-        let ui_section = settings::section().title(fl!("settings-ui-section")).add(
-            widget::row()
-                .push(widget::text::body(fl!("settings-ui-private-tags")))
-                .push(widget::horizontal_space())
-                .push(
-                    widget::text::body(self.settings.ui.hidden_tags().join(", "))
-                        .font(cosmic::font::Font::MONOSPACE),
-                )
-                .spacing(space_s),
-        );
-        content.push(ui_section.into());
+        // Save button section
+        let save_button = if self.is_modified() {
+            widget::button::suggested(fl!("settings-save")).on_press(SettingsMessage::Save)
+        } else {
+            widget::button::standard(fl!("settings-save"))
+        };
+
+        let save_status = match &self.save_state {
+            SaveState::Idle => widget::text(""),
+            SaveState::Saving => widget::text(fl!("settings-saving")),
+            SaveState::Saved => widget::text(fl!("settings-saved")),
+            SaveState::Error(err) => {
+                widget::text(format!("{}: {}", fl!("settings-save-error"), err))
+            }
+        };
+
+        let save_section = widget::row()
+            .push(save_button)
+            .push(widget::horizontal_space())
+            .push(save_status)
+            .spacing(space_m)
+            .padding(space_s);
+        content.push(save_section.into());
 
         settings::view_column(content).into()
     }
 
     pub fn view_context(&self) -> ContextView<'_, SettingsMessage> {
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+
+        // UI Privacy section
+        let ui_section = settings::section()
+            .title(fl!("settings-ui-section"))
+            .add(settings::item(
+                fl!("settings-ui-private-mode"),
+                widget::toggler(self.settings.ui.private_mode())
+                    .on_toggle(SettingsMessage::TogglePrivateMode),
+            ))
+            .add(settings::item(
+                fl!("settings-ui-private-tags"),
+                widget::text_input(
+                    fl!("settings-ui-private-tags-placeholder"),
+                    &self.private_tags_input,
+                )
+                .on_input(SettingsMessage::UpdatePrivateTags)
+                .width(Length::Fill),
+            ));
+
+        let content = widget::column().push(ui_section).spacing(space_s).into();
+
         ContextView {
             title: fl!("settings-context-title"),
-            content: widget::text(fl!("settings-context-placeholder")).into(),
+            content,
         }
     }
 
     pub fn update(&mut self, message: SettingsMessage) -> Task<Action<SettingsMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
+            SettingsMessage::ToggleDryRun(value) => {
+                self.settings.scan.set_dry_run(value);
+                self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            SettingsMessage::TogglePrivateMode(value) => {
+                self.settings.ui.set_private_mode(value);
+                self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            SettingsMessage::UpdatePrivateTags(value) => {
+                self.private_tags_input = value;
+                // Parse the comma-separated tags
+                let tags: Vec<String> = self
+                    .private_tags_input
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                self.settings.ui.set_private_tags(tags);
+                self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            SettingsMessage::Save => {
+                self.save_state = SaveState::Saving;
+                let settings = self.settings.clone();
+                cosmic::task::future(async move {
+                    match archive_organizer::settings::save(&settings) {
+                        Ok(()) => SettingsMessage::SaveComplete,
+                        Err(e) => SettingsMessage::SaveError(e.to_string()),
+                    }
+                })
+            }
+            SettingsMessage::SaveComplete => {
+                self.save_state = SaveState::Saved;
+                // Update original settings to reflect saved state
+                self.original_settings = Arc::new(self.settings.clone());
+                Task::none()
+            }
+            SettingsMessage::SaveError(error) => {
+                self.save_state = SaveState::Error(error);
+                Task::none()
+            }
             SettingsMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }

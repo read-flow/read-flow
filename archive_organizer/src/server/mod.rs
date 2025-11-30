@@ -18,6 +18,7 @@ use rocket::post;
 use rocket::put;
 use rocket::routes;
 use rocket::serde::Deserialize;
+use rocket::serde::Serialize;
 use rocket::serde::json::Json;
 use rocket_cors::AllowedOrigins;
 use rocket_cors::Cors;
@@ -41,7 +42,7 @@ use crate::scan;
 use crate::settings;
 use crate::to_unique_file;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(crate = "rocket::serde")]
 pub struct ServerSettings {
     pub download_folder: ExpandedPath,
