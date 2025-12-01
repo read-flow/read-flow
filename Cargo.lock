@@ -290,6 +290,7 @@ dependencies = [
  "anyhow",
  "archive-organizer",
  "async-trait",
+ "clap",
  "futures-util",
  "i18n-embed",
  "i18n-embed-fl",

@@ -15,6 +15,7 @@ maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+clap = { workspace = true, features = ["derive"] }
 futures-util.workspace = true
 i18n-embed = { workspace = true, features = ["fluent-system", "desktop-requester"] }
 i18n-embed-fl.workspace = true
