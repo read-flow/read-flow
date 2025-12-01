@@ -60,7 +60,7 @@ impl DirectorySettings {
         }
     }
 
-    fn inherit(&self) -> bool {
+    pub fn inherit(&self) -> bool {
         use DirectorySettings::*;
         match self {
             Ignore { inherit, .. } | Scan { inherit, .. } => *inherit,

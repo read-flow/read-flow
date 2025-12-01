@@ -463,7 +463,7 @@ impl SourcesPage {
                             }),
                     )
                     .push(
-                        widget::button::icon(icon::from_name("edit-delete-symbolic").size(16))
+                        widget::button::icon(icon::from_name("list-remove-symbolic").size(16))
                             .padding(space_xxs)
                             .class(theme::Button::Destructive)
                             .on_press(SourcesMessage::RequestDeleteSource(source.clone())),
