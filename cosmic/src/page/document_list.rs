@@ -234,7 +234,7 @@ impl DocumentList {
         );
 
         let search_input =
-            widget::text_input(fl!("file-list-search-placeholder"), &self.search_query)
+            widget::text_input(fl!("document-list-search-placeholder"), &self.search_query)
                 .id(self.search_input_id.clone())
                 .always_active()
                 .on_input(DocumentListMessage::SearchChanged)
@@ -261,7 +261,7 @@ impl DocumentList {
         let header_row = if self.is_filtering {
             // Show filtering indicator in the header
             header_row.push(
-                widget::text(fl!("file-list-filtering"))
+                widget::text(fl!("document-list-filtering"))
                     .size(12)
                     .apply(widget::container)
                     .width(Length::Shrink)
@@ -329,13 +329,13 @@ impl DocumentList {
                 .placeholder(fl!("document-list-all-sources")),
             )
             .add_maybe(self.source_filter.as_ref().map(|_| {
-                widget::button::text(fl!("file-list-clear-filter"))
+                widget::button::text(fl!("document-list-clear-filter"))
                     .on_press(DocumentListMessage::ClearSourceFilter)
             }));
 
         // Reading Status Filter Section
         let status_section = settings::section()
-            .title(fl!("file-list-filter-by-status"))
+            .title(fl!("document-list-filter-by-status"))
             .add(
                 iced::widget::pick_list(
                     [
@@ -347,15 +347,15 @@ impl DocumentList {
                     |status| DocumentListMessage::StatusFilterChanged(Some(status)),
                 )
                 .width(Length::Fill)
-                .placeholder(fl!("file-list-all-statuses")),
+                .placeholder(fl!("document-list-all-statuses")),
             )
             .add_maybe(self.status_filter.map(|_| {
-                widget::button::text(fl!("file-list-clear-filter"))
+                widget::button::text(fl!("document-list-clear-filter"))
                     .on_press(DocumentListMessage::ClearStatusFilter)
             }));
 
         ContextView {
-            title: fl!("file-list-options-title"),
+            title: fl!("document-list-options-title"),
             content: settings::view_column(vec![
                 sort_section.into(),
                 source_section.into(),

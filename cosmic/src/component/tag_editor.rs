@@ -149,7 +149,7 @@ impl TagEditor {
                 )
                 .width(Length::Fill);
 
-                let add_button = widget::button::standard(fl!("file-details-add"))
+                let add_button = widget::button::standard(fl!("tag-editor-add"))
                     .apply_if(!self.combo_selection.is_empty(), |button| {
                         button
                             .on_press(TagEditorMessage::AddSelectedTag)
@@ -187,7 +187,7 @@ impl TagEditor {
                             .size(16)
                             .icon(),
                     )
-                    .push(text(fl!("file-details-loading-tags"))),
+                    .push(text(fl!("tag-editor-loading-tags"))),
             ),
             _ => column.push(text(fl!("settings-failed-to-load-tags"))),
         };

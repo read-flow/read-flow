@@ -71,7 +71,7 @@ impl TagFilter {
 
         // Allow Tags Section
         let allow_section = self.view_tag_filter_section(
-            fl!("file-list-allow-tags"),
+            fl!("document-list-allow-tags"),
             &self.allow_tags,
             &self.new_allow_tag,
             TagFilterMessage::UpdateNewAllowTag,
@@ -82,7 +82,7 @@ impl TagFilter {
 
         // Deny Tags Section
         let deny_section = self.view_tag_filter_section(
-            fl!("file-list-deny-tags"),
+            fl!("document-list-deny-tags"),
             &self.deny_tags,
             &self.new_deny_tag,
             TagFilterMessage::UpdateNewDenyTag,
@@ -94,7 +94,7 @@ impl TagFilter {
         // Clear all tag filters button
         if !self.allow_tags.is_empty() || !self.deny_tags.is_empty() {
             let clear_section = settings::section().add(
-                widget::button::text(fl!("file-list-clear-all-tag-filters"))
+                widget::button::text(fl!("document-list-clear-all-tag-filters"))
                     .on_press(TagFilterMessage::ClearAllTagFilters),
             );
             content.push(clear_section.into());
@@ -134,7 +134,7 @@ impl TagFilter {
 
             section = section.add(tags_flex);
         } else {
-            section = section.add(widget::text::caption(fl!("file-list-no-tags-selected")));
+            section = section.add(widget::text::caption(fl!("document-list-no-tags-selected")));
         }
 
         // Add tag input
@@ -158,7 +158,9 @@ impl TagFilter {
             }) => {
                 if all_tags.is_empty() {
                     // No tags exist in the system at all
-                    section.add(widget::text::caption(fl!("file-list-no-tags-available")))
+                    section.add(widget::text::caption(fl!(
+                        "document-list-no-tags-available"
+                    )))
                 } else {
                     // Check if there are any tags available that aren't already in use
                     let has_available_tags = all_tags
@@ -167,25 +169,23 @@ impl TagFilter {
 
                     if !has_available_tags {
                         // All existing tags are already in use
-                        section.add(widget::text::caption(fl!("file-list-all-tags-in-use")))
+                        section.add(widget::text::caption(fl!("document-list-all-tags-in-use")))
                     } else {
                         // Show combo box with available tags
                         let combo = combo_box(
                             available_tags,
-                            &fl!("file-list-select-tag"),
+                            &fl!("document-list-select-tag"),
                             Some(new_tag_input),
                             update_message,
                         )
                         .width(Length::Fill);
 
-                        let add_button = widget::button::text(fl!("file-list-add-tag")).apply_if(
-                            !new_tag_input.is_empty(),
-                            |button| {
+                        let add_button = widget::button::text(fl!("document-list-add-tag"))
+                            .apply_if(!new_tag_input.is_empty(), |button| {
                                 button
                                     .on_press(add_message)
                                     .class(widget::button::ButtonClass::Suggested)
-                            },
-                        );
+                            });
 
                         let input_row =
                             widget::row().push(combo).push(add_button).spacing(space_xs);

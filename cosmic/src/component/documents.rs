@@ -60,7 +60,7 @@ impl DocumentsComponent {
                         .size(24)
                         .icon(),
                 )
-                .push(widget::text(fl!("file-list-loading")))
+                .push(widget::text(fl!("document-list-loading")))
                 .into(),
             DocumentState::Failed(error) => {
                 widget::text(fl!("generic-error", error = error.as_str())).into()
@@ -76,7 +76,7 @@ impl DocumentsComponent {
                 if visible_files.is_empty() {
                     return Column::new()
                         .push(
-                            widget::container(widget::text(fl!("file-list-no-files")))
+                            widget::container(widget::text(fl!("document-list-no-files")))
                                 .width(Length::Fill)
                                 .center_x(Length::Fill)
                                 .padding(32),

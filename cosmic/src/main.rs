@@ -11,10 +11,9 @@ mod iter;
 mod page;
 mod state;
 
-use clap::Parser;
-
 use archive_organizer::ApplicationModule;
 use archive_organizer::settings;
+use clap::Parser;
 
 #[derive(Debug, clap::Parser)]
 pub struct Cli {

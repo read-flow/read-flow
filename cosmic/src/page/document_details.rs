@@ -72,10 +72,10 @@ impl DocumentDetails {
                 })
             }),
             initial_tags,
-            fl!("file-details-select-tag"),
-            fl!("file-details-enter"),
-            fl!("file-details-no-tags"),
-            fl!("file-details-remove-tag"),
+            fl!("tag-editor-select-tag"),
+            fl!("tag-editor-enter"),
+            fl!("tag-editor-no-tags"),
+            fl!("tag-editor-remove-tag"),
         );
 
         let file_details = DocumentDetails {
@@ -150,38 +150,38 @@ impl DocumentDetails {
                     .push(
                         widget::button::icon(widget::icon::from_name("document-open-symbolic"))
                             .on_press(DocumentDetailsMessage::OpenDocument)
-                            .tooltip(fl!("file-details-open-file")),
+                            .tooltip(fl!("document-details-open-file")),
                     )
                     .push(
                         widget::button::icon(widget::icon::from_name("window-close-symbolic"))
                             .on_press(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
                                 self.document.metadata.fingerprint.clone(),
                             )))
-                            .tooltip(fl!("file-details-close")),
+                            .tooltip(fl!("document-details-close")),
                     ),
             );
 
         // Build settings sections
         let basic_info_section = widget::settings::section()
-            .title(fl!("file-details-basic-info"))
+            .title(fl!("document-details-basic-info"))
             .add(widget::settings::item(
-                fl!("file-details-filename"),
+                fl!("document-details-filename"),
                 text(filename),
             ))
             .add(widget::settings::item(
-                fl!("file-details-folder"),
+                fl!("document-details-folder"),
                 text(folder),
             ))
             .add(widget::settings::item(
-                fl!("file-details-type"),
+                fl!("document-details-type"),
                 text(self.document.metadata.type_.as_str()),
             ))
             .add(widget::settings::item(
-                fl!("file-details-size"),
+                fl!("document-details-size"),
                 text(self.format_file_size(self.document.metadata.size.into())),
             ))
             .add(widget::settings::item(
-                fl!("file-details-status"),
+                fl!("document-details-status"),
                 cosmic::iced::widget::pick_list(
                     [
                         ReadingStatus::Unread,
@@ -191,18 +191,18 @@ impl DocumentDetails {
                     Some(self.document.metadata.status),
                     DocumentDetailsMessage::UpdateReadingStatus,
                 )
-                .placeholder(fl!("file-details-select-status")),
+                .placeholder(fl!("document-details-select-status")),
             ));
 
         let technical_section = widget::settings::section()
-            .title(fl!("file-details-technical"))
+            .title(fl!("document-details-technical"))
             .add(widget::settings::item(
-                fl!("file-details-fingerprint"),
+                fl!("document-details-fingerprint"),
                 text(&self.document.metadata.fingerprint),
             ));
 
         let tags_section = widget::settings::section()
-            .title(fl!("file-details-tags"))
+            .title(fl!("document-details-tags"))
             .add(
                 self.tag_editor
                     .view()

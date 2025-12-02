@@ -1,3 +1,5 @@
+# The keys in each section (separated by a comment) are sorted alphabetically
+
 app-title = Archive Organizer Cosmic
 about = À propos
 documents = Les Documents
@@ -11,135 +13,149 @@ unknown-remote = ⚠ Source distante inconnue: { $url }
 generic-error = 🛑 Erreur: { $error }
 
 # File list states
-file-list-new = Nouveau
-file-list-loading = Chargement
-file-list-no-files = Aucun fichier ne correspond aux filtres actuels
-file-list-files-section = Fichiers
-file-list-search-placeholder = Rechercher des fichiers...
-file-list-filtering = Filtrage...
-file-list-options-title = Options de Liste de Fichiers
-file-list-filters-section = Filtres
-file-list-filter-by-status = Filtrer par Statut de Lecture
-file-list-all-statuses = Tous les statuts
-file-list-clear-filter = Effacer le Filtre
-file-list-filter-by-tags = Filtrer par Étiquettes
-file-list-allow-tags = Inclure Étiquettes (doit avoir TOUTES)
-file-list-deny-tags = Exclure Étiquettes (ne doit avoir AUCUNE)
-file-list-no-tags-selected = Aucune étiquette sélectionnée
-file-list-select-tag = Sélectionner une étiquette
 file-list-add-tag = Ajouter
-file-list-clear-all-tag-filters = Effacer Tous les Filtres d'Étiquettes
+file-list-all-statuses = Tous les statuts
 file-list-all-tags-in-use = Toutes les étiquettes sont déjà utilisées
+file-list-allow-tags = Inclure Étiquettes (doit avoir TOUTES)
+file-list-clear-all-tag-filters = Effacer Tous les Filtres d'Étiquettes
+file-list-clear-filter = Effacer le Filtre
+file-list-deny-tags = Exclure Étiquettes (ne doit avoir AUCUNE)
+file-list-files-section = Fichiers
+file-list-filter-by-status = Filtrer par Statut de Lecture
+file-list-filter-by-tags = Filtrer par Étiquettes
+file-list-filtering = Filtrage...
+file-list-filters-section = Filtres
+file-list-loading = Chargement
+file-list-new = Nouveau
+file-list-no-files = Aucun fichier ne correspond aux filtres actuels
 file-list-no-tags-available = Aucune étiquette disponible dans le système
+file-list-no-tags-selected = Aucune étiquette sélectionnée
+file-list-options-title = Options de Liste de Fichiers
+file-list-search-placeholder = Rechercher des fichiers...
+file-list-select-tag = Sélectionner une étiquette
 
 # File details
-file-details-unknown = Inconnu
-file-details-basic-info = Informations de base
-file-details-folder = Dossier
-file-details-filename = Nom du fichier
-file-details-type = Type
-file-details-size = Taille
-file-details-status = Statut
-file-details-technical = Détails techniques
-file-details-id = ID
-file-details-full-path = Chemin complet
-file-details-fingerprint = Empreinte
-file-details-tags = Étiquettes
-file-details-no-tags = Aucune étiquette
-file-details-select-tag = Sélectionner une étiquette
-file-details-add = Ajouter
-file-details-loading-tags = Chargement des étiquettes...
-file-details-size-bytes = { $size } octets
-file-details-select-status = Sélectionner le statut
-file-details-open-file = Ouvrir le Fichier
-file-details-close = Fermer
-file-details-remove-tag = Supprimer l'étiquette
+document-details-add = Ajouter
+document-details-basic-info = Informations de base
+document-details-close = Fermer
+document-details-filename = Nom du fichier
+document-details-fingerprint = Empreinte
+document-details-folder = Dossier
+document-details-full-path = Chemin complet
+document-details-id = ID
+document-details-loading-tags = Chargement des étiquettes...
+document-details-no-tags = Aucune étiquette
+document-details-open-file = Ouvrir le Fichier
+document-details-remove-tag = Supprimer l'étiquette
+document-details-select-status = Sélectionner le statut
+document-details-select-tag = Sélectionner une étiquette
+document-details-size = Taille
+document-details-size-bytes = { $size } octets
+document-details-status = Statut
+document-details-tags = Étiquettes
+document-details-technical = Détails techniques
+document-details-type = Type
+document-details-unknown = Inconnu
+
+# Tag editor
+tag-editor-add = Ajouter
+tag-editor-enter = Entrer une nouvelle étiquette
+tag-editor-loading-tags = Chargement des étiquettes...
+tag-editor-no-tags = Aucune étiquette
+tag-editor-remove-tag = Supprimer l'étiquette
+tag-editor-select-tag = Sélectionner une étiquette
+
+# Tag filter
+tag-filter-error = Échec du chargement des étiquettes
+tag-filter-loading = Chargement des étiquettes...
 
 # Document details
-document-details-sources = Sources
-document-details-source-local = Local
 document-details-no-sources = Aucune source disponible
+document-details-source-local = Local
+document-details-sources = Sources
 
 # Document list
-document-list-filter-by-source = Filtrer par Source
 document-list-all-sources = Toutes les sources
+document-list-filter-by-source = Filtrer par Source
 document-list-sort-by = Trier par
 document-list-sort-filename-asc = Nom de fichier (A-Z)
 document-list-sort-filename-desc = Nom de fichier (Z-A)
 document-list-sort-size-asc = Taille (Plus petit)
 document-list-sort-size-desc = Taille (Plus grand)
-document-list-sort-type-asc = Type (A-Z)
-document-list-sort-type-desc = Type (Z-A)
 document-list-sort-status-asc = Statut (Non lu d'abord)
 document-list-sort-status-desc = Statut (Lu d'abord)
+document-list-sort-type-asc = Type (A-Z)
+document-list-sort-type-desc = Type (Z-A)
 
 # Page messages
 page-not-found = ⚠ Non trouvé
 
 # Language menu
 language = Langue
-language-english = English
 language-dutch = Nederlands
+language-english = English
 language-french = Français
 
 # Pagination: TODO
-pagination-page = Page
-pagination-of = of
 pagination-first = First
-pagination-prev = Previous
-pagination-next = Next
 pagination-last = Last
+pagination-next = Next
+pagination-of = of
+pagination-page = Page
+pagination-prev = Previous
 
 # Sources
-sources-section-title = Sources distantes
 sources-add-section-title = Ajouter une nouvelle source
-sources-loading-state-new = Initialisation
-sources-loading-state-loading = Chargement...
+sources-context-title = Sources
+sources-delete-confirm-body = Êtes-vous sûr de vouloir supprimer cette source ? Cette action ne peut pas être annulée.
+sources-delete-confirm-cancel = Annuler
+sources-delete-confirm-delete = Supprimer
+sources-delete-confirm-title = Supprimer la source
 sources-empty-state = Aucune source distante configurée
 sources-enter-url = Entrer l'URL distante
-sources-invalid-url = URL non valide
-sources-error-title = Une erreur s'est produite
 sources-error-close = Fermer
-sources-delete-confirm-title = Supprimer la source
-sources-delete-confirm-body = Êtes-vous sûr de vouloir supprimer cette source ? Cette action ne peut pas être annulée.
-sources-delete-confirm-delete = Supprimer
-sources-delete-confirm-cancel = Annuler
+sources-error-title = Une erreur s'est produite
+sources-invalid-url = URL non valide
+sources-loading-state-loading = Chargement...
+sources-loading-state-new = Initialisation
+sources-section-title = Sources distantes
 
 # Settings page
-settings-page-title = Paramètres
-settings-context-title = Paramètres de confidentialité
-settings-context-placeholder = Les options des paramètres apparaîtront ici
-settings-database-section = Base de données
-settings-database-location = Emplacement de la base de données
-settings-scan-section = Analyse
-settings-scan-dry-run = Mode d'exécution à sec
-settings-scan-directories-section = Répertoires de scan
-settings-directory-action-ignore = Ignorer
-settings-directory-action-scan = Scanner
 settings-add-directory = Ajouter un répertoire
-settings-directory-path = Chemin du répertoire
-settings-directory-action = Action
-settings-directory-action-scan-label = Scanner
-settings-directory-action-ignore-label = Ignorer
-settings-directory-inherit = Hériter les paramètres aux sous-répertoires
-settings-remove-directory = Supprimer le répertoire
-settings-edit-directory = Modifier le répertoire
 settings-cancel-edit = Annuler
-settings-save-directory = Enregistrer le répertoire
-settings-invalid-path = Chemin de répertoire invalide
+settings-context-placeholder = Les options des paramètres apparaîtront ici
+settings-context-title = Paramètres de confidentialité
+settings-database-location = Emplacement de la base de données
+settings-database-section = Base de données
+settings-directory-action = Action
+settings-directory-action-ignore = Ignorer
+settings-directory-action-ignore-label = Ignorer
+settings-directory-action-scan = Scanner
+settings-directory-action-scan-label = Scanner
 settings-directory-exists = Le répertoire existe déjà
-settings-ui-section = Confidentialité
+settings-directory-inherit = Hériter les paramètres aux sous-répertoires
+settings-directory-path = Chemin du répertoire
+settings-disabled = Désactivé
+settings-edit-directory = Modifier le répertoire
+settings-enabled = Activé
+settings-enter-private-tag = Entrer un nouveau tag...
+settings-failed-to-load-tags = Échec du chargement des tags
+settings-invalid-path = Chemin de répertoire invalide
+settings-no-private-tags = Aucun tag privé configuré
+settings-page-title = Paramètres
+settings-remove-directory = Supprimer le répertoire
+settings-remove-private-tag = Supprimer le tag privé
+settings-save = Enregistrer les paramètres
+settings-save-directory = Enregistrer le répertoire
+settings-save-error = Erreur lors de l'enregistrement des paramètres
+settings-saved = Paramètres enregistrés avec succès
+settings-saving = Enregistrement...
+settings-scan-directories-section = Répertoires de scan
+settings-scan-dry-run = Mode d'exécution à sec
+settings-scan-section = Analyse
+settings-select-private-tag = Sélectionner un tag...
 settings-ui-private-mode = Mode privé
 settings-ui-private-tags = Tags privés
 settings-ui-private-tags-placeholder = tag1, tag2, tag3
-settings-enabled = Activé
-settings-disabled = Désactivé
-settings-save = Enregistrer les paramètres
-settings-saving = Enregistrement...
-settings-saved = Paramètres enregistrés avec succès
-settings-save-error = Erreur lors de l'enregistrement des paramètres
-settings-no-private-tags = Aucun tag privé configuré
-settings-remove-private-tag = Supprimer le tag privé
-settings-select-private-tag = Sélectionner un tag...
-settings-enter-private-tag = Entrer un nouveau tag...
-settings-failed-to-load-tags = Échec du chargement des tags
+settings-ui-section = Confidentialité
+
