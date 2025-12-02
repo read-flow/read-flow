@@ -6,12 +6,15 @@ use std::sync::Arc;
 use archive_organizer::scan::DirectorySettings;
 use archive_organizer::settings::Settings;
 use cosmic::Action;
+use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
+use cosmic::iced::Length;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
+use cosmic::widget::container;
 use cosmic::widget::icon;
 use cosmic::widget::settings;
 
@@ -320,17 +323,23 @@ impl SettingsPage {
                 let controls = widget::row()
                     .push(edit_button)
                     .push(remove_button)
-                    .spacing(space_s);
+                    .spacing(space_s)
+                    .apply(container)
+                    .align_right(Length::Shrink);
 
-                section.add(settings::item(
-                    format!("{}", path.display()),
-                    widget::row()
-                        .push(widget::text::body(action))
-                        .push(widget::horizontal_space())
-                        .push(controls)
-                        .spacing(space_m)
-                        .align_y(cosmic::iced::Alignment::Center),
-                ))
+                section.add(
+                    settings::item_row(vec![
+                        widget::text::body(format!("{}", path.display()))
+                            .width(Length::FillPortion(3))
+                            .into(),
+                        widget::text::body(action)
+                            .width(Length::FillPortion(1))
+                            .into(),
+                        controls.width(Length::FillPortion(1)).into(),
+                    ])
+                    .spacing(space_m)
+                    .align_y(cosmic::iced::Alignment::Center),
+                )
             },
         );
 
