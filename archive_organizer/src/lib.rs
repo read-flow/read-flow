@@ -171,7 +171,7 @@ impl<T> Builder for T {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(try_from = "PathBuf", into = "PathBuf")]
 pub struct ExpandedPath(PathBuf);
 
@@ -220,6 +220,12 @@ impl Deref for ExpandedPath {
     type Target = PathBuf;
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl std::fmt::Display for ExpandedPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&format!("{}", self.0.to_string_lossy()))
     }
 }
 

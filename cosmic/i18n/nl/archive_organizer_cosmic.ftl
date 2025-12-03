@@ -140,6 +140,7 @@ settings-directory-action-scan-label = Scannen
 settings-directory-exists = Map bestaat al
 settings-directory-inherit = Overneem instellingen naar submappen
 settings-directory-path = Map Pad
+settings-directory-tags = Tags
 settings-disabled = Uitgeschakeld
 settings-edit-directory = Map Bewerken
 settings-enabled = Ingeschakeld

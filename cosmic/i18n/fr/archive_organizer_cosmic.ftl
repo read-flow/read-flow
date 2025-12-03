@@ -135,6 +135,7 @@ settings-directory-action-scan-label = Scanner
 settings-directory-exists = Le répertoire existe déjà
 settings-directory-inherit = Hériter les paramètres aux sous-répertoires
 settings-directory-path = Chemin du répertoire
+settings-directory-tags = Tags
 settings-disabled = Désactivé
 settings-edit-directory = Modifier le répertoire
 settings-enabled = Activé

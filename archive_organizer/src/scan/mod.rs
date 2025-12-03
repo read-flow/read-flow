@@ -1,12 +1,13 @@
 pub mod file_system_visitor;
 pub mod modules;
+
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
 pub use file_system_visitor::Error;
 pub use file_system_visitor::FileSystemVisitor;
-use indexmap::IndexMap;
 use itertools::Itertools;
 use modules::file_extension_finder::FileExtensionFinder;
 use modules::scm_project_finder::ScmProjectFinder;
@@ -20,8 +21,8 @@ use crate::db::ConnectionPool;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ScanSettings {
     pub dry_run: bool,
-    pub auto_tags: IndexMap<String, Vec<String>>,
-    pub directories: IndexMap<ExpandedPath, DirectorySettings>,
+    pub auto_tags: BTreeMap<String, Vec<String>>,
+    pub directories: BTreeMap<ExpandedPath, DirectorySettings>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]

@@ -6,6 +6,7 @@ mod client;
 mod component;
 mod config;
 mod cosmic_ext;
+mod forms;
 mod i18n;
 mod iter;
 mod page;
