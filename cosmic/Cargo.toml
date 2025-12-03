@@ -22,6 +22,7 @@ i18n-embed-fl.workspace = true
 indexmap.workspace = true
 open.workspace = true
 rand.workspace = true
+rfd.workspace = true
 rust-embed.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }

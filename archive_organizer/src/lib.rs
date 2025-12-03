@@ -181,11 +181,11 @@ impl From<ExpandedPath> for PathBuf {
     }
 }
 
-// impl ExpandedPath {
-//     fn into_inner(self) -> PathBuf {
-//         self.0
-//     }
-// }
+impl ExpandedPath {
+    pub fn into_inner(self) -> PathBuf {
+        self.0
+    }
+}
 
 impl FromStr for ExpandedPath {
     type Err = std::io::Error;

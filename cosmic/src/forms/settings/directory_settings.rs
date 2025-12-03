@@ -4,17 +4,22 @@ use std::mem::take;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use archive_organizer::Builder;
 use archive_organizer::ExpandedPath;
 use archive_organizer::scan::DirectorySettings;
 use cosmic::Action;
+use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
+use cosmic::iced_widget::Row;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
 use cosmic::widget::settings::Section;
+use rfd::AsyncFileDialog;
+use rfd::FileHandle;
 
 use crate::aggregator::Aggregator;
 use crate::component::tag_editor::TagEditor;
@@ -43,7 +48,7 @@ pub struct DirectorySettingsForm {
     /// Tag editor for private tags
     tag_editor: Option<TagEditor>,
     /// Path input for new/editing directory
-    new_directory_path: String,
+    new_directory_path: Option<FileHandle>,
     /// Action selection for new/editing directory (Scan/Ignore)
     new_directory_action: DirectoryAction,
     /// Inheritance setting for new/editing directory
@@ -62,11 +67,8 @@ pub enum DirectorySettingsFormOutput {
 pub enum DirectorySettingsFormMessage {
     /// Tag editor message
     TagEditor(TagEditorMessage),
-    /// Update the directory path input in the editor
-    ///
-    /// # Arguments
-    /// * `String` - The new directory path
-    UpdateDirectoryPath(String),
+    SelectDirectoryPath,
+    SelectedDirectoryPath(Option<FileHandle>),
     /// Update the directory action selection in the editor
     ///
     /// # Arguments
@@ -110,7 +112,7 @@ impl DirectorySettingsForm {
             aggregator,
             original_settings: settings,
             tag_editor: None,
-            new_directory_path: format!("{path}"),
+            new_directory_path: Some(FileHandle::from(path.into_inner())),
             new_directory_action: action,
             new_directory_inherit: inherit,
             new_directory_scan_tags: tags.unwrap_or(vec![]),
@@ -185,9 +187,20 @@ impl DirectorySettingsForm {
     ) -> Section<'a, DirectorySettingsFormMessage> {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
-        let path_input =
-            widget::text_input(fl!("settings-directory-path"), &self.new_directory_path)
-                .on_input(DirectorySettingsFormMessage::UpdateDirectoryPath);
+        let path_input = vec![
+            widget::text_input(
+                fl!("settings-directory-path"),
+                self.new_directory_path
+                    .as_ref()
+                    .map(|path| path.path().to_string_lossy().to_string())
+                    .unwrap_or("".to_string()),
+            )
+            .into(),
+            widget::button::text("Select")
+                .on_press(DirectorySettingsFormMessage::SelectDirectoryPath)
+                .into(),
+        ]
+        .apply(Row::with_children);
 
         // Use radio buttons instead of dropdown to avoid lifetime issues
         let scan_radio = widget::radio(
@@ -209,40 +222,31 @@ impl DirectorySettingsForm {
             .push(ignore_radio)
             .spacing(space_s);
 
-        let tag_editor = self
-            .tag_editor
-            .as_ref()
-            .map(|tag_editor| tag_editor.view().map(Into::into));
-
-        let inherit_toggle = widget::toggler(self.new_directory_inherit)
-            .on_toggle(DirectorySettingsFormMessage::UpdateDirectoryInherit);
-
-        let save_button = widget::button::suggested(fl!("settings-save-directory"))
-            .on_press(DirectorySettingsFormMessage::SaveDirectory);
-
-        let cancel_button = widget::button::standard(fl!("settings-cancel-edit"))
-            .on_press(DirectorySettingsFormMessage::CancelEditDirectory);
-
         section
             .add(settings::item(fl!("settings-directory-path"), path_input))
             .add(settings::item(
                 fl!("settings-directory-action"),
                 action_selection,
             ))
-            .add_maybe(
-                tag_editor
-                    .map(|tag_editor| settings::item(fl!("settings-directory-tags"), tag_editor)),
-            )
+            .add_maybe(self.tag_editor.as_ref().map(|tag_editor| {
+                settings::item(
+                    fl!("settings-directory-tags"),
+                    tag_editor.view().map(Into::into),
+                )
+            }))
             .add(settings::item(
                 fl!("settings-directory-inherit"),
-                inherit_toggle,
+                widget::toggler(self.new_directory_inherit)
+                    .on_toggle(DirectorySettingsFormMessage::UpdateDirectoryInherit),
             ))
-            .add(
-                widget::row()
-                    .push(save_button)
-                    .push(cancel_button)
-                    .spacing(space_s),
-            )
+            .add(settings::item_row(vec![
+                widget::button::suggested(fl!("settings-save-directory"))
+                    .on_press(DirectorySettingsFormMessage::SaveDirectory)
+                    .into(),
+                widget::button::standard(fl!("settings-cancel-edit"))
+                    .on_press(DirectorySettingsFormMessage::CancelEditDirectory)
+                    .into(),
+            ]))
     }
 
     pub fn view<'a>(&'a self) -> Element<'a, DirectorySettingsFormMessage> {
@@ -289,9 +293,25 @@ impl DirectorySettingsForm {
                         .unwrap_or_else(Task::none),
                 }
             }
-            DirectorySettingsFormMessage::UpdateDirectoryPath(path) => {
-                // Update the path input field in the directory editor
-                self.new_directory_path = path;
+            DirectorySettingsFormMessage::SelectDirectoryPath => {
+                let path = self.new_directory_path.clone();
+                task::future(async move {
+                    let directory = AsyncFileDialog::new()
+                        .apply_if(path.is_some(), |dialog| {
+                            // Unwrap is safe because of `is_some()` above
+                            dialog.set_directory(path.as_ref().unwrap().path())
+                        })
+                        .pick_folder()
+                        .await;
+
+                    DirectorySettingsFormMessage::SelectedDirectoryPath(directory)
+                })
+            }
+            DirectorySettingsFormMessage::SelectedDirectoryPath(file_handle) => {
+                // Only overwrite when some file_handle is returned
+                if let Some(path) = file_handle {
+                    self.new_directory_path = Some(path);
+                }
                 Task::none()
             }
             DirectorySettingsFormMessage::UpdateDirectoryAction(action) => {
@@ -306,33 +326,32 @@ impl DirectorySettingsForm {
             }
             DirectorySettingsFormMessage::SaveDirectory => {
                 // Validate and save the directory being edited/added
-                if self.new_directory_path.is_empty() {
-                    Task::none() // TODO: Show error message for empty path
-                } else {
-                    let path_buf = PathBuf::from(&self.new_directory_path);
-                    let expanded_path =
-                        match archive_organizer::ExpandedPath::try_from(path_buf.clone()) {
-                            Ok(path) => path,
-                            Err(_) => return Task::none(), // TODO: Show error message for invalid path
-                        };
+                if let Some(path) = self.new_directory_path.as_ref() {
+                    let path_buf = PathBuf::from(path);
+                    let expanded_path = match archive_organizer::ExpandedPath::try_from(path_buf) {
+                        Ok(path) => path,
+                        Err(_) => return Task::none(), // TODO: Show error message for invalid path
+                    };
 
                     let dir_settings = self.take_directory_settings();
 
                     // reset editor state
                     self.original_settings = None;
-                    self.new_directory_path = String::new();
+                    self.new_directory_path = None;
                     self.new_directory_action = DirectoryAction::Ignore;
                     self.new_directory_inherit = false;
 
                     task::message(DirectorySettingsFormMessage::Out(
                         DirectorySettingsFormOutput::Ok(expanded_path, dir_settings),
                     ))
+                } else {
+                    Task::none() // TODO: Show error message for empty path
                 }
             }
             DirectorySettingsFormMessage::CancelEditDirectory => {
                 // reset the editor state
                 self.original_settings = None;
-                self.new_directory_path = String::new();
+                self.new_directory_path = None;
                 self.new_directory_action = DirectoryAction::Ignore;
                 self.new_directory_inherit = false;
 
