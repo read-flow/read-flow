@@ -9,6 +9,7 @@ pub mod tag;
 
 use std::hash::Hash;
 use std::ops::Deref;
+use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -91,7 +92,7 @@ impl ApplicationModule {
                 .iter()
                 .flat_map(|f| f.parent())
                 .chain(scan_directories)
-                .map(|d| format!("{}", d.display()))
+                .map(|d| d.display().to_string())
                 .unique()
                 .sorted()
                 .collect();
@@ -116,7 +117,7 @@ impl ApplicationModule {
 /// - given `filename` is `my_file.txt`, `extension` is `txt` and both `my_file.txt` and `my_file.1.txt` exist, results in `my_file.2.txt`
 fn to_unique_file(filename: &mut PathBuf, extension: &str) {
     // Use display as a UTF-8 string to compare
-    let filename_display = format!("{}", filename.display());
+    let filename_display = filename.display().to_string();
     assert!(
         filename_display.ends_with(extension),
         "{filename_display} should end with {extension}",
@@ -160,6 +161,10 @@ pub trait Builder: Sized {
     fn apply_if<F>(self, condition: bool, fun: F) -> Self
     where
         F: FnOnce(Self) -> Self;
+
+    fn apply_maybe<F, T>(self, option: Option<T>, fun: F) -> Self
+    where
+        F: FnOnce(Self, T) -> Self;
 }
 
 impl<T> Builder for T {
@@ -168,6 +173,17 @@ impl<T> Builder for T {
         F: FnOnce(Self) -> Self,
     {
         if condition { fun(self) } else { self }
+    }
+
+    fn apply_maybe<F, S>(self, option: Option<S>, fun: F) -> Self
+    where
+        F: FnOnce(Self, S) -> Self,
+    {
+        if let Some(value) = option {
+            fun(self, value)
+        } else {
+            self
+        }
     }
 }
 
@@ -185,6 +201,32 @@ impl ExpandedPath {
     pub fn into_inner(self) -> PathBuf {
         self.0
     }
+
+    pub fn get_directory(&self) -> Option<PathBuf> {
+        let path = self.0.canonicalize().unwrap_or_else(|_| self.0.clone());
+        if path.is_dir() {
+            Some(path.clone())
+        } else if path.is_file() || Some(Component::RootDir) == path.components().next() {
+            path.parent()
+                .map(|dir| dir.into())
+                .or_else(|| std::env::current_dir().ok())
+        } else {
+            std::env::current_dir().ok()
+        }
+    }
+
+    pub fn get_full_path(&self) -> PathBuf {
+        let path = self.0.canonicalize().unwrap_or_else(|_| self.0.clone());
+        if !path.starts_with(std::path::MAIN_SEPARATOR_STR)
+            && !path.starts_with("$")
+            && !path.starts_with("%")
+            && let Ok(joined_path) = std::env::current_dir().map(|dir| dir.join(&path))
+        {
+            joined_path
+        } else {
+            path
+        }
+    }
 }
 
 impl FromStr for ExpandedPath {
@@ -199,7 +241,7 @@ impl TryFrom<PathBuf> for ExpandedPath {
     type Error = std::io::Error;
 
     fn try_from(value: PathBuf) -> Result<Self, Self::Error> {
-        let expanded = expanduser(format!("{}", value.display()))?;
+        let expanded = expanduser(value.display().to_string())?;
         Ok(ExpandedPath(expanded))
     }
 }
@@ -225,7 +267,7 @@ impl Deref for ExpandedPath {
 
 impl std::fmt::Display for ExpandedPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&format!("{}", self.0.to_string_lossy()))
+        f.write_str(&self.0.display().to_string())
     }
 }
 

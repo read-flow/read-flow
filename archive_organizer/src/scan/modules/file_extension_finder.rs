@@ -56,7 +56,7 @@ impl FileModule for FileExtensionFinder {
                 // unwrap is safe, because the file is just added
                 let db_file = self
                     .connection_pool
-                    .select_file_by_path(&format!("{}", file.display()))?
+                    .select_file_by_path(&file.display().to_string())?
                     .unwrap();
 
                 tracing::debug!("inserting tags: {tags:?} for file: {}", db_file.path);
@@ -88,7 +88,7 @@ pub fn to_new_file(file: &Path, extension: &str) -> NewFile {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let fingerprint = stdout.split(' ').next().expect("expected fingerprint");
     NewFile {
-        path: format!("{}", file.display()),
+        path: file.display().to_string(),
         type_: extension.to_owned(),
         size,
         fingerprint: fingerprint.to_string(),

@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use archive_organizer::Builder;
 use archive_organizer::ExpandedPath;
 use archive_organizer::scan::DirectorySettings;
 use archive_organizer::settings::Settings;
@@ -12,12 +13,15 @@ use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
 use cosmic::iced::Length;
+use cosmic::iced_widget::Row;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::container;
 use cosmic::widget::icon;
 use cosmic::widget::settings;
+use rfd::AsyncFileDialog;
+use rfd::FileHandle;
 
 use crate::aggregator::Aggregator;
 use crate::app::ContextView;
@@ -70,12 +74,15 @@ pub enum SettingsMessage {
     TagEditor(TagEditorMessage),
     /// Directory settings form message
     DirectorySettingsForm(DirectorySettingsFormMessage),
+    SelectDatabaseLocation,
+    SelectedDatabaseLocation(Option<FileHandle>),
     /// Save settings to file
     Save,
     /// Settings saved successfully
     SaveComplete,
     /// Settings save failed
     SaveError(String),
+
     /// Directory management messages
     /// Open the directory editor for adding a new directory
     AddDirectory,
@@ -155,10 +162,7 @@ impl SettingsPage {
     /// # Returns
     /// `true` if settings have been modified, `false` otherwise
     fn is_modified(&self) -> bool {
-        self.settings.scan.dry_run != self.original_settings.scan.dry_run
-            || self.settings.ui.private_mode() != self.original_settings.ui.private_mode()
-            || self.settings.ui.private_tags() != self.original_settings.ui.private_tags()
-            || self.settings.scan.directories != self.original_settings.scan.directories
+        self.settings != *self.original_settings
     }
 
     pub fn view(&self) -> Element<'_, SettingsMessage> {
@@ -173,8 +177,14 @@ impl SettingsPage {
             .title(fl!("settings-database-section"))
             .add(settings::item(
                 fl!("settings-database-location"),
-                widget::text::body(self.settings.database.url())
-                    .font(cosmic::font::Font::MONOSPACE),
+                Row::with_children(vec![
+                    widget::text::body(self.settings.database.url())
+                        .font(cosmic::font::Font::MONOSPACE)
+                        .into(),
+                    widget::button::text("Select")
+                        .on_press(SettingsMessage::SelectDatabaseLocation)
+                        .into(),
+                ]),
             ));
         content.push(database_section.into());
 
@@ -221,7 +231,7 @@ impl SettingsPage {
 
                 section.add(
                     settings::item_row(vec![
-                        widget::text::body(format!("{}", path.display()))
+                        widget::text::body(path.display().to_string())
                             .width(Length::FillPortion(3))
                             .into(),
                         widget::text::body(action)
@@ -349,6 +359,40 @@ impl SettingsPage {
                     }
                 }
             },
+            SettingsMessage::SelectDatabaseLocation => {
+                let path = self
+                    .settings
+                    .database
+                    .url()
+                    .parse::<ExpandedPath>()
+                    .unwrap()
+                    .get_full_path();
+                let parent_str = path.parent().map(|path| path.display().to_string());
+                let file_name = path
+                    .file_name()
+                    .map(|file_name| file_name.display().to_string());
+                task::future(async move {
+                    let directory = AsyncFileDialog::new()
+                        .apply_maybe(parent_str, |dialog, path| dialog.set_directory(path))
+                        .apply_maybe(file_name, |dialog, file_name| {
+                            dialog.set_file_name(file_name)
+                        })
+                        .pick_file()
+                        .await;
+
+                    SettingsMessage::SelectedDatabaseLocation(directory)
+                })
+            }
+            SettingsMessage::SelectedDatabaseLocation(file_handle) => {
+                // Only overwrite when some file_handle is returned
+                if let Some(file) = file_handle {
+                    self.settings
+                        .database
+                        .set_url(file.path().display().to_string());
+                    self.save_state = SaveState::Idle;
+                }
+                Task::none()
+            }
             SettingsMessage::AddDirectory => {
                 // Use a special marker path to indicate we're adding a new directory
                 // This triggers the directory editor to show with default values

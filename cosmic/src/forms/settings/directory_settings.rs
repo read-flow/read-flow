@@ -112,7 +112,7 @@ impl DirectorySettingsForm {
             aggregator,
             original_settings: settings,
             tag_editor: None,
-            new_directory_path: Some(FileHandle::from(path.into_inner())),
+            new_directory_path: path.get_directory().map(FileHandle::from),
             new_directory_action: action,
             new_directory_inherit: inherit,
             new_directory_scan_tags: tags.unwrap_or(vec![]),
@@ -192,7 +192,7 @@ impl DirectorySettingsForm {
                 fl!("settings-directory-path"),
                 self.new_directory_path
                     .as_ref()
-                    .map(|path| path.path().to_string_lossy().to_string())
+                    .map(|path| path.path().display().to_string())
                     .unwrap_or("".to_string()),
             )
             .into(),
@@ -328,7 +328,7 @@ impl DirectorySettingsForm {
                 // Validate and save the directory being edited/added
                 if let Some(path) = self.new_directory_path.as_ref() {
                     let path_buf = PathBuf::from(path);
-                    let expanded_path = match archive_organizer::ExpandedPath::try_from(path_buf) {
+                    let expanded_path = match ExpandedPath::try_from(path_buf) {
                         Ok(path) => path,
                         Err(_) => return Task::none(), // TODO: Show error message for invalid path
                     };

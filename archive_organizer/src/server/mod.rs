@@ -29,20 +29,16 @@ use crate::ExpandedPath;
 use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::Status;
+use crate::db;
+use crate::db::dao;
 use crate::db::dao::FileDao;
 use crate::db::dao::FileTagDao;
-use crate::db::dao::{
-    self,
-};
 use crate::db::datasource::DbClient;
-use crate::db::{
-    self,
-};
 use crate::scan;
 use crate::settings;
 use crate::to_unique_file;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(crate = "rocket::serde")]
 pub struct ServerSettings {
     pub download_folder: ExpandedPath,
@@ -368,7 +364,7 @@ async fn upload_file(
 
     let result = application_module
         .connection_pool
-        .select_file_by_path(&format!("{}", target_file.display()))?
+        .select_file_by_path(&target_file.display().to_string())?
         .unwrap();
     Ok(Json((result, vec![]).into()))
 }

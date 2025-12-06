@@ -145,10 +145,10 @@ fn display_path<'a>(path: &'a str) -> Element<'a, DocumentsMessage> {
     let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
     let path: &Path = path.as_ref();
-    let directory = format!("{}", path.parent().unwrap().display());
+    let directory = path.parent().unwrap().display().to_string();
     let filename = path.file_name().unwrap();
     cosmic::iced_widget::column![
-        widget::text(format!("{}", filename.to_string_lossy())),
+        widget::text(filename.display().to_string()),
         widget::text(directory).size(11),
     ]
     .spacing(space_xxs)

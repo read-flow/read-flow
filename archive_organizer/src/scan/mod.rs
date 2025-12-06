@@ -18,18 +18,27 @@ use crate::ApplicationModule;
 use crate::ExpandedPath;
 use crate::db::ConnectionPool;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ScanSettings {
+    #[serde(default)]
     pub dry_run: bool,
+    #[serde(default)]
     pub auto_tags: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
     pub directories: BTreeMap<ExpandedPath, DirectorySettings>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "action")]
 pub enum DirectorySettings {
-    Ignore { inherit: bool },
-    Scan { tags: Vec<String>, inherit: bool },
+    Ignore {
+        inherit: bool,
+    },
+    Scan {
+        #[serde(default)]
+        tags: Vec<String>,
+        inherit: bool,
+    },
 }
 
 impl DirectorySettings {

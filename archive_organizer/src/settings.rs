@@ -12,12 +12,14 @@ use crate::scan::ScanSettings;
 #[cfg(feature = "server")]
 use crate::server::ServerSettings;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Settings {
     pub database: DbSettings,
     #[cfg(feature = "server")]
     pub server: ServerSettings,
+    #[serde(default)]
     pub scan: ScanSettings,
+    #[serde(default)]
     pub ui: UiSettings,
 }
 
@@ -84,10 +86,11 @@ pub fn save(settings: &Settings) -> Result<(), SettingsError> {
     Ok(())
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct UiSettings {
     #[serde(default)]
     private_mode: bool,
+    #[serde(default)]
     private_tags: Vec<String>,
 }
 
