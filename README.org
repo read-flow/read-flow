@@ -50,3 +50,7 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] Server downloads files into file specific folder: "{download_folder}/{filename}/{filename}.{extension}"
       This way related books, with the same name, but different extension will be stored in the same folder,
       Calibre can then import them as related to the same book.
+- [ ] Make aggregator fail-safe for remotes that are unavailable at that moment. (use status endpoint)
+- [ ] Use same approach for ~Out~ messages, ~settings.rs~ uses different approach then ~page/mod.rs~
+- [ ] Make settings page edit only the file, and apply the commandline arguments for the runtime settings
+- [ ] Some settings, like the database url, are only effective after a restart, notify the user when they change those
