@@ -1,3 +1,4 @@
+use std::fmt;
 use std::process::ExitStatus;
 
 use archive_organizer::api::File;
@@ -43,8 +44,8 @@ impl ClientSelector {
     }
 }
 
-impl std::fmt::Display for ClientSelector {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for ClientSelector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ClientSelector::Local => write!(f, "Local"),
             ClientSelector::Remote(url) => {
@@ -65,6 +66,17 @@ impl Client {
         match self {
             Client::Local(_) => ClientSelector::Local,
             Client::Remote(client) => ClientSelector::Remote(client.base_url.clone()),
+        }
+    }
+}
+
+impl fmt::Debug for Client {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Client::Local(_) => write!(f, "Local database client"),
+            Client::Remote(remote) => {
+                write!(f, "Remote HTTP client: {}", remote.base_url())
+            }
         }
     }
 }

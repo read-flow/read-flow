@@ -7,6 +7,7 @@ pub mod server;
 pub mod settings;
 pub mod tag;
 
+use std::fmt;
 use std::hash::Hash;
 use std::ops::Deref;
 use std::path::Component;
@@ -265,9 +266,9 @@ impl Deref for ExpandedPath {
     }
 }
 
-impl std::fmt::Display for ExpandedPath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0.display().to_string())
+impl fmt::Display for ExpandedPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", &self.0.display())
     }
 }
 

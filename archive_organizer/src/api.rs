@@ -1,5 +1,6 @@
 use std::fmt::Display;
 use std::fmt::Formatter;
+use std::fmt::Result as FmtResult;
 use std::process::ExitStatus;
 use std::result::Result;
 use std::str::FromStr;
@@ -21,7 +22,7 @@ pub enum ReadingStatus {
 }
 
 impl Display for ReadingStatus {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{self:?}")
     }
 }
