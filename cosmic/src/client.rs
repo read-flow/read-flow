@@ -18,6 +18,8 @@ pub enum FilesClientError {
     Remote(client::Error),
     #[error("client not found: {0:?}")]
     ClientNotFound(ClientSelector),
+    #[error("no sources available for document")]
+    NoSourcesAvailable,
 }
 
 impl From<dao::Error> for FilesClientError {
