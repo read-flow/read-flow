@@ -3,7 +3,7 @@ use std::process::ExitStatus;
 use std::sync::Arc;
 
 use provider::r#async::Cache;
-use provider::r#async::Expiring;
+use provider::r#async::MappingProvider;
 use provider::r#async::Provider;
 use tokio::sync::RwLock;
 
@@ -15,63 +15,58 @@ use crate::client::ClientSelector;
 use crate::client::FilesClientError;
 
 type DocumentCache = Arc<Cache<Documents, Arc<RwLock<Aggregator>>>>;
+type TagsCache =
+    Cache<Vec<String>, MappingProvider<DocumentCache, fn(Documents) -> Vec<String>, Documents>>;
+
+/// Extract unique sorted tags from documents.
+fn extract_tags(documents: Documents) -> Vec<String> {
+    let mut tags = documents
+        .into_iter()
+        .flat_map(|document| document.metadata.tags)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    tags.sort();
+    tags
+}
 
 pub struct DocumentProvider {
     pub(crate) aggregator: Arc<RwLock<Aggregator>>,
     document_cache: DocumentCache,
-    cached_tags: RwLock<Option<Vec<String>>>,
+    tags_cache: TagsCache,
 }
 
 impl DocumentProvider {
     pub fn new(aggregator: Aggregator) -> Self {
         let aggregator = Arc::new(RwLock::new(aggregator));
         let document_cache = Arc::new(aggregator.clone().cache());
+        let tags_cache = document_cache
+            .clone()
+            .map(extract_tags as fn(Documents) -> Vec<String>)
+            .cache();
         Self {
             aggregator,
             document_cache,
-            cached_tags: Default::default(),
+            tags_cache,
         }
     }
 
     pub async fn set_expired(&self) {
-        // First clear aggregator, to ensure cached_tags are not refreshed before.
+        // Invalidate both caches - document cache first, then tags cache
         self.document_cache.set_expired().await;
-
-        let mut cached_tags = self.cached_tags.write().await;
-        *cached_tags = None;
+        self.tags_cache.set_expired().await;
     }
 
     pub async fn get_documents(&self) -> Result<Documents, FilesClientError> {
         self.document_cache.provide().await
     }
 
+    /// Get all unique tags from all documents.
+    ///
+    /// Uses a cached mapping provider that derives tags from the document cache.
+    /// The cache is automatically invalidated when the document cache expires.
     pub async fn get_all_tags(&self) -> Result<Vec<String>, FilesClientError> {
-        {
-            let cached_tags = self.cached_tags.read().await;
-            if !cached_tags.is_none() && !self.document_cache.is_expired().await {
-                // unwrap is safe, because tags are not expired
-                return Ok(cached_tags.as_ref().unwrap().clone());
-            }
-        }
-
-        let mut cached_tags = self.cached_tags.write().await;
-        // Double check after aquiring write lock
-        if !cached_tags.is_none() && !self.document_cache.is_expired().await {
-            // unwrap is safe, because tags are not expired
-            return Ok(cached_tags.as_ref().unwrap().clone());
-        }
-
-        let documents = self.get_documents().await?;
-        let mut tags = documents
-            .into_iter()
-            .flat_map(|document| document.metadata.tags)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        tags.sort();
-        *cached_tags = Some(tags.clone());
-        Ok(tags)
+        self.tags_cache.provide().await
     }
 
     /// Get a single document by fingerprint.
