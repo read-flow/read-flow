@@ -221,11 +221,7 @@ impl DocumentList {
                 task::message(DocumentListMessage::FocusSearchInput),
                 task::future(async move {
                     DocumentListMessage::SetAvailableSources(
-                        document_provider_clone
-                            .aggregator
-                            .read()
-                            .await
-                            .client_selectors(),
+                        document_provider_clone.get_client_selectors().await,
                     )
                 }),
             ]),

@@ -250,12 +250,10 @@ impl Pages {
             PageMessage::AddRemote(url) => {
                 let document_provider = self.document_provider.clone();
                 task::future(async move {
-                    let mut aggregator = document_provider.aggregator.write().await;
                     tracing::info!("adding remote client: {url}");
-                    aggregator.add(FilesClient::new(url).unwrap().into());
-
-                    tracing::info!("expiring document provider");
-                    document_provider.set_expired().await;
+                    document_provider
+                        .add_client(FilesClient::new(url).unwrap().into())
+                        .await;
                     PageMessage::Refresh
                 })
             }
@@ -263,12 +261,8 @@ impl Pages {
                 let selector = ClientSelector::Remote(url.clone());
                 let document_provider = self.document_provider.clone();
                 task::future(async move {
-                    let mut aggregator = document_provider.aggregator.write().await;
                     tracing::info!("removing remote client: {url}");
-                    aggregator.remove(&selector);
-
-                    tracing::info!("expiring document provider");
-                    document_provider.set_expired().await;
+                    document_provider.remove_client(&selector).await;
                     PageMessage::Refresh
                 })
             }

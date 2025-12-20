@@ -10,6 +10,8 @@ use tokio::sync::RwLock;
 use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
 use crate::aggregator::Documents;
+use crate::client::Client;
+use crate::client::ClientSelector;
 use crate::client::FilesClientError;
 
 type DocumentCache = Arc<Cache<Documents, Arc<RwLock<Aggregator>>>>;
@@ -134,6 +136,29 @@ impl DocumentProvider {
     /// Prefers local sources over remote sources.
     pub async fn open_document(&self, document: Document) -> Result<ExitStatus, FilesClientError> {
         self.aggregator.read().await.xdg_open_file(document).await
+    }
+
+    /// Get the list of client selectors.
+    ///
+    /// Returns the selectors for all registered clients.
+    pub async fn get_client_selectors(&self) -> Vec<ClientSelector> {
+        self.aggregator.read().await.client_selectors()
+    }
+
+    /// Add a client to the aggregator.
+    ///
+    /// Automatically invalidates the cache after adding.
+    pub async fn add_client(&self, client: Client) {
+        self.aggregator.write().await.add(client);
+        self.set_expired().await;
+    }
+
+    /// Remove a client from the aggregator.
+    ///
+    /// Automatically invalidates the cache after removing.
+    pub async fn remove_client(&self, selector: &ClientSelector) {
+        self.aggregator.write().await.remove(selector);
+        self.set_expired().await;
     }
 }
 
