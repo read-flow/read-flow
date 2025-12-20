@@ -297,6 +297,7 @@ dependencies = [
  "indexmap",
  "libcosmic",
  "open",
+ "provider",
  "rand 0.9.2",
  "rfd 0.16.0",
  "rust-embed",
@@ -4964,6 +4965,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eb8486b569e12e2c32ad3e204dbaba5e4b5b216e9367044f25f1dba42341773"
 
 [[package]]
+name = "provider"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+ "trait-variant",
+]
+
+[[package]]
 name = "pwd"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6753,6 +6762,17 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "trait-variant"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70977707304198400eb4835a78f6a9f928bf41bba420deb8fdb175cd965d77a7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]
