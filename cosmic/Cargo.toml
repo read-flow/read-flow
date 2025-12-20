@@ -31,6 +31,7 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 archive-organizer = { path = "../archive_organizer", default-features = false }
+provider = { path = "../provider" }
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"

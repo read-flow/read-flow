@@ -106,11 +106,6 @@ impl TagEditor {
         )
     }
 
-    /// Get the currently selected tags
-    pub fn tags(&self) -> &[String] {
-        &self.selected_tags
-    }
-
     /// View the tag editor
     pub fn view(&self) -> Element<'_, TagEditorMessage> {
         let cosmic_theme::Spacing {

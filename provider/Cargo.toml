@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 tokio = { workspace = true, features = ["rt", "test-util", "macros"] }
+tracing.workspace = true
 trait-variant.workspace = true

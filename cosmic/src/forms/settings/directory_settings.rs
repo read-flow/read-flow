@@ -21,11 +21,11 @@ use cosmic::widget::settings::Section;
 use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 
-use crate::aggregator::Aggregator;
 use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
 use crate::component::tag_editor::TagEditorOutput;
 use crate::cosmic_ext::ActionExt;
+use crate::document_provider::DocumentProvider;
 use crate::fl;
 
 /// Directory action for editing
@@ -42,7 +42,7 @@ pub enum DirectoryAction {
 }
 
 pub struct DirectorySettingsForm {
-    aggregator: Arc<Aggregator>,
+    document_provider: Arc<DocumentProvider>,
     /// Original settings, or `None` if this is a new entry
     original_settings: Option<(ExpandedPath, DirectorySettings)>,
     /// Tag editor for private tags
@@ -96,7 +96,7 @@ impl From<TagEditorMessage> for DirectorySettingsFormMessage {
 impl DirectorySettingsForm {
     pub fn new(
         settings: Option<(ExpandedPath, DirectorySettings)>,
-        aggregator: Arc<Aggregator>,
+        document_provider: Arc<DocumentProvider>,
     ) -> (Self, Task<Action<DirectorySettingsFormMessage>>) {
         let (path, action, inherit, tags) = match settings.clone() {
             Some((path, DirectorySettings::Scan { inherit, tags })) => {
@@ -109,7 +109,7 @@ impl DirectorySettingsForm {
         };
 
         let mut form = Self {
-            aggregator,
+            document_provider,
             original_settings: settings,
             tag_editor: None,
             new_directory_path: path.get_directory().map(FileHandle::from),
@@ -150,14 +150,14 @@ impl DirectorySettingsForm {
     }
 
     fn create_tag_editor(&mut self) -> Task<Action<DirectorySettingsFormMessage>> {
-        let aggregator = self.aggregator.clone();
+        let document_provider = self.document_provider.clone();
 
         let (tag_editor, tag_editor_task) = TagEditor::new(
             Box::new(move || {
-                let aggregator = aggregator.clone();
+                let document_provider = document_provider.clone();
                 Box::pin(async move {
-                    aggregator
-                        .get_file_tags()
+                    document_provider
+                        .get_all_tags()
                         .await
                         .map_err(|err| format!("{err}"))
                 })

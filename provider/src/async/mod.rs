@@ -235,6 +235,7 @@ where
         {
             let value = self.value.read().await;
             if let Some(ref cached) = *value {
+                tracing::debug!("return value from cache, after read lock");
                 return Ok(cached.clone());
             }
         }
@@ -243,11 +244,15 @@ where
         let mut value = self.value.write().await;
         // Double-check after acquiring write lock
         if let Some(ref cached) = *value {
+            tracing::debug!("return value from cache, after write lock");
             return Ok(cached.clone());
         }
 
+        tracing::debug!("retrieve value from provider");
         let new_value = self.provider.provide().await?;
+        tracing::debug!("store retrieved value in cache");
         *value = Some(new_value.clone());
+        tracing::debug!("return retrieved value");
         Ok(new_value)
     }
 }

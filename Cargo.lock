@@ -4969,6 +4969,7 @@ name = "provider"
 version = "0.1.0"
 dependencies = [
  "tokio",
+ "tracing",
  "trait-variant",
 ]
 

@@ -17,18 +17,18 @@ use cosmic::widget::Column;
 use cosmic::widget::Row;
 use cosmic::widget::text;
 
-use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
 use crate::app::ContextView;
 use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
 use crate::component::tag_editor::TagEditorOutput;
 use crate::cosmic_ext::ActionExt;
+use crate::document_provider::DocumentProvider;
 use crate::fl;
 
 pub struct DocumentDetails {
     document: Document,
-    aggregator: Arc<Aggregator>,
+    document_provider: Arc<DocumentProvider>,
     tag_editor: TagEditor,
 }
 
@@ -56,17 +56,17 @@ pub enum DocumentDetailsMessage {
 impl DocumentDetails {
     pub fn new(
         document: Document,
-        aggregator: Arc<Aggregator>,
+        document_provider: Arc<DocumentProvider>,
     ) -> (Self, Task<Action<DocumentDetailsMessage>>) {
         let initial_tags = document.metadata.tags.clone();
-        let aggregator_clone = aggregator.clone();
+        let document_provider_clone = document_provider.clone();
 
         let (tag_editor, tag_editor_task) = TagEditor::new(
             Box::new(move || {
-                let aggregator = aggregator_clone.clone();
+                let document_provider = document_provider_clone.clone();
                 Box::pin(async move {
-                    aggregator
-                        .get_file_tags()
+                    document_provider
+                        .get_all_tags()
                         .await
                         .map_err(|err| format!("{err}"))
                 })
@@ -80,7 +80,7 @@ impl DocumentDetails {
 
         let file_details = DocumentDetails {
             document,
-            aggregator,
+            document_provider,
             tag_editor,
         };
 
@@ -275,13 +275,17 @@ impl DocumentDetails {
             DocumentDetailsMessage::UpdateReadingStatus(status) => {
                 let mut updated_document = self.document.clone();
                 updated_document.metadata.status = status;
-                let aggregator = self.aggregator.clone();
+                let document_provider = self.document_provider.clone();
 
                 task::future(async move {
-                    let result = aggregator
+                    let result = document_provider
+                        .aggregator
+                        .read()
+                        .await
                         .update_document(updated_document)
                         .await
                         .map_err(|err| format!("{err}"));
+                    document_provider.set_expired().await;
                     DocumentDetailsMessage::ReadingStatusUpdated(result)
                 })
             }
@@ -299,9 +303,15 @@ impl DocumentDetails {
             }
             DocumentDetailsMessage::OpenDocument => {
                 let document = self.document.clone();
-                let aggregator = self.aggregator.clone();
+                let document_provider = self.document_provider.clone();
                 task::future(async move {
-                    if let Err(e) = aggregator.xdg_open_file(document).await {
+                    if let Err(e) = document_provider
+                        .aggregator
+                        .read()
+                        .await
+                        .xdg_open_file(document)
+                        .await
+                    {
                         tracing::error!("Failed to open file: {e}");
                     }
                     DocumentDetailsMessage::RefreshDocument
@@ -333,13 +343,21 @@ impl DocumentDetails {
             }
             DocumentDetailsMessage::RefreshDocument => {
                 let document = self.document.clone();
-                let aggregator = self.aggregator.clone();
+                let document_provider = self.document_provider.clone();
 
                 task::future(async move {
-                    let result = aggregator
-                        .reload_document(document)
+                    let result = document_provider
+                        .get_documents()
                         .await
-                        .map_err(|err| format!("{err}"));
+                        .map_err(|err| format!("{err}"))
+                        .and_then(|documents| {
+                            documents
+                                .get(&document.metadata.fingerprint)
+                                .cloned()
+                                .ok_or_else(|| {
+                                    fl!("document-details-document-no-longer-accessible")
+                                })
+                        });
                     DocumentDetailsMessage::DocumentRefreshed(result)
                 })
             }
@@ -368,27 +386,46 @@ impl DocumentDetails {
 
     fn add_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
         let document = self.document.clone();
-        let client = self.aggregator.clone();
+        let document_provider_1 = self.document_provider.clone();
+        let document_provider_2 = self.document_provider.clone();
 
         task::future(async move {
-            match client.add_document_tags(document, vec![tag]).await {
+            match document_provider_1
+                .aggregator
+                .read()
+                .await
+                .add_document_tags(document, vec![tag])
+                .await
+            {
                 Ok(tags) => DocumentDetailsMessage::TagsAdded(Ok(tags)),
                 Err(err) => DocumentDetailsMessage::TagsAdded(Err(format!("{err}"))),
             }
         })
+        .chain(task::future(async move {
+            document_provider_2.set_expired().await;
+            DocumentDetailsMessage::RefreshDocument
+        }))
     }
 
     fn remove_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
         let document = self.document.clone();
-        let aggregator = self.aggregator.clone();
+        let document_provider_1 = self.document_provider.clone();
+        let document_provider_2 = self.document_provider.clone();
 
         task::future(async move {
-            let result = aggregator
+            let result = document_provider_1
+                .aggregator
+                .read()
+                .await
                 .delete_document_tags(document, vec![tag])
                 .await
                 .map_err(|err| format!("{err}"));
             DocumentDetailsMessage::TagsRemoved(result)
         })
+        .chain(task::future(async move {
+            document_provider_2.set_expired().await;
+            DocumentDetailsMessage::RefreshDocument
+        }))
     }
 }
 

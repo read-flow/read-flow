@@ -20,7 +20,6 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
 
-use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
 use crate::aggregator::Documents;
 use crate::app::ContextView;
@@ -34,6 +33,7 @@ use crate::component::tag_filter::TagFilter;
 use crate::component::tag_filter::TagFilterMessage;
 use crate::component::tag_filter::TagFilterOutput;
 use crate::cosmic_ext::ActionExt;
+use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::state::filtered::Filtered;
 
@@ -81,7 +81,7 @@ impl fmt::Display for DocumentSortOption {
 }
 
 pub struct DocumentList {
-    pub(super) aggregator: Arc<Aggregator>,
+    pub(super) document_provider: Arc<DocumentProvider>,
     archive: DocumentsComponent,
     is_filtering: bool,                     // Track if filtering is in progress
     search_query: String,                   // The search query string
@@ -118,6 +118,7 @@ pub enum DocumentListMessage {
     ClearSourceFilter,
     TagFilter(TagFilterMessage),
     DocumentsComponent(DocumentsMessage),
+    SetAvailableSources(Vec<ClientSelector>),
     Out(DocumentListOutput),
 }
 
@@ -180,20 +181,29 @@ impl DocumentList {
         })
     }
 
-    pub fn new(aggregator: Arc<Aggregator>) -> (Self, Task<Action<DocumentListMessage>>) {
-        let aggregator_clone = aggregator.clone();
+    pub fn new(
+        document_provider: Arc<DocumentProvider>,
+    ) -> (Self, Task<Action<DocumentListMessage>>) {
+        let document_provider_clone = document_provider.clone();
         let tags_fetcher = Box::new(move || {
-            let agg = aggregator_clone.clone();
-            Box::pin(async move { agg.get_file_tags().await.map_err(|e| format!("{e}")) })
+            let document_provider_clone = document_provider_clone.clone();
+            Box::pin(async move {
+                document_provider_clone
+                    .get_all_tags()
+                    .await
+                    .map_err(|e| format!("{e}"))
+            })
                 as std::pin::Pin<
                     Box<dyn std::future::Future<Output = Result<Vec<String>, String>> + Send>,
                 >
         });
         let (tag_filter, tag_filter_init) = TagFilter::new(tags_fetcher);
-        let available_sources = aggregator.client_selectors();
+
+        let document_provider_clone = document_provider.clone();
+
         (
             Self {
-                aggregator,
+                document_provider,
                 archive: DocumentsComponent::default(),
                 search_query: String::new(),
                 is_filtering: false,
@@ -203,12 +213,21 @@ impl DocumentList {
                 status_filter: None,
                 tag_filter,
                 source_filter: None,
-                available_sources,
+                available_sources: Default::default(),
             },
             Task::batch(vec![
                 tag_filter_init.map(ActionExt::map_into),
                 task::message(DocumentListMessage::LoadArchive),
                 task::message(DocumentListMessage::FocusSearchInput),
+                task::future(async move {
+                    DocumentListMessage::SetAvailableSources(
+                        document_provider_clone
+                            .aggregator
+                            .read()
+                            .await
+                            .client_selectors(),
+                    )
+                }),
             ]),
         )
     }
@@ -372,11 +391,11 @@ impl DocumentList {
         match message {
             DocumentListMessage::LoadArchive => {
                 self.archive.documents = DocumentState::Loading;
-                let aggregator = self.aggregator.clone();
+                let document_provider = self.document_provider.clone();
                 task::future({
-                    let aggregator = aggregator.clone();
+                    let document_provider = document_provider.clone();
                     async move {
-                        match aggregator.aggregate().await {
+                        match document_provider.get_documents().await {
                             Ok(documents) => DocumentListMessage::Loaded(documents),
                             Err(error) => DocumentListMessage::LoadingFailed(format!("{error}")),
                         }
@@ -515,6 +534,10 @@ impl DocumentList {
                 },
                 msg => self.archive.update(msg).map(ActionExt::map_into),
             },
+            DocumentListMessage::SetAvailableSources(client_selectors) => {
+                self.available_sources = client_selectors;
+                Task::none()
+            }
             DocumentListMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }

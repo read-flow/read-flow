@@ -23,12 +23,12 @@ use cosmic::widget::settings;
 use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 
-use crate::aggregator::Aggregator;
 use crate::app::ContextView;
 use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
 use crate::component::tag_editor::TagEditorOutput;
 use crate::cosmic_ext::ActionExt;
+use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::forms::settings::directory_settings::DirectorySettingsForm;
 use crate::forms::settings::directory_settings::DirectorySettingsFormMessage;
@@ -45,7 +45,7 @@ pub enum SaveState {
 
 pub struct SettingsPage {
     /// Aggregator
-    aggregator: Arc<Aggregator>,
+    document_provider: Arc<DocumentProvider>,
     /// Original settings (for comparison)
     original_settings: Arc<Settings>,
     /// Editable copy of settings
@@ -119,16 +119,15 @@ impl From<DirectorySettingsFormMessage> for SettingsMessage {
 impl SettingsPage {
     pub fn new(
         settings: Arc<Settings>,
-        aggregator: Arc<Aggregator>,
+        document_provider: Arc<DocumentProvider>,
     ) -> (Self, Task<Action<SettingsMessage>>) {
-        let my_aggregator = aggregator.clone();
+        let document_provider_clone = document_provider.clone();
         let (tag_editor, tag_editor_task) = TagEditor::new(
             Box::new(move || {
-                let aggregator = my_aggregator.clone();
+                let document_provider = document_provider_clone.clone();
                 Box::pin(async move {
-                    aggregator
-                        .clone()
-                        .get_file_tags()
+                    document_provider
+                        .get_all_tags()
                         .await
                         .map_err(|err| format!("{err}"))
                 })
@@ -142,7 +141,7 @@ impl SettingsPage {
 
         (
             Self {
-                aggregator: aggregator.clone(),
+                document_provider: document_provider.clone(),
                 original_settings: settings.clone(),
                 settings: (*settings).clone(),
                 tag_editor,
@@ -398,7 +397,7 @@ impl SettingsPage {
                 // This triggers the directory editor to show with default values
                 self.editing_directory = Some(PathBuf::from("__new_directory__"));
                 let (directory_settings_form, initialize) =
-                    DirectorySettingsForm::new(None, self.aggregator.clone());
+                    DirectorySettingsForm::new(None, self.document_provider.clone());
                 self.directory_settings_form = Some(directory_settings_form);
                 initialize.map(ActionExt::map_into)
             }
@@ -422,7 +421,7 @@ impl SettingsPage {
 
                 let (directory_settings_form, initialize) = DirectorySettingsForm::new(
                     Some((expanded_path, dir_settings)),
-                    self.aggregator.clone(),
+                    self.document_provider.clone(),
                 );
                 self.directory_settings_form = Some(directory_settings_form);
                 initialize.map(ActionExt::map_into)

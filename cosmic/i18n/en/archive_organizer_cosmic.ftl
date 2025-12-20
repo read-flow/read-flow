@@ -39,6 +39,7 @@ document-details-tags = Tags
 document-details-technical = Technical Details
 document-details-type = Type
 document-details-unknown = Unknown
+document-details-document-no-longer-accessible = Document no longer accessible
 
 # Tag editor
 tag-editor-add = Add

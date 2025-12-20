@@ -11,20 +11,15 @@ use archive_organizer::api::FileDataSource;
 use archive_organizer::api::ReadingStatus;
 use futures_util::stream;
 use futures_util::stream::StreamExt;
+use provider::r#async::Provider;
 
 use crate::client::Client;
 use crate::client::ClientSelector;
 use crate::client::FilesClientError;
 
-#[derive(Clone)]
 pub struct Aggregator {
     clients: HashMap<ClientSelector, Client>,
 }
-
-unsafe impl Send for Aggregator {}
-unsafe impl Sync for Aggregator {}
-unsafe impl Send for Documents {}
-unsafe impl Sync for Documents {}
 
 impl Aggregator {
     pub fn new(clients: Vec<Client>) -> Self {
@@ -36,8 +31,28 @@ impl Aggregator {
         }
     }
 
+    pub async fn add_available(&mut self, clients: Vec<Client>) {
+        stream::iter(clients)
+            .fold(self, |acc, client| async move {
+                match client.status().await {
+                    Ok(_) => {
+                        acc.add(client);
+                    }
+                    Err(error) => {
+                        tracing::error!("could not get status for {}: {error}", client.selector())
+                    }
+                }
+                acc
+            })
+            .await;
+    }
+
     pub fn add(&mut self, client: Client) -> Option<Client> {
         self.clients.insert(client.selector(), client)
+    }
+
+    pub fn remove(&mut self, selector: &ClientSelector) -> Option<Client> {
+        self.clients.remove(selector)
     }
 
     pub fn client_for(&self, selector: &ClientSelector) -> Option<&Client> {
@@ -70,7 +85,7 @@ impl Aggregator {
                 .await;
 
         // Process results and aggregate documents
-        for result in results {
+        for result in results.into_iter().filter(Result::is_ok) {
             let (selector, files) = result?;
             for file in files {
                 documents.push((selector.clone(), file).into());
@@ -78,18 +93,6 @@ impl Aggregator {
         }
 
         Ok(documents)
-    }
-
-    pub async fn get_file_tags(&self) -> Result<Vec<String>, FilesClientError> {
-        let tags = self
-            .aggregate()
-            .await?
-            .into_iter()
-            .flat_map(|document| document.metadata.tags)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
-        Ok(tags)
     }
 
     fn iter_document(&self, document: Document) -> impl Iterator<Item = (Client, File)> {
@@ -109,7 +112,10 @@ impl Aggregator {
             .await;
 
         // Process results and return first error
-        results.into_iter().collect::<Result<Vec<_>, _>>()?;
+        results
+            .into_iter()
+            .filter(Result::is_ok)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(())
     }
@@ -140,37 +146,12 @@ impl Aggregator {
             .await;
 
         // Process results and return first error
-        results.into_iter().collect::<Result<Vec<_>, _>>()?;
+        results
+            .into_iter()
+            .filter(Result::is_ok)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(())
-    }
-
-    pub async fn reload_document(&self, document: Document) -> Result<Document, FilesClientError> {
-        let number_of_sources = document.sources.len();
-        let files: Vec<Result<(ClientSelector, Option<File>), FilesClientError>> =
-            stream::iter(self.iter_document(document))
-                .map(|(client, file)| async move {
-                    Ok((client.selector(), client.get_file(file.id).await?))
-                })
-                .buffer_unordered(number_of_sources)
-                .collect()
-                .await;
-
-        let documents = files
-            .into_iter()
-            .filter_map(|result| match result {
-                Ok((selector, Some(file))) => Some(Ok((selector, file).into())),
-                Ok((_, None)) => None,
-                Err(err) => Some(Err(err)),
-            })
-            .collect::<Result<Vec<Document>, FilesClientError>>()?;
-
-        let mut retval = Documents::default();
-        for document in documents {
-            retval.push(document);
-        }
-
-        Ok(retval.into_single_document())
     }
 
     pub async fn add_document_tags(
@@ -191,7 +172,7 @@ impl Aggregator {
 
         // Process results and aggregate tags
         let mut retval = HashSet::new();
-        for result in results {
+        for result in results.into_iter().filter(Result::is_ok) {
             retval.extend(result?);
         }
 
@@ -199,6 +180,14 @@ impl Aggregator {
         let mut tags: Vec<_> = retval.into_iter().collect();
         tags.sort();
         Ok(tags)
+    }
+}
+
+impl Provider<Documents> for Aggregator {
+    type Error = FilesClientError;
+
+    async fn provide(&self) -> Result<Documents, Self::Error> {
+        self.aggregate().await
     }
 }
 
@@ -296,9 +285,8 @@ impl Documents {
         self.0.into_values()
     }
 
-    pub fn into_single_document(self) -> Document {
-        assert_eq!(self.0.len(), 1);
-        self.into_iter().next().unwrap()
+    pub fn get(&self, fingerprint: &str) -> Option<&Document> {
+        self.0.get(fingerprint)
     }
 }
 

@@ -54,3 +54,5 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] Use same approach for ~Out~ messages, ~settings.rs~ uses different approach then ~page/mod.rs~
 - [ ] Make settings page edit only the file, and apply the commandline arguments for the runtime settings
 - [ ] Some settings, like the database url, are only effective after a restart, notify the user when they change those
+- [ ] After adding a source, add the source to the active aggregator (needs Arc<Mutex<Aggregator>>)
+- [ ] =page/mod.rs= contains a lot of initialization code (and messages) that might need to be handled by =app.rs=

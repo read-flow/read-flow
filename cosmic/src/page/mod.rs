@@ -26,7 +26,9 @@ use url::Url;
 use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
 use crate::app::ContextView;
+use crate::client::ClientSelector;
 use crate::cosmic_ext::ActionExt;
+use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::page::document_details::DocumentDetails;
 use crate::page::document_details::DocumentDetailsMessage;
@@ -43,6 +45,8 @@ use crate::page::sources::SourcesPage;
 type Fingerprint = String;
 
 pub struct Pages {
+    document_provider: Arc<DocumentProvider>,
+
     sources: SourcesPage,
     documents: DocumentList,
     document_details: IndexMap<Fingerprint, DocumentDetails>,
@@ -75,6 +79,7 @@ pub enum PageMessage {
     OpenDocumentDetails(Document),
     CloseDocumentDetails(Fingerprint),
     Settings(SettingsMessage),
+    Refresh,
     Out(PageOutput),
 }
 
@@ -127,12 +132,14 @@ impl Pages {
             .chain(Some(db_client.into()))
             .collect::<Vec<_>>();
 
-        let aggregator = Arc::new(Aggregator::new(clients));
+        let document_provider = Arc::new(DocumentProvider::new(Aggregator::new(clients)));
 
-        let (settings, init_settings) =
-            SettingsPage::new(application_module.settings.clone(), aggregator.clone());
+        let (settings, init_settings) = SettingsPage::new(
+            application_module.settings.clone(),
+            document_provider.clone(),
+        );
 
-        let (documents, init_documents) = DocumentList::new(aggregator);
+        let (documents, init_documents) = DocumentList::new(document_provider.clone());
 
         let tasks = vec![
             init_sources.map(ActionExt::map_into),
@@ -142,6 +149,7 @@ impl Pages {
 
         (
             Self {
+                document_provider,
                 sources,
                 documents,
                 document_details: Default::default(),
@@ -217,19 +225,52 @@ impl Pages {
     pub fn update(&mut self, message: PageMessage) -> Task<Action<PageMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
+            PageMessage::Refresh => {
+                let mut messages = self
+                    .document_details
+                    .iter()
+                    .map(|(fingerprint, _)| {
+                        task::message(PageMessage::DocumentDetails(
+                            fingerprint.clone(),
+                            DocumentDetailsMessage::RefreshDocument,
+                        ))
+                    })
+                    .collect::<Vec<_>>();
+                messages.push(task::message(PageMessage::from(
+                    DocumentListMessage::LoadArchive,
+                )));
+                Task::batch(messages)
+            }
             PageMessage::DocumentDetails(fingerprint, message) => self.document_details
                 [&fingerprint]
                 .update(message)
                 .map(move |action| {
                     action.map(|msg| map_document_details_message(fingerprint.clone(), msg))
                 }),
-            PageMessage::AddRemote(_url) => {
-                // TODO: Update aggregator, and use Arc<Aggregator> everywhere
-                Task::none()
+            PageMessage::AddRemote(url) => {
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    let mut aggregator = document_provider.aggregator.write().await;
+                    tracing::info!("adding remote client: {url}");
+                    aggregator.add(FilesClient::new(url).unwrap().into());
+
+                    tracing::info!("expiring document provider");
+                    document_provider.set_expired().await;
+                    PageMessage::Refresh
+                })
             }
-            PageMessage::DeleteRemote(_url) => {
-                // TODO: Update aggregator
-                Task::none()
+            PageMessage::DeleteRemote(url) => {
+                let selector = ClientSelector::Remote(url.clone());
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    let mut aggregator = document_provider.aggregator.write().await;
+                    tracing::info!("removing remote client: {url}");
+                    aggregator.remove(&selector);
+
+                    tracing::info!("expiring document provider");
+                    document_provider.set_expired().await;
+                    PageMessage::Refresh
+                })
             }
             PageMessage::Sources(sources_message) => self
                 .sources
@@ -263,7 +304,7 @@ impl Pages {
                     let fingerprint_1 = fingerprint.clone();
                     let fingerprint_2 = fingerprint.clone();
                     let (document_details, initialization) =
-                        DocumentDetails::new(document, self.documents.aggregator.clone());
+                        DocumentDetails::new(document, self.documents.document_provider.clone());
                     self.document_details
                         .insert(fingerprint.clone(), document_details);
                     initialization
