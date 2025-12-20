@@ -305,16 +305,11 @@ impl Document {
 
     /// Returns sources in priority order: local sources first, then remote sources.
     pub fn sources_by_priority(&self) -> Vec<&DocumentSource> {
-        let mut local: Vec<_> = self
+        let (mut local, mut remote) = self
             .sources
             .iter()
-            .filter(|s| s.client.is_local())
-            .collect();
-        let mut remote: Vec<_> = self
-            .sources
-            .iter()
-            .filter(|s| !s.client.is_local())
-            .collect();
+            .partition::<Vec<_>, _>(|s| s.client.is_local());
+
         local.append(&mut remote);
         local
     }
