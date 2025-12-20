@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::process::ExitStatus;
 use std::sync::Arc;
 
 use provider::r#async::Cache;
@@ -7,6 +8,7 @@ use provider::r#async::Provider;
 use tokio::sync::RwLock;
 
 use crate::aggregator::Aggregator;
+use crate::aggregator::Document;
 use crate::aggregator::Documents;
 use crate::client::FilesClientError;
 
@@ -68,6 +70,70 @@ impl DocumentProvider {
         tags.sort();
         *cached_tags = Some(tags.clone());
         Ok(tags)
+    }
+
+    /// Get a single document by fingerprint.
+    ///
+    /// Uses the cached documents to efficiently look up a single document.
+    pub async fn get_document(
+        &self,
+        fingerprint: &str,
+    ) -> Result<Option<Document>, FilesClientError> {
+        self.get_documents()
+            .await
+            .map(|docs| docs.get(fingerprint).cloned())
+    }
+
+    /// Update a document across all sources.
+    ///
+    /// Automatically invalidates the cache after the update.
+    pub async fn update_document(&self, document: Document) -> Result<(), FilesClientError> {
+        let result = self.aggregator.read().await.update_document(document).await;
+        self.set_expired().await;
+        result
+    }
+
+    /// Add tags to a document across all sources.
+    ///
+    /// Automatically invalidates the cache after the update.
+    pub async fn add_document_tags(
+        &self,
+        document: Document,
+        tags: Vec<String>,
+    ) -> Result<Vec<String>, FilesClientError> {
+        let result = self
+            .aggregator
+            .read()
+            .await
+            .add_document_tags(document, tags)
+            .await;
+        self.set_expired().await;
+        result
+    }
+
+    /// Delete tags from a document across all sources.
+    ///
+    /// Automatically invalidates the cache after the update.
+    pub async fn delete_document_tags(
+        &self,
+        document: Document,
+        tags: Vec<String>,
+    ) -> Result<(), FilesClientError> {
+        let result = self
+            .aggregator
+            .read()
+            .await
+            .delete_document_tags(document, tags)
+            .await;
+        self.set_expired().await;
+        result
+    }
+
+    /// Open a document using the system's default application.
+    ///
+    /// Prefers local sources over remote sources.
+    pub async fn open_document(&self, document: Document) -> Result<ExitStatus, FilesClientError> {
+        self.aggregator.read().await.xdg_open_file(document).await
     }
 }
 

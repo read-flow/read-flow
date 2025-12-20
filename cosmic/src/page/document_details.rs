@@ -279,13 +279,9 @@ impl DocumentDetails {
 
                 task::future(async move {
                     let result = document_provider
-                        .aggregator
-                        .read()
-                        .await
                         .update_document(updated_document)
                         .await
                         .map_err(|err| format!("{err}"));
-                    document_provider.set_expired().await;
                     DocumentDetailsMessage::ReadingStatusUpdated(result)
                 })
             }
@@ -305,13 +301,7 @@ impl DocumentDetails {
                 let document = self.document.clone();
                 let document_provider = self.document_provider.clone();
                 task::future(async move {
-                    if let Err(e) = document_provider
-                        .aggregator
-                        .read()
-                        .await
-                        .xdg_open_file(document)
-                        .await
-                    {
+                    if let Err(e) = document_provider.open_document(document).await {
                         tracing::error!("Failed to open file: {e}");
                     }
                     DocumentDetailsMessage::RefreshDocument
@@ -342,21 +332,18 @@ impl DocumentDetails {
                 task::none()
             }
             DocumentDetailsMessage::RefreshDocument => {
-                let document = self.document.clone();
+                let fingerprint = self.document.metadata.fingerprint.clone();
                 let document_provider = self.document_provider.clone();
 
                 task::future(async move {
                     let result = document_provider
-                        .get_documents()
+                        .get_document(&fingerprint)
                         .await
                         .map_err(|err| format!("{err}"))
-                        .and_then(|documents| {
-                            documents
-                                .get(&document.metadata.fingerprint)
-                                .cloned()
-                                .ok_or_else(|| {
-                                    fl!("document-details-document-no-longer-accessible")
-                                })
+                        .and_then(|document| {
+                            document.ok_or_else(|| {
+                                fl!("document-details-document-no-longer-accessible")
+                            })
                         });
                     DocumentDetailsMessage::DocumentRefreshed(result)
                 })
@@ -386,14 +373,10 @@ impl DocumentDetails {
 
     fn add_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
         let document = self.document.clone();
-        let document_provider_1 = self.document_provider.clone();
-        let document_provider_2 = self.document_provider.clone();
+        let document_provider = self.document_provider.clone();
 
         task::future(async move {
-            match document_provider_1
-                .aggregator
-                .read()
-                .await
+            match document_provider
                 .add_document_tags(document, vec![tag])
                 .await
             {
@@ -401,31 +384,21 @@ impl DocumentDetails {
                 Err(err) => DocumentDetailsMessage::TagsAdded(Err(format!("{err}"))),
             }
         })
-        .chain(task::future(async move {
-            document_provider_2.set_expired().await;
-            DocumentDetailsMessage::RefreshDocument
-        }))
+        .chain(task::message(DocumentDetailsMessage::RefreshDocument))
     }
 
     fn remove_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
         let document = self.document.clone();
-        let document_provider_1 = self.document_provider.clone();
-        let document_provider_2 = self.document_provider.clone();
+        let document_provider = self.document_provider.clone();
 
         task::future(async move {
-            let result = document_provider_1
-                .aggregator
-                .read()
-                .await
+            let result = document_provider
                 .delete_document_tags(document, vec![tag])
                 .await
                 .map_err(|err| format!("{err}"));
             DocumentDetailsMessage::TagsRemoved(result)
         })
-        .chain(task::future(async move {
-            document_provider_2.set_expired().await;
-            DocumentDetailsMessage::RefreshDocument
-        }))
+        .chain(task::message(DocumentDetailsMessage::RefreshDocument))
     }
 }
 
