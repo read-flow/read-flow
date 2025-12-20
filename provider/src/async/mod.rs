@@ -1,10 +1,18 @@
-use std::fmt::Debug;
-use std::ops::Deref;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
+mod cache;
+mod expiring_item_cache;
+mod expiring_value;
+mod mapping_provider;
+mod value;
+
 use std::sync::Arc;
 
+pub use cache::Cache;
+pub use expiring_item_cache::ExpiringItemCache;
+pub use expiring_value::Expired;
+pub use expiring_value::ExpiringValue;
+pub use mapping_provider::MappingProvider;
 use tokio::sync::RwLock;
+pub use value::Value;
 
 #[trait_variant::make(Send)]
 pub trait Provider<T> {
@@ -50,220 +58,7 @@ where
 {
     type Error = E;
     async fn provide(&self) -> Result<T, Self::Error> {
-        let provider = self.read().await;
-        provider.provide().await
-    }
-}
-
-pub struct MappingProvider<P, F, T> {
-    provider: P,
-    transformation: F,
-    _marker: std::marker::PhantomData<T>,
-}
-
-impl<P, F, T> MappingProvider<P, F, T> {
-    pub fn new(provider: P, transformation: F) -> Self {
-        Self {
-            provider,
-            transformation,
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T, P, R, F> Provider<R> for MappingProvider<P, F, T>
-where
-    P: Provider<T> + Sync,
-    F: Fn(T) -> R + Send + Sync,
-    T: Send + Sync,
-{
-    type Error = P::Error;
-    async fn provide(&self) -> Result<R, Self::Error> {
-        self.provider.provide().await.map(&self.transformation)
-    }
-}
-
-impl<P, F, T> Expiring for MappingProvider<P, F, T>
-where
-    P: Expiring + Sync,
-    F: Send + Sync,
-    T: Send + Sync,
-{
-    async fn is_expired(&self) -> bool {
-        self.provider.is_expired().await
-    }
-}
-
-/// Value
-// TODO: nutype?
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Value<T>(T);
-
-impl<T> Value<T> {
-    pub const fn new(value: T) -> Self {
-        Value(value)
-    }
-}
-
-impl<T> Default for Value<T>
-where
-    T: Default,
-{
-    fn default() -> Self {
-        Value(Default::default())
-    }
-}
-
-impl<T> AsRef<T> for Value<T> {
-    fn as_ref(&self) -> &T {
-        &self.0
-    }
-}
-
-impl<T> AsMut<T> for Value<T> {
-    fn as_mut(&mut self) -> &mut T {
-        &mut self.0
-    }
-}
-
-impl<T> From<T> for Value<T> {
-    fn from(value: T) -> Self {
-        Value(value)
-    }
-}
-
-impl<T> Provider<T> for Value<T>
-where
-    T: Clone + Send + Sync,
-{
-    type Error = ();
-    async fn provide(&self) -> Result<T, Self::Error> {
-        Ok(self.0.clone())
-    }
-}
-
-/// Expiring Value
-pub struct ExpiringValue<T> {
-    value: T,
-    expired: AtomicBool,
-}
-
-impl<T> ExpiringValue<T> {
-    pub fn new(value: T) -> Self {
-        Self {
-            value,
-            expired: AtomicBool::new(false),
-        }
-    }
-
-    pub fn set_expired(&self) {
-        self.expired.store(true, Ordering::Release);
-    }
-}
-
-impl<T> Deref for ExpiringValue<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-impl<T> AsRef<T> for ExpiringValue<T> {
-    fn as_ref(&self) -> &T {
-        &self.value
-    }
-}
-
-impl<T> AsMut<T> for ExpiringValue<T> {
-    fn as_mut(&mut self) -> &mut T {
-        &mut self.value
-    }
-}
-
-impl<T> Expiring for ExpiringValue<T>
-where
-    T: Send + Sync,
-{
-    async fn is_expired(&self) -> bool {
-        self.expired.load(Ordering::Acquire)
-    }
-}
-
-impl<T> From<T> for ExpiringValue<T> {
-    fn from(source: T) -> Self {
-        ExpiringValue::new(source)
-    }
-}
-
-/// Cache
-pub struct Cache<T, P> {
-    provider: P,
-    value: RwLock<Option<T>>,
-}
-
-impl<T, P> Cache<T, P> {
-    pub fn new(provider: P) -> Self {
-        Self {
-            provider,
-            value: RwLock::new(None),
-        }
-    }
-
-    pub async fn set_expired(&self) {
-        let mut value = self.value.write().await;
-        *value = None;
-    }
-
-    pub fn provider(&self) -> &P {
-        &self.provider
-    }
-
-    pub fn provider_mut(&mut self) -> &mut P {
-        &mut self.provider
-    }
-}
-
-impl<T, P, E> Provider<T> for Cache<T, P>
-where
-    P: Provider<T, Error = E> + Sync,
-    T: Clone + Send + Sync,
-{
-    type Error = E;
-
-    async fn provide(&self) -> Result<T, Self::Error> {
-        // Try to read the cached value first
-        {
-            let value = self.value.read().await;
-            if let Some(ref cached) = *value {
-                tracing::debug!("return value from cache, after read lock");
-                return Ok(cached.clone());
-            }
-        }
-
-        // Value not cached, acquire write lock and populate
-        let mut value = self.value.write().await;
-        // Double-check after acquiring write lock
-        if let Some(ref cached) = *value {
-            tracing::debug!("return value from cache, after write lock");
-            return Ok(cached.clone());
-        }
-
-        tracing::debug!("retrieve value from provider");
-        let new_value = self.provider.provide().await?;
-        tracing::debug!("store retrieved value in cache");
-        *value = Some(new_value.clone());
-        tracing::debug!("return retrieved value");
-        Ok(new_value)
-    }
-}
-
-impl<T, P> Expiring for Cache<T, P>
-where
-    P: Provider<T> + Sync,
-    T: Send + Sync,
-{
-    async fn is_expired(&self) -> bool {
-        self.value.read().await.is_none()
+        self.read().await.provide().await
     }
 }
 
@@ -281,70 +76,12 @@ where
     }
 }
 
-pub struct ExpiringItemCache<T, P> {
-    provider: P,
-    value: RwLock<Option<T>>,
-}
-
-impl<T, P> ExpiringItemCache<T, P> {
-    pub fn new(provider: P) -> Self {
-        Self {
-            provider,
-            value: RwLock::new(None),
-        }
-    }
-
-    pub async fn set_expired(&self) {
-        let mut value = self.value.write().await;
-        *value = None;
-    }
-}
-
-impl<T, P> Expiring for ExpiringItemCache<T, P>
+impl<P> Expiring for RwLock<P>
 where
-    P: Send + Sync,
-    T: Expiring + Sync,
+    P: Expiring + Sync,
 {
     async fn is_expired(&self) -> bool {
-        let value = self.value.read().await;
-        match &*value {
-            Some(v) => v.is_expired().await,
-            None => true,
-        }
-    }
-}
-
-impl<T, P, E> Provider<T> for ExpiringItemCache<T, P>
-where
-    P: Provider<T, Error = E> + Sync,
-    T: Expiring + Clone + Sync,
-{
-    type Error = E;
-
-    async fn provide(&self) -> Result<T, Self::Error> {
-        // Try to read the cached value first
-        {
-            let value = self.value.read().await;
-            if let Some(ref cached) = *value {
-                if !cached.is_expired().await {
-                    return Ok(cached.clone());
-                }
-            }
-        }
-
-        // Value not cached or expired, acquire write lock and populate
-        let mut value = self.value.write().await;
-
-        // Double-check after acquiring write lock
-        if let Some(ref cached) = *value {
-            if !cached.is_expired().await {
-                return Ok(cached.clone());
-            }
-        }
-
-        let new_value = self.provider.provide().await?;
-        *value = Some(new_value.clone());
-        Ok(new_value)
+        self.read().await.is_expired().await
     }
 }
 
@@ -352,6 +89,7 @@ where
 mod tests {
     use std::convert::Infallible;
     use std::sync::atomic::AtomicU8;
+    use std::sync::atomic::Ordering;
     use std::sync::RwLock;
 
     use super::*;
