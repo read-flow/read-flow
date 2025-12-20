@@ -1,6 +1,7 @@
 mod cache;
 mod expiring_item_cache;
 mod expiring_value;
+mod fallback_provider;
 mod mapping_provider;
 mod observable_provider;
 mod value;
@@ -11,6 +12,7 @@ pub use cache::Cache;
 pub use expiring_item_cache::ExpiringItemCache;
 pub use expiring_value::Expired;
 pub use expiring_value::ExpiringValue;
+pub use fallback_provider::FallbackProvider;
 pub use mapping_provider::MappingProvider;
 pub use observable_provider::HasSetExpired;
 pub use observable_provider::Invalidated;
@@ -54,6 +56,25 @@ pub trait Provider<T> {
         Self: Sized,
     {
         ObservableProvider::new(self)
+    }
+
+    /// Create a fallback chain with another provider.
+    ///
+    /// If this provider fails, the fallback provider will be tried.
+    /// This is useful for operations that might fail on one source but succeed on another.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let provider = local_provider.or_fallback(remote_provider);
+    /// let result = provider.provide().await?;
+    /// ```
+    fn or_fallback<P>(self, fallback: P) -> FallbackProvider<Self, P>
+    where
+        Self: Sized,
+        P: Provider<T, Error = Self::Error>,
+    {
+        FallbackProvider::with_fallback(self, fallback)
     }
 }
 
