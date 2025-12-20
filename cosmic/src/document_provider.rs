@@ -1,11 +1,16 @@
 use std::collections::HashSet;
+use std::hash::Hash;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
+use cosmic::iced::Subscription;
 use provider::r#async::Cache;
+use provider::r#async::Invalidated;
 use provider::r#async::MappingProvider;
+use provider::r#async::ObservableProvider;
 use provider::r#async::Provider;
 use tokio::sync::RwLock;
+use tokio::sync::broadcast;
 
 use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
@@ -15,8 +20,11 @@ use crate::client::ClientSelector;
 use crate::client::FilesClientError;
 
 type DocumentCache = Arc<Cache<Documents, Arc<RwLock<Aggregator>>>>;
-type TagsCache =
-    Cache<Vec<String>, MappingProvider<DocumentCache, fn(Documents) -> Vec<String>, Documents>>;
+type ObservableDocumentCache = Arc<ObservableProvider<DocumentCache>>;
+type TagsCache = Cache<
+    Vec<String>,
+    MappingProvider<ObservableDocumentCache, fn(Documents) -> Vec<String>, Documents>,
+>;
 
 /// Extract unique sorted tags from documents.
 fn extract_tags(documents: Documents) -> Vec<String> {
@@ -32,7 +40,7 @@ fn extract_tags(documents: Documents) -> Vec<String> {
 
 pub struct DocumentProvider {
     pub(crate) aggregator: Arc<RwLock<Aggregator>>,
-    document_cache: DocumentCache,
+    observable_cache: ObservableDocumentCache,
     tags_cache: TagsCache,
 }
 
@@ -40,25 +48,87 @@ impl DocumentProvider {
     pub fn new(aggregator: Aggregator) -> Self {
         let aggregator = Arc::new(RwLock::new(aggregator));
         let document_cache = Arc::new(aggregator.clone().cache());
-        let tags_cache = document_cache
+        let observable_cache = Arc::new(ObservableProvider::new(document_cache));
+        let tags_cache = observable_cache
             .clone()
             .map(extract_tags as fn(Documents) -> Vec<String>)
             .cache();
         Self {
             aggregator,
-            document_cache,
+            observable_cache,
             tags_cache,
         }
     }
 
     pub async fn set_expired(&self) {
-        // Invalidate both caches - document cache first, then tags cache
-        self.document_cache.set_expired().await;
+        // Invalidate both caches - observable cache first (notifies subscribers), then tags cache
+        self.observable_cache.set_expired().await;
         self.tags_cache.set_expired().await;
     }
 
     pub async fn get_documents(&self) -> Result<Documents, FilesClientError> {
-        self.document_cache.provide().await
+        self.observable_cache.provide().await
+    }
+
+    /// Subscribe to cache invalidation notifications.
+    ///
+    /// Returns a receiver that will receive notifications whenever the cache is invalidated.
+    /// This can be used to trigger UI refreshes when data changes.
+    pub fn subscribe(&self) -> broadcast::Receiver<Invalidated> {
+        self.observable_cache.subscribe()
+    }
+
+    /// Create an iced Subscription that emits messages when the cache is invalidated.
+    ///
+    /// The subscription will emit the result of calling `f` whenever the document cache
+    /// is invalidated. This is useful for triggering UI refreshes in cosmic applications.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// fn subscription(&self) -> Subscription<Message> {
+    ///     self.document_provider.invalidation_subscription(
+    ///         "document-invalidation",
+    ///         || Message::DocumentsChanged,
+    ///     )
+    /// }
+    /// ```
+    pub fn invalidation_subscription<I, M, F>(&self, id: I, f: F) -> Subscription<M>
+    where
+        I: Hash + 'static,
+        M: Send + 'static,
+        F: Fn() -> M + Send + 'static,
+    {
+        use cosmic::iced_futures::futures::SinkExt;
+        use cosmic::iced_futures::futures::channel::mpsc;
+
+        let mut receiver = self.subscribe();
+        Subscription::run_with_id(
+            id,
+            cosmic::iced::stream::channel(4, move |mut sender: mpsc::Sender<M>| async move {
+                loop {
+                    match receiver.recv().await {
+                        Ok(_) => {
+                            if sender.send(f()).await.is_err() {
+                                // Channel closed, stop the subscription
+                                break;
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            // Sender dropped, stop the subscription
+                            break;
+                        }
+                        Err(broadcast::error::RecvError::Lagged(_)) => {
+                            // Missed some messages, but continue listening
+                            // Still send a notification since data has changed
+                            if sender.send(f()).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }),
+        )
     }
 
     /// Get all unique tags from all documents.

@@ -2,6 +2,7 @@ mod cache;
 mod expiring_item_cache;
 mod expiring_value;
 mod mapping_provider;
+mod observable_provider;
 mod value;
 
 use std::sync::Arc;
@@ -11,6 +12,9 @@ pub use expiring_item_cache::ExpiringItemCache;
 pub use expiring_value::Expired;
 pub use expiring_value::ExpiringValue;
 pub use mapping_provider::MappingProvider;
+pub use observable_provider::HasSetExpired;
+pub use observable_provider::Invalidated;
+pub use observable_provider::ObservableProvider;
 use tokio::sync::RwLock;
 pub use value::Value;
 
@@ -39,6 +43,17 @@ pub trait Provider<T> {
         T: Expiring,
     {
         ExpiringItemCache::new(self)
+    }
+
+    /// Wrap this provider in an observable provider that notifies subscribers on invalidation.
+    ///
+    /// This is useful for reactive UI patterns where the UI needs to refresh when
+    /// underlying data changes.
+    fn observable(self) -> ObservableProvider<Self>
+    where
+        Self: Sized,
+    {
+        ObservableProvider::new(self)
     }
 }
 
