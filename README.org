@@ -56,3 +56,5 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] Some settings, like the database url, are only effective after a restart, notify the user when they change those
 - [ ] After adding a source, add the source to the active aggregator (needs Arc<Mutex<Aggregator>>)
 - [ ] =page/mod.rs= contains a lot of initialization code (and messages) that might need to be handled by =app.rs=
+- [ ] On the Sources page, add an indicator icon for each source whether they are available or not
+  - [ ] Allow adding sources that are not available at the time of adding(?)
