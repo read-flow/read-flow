@@ -388,15 +388,25 @@ impl DocumentList {
             DocumentListMessage::LoadArchive => {
                 self.archive.documents = DocumentState::Loading;
                 let document_provider = self.document_provider.clone();
-                task::future({
-                    let document_provider = document_provider.clone();
-                    async move {
-                        match document_provider.get_documents().await {
-                            Ok(documents) => DocumentListMessage::Loaded(documents),
-                            Err(error) => DocumentListMessage::LoadingFailed(format!("{error}")),
+                let document_provider_clone = self.document_provider.clone();
+                Task::batch([
+                    task::future({
+                        let document_provider = document_provider.clone();
+                        async move {
+                            match document_provider.get_documents().await {
+                                Ok(documents) => DocumentListMessage::Loaded(documents),
+                                Err(error) => {
+                                    DocumentListMessage::LoadingFailed(format!("{error}"))
+                                }
+                            }
                         }
-                    }
-                })
+                    }),
+                    task::future(async move {
+                        DocumentListMessage::SetAvailableSources(
+                            document_provider_clone.get_client_selectors().await,
+                        )
+                    }),
+                ])
             }
             DocumentListMessage::Loaded(files) => {
                 // For initial load, use synchronous filtering and sorting since it's typically fast
@@ -531,8 +541,18 @@ impl DocumentList {
                 msg => self.archive.update(msg).map(ActionExt::map_into),
             },
             DocumentListMessage::SetAvailableSources(client_selectors) => {
+                // Set available sources
                 self.available_sources = client_selectors;
-                Task::none()
+                // Clear source filter if it doesn't exist anymore
+                if let Some(source) = &self.source_filter
+                    && !self.available_sources.contains(source)
+                {
+                    self.source_filter = None;
+                    // Immediately filter to reflect clearing the source filter (no debounce needed for clearing)
+                    self.filter_now()
+                } else {
+                    Task::none()
+                }
             }
             DocumentListMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
