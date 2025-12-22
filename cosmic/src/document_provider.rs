@@ -1,5 +1,5 @@
+use std::any::Any;
 use std::collections::HashSet;
-use std::hash::Hash;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
@@ -93,9 +93,8 @@ impl DocumentProvider {
     ///     )
     /// }
     /// ```
-    pub fn invalidation_subscription<I, M, F>(&self, id: I, f: F) -> Subscription<M>
+    pub fn invalidation_subscription<M, F>(&self, f: F) -> Subscription<M>
     where
-        I: Hash + 'static,
         M: Send + 'static,
         F: Fn() -> M + Send + 'static,
     {
@@ -104,7 +103,7 @@ impl DocumentProvider {
 
         let mut receiver = self.subscribe();
         Subscription::run_with_id(
-            id,
+            Invalidated.type_id(),
             cosmic::iced::stream::channel(4, move |mut sender: mpsc::Sender<M>| async move {
                 loop {
                     match receiver.recv().await {

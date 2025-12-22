@@ -18,7 +18,6 @@ use cosmic::widget::icon;
 use cosmic::widget::menu;
 use cosmic::widget::nav_bar;
 use cosmic::widget::segmented_button::Entity;
-use futures_util::SinkExt;
 use i18n_embed::unic_langid::LanguageIdentifier;
 
 use crate::config::Config;
@@ -58,7 +57,6 @@ pub struct AppModel {
 /// Messages emitted by the application and its widgets.
 #[derive(Debug, Clone)]
 pub enum Message {
-    SubscriptionChannel,
     ToggleContextPage(ContextPage),
     ToggleActivePageContext,
     UpdateConfig(Config),
@@ -281,18 +279,11 @@ impl cosmic::Application for AppModel {
     /// emit messages to the application through a channel. They are started at the
     /// beginning of the application, and persist through its lifetime.
     fn subscription(&self) -> Subscription<Self::Message> {
-        struct MySubscription;
-
         Subscription::batch(vec![
-            // Create a subscription which emits updates through a channel.
-            Subscription::run_with_id(
-                std::any::TypeId::of::<MySubscription>(),
-                cosmic::iced::stream::channel(4, move |mut channel| async move {
-                    _ = channel.send(Message::SubscriptionChannel).await;
-
-                    futures_util::future::pending().await
-                }),
-            ),
+            // Subscribe to document provider cache invalidation events
+            self.pages
+                .document_provider
+                .invalidation_subscription(|| Message::Page(PageMessage::Refresh)),
             // Watch for application configuration changes.
             self.core()
                 .watch_config::<Config>(Self::APP_ID)
@@ -313,10 +304,6 @@ impl cosmic::Application for AppModel {
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         tracing::debug!("received: {message:?}");
         match message {
-            Message::SubscriptionChannel => {
-                // For example purposes only.
-                Task::none()
-            }
             Message::ToggleContextPage(context_page) => {
                 if self.context_page == context_page {
                     // Close the context drawer if the toggled context page is the same.

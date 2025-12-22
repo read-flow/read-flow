@@ -45,7 +45,7 @@ use crate::page::sources::SourcesPage;
 type Fingerprint = String;
 
 pub struct Pages {
-    document_provider: Arc<DocumentProvider>,
+    pub(crate) document_provider: Arc<DocumentProvider>,
 
     sources: SourcesPage,
     documents: DocumentList,
@@ -80,6 +80,7 @@ pub enum PageMessage {
     CloseDocumentDetails(Fingerprint),
     Settings(SettingsMessage),
     Refresh,
+    Noop,
     Out(PageOutput),
 }
 
@@ -225,6 +226,7 @@ impl Pages {
     pub fn update(&mut self, message: PageMessage) -> Task<Action<PageMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
+            PageMessage::Noop => Task::none(),
             PageMessage::Refresh => {
                 let mut messages = self
                     .document_details
@@ -250,20 +252,20 @@ impl Pages {
             PageMessage::AddRemote(url) => {
                 let document_provider = self.document_provider.clone();
                 task::future(async move {
-                    tracing::info!("adding remote client: {url}");
+                    tracing::debug!("adding remote client: {url}");
                     document_provider
                         .add_client(FilesClient::new(url).unwrap().into())
                         .await;
-                    PageMessage::Refresh
+                    PageMessage::Noop
                 })
             }
             PageMessage::DeleteRemote(url) => {
                 let selector = ClientSelector::Remote(url.clone());
                 let document_provider = self.document_provider.clone();
                 task::future(async move {
-                    tracing::info!("removing remote client: {url}");
+                    tracing::debug!("removing remote client: {url}");
                     document_provider.remove_client(&selector).await;
-                    PageMessage::Refresh
+                    PageMessage::Noop
                 })
             }
             PageMessage::Sources(sources_message) => self
