@@ -16,8 +16,6 @@ pub enum FilesClientError {
     Local(dao::Error),
     #[error("remote files error: {0}")]
     Remote(client::Error),
-    #[error("client not found: {0:?}")]
-    ClientNotFound(ClientSelector),
     #[error("no sources available for document")]
     NoSourcesAvailable,
 }

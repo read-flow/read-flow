@@ -120,52 +120,40 @@ impl Aggregator {
         Ok(())
     }
 
-    /// Open a document using xdg-open, trying sources in priority order.
+    /// Open a document using xdg-open, trying clients in priority order.
     ///
-    /// Tries local sources first, then remote sources.
-    /// If opening from one source fails, the next source is tried.
+    /// Tries local client first, then remote clients.
+    /// If opening from one client fails, the next client is tried.
     pub async fn xdg_open_file(&self, document: Document) -> Result<ExitStatus, FilesClientError> {
         let sources = document.sources_by_priority();
 
-        if sources.is_empty() {
-            return Err(FilesClientError::NoSourcesAvailable);
-        }
+        let clients = sources.into_iter().filter_map(|source| {
+            self.client_for(&source.client)
+                .map(|client| (client, source))
+        });
 
-        // Create providers for each source
-        let providers: Vec<OpenFileProvider> = sources
-            .into_iter()
-            .filter_map(|source| {
-                self.client_for(&source.client).map(|client| {
-                    let file = File::from(SingleDocumentSource(
-                        source.clone(),
-                        document.metadata.clone(),
-                    ));
-                    OpenFileProvider {
-                        client: client.clone(),
-                        file,
-                    }
-                })
-            })
-            .collect();
-
-        if providers.is_empty() {
-            return Err(FilesClientError::NoSourcesAvailable);
-        }
-
-        // Try each provider in order until one succeeds
+        // Try each source in order until one succeeds
         let mut last_error = None;
-        for provider in providers {
-            match provider.provide().await {
+        for (client, source) in clients {
+            let file = File::from(SingleDocumentSource(
+                source.clone(),
+                document.metadata.clone(),
+            ));
+            // Try to open file
+            match client.xdg_open_file(file).await {
                 Ok(status) => return Ok(status),
                 Err(e) => {
-                    tracing::debug!("Failed to open file from source: {e}");
+                    tracing::warn!(
+                        "Failed to open file from source `{}`: {e}",
+                        client.selector()
+                    );
                     last_error = Some(e);
                 }
             }
         }
 
-        // All providers failed, return the last error
-        Err(last_error.unwrap())
+        // All clients failed, or no clients available
+        Err(last_error.unwrap_or(FilesClientError::NoSourcesAvailable))
     }
 
     pub async fn delete_document_tags(
@@ -387,19 +375,5 @@ impl From<SingleDocumentSource> for File {
             tags: metadata.tags,
             status: metadata.status,
         }
-    }
-}
-
-/// A provider that opens a file using xdg-open via a specific client.
-struct OpenFileProvider {
-    client: Client,
-    file: File,
-}
-
-impl Provider<ExitStatus> for OpenFileProvider {
-    type Error = FilesClientError;
-
-    async fn provide(&self) -> Result<ExitStatus, Self::Error> {
-        self.client.xdg_open_file(self.file.clone()).await
     }
 }
