@@ -3,6 +3,7 @@ mod expiring_item_cache;
 mod expiring_value;
 mod fallback_provider;
 mod mapping_provider;
+mod observable_cache;
 mod observable_provider;
 mod value;
 
@@ -14,9 +15,9 @@ pub use expiring_value::Expired;
 pub use expiring_value::ExpiringValue;
 pub use fallback_provider::FallbackProvider;
 pub use mapping_provider::MappingProvider;
-pub use observable_provider::HasSetExpired;
-pub use observable_provider::Invalidated;
+pub use observable_cache::ObservableCache;
 pub use observable_provider::ObservableProvider;
+use tokio::sync::broadcast;
 use tokio::sync::RwLock;
 pub use value::Value;
 
@@ -30,6 +31,23 @@ pub trait Provider<T> {
         Self: Sized,
     {
         MappingProvider::new(self, transformation)
+    }
+
+    fn observable_cache(self) -> ObservableCache<Self, fn(T) -> T, T, T>
+    where
+        Self: Sized,
+    {
+        ObservableCache::new(self)
+    }
+
+    fn observable_cache_with_transform<R>(
+        self,
+        transformation: fn(T) -> R,
+    ) -> ObservableCache<Self, fn(T) -> R, T, R>
+    where
+        Self: Sized,
+    {
+        ObservableCache::new_transform(self, transformation)
     }
 
     fn cache(self) -> Cache<T, Self>
@@ -119,6 +137,33 @@ where
     async fn is_expired(&self) -> bool {
         self.read().await.is_expired().await
     }
+}
+
+/// Trait for providers that have a `set_expired` method.
+///
+/// This is implemented by `Cache` and `ExpiringItemCache`.
+#[trait_variant::make(Send)]
+pub trait HasSetExpired {
+    /// Invalidate the cached value.
+    async fn set_expired(&self);
+}
+
+// Implement HasSetExpired for Arc<T> where T: HasSetExpired
+impl<T> HasSetExpired for std::sync::Arc<T>
+where
+    T: HasSetExpired + Sync,
+{
+    async fn set_expired(&self) {
+        self.as_ref().set_expired().await
+    }
+}
+
+/// A notification that the observable provider's cache has been invalidated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Invalidated;
+
+pub trait Observable<T> {
+    fn subscribe(&self) -> broadcast::Receiver<T>;
 }
 
 #[cfg(test)]

@@ -1,6 +1,7 @@
 use tokio::sync::RwLock;
 
 use crate::r#async::Expiring;
+use crate::r#async::HasSetExpired;
 use crate::r#async::Provider;
 
 pub struct ExpiringItemCache<T, P> {
@@ -15,11 +16,6 @@ impl<T, P> ExpiringItemCache<T, P> {
             value: RwLock::new(None),
         }
     }
-
-    pub async fn set_expired(&self) {
-        let mut value = self.value.write().await;
-        *value = None;
-    }
 }
 
 impl<T, P> Expiring for ExpiringItemCache<T, P>
@@ -33,6 +29,18 @@ where
             Some(v) => v.is_expired().await,
             None => true,
         }
+    }
+}
+
+// Implement HasSetExpired for ExpiringItemCache
+impl<T, P> HasSetExpired for ExpiringItemCache<T, P>
+where
+    P: Send + Sync,
+    T: Send + Sync,
+{
+    async fn set_expired(&self) {
+        let mut value = self.value.write().await;
+        *value = None;
     }
 }
 

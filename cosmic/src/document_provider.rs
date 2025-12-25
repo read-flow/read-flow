@@ -4,10 +4,10 @@ use std::process::ExitStatus;
 use std::sync::Arc;
 
 use cosmic::iced::Subscription;
-use provider::r#async::Cache;
+use provider::r#async::HasSetExpired;
 use provider::r#async::Invalidated;
-use provider::r#async::MappingProvider;
-use provider::r#async::ObservableProvider;
+use provider::r#async::Observable;
+use provider::r#async::ObservableCache;
 use provider::r#async::Provider;
 use tokio::sync::RwLock;
 use tokio::sync::broadcast;
@@ -19,12 +19,10 @@ use crate::client::Client;
 use crate::client::ClientSelector;
 use crate::client::FilesClientError;
 
-type DocumentCache = Arc<Cache<Documents, Arc<RwLock<Aggregator>>>>;
-type ObservableDocumentCache = Arc<ObservableProvider<DocumentCache>>;
-type TagsCache = Cache<
-    Vec<String>,
-    MappingProvider<ObservableDocumentCache, fn(Documents) -> Vec<String>, Documents>,
->;
+type DoocumentsCache =
+    ObservableCache<Arc<RwLock<Aggregator>>, fn(Documents) -> Documents, Documents, Documents>;
+type TagsCache =
+    ObservableCache<Arc<DoocumentsCache>, fn(Documents) -> Vec<String>, Documents, Vec<String>>;
 
 /// Extract unique sorted tags from documents.
 fn extract_tags(documents: Documents) -> Vec<String> {
@@ -40,34 +38,27 @@ fn extract_tags(documents: Documents) -> Vec<String> {
 
 pub struct DocumentProvider {
     pub(crate) aggregator: Arc<RwLock<Aggregator>>,
-    observable_cache: ObservableDocumentCache,
+    documents_cache: Arc<DoocumentsCache>,
     tags_cache: TagsCache,
 }
 
 impl DocumentProvider {
     pub fn new(aggregator: Aggregator) -> Self {
         let aggregator = Arc::new(RwLock::new(aggregator));
-        let document_cache = Arc::new(aggregator.clone().cache());
-        let observable_cache = Arc::new(ObservableProvider::new(document_cache));
-        let tags_cache = observable_cache
+        let documents_cache = Arc::new(aggregator.clone().observable_cache());
+        let tags_cache = documents_cache
             .clone()
-            .map(extract_tags as fn(Documents) -> Vec<String>)
-            .cache();
+            .observable_cache_with_transform(extract_tags as fn(Documents) -> Vec<String>);
+
         Self {
             aggregator,
-            observable_cache,
+            documents_cache,
             tags_cache,
         }
     }
 
-    pub async fn set_expired(&self) {
-        // Invalidate both caches - observable cache first (notifies subscribers), then tags cache
-        self.observable_cache.set_expired().await;
-        self.tags_cache.set_expired().await;
-    }
-
     pub async fn get_documents(&self) -> Result<Documents, FilesClientError> {
-        self.observable_cache.provide().await
+        self.documents_cache.provide().await
     }
 
     /// Subscribe to cache invalidation notifications.
@@ -75,7 +66,7 @@ impl DocumentProvider {
     /// Returns a receiver that will receive notifications whenever the cache is invalidated.
     /// This can be used to trigger UI refreshes when data changes.
     pub fn subscribe(&self) -> broadcast::Receiver<Invalidated> {
-        self.observable_cache.subscribe()
+        self.documents_cache.subscribe()
     }
 
     /// Create an iced Subscription that emits messages when the cache is invalidated.
@@ -223,6 +214,14 @@ impl DocumentProvider {
     pub async fn remove_client(&self, selector: &ClientSelector) {
         self.aggregator.write().await.remove(selector);
         self.set_expired().await;
+    }
+}
+
+impl HasSetExpired for DocumentProvider {
+    async fn set_expired(&self) {
+        // Invalidate both caches - observable cache first (notifies subscribers), then tags cache
+        self.documents_cache.set_expired().await;
+        self.tags_cache.set_expired().await;
     }
 }
 

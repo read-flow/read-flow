@@ -7,11 +7,10 @@
 use tokio::sync::broadcast;
 
 use crate::r#async::Expiring;
+use crate::r#async::HasSetExpired;
+use crate::r#async::Invalidated;
+use crate::r#async::Observable;
 use crate::r#async::Provider;
-
-/// A notification that the observable provider's cache has been invalidated.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Invalidated;
 
 /// An observable provider that notifies subscribers when invalidated.
 ///
@@ -60,14 +59,6 @@ impl<P> ObservableProvider<P> {
         Self { provider, sender }
     }
 
-    /// Subscribe to invalidation notifications.
-    ///
-    /// Returns a receiver that will receive `Invalidated` messages whenever
-    /// `set_expired()` is called on this provider.
-    pub fn subscribe(&self) -> broadcast::Receiver<Invalidated> {
-        self.sender.subscribe()
-    }
-
     /// Get a reference to the underlying provider.
     pub fn provider(&self) -> &P {
         &self.provider
@@ -76,6 +67,16 @@ impl<P> ObservableProvider<P> {
     /// Get a mutable reference to the underlying provider.
     pub fn provider_mut(&mut self) -> &mut P {
         &mut self.provider
+    }
+}
+
+impl<P> Observable<Invalidated> for ObservableProvider<P> {
+    /// Subscribe to invalidation notifications.
+    ///
+    /// Returns a receiver that will receive `Invalidated` messages whenever
+    /// `set_expired()` is called on this provider.
+    fn subscribe(&self) -> broadcast::Receiver<Invalidated> {
+        self.sender.subscribe()
     }
 }
 
@@ -109,46 +110,5 @@ where
 {
     async fn is_expired(&self) -> bool {
         self.provider.is_expired().await
-    }
-}
-
-/// Trait for providers that have a `set_expired` method.
-///
-/// This is implemented by `Cache` and `ExpiringItemCache`.
-#[trait_variant::make(Send)]
-pub trait HasSetExpired {
-    /// Invalidate the cached value.
-    async fn set_expired(&self);
-}
-
-// Implement HasSetExpired for Cache
-impl<T, P> HasSetExpired for crate::r#async::Cache<T, P>
-where
-    P: Send + Sync,
-    T: Send + Sync,
-{
-    async fn set_expired(&self) {
-        crate::r#async::Cache::set_expired(self).await
-    }
-}
-
-// Implement HasSetExpired for ExpiringItemCache
-impl<T, P> HasSetExpired for crate::r#async::ExpiringItemCache<T, P>
-where
-    P: Send + Sync,
-    T: Send + Sync,
-{
-    async fn set_expired(&self) {
-        crate::r#async::ExpiringItemCache::set_expired(self).await
-    }
-}
-
-// Implement HasSetExpired for Arc<T> where T: HasSetExpired
-impl<T> HasSetExpired for std::sync::Arc<T>
-where
-    T: HasSetExpired + Sync,
-{
-    async fn set_expired(&self) {
-        self.as_ref().set_expired().await
     }
 }

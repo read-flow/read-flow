@@ -1,6 +1,10 @@
+use std::any::type_name;
+use std::fmt;
+
 use tokio::sync::RwLock;
 
 use crate::r#async::Expiring;
+use crate::r#async::HasSetExpired;
 use crate::r#async::Provider;
 
 /// Cache
@@ -9,17 +13,18 @@ pub struct Cache<T, P> {
     value: RwLock<Option<T>>,
 }
 
+impl<T, P> fmt::Debug for Cache<T, P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Cache Provider of `{}`", type_name::<T>())
+    }
+}
+
 impl<T, P> Cache<T, P> {
     pub fn new(provider: P) -> Self {
         Self {
             provider,
             value: RwLock::new(None),
         }
-    }
-
-    pub async fn set_expired(&self) {
-        let mut value = self.value.write().await;
-        *value = None;
     }
 
     pub fn provider(&self) -> &P {
@@ -72,5 +77,17 @@ where
 {
     async fn is_expired(&self) -> bool {
         self.value.read().await.is_none()
+    }
+}
+
+// Implement HasSetExpired for Cache
+impl<T, P> HasSetExpired for Cache<T, P>
+where
+    P: Send + Sync,
+    T: Send + Sync,
+{
+    async fn set_expired(&self) {
+        let mut value = self.value.write().await;
+        *value = None;
     }
 }
