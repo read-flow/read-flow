@@ -1,20 +1,22 @@
+mod and_then;
 mod cache;
 mod expiring_item_cache;
 mod expiring_value;
 mod fallback_provider;
-mod mapping_provider;
+mod map;
 mod observable_cache;
 mod observable_provider;
 mod value;
 
 use std::sync::Arc;
 
+pub use and_then::AndThen;
 pub use cache::Cache;
 pub use expiring_item_cache::ExpiringItemCache;
 pub use expiring_value::Expired;
 pub use expiring_value::ExpiringValue;
 pub use fallback_provider::FallbackProvider;
-pub use mapping_provider::MappingProvider;
+pub use map::Map;
 pub use observable_cache::ObservableCache;
 pub use observable_provider::ObservableProvider;
 use tokio::sync::broadcast;
@@ -26,11 +28,18 @@ pub trait Provider<T> {
     type Error;
     async fn provide(&self) -> Result<T, Self::Error>;
 
-    fn map<F>(self, transformation: F) -> MappingProvider<Self, F, T>
+    fn map<F>(self, transformation: F) -> Map<Self, F, T>
     where
         Self: Sized,
     {
-        MappingProvider::new(self, transformation)
+        Map::new(self, transformation)
+    }
+
+    fn and_then<F>(self, transformation: F) -> AndThen<Self, F, T>
+    where
+        Self: Sized,
+    {
+        AndThen::new(self, transformation)
     }
 
     fn observable_cache(self) -> ObservableCache<Self, fn(T) -> T, T, T>
@@ -40,14 +49,31 @@ pub trait Provider<T> {
         ObservableCache::new(self)
     }
 
-    fn observable_cache_with_transform<R>(
+    fn arc(self) -> Arc<Self>
+    where
+        Self: Sized,
+    {
+        Arc::new(self)
+    }
+
+    fn observable_cache_with_transform<F, R>(
+        self,
+        transformation: F,
+    ) -> ObservableCache<Self, F, T, R>
+    where
+        Self: Sized,
+    {
+        ObservableCache::with_transform(self, transformation)
+    }
+
+    fn observable_cache_with_fn<R>(
         self,
         transformation: fn(T) -> R,
     ) -> ObservableCache<Self, fn(T) -> R, T, R>
     where
         Self: Sized,
     {
-        ObservableCache::new_transform(self, transformation)
+        ObservableCache::with_transform(self, transformation)
     }
 
     fn cache(self) -> Cache<T, Self>

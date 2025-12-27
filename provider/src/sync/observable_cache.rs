@@ -2,15 +2,15 @@ use std::any::type_name;
 use std::convert::identity;
 use std::fmt;
 use std::marker::PhantomData;
+use std::sync::RwLock;
 
 use tokio::sync::broadcast;
-use tokio::sync::RwLock;
 
-use crate::r#async::Expiring;
-use crate::r#async::HasSetExpired;
-use crate::r#async::Invalidated;
-use crate::r#async::Observable;
-use crate::r#async::Provider;
+use crate::sync::Expiring;
+use crate::sync::HasSetExpired;
+use crate::sync::Invalidated;
+use crate::sync::Observable;
+use crate::sync::Provider;
 
 /// An observable cache that notifies subscribers when invalidated.
 pub struct ObservableCache<P, F, T, R> {
@@ -56,16 +56,10 @@ impl<P, F, T, R> Observable<Invalidated> for ObservableCache<P, F, T, R> {
     }
 }
 
-impl<P, F, T, R> HasSetExpired for ObservableCache<P, F, T, R>
-where
-    P: Send + Sync,
-    F: Send + Sync,
-    T: Send + Sync,
-    R: Send + Sync,
-{
+impl<P, F, T, R> HasSetExpired for ObservableCache<P, F, T, R> {
     /// Invalidate the cache and notify all subscribers.
-    async fn set_expired(&self) {
-        let mut value = self.value.write().await;
+    fn set_expired(&self) {
+        let mut value = self.value.write().unwrap();
         *value = None;
         // Ignore send errors - they just mean no receivers are listening
         let _ = self.sender.send(Invalidated);
@@ -74,17 +68,16 @@ where
 
 impl<P, F, T, R> Provider<R> for ObservableCache<P, F, T, R>
 where
-    P: Provider<T> + Sync,
-    F: Fn(T) -> R + Send + Sync,
-    T: Send + Sync,
-    R: Clone + Send + Sync,
+    P: Provider<T>,
+    F: Fn(T) -> R,
+    R: Clone,
 {
     type Error = P::Error;
 
-    async fn provide(&self) -> Result<R, Self::Error> {
+    fn provide(&self) -> Result<R, Self::Error> {
         // Try to read the cached value first
         {
-            let value = self.value.read().await;
+            let value = self.value.read().unwrap();
             if let Some(ref cached) = *value {
                 tracing::debug!("return value from cache, after read lock");
                 return Ok(cached.clone());
@@ -92,7 +85,7 @@ where
         }
 
         // Value not cached, acquire write lock and populate
-        let mut value = self.value.write().await;
+        let mut value = self.value.write().unwrap();
         // Double-check after acquiring write lock
         if let Some(ref cached) = *value {
             tracing::debug!("return value from cache, after write lock");
@@ -100,7 +93,7 @@ where
         }
 
         tracing::debug!("retrieve value from provider");
-        let new_value = self.provider.provide().await?;
+        let new_value = self.provider.provide()?;
         tracing::debug!("apply transformation");
         let new_value = (self.transformation)(new_value);
         tracing::debug!("store retrieved value in cache");
@@ -110,14 +103,8 @@ where
     }
 }
 
-impl<P, F, T, R> Expiring for ObservableCache<P, F, T, R>
-where
-    P: Send + Sync,
-    F: Send + Sync,
-    T: Send + Sync,
-    R: Send + Sync,
-{
-    async fn is_expired(&self) -> bool {
-        self.value.read().await.is_none()
+impl<P, F, T, R> Expiring for ObservableCache<P, F, T, R> {
+    fn is_expired(&self) -> bool {
+        self.value.read().unwrap().is_none()
     }
 }
