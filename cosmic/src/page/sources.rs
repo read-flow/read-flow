@@ -1,8 +1,9 @@
+use std::sync::Arc;
+
 use archive_organizer::Builder;
 use archive_organizer::api::FileDataSource;
 use archive_organizer::api::Status;
 use archive_organizer::client::FilesClient;
-use archive_organizer::db::ConnectionPool;
 use archive_organizer::db::dao::RemoteDao;
 use archive_organizer::db::models::NewRemote;
 use archive_organizer::db::models::Remote;
@@ -22,6 +23,7 @@ use cosmic::widget::row;
 use cosmic::widget::settings;
 use url::Url;
 
+use crate::ApplicationModule;
 use crate::app::ContextView;
 use crate::fl;
 use crate::iter::find_with_next;
@@ -32,7 +34,7 @@ pub type RemotesState = LoadedState<Vec<Remote>>;
 pub type UrlVerificationState = LoadedState<Status>;
 
 pub struct SourcesPage {
-    connection_pool: ConnectionPool,
+    application_module: Arc<ApplicationModule>,
     remotes_state: RemotesState,
     entered_url: String,
     entered_url_id: widget::Id, // Unique ID for focus management
@@ -79,10 +81,10 @@ pub enum SourcesMessage {
 }
 
 impl SourcesPage {
-    pub fn new(connection_pool: ConnectionPool) -> (Self, Task<Action<SourcesMessage>>) {
+    pub fn new(application_module: Arc<ApplicationModule>) -> (Self, Task<Action<SourcesMessage>>) {
         (
             Self {
-                connection_pool,
+                application_module,
                 remotes_state: Default::default(),
                 entered_url: Default::default(),
                 entered_url_id: widget::Id::unique(),
@@ -254,7 +256,7 @@ impl SourcesPage {
         match message {
             SourcesMessage::LoadRemotes => {
                 self.remotes_state = RemotesState::Loading;
-                let connection_pool = self.connection_pool.clone();
+                let connection_pool = self.application_module.connection_pool();
                 task::future(async move {
                     match connection_pool.select_all_remotes() {
                         Ok(remotes) => SourcesMessage::SetRemotesStateLoaded(remotes),
@@ -319,7 +321,7 @@ impl SourcesPage {
                 }
             }
             SourcesMessage::SubmitSource(url) => {
-                let connection_pool = self.connection_pool.clone();
+                let connection_pool = self.application_module.connection_pool();
                 let order = self.remotes_state.unwrap().len() + 1;
                 task::future(async move {
                     match connection_pool.insert_remote(NewRemote {
@@ -356,7 +358,7 @@ impl SourcesPage {
                 task::none()
             }
             SourcesMessage::DeleteSource(id) => {
-                let connection_pool = self.connection_pool.clone();
+                let connection_pool = self.application_module.connection_pool();
                 task::future(async move {
                     match connection_pool.delete_remote_by_id(id) {
                         Ok(_) => SourcesMessage::DeletedSource(id),
@@ -410,7 +412,7 @@ impl SourcesPage {
                 .unwrap_or_else(task::none)
             }
             SourcesMessage::SwapOrderOfRemotes(first, second) => {
-                let connection_pool = self.connection_pool.clone();
+                let connection_pool = self.application_module.connection_pool();
                 task::future(async move {
                     match connection_pool.swap_order_of_remotes(&first, &second) {
                         Ok(_) => SourcesMessage::LoadRemotes,

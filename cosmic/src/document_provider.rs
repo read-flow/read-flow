@@ -48,7 +48,7 @@ impl DocumentProvider {
         let documents_cache = Arc::new(aggregator.clone().observable_cache());
         let tags_cache = documents_cache
             .clone()
-            .observable_cache_with_transform(extract_tags as fn(Documents) -> Vec<String>);
+            .observable_cache_with_fn(extract_tags as fn(Documents) -> Vec<String>);
 
         Self {
             aggregator,

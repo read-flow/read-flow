@@ -11,12 +11,15 @@ pub use file_system_visitor::FileSystemVisitor;
 use itertools::Itertools;
 use modules::file_extension_finder::FileExtensionFinder;
 use modules::scm_project_finder::ScmProjectFinder;
+use provider::sync::Provider;
 use serde::Deserialize;
 use serde::Serialize;
 
 use crate::ApplicationModule;
 use crate::ExpandedPath;
 use crate::db::ConnectionPool;
+use crate::settings::Settings;
+use crate::settings::SettingsError;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ScanSettings {
@@ -128,7 +131,10 @@ pub fn create_visitor(
     )
 }
 
-impl ApplicationModule {
+impl<P> ApplicationModule<P>
+where
+    P: Provider<Settings, Error = SettingsError>,
+{
     pub fn scan(self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref().canonicalize()?;
         self.visitor().visit(&path)?;

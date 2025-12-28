@@ -2,7 +2,7 @@
 
 This is a tool to help discover and organize files locally and on remote servers.
 
-* TODO: Implement the following items [23/39]
+* TODO: Implement the following items [23/47]
 
 - [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
 - [X] Make database URL configurable (using ~figment~)
@@ -58,3 +58,4 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] =page/mod.rs= contains a lot of initialization code (and messages) that might need to be handled by =app.rs=
 - [ ] On the Sources page, add an indicator icon for each source whether they are available or not
   - [ ] Allow adding sources that are not available at the time of adding(?)
+- [ ] modify DAO traits to take the connection as a parameter, so we can add transactions

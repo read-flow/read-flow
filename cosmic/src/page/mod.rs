@@ -6,9 +6,9 @@ mod settings;
 mod sources;
 
 use core::panic;
+use std::any::Any;
 use std::sync::Arc;
 
-use archive_organizer::ApplicationModule;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::dao::RemoteDao;
 use cosmic::Action;
@@ -16,13 +16,17 @@ use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::iced::Length;
+use cosmic::iced::Subscription;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::task;
 use cosmic::widget;
 use indexmap::IndexMap;
+use provider::sync::Invalidated;
+use tokio::sync::broadcast;
 use url::Url;
 
+use crate::ApplicationModule;
 use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
 use crate::app::ContextView;
@@ -103,15 +107,12 @@ impl From<SettingsMessage> for PageMessage {
 }
 
 impl Pages {
-    pub fn new(application_module: &ApplicationModule) -> (Self, Task<Action<PageMessage>>) {
-        // Get the database client from the application module
-        let db_client = application_module.db_client();
-
-        let (sources, init_sources) = SourcesPage::new(application_module.connection_pool.clone());
+    pub fn new(application_module: Arc<ApplicationModule>) -> (Self, Task<Action<PageMessage>>) {
+        let (sources, init_sources) = SourcesPage::new(application_module.clone());
 
         // Get remote clients from the application module
         let remote_clients = application_module
-            .connection_pool
+            .connection_pool()
             .select_all_remotes()
             .unwrap_or_default()
             .into_iter()
@@ -130,15 +131,13 @@ impl Pages {
             .clone()
             .into_iter()
             .map(Into::into)
-            .chain(Some(db_client.into()))
+            .chain(Some(application_module.clone().into()))
             .collect::<Vec<_>>();
 
         let document_provider = Arc::new(DocumentProvider::new(Aggregator::new(clients)));
 
-        let (settings, init_settings) = SettingsPage::new(
-            application_module.settings.clone(),
-            document_provider.clone(),
-        );
+        let (settings, init_settings) =
+            SettingsPage::new(application_module.clone(), document_provider.clone());
 
         let (documents, init_documents) = DocumentList::new(document_provider.clone());
 
@@ -369,4 +368,44 @@ fn map_settings_message(msg: SettingsMessage) -> PageMessage {
         // All other messages are handled by the settings page itself
         msg => PageMessage::Settings(msg),
     }
+}
+
+pub fn settings_invalidation_subscription<M, F>(
+    application_module: Arc<ApplicationModule>,
+    f: F,
+) -> Subscription<M>
+where
+    M: Send + 'static,
+    F: Fn() -> M + Send + 'static,
+{
+    use cosmic::iced_futures::futures::SinkExt;
+    use cosmic::iced_futures::futures::channel::mpsc;
+
+    let mut receiver = application_module.subscribe();
+    Subscription::run_with_id(
+        Invalidated.type_id(),
+        cosmic::iced::stream::channel(4, move |mut sender: mpsc::Sender<M>| async move {
+            loop {
+                match receiver.recv().await {
+                    Ok(_) => {
+                        if sender.send(f()).await.is_err() {
+                            // Channel closed, stop the subscription
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        // Sender dropped, stop the subscription
+                        break;
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                        // Missed some messages, but continue listening
+                        // Still send a notification since data has changed
+                        if sender.send(f()).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        }),
+    )
 }

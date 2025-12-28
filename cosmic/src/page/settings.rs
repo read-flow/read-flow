@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use archive_organizer::Builder;
 use archive_organizer::ExpandedPath;
+use archive_organizer::SettingsProvider;
 use archive_organizer::scan::DirectorySettings;
 use archive_organizer::settings::Settings;
 use cosmic::Action;
@@ -20,9 +21,12 @@ use cosmic::widget;
 use cosmic::widget::container;
 use cosmic::widget::icon;
 use cosmic::widget::settings;
+use provider::sync::HasSetExpired;
+use provider::sync::Provider;
 use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 
+use crate::ApplicationModule;
 use crate::app::ContextView;
 use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
@@ -44,6 +48,8 @@ pub enum SaveState {
 }
 
 pub struct SettingsPage {
+    /// Application module, to refresh settings on save
+    application_module: Arc<ApplicationModule>,
     /// Aggregator
     document_provider: Arc<DocumentProvider>,
     /// Original settings (for comparison)
@@ -118,9 +124,10 @@ impl From<DirectorySettingsFormMessage> for SettingsMessage {
 
 impl SettingsPage {
     pub fn new(
-        settings: Arc<Settings>,
+        application_module: Arc<ApplicationModule>,
         document_provider: Arc<DocumentProvider>,
     ) -> (Self, Task<Action<SettingsMessage>>) {
+        let settings: Arc<Settings> = SettingsProvider.provide().unwrap().into();
         let document_provider_clone = document_provider.clone();
         let (tag_editor, tag_editor_task) = TagEditor::new(
             Box::new(move || {
@@ -141,6 +148,7 @@ impl SettingsPage {
 
         (
             Self {
+                application_module,
                 document_provider: document_provider.clone(),
                 original_settings: settings.clone(),
                 settings: (*settings).clone(),
@@ -405,7 +413,7 @@ impl SettingsPage {
                 // Load existing directory settings into the editor
                 self.editing_directory = Some(path.clone());
                 let (expanded_path, dir_settings) = if let Ok(expanded_path) =
-                    archive_organizer::ExpandedPath::try_from(path.clone())
+                    ExpandedPath::try_from(path.clone())
                 {
                     if let Some(dir_settings) = self.settings.scan.directories.get(&expanded_path) {
                         (expanded_path, dir_settings.clone())
@@ -442,7 +450,7 @@ impl SettingsPage {
                         } else {
                             // Editing an existing directory - remove old entry and add new one
                             if let Ok(expanded_original) =
-                                archive_organizer::ExpandedPath::try_from(original_path.clone())
+                                ExpandedPath::try_from(original_path.clone())
                             {
                                 self.settings.scan.directories.remove(&expanded_original);
                             }
@@ -467,7 +475,7 @@ impl SettingsPage {
             }
             SettingsMessage::RemoveDirectory(path) => {
                 // Remove a directory from the scan settings
-                if let Ok(expanded_path) = archive_organizer::ExpandedPath::try_from(path) {
+                if let Ok(expanded_path) = ExpandedPath::try_from(path) {
                     self.settings.scan.directories.remove(&expanded_path);
                     self.save_state = SaveState::Idle;
                 }
@@ -487,6 +495,8 @@ impl SettingsPage {
                 self.save_state = SaveState::Saved;
                 // Update original settings to reflect saved state
                 self.original_settings = Arc::new(self.settings.clone());
+                // Invalidate application module to refresh the documentation in the rest of the app
+                self.application_module.set_expired();
                 Task::none()
             }
             SettingsMessage::SaveError(error) => {

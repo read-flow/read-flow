@@ -267,6 +267,7 @@ dependencies = [
  "indexmap",
  "itertools",
  "mime 0.3.17",
+ "provider",
  "r2d2",
  "rayon",
  "reqwest",

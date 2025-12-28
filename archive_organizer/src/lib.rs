@@ -20,9 +20,13 @@ use api::FileDataSource;
 use db::ConnectionPool;
 use db::datasource::DbClient;
 use expanduser::expanduser;
-use figment::Figment;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use provider::sync::HasSetExpired;
+use provider::sync::Invalidated;
+use provider::sync::Observable;
+use provider::sync::ObservableCache;
+use provider::sync::Provider;
 use scan::DirectorySettings;
 use scan::FileSystemVisitor;
 use serde::Deserialize;
@@ -30,47 +34,94 @@ use serde::Serialize;
 use settings::Settings;
 use settings::SettingsError;
 use tokio::runtime::Runtime;
+use tokio::sync::broadcast;
 
-#[derive(Clone, Debug)]
-pub struct ApplicationModule {
-    pub settings: Arc<Settings>,
-    pub connection_pool: ConnectionPool,
+type SettingsCache<P> = ObservableCache<P, fn(Settings) -> Settings, Settings, Settings>;
+type ConnectionPoolCache<P> = ObservableCache<
+    Arc<SettingsCache<P>>,
+    fn(Settings) -> ConnectionPool,
+    Settings,
+    ConnectionPool,
+>;
+type ClientCache<P> = ObservableCache<
+    Arc<ConnectionPoolCache<P>>,
+    fn(ConnectionPool) -> DbClient,
+    ConnectionPool,
+    DbClient,
+>;
+
+#[derive(Debug)]
+pub struct ApplicationModule<P> {
+    settings: Arc<SettingsCache<P>>,
+    connection_pool: Arc<ConnectionPoolCache<P>>,
+    db_client: Arc<ClientCache<P>>,
 }
 
-impl ApplicationModule {
-    pub fn instantiate() -> anyhow::Result<Self> {
-        let settings = settings::extract()?;
-        Ok(Self::from_settings(settings))
-    }
+pub struct SettingsProvider;
 
-    pub fn from_figment(figment: &Figment) -> Result<Self, SettingsError> {
-        let settings = figment.extract()?;
-        Ok(Self::from_settings(settings))
+impl Provider<Settings> for SettingsProvider {
+    type Error = SettingsError;
+    fn provide(&self) -> Result<Settings, Self::Error> {
+        settings::extract()
     }
+}
 
-    pub fn from_settings(settings: Settings) -> Self {
-        let connection_pool = db::get_connection_pool(&settings.database);
+impl ApplicationModule<SettingsProvider> {
+    pub fn instantiate() -> Self {
+        Self::new(SettingsProvider)
+    }
+}
+
+impl<P> ApplicationModule<P>
+where
+    P: Provider<Settings, Error = SettingsError>,
+{
+    pub fn new(settings_provider: P) -> Self {
+        let settings = settings_provider.observable_cache().arc();
+        let connection_pool = settings
+            .clone()
+            .observable_cache_with_fn(|settings: Settings| {
+                db::get_connection_pool(&settings.database)
+            })
+            .arc();
+        let db_client = connection_pool
+            .clone()
+            .observable_cache_with_fn(DbClient::new)
+            .arc();
 
         Self {
-            settings: Arc::new(settings),
+            settings,
             connection_pool,
+            db_client,
         }
     }
 
+    pub fn settings(&self) -> Settings {
+        self.settings.provide().unwrap()
+    }
+
+    pub fn connection_pool(&self) -> ConnectionPool {
+        self.connection_pool.provide().unwrap()
+    }
+
     pub fn db_client(&self) -> DbClient {
-        DbClient::new(self.connection_pool.clone())
+        self.db_client.provide().unwrap()
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<Invalidated> {
+        self.settings.subscribe()
     }
 
     fn visitor(&self) -> FileSystemVisitor {
-        scan::create_visitor(self.connection_pool.clone(), self.settings.scan.clone())
+        scan::create_visitor(self.connection_pool(), self.settings().scan)
     }
 
     pub fn extract_scan_directories(&self) {
         // Create the runtime
         let rt = Runtime::new().unwrap();
 
-        let scan_directories = self
-            .settings
+        let settings = self.settings();
+        let scan_directories = settings
             .scan
             .directories
             .iter()
@@ -107,6 +158,48 @@ impl ApplicationModule {
                 println!("{dir}");
             }
         });
+    }
+}
+
+impl<P> Provider<Settings> for ApplicationModule<P>
+where
+    P: Provider<Settings, Error = SettingsError>,
+{
+    type Error = SettingsError;
+
+    fn provide(&self) -> Result<Settings, Self::Error> {
+        self.settings.provide()
+    }
+}
+
+impl<P> Provider<ConnectionPool> for ApplicationModule<P>
+where
+    P: Provider<Settings, Error = SettingsError>,
+{
+    type Error = SettingsError;
+
+    fn provide(&self) -> Result<ConnectionPool, Self::Error> {
+        self.connection_pool.provide()
+    }
+}
+
+impl<P> Provider<DbClient> for ApplicationModule<P>
+where
+    P: Provider<Settings, Error = SettingsError>,
+{
+    type Error = SettingsError;
+
+    fn provide(&self) -> Result<DbClient, Self::Error> {
+        self.db_client.provide()
+    }
+}
+
+impl<P> HasSetExpired for ApplicationModule<P> {
+    fn set_expired(&self) {
+        // The order is important here, we want to expire the deepest in the chain first
+        self.settings.set_expired();
+        self.connection_pool.set_expired();
+        self.db_client.set_expired();
     }
 }
 

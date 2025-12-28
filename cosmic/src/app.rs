@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use archive_organizer::ApplicationModule;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config;
 use cosmic::cosmic_config::CosmicConfigEntry;
@@ -19,7 +19,9 @@ use cosmic::widget::menu;
 use cosmic::widget::nav_bar;
 use cosmic::widget::segmented_button::Entity;
 use i18n_embed::unic_langid::LanguageIdentifier;
+use provider::r#async::HasSetExpired;
 
+use crate::ApplicationModule;
 use crate::config::Config;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
@@ -27,6 +29,7 @@ use crate::page::PageMessage;
 use crate::page::PageOutput;
 use crate::page::PageSelector;
 use crate::page::Pages;
+use crate::page::settings_invalidation_subscription;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
@@ -49,7 +52,7 @@ pub struct AppModel {
     // Configuration data that persists between application runs.
     config: Config,
     /// Application Module
-    _application_module: ApplicationModule,
+    application_module: Arc<ApplicationModule>,
     /// Pages
     pages: Pages,
 }
@@ -66,6 +69,7 @@ pub enum Message {
     ActivatePage(PageSelector),
     ActivePageRemoved(PageSelector),
     SwitchLanguage(LanguageIdentifier),
+    ExpireDocumentProvider,
 }
 
 impl From<PageOutput> for Message {
@@ -96,7 +100,7 @@ impl cosmic::Application for AppModel {
     type Executor = cosmic::executor::Default;
 
     /// Data that your application receives to its init method.
-    type Flags = ApplicationModule;
+    type Flags = Arc<ApplicationModule>;
 
     /// Messages which the application and its widgets will emit.
     type Message = Message;
@@ -121,7 +125,7 @@ impl cosmic::Application for AppModel {
         let mut nav = nav_bar::Model::default();
         let mut nav_mappings = HashMap::new();
 
-        let (pages, page_action) = Pages::new(&application_module);
+        let (pages, page_action) = Pages::new(application_module.clone());
 
         nav.insert()
             .text(pages.display_name(&PageSelector::Documents))
@@ -177,7 +181,7 @@ impl cosmic::Application for AppModel {
                     }
                 })
                 .unwrap_or_default(),
-            _application_module: application_module,
+            application_module,
             pages,
         };
 
@@ -284,6 +288,9 @@ impl cosmic::Application for AppModel {
             self.pages
                 .document_provider
                 .invalidation_subscription(|| Message::Page(PageMessage::Refresh)),
+            settings_invalidation_subscription(self.application_module.clone(), || {
+                Message::ExpireDocumentProvider
+            }),
             // Watch for application configuration changes.
             self.core()
                 .watch_config::<Config>(Self::APP_ID)
@@ -387,6 +394,13 @@ impl cosmic::Application for AppModel {
 
                 // Update the window title to reflect the new language
                 self.update_title()
+            }
+            Message::ExpireDocumentProvider => {
+                let document_provider = self.pages.document_provider.clone();
+                task::future(async move {
+                    document_provider.set_expired().await;
+                    Message::Page(PageMessage::Refresh)
+                })
             }
         }
     }

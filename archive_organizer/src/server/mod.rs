@@ -4,7 +4,10 @@ use std::io;
 use std::path::Path;
 
 use authn::AuthorizedUser;
+use figment::Figment;
 use indexmap::IndexMap;
+use provider::sync::AndThen;
+use provider::sync::Provider;
 use rocket::Responder;
 use rocket::State;
 use rocket::delete;
@@ -33,9 +36,10 @@ use crate::db;
 use crate::db::dao;
 use crate::db::dao::FileDao;
 use crate::db::dao::FileTagDao;
-use crate::db::datasource::DbClient;
 use crate::scan;
 use crate::settings;
+use crate::settings::Settings;
+use crate::settings::SettingsError;
 use crate::to_unique_file;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -97,7 +101,7 @@ impl From<scan::Error> for Error {
     }
 }
 
-type Result<T> = std::result::Result<T, Error>;
+type Result<T, E = Error> = std::result::Result<T, E>;
 
 pub fn create_cors() -> Cors {
     let cors = CorsOptions::default()
@@ -114,11 +118,33 @@ pub fn create_cors() -> Cors {
     cors.to_cors().unwrap()
 }
 
+struct FigmentProvider;
+
+impl Provider<Figment> for FigmentProvider {
+    type Error = SettingsError;
+    fn provide(&self) -> Result<Figment, Self::Error> {
+        Ok(settings::decorate(rocket::Config::figment()))
+    }
+}
+
+type SettingsProvider =
+    AndThen<FigmentProvider, fn(Figment) -> Result<Settings, SettingsError>, Figment>;
+
+fn extract_settings(figment: Figment) -> Result<Settings, SettingsError> {
+    Ok(figment.extract()?)
+}
+
 #[rocket::launch]
 pub fn serve() -> _ {
-    let figment = settings::decorate(rocket::Config::figment());
+    let figment_provider = FigmentProvider;
+    // unwrap is safe because FigmentProvider technically doesn't err
+    let figment = figment_provider.provide().unwrap();
 
-    let application_module = ApplicationModule::from_figment(&figment).unwrap();
+    let settings_provider = figment_provider
+        .and_then(extract_settings as fn(Figment) -> Result<Settings, SettingsError>);
+
+    let application_module: ApplicationModule<SettingsProvider> =
+        ApplicationModule::new(settings_provider);
 
     let cors = create_cors();
 
@@ -144,7 +170,7 @@ pub fn serve() -> _ {
 
 #[get("/status")]
 async fn status(
-    application_module: &State<ApplicationModule>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Status>> {
     let status = application_module.db_client().status().await?;
@@ -153,11 +179,13 @@ async fn status(
 
 #[get("/files")]
 fn get_files(
-    application_module: &State<ApplicationModule>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<File>>> {
-    let files = application_module.connection_pool.select_all_files()?;
-    let file_tags = application_module.connection_pool.select_all_file_tags()?;
+    let files = application_module.connection_pool().select_all_files()?;
+    let file_tags = application_module
+        .connection_pool()
+        .select_all_file_tags()?;
 
     let mut file_tags_map: IndexMap<_, Vec<_>> = IndexMap::new();
 
@@ -186,35 +214,35 @@ fn get_files(
 #[put("/files", data = "<file>")]
 fn update_file(
     file: Json<File>,
-    application_module: &State<ApplicationModule>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<File>> {
     let (db_file, _) = file.0.clone().into();
-    application_module.connection_pool.update_file(db_file)?;
+    application_module.connection_pool().update_file(db_file)?;
 
     Ok(file)
 }
 
 #[get("/files/tags")]
 fn get_files_tags(
-    application_module: &State<ApplicationModule>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
-    let tags = application_module.connection_pool.select_all_tags()?;
+    let tags = application_module.connection_pool().select_all_tags()?;
     Ok(Json(tags))
 }
 
 #[get("/files/<id>")]
 fn get_file(
     id: i32,
-    application_module: &State<ApplicationModule>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Option<Json<File>>> {
     let tags = application_module
-        .connection_pool
+        .connection_pool()
         .select_file_tags_by_file_id(id)?;
     let file = application_module
-        .connection_pool
+        .connection_pool()
         .select_file_by_id(id)?
         .map(|file| (file, tags).into());
 
@@ -224,11 +252,11 @@ fn get_file(
 #[get("/files/<id>/tags")]
 fn get_file_tags(
     id: i32,
-    application_module: &State<ApplicationModule>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
     let tags = application_module
-        .connection_pool
+        .connection_pool()
         .select_file_tags_by_file_id(id)?
         .into_iter()
         .map(|tag| tag.tag)
@@ -240,7 +268,7 @@ fn get_file_tags(
 fn post_file_tags(
     id: i32,
     tags: Json<Vec<String>>,
-    application_module: &State<ApplicationModule>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
     let file_tags = tags
@@ -249,7 +277,7 @@ fn post_file_tags(
         .map(|tag| db::models::FileTag::new(id, tag))
         .collect();
     application_module
-        .connection_pool
+        .connection_pool()
         .upsert_many_file_tags(file_tags)?;
 
     get_file_tags(id, application_module, user)
@@ -259,12 +287,12 @@ fn post_file_tags(
 fn delete_file_tags(
     id: i32,
     tags: Json<Vec<String>>,
-    application_module: &State<ApplicationModule>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
     for tag in tags.into_inner() {
         application_module
-            .connection_pool
+            .connection_pool()
             .delete_file_tag(db::models::FileTag::new(id, tag))?;
     }
 
@@ -275,10 +303,10 @@ fn delete_file_tags(
 async fn download_file(
     id: i32,
     file_name: &str,
-    application_module: &State<ApplicationModule>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Option<(ContentType, NamedFile)>> {
-    let file = application_module.connection_pool.select_file_by_id(id)?;
+    let file = application_module.connection_pool().select_file_by_id(id)?;
 
     match file {
         None => Ok(None),
@@ -310,10 +338,10 @@ async fn download_file(
 #[delete("/files/<id>")]
 async fn delete_file(
     id: i32,
-    application_module: &State<ApplicationModule>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<()> {
-    let db_client = DbClient::new(application_module.connection_pool.clone());
+    let db_client = application_module.db_client();
     // Get the file to delete
     let file = db_client.get_file(id).await?;
 
@@ -330,7 +358,7 @@ async fn delete_file(
 #[post("/files", data = "<file>")]
 async fn upload_file(
     mut file: Form<TempFile<'_>>,
-    application_module: &State<ApplicationModule>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<File>> {
     let extension = file
@@ -345,7 +373,7 @@ async fn upload_file(
 
     let filename = file.name().unwrap(); // sanitized filename, safe to use
     let target_dir = application_module
-        .settings
+        .settings()
         .server
         .download_folder
         .join(filename);
@@ -363,7 +391,7 @@ async fn upload_file(
     application_module.visitor().visit(&target_file)?;
 
     let result = application_module
-        .connection_pool
+        .connection_pool()
         .select_file_by_path(&target_file.display().to_string())?
         .unwrap();
     Ok(Json((result, vec![]).into()))

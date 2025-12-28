@@ -44,6 +44,8 @@ tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
 tracing.workspace = true
 url.workspace = true
 
+provider.path = "../provider"
+
 rocket = { workspace = true, optional = true, features = ["http2", "json"] }
 rocket_cors = { workspace = true, optional = true }
 
