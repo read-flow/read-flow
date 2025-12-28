@@ -5,6 +5,7 @@ use std::collections::hash_map::IntoValues;
 use std::iter::repeat_n;
 use std::process::ExitStatus;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
@@ -13,21 +14,24 @@ use futures_util::stream;
 use futures_util::stream::StreamExt;
 use provider::r#async::Provider;
 
+use crate::ApplicationModule;
 use crate::client::Client;
 use crate::client::ClientSelector;
 use crate::client::FilesClientError;
 
 pub struct Aggregator {
     clients: HashMap<ClientSelector, Client>,
+    application_module: Arc<ApplicationModule>,
 }
 
 impl Aggregator {
-    pub fn new(clients: Vec<Client>) -> Self {
+    pub fn new(clients: Vec<Client>, application_module: Arc<ApplicationModule>) -> Self {
         Self {
             clients: clients
                 .into_iter()
                 .map(|client| (client.selector(), client))
                 .collect(),
+            application_module,
         }
     }
 
@@ -63,6 +67,14 @@ impl Aggregator {
         self.clients.keys().cloned().collect()
     }
 
+    fn filter_out_hidden_files(&self, files: Vec<File>) -> Vec<File> {
+        let ui_settings = self.application_module.settings().ui;
+        files
+            .into_iter()
+            .filter(|file| !ui_settings.contains_hidden_tag(&file.tags))
+            .collect()
+    }
+
     pub async fn aggregate(&self) -> Result<Documents, FilesClientError> {
         let mut documents = Documents::default();
 
@@ -78,6 +90,7 @@ impl Aggregator {
             stream::iter(clients)
                 .map(|(selector, client)| async move {
                     let files = client.get_files().await?;
+                    let files = self.filter_out_hidden_files(files);
                     Ok((selector, files))
                 })
                 .buffer_unordered(self.clients.len())

@@ -134,7 +134,10 @@ impl Pages {
             .chain(Some(application_module.clone().into()))
             .collect::<Vec<_>>();
 
-        let document_provider = Arc::new(DocumentProvider::new(Aggregator::new(clients)));
+        let document_provider = Arc::new(DocumentProvider::new(Aggregator::new(
+            clients,
+            application_module.clone(),
+        )));
 
         let (settings, init_settings) =
             SettingsPage::new(application_module.clone(), document_provider.clone());
