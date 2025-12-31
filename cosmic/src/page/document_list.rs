@@ -250,7 +250,7 @@ impl DocumentList {
         );
 
         let search_input =
-            widget::text_input(fl!("document-list-search-placeholder"), &self.search_query)
+            widget::search_input(fl!("document-list-search-placeholder"), &self.search_query)
                 .id(self.search_input_id.clone())
                 .always_active()
                 .on_input(DocumentListMessage::SearchChanged)
