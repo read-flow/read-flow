@@ -20,15 +20,12 @@ use rocket::http::Method;
 use rocket::post;
 use rocket::put;
 use rocket::routes;
-use rocket::serde::Deserialize;
-use rocket::serde::Serialize;
 use rocket::serde::json::Json;
 use rocket_cors::AllowedOrigins;
 use rocket_cors::Cors;
 use rocket_cors::CorsOptions;
 
 use crate::ApplicationModule;
-use crate::ExpandedPath;
 use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::Status;
@@ -38,22 +35,10 @@ use crate::db::dao::FileDao;
 use crate::db::dao::FileTagDao;
 use crate::scan;
 use crate::settings;
+pub use crate::settings::ServerSettings;
 use crate::settings::Settings;
 use crate::settings::SettingsError;
 use crate::to_unique_file;
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(crate = "rocket::serde")]
-pub struct ServerSettings {
-    pub download_folder: ExpandedPath,
-    pub authorization_tokens: Vec<String>,
-    #[serde(default = "default_jwt_secret")]
-    pub jwt_secret: String,
-}
-
-fn default_jwt_secret() -> String {
-    "archive_organizer_jwt_secret".to_string()
-}
 
 #[derive(Debug, thiserror::Error, Responder)]
 enum Error {

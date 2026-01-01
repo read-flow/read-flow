@@ -8,13 +8,9 @@ use archive_organizer::Builder;
 use archive_organizer::ExpandedPath;
 use archive_organizer::scan::DirectorySettings;
 use cosmic::Action;
-use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
-use cosmic::cosmic_theme;
-use cosmic::iced_widget::Row;
 use cosmic::task;
-use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
 use cosmic::widget::settings::Section;
@@ -27,6 +23,8 @@ use crate::component::tag_editor::TagEditorOutput;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
+
+const ICON_SIZE: u16 = 16;
 
 /// Directory action for editing
 ///
@@ -163,10 +161,10 @@ impl DirectorySettingsForm {
                 })
             }),
             self.new_directory_scan_tags.clone(),
-            fl!("settings-select-private-tag"),
-            fl!("settings-enter-private-tag"),
-            fl!("settings-no-private-tags"),
-            fl!("settings-remove-private-tag"),
+            fl!("settings-select-directory-tag"),
+            fl!("settings-enter-directory-tag"),
+            fl!("settings-no-directory-tags"),
+            fl!("settings-remove-directory-tag"),
         );
 
         self.tag_editor = Some(tag_editor);
@@ -185,60 +183,57 @@ impl DirectorySettingsForm {
         &'a self,
         section: Section<'a, DirectorySettingsFormMessage>,
     ) -> Section<'a, DirectorySettingsFormMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
-        let path_input = vec![
-            widget::text_input(
-                fl!("settings-directory-path"),
-                self.new_directory_path
-                    .as_ref()
-                    .map(|path| path.path().display().to_string())
-                    .unwrap_or("".to_string()),
-            )
-            .into(),
-            widget::button::text("Select")
-                .on_press(DirectorySettingsFormMessage::SelectDirectoryPath)
+        let path_input = settings::item::builder(fl!("settings-directory-path"))
+            .icon(widget::icon::from_name("folder-symbolic").size(ICON_SIZE))
+            .control(settings::item_row(vec![
+                widget::text_input(
+                    fl!("settings-directory-path"),
+                    self.new_directory_path
+                        .as_ref()
+                        .map(|path| path.path().display().to_string())
+                        .unwrap_or_default(),
+                )
                 .into(),
-        ]
-        .apply(Row::with_children);
+                widget::button::text("Select")
+                    .on_press(DirectorySettingsFormMessage::SelectDirectoryPath)
+                    .into(),
+            ]));
 
-        // Use radio buttons instead of dropdown to avoid lifetime issues
-        let scan_radio = widget::radio(
-            widget::text::body(fl!("settings-directory-action-scan-label")),
-            DirectoryAction::Scan,
-            Some(self.new_directory_action),
-            DirectorySettingsFormMessage::UpdateDirectoryAction,
-        );
-
-        let ignore_radio = widget::radio(
-            widget::text::body(fl!("settings-directory-action-ignore-label")),
-            DirectoryAction::Ignore,
-            Some(self.new_directory_action),
-            DirectorySettingsFormMessage::UpdateDirectoryAction,
-        );
-
-        let action_selection = widget::column()
-            .push(scan_radio)
-            .push(ignore_radio)
-            .spacing(space_s);
+        let action_selection = settings::item::builder(fl!("settings-directory-action"))
+            .icon(widget::icon::from_name("system-run-symbolic").size(ICON_SIZE))
+            .control(settings::item_row(vec![
+                widget::radio(
+                    widget::text::body(fl!("settings-directory-action-scan-label")),
+                    DirectoryAction::Scan,
+                    Some(self.new_directory_action),
+                    DirectorySettingsFormMessage::UpdateDirectoryAction,
+                )
+                .into(),
+                widget::radio(
+                    widget::text::body(fl!("settings-directory-action-ignore-label")),
+                    DirectoryAction::Ignore,
+                    Some(self.new_directory_action),
+                    DirectorySettingsFormMessage::UpdateDirectoryAction,
+                )
+                .into(),
+            ]));
 
         section
-            .add(settings::item(fl!("settings-directory-path"), path_input))
-            .add(settings::item(
-                fl!("settings-directory-action"),
-                action_selection,
-            ))
+            .add(path_input)
+            .add(action_selection)
             .add_maybe(self.tag_editor.as_ref().map(|tag_editor| {
-                settings::item(
-                    fl!("settings-directory-tags"),
-                    tag_editor.view().map(Into::into),
-                )
+                settings::item::builder(fl!("settings-directory-tags"))
+                    .icon(widget::icon::from_name("starred-symbolic").size(ICON_SIZE))
+                    .control(tag_editor.view().map(Into::into))
             }))
-            .add(settings::item(
-                fl!("settings-directory-inherit"),
-                widget::toggler(self.new_directory_inherit)
-                    .on_toggle(DirectorySettingsFormMessage::UpdateDirectoryInherit),
-            ))
+            .add(
+                settings::item::builder(fl!("settings-directory-inherit"))
+                    .icon(widget::icon::from_name("application-default-symbolic").size(ICON_SIZE))
+                    .toggler(
+                        self.new_directory_inherit,
+                        DirectorySettingsFormMessage::UpdateDirectoryInherit,
+                    ),
+            )
             .add(settings::item_row(vec![
                 widget::button::suggested(fl!("settings-save-directory"))
                     .on_press(DirectorySettingsFormMessage::SaveDirectory)
