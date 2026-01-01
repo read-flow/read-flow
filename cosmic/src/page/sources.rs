@@ -13,10 +13,12 @@ use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
 use cosmic::iced::Length;
+use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
+use cosmic::widget::Row;
 use cosmic::widget::container;
 use cosmic::widget::icon;
 use cosmic::widget::row;
@@ -110,8 +112,7 @@ impl SourcesPage {
                 .body(fl!("sources-delete-confirm-body"))
                 .icon(icon::from_name("dialog-warning-symbolic").size(64))
                 .control(
-                    widget::text(&remote.base_url)
-                        .font(cosmic::font::Font::MONOSPACE)
+                    widget::text::monotext(&remote.base_url)
                         .apply(widget::container)
                         .class(cosmic::theme::Container::Card)
                         .padding(space_s)
@@ -140,8 +141,7 @@ impl SourcesPage {
             let dialog = widget::dialog()
                 .title(fl!("sources-error-title"))
                 .control(
-                    widget::text(error)
-                        .font(cosmic::font::Font::MONOSPACE)
+                    widget::text::monotext(error)
                         .apply(widget::container)
                         .class(cosmic::theme::Container::Card)
                         .padding(space_s)
@@ -241,7 +241,24 @@ impl SourcesPage {
 
         content.push(add_section.into());
 
-        settings::view_column(content).into()
+        vec![
+            widget::horizontal_space().into(),
+            settings::view_column(content)
+                .apply(widget::container)
+                .width(Length::FillPortion(4))
+                .height(Length::Shrink)
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Top)
+                .into(),
+            widget::horizontal_space().into(),
+        ]
+        .apply(Row::with_children)
+        .apply(widget::scrollable::vertical)
+        .apply(widget::container)
+        .height(Length::Fill)
+        .align_x(Horizontal::Center)
+        .align_y(Vertical::Top)
+        .into()
     }
 
     pub fn view_context(&self) -> ContextView<'_, SourcesMessage> {

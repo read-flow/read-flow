@@ -226,16 +226,20 @@ impl DocumentDetails {
         vec![
             widget::horizontal_space().into(),
             content
-                .apply(widget::scrollable::vertical)
                 .apply(widget::container)
                 .width(Length::FillPortion(4))
-                .height(Length::Fill)
+                .height(Length::Shrink)
                 .align_x(Horizontal::Center)
                 .align_y(Vertical::Top)
                 .into(),
             widget::horizontal_space().into(),
         ]
         .apply(Row::with_children)
+        .apply(widget::scrollable::vertical)
+        .apply(widget::container)
+        .height(Length::Fill)
+        .align_x(Horizontal::Center)
+        .align_y(Vertical::Top)
         .into()
     }
 
