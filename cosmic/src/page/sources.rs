@@ -291,14 +291,19 @@ impl SourcesPage {
             }
             SourcesMessage::UpdateEnteredUrl(url) => {
                 self.entered_url = url;
-                match self.entered_url.parse::<Url>() {
-                    Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
-                        url,
-                        do_submit: false,
-                    }),
-                    Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(fl!(
-                        "sources-invalid-url"
-                    ))),
+                self.url_verification_state = UrlVerificationState::New;
+                if self.entered_url.is_empty() {
+                    widget::text_input::focus(self.entered_url_id.clone())
+                } else {
+                    match self.entered_url.parse::<Url>() {
+                        Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
+                            url,
+                            do_submit: false,
+                        }),
+                        Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
+                            fl!("sources-invalid-url"),
+                        )),
+                    }
                 }
             }
             SourcesMessage::SetUrlVerificationStateFailed(error) => {
