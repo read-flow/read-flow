@@ -22,6 +22,8 @@ use archive_organizer::settings::SettingsError;
 use clap::Parser;
 use provider::sync::Provider;
 
+const ICON_SIZE: u16 = 16;
+
 pub type ApplicationModule = GenericApplicationModule<AppSettings>;
 
 #[derive(Debug, clap::Parser)]

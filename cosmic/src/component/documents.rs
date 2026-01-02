@@ -14,6 +14,7 @@ use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Row;
 
+use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::component::pagination::Pagination;
 use crate::component::pagination::PaginationMessage;
@@ -57,7 +58,7 @@ impl DocumentsComponent {
                 .align_y(Vertical::Center)
                 .push(
                     widget::icon::from_name("content-loading-symbolic")
-                        .size(24)
+                        .size(ICON_SIZE)
                         .icon(),
                 )
                 .push(widget::text(fl!("document-list-loading")))
@@ -126,7 +127,7 @@ fn view_document<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
     // Create a button with icon and file path that fills the width
     let button = widget::button::custom(
         Row::new()
-            .push(widget::icon::from_name(icon_name).size(16).icon())
+            .push(widget::icon::from_name(icon_name).size(ICON_SIZE).icon())
             .push(display_path(&document.local_or_any_source().path))
             .spacing(space_s)
             .align_y(cosmic::iced::Alignment::Center)

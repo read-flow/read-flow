@@ -26,6 +26,7 @@ use cosmic::widget::settings;
 use url::Url;
 
 use crate::ApplicationModule;
+use crate::ICON_SIZE;
 use crate::app::ContextView;
 use crate::fl;
 use crate::iter::find_with_next;
@@ -225,7 +226,7 @@ impl SourcesPage {
                             LoadedState::Failed(_) => icon::from_name("dialog-error-symbolic"),
                             LoadedState::Loaded(_) => icon::from_name("emblem-ok-symbolic"),
                         }
-                        .size(16),
+                        .size(ICON_SIZE),
                     )
                     .spacing(space_xs)
                     .align_y(Vertical::Center),
@@ -463,7 +464,7 @@ impl SourcesPage {
         row()
             .push(
                 icon::from_name("network-server-symbolic")
-                    .size(16)
+                    .size(ICON_SIZE)
                     .apply(container)
                     .padding([0, space_xs, 0, 0]),
             )
@@ -471,7 +472,7 @@ impl SourcesPage {
             .push(
                 row()
                     .push(
-                        widget::button::icon(icon::from_name("go-up-symbolic").size(16))
+                        widget::button::icon(icon::from_name("go-up-symbolic").size(ICON_SIZE))
                             .padding(space_xxs)
                             .class(theme::Button::Icon)
                             .apply_if(!is_first, |button| {
@@ -479,7 +480,7 @@ impl SourcesPage {
                             }),
                     )
                     .push(
-                        widget::button::icon(icon::from_name("go-down-symbolic").size(16))
+                        widget::button::icon(icon::from_name("go-down-symbolic").size(ICON_SIZE))
                             .padding(space_xxs)
                             .class(theme::Button::Icon)
                             .apply_if(!is_last, |button| {
@@ -487,10 +488,12 @@ impl SourcesPage {
                             }),
                     )
                     .push(
-                        widget::button::icon(icon::from_name("list-remove-symbolic").size(16))
-                            .padding(space_xxs)
-                            .class(theme::Button::Destructive)
-                            .on_press(SourcesMessage::RequestDeleteSource(source.clone())),
+                        widget::button::icon(
+                            icon::from_name("list-remove-symbolic").size(ICON_SIZE),
+                        )
+                        .padding(space_xxs)
+                        .class(theme::Button::Destructive)
+                        .on_press(SourcesMessage::RequestDeleteSource(source.clone())),
                     )
                     .spacing(space_xxs),
             )

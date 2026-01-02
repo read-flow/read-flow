@@ -30,6 +30,7 @@ use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 
 use crate::ApplicationModule;
+use crate::ICON_SIZE;
 use crate::app::ContextView;
 use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
@@ -40,8 +41,6 @@ use crate::fl;
 use crate::forms::settings::directory_settings::DirectorySettingsForm;
 use crate::forms::settings::directory_settings::DirectorySettingsFormMessage;
 use crate::forms::settings::directory_settings::DirectorySettingsFormOutput;
-
-const ICON_SIZE: u16 = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum EditState<T> {

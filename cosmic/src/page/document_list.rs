@@ -20,6 +20,7 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
 
+use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::aggregator::Documents;
 use crate::app::ContextView;
@@ -238,7 +239,7 @@ impl DocumentList {
         let header_row = widget::row().align_y(Vertical::Center).spacing(space_s);
 
         let header_row = header_row.push(
-            widget::button::icon(widget::icon::from_name("open-menu-symbolic"))
+            widget::button::icon(widget::icon::from_name("open-menu-symbolic").size(ICON_SIZE))
                 .on_press(DocumentListMessage::Out(
                     DocumentListOutput::ToggleContextPage,
                 ))
@@ -265,7 +266,7 @@ impl DocumentList {
         );
 
         let header_row = header_row.push(
-            widget::button::icon(widget::icon::from_name("edit-clear-symbolic"))
+            widget::button::icon(widget::icon::from_name("edit-clear-symbolic").size(ICON_SIZE))
                 .on_press(DocumentListMessage::ClearSearch)
                 .apply(widget::container)
                 .width(Length::Shrink)

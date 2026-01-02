@@ -19,6 +19,7 @@ use cosmic::widget::Column;
 use cosmic::widget::Row;
 use cosmic::widget::text;
 
+use crate::ICON_SIZE;
 use crate::fl;
 use crate::state::tags::Tags;
 use crate::state::tags::TagsState;
@@ -179,7 +180,7 @@ impl TagEditor {
                     .align_y(Vertical::Center)
                     .push(
                         widget::icon::from_name("content-loading-symbolic")
-                            .size(16)
+                            .size(ICON_SIZE)
                             .icon(),
                     )
                     .push(text(fl!("tag-editor-loading-tags"))),

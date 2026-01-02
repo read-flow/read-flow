@@ -17,6 +17,7 @@ use cosmic::widget::Column;
 use cosmic::widget::Row;
 use cosmic::widget::text;
 
+use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::app::ContextView;
 use crate::component::tag_editor::TagEditor;
@@ -148,16 +149,20 @@ impl DocumentDetails {
                 Row::new()
                     .spacing(space_xs)
                     .push(
-                        widget::button::icon(widget::icon::from_name("document-open-symbolic"))
-                            .on_press(DocumentDetailsMessage::OpenDocument)
-                            .tooltip(fl!("document-details-open-file")),
+                        widget::button::icon(
+                            widget::icon::from_name("document-open-symbolic").size(ICON_SIZE),
+                        )
+                        .on_press(DocumentDetailsMessage::OpenDocument)
+                        .tooltip(fl!("document-details-open-file")),
                     )
                     .push(
-                        widget::button::icon(widget::icon::from_name("window-close-symbolic"))
-                            .on_press(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
-                                self.document.metadata.fingerprint.clone(),
-                            )))
-                            .tooltip(fl!("document-details-close")),
+                        widget::button::icon(
+                            widget::icon::from_name("window-close-symbolic").size(ICON_SIZE),
+                        )
+                        .on_press(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
+                            self.document.metadata.fingerprint.clone(),
+                        )))
+                        .tooltip(fl!("document-details-close")),
                     ),
             );
 
@@ -471,7 +476,7 @@ impl DocumentDetails {
             let source_row = Row::new()
                 .spacing(space_s)
                 .align_y(Vertical::Center)
-                .push(widget::icon::from_name(icon_name).size(24).icon())
+                .push(widget::icon::from_name(icon_name).size(ICON_SIZE).icon())
                 .push(
                     Column::new()
                         .spacing(space_xxs)

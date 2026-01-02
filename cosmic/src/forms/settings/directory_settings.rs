@@ -17,14 +17,13 @@ use cosmic::widget::settings::Section;
 use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 
+use crate::ICON_SIZE;
 use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
 use crate::component::tag_editor::TagEditorOutput;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
-
-const ICON_SIZE: u16 = 16;
 
 /// Directory action for editing
 ///
