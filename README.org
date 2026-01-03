@@ -2,7 +2,7 @@
 
 This is a tool to help discover and organize files locally and on remote servers.
 
-* TODO: Implement the following items [23/47]
+* TODO: Implement the following items [27/47]
 
 - [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
 - [X] Make database URL configurable (using ~figment~)
@@ -50,11 +50,11 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] Server downloads files into file specific folder: "{download_folder}/{filename}/{filename}.{extension}"
       This way related books, with the same name, but different extension will be stored in the same folder,
       Calibre can then import them as related to the same book.
-- [ ] Make aggregator fail-safe for remotes that are unavailable at that moment. (use status endpoint)
+- [X] Make aggregator fail-safe for remotes that are unavailable at that moment. (use status endpoint)
 - [ ] Use same approach for ~Out~ messages, ~settings.rs~ uses different approach then ~page/mod.rs~
-- [ ] Make settings page edit only the file, and apply the commandline arguments for the runtime settings
-- [ ] Some settings, like the database url, are only effective after a restart, notify the user when they change those
-- [ ] After adding a source, add the source to the active aggregator (needs Arc<Mutex<Aggregator>>)
+- [X] Make settings page edit only the file, and apply the commandline arguments for the runtime settings
+- [X] Some settings, like the database url, are only effective after a restart, notify the user when they change those
+- [X] After adding a source, add the source to the active aggregator (needs Arc<Mutex<Aggregator>>)
 - [ ] =page/mod.rs= contains a lot of initialization code (and messages) that might need to be handled by =app.rs=
 - [ ] On the Sources page, add an indicator icon for each source whether they are available or not
   - [ ] Allow adding sources that are not available at the time of adding(?)
