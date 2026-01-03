@@ -43,7 +43,7 @@ pub struct DirectorySettingsForm {
     /// Original settings, or `None` if this is a new entry
     original_settings: Option<(ExpandedPath, DirectorySettings)>,
     /// Tag editor for private tags
-    tag_editor: Option<TagEditor>,
+    tag_editor: Option<TagEditor<Arc<DocumentProvider>>>,
     /// Path input for new/editing directory
     new_directory_path: Option<FileHandle>,
     /// Action selection for new/editing directory (Scan/Ignore)
@@ -150,15 +150,7 @@ impl DirectorySettingsForm {
         let document_provider = self.document_provider.clone();
 
         let (tag_editor, tag_editor_task) = TagEditor::new(
-            Box::new(move || {
-                let document_provider = document_provider.clone();
-                Box::pin(async move {
-                    document_provider
-                        .get_all_tags()
-                        .await
-                        .map_err(|err| format!("{err}"))
-                })
-            }),
+            document_provider.clone(),
             self.new_directory_scan_tags.clone(),
             fl!("settings-select-directory-tag"),
             fl!("settings-enter-directory-tag"),

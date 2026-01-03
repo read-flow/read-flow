@@ -30,7 +30,7 @@ use crate::fl;
 pub struct DocumentDetails {
     document: Document,
     document_provider: Arc<DocumentProvider>,
-    tag_editor: TagEditor,
+    tag_editor: TagEditor<Arc<DocumentProvider>>,
 }
 
 #[derive(Debug, Clone)]
@@ -63,15 +63,7 @@ impl DocumentDetails {
         let document_provider_clone = document_provider.clone();
 
         let (tag_editor, tag_editor_task) = TagEditor::new(
-            Box::new(move || {
-                let document_provider = document_provider_clone.clone();
-                Box::pin(async move {
-                    document_provider
-                        .get_all_tags()
-                        .await
-                        .map_err(|err| format!("{err}"))
-                })
-            }),
+            document_provider_clone.clone(),
             initial_tags,
             fl!("tag-editor-select-tag"),
             fl!("tag-editor-enter"),

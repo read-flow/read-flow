@@ -68,7 +68,7 @@ pub struct SettingsPage {
     /// Editable copy of settings
     settings: Settings,
     /// Tag editor for private tags
-    tag_editor: TagEditor,
+    tag_editor: TagEditor<Arc<DocumentProvider>>,
     /// Save state
     save_state: SaveState,
     /// Directory editing state
@@ -150,15 +150,7 @@ impl SettingsPage {
         let settings: Arc<Settings> = SettingsProvider.provide().unwrap().into();
         let document_provider_clone = document_provider.clone();
         let (tag_editor, tag_editor_task) = TagEditor::new(
-            Box::new(move || {
-                let document_provider = document_provider_clone.clone();
-                Box::pin(async move {
-                    document_provider
-                        .get_all_tags()
-                        .await
-                        .map_err(|err| format!("{err}"))
-                })
-            }),
+            document_provider_clone.clone(),
             settings.ui.private_tags().to_vec(),
             fl!("settings-select-private-tag"),
             fl!("settings-enter-private-tag"),

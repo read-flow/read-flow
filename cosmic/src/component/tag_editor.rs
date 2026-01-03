@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::future::Future;
-use std::pin::Pin;
+use std::fmt::Display;
 
 use archive_organizer::Builder;
 use cosmic::Action;
@@ -18,20 +17,17 @@ use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Row;
 use cosmic::widget::text;
+use provider::r#async::Provider;
 
 use crate::ICON_SIZE;
 use crate::fl;
 use crate::state::tags::Tags;
 use crate::state::tags::TagsState;
 
-/// A function that fetches tags asynchronously
-pub type TagsFetcher =
-    Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<Vec<String>, String>> + Send>> + Send>;
-
 /// Tag editor component for selecting, adding, and removing tags
-pub struct TagEditor {
+pub struct TagEditor<P> {
     /// Function to fetch available tags
-    tags_fetcher: TagsFetcher,
+    tags_provider: P,
     /// Currently selected tags
     selected_tags: Vec<String>,
     /// Tags state for combo box
@@ -82,9 +78,13 @@ pub enum TagEditorMessage {
     Out(TagEditorOutput),
 }
 
-impl TagEditor {
+impl<P, E> TagEditor<P>
+where
+    P: Provider<Vec<String>, Error = E> + Clone + 'static,
+    E: Display,
+{
     pub fn new(
-        tags_fetcher: TagsFetcher,
+        tags_provider: P,
         initial_tags: Vec<String>,
         select_placeholder: String,
         enter_placeholder: String,
@@ -93,7 +93,7 @@ impl TagEditor {
     ) -> (Self, Task<Action<TagEditorMessage>>) {
         (
             Self {
-                tags_fetcher,
+                tags_provider,
                 selected_tags: initial_tags,
                 tags: TagsState::default(),
                 combo_selection: String::new(),
@@ -231,8 +231,12 @@ impl TagEditor {
         match message {
             TagEditorMessage::LoadAllTags => {
                 self.tags = TagsState::Loading;
-                let future = (self.tags_fetcher)();
-                task::future(async move { TagEditorMessage::AllTagsLoaded(future.await) })
+                let tags_provider = self.tags_provider.clone();
+                task::future(async move {
+                    TagEditorMessage::AllTagsLoaded(
+                        tags_provider.provide().await.map_err(|e| format!("{e}")),
+                    )
+                })
             }
             TagEditorMessage::AllTagsLoaded(result) => {
                 match result {

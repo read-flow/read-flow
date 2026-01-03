@@ -4,6 +4,7 @@ use std::process::ExitStatus;
 use std::sync::Arc;
 
 use cosmic::iced::Subscription;
+use provider::r#async::Expiring;
 use provider::r#async::HasSetExpired;
 use provider::r#async::Invalidated;
 use provider::r#async::Observable;
@@ -225,24 +226,24 @@ impl HasSetExpired for DocumentProvider {
     }
 }
 
-// impl Provider<Documents> for DocumentProvider {
-//     type Error = FilesClientError;
+impl Provider<Documents> for DocumentProvider {
+    type Error = FilesClientError;
 
-//     async fn provide(&self) -> Result<Documents, Self::Error> {
-//         self.get_documents().await
-//     }
-// }
+    async fn provide(&self) -> Result<Documents, Self::Error> {
+        self.get_documents().await
+    }
+}
 
-// impl Expiring for DocumentProvider {
-//     async fn is_expired(&self) -> bool {
-//         self.document_cache.is_expired().await
-//     }
-// }
+impl Expiring for DocumentProvider {
+    async fn is_expired(&self) -> bool {
+        self.documents_cache.is_expired().await || self.tags_cache.is_expired().await
+    }
+}
 
-// impl Provider<Vec<String>> for DocumentProvider {
-//     type Error = FilesClientError;
+impl Provider<Vec<String>> for DocumentProvider {
+    type Error = FilesClientError;
 
-//     async fn provide(&self) -> Result<Vec<String>, Self::Error> {
-//         self.get_all_tags().await
-//     }
-// }
+    async fn provide(&self) -> Result<Vec<String>, Self::Error> {
+        self.get_all_tags().await
+    }
+}

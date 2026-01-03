@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::HashSet;
-use std::future::Future;
-use std::pin::Pin;
+use std::fmt::Display;
 
 use archive_organizer::Builder;
 use cosmic::Element;
@@ -13,17 +12,14 @@ use cosmic::iced::widget::combo_box;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
+use provider::r#async::Provider;
 
 use crate::fl;
 use crate::state::tags::Tags;
 use crate::state::tags::TagsState;
 
-/// A function that fetches tags asynchronously
-pub type TagsFetcher =
-    Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<Vec<String>, String>> + Send>> + Send>;
-
-pub struct TagFilter {
-    tags_fetcher: TagsFetcher,
+pub struct TagFilter<P> {
+    tags_provider: P,
     pub allow_tags: HashSet<String>, // Tags that files must have (whitelist)
     pub deny_tags: HashSet<String>,  // Tags that files must not have (blacklist)
     tags: TagsState,                 // Available tags for selection
@@ -51,11 +47,15 @@ pub enum TagFilterMessage {
     Out(TagFilterOutput),
 }
 
-impl TagFilter {
-    pub fn new(tags_fetcher: TagsFetcher) -> (Self, Task<cosmic::Action<TagFilterMessage>>) {
+impl<P, E> TagFilter<P>
+where
+    P: Provider<Vec<String>, Error = E> + Clone + 'static,
+    E: Display,
+{
+    pub fn new(tags_provider: P) -> (Self, Task<cosmic::Action<TagFilterMessage>>) {
         (
             Self {
-                tags_fetcher,
+                tags_provider,
                 allow_tags: HashSet::new(),
                 deny_tags: HashSet::new(),
                 tags: TagsState::default(),
@@ -219,8 +219,12 @@ impl TagFilter {
         match message {
             TagFilterMessage::LoadAllTags => {
                 self.tags = TagsState::Loading;
-                let future = (self.tags_fetcher)();
-                cosmic::task::future(async move { TagFilterMessage::AllTagsLoaded(future.await) })
+                let tags_provider = self.tags_provider.clone();
+                cosmic::task::future(async move {
+                    TagFilterMessage::AllTagsLoaded(
+                        tags_provider.provide().await.map_err(|e| format!("{e}")),
+                    )
+                })
             }
             TagFilterMessage::AllTagsLoaded(result) => {
                 match result {

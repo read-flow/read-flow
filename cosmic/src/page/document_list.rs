@@ -84,14 +84,14 @@ impl fmt::Display for DocumentSortOption {
 pub struct DocumentList {
     pub(super) document_provider: Arc<DocumentProvider>,
     archive: DocumentsComponent,
-    is_filtering: bool,                     // Track if filtering is in progress
-    search_query: String,                   // The search query string
-    search_input_id: widget::Id,            // Unique ID for focus management
-    debounce_counter: u32,                  // Counter to track debounce state
-    sort_option: DocumentSortOption,        // Current sort option
-    status_filter: Option<ReadingStatus>,   // Optional reading status filter
-    tag_filter: TagFilter,                  // Tag Filter component
-    source_filter: Option<ClientSelector>,  // Optional source filter
+    is_filtering: bool,                   // Track if filtering is in progress
+    search_query: String,                 // The search query string
+    search_input_id: widget::Id,          // Unique ID for focus management
+    debounce_counter: u32,                // Counter to track debounce state
+    sort_option: DocumentSortOption,      // Current sort option
+    status_filter: Option<ReadingStatus>, // Optional reading status filter
+    tag_filter: TagFilter<Arc<DocumentProvider>>, // Tag Filter component
+    source_filter: Option<ClientSelector>, // Optional source filter
     available_sources: Vec<ClientSelector>, // Available sources for filtering
 }
 
@@ -185,20 +185,7 @@ impl DocumentList {
     pub fn new(
         document_provider: Arc<DocumentProvider>,
     ) -> (Self, Task<Action<DocumentListMessage>>) {
-        let document_provider_clone = document_provider.clone();
-        let tags_fetcher = Box::new(move || {
-            let document_provider_clone = document_provider_clone.clone();
-            Box::pin(async move {
-                document_provider_clone
-                    .get_all_tags()
-                    .await
-                    .map_err(|e| format!("{e}"))
-            })
-                as std::pin::Pin<
-                    Box<dyn std::future::Future<Output = Result<Vec<String>, String>> + Send>,
-                >
-        });
-        let (tag_filter, tag_filter_init) = TagFilter::new(tags_fetcher);
+        let (tag_filter, tag_filter_init) = TagFilter::new(document_provider.clone());
 
         let document_provider_clone = document_provider.clone();
 
