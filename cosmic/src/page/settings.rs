@@ -1,0 +1,747 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use archive_organizer::Builder;
+use archive_organizer::ExpandedPath;
+use archive_organizer::SettingsProvider;
+use archive_organizer::scan::DirectorySettings;
+use archive_organizer::settings::Settings;
+use cosmic::Action;
+use cosmic::Apply;
+use cosmic::Element;
+use cosmic::Task;
+use cosmic::cosmic_theme;
+use cosmic::iced::Length;
+use cosmic::iced::alignment::Horizontal;
+use cosmic::iced::alignment::Vertical;
+use cosmic::iced_widget::Row;
+use cosmic::task;
+use cosmic::theme;
+use cosmic::widget;
+use cosmic::widget::container;
+use cosmic::widget::icon;
+use cosmic::widget::settings;
+use provider::sync::HasSetExpired;
+use provider::sync::Provider;
+use rfd::AsyncFileDialog;
+use rfd::FileHandle;
+
+use crate::ApplicationModule;
+use crate::ICON_SIZE;
+use crate::app::ContextView;
+use crate::component::tag_editor::TagEditor;
+use crate::component::tag_editor::TagEditorMessage;
+use crate::component::tag_editor::TagEditorOutput;
+use crate::cosmic_ext::ActionExt;
+use crate::document_provider::DocumentProvider;
+use crate::fl;
+use crate::forms::settings::directory_settings::DirectorySettingsForm;
+use crate::forms::settings::directory_settings::DirectorySettingsFormMessage;
+use crate::forms::settings::directory_settings::DirectorySettingsFormOutput;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EditState<T> {
+    Idle,
+    Adding,
+    Editing(T),
+}
+
+/// State for tracking save status
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SaveState {
+    Idle,
+    Saving,
+    Saved,
+    Error(String),
+}
+
+pub struct SettingsPage {
+    /// Application module, to refresh settings on save
+    application_module: Arc<ApplicationModule>,
+    /// Aggregator
+    document_provider: Arc<DocumentProvider>,
+    /// Original settings (for comparison)
+    original_settings: Arc<Settings>,
+    /// Editable copy of settings
+    settings: Settings,
+    /// Tag editor for private tags
+    tag_editor: TagEditor<Arc<DocumentProvider>>,
+    /// Save state
+    save_state: SaveState,
+    /// Directory editing state
+    editing_directory: EditState<PathBuf>,
+    /// Directory Settings Form
+    directory_settings_form: Option<DirectorySettingsForm>,
+    /// Authorization tokens that are currently being edited
+    editing_authorization_tokens: HashMap<usize, String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SettingsOutput {}
+
+#[derive(Debug, Clone)]
+pub enum SettingsMessage {
+    /// Toggle dry run mode
+    ToggleDryRun(bool),
+    /// Toggle private mode
+    TogglePrivateMode(bool),
+    /// Tag editor message
+    TagEditor(TagEditorMessage),
+    /// Directory settings form message
+    DirectorySettingsForm(DirectorySettingsFormMessage),
+    SelectDatabaseLocation,
+    SelectedDatabaseLocation(Option<FileHandle>),
+    /// Server settings form message
+    SelectServerDownloadFolder,
+    SelectedServerDownloadFolder(Option<FileHandle>),
+    ToggleAuthorizationTokenEdit(usize, bool),
+    EditAuthorizationToken(usize, String),
+    SubmitAuthorizationToken(usize, String),
+    AddAuthorizationToken,
+    DeleteAuthorizationToken(usize),
+    /// Save settings to file
+    Save,
+    /// Settings saved successfully
+    SaveComplete,
+    /// Settings save failed
+    SaveError(String),
+
+    /// Directory management messages
+    /// Open the directory editor for adding a new directory
+    AddDirectory,
+    /// Remove a directory from the scan settings
+    ///
+    /// # Arguments
+    /// * `PathBuf` - The path to the directory to remove
+    RemoveDirectory(PathBuf),
+    /// Open the directory editor for editing an existing directory
+    ///
+    /// # Arguments
+    /// * `PathBuf` - The path to the directory to edit
+    EditDirectory(PathBuf),
+    /// Save the directory being edited/added to settings
+    SaveDirectory(ExpandedPath, DirectorySettings),
+    /// Cancel directory editing and close the editor
+    CancelEditDirectory,
+    /// Output message (for parent component)
+    Out(SettingsOutput),
+}
+
+impl From<TagEditorMessage> for SettingsMessage {
+    fn from(value: TagEditorMessage) -> Self {
+        Self::TagEditor(value)
+    }
+}
+
+impl From<DirectorySettingsFormMessage> for SettingsMessage {
+    fn from(value: DirectorySettingsFormMessage) -> Self {
+        Self::DirectorySettingsForm(value)
+    }
+}
+
+impl SettingsPage {
+    pub fn new(
+        application_module: Arc<ApplicationModule>,
+        document_provider: Arc<DocumentProvider>,
+    ) -> (Self, Task<Action<SettingsMessage>>) {
+        let settings: Arc<Settings> = SettingsProvider.provide().unwrap().into();
+        let document_provider_clone = document_provider.clone();
+        let (tag_editor, tag_editor_task) = TagEditor::new(
+            document_provider_clone.clone(),
+            settings.ui.private_tags().to_vec(),
+            fl!("settings-select-private-tag"),
+            fl!("settings-enter-private-tag"),
+            fl!("settings-no-private-tags"),
+            fl!("settings-remove-private-tag"),
+        );
+
+        (
+            Self {
+                application_module,
+                document_provider: document_provider.clone(),
+                original_settings: settings.clone(),
+                settings: (*settings).clone(),
+                tag_editor,
+                save_state: SaveState::Idle,
+                editing_directory: EditState::Idle,
+                directory_settings_form: None,
+                editing_authorization_tokens: Default::default(),
+            },
+            tag_editor_task.map(ActionExt::map_into),
+        )
+    }
+
+    /// Check if settings have been modified
+    ///
+    /// Compares the current settings with the original settings to determine
+    /// if any changes have been made that need to be saved.
+    ///
+    /// # Returns
+    /// `true` if settings have been modified, `false` otherwise
+    fn is_modified(&self) -> bool {
+        self.settings != *self.original_settings
+    }
+
+    fn can_be_saved(&self) -> bool {
+        self.editing_authorization_tokens.is_empty()
+    }
+
+    pub fn view(&self) -> Element<'_, SettingsMessage> {
+        let cosmic_theme::Spacing {
+            space_s, space_m, ..
+        } = theme::active().cosmic().spacing;
+
+        let mut content = Vec::new();
+
+        // Database section (read-only)
+        let database_section = settings::section()
+            .title(fl!("settings-database-section"))
+            .add(
+                settings::item::builder(fl!("settings-database-location"))
+                    .icon(widget::icon::from_name("add-files-to-archive-symbolic").size(ICON_SIZE))
+                    .control(
+                        settings::item_row(vec![
+                            widget::text::monotext(self.settings.database.url()).into(),
+                            widget::button::text("Select")
+                                .on_press(SettingsMessage::SelectDatabaseLocation)
+                                .into(),
+                        ])
+                        .align_y(Vertical::Center),
+                    ),
+            );
+        content.push(database_section.into());
+
+        // Server section
+        let authorization_tokens_section = self
+            .settings
+            .server
+            .authorization_tokens
+            .iter()
+            .enumerate()
+            .fold(
+                settings::section().title(fl!("settings-server-authorization-tokens")),
+                |acc, (index, token)| acc.add(self.authorization_token_input(token, index)),
+            )
+            .add(settings::item_row(vec![
+                widget::horizontal_space()
+                    .width(Length::FillPortion(5))
+                    .into(),
+                widget::button::icon(widget::icon::from_name("list-add-symbolic").size(ICON_SIZE))
+                    .class(widget::button::ButtonClass::Suggested)
+                    .on_press(SettingsMessage::AddAuthorizationToken)
+                    .tooltip(fl!("settings-server-add-authorization-token"))
+                    .apply(widget::container)
+                    .width(Length::FillPortion(1))
+                    .align_x(Horizontal::Right)
+                    .into(),
+            ]));
+
+        let server_section = settings::section()
+            .title(fl!("settings-server-section"))
+            .add(
+                settings::item::builder(fl!("settings-server-download-folder"))
+                    .icon(widget::icon::from_name("folder-download-symbolic").size(ICON_SIZE))
+                    .control(
+                        settings::item_row(vec![
+                            widget::text::monotext(format!(
+                                "{}",
+                                self.settings.server.download_folder.display()
+                            ))
+                            .into(),
+                            widget::button::text("Select")
+                                .on_press(SettingsMessage::SelectServerDownloadFolder)
+                                .into(),
+                        ])
+                        .align_y(Vertical::Center),
+                    ),
+            );
+
+        content.push(server_section.into());
+        content.push(authorization_tokens_section.into());
+
+        // Scan section
+        let scan_section = settings::section().title(fl!("settings-scan-section")).add(
+            settings::item::builder(fl!("settings-scan-dry-run"))
+                .icon(widget::icon::from_name("system-run-symbolic").size(ICON_SIZE))
+                .toggler(self.settings.scan.dry_run, SettingsMessage::ToggleDryRun),
+        );
+        content.push(scan_section.into());
+
+        // Scan directories section with add/edit functionality
+        let directories_section = self
+            .settings
+            .scan
+            .directories
+            .iter()
+            .fold(
+                settings::section().title(fl!("settings-scan-directories-section")),
+                |section, (path, dir_settings)| {
+                    let action = match dir_settings {
+                        archive_organizer::scan::DirectorySettings::Ignore { .. } => {
+                            fl!("settings-directory-action-ignore")
+                        }
+                        archive_organizer::scan::DirectorySettings::Scan { .. } => {
+                            fl!("settings-directory-action-scan")
+                        }
+                    };
+
+                    let edit_button =
+                        widget::button::icon(icon::from_name("edit-symbolic").size(ICON_SIZE))
+                            .on_press(SettingsMessage::EditDirectory(path.clone().into()))
+                            .tooltip(fl!("settings-edit-directory"));
+
+                    let remove_button = widget::button::icon(
+                        icon::from_name("list-remove-symbolic").size(ICON_SIZE),
+                    )
+                    .class(widget::button::ButtonClass::Destructive)
+                    .on_press(SettingsMessage::RemoveDirectory(path.clone().into()))
+                    .tooltip(fl!("settings-remove-directory"));
+
+                    let controls = widget::row()
+                        .push(edit_button)
+                        .push(remove_button)
+                        .spacing(space_s)
+                        .apply(container)
+                        .align_right(Length::Shrink);
+
+                    section.add(
+                        settings::item_row(vec![
+                            settings::item_row(vec![
+                                widget::icon::from_name("folder-symbolic")
+                                    .size(ICON_SIZE)
+                                    .apply(widget::container)
+                                    .into(),
+                                widget::text::monotext(path.display().to_string())
+                                    .width(Length::Fill)
+                                    .into(),
+                            ])
+                            .width(Length::FillPortion(4))
+                            .into(),
+                            widget::text::body(action)
+                                .width(Length::FillPortion(1))
+                                .into(),
+                            controls.width(Length::FillPortion(1)).into(),
+                        ])
+                        .spacing(space_m)
+                        .align_y(cosmic::iced::Alignment::Center),
+                    )
+                },
+            )
+            .add(settings::item_row(vec![
+                widget::horizontal_space()
+                    .width(Length::FillPortion(5))
+                    .into(),
+                widget::button::icon(icon::from_name("list-add-symbolic").size(ICON_SIZE))
+                    .class(widget::button::ButtonClass::Suggested)
+                    .on_press(SettingsMessage::AddDirectory)
+                    .tooltip(fl!("settings-add-directory"))
+                    .apply(widget::container)
+                    .width(Length::FillPortion(1))
+                    .align_x(Horizontal::Right)
+                    .into(),
+            ]));
+
+        content.push(directories_section.into());
+
+        // Show directory editor if editing
+        if let Some(directory_settings_form) = self.directory_settings_form.as_ref() {
+            content.push(directory_settings_form.view().map(Into::into));
+        }
+
+        // Save button section
+        let save_button = if self.is_modified() && self.can_be_saved() {
+            widget::button::suggested(fl!("settings-save")).on_press(SettingsMessage::Save)
+        } else {
+            widget::button::standard(fl!("settings-save"))
+        };
+
+        let save_status = match &self.save_state {
+            SaveState::Idle => widget::text(""),
+            SaveState::Saving => widget::text(fl!("settings-saving")),
+            SaveState::Saved => widget::text(fl!("settings-saved")),
+            SaveState::Error(err) => {
+                widget::text(format!("{}: {}", fl!("settings-save-error"), err))
+            }
+        };
+
+        let save_section = widget::row()
+            .push(save_button)
+            .push(widget::horizontal_space())
+            .push(save_status)
+            .spacing(space_m)
+            .padding(space_s);
+        content.push(save_section.into());
+
+        vec![
+            widget::horizontal_space().into(),
+            settings::view_column(content)
+                .apply(widget::container)
+                .width(Length::FillPortion(4))
+                .height(Length::Shrink)
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Top)
+                .into(),
+            widget::horizontal_space().into(),
+        ]
+        .apply(Row::with_children)
+        .apply(widget::scrollable::vertical)
+        .apply(widget::container)
+        .height(Length::Fill)
+        .align_x(Horizontal::Center)
+        .align_y(Vertical::Top)
+        .into()
+    }
+
+    pub fn view_context(&self) -> ContextView<'_, SettingsMessage> {
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+
+        // UI Privacy section
+        let ui_section = settings::section()
+            .title(fl!("settings-ui-section"))
+            .add(
+                settings::item::builder(fl!("settings-ui-private-mode"))
+                    .icon(
+                        widget::icon::from_name("preferences-system-privacy-symbolic")
+                            .size(ICON_SIZE),
+                    )
+                    .toggler(
+                        self.settings.ui.private_mode(),
+                        SettingsMessage::TogglePrivateMode,
+                    ),
+            )
+            .add(
+                settings::item::builder(fl!("settings-ui-private-tags"))
+                    .icon(widget::icon::from_name("starred-symbolic").size(ICON_SIZE))
+                    .flex_control(self.tag_editor.view().map(SettingsMessage::TagEditor)),
+            );
+
+        let content = widget::column().push(ui_section).spacing(space_s).into();
+
+        ContextView {
+            title: fl!("settings-context-title"),
+            content,
+        }
+    }
+
+    pub fn update(&mut self, message: SettingsMessage) -> Task<Action<SettingsMessage>> {
+        tracing::debug!("received: {message:?}");
+        match message {
+            SettingsMessage::ToggleDryRun(value) => {
+                self.settings.scan.set_dry_run(value);
+                self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            SettingsMessage::TogglePrivateMode(value) => {
+                self.settings.ui.set_private_mode(value);
+                self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            SettingsMessage::TagEditor(message) => match message {
+                TagEditorMessage::Out(message) => match message {
+                    TagEditorOutput::TagsUpdated(tags) => {
+                        self.settings.ui.set_private_tags(tags);
+                        self.save_state = SaveState::Idle;
+                        Task::none()
+                    }
+                    TagEditorOutput::TagAdded(_) | TagEditorOutput::TagRemoved(_) => {
+                        // These are handled via TagsUpdated
+                        Task::none()
+                    }
+                },
+                message => self.tag_editor.update(message).map(ActionExt::map_into),
+            },
+            SettingsMessage::DirectorySettingsForm(message) => match message {
+                DirectorySettingsFormMessage::Out(directory_settings_form_output) => {
+                    match directory_settings_form_output {
+                        DirectorySettingsFormOutput::Cancelled => {
+                            task::message(SettingsMessage::CancelEditDirectory)
+                        }
+                        DirectorySettingsFormOutput::Ok(expanded_path, directory_settings) => {
+                            task::message(SettingsMessage::SaveDirectory(
+                                expanded_path,
+                                directory_settings,
+                            ))
+                        }
+                    }
+                }
+                message => {
+                    if let Some(directory_form) = self.directory_settings_form.as_mut() {
+                        directory_form.update(message).map(ActionExt::map_into)
+                    } else {
+                        Task::none()
+                    }
+                }
+            },
+            SettingsMessage::SelectDatabaseLocation => {
+                let path = self
+                    .settings
+                    .database
+                    .url()
+                    .parse::<ExpandedPath>()
+                    .unwrap()
+                    .get_full_path();
+                let parent_str = path.parent().map(|path| path.display().to_string());
+                let file_name = path
+                    .file_name()
+                    .map(|file_name| file_name.display().to_string());
+                task::future(async move {
+                    let directory = AsyncFileDialog::new()
+                        .apply_maybe(parent_str, |dialog, path| dialog.set_directory(path))
+                        .apply_maybe(file_name, |dialog, file_name| {
+                            dialog.set_file_name(file_name)
+                        })
+                        .pick_file()
+                        .await;
+
+                    SettingsMessage::SelectedDatabaseLocation(directory)
+                })
+            }
+            SettingsMessage::SelectedDatabaseLocation(file_handle) => {
+                // Only overwrite when some file_handle is returned
+                if let Some(file) = file_handle {
+                    self.settings
+                        .database
+                        .set_url(file.path().display().to_string());
+                    self.save_state = SaveState::Idle;
+                }
+                Task::none()
+            }
+            SettingsMessage::SelectServerDownloadFolder => {
+                let download_folder = self.settings.server.download_folder.clone();
+
+                task::future(async move {
+                    let directory = AsyncFileDialog::new()
+                        .set_directory(download_folder)
+                        .set_can_create_directories(true)
+                        .pick_folder()
+                        .await;
+
+                    SettingsMessage::SelectedServerDownloadFolder(directory)
+                })
+            }
+            SettingsMessage::SelectedServerDownloadFolder(file_handle) => {
+                // Only overwrite when some file_handle is returned
+                if let Some(file) = file_handle {
+                    self.settings.server.download_folder =
+                        file.path().to_path_buf().try_into().unwrap();
+                    self.save_state = SaveState::Idle;
+                }
+                Task::none()
+            }
+            SettingsMessage::AddDirectory => {
+                // Indicate we're adding a new directory
+                // This triggers the directory editor to show with default values
+                self.editing_directory = EditState::Adding;
+                let (directory_settings_form, initialize) =
+                    DirectorySettingsForm::new(None, self.document_provider.clone());
+                self.directory_settings_form = Some(directory_settings_form);
+                initialize.map(ActionExt::map_into)
+            }
+            SettingsMessage::EditDirectory(path) => {
+                // Load existing directory settings into the editor
+                self.editing_directory = EditState::Editing(path.clone());
+                let (expanded_path, dir_settings) = if let Ok(expanded_path) =
+                    ExpandedPath::try_from(path.clone())
+                {
+                    if let Some(dir_settings) = self.settings.scan.directories.get(&expanded_path) {
+                        (expanded_path, dir_settings.clone())
+                    } else {
+                        (expanded_path, DirectorySettings::Ignore { inherit: false })
+                    }
+                } else {
+                    (
+                        Default::default(),
+                        DirectorySettings::Ignore { inherit: false },
+                    )
+                };
+
+                let (directory_settings_form, initialize) = DirectorySettingsForm::new(
+                    Some((expanded_path, dir_settings)),
+                    self.document_provider.clone(),
+                );
+                self.directory_settings_form = Some(directory_settings_form);
+                initialize.map(ActionExt::map_into)
+            }
+            SettingsMessage::SaveDirectory(expanded_path, dir_settings) => {
+                // Validate and save the directory being edited/added
+                if expanded_path.as_os_str().is_empty() {
+                    Task::none() // TODO: Show error message for empty path
+                } else {
+                    // Check if we're editing an existing directory or adding a new one
+                    match &self.editing_directory {
+                        EditState::Adding => {
+                            // Adding a new directory - just insert it
+                            self.settings
+                                .scan
+                                .directories
+                                .insert(expanded_path, dir_settings);
+                        }
+                        EditState::Editing(original_path) => {
+                            // Editing an existing directory - remove old entry and add new one
+                            if let Ok(expanded_original) =
+                                ExpandedPath::try_from(original_path.clone())
+                            {
+                                self.settings.scan.directories.remove(&expanded_original);
+                            }
+                            self.settings
+                                .scan
+                                .directories
+                                .insert(expanded_path, dir_settings);
+                        }
+                        _ => {}
+                    }
+
+                    self.editing_directory = EditState::Idle;
+                    self.directory_settings_form = None;
+                    self.save_state = SaveState::Idle;
+                    Task::none()
+                }
+            }
+            SettingsMessage::CancelEditDirectory => {
+                // Cancel directory editing and reset the editor state
+                self.editing_directory = EditState::Idle;
+                self.directory_settings_form = None;
+                Task::none()
+            }
+            SettingsMessage::RemoveDirectory(path) => {
+                // Remove a directory from the scan settings
+                if let Ok(expanded_path) = ExpandedPath::try_from(path) {
+                    self.settings.scan.directories.remove(&expanded_path);
+                    self.save_state = SaveState::Idle;
+                }
+                Task::none()
+            }
+            SettingsMessage::Save => {
+                self.save_state = SaveState::Saving;
+                let settings = self.settings.clone();
+                task::future(async move {
+                    match archive_organizer::settings::save(&settings) {
+                        Ok(()) => SettingsMessage::SaveComplete,
+                        Err(e) => SettingsMessage::SaveError(e.to_string()),
+                    }
+                })
+            }
+            SettingsMessage::SaveComplete => {
+                self.save_state = SaveState::Saved;
+                // Update original settings to reflect saved state
+                self.original_settings = Arc::new(self.settings.clone());
+                // Invalidate application module to refresh the documentation in the rest of the app
+                self.application_module.set_expired();
+                Task::none()
+            }
+            SettingsMessage::SaveError(error) => {
+                self.save_state = SaveState::Error(error);
+                Task::none()
+            }
+            SettingsMessage::Out(_) => {
+                panic!("{message:?} should be handled by the parent component")
+            }
+            SettingsMessage::ToggleAuthorizationTokenEdit(index, editing) => {
+                if editing {
+                    self.editing_authorization_tokens.insert(
+                        index,
+                        self.settings.server.authorization_tokens[index].clone(),
+                    );
+                } else {
+                    self.editing_authorization_tokens.remove(&index);
+                }
+                Task::none()
+            }
+            SettingsMessage::EditAuthorizationToken(index, token) => {
+                self.editing_authorization_tokens.insert(index, token);
+                Task::none()
+            }
+            SettingsMessage::SubmitAuthorizationToken(index, token) => {
+                if !token.is_empty() {
+                    self.settings.server.authorization_tokens[index] = token;
+                    self.editing_authorization_tokens.remove(&index);
+                }
+                Task::none()
+            }
+            SettingsMessage::AddAuthorizationToken => {
+                let new_token = String::new();
+                self.settings
+                    .server
+                    .authorization_tokens
+                    .push(new_token.clone());
+                self.editing_authorization_tokens.insert(
+                    self.settings.server.authorization_tokens.len() - 1,
+                    new_token,
+                );
+                Task::none()
+            }
+            SettingsMessage::DeleteAuthorizationToken(index) => {
+                self.settings.server.authorization_tokens.remove(index);
+                self.editing_authorization_tokens =
+                    std::mem::take(&mut self.editing_authorization_tokens)
+                        .into_iter()
+                        .filter_map(|(key, token)| {
+                            if key == index {
+                                None
+                            } else if key < index {
+                                Some((key, token))
+                            } else {
+                                Some((key - 1, token))
+                            }
+                        })
+                        .collect();
+                Task::none()
+            }
+        }
+    }
+
+    fn authorization_token_input<'a>(
+        &'a self,
+        original_token: &'a String,
+        index: usize,
+    ) -> Element<'a, SettingsMessage> {
+        let value = self
+            .editing_authorization_tokens
+            .get(&index)
+            .unwrap_or(original_token);
+        let editing = self.editing_authorization_tokens.contains_key(&index);
+
+        let icon = widget::icon::from_name(if editing {
+            "edit-clear-symbolic"
+        } else {
+            "edit-symbolic"
+        })
+        .size(ICON_SIZE);
+
+        let button = widget::button::icon(icon).on_press(
+            SettingsMessage::ToggleAuthorizationTokenEdit(index, !editing),
+        );
+
+        settings::item_row(vec![
+            widget::icon::from_name("avatar-default-symbolic")
+                .size(ICON_SIZE)
+                .into(),
+            widget::text_input(fl!("settings-server-enter-authorization-token"), value)
+                .leading_icon(
+                    widget::icon::from_name("dialog-password-symbolic")
+                        .size(ICON_SIZE)
+                        .into(),
+                )
+                .trailing_icon(button.into())
+                .apply_if(editing, |input| {
+                    input
+                        .on_input(move |input| {
+                            SettingsMessage::EditAuthorizationToken(index, input)
+                        })
+                        .on_submit(move |input| {
+                            SettingsMessage::SubmitAuthorizationToken(index, input)
+                        })
+                })
+                .into(),
+            widget::button::icon(widget::icon::from_name("list-remove-symbolic").size(ICON_SIZE))
+                .class(widget::button::ButtonClass::Destructive)
+                .on_press(SettingsMessage::DeleteAuthorizationToken(index))
+                .tooltip(fl!("settings-server-delete-authorization-token"))
+                .into(),
+        ])
+        .into()
+    }
+}

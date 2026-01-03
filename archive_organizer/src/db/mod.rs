@@ -13,10 +13,22 @@ use diesel::r2d2::Pool;
 use diesel_migrations::EmbeddedMigrations;
 use diesel_migrations::MigrationHarness;
 use diesel_migrations::embed_migrations;
+use serde::Deserialize;
+use serde::Serialize;
 
-#[derive(Debug, serde::Deserialize, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DbSettings {
     url: String,
+}
+
+impl DbSettings {
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    pub fn set_url(&mut self, url: String) {
+        self.url = url;
+    }
 }
 
 pub type ConnectionPool = Pool<ConnectionManager<SqliteConnection>>;

@@ -1,33 +1,47 @@
 pub mod file_system_visitor;
 pub mod modules;
+
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result;
 pub use file_system_visitor::Error;
 pub use file_system_visitor::FileSystemVisitor;
-use indexmap::IndexMap;
 use itertools::Itertools;
 use modules::file_extension_finder::FileExtensionFinder;
 use modules::scm_project_finder::ScmProjectFinder;
+use provider::sync::Provider;
 use serde::Deserialize;
+use serde::Serialize;
 
 use crate::ApplicationModule;
 use crate::ExpandedPath;
 use crate::db::ConnectionPool;
+use crate::settings::Settings;
+use crate::settings::SettingsError;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ScanSettings {
+    #[serde(default)]
     pub dry_run: bool,
-    pub auto_tags: IndexMap<String, Vec<String>>,
-    pub directories: IndexMap<ExpandedPath, DirectorySettings>,
+    #[serde(default)]
+    pub auto_tags: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pub directories: BTreeMap<ExpandedPath, DirectorySettings>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "action")]
 pub enum DirectorySettings {
-    Ignore { inherit: bool },
-    Scan { tags: Vec<String>, inherit: bool },
+    Ignore {
+        inherit: bool,
+    },
+    Scan {
+        #[serde(default)]
+        tags: Vec<String>,
+        inherit: bool,
+    },
 }
 
 impl DirectorySettings {
@@ -59,7 +73,7 @@ impl DirectorySettings {
         }
     }
 
-    fn inherit(&self) -> bool {
+    pub fn inherit(&self) -> bool {
         use DirectorySettings::*;
         match self {
             Ignore { inherit, .. } | Scan { inherit, .. } => *inherit,
@@ -77,6 +91,10 @@ impl ScanSettings {
             .map(|(_key, value)| value)
             .cloned()
             .reduce(|acc, item| acc.merge(item))
+    }
+
+    pub fn set_dry_run(&mut self, dry_run: bool) {
+        self.dry_run = dry_run;
     }
 }
 
@@ -113,7 +131,10 @@ pub fn create_visitor(
     )
 }
 
-impl ApplicationModule {
+impl<P> ApplicationModule<P>
+where
+    P: Provider<Settings, Error = SettingsError>,
+{
     pub fn scan(self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref().canonicalize()?;
         self.visitor().visit(&path)?;

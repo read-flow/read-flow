@@ -15,12 +15,14 @@ maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+clap = { workspace = true, features = ["derive"] }
 futures-util.workspace = true
 i18n-embed = { workspace = true, features = ["fluent-system", "desktop-requester"] }
 i18n-embed-fl.workspace = true
 indexmap.workspace = true
 open.workspace = true
 rand.workspace = true
+rfd.workspace = true
 rust-embed.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
@@ -29,6 +31,7 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 archive-organizer = { path = "../archive_organizer", default-features = false }
+provider = { path = "../provider" }
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"

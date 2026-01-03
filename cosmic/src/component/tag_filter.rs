@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::HashSet;
+use std::fmt::Display;
 
 use archive_organizer::Builder;
-use archive_organizer::api::FileDataSource;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
@@ -12,14 +12,14 @@ use cosmic::iced::widget::combo_box;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
+use provider::r#async::Provider;
 
-use crate::client::Client;
 use crate::fl;
 use crate::state::tags::Tags;
 use crate::state::tags::TagsState;
 
-pub struct TagFilter {
-    client: Client,
+pub struct TagFilter<P> {
+    tags_provider: P,
     pub allow_tags: HashSet<String>, // Tags that files must have (whitelist)
     pub deny_tags: HashSet<String>,  // Tags that files must not have (blacklist)
     tags: TagsState,                 // Available tags for selection
@@ -47,11 +47,15 @@ pub enum TagFilterMessage {
     Out(TagFilterOutput),
 }
 
-impl TagFilter {
-    pub fn new(client: Client) -> (Self, Task<cosmic::Action<TagFilterMessage>>) {
+impl<P, E> TagFilter<P>
+where
+    P: Provider<Vec<String>, Error = E> + Clone + 'static,
+    E: Display,
+{
+    pub fn new(tags_provider: P) -> (Self, Task<cosmic::Action<TagFilterMessage>>) {
         (
             Self {
-                client,
+                tags_provider,
                 allow_tags: HashSet::new(),
                 deny_tags: HashSet::new(),
                 tags: TagsState::default(),
@@ -67,7 +71,7 @@ impl TagFilter {
 
         // Allow Tags Section
         let allow_section = self.view_tag_filter_section(
-            fl!("file-list-allow-tags"),
+            fl!("document-list-allow-tags"),
             &self.allow_tags,
             &self.new_allow_tag,
             TagFilterMessage::UpdateNewAllowTag,
@@ -78,7 +82,7 @@ impl TagFilter {
 
         // Deny Tags Section
         let deny_section = self.view_tag_filter_section(
-            fl!("file-list-deny-tags"),
+            fl!("document-list-deny-tags"),
             &self.deny_tags,
             &self.new_deny_tag,
             TagFilterMessage::UpdateNewDenyTag,
@@ -90,7 +94,7 @@ impl TagFilter {
         // Clear all tag filters button
         if !self.allow_tags.is_empty() || !self.deny_tags.is_empty() {
             let clear_section = settings::section().add(
-                widget::button::text(fl!("file-list-clear-all-tag-filters"))
+                widget::button::text(fl!("document-list-clear-all-tag-filters"))
                     .on_press(TagFilterMessage::ClearAllTagFilters),
             );
             content.push(clear_section.into());
@@ -130,7 +134,7 @@ impl TagFilter {
 
             section = section.add(tags_flex);
         } else {
-            section = section.add(widget::text::caption(fl!("file-list-no-tags-selected")));
+            section = section.add(widget::text::caption(fl!("document-list-no-tags-selected")));
         }
 
         // Add tag input
@@ -154,7 +158,9 @@ impl TagFilter {
             }) => {
                 if all_tags.is_empty() {
                     // No tags exist in the system at all
-                    section.add(widget::text::caption(fl!("file-list-no-tags-available")))
+                    section.add(widget::text::caption(fl!(
+                        "document-list-no-tags-available"
+                    )))
                 } else {
                     // Check if there are any tags available that aren't already in use
                     let has_available_tags = all_tags
@@ -163,25 +169,23 @@ impl TagFilter {
 
                     if !has_available_tags {
                         // All existing tags are already in use
-                        section.add(widget::text::caption(fl!("file-list-all-tags-in-use")))
+                        section.add(widget::text::caption(fl!("document-list-all-tags-in-use")))
                     } else {
                         // Show combo box with available tags
                         let combo = combo_box(
                             available_tags,
-                            &fl!("file-list-select-tag"),
+                            &fl!("document-list-select-tag"),
                             Some(new_tag_input),
                             update_message,
                         )
                         .width(Length::Fill);
 
-                        let add_button = widget::button::text(fl!("file-list-add-tag")).apply_if(
-                            !new_tag_input.is_empty(),
-                            |button| {
+                        let add_button = widget::button::text(fl!("document-list-add-tag"))
+                            .apply_if(!new_tag_input.is_empty(), |button| {
                                 button
                                     .on_press(add_message)
                                     .class(widget::button::ButtonClass::Suggested)
-                            },
-                        );
+                            });
 
                         let input_row =
                             widget::row().push(combo).push(add_button).spacing(space_xs);
@@ -215,12 +219,11 @@ impl TagFilter {
         match message {
             TagFilterMessage::LoadAllTags => {
                 self.tags = TagsState::Loading;
-                let client = self.client.clone();
+                let tags_provider = self.tags_provider.clone();
                 cosmic::task::future(async move {
-                    match client.get_files_tags().await {
-                        Ok(tags) => TagFilterMessage::AllTagsLoaded(Ok(tags)),
-                        Err(err) => TagFilterMessage::AllTagsLoaded(Err(format!("{err}"))),
-                    }
+                    TagFilterMessage::AllTagsLoaded(
+                        tags_provider.provide().await.map_err(|e| format!("{e}")),
+                    )
                 })
             }
             TagFilterMessage::AllTagsLoaded(result) => {
@@ -243,8 +246,8 @@ impl TagFilter {
             TagFilterMessage::AddAllowTag => {
                 if !self.new_allow_tag.is_empty() && !self.allow_tags.contains(&self.new_allow_tag)
                 {
-                    self.allow_tags.insert(self.new_allow_tag.clone());
-                    self.new_allow_tag.clear();
+                    self.allow_tags
+                        .insert(std::mem::take(&mut self.new_allow_tag));
 
                     // Update available tags to reflect the change
                     if let TagsState::Loaded(Tags { all_tags, .. }) = &self.tags {
@@ -280,8 +283,8 @@ impl TagFilter {
             }
             TagFilterMessage::AddDenyTag => {
                 if !self.new_deny_tag.is_empty() && !self.deny_tags.contains(&self.new_deny_tag) {
-                    self.deny_tags.insert(self.new_deny_tag.clone());
-                    self.new_deny_tag.clear();
+                    self.deny_tags
+                        .insert(std::mem::take(&mut self.new_deny_tag));
 
                     // Update available tags to reflect the change
                     if let TagsState::Loaded(Tags { all_tags, .. }) = &self.tags {
@@ -326,7 +329,7 @@ impl TagFilter {
                 }
             }
             TagFilterMessage::Out(_) => {
-                panic!("should be handled by the parent component")
+                panic!("{message:?} should be handled by the parent component")
             }
         }
     }

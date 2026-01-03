@@ -1,32 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use archive_organizer::ApplicationModule;
-use archive_organizer::Builder;
 use cosmic::app::context_drawer;
+use cosmic::cosmic_config;
 use cosmic::cosmic_config::CosmicConfigEntry;
-use cosmic::cosmic_config::{
-    self,
-};
 use cosmic::iced::Length;
 use cosmic::iced::Subscription;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::prelude::*;
 use cosmic::task;
+use cosmic::widget;
 use cosmic::widget::about::About;
 use cosmic::widget::icon;
 use cosmic::widget::menu;
 use cosmic::widget::nav_bar;
 use cosmic::widget::segmented_button::Entity;
-use cosmic::widget::segmented_button::EntityMut;
-use cosmic::widget::{
-    self,
-};
-use futures_util::SinkExt;
 use i18n_embed::unic_langid::LanguageIdentifier;
+use provider::r#async::HasSetExpired;
 
+use crate::ApplicationModule;
 use crate::config::Config;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
@@ -34,6 +29,7 @@ use crate::page::PageMessage;
 use crate::page::PageOutput;
 use crate::page::PageSelector;
 use crate::page::Pages;
+use crate::page::settings_invalidation_subscription;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
@@ -56,7 +52,7 @@ pub struct AppModel {
     // Configuration data that persists between application runs.
     config: Config,
     /// Application Module
-    _application_module: ApplicationModule,
+    application_module: Arc<ApplicationModule>,
     /// Pages
     pages: Pages,
 }
@@ -64,21 +60,23 @@ pub struct AppModel {
 /// Messages emitted by the application and its widgets.
 #[derive(Debug, Clone)]
 pub enum Message {
-    SubscriptionChannel,
     ToggleContextPage(ContextPage),
     ToggleActivePageContext,
     UpdateConfig(Config),
     LaunchUrl(String),
     Page(PageMessage),
     PageAdded(PageSelector, &'static str),
+    ActivatePage(PageSelector),
     ActivePageRemoved(PageSelector),
     SwitchLanguage(LanguageIdentifier),
+    ExpireDocumentProvider,
 }
 
 impl From<PageOutput> for Message {
     fn from(source: PageOutput) -> Self {
         match source {
             PageOutput::PageAdded(page, icon_name) => Message::PageAdded(page, icon_name),
+            PageOutput::TogglePage(page_selector) => Message::ActivatePage(page_selector),
             PageOutput::PageRemoved(page) => Message::ActivePageRemoved(page),
             PageOutput::ToggleContextPage(page_selector) => {
                 Message::ToggleContextPage(ContextPage::PageContext(page_selector))
@@ -102,7 +100,7 @@ impl cosmic::Application for AppModel {
     type Executor = cosmic::executor::Default;
 
     /// Data that your application receives to its init method.
-    type Flags = ApplicationModule;
+    type Flags = Arc<ApplicationModule>;
 
     /// Messages which the application and its widgets will emit.
     type Message = Message;
@@ -127,7 +125,16 @@ impl cosmic::Application for AppModel {
         let mut nav = nav_bar::Model::default();
         let mut nav_mappings = HashMap::new();
 
-        let (pages, page_action) = Pages::new(&application_module);
+        let (pages, page_action) = Pages::new(application_module.clone());
+
+        nav.insert()
+            .text(pages.display_name(&PageSelector::Documents))
+            .data::<PageSelector>(PageSelector::Documents)
+            .icon(icon::from_name("resources-symbolic"))
+            .with_id(|nav_id| {
+                nav_mappings.insert(PageSelector::Documents, nav_id);
+            })
+            .activate();
 
         nav.insert()
             .text(pages.display_name(&PageSelector::Sources))
@@ -137,16 +144,13 @@ impl cosmic::Application for AppModel {
                 nav_mappings.insert(PageSelector::Sources, nav_id);
             });
 
-        for (index, selector) in pages.all_file_list_selectors().iter().enumerate() {
-            nav.insert()
-                .text(pages.display_name(selector))
-                .data::<PageSelector>(selector.clone())
-                .icon(icon::from_name("package-x-generic-symbolic"))
-                .apply_if(index == 0, EntityMut::activate)
-                .with_id(|nav_id| {
-                    nav_mappings.insert(selector.clone(), nav_id);
-                });
-        }
+        nav.insert()
+            .text(pages.display_name(&PageSelector::Settings))
+            .data::<PageSelector>(PageSelector::Settings)
+            .icon(icon::from_name("preferences-system-symbolic"))
+            .with_id(|nav_id| {
+                nav_mappings.insert(PageSelector::Settings, nav_id);
+            });
 
         // Create the about widget
         let about = About::default()
@@ -177,7 +181,7 @@ impl cosmic::Application for AppModel {
                     }
                 })
                 .unwrap_or_default(),
-            _application_module: application_module,
+            application_module,
             pages,
         };
 
@@ -279,18 +283,14 @@ impl cosmic::Application for AppModel {
     /// emit messages to the application through a channel. They are started at the
     /// beginning of the application, and persist through its lifetime.
     fn subscription(&self) -> Subscription<Self::Message> {
-        struct MySubscription;
-
         Subscription::batch(vec![
-            // Create a subscription which emits updates through a channel.
-            Subscription::run_with_id(
-                std::any::TypeId::of::<MySubscription>(),
-                cosmic::iced::stream::channel(4, move |mut channel| async move {
-                    _ = channel.send(Message::SubscriptionChannel).await;
-
-                    futures_util::future::pending().await
-                }),
-            ),
+            // Subscribe to document provider cache invalidation events
+            self.pages
+                .document_provider
+                .invalidation_subscription(|| Message::Page(PageMessage::Refresh)),
+            settings_invalidation_subscription(self.application_module.clone(), || {
+                Message::ExpireDocumentProvider
+            }),
             // Watch for application configuration changes.
             self.core()
                 .watch_config::<Config>(Self::APP_ID)
@@ -311,10 +311,6 @@ impl cosmic::Application for AppModel {
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         tracing::debug!("received: {message:?}");
         match message {
-            Message::SubscriptionChannel => {
-                // For example purposes only.
-                Task::none()
-            }
             Message::ToggleContextPage(context_page) => {
                 if self.context_page == context_page {
                     // Close the context drawer if the toggled context page is the same.
@@ -347,6 +343,12 @@ impl cosmic::Application for AppModel {
                 }
             },
             Message::Page(page_message) => self.pages.update(page_message).map(ActionExt::map_into),
+            Message::ActivatePage(selector) => {
+                if let Some(id) = self.nav_mappings.get(&selector).cloned() {
+                    self.nav.activate(id);
+                }
+                Task::none()
+            }
             Message::PageAdded(selector, icon_name) => {
                 let parent = self.nav.active();
                 self.nav
@@ -392,6 +394,13 @@ impl cosmic::Application for AppModel {
 
                 // Update the window title to reflect the new language
                 self.update_title()
+            }
+            Message::ExpireDocumentProvider => {
+                let document_provider = self.pages.document_provider.clone();
+                task::future(async move {
+                    document_provider.set_expired().await;
+                    Message::Page(PageMessage::Refresh)
+                })
             }
         }
     }

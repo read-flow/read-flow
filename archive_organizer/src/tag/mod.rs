@@ -1,5 +1,6 @@
 use itertools::Itertools;
 use itertools::concat;
+use provider::sync::Provider;
 
 use crate::ApplicationModule;
 use crate::db::dao::Error;
@@ -8,10 +9,15 @@ use crate::db::dao::FileTagDao;
 use crate::db::models::File;
 use crate::db::models::FileTag;
 use crate::scan::ScanSettings;
+use crate::settings::Settings;
+use crate::settings::SettingsError;
 
-impl ApplicationModule {
+impl<P> ApplicationModule<P>
+where
+    P: Provider<Settings, Error = SettingsError>,
+{
     pub fn apply_tags(&self) -> Result<(), Error> {
-        self.apply_tags_from_settings(&self.settings.scan)
+        self.apply_tags_from_settings(&self.settings().scan)
     }
 
     fn apply_tags_from_settings(&self, scan_settings: &ScanSettings) -> Result<(), Error> {
@@ -19,7 +25,7 @@ impl ApplicationModule {
             .auto_tags
             .iter()
             .map(|(path, tags)| {
-                self.connection_pool
+                self.connection_pool()
                     .select_all_files_by_path_like(path)
                     .map(|files| {
                         if scan_settings.dry_run {
@@ -35,7 +41,7 @@ impl ApplicationModule {
         if scan_settings.dry_run {
             Ok(())
         } else {
-            self.connection_pool
+            self.connection_pool()
                 .upsert_many_file_tags(concat(file_tags_to_add))
         }
     }

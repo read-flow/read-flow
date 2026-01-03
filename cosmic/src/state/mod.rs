@@ -1,4 +1,4 @@
-pub mod files;
+pub mod filtered;
 pub mod tags;
 
 #[derive(Default)]

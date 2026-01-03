@@ -1,8 +1,9 @@
+use std::sync::Arc;
+
 use archive_organizer::Builder;
 use archive_organizer::api::FileDataSource;
 use archive_organizer::api::Status;
 use archive_organizer::client::FilesClient;
-use archive_organizer::db::ConnectionPool;
 use archive_organizer::db::dao::RemoteDao;
 use archive_organizer::db::models::NewRemote;
 use archive_organizer::db::models::Remote;
@@ -12,16 +13,20 @@ use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
 use cosmic::iced::Length;
+use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
+use cosmic::widget::Row;
 use cosmic::widget::container;
 use cosmic::widget::icon;
 use cosmic::widget::row;
 use cosmic::widget::settings;
 use url::Url;
 
+use crate::ApplicationModule;
+use crate::ICON_SIZE;
 use crate::app::ContextView;
 use crate::fl;
 use crate::iter::find_with_next;
@@ -32,7 +37,7 @@ pub type RemotesState = LoadedState<Vec<Remote>>;
 pub type UrlVerificationState = LoadedState<Status>;
 
 pub struct SourcesPage {
-    connection_pool: ConnectionPool,
+    application_module: Arc<ApplicationModule>,
     remotes_state: RemotesState,
     entered_url: String,
     entered_url_id: widget::Id, // Unique ID for focus management
@@ -79,10 +84,10 @@ pub enum SourcesMessage {
 }
 
 impl SourcesPage {
-    pub fn new(connection_pool: ConnectionPool) -> (Self, Task<Action<SourcesMessage>>) {
+    pub fn new(application_module: Arc<ApplicationModule>) -> (Self, Task<Action<SourcesMessage>>) {
         (
             Self {
-                connection_pool,
+                application_module,
                 remotes_state: Default::default(),
                 entered_url: Default::default(),
                 entered_url_id: widget::Id::unique(),
@@ -108,8 +113,7 @@ impl SourcesPage {
                 .body(fl!("sources-delete-confirm-body"))
                 .icon(icon::from_name("dialog-warning-symbolic").size(64))
                 .control(
-                    widget::text(&remote.base_url)
-                        .font(cosmic::font::Font::MONOSPACE)
+                    widget::text::monotext(&remote.base_url)
                         .apply(widget::container)
                         .class(cosmic::theme::Container::Card)
                         .padding(space_s)
@@ -138,8 +142,7 @@ impl SourcesPage {
             let dialog = widget::dialog()
                 .title(fl!("sources-error-title"))
                 .control(
-                    widget::text(error)
-                        .font(cosmic::font::Font::MONOSPACE)
+                    widget::text::monotext(error)
                         .apply(widget::container)
                         .class(cosmic::theme::Container::Card)
                         .padding(space_s)
@@ -223,7 +226,7 @@ impl SourcesPage {
                             LoadedState::Failed(_) => icon::from_name("dialog-error-symbolic"),
                             LoadedState::Loaded(_) => icon::from_name("emblem-ok-symbolic"),
                         }
-                        .size(16),
+                        .size(ICON_SIZE),
                     )
                     .spacing(space_xs)
                     .align_y(Vertical::Center),
@@ -239,7 +242,24 @@ impl SourcesPage {
 
         content.push(add_section.into());
 
-        settings::view_column(content).into()
+        vec![
+            widget::horizontal_space().into(),
+            settings::view_column(content)
+                .apply(widget::container)
+                .width(Length::FillPortion(4))
+                .height(Length::Shrink)
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Top)
+                .into(),
+            widget::horizontal_space().into(),
+        ]
+        .apply(Row::with_children)
+        .apply(widget::scrollable::vertical)
+        .apply(widget::container)
+        .height(Length::Fill)
+        .align_x(Horizontal::Center)
+        .align_y(Vertical::Top)
+        .into()
     }
 
     pub fn view_context(&self) -> ContextView<'_, SourcesMessage> {
@@ -254,7 +274,7 @@ impl SourcesPage {
         match message {
             SourcesMessage::LoadRemotes => {
                 self.remotes_state = RemotesState::Loading;
-                let connection_pool = self.connection_pool.clone();
+                let connection_pool = self.application_module.connection_pool();
                 task::future(async move {
                     match connection_pool.select_all_remotes() {
                         Ok(remotes) => SourcesMessage::SetRemotesStateLoaded(remotes),
@@ -272,14 +292,19 @@ impl SourcesPage {
             }
             SourcesMessage::UpdateEnteredUrl(url) => {
                 self.entered_url = url;
-                match self.entered_url.parse::<Url>() {
-                    Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
-                        url,
-                        do_submit: false,
-                    }),
-                    Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(fl!(
-                        "sources-invalid-url"
-                    ))),
+                self.url_verification_state = UrlVerificationState::New;
+                if self.entered_url.is_empty() {
+                    widget::text_input::focus(self.entered_url_id.clone())
+                } else {
+                    match self.entered_url.parse::<Url>() {
+                        Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
+                            url,
+                            do_submit: false,
+                        }),
+                        Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
+                            fl!("sources-invalid-url"),
+                        )),
+                    }
                 }
             }
             SourcesMessage::SetUrlVerificationStateFailed(error) => {
@@ -319,7 +344,7 @@ impl SourcesPage {
                 }
             }
             SourcesMessage::SubmitSource(url) => {
-                let connection_pool = self.connection_pool.clone();
+                let connection_pool = self.application_module.connection_pool();
                 let order = self.remotes_state.unwrap().len() + 1;
                 task::future(async move {
                     match connection_pool.insert_remote(NewRemote {
@@ -356,7 +381,7 @@ impl SourcesPage {
                 task::none()
             }
             SourcesMessage::DeleteSource(id) => {
-                let connection_pool = self.connection_pool.clone();
+                let connection_pool = self.application_module.connection_pool();
                 task::future(async move {
                     match connection_pool.delete_remote_by_id(id) {
                         Ok(_) => SourcesMessage::DeletedSource(id),
@@ -410,7 +435,7 @@ impl SourcesPage {
                 .unwrap_or_else(task::none)
             }
             SourcesMessage::SwapOrderOfRemotes(first, second) => {
-                let connection_pool = self.connection_pool.clone();
+                let connection_pool = self.application_module.connection_pool();
                 task::future(async move {
                     match connection_pool.swap_order_of_remotes(&first, &second) {
                         Ok(_) => SourcesMessage::LoadRemotes,
@@ -419,7 +444,7 @@ impl SourcesPage {
                 })
             }
             SourcesMessage::Out(_) => {
-                panic!("should be handled by the parent component")
+                panic!("{message:?} should be handled by the parent component")
             }
         }
     }
@@ -439,7 +464,7 @@ impl SourcesPage {
         row()
             .push(
                 icon::from_name("network-server-symbolic")
-                    .size(16)
+                    .size(ICON_SIZE)
                     .apply(container)
                     .padding([0, space_xs, 0, 0]),
             )
@@ -447,7 +472,7 @@ impl SourcesPage {
             .push(
                 row()
                     .push(
-                        widget::button::icon(icon::from_name("go-up-symbolic").size(16))
+                        widget::button::icon(icon::from_name("go-up-symbolic").size(ICON_SIZE))
                             .padding(space_xxs)
                             .class(theme::Button::Icon)
                             .apply_if(!is_first, |button| {
@@ -455,7 +480,7 @@ impl SourcesPage {
                             }),
                     )
                     .push(
-                        widget::button::icon(icon::from_name("go-down-symbolic").size(16))
+                        widget::button::icon(icon::from_name("go-down-symbolic").size(ICON_SIZE))
                             .padding(space_xxs)
                             .class(theme::Button::Icon)
                             .apply_if(!is_last, |button| {
@@ -463,10 +488,12 @@ impl SourcesPage {
                             }),
                     )
                     .push(
-                        widget::button::icon(icon::from_name("edit-delete-symbolic").size(16))
-                            .padding(space_xxs)
-                            .class(theme::Button::Destructive)
-                            .on_press(SourcesMessage::RequestDeleteSource(source.clone())),
+                        widget::button::icon(
+                            icon::from_name("list-remove-symbolic").size(ICON_SIZE),
+                        )
+                        .padding(space_xxs)
+                        .class(theme::Button::Destructive)
+                        .on_press(SourcesMessage::RequestDeleteSource(source.clone())),
                     )
                     .spacing(space_xxs),
             )

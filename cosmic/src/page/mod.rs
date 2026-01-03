@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // pages
-mod file_details;
-pub(crate) mod file_list;
-pub(crate) mod sources;
+mod document_details;
+mod document_list;
+mod settings;
+mod sources;
 
 use core::panic;
+use std::any::Any;
+use std::sync::Arc;
 
-use archive_organizer::ApplicationModule;
-use archive_organizer::api::File;
 use archive_organizer::client::FilesClient;
 use archive_organizer::db::dao::RemoteDao;
 use cosmic::Action;
@@ -15,66 +16,75 @@ use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::iced::Length;
+use cosmic::iced::Subscription;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::task;
 use cosmic::widget;
-use file_details::FileDetails;
-use file_details::FileDetailsMessage;
-use file_details::FileDetailsOutput;
-use file_list::FileList;
-use file_list::FileListMessage;
-use file_list::FileListOutput;
 use indexmap::IndexMap;
-use rand::Rng;
-use rand::rngs::ThreadRng;
+use provider::sync::Invalidated;
+use tokio::sync::broadcast;
 use url::Url;
 
+use crate::ApplicationModule;
+use crate::aggregator::Aggregator;
+use crate::aggregator::Document;
 use crate::app::ContextView;
-use crate::client::Client;
 use crate::client::ClientSelector;
 use crate::cosmic_ext::ActionExt;
+use crate::document_provider::DocumentProvider;
 use crate::fl;
+use crate::page::document_details::DocumentDetails;
+use crate::page::document_details::DocumentDetailsMessage;
+use crate::page::document_details::DocumentDetailsOutput;
+use crate::page::document_list::DocumentList;
+use crate::page::document_list::DocumentListMessage;
+use crate::page::document_list::DocumentListOutput;
+use crate::page::settings::SettingsMessage;
+use crate::page::settings::SettingsPage;
 use crate::page::sources::SourcesMessage;
 use crate::page::sources::SourcesOutput;
 use crate::page::sources::SourcesPage;
 
+type Fingerprint = String;
+
 pub struct Pages {
-    rng: ThreadRng,
-    file_lists: IndexMap<ClientSelector, FileList>,
-    file_details: IndexMap<i32, FileDetails>,
+    pub(crate) document_provider: Arc<DocumentProvider>,
+
     sources: SourcesPage,
+    documents: DocumentList,
+    document_details: IndexMap<Fingerprint, DocumentDetails>,
+    settings: SettingsPage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PageSelector {
-    FileList(ClientSelector),
-    FileDetails(i32),
     Sources,
-}
-
-impl From<ClientSelector> for PageSelector {
-    fn from(value: ClientSelector) -> Self {
-        Self::FileList(value)
-    }
+    Documents,
+    DocumentDetails(Fingerprint),
+    Settings,
 }
 
 #[derive(Debug, Clone)]
 pub enum PageOutput {
     PageAdded(PageSelector, &'static str),
+    TogglePage(PageSelector),
     PageRemoved(PageSelector),
     ToggleContextPage(PageSelector),
 }
 
 #[derive(Debug, Clone)]
 pub enum PageMessage {
-    Files(ClientSelector, FileListMessage),
-    FileDetails(i32, FileDetailsMessage),
     Sources(SourcesMessage),
-    OpenFileDetails(ClientSelector, File),
-    CloseFileDetails(i32),
     AddRemote(Url),
     DeleteRemote(Url),
+    Documents(DocumentListMessage),
+    DocumentDetails(Fingerprint, DocumentDetailsMessage),
+    OpenDocumentDetails(Document),
+    CloseDocumentDetails(Fingerprint),
+    Settings(SettingsMessage),
+    Refresh,
+    Noop,
     Out(PageOutput),
 }
 
@@ -84,16 +94,25 @@ impl From<SourcesMessage> for PageMessage {
     }
 }
 
-impl Pages {
-    pub fn new(application_module: &ApplicationModule) -> (Self, Task<Action<PageMessage>>) {
-        // Get the database client from the application module
-        let db_client = application_module.db_client();
+impl From<DocumentListMessage> for PageMessage {
+    fn from(source: DocumentListMessage) -> Self {
+        Self::Documents(source)
+    }
+}
 
-        let (sources, init_sources) = SourcesPage::new(application_module.connection_pool.clone());
+impl From<SettingsMessage> for PageMessage {
+    fn from(source: SettingsMessage) -> Self {
+        Self::Settings(source)
+    }
+}
+
+impl Pages {
+    pub fn new(application_module: Arc<ApplicationModule>) -> (Self, Task<Action<PageMessage>>) {
+        let (sources, init_sources) = SourcesPage::new(application_module.clone());
 
         // Get remote clients from the application module
         let remote_clients = application_module
-            .connection_pool
+            .connection_pool()
             .select_all_remotes()
             .unwrap_or_default()
             .into_iter()
@@ -108,71 +127,63 @@ impl Pages {
                 Vec::new()
             });
 
-        let (local, local_task) = FileList::new(db_client.into());
+        let clients = remote_clients
+            .clone()
+            .into_iter()
+            .map(Into::into)
+            .chain(Some(application_module.clone().into()))
+            .collect::<Vec<_>>();
 
-        let mut tasks = vec![
-            local_task
-                .map(|action| action.map(|msg| map_file_list_message(ClientSelector::Local, msg))),
+        let document_provider = Arc::new(DocumentProvider::new(Aggregator::new(
+            clients,
+            application_module.clone(),
+        )));
+
+        let (settings, init_settings) =
+            SettingsPage::new(application_module.clone(), document_provider.clone());
+
+        let (documents, init_documents) = DocumentList::new(document_provider.clone());
+
+        let tasks = vec![
+            init_sources.map(ActionExt::map_into),
+            init_documents.map(ActionExt::map_into),
+            init_settings.map(ActionExt::map_into),
         ];
-
-        let (mut remotes, remote_tasks): (Vec<FileList>, Vec<Task<Action<PageMessage>>>) =
-            remote_clients
-                .into_iter()
-                .map(|remote_client| {
-                    let base_url = remote_client.base_url.clone();
-                    let (remote, task) = FileList::new(remote_client.into());
-                    (
-                        remote,
-                        task.map(move |action| {
-                            action.map(|msg| {
-                                map_file_list_message(ClientSelector::Remote(base_url.clone()), msg)
-                            })
-                        }),
-                    )
-                })
-                .unzip();
-
-        tasks.extend(remote_tasks);
-        tasks.push(init_sources.map(ActionExt::map_into));
-
-        let mut file_lists = vec![local];
-        file_lists.append(&mut remotes);
 
         (
             Self {
-                rng: rand::rng(),
-                file_lists: file_lists
-                    .into_iter()
-                    .map(|file_list| (file_list.selector(), file_list))
-                    .collect(),
-                file_details: Default::default(),
+                document_provider,
                 sources,
+                documents,
+                document_details: Default::default(),
+                settings,
             },
             task::batch(tasks),
         )
     }
 
-    pub fn all_file_list_selectors(&self) -> Vec<PageSelector> {
-        self.file_lists.keys().cloned().map(Into::into).collect()
-    }
-
     pub fn display_name<'a>(&'a self, page_selector: &'a PageSelector) -> String {
         match &page_selector {
-            PageSelector::FileList(selector) => self.file_lists[selector].display_name(),
-            PageSelector::FileDetails(id) => self.file_details[id].display_name(),
             PageSelector::Sources => fl!("app-file-sources"),
+            PageSelector::Documents => "Documents".to_string(),
+            PageSelector::DocumentDetails(fingerprint) => {
+                self.document_details[fingerprint].display_name()
+            }
+            PageSelector::Settings => fl!("settings-page-title"),
         }
     }
 
     pub fn view<'a>(&'a self, active_page: &'a PageSelector) -> Element<'a, PageMessage> {
         match &active_page {
-            PageSelector::FileList(selector) => self.file_lists[selector]
-                .view()
-                .map(|msg| map_file_list_message(selector.clone(), msg)),
-            PageSelector::FileDetails(id) => self
-                .file_details
-                .get(id)
-                .map(|page| page.view().map(|msg| map_file_details_message(*id, msg)))
+            PageSelector::Sources => self.sources.view().map(Into::into),
+            PageSelector::Documents => self.documents.view().map(map_document_list_message),
+            PageSelector::DocumentDetails(fingerprint) => self
+                .document_details
+                .get(fingerprint)
+                .map(|page| {
+                    page.view()
+                        .map(|msg| map_document_details_message(fingerprint.clone(), msg))
+                })
                 .unwrap_or_else(|| {
                     widget::text::title1(fl!("page-not-found"))
                         .apply(widget::container)
@@ -182,7 +193,7 @@ impl Pages {
                         .align_y(Vertical::Center)
                         .into()
                 }),
-            PageSelector::Sources => self.sources.view().map(Into::into),
+            PageSelector::Settings => self.settings.view().map(Into::into),
         }
     }
 
@@ -191,15 +202,14 @@ impl Pages {
         active_page: &'a PageSelector,
     ) -> ContextView<'a, PageMessage> {
         match &active_page {
-            PageSelector::FileList(selector) => self.file_lists[selector]
-                .view_context()
-                .map(|msg| map_file_list_message(selector.clone(), msg)),
-            PageSelector::FileDetails(id) => self
-                .file_details
-                .get(id)
+            PageSelector::Sources => self.sources.view_context().map(Into::into),
+            PageSelector::Documents => self.documents.view_context().map(map_document_list_message),
+            PageSelector::DocumentDetails(fingerprint) => self
+                .document_details
+                .get(fingerprint)
                 .map(|page| {
                     page.view_context()
-                        .map(|msg| map_file_details_message(*id, msg))
+                        .map(|msg| map_document_details_message(fingerprint.clone(), msg))
                 })
                 .unwrap_or_else(|| ContextView {
                     title: fl!("page-not-found"),
@@ -211,98 +221,105 @@ impl Pages {
                         .align_y(Vertical::Center)
                         .into(),
                 }),
-            PageSelector::Sources => self.sources.view_context().map(Into::into),
+            PageSelector::Settings => self.settings.view_context().map(Into::into),
         }
     }
 
     pub fn update(&mut self, message: PageMessage) -> Task<Action<PageMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
-            PageMessage::Files(selector, message) => {
-                match self.file_lists.get_mut(&selector) {
-                    Some(page) => page.update(message).map(move |action| {
-                        action.map(|msg| map_file_list_message(selector.clone(), msg))
-                    }),
-                    None => Task::none(), // TODO log
-                }
-            }
-            PageMessage::FileDetails(id, message) => self.file_details[&id]
-                .update(message)
-                .map(move |action| action.map(|msg| map_file_details_message(id, msg))),
-            PageMessage::AddRemote(url) => {
-                let client_selector = ClientSelector::Remote(url.clone());
-                let client = Client::Remote(FilesClient::new(url.clone()).unwrap());
-                let (file_list, initialize_task) = FileList::new(client);
-                self.file_lists.insert(client_selector.clone(), file_list);
-                initialize_task
-                    .map(move |action| {
-                        action.map(|msg| map_file_list_message(client_selector.clone(), msg))
+            PageMessage::Noop => Task::none(),
+            PageMessage::Refresh => {
+                let mut messages = self
+                    .document_details
+                    .iter()
+                    .map(|(fingerprint, _)| {
+                        task::message(PageMessage::DocumentDetails(
+                            fingerprint.clone(),
+                            DocumentDetailsMessage::RefreshDocument,
+                        ))
                     })
-                    .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
-                        PageSelector::FileList(ClientSelector::Remote(url)),
-                        "package-x-generic-symbolic",
-                    ))))
+                    .collect::<Vec<_>>();
+                messages.push(task::message(PageMessage::from(
+                    DocumentListMessage::LoadArchive,
+                )));
+                Task::batch(messages)
+            }
+            PageMessage::DocumentDetails(fingerprint, message) => self.document_details
+                [&fingerprint]
+                .update(message)
+                .map(move |action| {
+                    action.map(|msg| map_document_details_message(fingerprint.clone(), msg))
+                }),
+            PageMessage::AddRemote(url) => {
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    tracing::debug!("adding remote client: {url}");
+                    document_provider
+                        .add_client(FilesClient::new(url).unwrap().into())
+                        .await;
+                    PageMessage::Noop
+                })
             }
             PageMessage::DeleteRemote(url) => {
-                let client_selector = ClientSelector::Remote(url.clone());
-                self.file_lists.shift_remove(&client_selector);
-                task::message(PageMessage::Out(PageOutput::PageRemoved(
-                    PageSelector::FileList(ClientSelector::Remote(url)),
-                )))
+                let selector = ClientSelector::Remote(url.clone());
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    tracing::debug!("removing remote client: {url}");
+                    document_provider.remove_client(&selector).await;
+                    PageMessage::Noop
+                })
             }
             PageMessage::Sources(sources_message) => self
                 .sources
                 .update(sources_message)
                 .map(move |action| action.map(map_sources_message)),
-            PageMessage::OpenFileDetails(selector, file) => {
-                // TODO: only create new file_details if it does not yet exist
-                let id = self.rng.random();
-                let file_list = &self.file_lists[&selector];
-                let file_icon = get_file_type_icon(&file.type_);
-                let (file_details, initialization) =
-                    FileDetails::new(id, file, file_list.client().clone());
-                self.file_details.insert(id, file_details);
-                initialization
-                    .map(move |action| action.map(|msg| map_file_details_message(id, msg)))
-                    .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
-                        PageSelector::FileDetails(id),
-                        file_icon,
-                    ))))
-            }
-            PageMessage::CloseFileDetails(id) => {
-                let _ = self.file_details.swap_remove(&id);
+            PageMessage::Documents(document_list_message) => self
+                .documents
+                .update(document_list_message)
+                .map(move |action| action.map(map_document_list_message)),
+            PageMessage::Settings(settings_message) => self
+                .settings
+                .update(settings_message)
+                .map(move |action| action.map(map_settings_message)),
+            PageMessage::CloseDocumentDetails(fingerprint) => {
+                let _ = self.document_details.swap_remove(&fingerprint);
                 task::message(PageMessage::Out(PageOutput::PageRemoved(
-                    PageSelector::FileDetails(id),
+                    PageSelector::DocumentDetails(fingerprint),
                 )))
             }
+            PageMessage::OpenDocumentDetails(document) => {
+                let fingerprint = document.metadata.fingerprint.clone();
+                let document_icon = document.metadata.type_.get_file_type_icon();
+
+                // Only create new document_details if it does not yet exist
+                if self.document_details.contains_key(&fingerprint) {
+                    // Page already exists, just navigate to it
+                    task::message(PageMessage::Out(PageOutput::TogglePage(
+                        PageSelector::DocumentDetails(fingerprint),
+                    )))
+                } else {
+                    let fingerprint_1 = fingerprint.clone();
+                    let fingerprint_2 = fingerprint.clone();
+                    let (document_details, initialization) =
+                        DocumentDetails::new(document, self.documents.document_provider.clone());
+                    self.document_details
+                        .insert(fingerprint.clone(), document_details);
+                    initialization
+                        .map(move |action| {
+                            let fingerprint = fingerprint_1.clone();
+                            action.map(move |msg| map_document_details_message(fingerprint, msg))
+                        })
+                        .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
+                            PageSelector::DocumentDetails(fingerprint_2),
+                            document_icon,
+                        ))))
+                }
+            }
             PageMessage::Out(_) => {
-                panic!("should be handled by the parent component")
+                panic!("{message:?} should be handled by the parent component")
             }
         }
-    }
-}
-
-fn map_file_list_message(selector: ClientSelector, msg: FileListMessage) -> PageMessage {
-    match msg {
-        FileListMessage::Out(message) => match message {
-            FileListOutput::OpenFileDetails(file) => PageMessage::OpenFileDetails(selector, file),
-            FileListOutput::ToggleContextPage(client_selector) => {
-                PageMessage::Out(PageOutput::ToggleContextPage(client_selector.into()))
-            }
-        },
-        msg => PageMessage::Files(selector, msg),
-    }
-}
-
-fn map_file_details_message(id: i32, msg: FileDetailsMessage) -> PageMessage {
-    match msg {
-        FileDetailsMessage::Out(message) => match message {
-            FileDetailsOutput::Close(id) => PageMessage::CloseFileDetails(id),
-            FileDetailsOutput::RefreshFile(selector, file) => {
-                PageMessage::Files(selector, FileListMessage::RefreshFile(file))
-            }
-        },
-        msg => PageMessage::FileDetails(id, msg),
     }
 }
 
@@ -316,12 +333,82 @@ fn map_sources_message(msg: SourcesMessage) -> PageMessage {
     }
 }
 
-// Get appropriate file type icon based on extension
-pub fn get_file_type_icon(extension: &str) -> &'static str {
-    match extension.to_lowercase().as_str() {
-        "pdf" => "application-pdf",
-        "epub" => "application-epub+zip",
-        "mobi" => "application-x-mobipocket-ebook",
-        _ => panic!("Unsupported file extension: `{extension}`"),
+fn map_document_list_message(msg: DocumentListMessage) -> PageMessage {
+    match msg {
+        DocumentListMessage::Out(message) => match message {
+            DocumentListOutput::OpenDetails(document) => PageMessage::OpenDocumentDetails(document),
+            DocumentListOutput::ToggleContextPage => {
+                PageMessage::Out(PageOutput::ToggleContextPage(PageSelector::Documents))
+            }
+        },
+        msg => PageMessage::Documents(msg),
     }
+}
+
+fn map_document_details_message(
+    fingerprint: Fingerprint,
+    msg: DocumentDetailsMessage,
+) -> PageMessage {
+    match msg {
+        DocumentDetailsMessage::Out(message) => match message {
+            DocumentDetailsOutput::Close(fingerprint) => {
+                PageMessage::CloseDocumentDetails(fingerprint)
+            }
+            DocumentDetailsOutput::RefreshDocument(document) => {
+                PageMessage::Documents(DocumentListMessage::RefreshDocument(document))
+            }
+        },
+        msg => PageMessage::DocumentDetails(fingerprint, msg),
+    }
+}
+
+fn map_settings_message(msg: SettingsMessage) -> PageMessage {
+    match msg {
+        SettingsMessage::Out(_message) => {
+            // No output messages yet, but this is where they would be handled
+            unreachable!("No settings output messages defined yet")
+        }
+        // All other messages are handled by the settings page itself
+        msg => PageMessage::Settings(msg),
+    }
+}
+
+pub fn settings_invalidation_subscription<M, F>(
+    application_module: Arc<ApplicationModule>,
+    f: F,
+) -> Subscription<M>
+where
+    M: Send + 'static,
+    F: Fn() -> M + Send + 'static,
+{
+    use cosmic::iced_futures::futures::SinkExt;
+    use cosmic::iced_futures::futures::channel::mpsc;
+
+    let mut receiver = application_module.subscribe();
+    Subscription::run_with_id(
+        Invalidated.type_id(),
+        cosmic::iced::stream::channel(4, move |mut sender: mpsc::Sender<M>| async move {
+            loop {
+                match receiver.recv().await {
+                    Ok(_) => {
+                        if sender.send(f()).await.is_err() {
+                            // Channel closed, stop the subscription
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        // Sender dropped, stop the subscription
+                        break;
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                        // Missed some messages, but continue listening
+                        // Still send a notification since data has changed
+                        if sender.send(f()).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        }),
+    )
 }

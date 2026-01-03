@@ -29,7 +29,7 @@ impl DirectoryModule for ScmProjectFinder {
     fn handle(&self, directory: &Path) -> Result<(), DirectoryError> {
         let type_ = &self.directory.to_ascii_lowercase()[1..];
         let new_directory = NewDirectory {
-            path: format!("{}", directory.display()),
+            path: directory.display().to_string(),
             type_: type_.to_owned(),
         };
         tracing::debug!("inserting directory: {}", directory.display());
