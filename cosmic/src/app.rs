@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use archive_organizer::scan::DirectorySettings;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config;
 use cosmic::cosmic_config::CosmicConfigEntry;
@@ -70,6 +71,7 @@ pub enum Message {
     ActivePageRemoved(PageSelector),
     SwitchLanguage(LanguageIdentifier),
     ExpireDocumentProvider,
+    Scan,
 }
 
 impl From<PageOutput> for Message {
@@ -205,6 +207,13 @@ impl cosmic::Application for AppModel {
                         menu::Item::Button(fl!("context"), None, MenuAction::Context),
                         menu::Item::Button(fl!("about"), None, MenuAction::About),
                     ],
+                ),
+            ),
+            menu::Tree::with_children(
+                menu::root(fl!("actions")).apply(Element::from),
+                menu::items(
+                    &self.key_binds,
+                    vec![menu::Item::Button(fl!("scan"), None, MenuAction::Scan)],
                 ),
             ),
             menu::Tree::with_children(
@@ -402,6 +411,26 @@ impl cosmic::Application for AppModel {
                     Message::Page(PageMessage::Refresh)
                 })
             }
+            Message::Scan => {
+                let application_module = self.application_module.clone();
+                task::future(async move {
+                    for dir in application_module
+                        .settings()
+                        .scan
+                        .directories
+                        .iter()
+                        .filter_map(|(path, settings)| match settings {
+                            DirectorySettings::Scan { .. } => Some(path),
+                            DirectorySettings::Ignore { .. } => None,
+                        })
+                    {
+                        if let Err(e) = application_module.scan(dir) {
+                            tracing::error!("error occurred while scanning dir `{dir}`: {e}");
+                        }
+                    }
+                    Message::ExpireDocumentProvider
+                })
+            }
         }
     }
 
@@ -463,6 +492,7 @@ impl<'a, M: 'a> ContextView<'a, M> {
 pub enum MenuAction {
     About,
     Context,
+    Scan,
     SwitchTo(&'static str),
 }
 
@@ -473,6 +503,7 @@ impl menu::action::MenuAction for MenuAction {
         match self {
             MenuAction::About => Message::ToggleContextPage(ContextPage::About),
             MenuAction::Context => Message::ToggleActivePageContext,
+            MenuAction::Scan => Message::Scan,
             MenuAction::SwitchTo(language) => Message::SwitchLanguage(language.parse().unwrap()),
         }
     }

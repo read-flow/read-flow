@@ -135,7 +135,7 @@ impl<P> ApplicationModule<P>
 where
     P: Provider<Settings, Error = SettingsError>,
 {
-    pub fn scan(self, path: impl AsRef<Path>) -> Result<()> {
+    pub fn scan(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref().canonicalize()?;
         self.visitor().visit(&path)?;
         Ok(())
