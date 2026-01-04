@@ -2,7 +2,11 @@
 
 app-title = Archive Organizer Cosmic
 about = À propos
-documents = Les Documents
+actions = Actions
+app-file-sources = Sources de documents
+context = Contexte
+repository = Dépôt
+scan = Analyser
 view = Affichage
 welcome = Bienvenue dans Archive Organizer Cosmic! ✨
 page-id = Page { $num }
@@ -13,6 +17,7 @@ unknown-remote = ⚠ Source distante inconnue: { $url }
 generic-error = 🛑 Erreur: { $error }
 
 # File list states
+document-list-add-tag = Ajouter
 file-list-add-tag = Ajouter
 file-list-all-statuses = Tous les statuts
 file-list-all-tags-in-use = Toutes les étiquettes sont déjà utilisées
@@ -36,6 +41,8 @@ file-list-select-tag = Sélectionner une étiquette
 
 # File details
 document-details-add = Ajouter
+document-details-enter = Entrer une nouvelle étiquette
+document-details-document-no-longer-accessible = Document n'est plus accessible
 document-details-basic-info = Informations de base
 document-details-close = Fermer
 document-details-filename = Nom du fichier
@@ -96,13 +103,13 @@ language-dutch = Nederlands
 language-english = English
 language-french = Français
 
-# Pagination: TODO
-pagination-first = First
-pagination-last = Last
-pagination-next = Next
-pagination-of = of
+# Pagination
+pagination-first = Premier
+pagination-last = Dernier
+pagination-next = Suivant
+pagination-of = sur
 pagination-page = Page
-pagination-prev = Previous
+pagination-prev = Précédent
 
 # Sources
 sources-add-section-title = Ajouter une nouvelle source
@@ -158,5 +165,17 @@ settings-select-private-tag = Sélectionner un tag...
 settings-ui-private-mode = Mode privé
 settings-ui-private-tags = Tags privés
 settings-ui-private-tags-placeholder = tag1, tag2, tag3
-settings-ui-section = Confidentialité
+settings-server-section = Serveur
+settings-server-download-folder = Dossier de téléchargement
+settings-server-authorization-tokens = Jetons d'autorisation
+settings-server-add-authorization-token = Ajouter un jeton d'autorisation
+settings-server-delete-authorization-token = Supprimer le jeton d'autorisation
+settings-server-enter-authorization-token = Entrer le jeton d'autorisation...
+settings-select-directory-tag = Sélectionner une étiquette...
+settings-enter-directory-tag = Entrer une nouvelle étiquette...
+settings-no-directory-tags = Aucune étiquette configurée
+settings-remove-directory-tag = Supprimer l'étiquette
+settings-database-location-description = L'emplacement de la base de données
+settings-server-download-folder-description = Spécifie le dossier où les fichiers téléchargés seront placés
+settings-scan-dry-run-description = Si vrai, n'apportera pas de modifications à la base de données
 

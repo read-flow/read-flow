@@ -201,6 +201,7 @@ impl SettingsPage {
             .title(fl!("settings-database-section"))
             .add(
                 settings::item::builder(fl!("settings-database-location"))
+                    .description(fl!("settings-database-location-description"))
                     .icon(widget::icon::from_name("add-files-to-archive-symbolic").size(ICON_SIZE))
                     .control(
                         settings::item_row(vec![
@@ -243,6 +244,7 @@ impl SettingsPage {
             .title(fl!("settings-server-section"))
             .add(
                 settings::item::builder(fl!("settings-server-download-folder"))
+                    .description(fl!("settings-server-download-folder-description"))
                     .icon(widget::icon::from_name("folder-download-symbolic").size(ICON_SIZE))
                     .control(
                         settings::item_row(vec![
@@ -265,6 +267,7 @@ impl SettingsPage {
         // Scan section
         let scan_section = settings::section().title(fl!("settings-scan-section")).add(
             settings::item::builder(fl!("settings-scan-dry-run"))
+                .description(fl!("settings-scan-dry-run-description"))
                 .icon(widget::icon::from_name("system-run-symbolic").size(ICON_SIZE))
                 .toggler(self.settings.scan.dry_run, SettingsMessage::ToggleDryRun),
         );

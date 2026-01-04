@@ -2,9 +2,11 @@
 
 app-title = Archive Organizer Cosmic
 about = About
+actions = Actions
 context = Context
 documents = Documents
 repository = Repository
+scan = Scan
 view = View
 welcome = Welcome to Archive Organizer Cosmic! ✨
 page-id = Page { $num }
@@ -173,3 +175,6 @@ settings-select-directory-tag = Select a tag...
 settings-enter-directory-tag = Enter a new tag...
 settings-no-directory-tags = No tags configured
 settings-remove-directory-tag = Remove tag
+settings-database-location-description = The location of the database
+settings-server-download-folder-description = Specifies the folder where downloaded files will go
+settings-scan-dry-run-description = If true, will not make changes to the database

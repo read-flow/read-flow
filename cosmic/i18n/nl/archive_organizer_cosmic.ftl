@@ -17,6 +17,7 @@ app-file-sources = Document Bronnen
 generic-error = 🛑 Fout: { $error }
 
 # File list states
+document-list-add-tag = Toevoegen
 file-list-add-tag = Toevoegen
 file-list-all-statuses = Alle statussen
 file-list-all-tags-in-use = Alle tags zijn al in gebruik
@@ -40,9 +41,10 @@ file-list-select-tag = Selecteer een tag
 
 # File details
 document-details-add = Toevoegen
+document-details-enter = Nieuwe tag invoeren
+document-details-document-no-longer-accessible = Document niet langer toegankelijk
 document-details-basic-info = Basisinformatie
 document-details-close = Sluiten
-document-details-enter = Nieuwe tag invoeren
 document-details-filename = Bestandsnaam
 document-details-fingerprint = Vingerafdruk
 document-details-folder = Map
@@ -163,4 +165,16 @@ settings-select-private-tag = Selecteer een tag...
 settings-ui-private-mode = Privé Modus
 settings-ui-private-tags = Privé Tags
 settings-ui-private-tags-placeholder = tag1, tag2, tag3
-settings-ui-section = Privacy
+settings-server-section = Server
+settings-server-download-folder = Downloadmap
+settings-server-authorization-tokens = Autorisatietokens
+settings-server-add-authorization-token = Autorisatietoken toevoegen
+settings-server-delete-authorization-token = Autorisatietoken verwijderen
+settings-server-enter-authorization-token = Autorisatietoken invoeren...
+settings-select-directory-tag = Selecteer een tag...
+settings-enter-directory-tag = Voer een nieuwe tag in...
+settings-no-directory-tags = Geen tags geconfigureerd
+settings-remove-directory-tag = Tag verwijderen
+settings-database-location-description = De locatie van de database
+settings-server-download-folder-description = Specificeert de map waar gedownloade bestanden terechtkomen
+settings-scan-dry-run-description = Indien ingeschakeld, worden er geen wijzigingen aangebracht in de database
