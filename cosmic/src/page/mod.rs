@@ -84,6 +84,7 @@ pub enum PageMessage {
     CloseDocumentDetails(Fingerprint),
     Settings(SettingsMessage),
     Refresh,
+    ActivatePageContext(PageSelector),
     Noop,
     Out(PageOutput),
 }
@@ -316,6 +317,13 @@ impl Pages {
                         ))))
                 }
             }
+            PageMessage::ActivatePageContext(page_selector) => match page_selector {
+                PageSelector::Documents => self
+                    .documents
+                    .update(DocumentListMessage::ResetBatchTagEditor)
+                    .map(move |action| action.map(map_document_list_message)),
+                _ => Task::none(),
+            },
             PageMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }

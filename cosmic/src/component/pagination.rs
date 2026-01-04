@@ -89,12 +89,10 @@ impl Pagination {
                 })
                 .tooltip(fl!("pagination-prev"))
                 .into(),
-            widget::text(format!(
-                "{} {} {} {}",
-                fl!("pagination-page"),
-                self.page(),
-                fl!("pagination-of"),
-                self.total_pages()
+            widget::text(fl!(
+                "pagination-page-of-total",
+                page = self.page(),
+                total = self.total_pages()
             ))
             .align_x(Horizontal::Center)
             .width(Length::Fill)

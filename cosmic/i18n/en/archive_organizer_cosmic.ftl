@@ -10,7 +10,7 @@ scan = Scan
 view = View
 welcome = Welcome to Archive Organizer Cosmic! ✨
 page-id = Page { $num }
-git-description = Git commit {$hash} on {$date}
+git-description = Git commit { $hash } on { $date }
 unknown-remote = ⚠ Unknown Remote: { $url }
 
 app-file-sources = Document Sources
@@ -92,6 +92,11 @@ document-list-sort-status-asc = Status (Unread first)
 document-list-sort-status-desc = Status (Read first)
 document-list-sort-type-asc = Type (A-Z)
 document-list-sort-type-desc = Type (Z-A)
+document-list-deselect-all = Deselect all
+document-list-select-all = Select all
+document-list-selected-count = Selected { $count } documents
+document-list-selection-count = Selected { $selected } of { $total }
+document-list-batch-operations = Batch operations
 
 # Page messages
 page-not-found = ⚠ Not found
@@ -106,8 +111,7 @@ language-french = Français
 pagination-first = First
 pagination-last = Last
 pagination-next = Next
-pagination-of = of
-pagination-page = Page
+pagination-page-of-total = Page { $page } of { $total }
 pagination-prev = Previous
 
 # Sources

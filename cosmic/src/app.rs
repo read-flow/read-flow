@@ -322,14 +322,24 @@ impl cosmic::Application for AppModel {
         match message {
             Message::ToggleContextPage(context_page) => {
                 if self.context_page == context_page {
-                    // Close the context drawer if the toggled context page is the same.
+                    // Toggle context drawer if the toggled context page is the same.
                     self.core.window.show_context = !self.core.window.show_context;
                 } else {
-                    // Open the context drawer to display the requested context page.
-                    self.context_page = context_page;
+                    // Set the context drawer to display the requested context page.
+                    self.context_page = context_page.clone();
                     self.core.window.show_context = true;
                 }
-                Task::none()
+
+                // Reset batch tag editor if document list context page is activated
+                if let ContextPage::PageContext(page_selector) = context_page
+                    && self.core.window.show_context
+                {
+                    task::message(Message::Page(PageMessage::ActivatePageContext(
+                        page_selector,
+                    )))
+                } else {
+                    Task::none()
+                }
             }
             Message::ToggleActivePageContext => self
                 .nav

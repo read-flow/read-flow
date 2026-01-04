@@ -8,7 +8,7 @@ repository = Repository
 view = Weergave
 welcome = Welkom bij Archief Organizer Cosmic! ✨
 page-id = Pagina { $num }
-git-description = Git commit {$hash} op {$date}
+git-description = Git commit { $hash } op { $date }
 unknown-remote = ⚠ Onbekende externe bron: { $url }
 
 app-file-sources = Document Bronnen
@@ -93,6 +93,11 @@ document-list-sort-status-asc = Status (Ongelezen eerst)
 document-list-sort-status-desc = Status (Gelezen eerst)
 document-list-sort-type-asc = Type (A-Z)
 document-list-sort-type-desc = Type (Z-A)
+document-list-deselect-all = Alles deselecteren
+document-list-select-all = Alles selecteren
+document-list-selected-count = { $count } documenten geselecteerd
+document-list-selection-count = { $selected } van { $total } geselecteerd
+document-list-batch-operations = Batchbewerkingen
 
 # Page messages
 page-not-found = ⚠ Niet gevonden
@@ -107,8 +112,7 @@ language-french = Français
 pagination-first = Eerste
 pagination-last = Laatste
 pagination-next = Volgende
-pagination-of = van
-pagination-page = Pagina
+pagination-page-of-total = Pagina { $page } van { $total }
 pagination-prev = Vorige
 
 # Sources

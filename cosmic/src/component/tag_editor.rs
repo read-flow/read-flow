@@ -15,6 +15,7 @@ use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::Column;
+use cosmic::widget::Id;
 use cosmic::widget::Row;
 use cosmic::widget::text;
 use provider::r#async::Provider;
@@ -44,6 +45,8 @@ pub struct TagEditor<P> {
     empty_text: String,
     /// Tooltip for remove button
     remove_tooltip: String,
+    /// Input focus ID
+    input_id: Id,
 }
 
 #[derive(Debug, Clone)]
@@ -74,6 +77,8 @@ pub enum TagEditorMessage {
     RemoveTag(String),
     /// Set the selected tags (for external updates)
     SetTags(Vec<String>),
+    /// Focus the text input
+    FocusInput,
     /// Output message (for parent component)
     Out(TagEditorOutput),
 }
@@ -102,6 +107,7 @@ where
                 enter_placeholder,
                 empty_text,
                 remove_tooltip,
+                input_id: Id::unique(),
             },
             task::message(TagEditorMessage::LoadAllTags),
         )
@@ -163,6 +169,7 @@ where
 
                 // Text input for entering new tags
                 let input = widget::text_input(&self.enter_placeholder, &self.entered_tag)
+                    .id(self.input_id.clone())
                     .on_input(TagEditorMessage::UpdateEnteredTag)
                     .on_submit(TagEditorMessage::AddEnteredTag)
                     .width(Length::Fill);
@@ -273,7 +280,7 @@ where
             }
             TagEditorMessage::UpdateEnteredTag(tag) => {
                 self.entered_tag = tag;
-                Task::none()
+                task::message(TagEditorMessage::FocusInput)
             }
             TagEditorMessage::AddEnteredTag(tag) => {
                 if tag.trim().is_empty() {
@@ -299,6 +306,7 @@ where
                 self.update_available_tags();
                 Task::none()
             }
+            TagEditorMessage::FocusInput => widget::text_input::focus(self.input_id.clone()),
             TagEditorMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }

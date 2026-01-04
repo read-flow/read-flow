@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::hash_map::Entry;
 use std::collections::hash_map::IntoValues;
+use std::fmt;
 use std::iter::repeat_n;
 use std::process::ExitStatus;
 use std::str::FromStr;
@@ -109,7 +110,7 @@ impl Aggregator {
     }
 
     fn iter_document(&self, document: Document) -> impl Iterator<Item = (Client, File)> {
-        let files: HashMap<_, _> = document.into();
+        let files: Vec<_> = document.into();
 
         files
             .into_iter()
@@ -289,10 +290,16 @@ pub struct DocumentSource {
     pub client: ClientSelector,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Document {
     pub metadata: DocumentMetadata,
     pub sources: HashSet<DocumentSource>,
+}
+
+impl fmt::Debug for Document {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}:{}", self.metadata.type_, self.metadata.fingerprint)
+    }
 }
 
 impl Document {
@@ -316,8 +323,19 @@ impl Document {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Documents(HashMap<String, Document>);
+
+impl fmt::Debug for Documents {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let documents_count = self.0.len();
+        if documents_count == 1 {
+            write!(f, "{documents_count} document")
+        } else {
+            write!(f, "{documents_count} documents")
+        }
+    }
+}
 
 impl Documents {
     pub fn push(&mut self, document: Document) {
@@ -361,7 +379,7 @@ impl From<(ClientSelector, File)> for Document {
 
 struct SingleDocumentSource(DocumentSource, DocumentMetadata);
 
-impl From<Document> for HashMap<ClientSelector, File> {
+impl From<Document> for Vec<(ClientSelector, File)> {
     fn from(source: Document) -> Self {
         let number_of_sources = source.sources.len();
         source
