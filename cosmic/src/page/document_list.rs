@@ -474,6 +474,9 @@ impl DocumentList {
                         )),
                     )),
                     task::message(DocumentListMessage::ResetBatchTagEditor),
+                    task::message(DocumentListMessage::TagFilter(
+                        TagFilterMessage::LoadAllTags,
+                    )),
                 ])
             }
             DocumentListMessage::LoadingFailed(error) => {
