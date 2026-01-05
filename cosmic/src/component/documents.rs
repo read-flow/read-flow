@@ -96,7 +96,7 @@ impl DocumentsComponent {
                 // Add select all checkbox
                 let filtered_count = files.filtered_items().len();
                 let selected_count = self.selected_documents.len();
-                let all_selected = filtered_count > 0 && selected_count == filtered_count;
+                let all_selected = selected_count > 0 && selected_count >= filtered_count;
 
                 let checkbox_label = if all_selected {
                     fl!("document-list-deselect-all")
