@@ -129,7 +129,7 @@ pub fn serve() -> _ {
         .and_then(extract_settings as fn(Figment) -> Result<Settings, SettingsError>);
 
     let application_module: ApplicationModule<SettingsProvider> =
-        ApplicationModule::new(settings_provider);
+        ApplicationModule::new(settings_provider).expect("extract settings");
 
     let cors = create_cors();
 

@@ -59,7 +59,7 @@ impl Provider<Settings> for AppSettings {
     }
 }
 
-fn main() -> cosmic::iced::Result {
+fn main() -> anyhow::Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt::init();
 
@@ -74,7 +74,7 @@ fn main() -> cosmic::iced::Result {
         cli_parameters: Cli::parse(),
     };
 
-    let application_module = Arc::new(ApplicationModule::new(settings));
+    let application_module = Arc::new(ApplicationModule::new(settings)?);
 
     // Settings for configuring the application window and iced runtime.
     let settings = cosmic::app::Settings::default().size_limits(
@@ -84,5 +84,7 @@ fn main() -> cosmic::iced::Result {
     );
 
     // Starts the application's event loop with `()` as the application's flags.
-    cosmic::app::run::<app::AppModel>(settings, application_module)
+    let result = cosmic::app::run::<app::AppModel>(settings, application_module)?;
+
+    Ok(result)
 }

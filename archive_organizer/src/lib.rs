@@ -67,7 +67,7 @@ impl Provider<Settings> for SettingsProvider {
 }
 
 impl ApplicationModule<SettingsProvider> {
-    pub fn instantiate() -> Self {
+    pub fn instantiate() -> Result<Self, SettingsError> {
         Self::new(SettingsProvider)
     }
 }
@@ -76,7 +76,7 @@ impl<P> ApplicationModule<P>
 where
     P: Provider<Settings, Error = SettingsError>,
 {
-    pub fn new(settings_provider: P) -> Self {
+    pub fn new(settings_provider: P) -> Result<Self, SettingsError> {
         let settings = settings_provider.observable_cache().arc();
         let connection_pool = settings
             .clone()
@@ -89,11 +89,14 @@ where
             .observable_cache_with_fn(DbClient::new)
             .arc();
 
-        Self {
+        // Force whole provider chain, to capture errors eagerly.
+        db_client.provide()?;
+
+        Ok(Self {
             settings,
             connection_pool,
             db_client,
-        }
+        })
     }
 
     pub fn settings(&self) -> Settings {

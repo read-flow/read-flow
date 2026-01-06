@@ -37,11 +37,11 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::ApplyTags => ApplicationModule::instantiate().apply_tags()?,
+        Commands::ApplyTags => ApplicationModule::instantiate()?.apply_tags()?,
         Commands::ExtractScanDirectories => {
-            ApplicationModule::instantiate().extract_scan_directories()
+            ApplicationModule::instantiate()?.extract_scan_directories()
         }
-        Commands::Scan { path } => ApplicationModule::instantiate().scan(path)?,
+        Commands::Scan { path } => ApplicationModule::instantiate()?.scan(path)?,
         #[cfg(feature = "server")]
         Commands::Serve => server::main(),
     };
