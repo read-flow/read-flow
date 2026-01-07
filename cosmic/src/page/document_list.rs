@@ -229,11 +229,9 @@ impl DocumentList {
             fl!("tag-editor-remove-tag"),
         );
 
-        let document_provider_clone = document_provider.clone();
-
         (
             Self {
-                document_provider,
+                document_provider: document_provider.clone(),
                 archive: DocumentsComponent::default(),
                 search_query: String::new(),
                 is_filtering: false,
@@ -253,7 +251,7 @@ impl DocumentList {
                 task::message(DocumentListMessage::FocusSearchInput),
                 task::future(async move {
                     DocumentListMessage::SetAvailableSources(
-                        document_provider_clone.get_client_selectors().await,
+                        document_provider.get_client_selectors().await,
                     )
                 }),
             ]),
@@ -428,7 +426,7 @@ impl DocumentList {
             DocumentListMessage::LoadArchive => {
                 self.archive.documents = DocumentState::Loading;
                 let document_provider = self.document_provider.clone();
-                let document_provider_clone = self.document_provider.clone();
+
                 Task::batch([
                     task::future({
                         let document_provider = document_provider.clone();
@@ -443,7 +441,7 @@ impl DocumentList {
                     }),
                     task::future(async move {
                         DocumentListMessage::SetAvailableSources(
-                            document_provider_clone.get_client_selectors().await,
+                            document_provider.get_client_selectors().await,
                         )
                     }),
                 ])
