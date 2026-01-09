@@ -77,8 +77,6 @@ impl Aggregator {
     }
 
     pub async fn aggregate(&self) -> Result<Documents, FilesClientError> {
-        let mut documents = Documents::default();
-
         // Clone clients into a Vec to avoid lifetime issues with async closures
         let clients: Vec<(ClientSelector, Client)> = self
             .clients
@@ -99,12 +97,20 @@ impl Aggregator {
                 .await;
 
         // Process results and aggregate documents
-        for result in results.into_iter().filter(Result::is_ok) {
-            let (selector, files) = result?;
-            for file in files {
-                documents.push((selector.clone(), file).into());
-            }
-        }
+        let documents = results
+            .into_iter()
+            .filter_map(move |result| match result {
+                Ok(result) => Some(result),
+                Err(error) => {
+                    tracing::warn!("ignoring error while retrieving files: {error}");
+                    None
+                }
+            })
+            .flat_map(|(selector, files)| repeat_n(selector, files.len()).zip(files))
+            .fold(Documents::default(), |mut acc, item| {
+                acc.push(item.into());
+                acc
+            });
 
         Ok(documents)
     }
@@ -125,11 +131,11 @@ impl Aggregator {
             .collect()
             .await;
 
-        // Process results and return first error
+        // Log all errors
         results
             .into_iter()
-            .filter(Result::is_ok)
-            .collect::<Result<Vec<_>, _>>()?;
+            .filter_map(Result::err)
+            .for_each(|error| tracing::warn!("ignoring error during `update_file`: {error}"));
 
         Ok(())
     }
@@ -185,11 +191,11 @@ impl Aggregator {
             .collect()
             .await;
 
-        // Process results and return first error
+        // Log all errors
         results
             .into_iter()
-            .filter(Result::is_ok)
-            .collect::<Result<Vec<_>, _>>()?;
+            .filter_map(Result::err)
+            .for_each(|error| tracing::warn!("ignoring error during `delete_file_tags`: {error}"));
 
         Ok(())
     }
@@ -211,10 +217,19 @@ impl Aggregator {
                 .await;
 
         // Process results and aggregate tags
-        let mut retval = HashSet::new();
-        for result in results.into_iter().filter(Result::is_ok) {
-            retval.extend(result?);
-        }
+        let retval = results
+            .into_iter()
+            .filter_map(move |result| match result {
+                Ok(result) => Some(result),
+                Err(error) => {
+                    tracing::warn!("ignoring error during `add_file_tags`: {error}");
+                    None
+                }
+            })
+            .fold(HashSet::new(), |mut acc, item| {
+                acc.extend(item);
+                acc
+            });
 
         // Sort alphabetically for consistent ordering
         let mut tags: Vec<_> = retval.into_iter().collect();
