@@ -157,7 +157,7 @@ impl DocumentProvider {
     pub async fn add_document_tags(
         &self,
         document: Document,
-        tags: Vec<String>,
+        tags: &[String],
     ) -> Result<Vec<String>, FilesClientError> {
         let result = self
             .aggregator
@@ -169,13 +169,46 @@ impl DocumentProvider {
         result
     }
 
+    /// Add tags to multiple documents across all sources.
+    ///
+    /// Automatically invalidates the cache after the update.
+    pub async fn batch_add_document_tags(
+        &self,
+        documents: Vec<Document>,
+        tags: &[String],
+    ) -> Result<(), FilesClientError> {
+        let mut first_error = None;
+
+        for document in documents {
+            let result = self
+                .aggregator
+                .read()
+                .await
+                .add_document_tags(document, tags)
+                .await;
+
+            // Log all errors and remember first error
+            if let Err(error) = result {
+                tracing::warn!("failed adding tags to document: {error}");
+                first_error = first_error.or(Some(error));
+            }
+        }
+        // Expire, even if there were errors
+        self.set_expired().await;
+
+        match first_error {
+            None => Ok(()),
+            Some(error) => Err(error),
+        }
+    }
+
     /// Delete tags from a document across all sources.
     ///
     /// Automatically invalidates the cache after the update.
     pub async fn delete_document_tags(
         &self,
         document: Document,
-        tags: Vec<String>,
+        tags: &[String],
     ) -> Result<(), FilesClientError> {
         let result = self
             .aggregator
@@ -185,6 +218,39 @@ impl DocumentProvider {
             .await;
         self.set_expired().await;
         result
+    }
+
+    /// Delete tags from multiple documents across all sources.
+    ///
+    /// Automatically invalidates the cache after the update.
+    pub async fn batch_delete_document_tags(
+        &self,
+        documents: Vec<Document>,
+        tags: &[String],
+    ) -> Result<(), FilesClientError> {
+        let mut first_error = None;
+
+        for document in documents {
+            let result = self
+                .aggregator
+                .read()
+                .await
+                .delete_document_tags(document, tags)
+                .await;
+
+            // Log all errors and remember first error
+            if let Err(error) = result {
+                tracing::warn!("failed deleting tags from document: {error}");
+                first_error = first_error.or(Some(error));
+            }
+        }
+        // Expire, even if there were errors
+        self.set_expired().await;
+
+        match first_error {
+            None => Ok(()),
+            Some(error) => Err(error),
+        }
     }
 
     /// Open a document using the system's default application.

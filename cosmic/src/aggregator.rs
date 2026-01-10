@@ -179,12 +179,12 @@ impl Aggregator {
     pub async fn delete_document_tags(
         &self,
         document: Document,
-        tags: Vec<String>,
+        tags: &[String],
     ) -> Result<(), FilesClientError> {
         let number_of_sources = document.sources.len();
         let results: Vec<Result<(), FilesClientError>> = stream::iter(self.iter_document(document))
             .map(|(client, file)| {
-                let tags = tags.clone();
+                let tags = tags.to_vec();
                 async move { client.delete_file_tags(file.id, tags).await }
             })
             .buffer_unordered(number_of_sources)
@@ -203,13 +203,13 @@ impl Aggregator {
     pub async fn add_document_tags(
         &self,
         document: Document,
-        tags: Vec<String>,
+        tags: &[String],
     ) -> Result<Vec<String>, FilesClientError> {
         let number_of_sources = document.sources.len();
         let results: Vec<Result<Vec<String>, FilesClientError>> =
             stream::iter(self.iter_document(document))
                 .map(|(client, file)| {
-                    let tags = tags.clone();
+                    let tags = tags.to_vec();
                     async move { client.add_file_tags(file.id, tags).await }
                 })
                 .buffer_unordered(number_of_sources)

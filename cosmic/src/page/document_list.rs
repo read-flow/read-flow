@@ -3,6 +3,7 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt;
+use std::slice;
 use std::sync::Arc;
 
 use archive_organizer::api::ReadingStatus;
@@ -444,6 +445,10 @@ impl DocumentList {
                             document_provider.get_client_selectors().await,
                         )
                     }),
+                    task::message(DocumentListMessage::ResetBatchTagEditor),
+                    task::message(DocumentListMessage::TagFilter(
+                        TagFilterMessage::LoadAllTags,
+                    )),
                 ])
             }
             DocumentListMessage::Loaded(files) => {
@@ -471,9 +476,8 @@ impl DocumentList {
                             collection_size,
                         )),
                     )),
-                    task::message(DocumentListMessage::ResetBatchTagEditor),
-                    task::message(DocumentListMessage::TagFilter(
-                        TagFilterMessage::LoadAllTags,
+                    task::message(DocumentListMessage::DocumentsComponent(
+                        DocumentsMessage::FilterSelectedDocuments,
                     )),
                 ])
             }
@@ -573,17 +577,13 @@ impl DocumentList {
                         let selected_documents = self.archive.get_selected_documents();
                         let document_provider = self.document_provider.clone();
                         task::future(async move {
-                            for document in selected_documents {
-                                if let Err(error) = document_provider
-                                    .add_document_tags(document.clone(), vec![new_tag.clone()])
-                                    .await
-                                {
-                                    let fingerprint = document.metadata.fingerprint;
-                                    tracing::error!(
-                                        "failed to tag document with fingerprint `{fingerprint}`: {error}",
-                                    );
-                                }
-                            }
+                            let _ = document_provider
+                                .batch_add_document_tags(
+                                    selected_documents,
+                                    slice::from_ref(&new_tag),
+                                )
+                                .await;
+
                             DocumentListMessage::LoadArchive
                         })
                     }
@@ -591,20 +591,12 @@ impl DocumentList {
                         let selected_documents = self.archive.get_selected_documents();
                         let document_provider = self.document_provider.clone();
                         task::future(async move {
-                            for document in selected_documents {
-                                if let Err(error) = document_provider
-                                    .delete_document_tags(
-                                        document.clone(),
-                                        vec![removed_tag.clone()],
-                                    )
-                                    .await
-                                {
-                                    let fingerprint = document.metadata.fingerprint;
-                                    tracing::error!(
-                                        "failed to remove tag on document with fingerprint `{fingerprint}`: {error}",
-                                    );
-                                }
-                            }
+                            let _ = document_provider
+                                .batch_delete_document_tags(
+                                    selected_documents,
+                                    slice::from_ref(&removed_tag),
+                                )
+                                .await;
                             DocumentListMessage::LoadArchive
                         })
                     }

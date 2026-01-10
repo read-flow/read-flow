@@ -38,6 +38,7 @@ pub enum DocumentsMessage {
     ToggleDocumentSelected(Document),
     ToggleAllSelected(bool),
     Out(DocumentsOutput),
+    FilterSelectedDocuments,
 }
 
 impl From<PaginationMessage> for DocumentsMessage {
@@ -167,6 +168,25 @@ impl DocumentsComponent {
                     self.selected_documents.clear();
                 }
                 self.notify_selection_changed()
+            }
+            DocumentsMessage::FilterSelectedDocuments => {
+                if let DocumentState::Loaded(files) = &self.documents {
+                    let selected_document_count = self.selected_documents.len();
+                    let filtered_fingerprints = files
+                        .unfiltered()
+                        .iter()
+                        .map(|doc| doc.metadata.fingerprint.clone())
+                        .collect::<HashSet<_>>();
+                    self.selected_documents
+                        .retain(|doc| filtered_fingerprints.contains(doc));
+                    if self.selected_documents.len() != selected_document_count {
+                        self.notify_selection_changed()
+                    } else {
+                        Task::none()
+                    }
+                } else {
+                    Task::none()
+                }
             }
             DocumentsMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")

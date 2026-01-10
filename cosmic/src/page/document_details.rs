@@ -377,10 +377,7 @@ impl DocumentDetails {
         let document_provider = self.document_provider.clone();
 
         task::future(async move {
-            match document_provider
-                .add_document_tags(document, vec![tag])
-                .await
-            {
+            match document_provider.add_document_tags(document, &[tag]).await {
                 Ok(tags) => DocumentDetailsMessage::TagsAdded(Ok(tags)),
                 Err(err) => DocumentDetailsMessage::TagsAdded(Err(format!("{err}"))),
             }
@@ -394,7 +391,7 @@ impl DocumentDetails {
 
         task::future(async move {
             let result = document_provider
-                .delete_document_tags(document, vec![tag])
+                .delete_document_tags(document, &[tag])
                 .await
                 .map_err(|err| format!("{err}"));
             DocumentDetailsMessage::TagsRemoved(result)
