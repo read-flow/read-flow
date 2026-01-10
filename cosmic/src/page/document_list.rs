@@ -574,14 +574,13 @@ impl DocumentList {
                         let document_provider = self.document_provider.clone();
                         task::future(async move {
                             for document in selected_documents {
-                                if let Err(e) = document_provider
+                                if let Err(error) = document_provider
                                     .add_document_tags(document.clone(), vec![new_tag.clone()])
                                     .await
                                 {
+                                    let fingerprint = document.metadata.fingerprint;
                                     tracing::error!(
                                         "failed to tag document with fingerprint `{fingerprint}`: {error}",
-                                        fingerprint = document.metadata.fingerprint,
-                                        error = e
                                     );
                                 }
                             }
@@ -593,17 +592,16 @@ impl DocumentList {
                         let document_provider = self.document_provider.clone();
                         task::future(async move {
                             for document in selected_documents {
-                                if let Err(e) = document_provider
+                                if let Err(error) = document_provider
                                     .delete_document_tags(
                                         document.clone(),
                                         vec![removed_tag.clone()],
                                     )
                                     .await
                                 {
+                                    let fingerprint = document.metadata.fingerprint;
                                     tracing::error!(
                                         "failed to remove tag on document with fingerprint `{fingerprint}`: {error}",
-                                        fingerprint = document.metadata.fingerprint,
-                                        error = e
                                     );
                                 }
                             }
