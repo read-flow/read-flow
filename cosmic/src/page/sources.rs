@@ -41,6 +41,8 @@ pub struct SourcesPage {
     remotes_state: RemotesState,
     entered_url: String,
     entered_url_id: widget::Id, // Unique ID for focus management
+    entered_token: String,
+    entered_token_id: widget::Id, // Unique ID for focus management
     url_verification_state: UrlVerificationState,
     operation_error: Option<String>,
     pending_deletion: Option<Remote>,
@@ -48,7 +50,7 @@ pub struct SourcesPage {
 
 #[derive(Debug, Clone)]
 pub enum SourcesOutput {
-    AddedSource(Url),
+    AddedSource(Url, String),
     DeletedSource(Url),
 }
 
@@ -59,14 +61,19 @@ pub enum SourcesMessage {
     SetRemotesStateLoaded(Vec<Remote>),
 
     UpdateEnteredUrl(String),
-    VerifyEnteredUrl { url: Url, do_submit: bool },
+    UpdateEnteredToken(String),
+    VerifyEnteredUrl {
+        url: Url,
+        token: String,
+        do_submit: bool,
+    },
     SetUrlVerificationStateFailed(String),
     SetUrlVerificationStateLoaded(Status),
     ClearUrlEntries,
 
     AddSource(String),
-    SubmitSource(Url),
-    SubmittedSource(Url),
+    SubmitSource(Url, String),
+    SubmittedSource(Url, String),
     RequestDeleteSource(Remote),
     ConfirmDeleteSource,
     CancelDeleteSource,
@@ -91,6 +98,8 @@ impl SourcesPage {
                 remotes_state: Default::default(),
                 entered_url: Default::default(),
                 entered_url_id: widget::Id::unique(),
+                entered_token: Default::default(),
+                entered_token_id: widget::Id::unique(),
                 url_verification_state: Default::default(),
                 operation_error: None,
                 pending_deletion: None,
@@ -175,7 +184,7 @@ impl SourcesPage {
                 .into(),
             LoadedState::Failed(error) => settings::section()
                 .title(fl!("sources-section-title"))
-                .add(widget::text(fl!("generic-error", error = error.as_str())))
+                .add(widget::text(fl!("generic-error", error = error)))
                 .into(),
             LoadedState::Loaded(sources) => {
                 if sources.is_empty() {
@@ -207,18 +216,15 @@ impl SourcesPage {
         // Add source input section
         let add_section = settings::section()
             .title(fl!("sources-add-section-title"))
-            .add(
+            .add(widget::settings::item(
+                fl!("sources-url"),
                 row()
                     .push(
-                        widget::text_input(fl!("sources-enter-url"), &self.entered_url)
+                        widget::text_input(fl!("sources-url-placeholder"), &self.entered_url)
                             .id(self.entered_url_id.clone())
                             .on_input(SourcesMessage::UpdateEnteredUrl)
-                            .apply_if(self.url_verification_state.is_loaded(), |input| {
-                                input.on_submit(SourcesMessage::AddSource)
-                            })
                             .width(Length::Fill),
                     )
-                    .push(widget::horizontal_space().width(space_xs))
                     .push(
                         match self.url_verification_state {
                             LoadedState::New => icon::from_name("dialog-information-symbolic"),
@@ -229,8 +235,20 @@ impl SourcesPage {
                         .size(ICON_SIZE),
                     )
                     .spacing(space_xs)
-                    .align_y(Vertical::Center),
-            )
+                    .align_y(Vertical::Center)
+                    .width(Length::Fixed(600.0)),
+            ))
+            .add(widget::settings::item(
+                fl!("sources-authorization-token"),
+                widget::text_input(
+                    fl!("sources-authorization-token-placeholder"),
+                    &self.entered_token,
+                )
+                .id(self.entered_token_id.clone())
+                .on_input(SourcesMessage::UpdateEnteredToken)
+                .password()
+                .width(Length::Fixed(600.0)),
+            ))
             .add_maybe(
                 matches!(self.url_verification_state, LoadedState::Failed(_)).then(|| {
                     let LoadedState::Failed(ref error) = self.url_verification_state else {
@@ -238,6 +256,20 @@ impl SourcesPage {
                     };
                     widget::text::caption(error)
                 }),
+            )
+            .add(
+                row()
+                    .push(widget::horizontal_space().width(Length::Fill))
+                    .push(
+                        widget::button::suggested(fl!("sources-add-button")).apply_if(
+                            !(self.entered_url.is_empty()
+                                || self.entered_token.is_empty()
+                                || !matches!(self.url_verification_state, LoadedState::Loaded(_))),
+                            |button| {
+                                button.on_press(SourcesMessage::AddSource(self.entered_url.clone()))
+                            },
+                        ),
+                    ),
             );
 
         content.push(add_section.into());
@@ -288,6 +320,7 @@ impl SourcesPage {
                     match self.entered_url.parse::<Url>() {
                         Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
                             url,
+                            token: self.entered_token.clone(),
                             do_submit: false,
                         }),
                         Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
@@ -296,18 +329,26 @@ impl SourcesPage {
                     }
                 }
             }
+            SourcesMessage::UpdateEnteredToken(token) => {
+                self.entered_token = token;
+                task::none()
+            }
             SourcesMessage::SetUrlVerificationStateFailed(error) => {
                 self.url_verification_state = UrlVerificationState::Failed(error);
                 widget::text_input::focus(self.entered_url_id.clone())
             }
-            SourcesMessage::VerifyEnteredUrl { url, do_submit } => {
+            SourcesMessage::VerifyEnteredUrl {
+                url,
+                token,
+                do_submit,
+            } => {
                 self.url_verification_state = UrlVerificationState::Loading;
-                let client = FilesClient::new(url.clone()).expect("valid url");
+                let client = FilesClient::new(url.clone(), token.clone()).expect("valid url");
                 Task::batch(vec![
                     widget::text_input::focus(self.entered_url_id.clone()),
                     task::future(async move {
                         match client.status().await {
-                            Ok(_status) if do_submit => SourcesMessage::SubmitSource(url),
+                            Ok(_status) if do_submit => SourcesMessage::SubmitSource(url, token),
                             Ok(status) => SourcesMessage::SetUrlVerificationStateLoaded(status),
                             Err(error) => {
                                 SourcesMessage::SetUrlVerificationStateFailed(format!("{error}"))
@@ -325,6 +366,7 @@ impl SourcesPage {
                 match self.entered_url.parse::<Url>() {
                     Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
                         url,
+                        token: self.entered_token.clone(),
                         do_submit: true,
                     }),
                     Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
@@ -332,25 +374,27 @@ impl SourcesPage {
                     )),
                 }
             }
-            SourcesMessage::SubmitSource(url) => {
+            SourcesMessage::SubmitSource(url, token) => {
                 let connection_pool = self.application_module.connection_pool();
                 let order = self.remotes_state.unwrap().len() + 1;
                 task::future(async move {
                     match connection_pool.insert_remote(NewRemote {
                         base_url: url.to_string(),
                         order: order as i32,
+                        authorization_token: token.clone(),
                     }) {
-                        Ok(_) => SourcesMessage::SubmittedSource(url),
+                        Ok(_) => SourcesMessage::SubmittedSource(url, token),
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }
                 })
             }
-            SourcesMessage::SubmittedSource(url) => {
-                task::message(SourcesMessage::Out(SourcesOutput::AddedSource(url)))
+            SourcesMessage::SubmittedSource(url, token) => {
+                task::message(SourcesMessage::Out(SourcesOutput::AddedSource(url, token)))
                     .chain(task::message(SourcesMessage::ClearUrlEntries))
             }
             SourcesMessage::ClearUrlEntries => {
                 self.entered_url.clear();
+                self.entered_token.clear();
                 self.url_verification_state = Default::default();
                 task::message(SourcesMessage::LoadRemotes)
             }

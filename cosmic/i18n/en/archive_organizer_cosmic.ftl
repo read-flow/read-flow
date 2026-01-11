@@ -115,13 +115,17 @@ pagination-prev = Previous
 
 # Sources
 sources-add-section-title = Add New Source
+sources-add-button = Add Source
+sources-authorization-token = Authorization token
+sources-authorization-token-placeholder = Enter authorization token...
 sources-context-title = Sources
 sources-delete-confirm-body = Are you sure you want to delete this source? This action cannot be undone.
 sources-delete-confirm-cancel = Cancel
 sources-delete-confirm-delete = Delete
 sources-delete-confirm-title = Delete Source
 sources-empty-state = No remote sources configured
-sources-enter-url = Enter remote URL
+sources-url = Remote URL
+sources-url-placeholder = Enter remote URL
 sources-error-close = Close
 sources-error-title = An error occurred
 sources-invalid-url = Not a valid URL

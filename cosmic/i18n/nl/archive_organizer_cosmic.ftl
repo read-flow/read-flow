@@ -116,13 +116,17 @@ pagination-prev = Vorige
 
 # Sources
 sources-add-section-title = Nieuwe bron toevoegen
+sources-add-button = Bron toevoegen
+sources-authorization-token = Autorisatietoken
+sources-authorization-token-placeholder = Voer autorisatietoken in...
 sources-context-title = Bronnen
 sources-delete-confirm-body = Weet je zeker dat je deze bron wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.
 sources-delete-confirm-cancel = Annuleren
 sources-delete-confirm-delete = Verwijderen
 sources-delete-confirm-title = Bron verwijderen
 sources-empty-state = Geen externe bronnen geconfigureerd
-sources-enter-url = Voer externe URL in
+sources-url = Externe URL
+sources-url-placeholoder = Voer externe URL in
 sources-error-close = Sluiten
 sources-error-title = Er is een fout opgetreden
 sources-invalid-url = Geen valide URL

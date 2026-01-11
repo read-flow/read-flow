@@ -23,6 +23,7 @@ use crate::to_unique_file;
 #[derive(Clone)]
 pub struct FilesClient {
     pub base_url: Url,
+    authorization_token: String,
     client: Client,
 }
 
@@ -57,9 +58,10 @@ impl From<io::Error> for Error {
 }
 
 impl FilesClient {
-    pub fn new<U: Into<Url>>(base_url: U) -> Result<Self, Infallible> {
+    pub fn new<U: Into<Url>>(base_url: U, authorization_token: String) -> Result<Self, Infallible> {
         let result = Self {
             base_url: base_url.into(),
+            authorization_token,
             client: Client::new(),
         };
         Ok(result)
@@ -67,6 +69,10 @@ impl FilesClient {
 
     pub fn base_url(&self) -> &Url {
         &self.base_url
+    }
+
+    fn get_auth_header(&self) -> String {
+        format!("bearer {}", self.authorization_token)
     }
 
     async fn get_json<T>(&self, relative_url: &str) -> Result<T, Error>
@@ -77,7 +83,7 @@ impl FilesClient {
             .client
             .get(self.base_url.join(relative_url)?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, "bearer secret")
+            .header(header::AUTHORIZATION, self.get_auth_header())
             .send()
             .await?;
 
@@ -103,7 +109,7 @@ impl FilesClient {
                 filename.file_name().and_then(OsStr::to_str).unwrap()
             ))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, "bearer secret")
+            .header(header::AUTHORIZATION, self.get_auth_header())
             .send()
             .await?;
 
@@ -132,7 +138,7 @@ impl FilesClient {
             .client
             .post(self.base_url.join("/files")?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, "bearer secret")
+            .header(header::AUTHORIZATION, self.get_auth_header())
             .multipart(form)
             .send()
             .await?;
@@ -173,7 +179,7 @@ impl FileDataSource for FilesClient {
             .client
             .put(self.base_url.join("/files")?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, "bearer secret")
+            .header(header::AUTHORIZATION, self.get_auth_header())
             .json(&file)
             .send()
             .await?;
@@ -192,7 +198,7 @@ impl FileDataSource for FilesClient {
             .client
             .post(self.base_url.join(&format!("/files/{id}/tags"))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, "bearer secret")
+            .header(header::AUTHORIZATION, self.get_auth_header())
             .json(&tags)
             .send()
             .await?;
@@ -207,7 +213,7 @@ impl FileDataSource for FilesClient {
             .client
             .delete(self.base_url.join(&format!("/files/{id}/tags"))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, "bearer secret")
+            .header(header::AUTHORIZATION, self.get_auth_header())
             .json(&tags)
             .send()
             .await?;
@@ -244,7 +250,7 @@ impl FileDataSource for FilesClient {
             .client
             .delete(self.base_url.join(&format!("files/{}", file.id))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, "bearer secret")
+            .header(header::AUTHORIZATION, self.get_auth_header())
             .send()
             .await?;
 

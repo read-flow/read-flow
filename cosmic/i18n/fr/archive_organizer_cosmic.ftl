@@ -116,13 +116,17 @@ pagination-prev = Précédent
 
 # Sources
 sources-add-section-title = Ajouter une nouvelle source
+sources-add-button = Ajouter la source
+sources-authorization-token = Le jeton d'autorisation
+sources-authorization-token-placeholder = Entrer le jeton d'autorisation...
 sources-context-title = Sources
 sources-delete-confirm-body = Êtes-vous sûr de vouloir supprimer cette source ? Cette action ne peut pas être annulée.
 sources-delete-confirm-cancel = Annuler
 sources-delete-confirm-delete = Supprimer
 sources-delete-confirm-title = Supprimer la source
 sources-empty-state = Aucune source distante configurée
-sources-enter-url = Entrer l'URL distante
+sources-url = l'URL distante
+sources-url-placeholder = Entrer l'URL distante
 sources-error-close = Fermer
 sources-error-title = Une erreur s'est produite
 sources-invalid-url = URL non valide
