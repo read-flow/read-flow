@@ -24,7 +24,7 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
 - [ ] Proper HTTP error handling in ~server~ module, including tests
 - [ ] Make it possible to correlate `books` of different file types
-- [X] Recognize duplicates accross local/remote repositories
+- [ ] Recognize duplicates accross local/remote repositories
 - [ ] Separate file discovery in multiple main categories:
   - documents(.doc, .docx, .pdf, .epub, .mobi, etc.)
   - images(.jpg, .png, .webp, etc.)
@@ -32,7 +32,7 @@ This is a tool to help discover and organize files locally and on remote servers
   - audio(.ogg, .mp3, .wav, etc.)
 - [ ] Recognize calibre directories, and support calibre database to import data
 - [X] Derive folders to scan from discovered files
-- [ ] Store folders to scan in database, and add command to scan configured folders
+- [X] Store folders to scan in database, and add command to scan configured folders
 - [ ] Check files in the database to see whether they still exist
 - [ ] Change directory modules API so that they can match and still recurse into the directory
 - [ ] Add allow/denylist for directories to scan
