@@ -4,6 +4,7 @@ use std::fmt::Display;
 
 use archive_organizer::Builder;
 use cosmic::Action;
+use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
@@ -25,10 +26,17 @@ use crate::fl;
 use crate::state::tags::Tags;
 use crate::state::tags::TagsState;
 
+pub enum Orientation {
+    Vertical,
+    Horizontal,
+}
+
 /// Tag editor component for selecting, adding, and removing tags
 pub struct TagEditor<P> {
-    /// Function to fetch available tags
-    tags_provider: P,
+    /// Available tags provider
+    pub(super) tags_provider: P,
+    /// Orientation of the view
+    orientation: Orientation,
     /// Currently selected tags
     selected_tags: Vec<String>,
     /// Tags state for combo box
@@ -91,6 +99,7 @@ where
     pub fn new(
         tags_provider: P,
         initial_tags: Vec<String>,
+        orientation: Orientation,
         select_placeholder: String,
         enter_placeholder: String,
         empty_text: String,
@@ -101,6 +110,7 @@ where
                 tags_provider,
                 selected_tags: initial_tags,
                 tags: TagsState::default(),
+                orientation,
                 combo_selection: String::new(),
                 entered_tag: String::new(),
                 select_placeholder,
@@ -118,30 +128,66 @@ where
         let cosmic_theme::Spacing {
             space_xs, space_s, ..
         } = theme::active().cosmic().spacing;
-        let mut column = Column::new().spacing(space_s);
 
+        if matches!(self.orientation, Orientation::Vertical) {
+            Column::new()
+                .spacing(space_s)
+                .height(Length::Shrink)
+                .width(Length::Shrink)
+                .push(self.view_current_tags(space_xs))
+                .push(horizontal_rule(1))
+                .push(self.view_tags_form(space_xs, space_s))
+                .into()
+        } else {
+            Row::new()
+                .spacing(space_s)
+                .height(Length::Shrink)
+                .width(Length::Shrink)
+                .push(
+                    self.view_current_tags(space_xs)
+                        .apply(widget::container)
+                        .width(Length::FillPortion(1)),
+                )
+                .push(
+                    self.view_tags_form(space_xs, space_s)
+                        .apply(widget::container)
+                        .width(Length::FillPortion(1)),
+                )
+                .into()
+        }
+    }
+
+    fn view_current_tags(&self, space_xs: u16) -> Element<'_, TagEditorMessage> {
         // Show existing tags
         if self.selected_tags.is_empty() {
-            column = column.push(text(&self.empty_text));
+            text(&self.empty_text).into()
         } else {
             // Create a flow container for the tags
-            let mut tag_row = Row::new().spacing(space_xs).width(Length::Fill);
-            for tag in &self.selected_tags {
-                let tag_button = widget::button::text(tag)
-                    .trailing_icon(widget::icon::from_name("edit-delete-symbolic"))
-                    .on_press(TagEditorMessage::RemoveTag(tag.clone()))
-                    .tooltip(&self.remove_tooltip);
+            // let mut tag_row = FlexRow::new().spacing(space_xs).width(Length::Fill);
+            let tag_row = self
+                .selected_tags
+                .iter()
+                .fold(vec![], |mut acc, tag| {
+                    let tag_button = widget::button::text(tag)
+                        .trailing_icon(widget::icon::from_name("edit-delete-symbolic"))
+                        .on_press(TagEditorMessage::RemoveTag(tag.clone()))
+                        .tooltip(&self.remove_tooltip);
 
-                tag_row = tag_row.push(tag_button);
-            }
-            column = column.push(tag_row);
+                    acc.push(tag_button.into());
+                    acc
+                })
+                .apply(widget::Row::with_children)
+                .spacing(space_xs)
+                .width(Length::Fill);
+            tag_row.into()
         }
+    }
 
-        // Add tag input section
-        column = column.push(horizontal_rule(1));
-
-        column = match &self.tags {
+    fn view_tags_form(&self, space_xs: u16, space_s: u16) -> Element<'_, TagEditorMessage> {
+        match &self.tags {
             TagsState::Loaded(Tags { available_tags, .. }) => {
+                let mut column = Column::new();
+
                 // Add combo box for tag selection
                 let combo = combo_box(
                     available_tags,
@@ -179,23 +225,21 @@ where
                     .spacing(space_s)
                     .align_y(Vertical::Center);
 
-                column.push(input_row)
+                column.push(input_row).into()
             }
-            TagsState::Loading => column.push(
-                Row::new()
-                    .spacing(space_xs)
-                    .align_y(Vertical::Center)
-                    .push(
-                        widget::icon::from_name("content-loading-symbolic")
-                            .size(ICON_SIZE)
-                            .icon(),
-                    )
-                    .push(text(fl!("tag-editor-loading-tags"))),
-            ),
-            _ => column.push(text(fl!("settings-failed-to-load-tags"))),
-        };
+            TagsState::Loading => Row::new()
+                .spacing(space_xs)
+                .align_y(Vertical::Center)
+                .push(
+                    widget::icon::from_name("content-loading-symbolic")
+                        .size(ICON_SIZE)
+                        .icon(),
+                )
+                .push(text(fl!("tag-editor-loading-tags")))
+                .into(),
 
-        column.into()
+            _ => text(fl!("settings-failed-to-load-tags")).into(),
+        }
     }
 
     /// Update available tags by filtering out already selected tags

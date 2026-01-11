@@ -30,7 +30,9 @@ use crate::component::documents::DocumentState;
 use crate::component::documents::DocumentsComponent;
 use crate::component::documents::DocumentsMessage;
 use crate::component::documents::DocumentsOutput;
+use crate::component::documents::get_common_tags;
 use crate::component::pagination::PaginationMessage;
+use crate::component::tag_editor::Orientation;
 use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
 use crate::component::tag_editor::TagEditorOutput;
@@ -41,28 +43,6 @@ use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::state::filtered::Filtered;
-
-/// Get tags that are common to all selected documents
-fn get_common_tags(selected_documents: &[Document]) -> Vec<String> {
-    let common_tags = selected_documents
-        .iter()
-        .map(|document| {
-            document
-                .metadata
-                .tags
-                .clone()
-                .into_iter()
-                .collect::<HashSet<String>>()
-        })
-        .reduce(|acc, document_tags| acc.intersection(&document_tags).cloned().collect())
-        .unwrap_or_else(HashSet::new);
-
-    let mut common_tags = common_tags.into_iter().collect::<Vec<_>>();
-
-    common_tags.sort();
-
-    common_tags
-}
 
 /// Sort options for the document list
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -224,16 +204,19 @@ impl DocumentList {
         let (batch_tag_editor, batch_tag_editor_init) = TagEditor::new(
             document_provider.clone(),
             Vec::new(),
+            Orientation::Vertical,
             fl!("tag-editor-select-tag"),
             fl!("tag-editor-enter"),
             fl!("tag-editor-no-tags"),
             fl!("tag-editor-remove-tag"),
         );
 
+        let (archive, archive_init) = DocumentsComponent::new();
+
         (
             Self {
                 document_provider: document_provider.clone(),
-                archive: DocumentsComponent::default(),
+                archive,
                 search_query: String::new(),
                 is_filtering: false,
                 search_input_id: widget::Id::unique(),
@@ -248,6 +231,7 @@ impl DocumentList {
             Task::batch(vec![
                 tag_filter_init.map(ActionExt::map_into),
                 batch_tag_editor_init.map(ActionExt::map_into),
+                archive_init.map(ActionExt::map_into),
                 task::message(DocumentListMessage::LoadArchive),
                 task::message(DocumentListMessage::FocusSearchInput),
                 task::future(async move {
@@ -425,10 +409,12 @@ impl DocumentList {
         tracing::debug!("received: {message:?}");
         match message {
             DocumentListMessage::LoadArchive => {
-                self.archive.documents = DocumentState::Loading;
                 let document_provider = self.document_provider.clone();
 
                 Task::batch([
+                    self.archive
+                        .set_document_state(DocumentState::Loading)
+                        .map(ActionExt::map_into),
                     task::future({
                         let document_provider = document_provider.clone();
                         async move {
@@ -469,8 +455,10 @@ impl DocumentList {
                 });
 
                 let collection_size = files.filtered_len();
-                self.archive.documents = DocumentState::Loaded(files);
                 Task::batch([
+                    self.archive
+                        .set_document_state(DocumentState::Loaded(files))
+                        .map(ActionExt::map_into),
                     task::message(DocumentListMessage::DocumentsComponent(
                         DocumentsMessage::Pagination(PaginationMessage::SetCollectionSize(
                             collection_size,
@@ -481,17 +469,18 @@ impl DocumentList {
                     )),
                 ])
             }
-            DocumentListMessage::LoadingFailed(error) => {
-                self.archive.documents = DocumentState::Failed(error);
-                Task::none()
-            }
+            DocumentListMessage::LoadingFailed(error) => self
+                .archive
+                .set_document_state(DocumentState::Failed(error))
+                .map(ActionExt::map_into),
             DocumentListMessage::RefreshDocument(document) => {
                 let document_fingerprint = document.metadata.fingerprint.clone();
-                self.archive.documents.unwrap_mut().update_item(
-                    move |doc| doc.metadata.fingerprint == document_fingerprint,
-                    document,
-                );
-                Task::none()
+                self.archive
+                    .update_item(
+                        move |doc| doc.metadata.fingerprint == document_fingerprint,
+                        document,
+                    )
+                    .map(ActionExt::map_into)
             }
             DocumentListMessage::SearchChanged(query) => {
                 self.search_query = query.clone();
@@ -499,7 +488,7 @@ impl DocumentList {
                 self.debounce_counter += 1;
 
                 // Only start debounce timer if files have been loaded
-                if self.archive.documents.is_loaded() {
+                if self.archive.is_loaded() {
                     self.start_debounce_timer(self.debounce_counter, query)
                 } else {
                     Task::none()
@@ -522,7 +511,7 @@ impl DocumentList {
             }
             DocumentListMessage::DebounceTimeout(counter, query) => {
                 // Only proceed if this timeout matches the current counter (not superseded by newer typing)
-                if self.archive.documents.is_loaded()
+                if self.archive.is_loaded()
                     && counter == self.debounce_counter
                     && !self.is_filtering
                 {
@@ -534,7 +523,7 @@ impl DocumentList {
                             self.source_filter.clone(),
                             self.tag_filter.allow_tags.clone(),
                             self.tag_filter.deny_tags.clone(),
-                            self.archive.documents.unwrap().unfiltered().to_vec(),
+                            self.archive.unfiltered().to_vec(),
                         ),
                         task::message(DocumentListMessage::FocusSearchInput),
                     ])
@@ -572,36 +561,7 @@ impl DocumentList {
                 self.filter_now()
             }
             DocumentListMessage::BatchTagEditor(msg) => match msg {
-                TagEditorMessage::Out(msg) => match msg {
-                    TagEditorOutput::TagAdded(new_tag) => {
-                        let selected_documents = self.archive.get_selected_documents();
-                        let document_provider = self.document_provider.clone();
-                        task::future(async move {
-                            let _ = document_provider
-                                .batch_add_document_tags(
-                                    selected_documents,
-                                    slice::from_ref(&new_tag),
-                                )
-                                .await;
-
-                            DocumentListMessage::LoadArchive
-                        })
-                    }
-                    TagEditorOutput::TagRemoved(removed_tag) => {
-                        let selected_documents = self.archive.get_selected_documents();
-                        let document_provider = self.document_provider.clone();
-                        task::future(async move {
-                            let _ = document_provider
-                                .batch_delete_document_tags(
-                                    selected_documents,
-                                    slice::from_ref(&removed_tag),
-                                )
-                                .await;
-                            DocumentListMessage::LoadArchive
-                        })
-                    }
-                    TagEditorOutput::TagsUpdated(_tags) => Task::none(),
-                },
+                TagEditorMessage::Out(msg) => self.handle_batch_tag_editor_output(msg),
                 msg => self.batch_tag_editor.update(msg).map(ActionExt::map_into),
             },
             DocumentListMessage::TagFilter(msg) => match msg {
@@ -618,6 +578,9 @@ impl DocumentList {
                     DocumentsOutput::DocumentClicked(file) => cosmic::task::message(
                         DocumentListMessage::Out(DocumentListOutput::OpenDetails(file)),
                     ),
+                    DocumentsOutput::BatchTagEditor(msg) => {
+                        self.handle_batch_tag_editor_output(msg)
+                    }
                     DocumentsOutput::SelectionChanged(_) => {
                         // Handle selection changes if needed
                         Task::none()
@@ -645,6 +608,7 @@ impl DocumentList {
                 let (batch_tag_editor, batch_tag_editor_init) = TagEditor::new(
                     self.document_provider.clone(),
                     common_tags,
+                    Orientation::Vertical,
                     fl!("tag-editor-select-tag"),
                     fl!("tag-editor-enter"),
                     fl!("tag-editor-no-tags"),
@@ -659,11 +623,45 @@ impl DocumentList {
         }
     }
 
+    fn handle_batch_tag_editor_output(
+        &mut self,
+        msg: TagEditorOutput,
+    ) -> Task<Action<DocumentListMessage>> {
+        match msg {
+            TagEditorOutput::TagAdded(new_tag) => self.batch_add_tags(new_tag),
+            TagEditorOutput::TagRemoved(removed_tag) => self.batch_remove_tags(removed_tag),
+            TagEditorOutput::TagsUpdated(_tags) => Task::none(),
+        }
+    }
+
+    fn batch_remove_tags(&mut self, removed_tag: String) -> Task<Action<DocumentListMessage>> {
+        let selected_documents = self.archive.get_selected_documents();
+        let document_provider = self.document_provider.clone();
+        task::future(async move {
+            let _ = document_provider
+                .batch_delete_document_tags(selected_documents, slice::from_ref(&removed_tag))
+                .await;
+            DocumentListMessage::LoadArchive
+        })
+    }
+
+    fn batch_add_tags(&mut self, new_tag: String) -> Task<Action<DocumentListMessage>> {
+        let selected_documents = self.archive.get_selected_documents();
+        let document_provider = self.document_provider.clone();
+        task::future(async move {
+            let _ = document_provider
+                .batch_add_document_tags(selected_documents, slice::from_ref(&new_tag))
+                .await;
+
+            DocumentListMessage::LoadArchive
+        })
+    }
+
     fn filter_now(&mut self) -> Task<Action<DocumentListMessage>> {
         // Increment debounce counter to invalidate previous timers
         self.debounce_counter += 1;
 
-        if self.archive.documents.is_loaded() && !self.is_filtering {
+        if self.archive.is_loaded() && !self.is_filtering {
             self.is_filtering = true;
             self.start_background_filtering(
                 self.search_query.clone(),
@@ -671,7 +669,7 @@ impl DocumentList {
                 self.source_filter.clone(),
                 self.tag_filter.allow_tags.clone(),
                 self.tag_filter.deny_tags.clone(),
-                self.archive.documents.unwrap().unfiltered().to_vec(),
+                self.archive.unfiltered().to_vec(),
             )
         } else {
             Task::none()
@@ -679,11 +677,9 @@ impl DocumentList {
     }
 
     fn sort_now(&mut self) -> Task<Action<DocumentListMessage>> {
-        if self.archive.documents.is_loaded() {
+        if self.archive.is_loaded() {
             // Sort the unfiltered documents in place
             self.archive
-                .documents
-                .unwrap_mut()
                 .sort_unfiltered(|docs| sort_documents(docs, self.sort_option));
             // Re-apply the current filter to update the filtered view
             self.filter_now()

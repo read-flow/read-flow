@@ -1,13 +1,26 @@
+use std::fmt;
+
 pub mod filtered;
 pub mod tags;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub enum LoadedState<T> {
     #[default]
     New,
     Loading,
     Failed(String),
     Loaded(T),
+}
+
+impl<T> fmt::Debug for LoadedState<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LoadedState::New => write!(f, "New"),
+            LoadedState::Loading => write!(f, "Loading"),
+            LoadedState::Failed(_) => write!(f, "Failed"),
+            LoadedState::Loaded(_) => write!(f, "Loaded"),
+        }
+    }
 }
 
 impl<T> LoadedState<T> {
@@ -27,7 +40,7 @@ impl<T> LoadedState<T> {
         if let LoadedState::Loaded(state) = self {
             state
         } else {
-            panic!("Invalid state")
+            panic!("Invalid state: {self:?}")
         }
     }
 
@@ -35,7 +48,7 @@ impl<T> LoadedState<T> {
         if let LoadedState::Loaded(state) = self {
             state
         } else {
-            panic!("Invalid state")
+            panic!("Invalid state: {self:?}")
         }
     }
 }

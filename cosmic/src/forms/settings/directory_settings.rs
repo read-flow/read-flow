@@ -18,6 +18,7 @@ use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 
 use crate::ICON_SIZE;
+use crate::component::tag_editor::Orientation;
 use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
 use crate::component::tag_editor::TagEditorOutput;
@@ -152,6 +153,7 @@ impl DirectorySettingsForm {
         let (tag_editor, tag_editor_task) = TagEditor::new(
             document_provider.clone(),
             self.new_directory_scan_tags.clone(),
+            Orientation::Horizontal,
             fl!("settings-select-directory-tag"),
             fl!("settings-enter-directory-tag"),
             fl!("settings-no-directory-tags"),

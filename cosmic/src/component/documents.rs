@@ -10,15 +10,21 @@ use cosmic::Task;
 use cosmic::cosmic_theme;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Vertical;
+use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Row;
+use provider::r#async::Provider;
 
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::component::pagination::Pagination;
 use crate::component::pagination::PaginationMessage;
+use crate::component::tag_editor::Orientation;
+use crate::component::tag_editor::TagEditor;
+use crate::component::tag_editor::TagEditorMessage;
+use crate::component::tag_editor::TagEditorOutput;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::state::LoadedState;
@@ -26,9 +32,28 @@ use crate::state::filtered::Filtered;
 
 pub type DocumentState = LoadedState<Filtered<Document>>;
 
+impl Provider<Vec<String>> for DocumentState {
+    type Error = String;
+    async fn provide(&self) -> Result<Vec<String>, Self::Error> {
+        match self {
+            LoadedState::Loaded(documents) => {
+                let tags = documents
+                    .unfiltered()
+                    .iter()
+                    .flat_map(|doc| doc.metadata.tags.clone())
+                    .collect::<HashSet<_>>();
+
+                Ok(tags.into_iter().collect::<Vec<_>>())
+            }
+            _ => Err("error".to_string()),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum DocumentsOutput {
     DocumentClicked(Document),
+    BatchTagEditor(TagEditorOutput),
     SelectionChanged(Vec<Document>),
 }
 
@@ -37,8 +62,10 @@ pub enum DocumentsMessage {
     Pagination(PaginationMessage),
     ToggleDocumentSelected(Document),
     ToggleAllSelected(bool),
-    Out(DocumentsOutput),
+    BatchTagEditor(TagEditorMessage),
     FilterSelectedDocuments,
+    ResetBatchTagEditor,
+    Out(DocumentsOutput),
 }
 
 impl From<PaginationMessage> for DocumentsMessage {
@@ -47,99 +74,153 @@ impl From<PaginationMessage> for DocumentsMessage {
     }
 }
 
-#[derive(Default)]
+impl From<TagEditorMessage> for DocumentsMessage {
+    fn from(value: TagEditorMessage) -> Self {
+        match value {
+            TagEditorMessage::Out(msg) => {
+                DocumentsMessage::Out(DocumentsOutput::BatchTagEditor(msg))
+            }
+            _ => DocumentsMessage::BatchTagEditor(value),
+        }
+    }
+}
+
 pub struct DocumentsComponent {
-    pub documents: DocumentState,
-    pub pagination: Pagination,
-    pub selected_documents: HashSet<String>,
+    documents: DocumentState,
+    pagination: Pagination,
+    selected_documents: HashSet<String>,
+    batch_tag_editor: TagEditor<DocumentState>, // Tag editor for batch operations
 }
 
 impl DocumentsComponent {
+    pub fn new() -> (Self, Task<Action<DocumentsMessage>>) {
+        let documents: DocumentState = Default::default();
+
+        let (batch_tag_editor, init_batch_tag_editor) = TagEditor::new(
+            documents.clone(),
+            vec![],
+            Orientation::Horizontal,
+            fl!("tag-editor-select-tag"),
+            fl!("tag-editor-enter"),
+            fl!("tag-editor-no-tags"),
+            fl!("tag-editor-remove-tag"),
+        );
+
+        (
+            Self {
+                documents,
+                pagination: Default::default(),
+                selected_documents: Default::default(),
+                batch_tag_editor,
+            },
+            init_batch_tag_editor.map(ActionExt::map_into),
+        )
+    }
+
     pub fn view(&self) -> Element<'_, DocumentsMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
         match &self.documents {
-            DocumentState::New | DocumentState::Loading => Row::new()
-                .spacing(space_s)
-                .align_y(Vertical::Center)
-                .push(
-                    widget::icon::from_name("content-loading-symbolic")
-                        .size(ICON_SIZE)
-                        .icon(),
-                )
-                .push(widget::text(fl!("document-list-loading")))
-                .into(),
-            DocumentState::Failed(error) => {
-                widget::text(fl!("generic-error", error = error.as_str())).into()
-            }
-            DocumentState::Loaded(files) => {
-                let filtered_files = files.filtered_items();
-                let visible_files: Vec<_> = self
-                    .pagination
-                    .filter_visible(filtered_files.as_slice())
-                    .collect();
-
-                // Handle empty state
-                if visible_files.is_empty() {
-                    return Column::new()
-                        .push(
-                            widget::container(widget::text(fl!("document-list-no-files")))
-                                .width(Length::Fill)
-                                .center_x(Length::Fill)
-                                .padding(32),
-                        )
-                        .into();
-                }
-
-                // Build the settings section with files
-                let files_section = widget::settings::section();
-
-                // Add select all checkbox
-                let filtered_count = files.filtered_items().len();
-                let selected_count = self.selected_documents.len();
-                let all_selected = selected_count > 0 && selected_count >= filtered_count;
-
-                let checkbox_label = if all_selected {
-                    fl!("document-list-deselect-all")
-                } else {
-                    fl!("document-list-select-all")
-                };
-                let select_all_row = widget::row()
+            DocumentState::New | DocumentState::Loading => {
+                let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+                Row::new()
                     .spacing(space_s)
                     .align_y(Vertical::Center)
                     .push(
-                        widget::checkbox(checkbox_label, all_selected)
-                            .on_toggle(DocumentsMessage::ToggleAllSelected)
-                            .width(Length::FillPortion(1)),
+                        widget::icon::from_name("content-loading-symbolic")
+                            .size(ICON_SIZE)
+                            .icon(),
                     )
-                    .push(
-                        widget::text(fl!(
-                            "document-list-selection-count",
-                            selected = selected_count,
-                            total = filtered_count
-                        ))
-                        .width(Length::FillPortion(5)),
-                    );
-
-                let files_section = files_section
-                    .add(select_all_row)
-                    .add(self.pagination.view().map(Into::into));
-
-                let files_section = visible_files
-                    .into_iter()
-                    .fold(files_section, |section, file| {
-                        let is_selected =
-                            self.selected_documents.contains(&file.metadata.fingerprint);
-                        section.add(view_document(file, is_selected))
-                    })
-                    .add(self.pagination.view().map(Into::into));
-
-                let file_content = widget::settings::view_column(vec![files_section.into()])
-                    .apply(widget::scrollable::vertical);
-
-                Column::new().push(file_content).into()
+                    .push(widget::text(fl!("document-list-loading")))
+                    .into()
             }
+            DocumentState::Failed(error) => {
+                widget::text(fl!("generic-error", error = error.as_str())).into()
+            }
+            DocumentState::Loaded(files) => self.view_files(files),
         }
+    }
+
+    fn view_files<'a>(&'a self, files: &'a Filtered<Document>) -> Element<'a, DocumentsMessage> {
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+
+        let filtered_files = files.filtered_items();
+        let visible_files: Vec<_> = self
+            .pagination
+            .filter_visible(filtered_files.as_slice())
+            .collect();
+
+        // Handle empty state
+        if visible_files.is_empty() {
+            return Column::new()
+                .push(
+                    widget::container(widget::text(fl!("document-list-no-files")))
+                        .width(Length::Fill)
+                        .center_x(Length::Fill)
+                        .padding(32),
+                )
+                .into();
+        }
+
+        // Build the settings section with files
+        let files_section = widget::settings::section();
+
+        // Add select all checkbox
+        let filtered_count = filtered_files.len();
+        let selected_count = self.selected_documents.len();
+        let all_selected = selected_count > 0 && selected_count >= filtered_count;
+
+        let tag_editor_view = if selected_count > 0 {
+            self.batch_tag_editor
+                .view()
+                .map(Into::into)
+                .apply(widget::container)
+                .width(Length::FillPortion(3))
+                .into()
+        } else {
+            None
+        };
+
+        let checkbox_label = if all_selected {
+            fl!("document-list-deselect-all")
+        } else {
+            fl!("document-list-select-all")
+        };
+        let select_all_row =
+            widget::row()
+                .spacing(space_s)
+                .align_y(Vertical::Center)
+                .push(
+                    widget::checkbox(checkbox_label, all_selected)
+                        .on_toggle(DocumentsMessage::ToggleAllSelected)
+                        .width(Length::FillPortion(1)),
+                )
+                .push(
+                    widget::text(fl!(
+                        "document-list-selection-count",
+                        selected = selected_count,
+                        total = filtered_count
+                    ))
+                    .width(Length::FillPortion(
+                        if tag_editor_view.is_some() { 2 } else { 5 },
+                    )),
+                )
+                .push_maybe(tag_editor_view);
+
+        let files_section = files_section
+            .add(select_all_row)
+            .add(self.pagination.view().map(Into::into));
+
+        let files_section = visible_files
+            .into_iter()
+            .fold(files_section, |section, file| {
+                let is_selected = self.selected_documents.contains(&file.metadata.fingerprint);
+                section.add(view_document(file, is_selected))
+            })
+            .add(self.pagination.view().map(Into::into));
+
+        let file_content = widget::settings::view_column(vec![files_section.into()])
+            .apply(widget::scrollable::vertical);
+
+        Column::new().push(file_content).into()
     }
 
     pub fn update(&mut self, message: DocumentsMessage) -> Task<Action<DocumentsMessage>> {
@@ -188,6 +269,25 @@ impl DocumentsComponent {
                     Task::none()
                 }
             }
+            DocumentsMessage::BatchTagEditor(tag_editor_message) => self
+                .batch_tag_editor
+                .update(tag_editor_message)
+                .map(ActionExt::map_into),
+            DocumentsMessage::ResetBatchTagEditor => {
+                let selected_documents = self.get_selected_documents();
+                let common_tags = get_common_tags(&selected_documents);
+                let (batch_tag_editor, batch_tag_editor_init) = TagEditor::new(
+                    self.documents.clone(),
+                    common_tags,
+                    Orientation::Horizontal,
+                    fl!("tag-editor-select-tag"),
+                    fl!("tag-editor-enter"),
+                    fl!("tag-editor-no-tags"),
+                    fl!("tag-editor-remove-tag"),
+                );
+                self.batch_tag_editor = batch_tag_editor;
+                batch_tag_editor_init.map(ActionExt::map_into)
+            }
             DocumentsMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }
@@ -209,6 +309,7 @@ impl DocumentsComponent {
             cosmic::task::message(DocumentsMessage::Out(DocumentsOutput::SelectionChanged(
                 selected_docs,
             )))
+            .chain(task::message(DocumentsMessage::ResetBatchTagEditor))
         } else {
             Task::none()
         }
@@ -225,6 +326,48 @@ impl DocumentsComponent {
         } else {
             Vec::new()
         }
+    }
+
+    pub fn set_document_state(&mut self, state: DocumentState) -> Task<Action<DocumentsMessage>> {
+        self.documents = state.clone();
+        self.batch_tag_editor.tags_provider = state;
+        task::message(DocumentsMessage::ResetBatchTagEditor)
+    }
+
+    pub fn update_item<F>(&mut self, search_fn: F, item: Document) -> Task<Action<DocumentsMessage>>
+    where
+        F: FnMut(&&mut Document) -> bool + Clone,
+    {
+        self.documents
+            .unwrap_mut()
+            .update_item(search_fn.clone(), item.clone());
+        self.batch_tag_editor
+            .tags_provider
+            .unwrap_mut()
+            .update_item(search_fn, item);
+
+        task::message(DocumentsMessage::BatchTagEditor(
+            TagEditorMessage::LoadAllTags,
+        ))
+    }
+
+    pub fn is_loaded(&self) -> bool {
+        self.documents.is_loaded()
+    }
+
+    pub fn unfiltered(&self) -> &[Document] {
+        self.documents.unwrap().unfiltered()
+    }
+
+    pub fn sort_unfiltered<F>(&mut self, sort_fn: F)
+    where
+        F: FnMut(&mut [Document]) + Clone,
+    {
+        self.documents.unwrap_mut().sort_unfiltered(sort_fn.clone());
+        self.batch_tag_editor
+            .tags_provider
+            .unwrap_mut()
+            .sort_unfiltered(sort_fn);
     }
 }
 
@@ -280,4 +423,26 @@ fn display_path<'a>(path: &'a str) -> Element<'a, DocumentsMessage> {
     .apply(widget::container)
     .width(Length::Fill)
     .into()
+}
+
+/// Get tags that are common to all selected documents
+pub fn get_common_tags(selected_documents: &[Document]) -> Vec<String> {
+    let common_tags = selected_documents
+        .iter()
+        .map(|document| {
+            document
+                .metadata
+                .tags
+                .clone()
+                .into_iter()
+                .collect::<HashSet<String>>()
+        })
+        .reduce(|acc, document_tags| acc.intersection(&document_tags).cloned().collect())
+        .unwrap_or_else(HashSet::new);
+
+    let mut common_tags = common_tags.into_iter().collect::<Vec<_>>();
+
+    common_tags.sort();
+
+    common_tags
 }

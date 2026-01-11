@@ -20,6 +20,7 @@ use cosmic::widget::text;
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::app::ContextView;
+use crate::component::tag_editor::Orientation;
 use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
 use crate::component::tag_editor::TagEditorOutput;
@@ -65,6 +66,7 @@ impl DocumentDetails {
         let (tag_editor, tag_editor_task) = TagEditor::new(
             document_provider_clone.clone(),
             initial_tags,
+            Orientation::Horizontal,
             fl!("tag-editor-select-tag"),
             fl!("tag-editor-enter"),
             fl!("tag-editor-no-tags"),

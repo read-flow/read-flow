@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#[derive(Clone)]
 pub struct Filtered<T> {
     unfiltered: Vec<T>,
     filtered_indices: Vec<usize>,

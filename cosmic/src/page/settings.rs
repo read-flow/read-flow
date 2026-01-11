@@ -32,6 +32,7 @@ use rfd::FileHandle;
 use crate::ApplicationModule;
 use crate::ICON_SIZE;
 use crate::app::ContextView;
+use crate::component::tag_editor::Orientation;
 use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
 use crate::component::tag_editor::TagEditorOutput;
@@ -152,6 +153,7 @@ impl SettingsPage {
         let (tag_editor, tag_editor_task) = TagEditor::new(
             document_provider_clone.clone(),
             settings.ui.private_tags().to_vec(),
+            Orientation::Horizontal,
             fl!("settings-select-private-tag"),
             fl!("settings-enter-private-tag"),
             fl!("settings-no-private-tags"),
