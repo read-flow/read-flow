@@ -277,17 +277,14 @@ impl DocumentsComponent {
             DocumentsMessage::ResetBatchTagEditor => {
                 let selected_documents = self.get_selected_documents();
                 let common_tags = get_common_tags(&selected_documents);
-                let (batch_tag_editor, batch_tag_editor_init) = TagEditor::new(
-                    self.documents.clone(),
-                    common_tags,
-                    Orientation::Horizontal,
-                    fl!("tag-editor-select-tag"),
-                    fl!("tag-editor-enter"),
-                    fl!("tag-editor-no-tags"),
-                    fl!("tag-editor-remove-tag"),
-                );
-                self.batch_tag_editor = batch_tag_editor;
-                batch_tag_editor_init.map(ActionExt::map_into)
+                Task::batch(vec![
+                    task::message(DocumentsMessage::BatchTagEditor(TagEditorMessage::SetTags(
+                        common_tags,
+                    ))),
+                    task::message(DocumentsMessage::BatchTagEditor(
+                        TagEditorMessage::LoadAllTags,
+                    )),
+                ])
             }
             DocumentsMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")

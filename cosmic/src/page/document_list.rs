@@ -570,8 +570,8 @@ impl DocumentList {
                         self.handle_batch_tag_editor_output(msg)
                     }
                     DocumentsOutput::SelectionChanged(_) => {
-                        // Handle selection changes if needed
-                        Task::none()
+                        // Reset DocumentList's batch tag editor when selection changes
+                        task::message(DocumentListMessage::ResetBatchTagEditor)
                     }
                 },
                 msg => self.archive.update(msg).map(ActionExt::map_into),
@@ -593,17 +593,14 @@ impl DocumentList {
             DocumentListMessage::ResetBatchTagEditor => {
                 let selected_documents = self.archive.get_selected_documents();
                 let common_tags = get_common_tags(&selected_documents);
-                let (batch_tag_editor, batch_tag_editor_init) = TagEditor::new(
-                    self.document_provider.clone(),
-                    common_tags,
-                    Orientation::Vertical,
-                    fl!("tag-editor-select-tag"),
-                    fl!("tag-editor-enter"),
-                    fl!("tag-editor-no-tags"),
-                    fl!("tag-editor-remove-tag"),
-                );
-                self.batch_tag_editor = batch_tag_editor;
-                batch_tag_editor_init.map(ActionExt::map_into)
+                Task::batch(vec![
+                    task::message(DocumentListMessage::BatchTagEditor(
+                        TagEditorMessage::SetTags(common_tags),
+                    )),
+                    task::message(DocumentListMessage::BatchTagEditor(
+                        TagEditorMessage::LoadAllTags,
+                    )),
+                ])
             }
             DocumentListMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
