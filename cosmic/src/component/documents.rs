@@ -174,7 +174,7 @@ impl DocumentsComponent {
                 .view()
                 .map(Into::into)
                 .apply(widget::container)
-                .width(Length::FillPortion(3))
+                .width(Length::FillPortion(4))
                 .into()
         } else {
             None
@@ -201,7 +201,7 @@ impl DocumentsComponent {
                         total = filtered_count
                     ))
                     .width(Length::FillPortion(
-                        if tag_editor_view.is_some() { 2 } else { 5 },
+                        if tag_editor_view.is_some() { 1 } else { 5 },
                     )),
                 )
                 .push_maybe(tag_editor_view);

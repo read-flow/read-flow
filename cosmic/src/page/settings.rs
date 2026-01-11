@@ -153,7 +153,7 @@ impl SettingsPage {
         let (tag_editor, tag_editor_task) = TagEditor::new(
             document_provider_clone.clone(),
             settings.ui.private_tags().to_vec(),
-            Orientation::Horizontal,
+            Orientation::Vertical,
             fl!("settings-select-private-tag"),
             fl!("settings-enter-private-tag"),
             fl!("settings-no-private-tags"),

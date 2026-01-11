@@ -96,7 +96,6 @@ document-list-deselect-all = Deselect all
 document-list-select-all = Select all
 document-list-selected-count = Selected { $count } documents
 document-list-selection-count = Selected { $selected } of { $total }
-document-list-batch-operations = Batch operations
 
 # Page messages
 page-not-found = ⚠ Not found

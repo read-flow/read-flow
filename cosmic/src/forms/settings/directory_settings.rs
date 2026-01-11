@@ -153,7 +153,7 @@ impl DirectorySettingsForm {
         let (tag_editor, tag_editor_task) = TagEditor::new(
             document_provider.clone(),
             self.new_directory_scan_tags.clone(),
-            Orientation::Horizontal,
+            Orientation::Vertical,
             fl!("settings-select-directory-tag"),
             fl!("settings-enter-directory-tag"),
             fl!("settings-no-directory-tags"),

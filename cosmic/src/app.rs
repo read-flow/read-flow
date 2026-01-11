@@ -330,16 +330,7 @@ impl cosmic::Application for AppModel {
                     self.core.window.show_context = true;
                 }
 
-                // Reset batch tag editor if document list context page is activated
-                if let ContextPage::PageContext(page_selector) = context_page
-                    && self.core.window.show_context
-                {
-                    task::message(Message::Page(PageMessage::ActivatePageContext(
-                        page_selector,
-                    )))
-                } else {
-                    Task::none()
-                }
+                Task::none()
             }
             Message::ToggleActivePageContext => self
                 .nav

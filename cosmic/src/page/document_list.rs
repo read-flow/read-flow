@@ -30,11 +30,7 @@ use crate::component::documents::DocumentState;
 use crate::component::documents::DocumentsComponent;
 use crate::component::documents::DocumentsMessage;
 use crate::component::documents::DocumentsOutput;
-use crate::component::documents::get_common_tags;
 use crate::component::pagination::PaginationMessage;
-use crate::component::tag_editor::Orientation;
-use crate::component::tag_editor::TagEditor;
-use crate::component::tag_editor::TagEditorMessage;
 use crate::component::tag_editor::TagEditorOutput;
 use crate::component::tag_filter::TagFilter;
 use crate::component::tag_filter::TagFilterMessage;
@@ -100,7 +96,6 @@ pub struct DocumentList {
     tag_filter: TagFilter<Arc<DocumentProvider>>, // Tag Filter component
     source_filter: Option<ClientSelector>, // Optional source filter
     available_sources: Vec<ClientSelector>, // Available sources for filtering
-    batch_tag_editor: TagEditor<Arc<DocumentProvider>>, // Tag editor for batch operations
 }
 
 #[derive(Debug, Clone)]
@@ -126,17 +121,9 @@ pub enum DocumentListMessage {
     SourceFilterChanged(Option<ClientSelector>),
     ClearSourceFilter,
     TagFilter(TagFilterMessage),
-    BatchTagEditor(TagEditorMessage),
     DocumentsComponent(DocumentsMessage),
     SetAvailableSources(Vec<ClientSelector>),
-    ResetBatchTagEditor,
     Out(DocumentListOutput),
-}
-
-impl From<TagEditorMessage> for DocumentListMessage {
-    fn from(value: TagEditorMessage) -> Self {
-        Self::BatchTagEditor(value)
-    }
 }
 
 impl From<TagFilterMessage> for DocumentListMessage {
@@ -202,15 +189,6 @@ impl DocumentList {
         document_provider: Arc<DocumentProvider>,
     ) -> (Self, Task<Action<DocumentListMessage>>) {
         let (tag_filter, tag_filter_init) = TagFilter::new(document_provider.clone());
-        let (batch_tag_editor, batch_tag_editor_init) = TagEditor::new(
-            document_provider.clone(),
-            Vec::new(),
-            Orientation::Vertical,
-            fl!("tag-editor-select-tag"),
-            fl!("tag-editor-enter"),
-            fl!("tag-editor-no-tags"),
-            fl!("tag-editor-remove-tag"),
-        );
 
         let (archive, archive_init) = DocumentsComponent::new();
 
@@ -227,11 +205,9 @@ impl DocumentList {
                 tag_filter,
                 source_filter: None,
                 available_sources: Default::default(),
-                batch_tag_editor,
             },
             Task::batch(vec![
                 tag_filter_init.map(ActionExt::map_into),
-                batch_tag_editor_init.map(ActionExt::map_into),
                 archive_init.map(ActionExt::map_into),
                 task::message(DocumentListMessage::LoadArchive),
                 task::message(DocumentListMessage::FocusSearchInput),
@@ -380,14 +356,6 @@ impl DocumentList {
                 source_section.into(),
                 status_section.into(),
                 self.tag_filter.view().map(Into::into),
-                settings::section()
-                    .title(fl!("document-list-batch-operations"))
-                    .add(widget::text(fl!(
-                        "document-list-selected-count",
-                        count = self.archive.get_selected_documents().len()
-                    )))
-                    .add(self.batch_tag_editor.view().map(Into::into))
-                    .into(),
             ])
             .into(),
         }
@@ -419,7 +387,6 @@ impl DocumentList {
                             document_provider.get_client_selectors().await,
                         )
                     }),
-                    task::message(DocumentListMessage::ResetBatchTagEditor),
                     task::message(DocumentListMessage::TagFilter(
                         TagFilterMessage::LoadAllTags,
                     )),
@@ -548,10 +515,6 @@ impl DocumentList {
                 // Immediately filter to show all sources (no debounce needed for clearing)
                 self.filter_now()
             }
-            DocumentListMessage::BatchTagEditor(msg) => match msg {
-                TagEditorMessage::Out(msg) => self.handle_batch_tag_editor_output(msg),
-                msg => self.batch_tag_editor.update(msg).map(ActionExt::map_into),
-            },
             DocumentListMessage::TagFilter(msg) => match msg {
                 TagFilterMessage::Out(msg) => match msg {
                     TagFilterOutput::TagFiltersUpdated => {
@@ -571,7 +534,7 @@ impl DocumentList {
                     }
                     DocumentsOutput::SelectionChanged(_) => {
                         // Reset DocumentList's batch tag editor when selection changes
-                        task::message(DocumentListMessage::ResetBatchTagEditor)
+                        Task::none()
                     }
                 },
                 msg => self.archive.update(msg).map(ActionExt::map_into),
@@ -589,18 +552,6 @@ impl DocumentList {
                 } else {
                     Task::none()
                 }
-            }
-            DocumentListMessage::ResetBatchTagEditor => {
-                let selected_documents = self.archive.get_selected_documents();
-                let common_tags = get_common_tags(&selected_documents);
-                Task::batch(vec![
-                    task::message(DocumentListMessage::BatchTagEditor(
-                        TagEditorMessage::SetTags(common_tags),
-                    )),
-                    task::message(DocumentListMessage::BatchTagEditor(
-                        TagEditorMessage::LoadAllTags,
-                    )),
-                ])
             }
             DocumentListMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
