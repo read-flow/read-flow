@@ -176,7 +176,7 @@ where
                     acc.push(tag_button.into());
                     acc
                 })
-                .apply(widget::Row::with_children)
+                .apply(widget::flex_row)
                 .spacing(space_xs)
                 .width(Length::Fill);
             tag_row.into()

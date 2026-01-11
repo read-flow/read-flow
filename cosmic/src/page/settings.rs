@@ -17,7 +17,6 @@ use cosmic::cosmic_theme;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
-use cosmic::iced_widget::Row;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
@@ -42,6 +41,7 @@ use crate::fl;
 use crate::forms::settings::directory_settings::DirectorySettingsForm;
 use crate::forms::settings::directory_settings::DirectorySettingsFormMessage;
 use crate::forms::settings::directory_settings::DirectorySettingsFormOutput;
+use crate::layout::layout;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum EditState<T> {
@@ -380,24 +380,13 @@ impl SettingsPage {
             .padding(space_s);
         content.push(save_section.into());
 
-        vec![
-            widget::horizontal_space().into(),
-            settings::view_column(content)
-                .apply(widget::container)
-                .width(Length::FillPortion(4))
-                .height(Length::Shrink)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Top)
-                .into(),
-            widget::horizontal_space().into(),
-        ]
-        .apply(Row::with_children)
-        .apply(widget::scrollable::vertical)
-        .apply(widget::container)
-        .height(Length::Fill)
-        .align_x(Horizontal::Center)
-        .align_y(Vertical::Top)
-        .into()
+        layout(settings::view_column(content))
+            .apply(widget::scrollable::vertical)
+            .apply(widget::container)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Top)
+            .into()
     }
 
     pub fn view_context(&self) -> ContextView<'_, SettingsMessage> {

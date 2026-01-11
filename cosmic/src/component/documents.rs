@@ -27,6 +27,7 @@ use crate::component::tag_editor::TagEditorMessage;
 use crate::component::tag_editor::TagEditorOutput;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
+use crate::layout::layout;
 use crate::state::LoadedState;
 use crate::state::filtered::Filtered;
 
@@ -217,8 +218,8 @@ impl DocumentsComponent {
             })
             .add(self.pagination.view().map(Into::into));
 
-        let file_content = widget::settings::view_column(vec![files_section.into()])
-            .apply(widget::scrollable::vertical);
+        let file_content =
+            widget::settings::view_column(layout(files_section).apply(|row| vec![row.into()]));
 
         Column::new().push(file_content).into()
     }

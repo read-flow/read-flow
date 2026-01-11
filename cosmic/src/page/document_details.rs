@@ -27,6 +27,7 @@ use crate::component::tag_editor::TagEditorOutput;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
+use crate::layout::layout;
 
 pub struct DocumentDetails {
     document: Document,
@@ -222,24 +223,13 @@ impl DocumentDetails {
         ]);
 
         // Wrap content in a scrollable container
-        vec![
-            widget::horizontal_space().into(),
-            content
-                .apply(widget::container)
-                .width(Length::FillPortion(4))
-                .height(Length::Shrink)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Top)
-                .into(),
-            widget::horizontal_space().into(),
-        ]
-        .apply(Row::with_children)
-        .apply(widget::scrollable::vertical)
-        .apply(widget::container)
-        .height(Length::Fill)
-        .align_x(Horizontal::Center)
-        .align_y(Vertical::Top)
-        .into()
+        layout(content)
+            .apply(widget::scrollable::vertical)
+            .apply(widget::container)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Top)
+            .into()
     }
 
     pub fn view_context(&self) -> ContextView<'_, DocumentDetailsMessage> {

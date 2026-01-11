@@ -18,7 +18,6 @@ use cosmic::iced::alignment::Vertical;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
-use cosmic::widget::Row;
 use cosmic::widget::container;
 use cosmic::widget::icon;
 use cosmic::widget::row;
@@ -31,6 +30,7 @@ use crate::app::ContextView;
 use crate::fl;
 use crate::iter::find_with_next;
 use crate::iter::find_with_previous;
+use crate::layout::layout;
 use crate::state::LoadedState;
 
 pub type RemotesState = LoadedState<Vec<Remote>>;
@@ -242,24 +242,13 @@ impl SourcesPage {
 
         content.push(add_section.into());
 
-        vec![
-            widget::horizontal_space().into(),
-            settings::view_column(content)
-                .apply(widget::container)
-                .width(Length::FillPortion(4))
-                .height(Length::Shrink)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Top)
-                .into(),
-            widget::horizontal_space().into(),
-        ]
-        .apply(Row::with_children)
-        .apply(widget::scrollable::vertical)
-        .apply(widget::container)
-        .height(Length::Fill)
-        .align_x(Horizontal::Center)
-        .align_y(Vertical::Top)
-        .into()
+        layout(settings::view_column(content))
+            .apply(widget::scrollable::vertical)
+            .apply(widget::container)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Top)
+            .into()
     }
 
     pub fn view_context(&self) -> ContextView<'_, SourcesMessage> {

@@ -42,6 +42,7 @@ use crate::component::tag_filter::TagFilterOutput;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
+use crate::layout::layout;
 use crate::state::filtered::Filtered;
 
 /// Sort options for the document list
@@ -248,8 +249,6 @@ impl DocumentList {
             space_xxs, space_s, ..
         } = theme::active().cosmic().spacing;
 
-        let column = widget::column().spacing(space_xxs);
-
         let header_row = widget::row().align_y(Vertical::Center).spacing(space_s);
 
         let header_row = header_row.push(
@@ -313,27 +312,16 @@ impl DocumentList {
                 .align_y(Vertical::Center),
         );
 
-        let column = column.push(
-            header_row
-                .apply(widget::container)
-                .width(Length::Fill)
-                .height(Length::Shrink)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center),
-        );
-
-        let column = column.push(
-            self.archive
-                .view()
-                .map(Into::into)
-                .apply(widget::container)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(Horizontal::Left)
-                .align_y(Vertical::Top),
-        );
-
-        column.into()
+        widget::column()
+            .spacing(space_xxs)
+            .push(layout(header_row))
+            .push(
+                self.archive
+                    .view()
+                    .map(Into::into)
+                    .apply(widget::scrollable::vertical),
+            )
+            .into()
     }
 
     pub fn view_context(&self) -> ContextView<'_, DocumentListMessage> {
