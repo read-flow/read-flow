@@ -399,6 +399,7 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
             .align_y(cosmic::iced::Alignment::Center)
             .width(Length::Fill),
     )
+    .class(widget::button::ButtonClass::ListItem)
     .width(Length::Fill)
     .on_press(DocumentsMessage::Out(DocumentsOutput::DocumentClicked(
         document.clone(),
