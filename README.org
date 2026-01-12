@@ -1,61 +1,296 @@
-* Archive Organizer
+#+TITLE: Archive Organizer
+#+AUTHOR: Peterpaul Klein Haneveld
+#+EMAIL: pp.kleinhaneveld@gmail.com
 
-This is a tool to help discover and organize files locally and on remote servers.
+* Overview
 
-* TODO: Implement the following items [27/47]
+Archive Organizer is a cross-platform document management system designed to help organize and manage files across multiple machines. The project provides multiple interfaces for interacting with your document archive:
 
-- [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
-- [X] Make database URL configurable (using ~figment~)
-- [X] Add functions to convert between mime-types and extensions
-- [X] Use filename from part in multipart form and remove explicit form field
-- [X] Store all pages separately in gui, so that they don't need to be reinitialized when switching pages
-- [X] Add command to find duplicate entries
-- [X] Add configuration/database for remote servers to synchronize with
-- [X] Introduce common interface/trait around database and HTTP client
-- [X] Add cargo features for rocket server and gui
-- [X] Make authorization tokens configurable
-- [X] Create page to view/edit file/book/project details
-- [X] Add health endpoint, to check whether remote repository is up
-- [X] Store configuration in default location like =$HOME/.config/archive-organizer=
-- [ ] Add unit/integration tests
-- [ ] Implement 2-way TLS (including configuration/database)
-- [ ] HTTP response code & error handling in ~client~ module
-- [ ] Make file download folder for HTTP ~client~ configurable
-- [ ] Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
-- [ ] Proper HTTP error handling in ~server~ module, including tests
-- [ ] Make it possible to correlate `books` of different file types
-- [ ] Recognize duplicates accross local/remote repositories
-- [ ] Separate file discovery in multiple main categories:
-  - documents(.doc, .docx, .pdf, .epub, .mobi, etc.)
-  - images(.jpg, .png, .webp, etc.)
-  - videos(.mpeg, .mov, mp4, etc.)
-  - audio(.ogg, .mp3, .wav, etc.)
-- [ ] Recognize calibre directories, and support calibre database to import data
-- [X] Derive folders to scan from discovered files
-- [X] Store folders to scan in database, and add command to scan configured folders
-- [ ] Check files in the database to see whether they still exist
-- [ ] Change directory modules API so that they can match and still recurse into the directory
-- [ ] Add allow/denylist for directories to scan
-- [ ] Allow copying full paths from file details page
-- [X] In File Edit dialog, show all unused tags and allow to set them using a single click
-- [X] Open files from the gui
-- [X] Order files ascending or descending
-- [X] Add private mode, with configuration to hide documents by default
-- [ ] Allow deleting duplicate files (including from file storage) from file edit dialog
-- [ ] Allow duplicating files to/from remote, with configuration/input of location.
-- [X] Allow marking files as read/reading/unread
-- [X] Filter files on reading status
-- [X] Check if cosmic applications work better on chromeos
-  - No, they don't
-- [X] Server downloads files into file specific folder: "{download_folder}/{filename}/{filename}.{extension}"
-      This way related books, with the same name, but different extension will be stored in the same folder,
-      Calibre can then import them as related to the same book.
-- [X] Make aggregator fail-safe for remotes that are unavailable at that moment. (use status endpoint)
-- [ ] Use same approach for ~Out~ messages, ~settings.rs~ uses different approach then ~page/mod.rs~
-- [X] Make settings page edit only the file, and apply the commandline arguments for the runtime settings
-- [X] Some settings, like the database url, are only effective after a restart, notify the user when they change those
-- [X] After adding a source, add the source to the active aggregator (needs Arc<Mutex<Aggregator>>)
-- [ ] =page/mod.rs= contains a lot of initialization code (and messages) that might need to be handled by =app.rs=
-- [ ] On the Sources page, add an indicator icon for each source whether they are available or not
-  - [ ] Allow adding sources that are not available at the time of adding(?)
-- [ ] modify DAO traits to take the connection as a parameter, so we can add transactions
+- A *REST API server* for programmatic access
+- A *Cosmic desktop application* for Linux desktop environments
+- A *Single Page Application (SPA)* web interface with fuzzy search capabilities
+- A *Command-line interface* for scanning and tagging operations
+
+* Architecture
+
+The project is structured as a Rust workspace with three main crates and a separate web application:
+
+** Core Components
+
+*** =archive_organizer= (Core Library & Server)
+The main library and server implementation providing:
+- Database management using Diesel ORM with SQLite
+- REST API server using Rocket framework
+- File scanning and fingerprinting
+- Tag management and automatic tagging
+- Client API for remote server communication
+- Settings and configuration management
+
+*Key Modules:*
+- =api/= - File data source and API definitions
+- =client/= - Client for communicating with remote servers
+- =db/= - Database models, schema, and connection pooling
+- =scan/= - File system scanning and directory traversal
+- =server/= - REST API endpoints and server implementation
+- =tag/= - Tag management and automatic tagging logic
+- =settings/= - Configuration parsing and settings management
+
+*Binary:*
+- =archive-organizer= - Main CLI entry point with commands:
+  - =scan <path>= - Scan directories for files
+  - =apply-tags= - Apply automatic tagging rules
+  - =serve= - Start the REST API server
+  - =extract-scan-directories= - List all scan directories
+
+*** =cosmic= (Desktop Application)
+A native Linux desktop application built with libcosmic (COSMIC desktop environment toolkit):
+- Multi-window support with COSMIC desktop integration
+- Internationalization support (English, French, Dutch)
+- Single-instance application architecture
+- Async/tokio-based event handling
+- Accessibility features
+
+*Key Modules:*
+- =app/= - Main application model and state management
+- =component/= - Reusable UI components
+- =page/= - Application pages/views
+- =forms/= - Form handling and validation
+- =state/= - Application state management
+- =i18n/= - Internationalization resources
+- =client/= - Integration with archive organizer backend
+- =document_provider/= - Document data provisioning
+
+*Features:*
+- Private mode for sensitive documents
+- Tag-based filtering and organization
+- Native file system integration
+- GPU-accelerated rendering (wgpu)
+- Wayland and X11 support
+
+*** =provider= (Dependency Injection Framework)
+A lightweight dependency injection and observable pattern library:
+- =sync/= - Synchronous provider implementations
+- =async/= - Asynchronous provider implementations
+- Observable caching with invalidation support
+- Generic provider traits for dependency management
+
+*** =spa= (Single Page Application)
+A vanilla JavaScript web interface served independently:
+- Express.js server for static file serving
+- Tailwind CSS for styling
+- Fuse.js for client-side fuzzy search
+- PDF.js for PDF rendering
+- Real-time file filtering and tagging
+
+*Files:*
+- =public/= - Static assets (HTML, CSS, JS)
+- =server.js= - Express server for SPA
+- =FUZZY_SEARCH_EXAMPLES.md= - Documentation for search features
+
+* Project Structure
+
+#+BEGIN_EXAMPLE
+archive-organizer/
+├── archive_organizer/           # Core library and server
+│   ├── src/
+│   │   ├── bin/
+│   │   │   └── archive-organizer.rs   # Main CLI entry point
+│   │   ├── api/                       # API definitions
+│   │   ├── client/                    # Remote client
+│   │   ├── db/                        # Database layer
+│   │   ├── scan/                      # File scanning
+│   │   ├── server/                    # REST API server
+│   │   ├── tag/                       # Tag management
+│   │   └── lib.rs                     # Library root
+│   ├── migrations/                    # Diesel database migrations
+│   └── Cargo.toml                     # Rust package manifest
+│
+├── cosmic/                            # COSMIC desktop application
+│   ├── src/
+│   │   ├── app/                       # Application model
+│   │   ├── component/                 # UI components
+│   │   ├── page/                      # Application pages
+│   │   ├── forms/                     # Form handling
+│   │   ├── state/                     # State management
+│   │   └── main.rs                    # Desktop app entry point
+│   ├── i18n/                          # Translations (en, fr, nl)
+│   ├── resources/                     # Icons and assets
+│   └── Cargo.toml                     # Rust package manifest
+│
+├── provider/                          # Dependency injection library
+│   ├── src/
+│   │   ├── async/                     # Async providers
+│   │   ├── sync/                      # Sync providers
+│   │   └── lib.rs                     # Library root
+│   └── Cargo.toml                     # Rust package manifest
+│
+├── spa/                               # Web interface
+│   ├── public/
+│   │   ├── index.html                 # Main HTML
+│   │   ├── app.js                     # Application logic
+│   │   └── styles.css                 # Compiled styles
+│   ├── server.js                      # Express server
+│   ├── package.json                   # Node dependencies
+│   └── FUZZY_SEARCH_EXAMPLES.md       # Search documentation
+│
+├── Cargo.toml                         # Workspace manifest
+├── Cargo.lock                         # Dependency lock file
+├── archive-organizer.toml             # Application configuration
+├── archive-organizer.template.toml    # Configuration template
+├── openapi.yaml                       # REST API specification
+├── rest-api.http                      # HTTP test requests
+├── diesel.toml                        # Diesel CLI configuration
+├── Rocket.toml                        # Rocket server configuration
+├── database.db                        # SQLite database
+├── setup.sh                           # Setup script
+└── TODO.org                           # Project tasks
+#+END_EXAMPLE
+
+* Configuration
+
+The application is configured via =archive-organizer.toml= with the following sections:
+
+** =[database]=
+Database connection settings:
+- =url= - Path to SQLite database file
+
+** =[server]=
+Server configuration:
+- =download_folder= - Temporary download directory
+- =authorized_users= - Basic authentication credentials
+
+** =[scan]=
+Scanning behavior:
+- =dry_run= - Enable/disable dry run mode
+- =auto_tags= - Automatic tagging rules
+- =directories= - Scan directory configurations with actions (Scan/Ignore), tags, and inheritance settings
+
+** =[ui]=
+User interface settings:
+- =private_mode= - Enable/disable private mode
+- =private_tags= - Tags to hide unless in private mode
+
+* Features
+
+** File Management
+- Automatic file scanning and fingerprinting
+- Duplicate detection via content-based fingerprinting
+- Tag-based organization with automatic tagging rules
+- Reading status tracking (Unread, Reading, Read)
+- Multi-directory support with configurable inheritance
+
+** Search and Filtering
+- Fuzzy search with Fuse.js (web interface)
+- Tag-based filtering
+- Filename and path matching
+- Support for typos and partial matches
+
+** Multi-Platform Access
+- Native desktop application for COSMIC desktop
+- Web interface accessible from any browser
+- REST API for custom integrations
+- Command-line tools for automation
+
+** Security
+- Basic authentication for REST API
+- Private mode for sensitive documents
+- Tag-based content filtering
+
+** Internationalization
+- Desktop app supports English, French, and Dutch
+- Fluent-based localization system
+
+* REST API
+
+The REST API (documented in =openapi.yaml=) provides:
+
+- =GET /status= - Server status
+- =GET /files= - List all files
+- =POST /files= - Upload new file
+- =GET /files/{id}= - Get file details
+- =PUT /files/{id}= - Update file information
+- =DELETE /files/{id}= - Delete file
+- =GET /files/{id}/tags= - Get file tags
+- Additional tag and remote management endpoints
+
+* Database Schema
+
+The application uses SQLite with Diesel ORM. Migrations are located in =archive_organizer/migrations/= and include:
+
+- Initial database schema (files, tags, file_tags)
+- Remote server support
+- Remote ordering and authorization
+- Reading status tracking
+- User ID management
+
+* Building and Running
+
+** Prerequisites
+- Rust toolchain (edition 2024)
+- Node.js and npm (for SPA)
+- SQLite3
+- Diesel CLI (optional, for migrations)
+
+** Build Commands
+
+*** CLI and Server
+#+BEGIN_SRC bash
+# Build all workspace members
+cargo build --release
+
+# Run the server
+cargo run --bin archive-organizer -- serve
+
+# Scan a directory
+cargo run --bin archive-organizer -- scan /path/to/directory
+
+# Apply automatic tags
+cargo run --bin archive-organizer -- apply-tags
+#+END_SRC
+
+*** Desktop Application
+#+BEGIN_SRC bash
+cd cosmic
+cargo build --release
+cargo run
+#+END_SRC
+
+*** Web Interface
+#+BEGIN_SRC bash
+cd spa
+npm install
+npm run build:css
+npm start
+#+END_SRC
+
+* Development
+
+** Workspace Dependencies
+The workspace uses centralized dependency management. Common dependencies include:
+- =diesel= - Database ORM
+- =rocket= - Web framework
+- =serde= - Serialization
+- =tokio= - Async runtime
+- =clap= - CLI parsing
+- =reqwest= - HTTP client
+- =libcosmic= - COSMIC desktop toolkit
+
+** Code Organization
+- The project follows Rust's module system conventions
+- Each crate has a well-defined responsibility
+- The =provider= crate enables loose coupling via dependency injection
+- Settings are managed through an observable cache pattern for reactive updates
+
+** Testing
+Test files and configurations can be found in:
+- =archive_organizer/src/= - Unit tests
+- =rest-api.http= - HTTP endpoint tests
+
+* License
+
+- =archive_organizer= and =provider=: MIT License
+- =cosmic= desktop application: GPL-2 License
+
+* Author
+
+Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>

@@ -1,0 +1,61 @@
+* Archive Organizer
+
+This is a tool to help discover and organize files locally and on remote servers.
+
+* TODO: Implement the following items [27/47]
+
+- [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
+- [X] Make database URL configurable (using ~figment~)
+- [X] Add functions to convert between mime-types and extensions
+- [X] Use filename from part in multipart form and remove explicit form field
+- [X] Store all pages separately in gui, so that they don't need to be reinitialized when switching pages
+- [X] Add command to find duplicate entries
+- [X] Add configuration/database for remote servers to synchronize with
+- [X] Introduce common interface/trait around database and HTTP client
+- [X] Add cargo features for rocket server and gui
+- [X] Make authorization tokens configurable
+- [X] Create page to view/edit file/book/project details
+- [X] Add health endpoint, to check whether remote repository is up
+- [X] Store configuration in default location like =$HOME/.config/archive-organizer=
+- [ ] Add unit/integration tests
+- [ ] Implement 2-way TLS (including configuration/database)
+- [ ] HTTP response code & error handling in ~client~ module
+- [ ] Make file download folder for HTTP ~client~ configurable
+- [ ] Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
+- [ ] Proper HTTP error handling in ~server~ module, including tests
+- [ ] Make it possible to correlate `books` of different file types
+- [ ] Recognize duplicates accross local/remote repositories
+- [ ] Separate file discovery in multiple main categories:
+  - documents(.doc, .docx, .pdf, .epub, .mobi, etc.)
+  - images(.jpg, .png, .webp, etc.)
+  - videos(.mpeg, .mov, mp4, etc.)
+  - audio(.ogg, .mp3, .wav, etc.)
+- [ ] Recognize calibre directories, and support calibre database to import data
+- [X] Derive folders to scan from discovered files
+- [X] Store folders to scan in database, and add command to scan configured folders
+- [ ] Check files in the database to see whether they still exist
+- [ ] Change directory modules API so that they can match and still recurse into the directory
+- [ ] Add allow/denylist for directories to scan
+- [ ] Allow copying full paths from file details page
+- [X] In File Edit dialog, show all unused tags and allow to set them using a single click
+- [X] Open files from the gui
+- [X] Order files ascending or descending
+- [X] Add private mode, with configuration to hide documents by default
+- [ ] Allow deleting duplicate files (including from file storage) from file edit dialog
+- [ ] Allow duplicating files to/from remote, with configuration/input of location.
+- [X] Allow marking files as read/reading/unread
+- [X] Filter files on reading status
+- [X] Check if cosmic applications work better on chromeos
+  - No, they don't
+- [X] Server downloads files into file specific folder: "{download_folder}/{filename}/{filename}.{extension}"
+      This way related books, with the same name, but different extension will be stored in the same folder,
+      Calibre can then import them as related to the same book.
+- [X] Make aggregator fail-safe for remotes that are unavailable at that moment. (use status endpoint)
+- [ ] Use same approach for ~Out~ messages, ~settings.rs~ uses different approach then ~page/mod.rs~
+- [X] Make settings page edit only the file, and apply the commandline arguments for the runtime settings
+- [X] Some settings, like the database url, are only effective after a restart, notify the user when they change those
+- [X] After adding a source, add the source to the active aggregator (needs Arc<Mutex<Aggregator>>)
+- [ ] =page/mod.rs= contains a lot of initialization code (and messages) that might need to be handled by =app.rs=
+- [ ] On the Sources page, add an indicator icon for each source whether they are available or not
+  - [ ] Allow adding sources that are not available at the time of adding(?)
+- [ ] modify DAO traits to take the connection as a parameter, so we can add transactions
