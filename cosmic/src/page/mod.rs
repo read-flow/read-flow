@@ -76,7 +76,7 @@ pub enum PageOutput {
 #[derive(Debug, Clone)]
 pub enum PageMessage {
     Sources(SourcesMessage),
-    AddRemote(Url, String),
+    AddRemote(Url, String, String), // url, user_id, passphrase
     DeleteRemote(Url),
     Documents(DocumentListMessage),
     DocumentDetails(Fingerprint, DocumentDetailsMessage),
@@ -118,7 +118,11 @@ impl Pages {
             .into_iter()
             .map(|remote| {
                 let remote_connection: Url = remote.base_url.parse()?;
-                let client = FilesClient::new(remote_connection, remote.authorization_token)?;
+                let client = FilesClient::new(
+                    remote_connection,
+                    remote.user_id.clone(),
+                    remote.passphrase.clone(),
+                )?;
                 Ok(client)
             })
             .collect::<anyhow::Result<_>>()
@@ -251,12 +255,12 @@ impl Pages {
                 .map(move |action| {
                     action.map(|msg| map_document_details_message(fingerprint.clone(), msg))
                 }),
-            PageMessage::AddRemote(url, authorization_token) => {
+            PageMessage::AddRemote(url, user_id, passphrase) => {
                 let document_provider = self.document_provider.clone();
                 task::future(async move {
                     tracing::debug!("adding remote client: {url}");
                     document_provider
-                        .add_client(FilesClient::new(url, authorization_token).unwrap().into())
+                        .add_client(FilesClient::new(url, user_id, passphrase).unwrap().into())
                         .await;
                     PageMessage::Noop
                 })
@@ -326,8 +330,8 @@ impl Pages {
 fn map_sources_message(msg: SourcesMessage) -> PageMessage {
     match msg {
         SourcesMessage::Out(message) => match message {
-            SourcesOutput::AddedSource(url, authorization_token) => {
-                PageMessage::AddRemote(url, authorization_token)
+            SourcesOutput::AddedSource(url, user_id, passphrase) => {
+                PageMessage::AddRemote(url, user_id, passphrase)
             }
             SourcesOutput::DeletedSource(url) => PageMessage::DeleteRemote(url),
         },

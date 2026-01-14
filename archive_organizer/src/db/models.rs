@@ -90,7 +90,8 @@ pub struct Remote {
     pub id: i32,
     pub base_url: String,
     pub order: i32,
-    pub authorization_token: String,
+    pub passphrase: String,
+    pub user_id: String,
 }
 
 #[derive(Insertable)]
@@ -99,5 +100,6 @@ pub struct Remote {
 pub struct NewRemote {
     pub base_url: String,
     pub order: i32,
-    pub authorization_token: String,
+    pub passphrase: String,
+    pub user_id: String,
 }

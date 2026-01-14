@@ -46,7 +46,8 @@ impl Provider<Vec<String>> for DocumentState {
 
                 Ok(tags.into_iter().collect::<Vec<_>>())
             }
-            _ => Err("error".to_string()),
+            LoadedState::Failed(error) => Err(error.to_string()),
+            _ => Err(format!("{self:?}")),
         }
     }
 }

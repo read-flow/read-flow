@@ -37,6 +37,7 @@ pub struct Cli {
     private_tags: Vec<String>,
 }
 
+#[derive(Debug)]
 pub struct AppSettings {
     cli_parameters: Cli,
 }

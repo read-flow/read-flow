@@ -261,6 +261,7 @@ dependencies = [
  "anyhow",
  "assert4rs",
  "async-trait",
+ "base64 0.22.1",
  "clap",
  "diesel",
  "diesel_migrations",

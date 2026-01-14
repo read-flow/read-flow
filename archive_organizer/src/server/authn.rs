@@ -1,3 +1,4 @@
+use base64::Engine;
 use itertools::Itertools;
 use rocket::http::Status;
 use rocket::request::FromRequest;
@@ -7,31 +8,54 @@ use rocket::request::Request;
 use crate::ApplicationModule;
 use crate::server::SettingsProvider;
 
-pub struct AuthorizedUser {}
+pub struct AuthorizedUser {
+    pub user_id: String,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("expected a single Authorization header, found '{0}'")]
     TooManyAuthorizationHeaders(usize),
-    #[error("expected a bearer token")]
-    NotABearerToken,
-    #[error("expected a bearer token, but got '{0}'")]
-    ExpectedBearerToken(String),
-    #[error("the presented token is invalid")]
-    InvalidToken,
+    #[error("expected a Basic or Bearer token")]
+    InvalidAuthType,
+    #[error("invalid Basic authentication format")]
+    InvalidBasicAuth,
+    #[error("the presented credentials are invalid")]
+    InvalidCredentials,
 }
 
 impl AuthorizedUser {
+    fn extract_basic_auth(authorization_header: &str) -> Result<(String, String), Error> {
+        if !authorization_header.to_lowercase().starts_with("basic ") {
+            return Err(Error::InvalidAuthType);
+        }
+
+        let encoded_credentials = &authorization_header[6..]; // Remove "Basic "
+        let engine = base64::engine::general_purpose::STANDARD;
+        let decoded = engine
+            .decode(encoded_credentials)
+            .map_err(|_| Error::InvalidBasicAuth)?;
+
+        let credentials = String::from_utf8(decoded).map_err(|_| Error::InvalidBasicAuth)?;
+
+        tracing::debug!("got credentials: `{credentials}`");
+
+        match credentials.split_once(':') {
+            Some((user_id, passphrase)) => Ok((user_id.to_string(), passphrase.to_string())),
+            None => Err(Error::InvalidBasicAuth),
+        }
+    }
+
     fn extract_bearer_token(authorization_header: &str) -> Result<&str, Error> {
         match authorization_header.split_once(" ") {
             Some((bearer, token)) => {
                 if bearer.to_lowercase() != "bearer" {
-                    Err(Error::ExpectedBearerToken(bearer.to_owned()))
+                    Err(Error::InvalidAuthType)
                 } else {
                     Ok(token)
                 }
             }
-            None => Err(Error::NotABearerToken),
+            None => Err(Error::InvalidAuthType),
         }
     }
 }
@@ -54,22 +78,48 @@ impl<'r> FromRequest<'r> for AuthorizedUser {
             .at_most_one()
             .map_err(|error| Error::TooManyAuthorizationHeaders(error.count()));
 
+        tracing::debug!("got authorization header: {authorization_header:?}");
+
         match authorization_header {
             Ok(Some(authorization_header)) => {
-                match Self::extract_bearer_token(authorization_header) {
-                    Ok(token) => {
-                        // Finally, fall back to legacy token validation
-                        if settings
-                            .server
-                            .authorization_tokens
-                            .contains(&token.to_owned())
-                        {
-                            Outcome::Success(AuthorizedUser {})
-                        } else {
-                            Outcome::Error((Status::Forbidden, Error::InvalidToken))
+                // Try Basic authentication first (user_id:passphrase)
+                if authorization_header.to_lowercase().starts_with("basic ") {
+                    match Self::extract_basic_auth(authorization_header) {
+                        Ok((user_id, passphrase)) => {
+                            // Check against authorized_users hashmap
+                            if let Some(stored_passphrase) =
+                                settings.server.authorized_users.get(&user_id)
+                            {
+                                if stored_passphrase == &passphrase {
+                                    Outcome::Success(AuthorizedUser { user_id })
+                                } else {
+                                    Outcome::Error((Status::Forbidden, Error::InvalidCredentials))
+                                }
+                            } else {
+                                Outcome::Error((Status::Forbidden, Error::InvalidCredentials))
+                            }
                         }
+                        Err(error) => Outcome::Error((Status::Unauthorized, error)),
                     }
-                    Err(error) => Outcome::Error((Status::Unauthorized, error)),
+                }
+                // Fall back to Bearer token authentication for backward compatibility
+                else {
+                    match Self::extract_bearer_token(authorization_header) {
+                        Ok(token) => {
+                            // Check if token matches any stored passphrase (legacy support)
+                            for (user_id, stored_passphrase) in
+                                settings.server.authorized_users.iter()
+                            {
+                                if stored_passphrase == token {
+                                    return Outcome::Success(AuthorizedUser {
+                                        user_id: user_id.clone(),
+                                    });
+                                }
+                            }
+                            Outcome::Error((Status::Forbidden, Error::InvalidCredentials))
+                        }
+                        Err(error) => Outcome::Error((Status::Unauthorized, error)),
+                    }
                 }
             }
             Ok(None) => Outcome::Forward(Status::Unauthorized),

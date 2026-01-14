@@ -10,6 +10,7 @@ resolver = "3"
 anyhow = "1.0.98"
 assert4rs = "0.1.0"
 async-trait = "0.1.88"
+base64 = "0.22.1"
 clap = "4.5.52"
 diesel = { version = "2.3.5", features = ["chrono"] }
 diesel_migrations = "2.2.0"

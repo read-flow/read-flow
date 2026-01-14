@@ -40,7 +40,8 @@ diesel::table! {
         id -> Integer,
         base_url -> Text,
         order -> Integer,
-        authorization_token -> Text,
+        passphrase -> Text,
+        user_id -> Text,
     }
 }
 

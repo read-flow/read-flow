@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -38,6 +37,9 @@ use crate::component::tag_editor::TagEditorOutput;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
+use crate::forms::settings::authorized_user::AuthorizedUserForm;
+use crate::forms::settings::authorized_user::AuthorizedUserFormMessage;
+use crate::forms::settings::authorized_user::AuthorizedUserFormOutput;
 use crate::forms::settings::directory_settings::DirectorySettingsForm;
 use crate::forms::settings::directory_settings::DirectorySettingsFormMessage;
 use crate::forms::settings::directory_settings::DirectorySettingsFormOutput;
@@ -76,8 +78,8 @@ pub struct SettingsPage {
     editing_directory: EditState<PathBuf>,
     /// Directory Settings Form
     directory_settings_form: Option<DirectorySettingsForm>,
-    /// Authorization tokens that are currently being edited
-    editing_authorization_tokens: HashMap<usize, String>,
+    /// Authorized User Form
+    authorized_user_form: Option<AuthorizedUserForm>,
 }
 
 #[derive(Debug, Clone)]
@@ -95,14 +97,14 @@ pub enum SettingsMessage {
     DirectorySettingsForm(DirectorySettingsFormMessage),
     SelectDatabaseLocation,
     SelectedDatabaseLocation(Option<FileHandle>),
-    /// Server settings form message
+    /// Server settings
     SelectServerDownloadFolder,
     SelectedServerDownloadFolder(Option<FileHandle>),
-    ToggleAuthorizationTokenEdit(usize, bool),
-    EditAuthorizationToken(usize, String),
-    SubmitAuthorizationToken(usize, String),
-    AddAuthorizationToken,
-    DeleteAuthorizationToken(usize),
+    /// Server settings authorized users
+    AuthorizedUserForm(AuthorizedUserFormMessage),
+    AddAuthorizedUser,
+    EditAuthorizedUser(String),
+    DeleteAuthorizedUser(String),
     /// Save settings to file
     Save,
     /// Settings saved successfully
@@ -143,6 +145,12 @@ impl From<DirectorySettingsFormMessage> for SettingsMessage {
     }
 }
 
+impl From<AuthorizedUserFormMessage> for SettingsMessage {
+    fn from(value: AuthorizedUserFormMessage) -> Self {
+        Self::AuthorizedUserForm(value)
+    }
+}
+
 impl SettingsPage {
     pub fn new(
         application_module: Arc<ApplicationModule>,
@@ -170,7 +178,7 @@ impl SettingsPage {
                 save_state: SaveState::Idle,
                 editing_directory: EditState::Idle,
                 directory_settings_form: None,
-                editing_authorization_tokens: Default::default(),
+                authorized_user_form: None,
             },
             tag_editor_task.map(ActionExt::map_into),
         )
@@ -188,7 +196,7 @@ impl SettingsPage {
     }
 
     fn can_be_saved(&self) -> bool {
-        self.editing_authorization_tokens.is_empty()
+        self.authorized_user_form.is_none() && self.directory_settings_form.is_none()
     }
 
     pub fn view(&self) -> Element<'_, SettingsMessage> {
@@ -221,12 +229,14 @@ impl SettingsPage {
         let authorization_tokens_section = self
             .settings
             .server
-            .authorization_tokens
+            .authorized_users
             .iter()
             .enumerate()
             .fold(
-                settings::section().title(fl!("settings-server-authorization-tokens")),
-                |acc, (index, token)| acc.add(self.authorization_token_input(token, index)),
+                settings::section().title(fl!("settings-server-authorized-users")),
+                |acc, (_index, (user_id, token))| {
+                    acc.add(self.view_authorized_user_input(user_id, token))
+                },
             )
             .add(settings::item_row(vec![
                 widget::horizontal_space()
@@ -234,8 +244,8 @@ impl SettingsPage {
                     .into(),
                 widget::button::icon(widget::icon::from_name("list-add-symbolic").size(ICON_SIZE))
                     .class(widget::button::ButtonClass::Suggested)
-                    .on_press(SettingsMessage::AddAuthorizationToken)
-                    .tooltip(fl!("settings-server-add-authorization-token"))
+                    .on_press(SettingsMessage::AddAuthorizedUser)
+                    .tooltip(fl!("settings-server-add-authorized-user"))
                     .apply(widget::container)
                     .width(Length::FillPortion(1))
                     .align_x(Horizontal::Right)
@@ -266,6 +276,15 @@ impl SettingsPage {
         content.push(server_section.into());
         content.push(authorization_tokens_section.into());
 
+        if let Some(form) = self.authorized_user_form.as_ref() {
+            content.push(
+                settings::section()
+                    .title(fl!("settings-server-edit-authorized-user"))
+                    .add(settings::item_row(vec![form.view().map(Into::into)]))
+                    .into(),
+            );
+        }
+
         // Scan section
         let scan_section = settings::section().title(fl!("settings-scan-section")).add(
             settings::item::builder(fl!("settings-scan-dry-run"))
@@ -283,57 +302,7 @@ impl SettingsPage {
             .iter()
             .fold(
                 settings::section().title(fl!("settings-scan-directories-section")),
-                |section, (path, dir_settings)| {
-                    let action = match dir_settings {
-                        archive_organizer::scan::DirectorySettings::Ignore { .. } => {
-                            fl!("settings-directory-action-ignore")
-                        }
-                        archive_organizer::scan::DirectorySettings::Scan { .. } => {
-                            fl!("settings-directory-action-scan")
-                        }
-                    };
-
-                    let edit_button =
-                        widget::button::icon(icon::from_name("edit-symbolic").size(ICON_SIZE))
-                            .on_press(SettingsMessage::EditDirectory(path.clone().into()))
-                            .tooltip(fl!("settings-edit-directory"));
-
-                    let remove_button = widget::button::icon(
-                        icon::from_name("list-remove-symbolic").size(ICON_SIZE),
-                    )
-                    .class(widget::button::ButtonClass::Destructive)
-                    .on_press(SettingsMessage::RemoveDirectory(path.clone().into()))
-                    .tooltip(fl!("settings-remove-directory"));
-
-                    let controls = widget::row()
-                        .push(edit_button)
-                        .push(remove_button)
-                        .spacing(space_s)
-                        .apply(container)
-                        .align_right(Length::Shrink);
-
-                    section.add(
-                        settings::item_row(vec![
-                            settings::item_row(vec![
-                                widget::icon::from_name("folder-symbolic")
-                                    .size(ICON_SIZE)
-                                    .apply(widget::container)
-                                    .into(),
-                                widget::text::monotext(path.display().to_string())
-                                    .width(Length::Fill)
-                                    .into(),
-                            ])
-                            .width(Length::FillPortion(4))
-                            .into(),
-                            widget::text::body(action)
-                                .width(Length::FillPortion(1))
-                                .into(),
-                            controls.width(Length::FillPortion(1)).into(),
-                        ])
-                        .spacing(space_m)
-                        .align_y(cosmic::iced::Alignment::Center),
-                    )
-                },
+                |section, (path, dir_settings)| section.add(view_directory(path, dir_settings)),
             )
             .add(settings::item_row(vec![
                 widget::horizontal_space()
@@ -630,112 +599,184 @@ impl SettingsPage {
                 self.save_state = SaveState::Error(error);
                 Task::none()
             }
-            SettingsMessage::Out(_) => {
-                panic!("{message:?} should be handled by the parent component")
+            SettingsMessage::AddAuthorizedUser => {
+                let (authorized_user_form, init_authorized_user_form) =
+                    AuthorizedUserForm::new(None, String::new());
+                self.authorized_user_form = Some(authorized_user_form);
+                init_authorized_user_form.map(ActionExt::map_into)
             }
-            SettingsMessage::ToggleAuthorizationTokenEdit(index, editing) => {
-                if editing {
-                    self.editing_authorization_tokens.insert(
-                        index,
-                        self.settings.server.authorization_tokens[index].clone(),
-                    );
-                } else {
-                    self.editing_authorization_tokens.remove(&index);
+            SettingsMessage::DeleteAuthorizedUser(user_id) => {
+                self.settings.server.authorized_users.shift_remove(&user_id);
+                if self.is_editing_authorized_user(&user_id) {
+                    self.authorized_user_form = None;
                 }
                 Task::none()
             }
-            SettingsMessage::EditAuthorizationToken(index, token) => {
-                self.editing_authorization_tokens.insert(index, token);
-                Task::none()
+            SettingsMessage::EditAuthorizedUser(user_id) => {
+                let Some(passphrase) = self.settings.server.authorized_users.get(&user_id) else {
+                    return Task::none();
+                };
+
+                let (authorized_user_form, init_authorized_user_form) =
+                    AuthorizedUserForm::new(Some(user_id), passphrase.clone());
+                self.authorized_user_form = Some(authorized_user_form);
+                init_authorized_user_form.map(ActionExt::map_into)
             }
-            SettingsMessage::SubmitAuthorizationToken(index, token) => {
-                if !token.is_empty() {
-                    self.settings.server.authorization_tokens[index] = token;
-                    self.editing_authorization_tokens.remove(&index);
-                }
-                Task::none()
-            }
-            SettingsMessage::AddAuthorizationToken => {
-                let new_token = String::new();
-                self.settings
-                    .server
-                    .authorization_tokens
-                    .push(new_token.clone());
-                self.editing_authorization_tokens.insert(
-                    self.settings.server.authorization_tokens.len() - 1,
-                    new_token,
-                );
-                Task::none()
-            }
-            SettingsMessage::DeleteAuthorizationToken(index) => {
-                self.settings.server.authorization_tokens.remove(index);
-                self.editing_authorization_tokens =
-                    std::mem::take(&mut self.editing_authorization_tokens)
-                        .into_iter()
-                        .filter_map(|(key, token)| {
-                            if key == index {
-                                None
-                            } else if key < index {
-                                Some((key, token))
-                            } else {
-                                Some((key - 1, token))
+            SettingsMessage::AuthorizedUserForm(message) => match message {
+                AuthorizedUserFormMessage::Out(message) => {
+                    match message {
+                        AuthorizedUserFormOutput::Submit(
+                            Some(original_user_id),
+                            user_id,
+                            passphrase,
+                        ) => {
+                            let authorized_users = &mut self.settings.server.authorized_users;
+
+                            if original_user_id != user_id {
+                                authorized_users.shift_remove(&original_user_id);
+                                authorized_users.insert(user_id, passphrase);
+                            } else if let Some(value) = authorized_users.get_mut(&user_id) {
+                                *value = passphrase;
                             }
-                        })
-                        .collect();
-                Task::none()
+                        }
+                        AuthorizedUserFormOutput::Submit(None, user_id, passphrase) => {
+                            self.settings
+                                .server
+                                .authorized_users
+                                .insert(user_id, passphrase);
+                        }
+                        AuthorizedUserFormOutput::Cancel => {
+                            // Nothing to do, form will be deleted
+                        }
+                    };
+                    self.authorized_user_form = None;
+                    task::none()
+                }
+                _ => match self.authorized_user_form.as_mut() {
+                    Some(form) => form.update(message).map(ActionExt::map_into),
+                    None => task::none(),
+                },
+            },
+            SettingsMessage::Out(message) => {
+                panic!("{message:?} should be handled by the parent component")
             }
         }
     }
 
-    fn authorization_token_input<'a>(
+    fn view_authorized_user_input<'a>(
         &'a self,
-        original_token: &'a String,
-        index: usize,
+        user_id: &'a String,
+        passphrase: &'a String,
     ) -> Element<'a, SettingsMessage> {
-        let value = self
-            .editing_authorization_tokens
-            .get(&index)
-            .unwrap_or(original_token);
-        let editing = self.editing_authorization_tokens.contains_key(&index);
-
-        let icon = widget::icon::from_name(if editing {
-            "edit-clear-symbolic"
-        } else {
-            "edit-symbolic"
-        })
-        .size(ICON_SIZE);
-
-        let button = widget::button::icon(icon).on_press(
-            SettingsMessage::ToggleAuthorizationTokenEdit(index, !editing),
-        );
+        let is_editing = self.is_editing_authorized_user(user_id);
 
         settings::item_row(vec![
             widget::icon::from_name("avatar-default-symbolic")
                 .size(ICON_SIZE)
                 .into(),
-            widget::text_input(fl!("settings-server-enter-authorization-token"), value)
+            // User ID input field
+            widget::text_input(fl!("settings-server-enter-user-id"), user_id)
+                .leading_icon(
+                    widget::icon::from_name("user-info-symbolic")
+                        .size(ICON_SIZE)
+                        .into(),
+                )
+                .width(Length::FillPortion(1))
+                .into(),
+            // Passphrase input field
+            widget::text_input(fl!("settings-server-enter-passphrase"), passphrase)
                 .leading_icon(
                     widget::icon::from_name("dialog-password-symbolic")
                         .size(ICON_SIZE)
                         .into(),
                 )
-                .trailing_icon(button.into())
-                .apply_if(editing, |input| {
-                    input
-                        .on_input(move |input| {
-                            SettingsMessage::EditAuthorizationToken(index, input)
-                        })
-                        .on_submit(move |input| {
-                            SettingsMessage::SubmitAuthorizationToken(index, input)
-                        })
+                .width(Length::FillPortion(1))
+                .into(),
+            // Edit/Delete button
+            settings::item_row(vec![
+                widget::button::icon(
+                    widget::icon::from_name(if is_editing {
+                        "edit-clear-symbolic"
+                    } else {
+                        "edit-symbolic"
+                    })
+                    .size(ICON_SIZE),
+                )
+                .apply_if(!is_editing, |button| {
+                    button.on_press(SettingsMessage::EditAuthorizedUser(user_id.clone()))
                 })
                 .into(),
-            widget::button::icon(widget::icon::from_name("list-remove-symbolic").size(ICON_SIZE))
-                .class(widget::button::ButtonClass::Destructive)
-                .on_press(SettingsMessage::DeleteAuthorizationToken(index))
-                .tooltip(fl!("settings-server-delete-authorization-token"))
-                .into(),
+                widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
+                    .on_press(SettingsMessage::DeleteAuthorizedUser(user_id.clone()))
+                    .class(widget::button::ButtonClass::Destructive)
+                    .into(),
+            ])
+            .into(),
         ])
+        .align_y(Vertical::Center)
+        .apply(container)
+        .apply_if(is_editing, |container| {
+            container.class(cosmic::theme::Container::Background)
+        })
         .into()
     }
+
+    fn is_editing_authorized_user<'a>(&'a self, user_id: &'a String) -> bool {
+        self.authorized_user_form
+            .as_ref()
+            .map(|form| form.original_user_id.as_ref())
+            .unwrap_or(None)
+            == Some(user_id)
+    }
+}
+
+fn view_directory<'a>(
+    path: &'a ExpandedPath,
+    dir_settings: &'a DirectorySettings,
+) -> widget::Row<'a, SettingsMessage> {
+    let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+
+    let action = match dir_settings {
+        archive_organizer::scan::DirectorySettings::Ignore { .. } => {
+            fl!("settings-directory-action-ignore")
+        }
+        archive_organizer::scan::DirectorySettings::Scan { .. } => {
+            fl!("settings-directory-action-scan")
+        }
+    };
+
+    let edit_button = widget::button::icon(icon::from_name("edit-symbolic").size(ICON_SIZE))
+        .on_press(SettingsMessage::EditDirectory(path.clone().into()))
+        .tooltip(fl!("settings-edit-directory"));
+
+    let remove_button =
+        widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
+            .class(widget::button::ButtonClass::Destructive)
+            .on_press(SettingsMessage::RemoveDirectory(path.clone().into()))
+            .tooltip(fl!("settings-remove-directory"));
+
+    let controls = widget::row()
+        .push(edit_button)
+        .push(remove_button)
+        .spacing(space_s)
+        .apply(container)
+        .align_right(Length::Shrink);
+
+    settings::item_row(vec![
+        settings::item_row(vec![
+            widget::icon::from_name("folder-symbolic")
+                .size(ICON_SIZE)
+                .apply(widget::container)
+                .into(),
+            widget::text::monotext(path.display().to_string())
+                .width(Length::Fill)
+                .into(),
+        ])
+        .width(Length::FillPortion(4))
+        .into(),
+        widget::text::body(action)
+            .width(Length::FillPortion(1))
+            .into(),
+        controls.width(Length::FillPortion(1)).into(),
+    ])
 }

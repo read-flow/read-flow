@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
+use base64::Engine;
 use futures::StreamExt;
 use reqwest::Client;
 use reqwest::Url;
@@ -23,7 +24,8 @@ use crate::to_unique_file;
 #[derive(Clone)]
 pub struct FilesClient {
     pub base_url: Url,
-    authorization_token: String,
+    user_id: String,
+    passphrase: String,
     client: Client,
 }
 
@@ -58,10 +60,15 @@ impl From<io::Error> for Error {
 }
 
 impl FilesClient {
-    pub fn new<U: Into<Url>>(base_url: U, authorization_token: String) -> Result<Self, Infallible> {
+    pub fn new<U: Into<Url>>(
+        base_url: U,
+        user_id: String,
+        passphrase: String,
+    ) -> Result<Self, Infallible> {
         let result = Self {
             base_url: base_url.into(),
-            authorization_token,
+            user_id,
+            passphrase,
             client: Client::new(),
         };
         Ok(result)
@@ -72,7 +79,11 @@ impl FilesClient {
     }
 
     fn get_auth_header(&self) -> String {
-        format!("bearer {}", self.authorization_token)
+        // Use Basic authentication with user_id:passphrase
+        let credentials = format!("{}:{}", self.user_id, self.passphrase);
+        tracing::debug!("using credentials: `{credentials}");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
+        format!("Basic {}", encoded)
     }
 
     async fn get_json<T>(&self, relative_url: &str) -> Result<T, Error>

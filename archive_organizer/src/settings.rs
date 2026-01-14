@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use figment::Figment;
 use figment::providers::Format;
 use figment::providers::Toml;
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -29,14 +30,14 @@ pub struct Settings {
 #[cfg_attr(feature = "server", serde(crate = "rocket::serde"))]
 pub struct ServerSettings {
     pub download_folder: ExpandedPath,
-    pub authorization_tokens: Vec<String>,
+    pub authorized_users: IndexMap<String, String>,
 }
 
 impl Default for ServerSettings {
     fn default() -> Self {
         Self {
             download_folder: Path::new("/tmp").to_path_buf().try_into().unwrap(),
-            authorization_tokens: Default::default(),
+            authorized_users: Default::default(),
         }
     }
 }
