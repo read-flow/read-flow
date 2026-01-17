@@ -1,3 +1,4 @@
+use std::fmt;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -5,6 +6,14 @@ use figment::Figment;
 use figment::providers::Format;
 use figment::providers::Toml;
 use indexmap::IndexMap;
+use pbkdf2::Params;
+use pbkdf2::Pbkdf2;
+use pbkdf2::password_hash::Error as PbkdfError;
+use pbkdf2::password_hash::PasswordHash;
+use pbkdf2::password_hash::PasswordHasher;
+use pbkdf2::password_hash::PasswordVerifier;
+use pbkdf2::password_hash::SaltString;
+use pbkdf2::password_hash::rand_core::OsRng;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -23,6 +32,42 @@ pub struct Settings {
     pub ui: UiSettings,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "server", serde(crate = "rocket::serde"))]
+pub struct HashedPassword(String);
+
+impl fmt::Display for HashedPassword {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl TryFrom<String> for HashedPassword {
+    type Error = PbkdfError;
+
+    fn try_from(password: String) -> Result<Self, Self::Error> {
+        let salt = SaltString::generate(&mut OsRng);
+
+        let params = Params {
+            rounds: 100000,
+            ..Params::default()
+        };
+        // Hash password to PHC string ($pbkdf2-sha256$...)
+        let password_hash = Pbkdf2
+            .hash_password_customized(password.as_bytes(), None, None, params, &salt)?
+            .to_string();
+        Ok(Self(password_hash))
+    }
+}
+
+impl HashedPassword {
+    pub fn verify(&self, password: &str) -> Result<(), PbkdfError> {
+        // Verify password against PHC string
+        let parsed_hash = PasswordHash::new(&self.0)?;
+        Pbkdf2.verify_password(password.as_bytes(), &parsed_hash)
+    }
+}
+
 /// Settings for the `server` feature.
 ///
 /// Exposed here so they can be edited by the cosmic application.
@@ -30,7 +75,8 @@ pub struct Settings {
 #[cfg_attr(feature = "server", serde(crate = "rocket::serde"))]
 pub struct ServerSettings {
     pub download_folder: ExpandedPath,
-    pub authorized_users: IndexMap<String, String>,
+
+    pub authorized_users: IndexMap<String, HashedPassword>,
 }
 
 impl Default for ServerSettings {

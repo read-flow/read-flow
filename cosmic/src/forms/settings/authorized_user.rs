@@ -5,7 +5,6 @@ use cosmic::Action;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::iced::Length;
-use cosmic::iced::alignment::Vertical;
 use cosmic::task;
 use cosmic::widget;
 
@@ -14,15 +13,16 @@ use crate::fl;
 
 pub struct AuthorizedUserForm {
     pub(crate) original_user_id: Option<String>,
-    original_passphrase: String,
     editing_user_id: String,
     editing_passphrase: String,
+    show_passphrase: bool,
 }
 
 #[derive(Debug, Clone)]
 pub enum AuthorizedUserFormMessage {
     EditUserId(String),
     EditPassphrase(String),
+    ToggleShowPassphrase,
     Out(AuthorizedUserFormOutput),
 }
 
@@ -39,62 +39,69 @@ impl From<AuthorizedUserFormOutput> for AuthorizedUserFormMessage {
 }
 
 impl AuthorizedUserForm {
-    pub fn new(
-        user_id: Option<String>,
-        passphrase: String,
-    ) -> (Self, Task<Action<AuthorizedUserFormMessage>>) {
+    pub fn new(user_id: Option<String>) -> (Self, Task<Action<AuthorizedUserFormMessage>>) {
         (
             Self {
                 original_user_id: user_id.clone(),
-                original_passphrase: passphrase.clone(),
                 editing_user_id: user_id.unwrap_or_default(),
-                editing_passphrase: passphrase,
+                editing_passphrase: String::new(),
+                show_passphrase: false,
             },
             task::none(),
         )
     }
 
+    fn password_meets_requirements(password: &str) -> bool {
+        // TODO: combination of alphanumeric and special characters
+        password.len() >= 8
+    }
+
     fn is_submittable(&self) -> bool {
-        (self
-            .original_user_id
-            .as_ref()
-            .map(|user_id| user_id != &self.editing_user_id)
-            .unwrap_or_else(|| !self.editing_user_id.is_empty())
-            && !self.editing_passphrase.is_empty())
-            || (self.original_passphrase != self.editing_passphrase
-                && !self.editing_passphrase.is_empty()
-                && !self.editing_user_id.is_empty())
+        !self.editing_user_id.is_empty()
+            && Self::password_meets_requirements(&self.editing_passphrase)
     }
 
     pub fn view(&self) -> Element<'_, AuthorizedUserFormMessage> {
-        widget::settings::item_row(vec![
-            widget::icon::from_name("avatar-default-symbolic")
-                .size(ICON_SIZE)
-                .into(),
-            // User ID input field
-            widget::text_input(fl!("settings-server-enter-user-id"), &self.editing_user_id)
-                .leading_icon(
-                    widget::icon::from_name("user-info-symbolic")
-                        .size(ICON_SIZE)
-                        .into(),
-                )
-                .on_input(AuthorizedUserFormMessage::EditUserId)
-                .width(Length::FillPortion(1))
-                .into(),
-            // Passphrase input field
-            widget::text_input(
-                fl!("settings-server-enter-passphrase"),
-                &self.editing_passphrase,
+        widget::settings::section()
+            .title(fl!("settings-server-edit-authorized-user"))
+            .add(
+                widget::settings::item::builder(fl!("settings-server-user-id"))
+                    .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::text_input(
+                            fl!("settings-server-user-id-placeholder"),
+                            &self.editing_user_id,
+                        )
+                        .leading_icon(
+                            widget::icon::from_name("user-info-symbolic")
+                                .size(ICON_SIZE)
+                                .into(),
+                        )
+                        .on_input(AuthorizedUserFormMessage::EditUserId)
+                        .width(Length::FillPortion(1)),
+                    ),
             )
-            .leading_icon(
-                widget::icon::from_name("dialog-password-symbolic")
-                    .size(ICON_SIZE)
-                    .into(),
+            .add(
+                widget::settings::item::builder(fl!("settings-server-passphrase"))
+                    .icon(widget::icon::from_name("dialog-password-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::secure_input(
+                            fl!("settings-server-passphrase-placeholder"),
+                            &self.editing_passphrase,
+                            Some(AuthorizedUserFormMessage::ToggleShowPassphrase),
+                            !self.show_passphrase,
+                        )
+                        .leading_icon(
+                            widget::icon::from_name("dialog-password-symbolic")
+                                .size(ICON_SIZE)
+                                .into(),
+                        )
+                        .on_input(AuthorizedUserFormMessage::EditPassphrase)
+                        .width(Length::FillPortion(1)),
+                    ),
             )
-            .on_input(AuthorizedUserFormMessage::EditPassphrase)
-            .width(Length::FillPortion(1))
-            .into(),
-            widget::settings::item_row(vec![
+            .add(widget::settings::item_row(vec![
+                widget::horizontal_space().width(Length::Fill).into(),
                 // Cancel button
                 widget::button::icon(
                     widget::icon::from_name("edit-clear-all-symbolic").size(ICON_SIZE),
@@ -122,11 +129,8 @@ impl AuthorizedUserForm {
                     )
                 })
                 .into(),
-            ])
-            .into(),
-        ])
-        .align_y(Vertical::Center)
-        .into()
+            ]))
+            .into()
     }
 
     pub fn update(
@@ -141,6 +145,10 @@ impl AuthorizedUserForm {
             }
             AuthorizedUserFormMessage::EditPassphrase(passphrase) => {
                 self.editing_passphrase = passphrase;
+                task::none()
+            }
+            AuthorizedUserFormMessage::ToggleShowPassphrase => {
+                self.show_passphrase = !self.show_passphrase;
                 task::none()
             }
             AuthorizedUserFormMessage::Out(_) => {

@@ -18,7 +18,6 @@ use cosmic::iced::alignment::Vertical;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
-use cosmic::widget::container;
 use cosmic::widget::icon;
 use cosmic::widget::row;
 use cosmic::widget::settings;
@@ -116,9 +115,7 @@ impl SourcesPage {
     }
 
     pub fn view(&self) -> Element<'_, SourcesMessage> {
-        let cosmic_theme::Spacing {
-            space_s, space_xs, ..
-        } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
         let mut content = Vec::new();
 
@@ -223,46 +220,55 @@ impl SourcesPage {
         // Add source input section
         let add_section = settings::section()
             .title(fl!("sources-add-section-title"))
-            .add(widget::settings::item(
-                fl!("sources-url"),
-                row()
-                    .push(
-                        widget::text_input(fl!("sources-url-placeholder"), &self.entered_url)
-                            .id(self.entered_url_id.clone())
-                            .on_input(SourcesMessage::UpdateEnteredUrl)
-                            .width(Length::Fill),
-                    )
-                    .push(
-                        match self.url_verification_state {
-                            LoadedState::New => icon::from_name("dialog-information-symbolic"),
-                            LoadedState::Loading => icon::from_name("dialog-question-symbolic"),
-                            LoadedState::Failed(_) => icon::from_name("dialog-error-symbolic"),
-                            LoadedState::Loaded(_) => icon::from_name("emblem-ok-symbolic"),
-                        }
-                        .size(ICON_SIZE),
-                    )
-                    .spacing(space_xs)
-                    .align_y(Vertical::Center)
-                    .width(Length::Fixed(600.0)),
-            ))
-            .add(widget::settings::item(
-                fl!("sources-user-id"),
-                widget::text_input(fl!("sources-user-id-placeholder"), &self.entered_user_id)
-                    .id(self.entered_user_id_id.clone())
-                    .on_input(SourcesMessage::UpdateEnteredUserId)
-                    .width(Length::Fixed(600.0)),
-            ))
-            .add(widget::settings::item(
-                fl!("sources-authorization-token"),
-                widget::text_input(
-                    fl!("sources-authorization-token-placeholder"),
-                    &self.entered_passphrase,
-                )
-                .id(self.entered_passphrase_id.clone())
-                .on_input(SourcesMessage::UpdateEnteredPassphrase)
-                .password()
-                .width(Length::Fixed(600.0)),
-            ))
+            .add(
+                widget::settings::item::builder(fl!("sources-url"))
+                    .icon(icon::from_name("network-server-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::settings::item_row(vec![
+                            widget::text_input(fl!("sources-url-placeholder"), &self.entered_url)
+                                .id(self.entered_url_id.clone())
+                                .on_input(SourcesMessage::UpdateEnteredUrl)
+                                .width(Length::Fill)
+                                .into(),
+                            match self.url_verification_state {
+                                LoadedState::New => icon::from_name("dialog-information-symbolic"),
+                                LoadedState::Loading => icon::from_name("dialog-question-symbolic"),
+                                LoadedState::Failed(_) => icon::from_name("dialog-error-symbolic"),
+                                LoadedState::Loaded(_) => icon::from_name("emblem-ok-symbolic"),
+                            }
+                            .size(ICON_SIZE)
+                            .into(),
+                        ])
+                        .width(Length::Fixed(600.0)),
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("sources-user-id"))
+                    .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::text_input(
+                            fl!("sources-user-id-placeholder"),
+                            &self.entered_user_id,
+                        )
+                        .id(self.entered_user_id_id.clone())
+                        .on_input(SourcesMessage::UpdateEnteredUserId)
+                        .width(Length::Fixed(600.0)),
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("sources-authorization-token"))
+                    .icon(widget::icon::from_name("dialog-password-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::text_input(
+                            fl!("sources-authorization-token-placeholder"),
+                            &self.entered_passphrase,
+                        )
+                        .id(self.entered_passphrase_id.clone())
+                        .on_input(SourcesMessage::UpdateEnteredPassphrase)
+                        .password()
+                        .width(Length::Fixed(600.0)),
+                    ),
+            )
             .add_maybe(
                 matches!(self.url_verification_state, LoadedState::Failed(_)).then(|| {
                     let LoadedState::Failed(ref error) = self.url_verification_state else {
@@ -271,21 +277,20 @@ impl SourcesPage {
                     widget::text::caption(error)
                 }),
             )
-            .add(
-                row()
-                    .push(widget::horizontal_space().width(Length::Fill))
-                    .push(
-                        widget::button::suggested(fl!("sources-add-button")).apply_if(
-                            !(self.entered_url.is_empty()
-                                || self.entered_user_id.is_empty()
-                                || self.entered_passphrase.is_empty()
-                                || !matches!(self.url_verification_state, LoadedState::Loaded(_))),
-                            |button| {
-                                button.on_press(SourcesMessage::AddSource(self.entered_url.clone()))
-                            },
-                        ),
-                    ),
-            );
+            .add(widget::settings::item_row(vec![
+                widget::horizontal_space().width(Length::Fill).into(),
+                widget::button::suggested(fl!("sources-add-button"))
+                    .apply_if(
+                        !(self.entered_url.is_empty()
+                            || self.entered_user_id.is_empty()
+                            || self.entered_passphrase.is_empty()
+                            || !matches!(self.url_verification_state, LoadedState::Loaded(_))),
+                        |button| {
+                            button.on_press(SourcesMessage::AddSource(self.entered_url.clone()))
+                        },
+                    )
+                    .into(),
+            ]));
 
         content.push(add_section.into());
 
@@ -515,50 +520,26 @@ impl SourcesPage {
         is_first: bool,
         is_last: bool,
     ) -> Element<'a, SourcesMessage> {
-        let cosmic_theme::Spacing {
-            space_xxs,
-            space_xs,
-            ..
-        } = theme::active().cosmic().spacing;
-
-        row()
-            .push(
-                icon::from_name("network-server-symbolic")
-                    .size(ICON_SIZE)
-                    .apply(container)
-                    .padding([0, space_xs, 0, 0]),
-            )
-            .push(widget::text(&source.base_url).width(Length::Fill))
-            .push(
-                row()
-                    .push(
-                        widget::button::icon(icon::from_name("go-up-symbolic").size(ICON_SIZE))
-                            .padding(space_xxs)
-                            .class(theme::Button::Icon)
-                            .apply_if(!is_first, |button| {
-                                button.on_press(SourcesMessage::MoveSourceUp(source.clone()))
-                            }),
-                    )
-                    .push(
-                        widget::button::icon(icon::from_name("go-down-symbolic").size(ICON_SIZE))
-                            .padding(space_xxs)
-                            .class(theme::Button::Icon)
-                            .apply_if(!is_last, |button| {
-                                button.on_press(SourcesMessage::MoveSourceDown(source.clone()))
-                            }),
-                    )
-                    .push(
-                        widget::button::icon(
-                            icon::from_name("list-remove-symbolic").size(ICON_SIZE),
-                        )
-                        .padding(space_xxs)
-                        .class(theme::Button::Destructive)
-                        .on_press(SourcesMessage::RequestDeleteSource(source.clone())),
-                    )
-                    .spacing(space_xxs),
-            )
-            .spacing(space_xs)
-            .align_y(Vertical::Center)
+        widget::settings::item::builder(&source.base_url)
+            .icon(icon::from_name("network-server-symbolic").size(ICON_SIZE))
+            .control(widget::settings::item_row(vec![
+                widget::button::icon(icon::from_name("go-up-symbolic").size(ICON_SIZE))
+                    .class(theme::Button::Icon)
+                    .apply_if(!is_first, |button| {
+                        button.on_press(SourcesMessage::MoveSourceUp(source.clone()))
+                    })
+                    .into(),
+                widget::button::icon(icon::from_name("go-down-symbolic").size(ICON_SIZE))
+                    .class(theme::Button::Icon)
+                    .apply_if(!is_last, |button| {
+                        button.on_press(SourcesMessage::MoveSourceDown(source.clone()))
+                    })
+                    .into(),
+                widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
+                    .class(theme::Button::Destructive)
+                    .on_press(SourcesMessage::RequestDeleteSource(source.clone()))
+                    .into(),
+            ]))
             .into()
     }
 }

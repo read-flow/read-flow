@@ -33,6 +33,7 @@ futures.workspace = true
 indexmap = { workspace = true, features = ["serde"] }
 itertools.workspace = true
 mime.workspace = true
+pbkdf2 = { workspace = true, features = ["simple"] }
 r2d2.workspace = true
 rayon.workspace = true
 reqwest = { workspace = true, features = ["json", "stream", "multipart"] }

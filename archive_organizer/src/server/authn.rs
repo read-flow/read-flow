@@ -38,8 +38,6 @@ impl AuthorizedUser {
 
         let credentials = String::from_utf8(decoded).map_err(|_| Error::InvalidBasicAuth)?;
 
-        tracing::debug!("got credentials: `{credentials}`");
-
         match credentials.split_once(':') {
             Some((user_id, passphrase)) => Ok((user_id.to_string(), passphrase.to_string())),
             None => Err(Error::InvalidBasicAuth),
@@ -78,8 +76,6 @@ impl<'r> FromRequest<'r> for AuthorizedUser {
             .at_most_one()
             .map_err(|error| Error::TooManyAuthorizationHeaders(error.count()));
 
-        tracing::debug!("got authorization header: {authorization_header:?}");
-
         match authorization_header {
             Ok(Some(authorization_header)) => {
                 // Try Basic authentication first (user_id:passphrase)
@@ -90,7 +86,7 @@ impl<'r> FromRequest<'r> for AuthorizedUser {
                             if let Some(stored_passphrase) =
                                 settings.server.authorized_users.get(&user_id)
                             {
-                                if stored_passphrase == &passphrase {
+                                if stored_passphrase.verify(&passphrase).is_ok() {
                                     Outcome::Success(AuthorizedUser { user_id })
                                 } else {
                                     Outcome::Error((Status::Forbidden, Error::InvalidCredentials))
@@ -110,7 +106,7 @@ impl<'r> FromRequest<'r> for AuthorizedUser {
                             for (user_id, stored_passphrase) in
                                 settings.server.authorized_users.iter()
                             {
-                                if stored_passphrase == token {
+                                if stored_passphrase.verify(token).is_ok() {
                                     return Outcome::Success(AuthorizedUser {
                                         user_id: user_id.clone(),
                                     });

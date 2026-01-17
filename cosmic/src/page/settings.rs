@@ -7,6 +7,7 @@ use archive_organizer::Builder;
 use archive_organizer::ExpandedPath;
 use archive_organizer::SettingsProvider;
 use archive_organizer::scan::DirectorySettings;
+use archive_organizer::settings::HashedPassword;
 use archive_organizer::settings::Settings;
 use cosmic::Action;
 use cosmic::Apply;
@@ -226,7 +227,7 @@ impl SettingsPage {
         content.push(database_section.into());
 
         // Server section
-        let authorization_tokens_section = self
+        let authorized_users_section = self
             .settings
             .server
             .authorized_users
@@ -234,8 +235,8 @@ impl SettingsPage {
             .enumerate()
             .fold(
                 settings::section().title(fl!("settings-server-authorized-users")),
-                |acc, (_index, (user_id, token))| {
-                    acc.add(self.view_authorized_user_input(user_id, token))
+                |acc, (_index, (user_id, hashed_password))| {
+                    acc.add(self.view_authorized_user_input(user_id, hashed_password))
                 },
             )
             .add(settings::item_row(vec![
@@ -274,15 +275,10 @@ impl SettingsPage {
             );
 
         content.push(server_section.into());
-        content.push(authorization_tokens_section.into());
+        content.push(authorized_users_section.into());
 
         if let Some(form) = self.authorized_user_form.as_ref() {
-            content.push(
-                settings::section()
-                    .title(fl!("settings-server-edit-authorized-user"))
-                    .add(settings::item_row(vec![form.view().map(Into::into)]))
-                    .into(),
-            );
+            content.push(form.view().map(Into::into));
         }
 
         // Scan section
@@ -601,7 +597,7 @@ impl SettingsPage {
             }
             SettingsMessage::AddAuthorizedUser => {
                 let (authorized_user_form, init_authorized_user_form) =
-                    AuthorizedUserForm::new(None, String::new());
+                    AuthorizedUserForm::new(None);
                 self.authorized_user_form = Some(authorized_user_form);
                 init_authorized_user_form.map(ActionExt::map_into)
             }
@@ -613,12 +609,12 @@ impl SettingsPage {
                 Task::none()
             }
             SettingsMessage::EditAuthorizedUser(user_id) => {
-                let Some(passphrase) = self.settings.server.authorized_users.get(&user_id) else {
+                if !self.settings.server.authorized_users.contains_key(&user_id) {
                     return Task::none();
                 };
 
                 let (authorized_user_form, init_authorized_user_form) =
-                    AuthorizedUserForm::new(Some(user_id), passphrase.clone());
+                    AuthorizedUserForm::new(Some(user_id));
                 self.authorized_user_form = Some(authorized_user_form);
                 init_authorized_user_form.map(ActionExt::map_into)
             }
@@ -634,16 +630,16 @@ impl SettingsPage {
 
                             if original_user_id != user_id {
                                 authorized_users.shift_remove(&original_user_id);
-                                authorized_users.insert(user_id, passphrase);
+                                authorized_users.insert(user_id, passphrase.try_into().unwrap()); // TODO: error handling
                             } else if let Some(value) = authorized_users.get_mut(&user_id) {
-                                *value = passphrase;
+                                *value = passphrase.try_into().unwrap(); // TODO: error handling
                             }
                         }
                         AuthorizedUserFormOutput::Submit(None, user_id, passphrase) => {
                             self.settings
                                 .server
                                 .authorized_users
-                                .insert(user_id, passphrase);
+                                .insert(user_id, passphrase.try_into().unwrap());
                         }
                         AuthorizedUserFormOutput::Cancel => {
                             // Nothing to do, form will be deleted
@@ -666,34 +662,14 @@ impl SettingsPage {
     fn view_authorized_user_input<'a>(
         &'a self,
         user_id: &'a String,
-        passphrase: &'a String,
+        passphrase: &'a HashedPassword,
     ) -> Element<'a, SettingsMessage> {
         let is_editing = self.is_editing_authorized_user(user_id);
 
-        settings::item_row(vec![
-            widget::icon::from_name("avatar-default-symbolic")
-                .size(ICON_SIZE)
-                .into(),
-            // User ID input field
-            widget::text_input(fl!("settings-server-enter-user-id"), user_id)
-                .leading_icon(
-                    widget::icon::from_name("user-info-symbolic")
-                        .size(ICON_SIZE)
-                        .into(),
-                )
-                .width(Length::FillPortion(1))
-                .into(),
-            // Passphrase input field
-            widget::text_input(fl!("settings-server-enter-passphrase"), passphrase)
-                .leading_icon(
-                    widget::icon::from_name("dialog-password-symbolic")
-                        .size(ICON_SIZE)
-                        .into(),
-                )
-                .width(Length::FillPortion(1))
-                .into(),
-            // Edit/Delete button
-            settings::item_row(vec![
+        settings::item::builder(user_id)
+            .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))
+            .control(settings::item_row(vec![
+                widget::text_input("", format!("{passphrase}")).into(),
                 widget::button::icon(
                     widget::icon::from_name(if is_editing {
                         "edit-clear-symbolic"
@@ -710,15 +686,8 @@ impl SettingsPage {
                     .on_press(SettingsMessage::DeleteAuthorizedUser(user_id.clone()))
                     .class(widget::button::ButtonClass::Destructive)
                     .into(),
-            ])
-            .into(),
-        ])
-        .align_y(Vertical::Center)
-        .apply(container)
-        .apply_if(is_editing, |container| {
-            container.class(cosmic::theme::Container::Background)
-        })
-        .into()
+            ]))
+            .into()
     }
 
     fn is_editing_authorized_user<'a>(&'a self, user_id: &'a String) -> bool {
