@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::process::ExitStatus;
 use std::result::Result;
@@ -68,8 +69,13 @@ pub fn get_update<T: PartialEq + Clone>(original: &T, updated: &T) -> Option<T> 
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Status {}
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Status {
+    pub identifier: String,
+    #[serde(flatten)]
+    pub attributes: HashMap<String, String>,
+    pub nested_checks: Vec<Status>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct File {

@@ -41,7 +41,11 @@ impl FileDataSource for DbClient {
         tokio::task::block_in_place(|| {
             let mut connection = self.connection_pool.get()?;
             let _: usize = diesel::sql_query("SELECT 1").execute(&mut connection)?;
-            Ok(Status {})
+            let status = Status {
+                identifier: "database".to_string(),
+                ..Default::default()
+            };
+            Ok(status)
         })
     }
 

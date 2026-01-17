@@ -81,7 +81,6 @@ impl FilesClient {
     fn get_auth_header(&self) -> String {
         // Use Basic authentication with user_id:passphrase
         let credentials = format!("{}:{}", self.user_id, self.passphrase);
-        tracing::debug!("using credentials: `{credentials}");
         let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
         format!("Basic {}", encoded)
     }
@@ -170,7 +169,13 @@ impl FileDataSource for FilesClient {
     }
 
     async fn status(&self) -> Result<Status, Error> {
-        self.get_json("status").await
+        let server_status: Status = self.get_json("status").await?;
+        let status = Status {
+            identifier: "client".to_string(),
+            nested_checks: vec![server_status],
+            ..Default::default()
+        };
+        Ok(status)
     }
 
     async fn get_files(&self) -> Result<Vec<File>, Error> {

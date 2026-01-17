@@ -61,3 +61,8 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] modify DAO traits to take the connection as a parameter, so we can add transactions
 - [X] Hash and Salt all passphrases in the `server.authorized_users` settings field
 - [X] Update settings editor to also edit the user id
+- [ ] Use context view of File Details page for multiple actions:
+  - [ ] Remove duplicates (including files)
+  - [ ] For missing on local: Pull to local
+  - [ ] For missing on remote: Push to remote
+  - [ ] For all (reachable) sources: Check whether the file still exists

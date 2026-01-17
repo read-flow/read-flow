@@ -1,5 +1,6 @@
 mod authn;
 
+use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 
@@ -156,9 +157,14 @@ pub fn serve() -> _ {
 #[get("/status")]
 async fn status(
     application_module: &State<ApplicationModule<SettingsProvider>>,
-    _user: AuthorizedUser,
+    user: AuthorizedUser,
 ) -> Result<Json<Status>> {
-    let status = application_module.db_client().status().await?;
+    let db_status = application_module.db_client().status().await?;
+    let status = Status {
+        identifier: "server".to_string(),
+        attributes: HashMap::from_iter([("user_id".to_string(), user.user_id)]),
+        nested_checks: vec![db_status],
+    };
     Ok(Json(status))
 }
 

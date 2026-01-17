@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
 
 use archive_organizer::Builder;
 use archive_organizer::api::FileDataSource;
@@ -35,6 +37,8 @@ use crate::state::LoadedState;
 pub type RemotesState = LoadedState<Vec<Remote>>;
 pub type UrlVerificationState = LoadedState<Status>;
 
+const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(250);
+
 #[derive(Debug)]
 pub struct SourcesPage {
     application_module: Arc<ApplicationModule>,
@@ -45,9 +49,12 @@ pub struct SourcesPage {
     entered_user_id_id: widget::Id, // Unique ID for focus management
     entered_passphrase: String,
     entered_passphrase_id: widget::Id, // Unique ID for focus management
+    show_passphrase: bool,
     url_verification_state: UrlVerificationState,
     operation_error: Option<String>,
     pending_deletion: Option<Remote>,
+    // Debouncing state
+    last_input_time: Instant,
 }
 
 #[derive(Debug, Clone)]
@@ -65,14 +72,17 @@ pub enum SourcesMessage {
     UpdateEnteredUrl(String),
     UpdateEnteredUserId(String),
     UpdateEnteredPassphrase(String),
+    DebounceVerify(widget::Id),
+    ToggleShowPassphrase,
     VerifyEnteredUrl {
         url: Url,
         user_id: String,
         passphrase: String,
         do_submit: bool,
+        widget: widget::Id,
     },
-    SetUrlVerificationStateFailed(String),
-    SetUrlVerificationStateLoaded(Status),
+    SetUrlVerificationStateFailed(widget::Id, String),
+    SetUrlVerificationStateLoaded(widget::Id, Status),
     ClearUrlEntries,
 
     AddSource(String),
@@ -95,6 +105,18 @@ pub enum SourcesMessage {
 }
 
 impl SourcesPage {
+    fn start_debounce_verification(
+        &mut self,
+        widget_id: widget::Id,
+    ) -> Task<Action<SourcesMessage>> {
+        self.last_input_time = Instant::now();
+        // Start debounce task
+        task::future(async move {
+            tokio::time::sleep(DEBOUNCE_TIMEOUT).await;
+            SourcesMessage::DebounceVerify(widget_id)
+        })
+    }
+
     pub fn new(application_module: Arc<ApplicationModule>) -> (Self, Task<Action<SourcesMessage>>) {
         (
             Self {
@@ -106,9 +128,11 @@ impl SourcesPage {
                 entered_user_id_id: widget::Id::unique(),
                 entered_passphrase: Default::default(),
                 entered_passphrase_id: widget::Id::unique(),
+                show_passphrase: false,
                 url_verification_state: Default::default(),
                 operation_error: None,
                 pending_deletion: None,
+                last_input_time: Instant::now(),
             },
             task::message(SourcesMessage::LoadRemotes),
         )
@@ -259,13 +283,14 @@ impl SourcesPage {
                 widget::settings::item::builder(fl!("sources-authorization-token"))
                     .icon(widget::icon::from_name("dialog-password-symbolic").size(ICON_SIZE))
                     .control(
-                        widget::text_input(
+                        widget::secure_input(
                             fl!("sources-authorization-token-placeholder"),
                             &self.entered_passphrase,
+                            Some(SourcesMessage::ToggleShowPassphrase),
+                            !self.show_passphrase,
                         )
                         .id(self.entered_passphrase_id.clone())
                         .on_input(SourcesMessage::UpdateEnteredPassphrase)
-                        .password()
                         .width(Length::Fixed(600.0)),
                     ),
             )
@@ -333,62 +358,60 @@ impl SourcesPage {
             }
             SourcesMessage::UpdateEnteredUrl(url) => {
                 self.entered_url = url;
-                self.url_verification_state = UrlVerificationState::New;
-                if self.entered_url.is_empty() {
-                    widget::text_input::focus(self.entered_url_id.clone())
-                } else {
-                    match self.entered_url.parse::<Url>() {
-                        Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
-                            url,
-                            user_id: self.entered_user_id.clone(),
-                            passphrase: self.entered_passphrase.clone(),
-                            do_submit: false,
-                        }),
-                        Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
-                            fl!("sources-invalid-url"),
-                        )),
-                    }
-                }
+                self.start_debounce_verification(self.entered_url_id.clone())
             }
             SourcesMessage::UpdateEnteredUserId(user_id) => {
                 self.entered_user_id = user_id;
-                task::none()
+                self.start_debounce_verification(self.entered_user_id_id.clone())
             }
             SourcesMessage::UpdateEnteredPassphrase(passphrase) => {
                 self.entered_passphrase = passphrase;
-                task::none()
+                self.start_debounce_verification(self.entered_passphrase_id.clone())
             }
-            SourcesMessage::SetUrlVerificationStateFailed(error) => {
+            SourcesMessage::DebounceVerify(widget_id) => {
+                // Only verify if enough time has passed since last input
+                if self.last_input_time.elapsed() >= DEBOUNCE_TIMEOUT {
+                    self.verify_entered_url(widget_id)
+                } else {
+                    task::none()
+                }
+            }
+            SourcesMessage::SetUrlVerificationStateFailed(widget, error) => {
                 self.url_verification_state = UrlVerificationState::Failed(error);
-                widget::text_input::focus(self.entered_url_id.clone())
+                widget::text_input::focus(widget)
             }
             SourcesMessage::VerifyEnteredUrl {
                 url,
                 user_id,
                 passphrase,
                 do_submit,
+                widget,
             } => {
                 self.url_verification_state = UrlVerificationState::Loading;
                 let client = FilesClient::new(url.clone(), user_id.clone(), passphrase.clone())
                     .expect("valid url");
                 Task::batch(vec![
-                    widget::text_input::focus(self.entered_url_id.clone()),
+                    widget::text_input::focus(widget.clone()),
                     task::future(async move {
                         match client.status().await {
                             Ok(_status) if do_submit => {
                                 SourcesMessage::SubmitSource(url, user_id, passphrase)
                             }
-                            Ok(status) => SourcesMessage::SetUrlVerificationStateLoaded(status),
-                            Err(error) => {
-                                SourcesMessage::SetUrlVerificationStateFailed(format!("{error}"))
-                            }
+                            Ok(status) => SourcesMessage::SetUrlVerificationStateLoaded(
+                                widget.clone(),
+                                status,
+                            ),
+                            Err(error) => SourcesMessage::SetUrlVerificationStateFailed(
+                                widget,
+                                format!("{error}"),
+                            ),
                         }
                     }),
                 ])
             }
-            SourcesMessage::SetUrlVerificationStateLoaded(status) => {
+            SourcesMessage::SetUrlVerificationStateLoaded(widget, status) => {
                 self.url_verification_state = UrlVerificationState::Loaded(status);
-                widget::text_input::focus(self.entered_url_id.clone())
+                widget::text_input::focus(widget)
             }
             SourcesMessage::AddSource(url) => {
                 self.entered_url = url;
@@ -398,8 +421,10 @@ impl SourcesPage {
                         user_id: self.entered_user_id.clone(),
                         passphrase: self.entered_passphrase.clone(),
                         do_submit: true,
+                        widget: self.entered_url_id.clone(),
                     }),
                     Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
+                        self.entered_url_id.clone(),
                         String::from("invalid-url"),
                     )),
                 }
@@ -508,6 +533,10 @@ impl SourcesPage {
                     }
                 })
             }
+            SourcesMessage::ToggleShowPassphrase => {
+                self.show_passphrase = !self.show_passphrase;
+                task::none()
+            }
             SourcesMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }
@@ -541,5 +570,29 @@ impl SourcesPage {
                     .into(),
             ]))
             .into()
+    }
+
+    fn verify_entered_url(&mut self, widget: widget::Id) -> Task<Action<SourcesMessage>> {
+        self.url_verification_state = UrlVerificationState::New;
+        if self.entered_url.is_empty()
+            || self.entered_user_id.is_empty()
+            || self.entered_passphrase.is_empty()
+        {
+            widget::text_input::focus(widget.clone())
+        } else {
+            match self.entered_url.parse::<Url>() {
+                Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
+                    url,
+                    user_id: self.entered_user_id.clone(),
+                    passphrase: self.entered_passphrase.clone(),
+                    do_submit: false,
+                    widget: widget.clone(),
+                }),
+                Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
+                    widget.clone(),
+                    fl!("sources-invalid-url"),
+                )),
+            }
+        }
     }
 }
