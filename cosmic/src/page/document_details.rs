@@ -145,7 +145,7 @@ impl DocumentDetails {
                     .spacing(space_xs)
                     .push(
                         widget::button::icon(
-                            widget::icon::from_name("document-open-symbolic").size(ICON_SIZE),
+                            widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
                         )
                         .on_press(DocumentDetailsMessage::OpenDocument)
                         .tooltip(fl!("document-details-open-file")),
@@ -164,50 +164,66 @@ impl DocumentDetails {
         // Build settings sections
         let basic_info_section = widget::settings::section()
             .title(fl!("document-details-basic-info"))
-            .add(widget::settings::item(
-                fl!("document-details-filename"),
-                text(filename),
-            ))
-            .add(widget::settings::item(
-                fl!("document-details-folder"),
-                text(folder),
-            ))
-            .add(widget::settings::item(
-                fl!("document-details-type"),
-                text(self.document.metadata.type_.as_str()),
-            ))
-            .add(widget::settings::item(
-                fl!("document-details-size"),
-                text(self.format_file_size(self.document.metadata.size.into())),
-            ))
-            .add(widget::settings::item(
-                fl!("document-details-status"),
-                cosmic::iced::widget::pick_list(
-                    [
-                        ReadingStatus::Unread,
-                        ReadingStatus::Reading,
-                        ReadingStatus::Read,
-                    ],
-                    Some(self.document.metadata.status),
-                    DocumentDetailsMessage::UpdateReadingStatus,
-                )
-                .placeholder(fl!("document-details-select-status")),
-            ));
+            .add(
+                widget::settings::item::builder(fl!("document-details-filename"))
+                    .icon(widget::icon::from_name("document-open-symbolic").size(ICON_SIZE))
+                    .control(text(filename)),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-folder"))
+                    .icon(widget::icon::from_name("folder-symbolic").size(ICON_SIZE))
+                    .control(text(folder)),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-type"))
+                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
+                    .control(text(self.document.metadata.type_.as_str())),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-size"))
+                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
+                    .control(text(
+                        self.format_file_size(self.document.metadata.size.into()),
+                    )),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-status"))
+                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
+                    .control(
+                        cosmic::iced::widget::pick_list(
+                            [
+                                ReadingStatus::Unread,
+                                ReadingStatus::Reading,
+                                ReadingStatus::Read,
+                            ],
+                            Some(self.document.metadata.status),
+                            DocumentDetailsMessage::UpdateReadingStatus,
+                        )
+                        .placeholder(fl!("document-details-select-status")),
+                    ),
+            );
 
         let technical_section = widget::settings::section()
             .title(fl!("document-details-technical"))
-            .add(widget::settings::item(
-                fl!("document-details-fingerprint"),
-                text(&self.document.metadata.fingerprint),
-            ));
+            .add(
+                widget::settings::item::builder(fl!("document-details-fingerprint"))
+                    .icon(widget::icon::from_name("auth-fingerprint-symbolic").size(ICON_SIZE))
+                    .control(text(&self.document.metadata.fingerprint)),
+            );
 
         let tags_section = widget::settings::section()
             .title(fl!("document-details-tags"))
-            .add(
+            .add(widget::settings::item_row(vec![
+                widget::icon::from_name("starred-symbolic")
+                    .size(ICON_SIZE)
+                    .into(),
                 self.tag_editor
                     .view()
-                    .map(DocumentDetailsMessage::TagEditor),
-            );
+                    .map(DocumentDetailsMessage::TagEditor)
+                    .apply(widget::container)
+                    .width(Length::Fill)
+                    .into(),
+            ]));
 
         let sources_section = widget::settings::section()
             .title(fl!("document-details-sources"))
