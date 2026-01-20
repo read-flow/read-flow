@@ -132,7 +132,7 @@ impl cosmic::Application for AppModel {
         nav.insert()
             .text(pages.display_name(&PageSelector::Documents))
             .data::<PageSelector>(PageSelector::Documents)
-            .icon(icon::from_name("resources-symbolic"))
+            .icon(icon::from_name("emblem-documents-symbolic"))
             .with_id(|nav_id| {
                 nav_mappings.insert(PageSelector::Documents, nav_id);
             })
@@ -141,7 +141,7 @@ impl cosmic::Application for AppModel {
         nav.insert()
             .text(pages.display_name(&PageSelector::Sources))
             .data::<PageSelector>(PageSelector::Sources)
-            .icon(icon::from_name("resources-symbolic"))
+            .icon(icon::from_name("network-server-symbolic"))
             .with_id(|nav_id| {
                 nav_mappings.insert(PageSelector::Sources, nav_id);
             });

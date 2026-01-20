@@ -213,7 +213,7 @@ impl SettingsPage {
             .add(
                 settings::item::builder(fl!("settings-database-location"))
                     .description(fl!("settings-database-location-description"))
-                    .icon(widget::icon::from_name("add-files-to-archive-symbolic").size(ICON_SIZE))
+                    .icon(widget::icon::from_name("package-x-generic-symbolic").size(ICON_SIZE))
                     .control(
                         settings::item_row(vec![
                             widget::text::monotext(self.settings.database.url()).into(),
