@@ -108,8 +108,13 @@ pub fn create_visitor(
             Box::new(ScmProjectFinder::new(
                 ".git".into(),
                 connection_pool.clone(),
+                scan_settings.clone(),
             )),
-            Box::new(ScmProjectFinder::new(".hg".into(), connection_pool.clone())),
+            Box::new(ScmProjectFinder::new(
+                ".hg".into(),
+                connection_pool.clone(),
+                scan_settings.clone(),
+            )),
         ],
         vec![
             Box::new(FileExtensionFinder::new(

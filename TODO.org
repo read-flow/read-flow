@@ -66,3 +66,5 @@ This is a tool to help discover and organize files locally and on remote servers
   - [ ] For missing on local: Pull to local
   - [ ] For missing on remote: Push to remote
   - [ ] For all (reachable) sources: Check whether the file still exists
+- [ ] Add role-based authorization for server REST API, read/write access
+  - [ ] Update cosmic settings editor

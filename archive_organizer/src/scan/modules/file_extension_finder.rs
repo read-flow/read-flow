@@ -50,23 +50,29 @@ impl FileModule for FileExtensionFinder {
             DirectorySettings::Scan { tags, .. } => {
                 let extension = self.extension.to_ascii_lowercase();
                 let new_file = to_new_file(file, &extension);
-                tracing::debug!("inserting file: {}", file.display());
-                self.connection_pool.upsert_file(new_file)?;
 
-                // unwrap is safe, because the file is just added
-                let db_file = self
-                    .connection_pool
-                    .select_file_by_path(&file.display().to_string())?
-                    .unwrap();
+                if self.scan_settings.dry_run {
+                    tracing::debug!("[dry_run] found file: {}", file.display());
+                } else {
+                    tracing::debug!("inserting file: {}", file.display());
 
-                tracing::debug!("inserting tags: {tags:?} for file: {}", db_file.path);
+                    self.connection_pool.upsert_file(new_file)?;
 
-                let file_tags: Vec<_> = tags
-                    .into_iter()
-                    .map(|tag| FileTag::new(db_file.id, tag))
-                    .collect();
+                    // unwrap is safe, because the file is just added
+                    let db_file = self
+                        .connection_pool
+                        .select_file_by_path(&file.display().to_string())?
+                        .unwrap();
 
-                self.connection_pool.upsert_many_file_tags(file_tags)?;
+                    tracing::debug!("inserting tags: {tags:?} for file: {}", db_file.path);
+
+                    let file_tags: Vec<_> = tags
+                        .into_iter()
+                        .map(|tag| FileTag::new(db_file.id, tag))
+                        .collect();
+
+                    self.connection_pool.upsert_many_file_tags(file_tags)?;
+                }
 
                 Ok(())
             }
