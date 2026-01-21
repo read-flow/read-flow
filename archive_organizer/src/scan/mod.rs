@@ -96,6 +96,10 @@ impl ScanSettings {
     pub fn set_dry_run(&mut self, dry_run: bool) {
         self.dry_run = dry_run;
     }
+
+    pub fn merge_dry_run(&mut self, dry_run: bool) {
+        self.dry_run |= dry_run;
+    }
 }
 
 pub fn create_visitor(

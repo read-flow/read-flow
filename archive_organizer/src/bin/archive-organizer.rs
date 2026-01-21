@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use archive_organizer::ApplicationModule;
+use archive_organizer::ScanSettingsProvider;
 #[cfg(feature = "server")]
 use archive_organizer::server;
 use clap::Parser;
@@ -20,6 +21,8 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Scan {
+        #[clap(long, default_value = "false")]
+        dry_run: bool,
         path: PathBuf,
     },
     ApplyTags,
@@ -41,7 +44,9 @@ fn main() -> Result<()> {
         Commands::ExtractScanDirectories => {
             ApplicationModule::instantiate()?.extract_scan_directories()
         }
-        Commands::Scan { path } => ApplicationModule::instantiate()?.scan(path)?,
+        Commands::Scan { dry_run, path } => {
+            ApplicationModule::new(ScanSettingsProvider { dry_run })?.scan(path)?
+        }
         #[cfg(feature = "server")]
         Commands::Serve => server::main(),
     };

@@ -66,6 +66,19 @@ impl Provider<Settings> for SettingsProvider {
     }
 }
 
+pub struct ScanSettingsProvider {
+    pub dry_run: bool,
+}
+
+impl Provider<Settings> for ScanSettingsProvider {
+    type Error = SettingsError;
+    fn provide(&self) -> Result<Settings, Self::Error> {
+        let mut settings = settings::extract()?;
+        settings.scan.merge_dry_run(self.dry_run);
+        Ok(settings)
+    }
+}
+
 impl ApplicationModule<SettingsProvider> {
     pub fn instantiate() -> Result<Self, SettingsError> {
         Self::new(SettingsProvider)
