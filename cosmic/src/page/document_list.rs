@@ -19,7 +19,6 @@ use cosmic::iced::alignment::Vertical;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
-use cosmic::widget::settings;
 
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
@@ -302,17 +301,19 @@ impl DocumentList {
 
     pub fn view_context(&self) -> ContextView<'_, DocumentListMessage> {
         // Sort Section
-        let sort_section = settings::section().title(fl!("document-list-sort-by")).add(
-            iced::widget::pick_list(
-                DocumentSortOption::ALL,
-                Some(self.sort_option),
-                DocumentListMessage::SortChanged,
-            )
-            .width(Length::Fill),
-        );
+        let sort_section = widget::settings::section()
+            .title(fl!("document-list-sort-by"))
+            .add(
+                iced::widget::pick_list(
+                    DocumentSortOption::ALL,
+                    Some(self.sort_option),
+                    DocumentListMessage::SortChanged,
+                )
+                .width(Length::Fill),
+            );
 
         // Source Filter Section
-        let source_section = settings::section()
+        let source_section = widget::settings::section()
             .title(fl!("document-list-filter-by-source"))
             .add(
                 iced::widget::pick_list(
@@ -329,7 +330,7 @@ impl DocumentList {
             }));
 
         // Reading Status Filter Section
-        let status_section = settings::section()
+        let status_section = widget::settings::section()
             .title(fl!("document-list-filter-by-status"))
             .add(
                 iced::widget::pick_list(
@@ -351,7 +352,7 @@ impl DocumentList {
 
         ContextView {
             title: fl!("document-list-options-title"),
-            content: settings::view_column(vec![
+            content: widget::settings::view_column(vec![
                 sort_section.into(),
                 source_section.into(),
                 status_section.into(),
