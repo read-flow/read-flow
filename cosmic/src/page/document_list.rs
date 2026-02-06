@@ -30,6 +30,7 @@ use crate::component::documents::DocumentsComponent;
 use crate::component::documents::DocumentsMessage;
 use crate::component::documents::DocumentsOutput;
 use crate::component::pagination::PaginationMessage;
+use crate::component::provided_state::ProvidedStateMessage;
 use crate::component::tag_editor::TagEditorOutput;
 use crate::component::tag_filter::TagFilter;
 use crate::component::tag_filter::TagFilterMessage;
@@ -388,9 +389,9 @@ impl DocumentList {
                             document_provider.get_client_selectors().await,
                         )
                     }),
-                    task::message(DocumentListMessage::TagFilter(
-                        TagFilterMessage::LoadAllTags,
-                    )),
+                    task::message(DocumentListMessage::TagFilter(TagFilterMessage::Tags(
+                        ProvidedStateMessage::Load,
+                    ))),
                 ])
             }
             DocumentListMessage::Loaded(files) => {

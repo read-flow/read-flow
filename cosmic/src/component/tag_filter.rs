@@ -14,15 +14,18 @@ use cosmic::widget;
 use cosmic::widget::settings;
 use provider::r#async::Provider;
 
+use super::provided_state::ProvidedState;
+use super::provided_state::ProvidedStateMessage;
+use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::state::tags::Tags;
 use crate::state::tags::TagsState;
 
 pub struct TagFilter<P> {
-    tags_provider: P,
+    all_tags: ProvidedState<P, Vec<String>>,
+    tags: TagsState,
     pub allow_tags: HashSet<String>, // Tags that files must have (whitelist)
     pub deny_tags: HashSet<String>,  // Tags that files must not have (blacklist)
-    tags: TagsState,                 // Available tags for selection
     new_allow_tag: String,           // Current input for new allow tag
     new_deny_tag: String,            // Current input for new deny tag
 }
@@ -34,9 +37,9 @@ pub enum TagFilterOutput {
 
 #[derive(Debug, Clone)]
 pub enum TagFilterMessage {
+    // Tag loading
+    Tags(ProvidedStateMessage<Vec<String>>),
     // Tag filtering messages
-    LoadAllTags,
-    AllTagsLoaded(Result<Vec<String>, String>),
     UpdateNewAllowTag(String),
     AddAllowTag,
     RemoveAllowTag(String),
@@ -47,22 +50,29 @@ pub enum TagFilterMessage {
     Out(TagFilterOutput),
 }
 
+impl From<ProvidedStateMessage<Vec<String>>> for TagFilterMessage {
+    fn from(value: ProvidedStateMessage<Vec<String>>) -> Self {
+        Self::Tags(value)
+    }
+}
+
 impl<P, E> TagFilter<P>
 where
     P: Provider<Vec<String>, Error = E> + Clone + 'static,
     E: Display,
 {
     pub fn new(tags_provider: P) -> (Self, Task<cosmic::Action<TagFilterMessage>>) {
+        let (all_tags, init_task) = ProvidedState::new(tags_provider);
         (
             Self {
-                tags_provider,
+                all_tags,
+                tags: TagsState::default(),
                 allow_tags: HashSet::new(),
                 deny_tags: HashSet::new(),
-                tags: TagsState::default(),
                 new_allow_tag: String::new(),
                 new_deny_tag: String::new(),
             },
-            Task::batch(vec![cosmic::task::message(TagFilterMessage::LoadAllTags)]),
+            init_task.map(ActionExt::map_into),
         )
     }
 
@@ -199,45 +209,37 @@ where
         }
     }
 
-    fn update_available_tags(&mut self, all_tags: Vec<String>) {
-        // Filter out tags that are already in either allow or deny lists
-        let available_tags: Vec<String> = all_tags
-            .iter()
-            .filter(|tag| !self.allow_tags.contains(*tag) && !self.deny_tags.contains(*tag))
-            .cloned()
-            .collect();
-
-        let available_tags_state = combo_box::State::new(available_tags);
-        self.tags = TagsState::Loaded(Tags {
-            all_tags,
-            available_tags: available_tags_state,
+    fn update_available_tags(&mut self) {
+        self.tags = self.all_tags.state.map(|all_tags| {
+            let available_tags: Vec<String> = all_tags
+                .iter()
+                .filter(|tag| !self.allow_tags.contains(*tag) && !self.deny_tags.contains(*tag))
+                .cloned()
+                .collect();
+            Tags {
+                all_tags: all_tags.clone(),
+                available_tags: combo_box::State::new(available_tags),
+            }
         });
     }
 
     pub fn update(&mut self, message: TagFilterMessage) -> Task<cosmic::Action<TagFilterMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
-            TagFilterMessage::LoadAllTags => {
-                self.tags = TagsState::Loading;
-                let tags_provider = self.tags_provider.clone();
-                cosmic::task::future(async move {
-                    TagFilterMessage::AllTagsLoaded(
-                        tags_provider.provide().await.map_err(|e| format!("{e}")),
-                    )
-                })
-            }
-            TagFilterMessage::AllTagsLoaded(result) => {
-                match result {
-                    Ok(tags) => {
-                        tracing::debug!("Loaded {} tags: {:?}", tags.len(), tags);
-                        self.update_available_tags(tags);
-                    }
-                    Err(err) => {
-                        tracing::warn!("Failed to load tags: {}", &err);
-                        self.tags = TagsState::Failed(err);
-                    }
+            TagFilterMessage::Tags(msg) => {
+                let send_notification = !matches!(msg, ProvidedStateMessage::Load);
+                let task = self.all_tags.update(msg).map(ActionExt::map_into);
+                self.update_available_tags();
+                if send_notification {
+                    Task::batch(vec![
+                        task,
+                        cosmic::task::message(TagFilterMessage::Out(
+                            TagFilterOutput::TagFiltersUpdated,
+                        )),
+                    ])
+                } else {
+                    task
                 }
-                cosmic::task::message(TagFilterMessage::Out(TagFilterOutput::TagFiltersUpdated))
             }
             TagFilterMessage::UpdateNewAllowTag(tag) => {
                 self.new_allow_tag = tag;
@@ -248,34 +250,16 @@ where
                 {
                     self.allow_tags
                         .insert(std::mem::take(&mut self.new_allow_tag));
-
-                    // Update available tags to reflect the change
-                    if let TagsState::Loaded(Tags { all_tags, .. }) = &self.tags {
-                        self.update_available_tags(all_tags.clone());
-
-                        // Notify parent of update
-                        cosmic::task::message(TagFilterMessage::Out(
-                            TagFilterOutput::TagFiltersUpdated,
-                        ))
-                    } else {
-                        Task::none()
-                    }
+                    self.update_available_tags();
+                    cosmic::task::message(TagFilterMessage::Out(TagFilterOutput::TagFiltersUpdated))
                 } else {
                     Task::none()
                 }
             }
             TagFilterMessage::RemoveAllowTag(tag) => {
                 self.allow_tags.remove(&tag);
-
-                // Update available tags to reflect the change
-                if let TagsState::Loaded(Tags { all_tags, .. }) = &self.tags {
-                    self.update_available_tags(all_tags.clone());
-
-                    // Notify parent of update
-                    cosmic::task::message(TagFilterMessage::Out(TagFilterOutput::TagFiltersUpdated))
-                } else {
-                    Task::none()
-                }
+                self.update_available_tags();
+                cosmic::task::message(TagFilterMessage::Out(TagFilterOutput::TagFiltersUpdated))
             }
             TagFilterMessage::UpdateNewDenyTag(tag) => {
                 self.new_deny_tag = tag;
@@ -285,48 +269,22 @@ where
                 if !self.new_deny_tag.is_empty() && !self.deny_tags.contains(&self.new_deny_tag) {
                     self.deny_tags
                         .insert(std::mem::take(&mut self.new_deny_tag));
-
-                    // Update available tags to reflect the change
-                    if let TagsState::Loaded(Tags { all_tags, .. }) = &self.tags {
-                        self.update_available_tags(all_tags.clone());
-
-                        // Notify parent of update
-                        cosmic::task::message(TagFilterMessage::Out(
-                            TagFilterOutput::TagFiltersUpdated,
-                        ))
-                    } else {
-                        Task::none()
-                    }
+                    self.update_available_tags();
+                    cosmic::task::message(TagFilterMessage::Out(TagFilterOutput::TagFiltersUpdated))
                 } else {
                     Task::none()
                 }
             }
             TagFilterMessage::RemoveDenyTag(tag) => {
                 self.deny_tags.remove(&tag);
-
-                // Update available tags to reflect the change
-                if let TagsState::Loaded(Tags { all_tags, .. }) = &self.tags {
-                    self.update_available_tags(all_tags.clone());
-
-                    // Notify parent of update
-                    cosmic::task::message(TagFilterMessage::Out(TagFilterOutput::TagFiltersUpdated))
-                } else {
-                    Task::none()
-                }
+                self.update_available_tags();
+                cosmic::task::message(TagFilterMessage::Out(TagFilterOutput::TagFiltersUpdated))
             }
             TagFilterMessage::ClearAllTagFilters => {
                 self.allow_tags.clear();
                 self.deny_tags.clear();
-
-                // Update available tags to reflect the change
-                if let TagsState::Loaded(Tags { all_tags, .. }) = &self.tags {
-                    self.update_available_tags(all_tags.clone());
-
-                    // Notify parent of update
-                    cosmic::task::message(TagFilterMessage::Out(TagFilterOutput::TagFiltersUpdated))
-                } else {
-                    Task::none()
-                }
+                self.update_available_tags();
+                cosmic::task::message(TagFilterMessage::Out(TagFilterOutput::TagFiltersUpdated))
             }
             TagFilterMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")

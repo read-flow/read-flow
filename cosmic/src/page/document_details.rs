@@ -249,6 +249,14 @@ impl DocumentDetails {
     }
 
     pub fn view_context(&self) -> ContextView<'_, DocumentDetailsMessage> {
+        // let document_clients = self.document.get_client_selectors();
+        // let (_, missing_at) = self
+        //     .document_provider
+        //     .get_client_selectors()
+        //     .await
+        //     .into_iter()
+        //     .partition(|client| document_clients.contains(client));
+
         ContextView {
             title: "FileDetails".to_string(),
             content: text("TODO").into(),

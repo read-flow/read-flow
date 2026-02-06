@@ -336,6 +336,13 @@ impl Document {
         local.append(&mut remote);
         local
     }
+
+    pub fn get_client_selectors(&self) -> HashSet<ClientSelector> {
+        self.sources
+            .iter()
+            .map(|source| source.client.clone())
+            .collect()
+    }
 }
 
 #[derive(Clone, Default)]

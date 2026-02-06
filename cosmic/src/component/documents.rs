@@ -21,6 +21,7 @@ use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::component::pagination::Pagination;
 use crate::component::pagination::PaginationMessage;
+use crate::component::provided_state::ProvidedStateMessage;
 use crate::component::tag_editor::Orientation;
 use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
@@ -282,9 +283,9 @@ impl DocumentsComponent {
                     task::message(DocumentsMessage::BatchTagEditor(TagEditorMessage::SetTags(
                         common_tags,
                     ))),
-                    task::message(DocumentsMessage::BatchTagEditor(
-                        TagEditorMessage::LoadAllTags,
-                    )),
+                    task::message(DocumentsMessage::BatchTagEditor(TagEditorMessage::Tags(
+                        ProvidedStateMessage::Load,
+                    ))),
                 ])
             }
             DocumentsMessage::Out(_) => {
@@ -329,7 +330,7 @@ impl DocumentsComponent {
 
     pub fn set_document_state(&mut self, state: DocumentState) -> Task<Action<DocumentsMessage>> {
         self.documents = state.clone();
-        self.batch_tag_editor.tags_provider = state;
+        self.batch_tag_editor.set_provider(state);
         task::message(DocumentsMessage::ResetBatchTagEditor)
     }
 
@@ -341,13 +342,13 @@ impl DocumentsComponent {
             .unwrap_mut()
             .update_item(search_fn.clone(), item.clone());
         self.batch_tag_editor
-            .tags_provider
+            .provider_mut()
             .unwrap_mut()
             .update_item(search_fn, item);
 
-        task::message(DocumentsMessage::BatchTagEditor(
-            TagEditorMessage::LoadAllTags,
-        ))
+        task::message(DocumentsMessage::BatchTagEditor(TagEditorMessage::Tags(
+            ProvidedStateMessage::Load,
+        )))
     }
 
     pub fn is_loaded(&self) -> bool {
@@ -364,7 +365,7 @@ impl DocumentsComponent {
     {
         self.documents.unwrap_mut().sort_unfiltered(sort_fn.clone());
         self.batch_tag_editor
-            .tags_provider
+            .provider_mut()
             .unwrap_mut()
             .sort_unfiltered(sort_fn);
     }

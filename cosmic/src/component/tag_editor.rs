@@ -21,7 +21,10 @@ use cosmic::widget::Row;
 use cosmic::widget::text;
 use provider::r#async::Provider;
 
+use super::provided_state::ProvidedState;
+use super::provided_state::ProvidedStateMessage;
 use crate::ICON_SIZE;
+use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::state::tags::Tags;
 use crate::state::tags::TagsState;
@@ -33,14 +36,14 @@ pub enum Orientation {
 
 /// Tag editor component for selecting, adding, and removing tags
 pub struct TagEditor<P> {
-    /// Available tags provider
-    pub(super) tags_provider: P,
+    /// All tags, loaded from provider
+    all_tags: ProvidedState<P, Vec<String>>,
+    /// Available tags, derived from all_tags via map
+    tags: TagsState,
     /// Orientation of the view
     orientation: Orientation,
     /// Currently selected tags
     selected_tags: Vec<String>,
-    /// Tags state for combo box
-    tags: TagsState,
     /// Currently selected tag in combo box
     combo_selection: String,
     /// Entered tag in text input
@@ -69,10 +72,8 @@ pub enum TagEditorOutput {
 
 #[derive(Debug, Clone)]
 pub enum TagEditorMessage {
-    /// Load all tags from fetcher
-    LoadAllTags,
-    /// All tags loaded
-    AllTagsLoaded(Result<Vec<String>, String>),
+    /// Tags provider state
+    Tags(ProvidedStateMessage<Vec<String>>),
     /// Update selected tag in combo box
     UpdateComboSelection(String),
     /// Add selected tag from combo box
@@ -91,6 +92,12 @@ pub enum TagEditorMessage {
     Out(TagEditorOutput),
 }
 
+impl From<ProvidedStateMessage<Vec<String>>> for TagEditorMessage {
+    fn from(value: ProvidedStateMessage<Vec<String>>) -> Self {
+        Self::Tags(value)
+    }
+}
+
 impl<P, E> TagEditor<P>
 where
     P: Provider<Vec<String>, Error = E> + Clone + 'static,
@@ -105,11 +112,12 @@ where
         empty_text: String,
         remove_tooltip: String,
     ) -> (Self, Task<Action<TagEditorMessage>>) {
+        let (all_tags, init_task) = ProvidedState::new(tags_provider);
         (
             Self {
-                tags_provider,
-                selected_tags: initial_tags,
+                all_tags,
                 tags: TagsState::default(),
+                selected_tags: initial_tags,
                 orientation,
                 combo_selection: String::new(),
                 entered_tag: String::new(),
@@ -119,8 +127,16 @@ where
                 remove_tooltip,
                 input_id: Id::unique(),
             },
-            task::message(TagEditorMessage::LoadAllTags),
+            init_task.map(ActionExt::map_into),
         )
+    }
+
+    pub fn set_provider(&mut self, provider: P) {
+        self.all_tags.set_provider(provider);
+    }
+
+    pub fn provider_mut(&mut self) -> &mut P {
+        self.all_tags.provider_mut()
     }
 
     /// View the tag editor
@@ -244,17 +260,17 @@ where
 
     /// Update available tags by filtering out already selected tags
     fn update_available_tags(&mut self) {
-        if let TagsState::Loaded(Tags { all_tags, .. }) = &self.tags {
+        self.tags = self.all_tags.state.map(|all_tags| {
             let available: Vec<String> = all_tags
                 .iter()
                 .filter(|tag| !self.selected_tags.contains(tag))
                 .cloned()
                 .collect();
-            self.tags = TagsState::Loaded(Tags {
+            Tags {
                 all_tags: all_tags.clone(),
                 available_tags: combo_box::State::new(available),
-            });
-        }
+            }
+        });
     }
 
     /// Add a tag and notify parent
@@ -280,35 +296,10 @@ where
     pub fn update(&mut self, message: TagEditorMessage) -> Task<Action<TagEditorMessage>> {
         tracing::debug!("TagEditor received: {message:?}");
         match message {
-            TagEditorMessage::LoadAllTags => {
-                self.tags = TagsState::Loading;
-                let tags_provider = self.tags_provider.clone();
-                task::future(async move {
-                    TagEditorMessage::AllTagsLoaded(
-                        tags_provider.provide().await.map_err(|e| format!("{e}")),
-                    )
-                })
-            }
-            TagEditorMessage::AllTagsLoaded(result) => {
-                match result {
-                    Ok(tags) => {
-                        // Filter out already selected tags
-                        let available: Vec<String> = tags
-                            .iter()
-                            .filter(|tag| !self.selected_tags.contains(tag))
-                            .cloned()
-                            .collect();
-                        self.tags = TagsState::Loaded(Tags {
-                            all_tags: tags,
-                            available_tags: combo_box::State::new(available),
-                        });
-                    }
-                    Err(err) => {
-                        tracing::warn!("Failed to load tags: {}", &err);
-                        self.tags = TagsState::Failed(err);
-                    }
-                }
-                Task::none()
+            TagEditorMessage::Tags(msg) => {
+                let task = self.all_tags.update(msg).map(ActionExt::map_into);
+                self.update_available_tags();
+                task
             }
             TagEditorMessage::UpdateComboSelection(tag) => {
                 self.combo_selection = tag;

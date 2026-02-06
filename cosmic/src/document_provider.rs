@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::collections::HashSet;
+use std::convert::Infallible;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
@@ -292,6 +293,12 @@ impl HasSetExpired for DocumentProvider {
     }
 }
 
+impl Expiring for DocumentProvider {
+    async fn is_expired(&self) -> bool {
+        self.documents_cache.is_expired().await || self.tags_cache.is_expired().await
+    }
+}
+
 impl Provider<Documents> for DocumentProvider {
     type Error = FilesClientError;
 
@@ -300,16 +307,18 @@ impl Provider<Documents> for DocumentProvider {
     }
 }
 
-impl Expiring for DocumentProvider {
-    async fn is_expired(&self) -> bool {
-        self.documents_cache.is_expired().await || self.tags_cache.is_expired().await
-    }
-}
-
 impl Provider<Vec<String>> for DocumentProvider {
     type Error = FilesClientError;
 
     async fn provide(&self) -> Result<Vec<String>, Self::Error> {
         self.get_all_tags().await
+    }
+}
+
+impl Provider<Vec<ClientSelector>> for DocumentProvider {
+    type Error = Infallible;
+
+    async fn provide(&self) -> Result<Vec<ClientSelector>, Self::Error> {
+        Ok(self.get_client_selectors().await)
     }
 }

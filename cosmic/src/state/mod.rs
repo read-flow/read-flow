@@ -1,7 +1,7 @@
-use std::fmt;
-
 pub mod filtered;
 pub mod tags;
+
+use std::fmt;
 
 #[derive(Default, Clone)]
 pub enum LoadedState<T> {
@@ -26,6 +26,15 @@ impl<T> fmt::Debug for LoadedState<T> {
 impl<T> LoadedState<T> {
     pub fn is_loaded(&self) -> bool {
         matches!(self, LoadedState::Loaded(_))
+    }
+
+    pub fn map<U>(&self, f: impl FnOnce(&T) -> U) -> LoadedState<U> {
+        match self {
+            LoadedState::New => LoadedState::New,
+            LoadedState::Loading => LoadedState::Loading,
+            LoadedState::Failed(e) => LoadedState::Failed(e.clone()),
+            LoadedState::Loaded(t) => LoadedState::Loaded(f(t)),
+        }
     }
 
     // pub fn get_loaded(&self) -> Option<&T> {

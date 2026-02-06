@@ -6,6 +6,7 @@ use archive_organizer::Builder;
 use archive_organizer::api::FileDataSource;
 use archive_organizer::api::Status;
 use archive_organizer::client::FilesClient;
+use archive_organizer::db;
 use archive_organizer::db::dao::RemoteDao;
 use archive_organizer::db::models::NewRemote;
 use archive_organizer::db::models::Remote;
@@ -23,26 +24,39 @@ use cosmic::widget;
 use cosmic::widget::icon;
 use cosmic::widget::row;
 use cosmic::widget::settings;
+use provider::r#async::Provider;
 use url::Url;
 
 use crate::ApplicationModule;
 use crate::ICON_SIZE;
 use crate::app::ContextView;
+use crate::component::provided_state::ProvidedState;
+use crate::component::provided_state::ProvidedStateMessage;
+use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::iter::find_with_next;
 use crate::iter::find_with_previous;
 use crate::layout::layout;
 use crate::state::LoadedState;
 
-pub type RemotesState = LoadedState<Vec<Remote>>;
 pub type UrlVerificationState = LoadedState<Status>;
 
 const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(250);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+struct RemotesProvider(Arc<ApplicationModule>);
+
+impl Provider<Vec<Remote>> for RemotesProvider {
+    type Error = db::dao::Error;
+
+    async fn provide(&self) -> Result<Vec<Remote>, Self::Error> {
+        self.0.connection_pool().select_all_remotes()
+    }
+}
+
 pub struct SourcesPage {
     application_module: Arc<ApplicationModule>,
-    remotes_state: RemotesState,
+    remotes_state: ProvidedState<RemotesProvider, Vec<Remote>>,
     entered_url: String,
     entered_url_id: widget::Id, // Unique ID for focus management
     entered_user_id: String,
@@ -65,9 +79,7 @@ pub enum SourcesOutput {
 
 #[derive(Debug, Clone)]
 pub enum SourcesMessage {
-    LoadRemotes,
-    SetRemotesStateFailed(String),
-    SetRemotesStateLoaded(Vec<Remote>),
+    Remotes(ProvidedStateMessage<Vec<Remote>>),
 
     UpdateEnteredUrl(String),
     UpdateEnteredUserId(String),
@@ -104,6 +116,12 @@ pub enum SourcesMessage {
     Out(SourcesOutput),
 }
 
+impl From<ProvidedStateMessage<Vec<Remote>>> for SourcesMessage {
+    fn from(value: ProvidedStateMessage<Vec<Remote>>) -> Self {
+        Self::Remotes(value)
+    }
+}
+
 impl SourcesPage {
     fn start_debounce_verification(
         &mut self,
@@ -118,10 +136,12 @@ impl SourcesPage {
     }
 
     pub fn new(application_module: Arc<ApplicationModule>) -> (Self, Task<Action<SourcesMessage>>) {
+        let (remotes_state, init_remotes_state) =
+            ProvidedState::new(RemotesProvider(application_module.clone()));
         (
             Self {
                 application_module,
-                remotes_state: Default::default(),
+                remotes_state,
                 entered_url: Default::default(),
                 entered_url_id: widget::Id::unique(),
                 entered_user_id: Default::default(),
@@ -134,7 +154,7 @@ impl SourcesPage {
                 pending_deletion: None,
                 last_input_time: Instant::now(),
             },
-            task::message(SourcesMessage::LoadRemotes),
+            task::batch([init_remotes_state.map(ActionExt::map_into)]),
         )
     }
 
@@ -201,7 +221,7 @@ impl SourcesPage {
         }
 
         // Sources list section
-        let sources_section = match &self.remotes_state {
+        let sources_section = match &self.remotes_state.state {
             LoadedState::New => settings::section()
                 .title(fl!("sources-section-title"))
                 .add(widget::text(fl!("sources-loading-state-new")))
@@ -338,23 +358,8 @@ impl SourcesPage {
     pub fn update(&mut self, message: SourcesMessage) -> Task<Action<SourcesMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
-            SourcesMessage::LoadRemotes => {
-                self.remotes_state = RemotesState::Loading;
-                let connection_pool = self.application_module.connection_pool();
-                task::future(async move {
-                    match connection_pool.select_all_remotes() {
-                        Ok(remotes) => SourcesMessage::SetRemotesStateLoaded(remotes),
-                        Err(error) => SourcesMessage::SetRemotesStateFailed(format!("{error}")),
-                    }
-                })
-            }
-            SourcesMessage::SetRemotesStateLoaded(remotes) => {
-                self.remotes_state = RemotesState::Loaded(remotes);
-                task::none()
-            }
-            SourcesMessage::SetRemotesStateFailed(error) => {
-                self.remotes_state = RemotesState::Failed(error);
-                task::none()
+            SourcesMessage::Remotes(message) => {
+                self.remotes_state.update(message).map(ActionExt::map_into)
             }
             SourcesMessage::UpdateEnteredUrl(url) => {
                 self.entered_url = url;
@@ -431,7 +436,7 @@ impl SourcesPage {
             }
             SourcesMessage::SubmitSource(url, user_id, passphrase) => {
                 let connection_pool = self.application_module.connection_pool();
-                let order = self.remotes_state.unwrap().len() + 1;
+                let order = self.remotes_state.state.unwrap().len() + 1;
                 task::future(async move {
                     match connection_pool.insert_remote(NewRemote {
                         base_url: url.to_string(),
@@ -453,7 +458,7 @@ impl SourcesPage {
                 self.entered_user_id.clear();
                 self.entered_passphrase.clear();
                 self.url_verification_state = Default::default();
-                task::message(SourcesMessage::LoadRemotes)
+                task::message(SourcesMessage::Remotes(ProvidedStateMessage::Load))
             }
             SourcesMessage::RequestDeleteSource(remote) => {
                 self.pending_deletion = Some(remote);
@@ -482,6 +487,7 @@ impl SourcesPage {
             SourcesMessage::DeletedSource(id) => {
                 let remote = self
                     .remotes_state
+                    .state
                     .unwrap() // should be safe, because otherwise `DeleteSource` message cannot be generated.
                     .iter()
                     .find(|a| a.id == id)
@@ -490,7 +496,9 @@ impl SourcesPage {
                 task::message(SourcesMessage::Out(SourcesOutput::DeletedSource(
                     remote.base_url.parse().unwrap(),
                 )))
-                .chain(task::message(SourcesMessage::LoadRemotes))
+                .chain(task::message(SourcesMessage::Remotes(
+                    ProvidedStateMessage::Load,
+                )))
             }
             SourcesMessage::SetOperationError(error) => {
                 self.operation_error = Some(error);
@@ -501,7 +509,7 @@ impl SourcesPage {
                 task::none()
             }
             SourcesMessage::MoveSourceUp(remote) => {
-                find_with_previous(self.remotes_state.unwrap().iter(), |current| {
+                find_with_previous(self.remotes_state.state.unwrap().iter(), |current| {
                     current.id == remote.id
                 })
                 .map(|(prev, current)| {
@@ -513,7 +521,7 @@ impl SourcesPage {
                 .unwrap_or_else(task::none)
             }
             SourcesMessage::MoveSourceDown(remote) => {
-                find_with_next(self.remotes_state.unwrap().iter(), |current| {
+                find_with_next(self.remotes_state.state.unwrap().iter(), |current| {
                     current.id == remote.id
                 })
                 .map(|(current, next)| {
@@ -528,7 +536,7 @@ impl SourcesPage {
                 let connection_pool = self.application_module.connection_pool();
                 task::future(async move {
                     match connection_pool.swap_order_of_remotes(&first, &second) {
-                        Ok(_) => SourcesMessage::LoadRemotes,
+                        Ok(_) => SourcesMessage::Remotes(ProvidedStateMessage::Load),
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }
                 })

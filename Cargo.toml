@@ -12,6 +12,7 @@ assert4rs = "0.1.0"
 async-trait = "0.1.88"
 base64 = "0.22.1"
 clap = "4.5.52"
+derive_more = "2.1.1"
 diesel = { version = "2.3.5", features = ["chrono"] }
 diesel_migrations = "2.2.0"
 expanduser = "1.2.2"
