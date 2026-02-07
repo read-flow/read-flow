@@ -56,9 +56,14 @@ tag-filter-error = Failed to load tags
 tag-filter-loading = Loading tags...
 
 # Document details
+document-details-available-everywhere = Document is available on all sources
+document-details-download-to-local = Download to Local
+document-details-loading-sources = Loading sources...
 document-details-no-sources = No sources available
+document-details-send-to = Send To
 document-details-source-local = Local
 document-details-sources = Sources
+document-details-upload-to = Upload to { $host }
 
 # Document list
 document-list-add-tag = Add

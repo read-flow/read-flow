@@ -20,6 +20,9 @@ use cosmic::widget::text;
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::app::ContextView;
+use crate::client::ClientSelector;
+use crate::component::provided_state::ProvidedState;
+use crate::component::provided_state::ProvidedStateMessage;
 use crate::component::tag_editor::Orientation;
 use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
@@ -28,10 +31,12 @@ use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::layout::layout;
+use crate::state::LoadedState;
 
 pub struct DocumentDetails {
     document: Document,
     document_provider: Arc<DocumentProvider>,
+    all_clients: ProvidedState<Arc<DocumentProvider>, Vec<ClientSelector>>,
     tag_editor: TagEditor<Arc<DocumentProvider>>,
 }
 
@@ -51,9 +56,18 @@ pub enum DocumentDetailsMessage {
     UpdateReadingStatus(ReadingStatus),
     ReadingStatusUpdated(Result<(), String>),
     OpenDocument,
+    AllClients(ProvidedStateMessage<Vec<ClientSelector>>),
+    SendToClient(ClientSelector),
+    SentToClient(Result<(), String>),
 
     // Message intended for the parent module
     Out(DocumentDetailsOutput),
+}
+
+impl From<ProvidedStateMessage<Vec<ClientSelector>>> for DocumentDetailsMessage {
+    fn from(value: ProvidedStateMessage<Vec<ClientSelector>>) -> Self {
+        Self::AllClients(value)
+    }
 }
 
 impl DocumentDetails {
@@ -62,10 +76,9 @@ impl DocumentDetails {
         document_provider: Arc<DocumentProvider>,
     ) -> (Self, Task<Action<DocumentDetailsMessage>>) {
         let initial_tags = document.metadata.tags.clone();
-        let document_provider_clone = document_provider.clone();
 
         let (tag_editor, tag_editor_task) = TagEditor::new(
-            document_provider_clone.clone(),
+            document_provider.clone(),
             initial_tags,
             Orientation::Horizontal,
             fl!("tag-editor-select-tag"),
@@ -74,15 +87,20 @@ impl DocumentDetails {
             fl!("tag-editor-remove-tag"),
         );
 
+        let (all_clients, init_all_clients) = ProvidedState::new(document_provider.clone());
         let file_details = DocumentDetails {
             document,
             document_provider,
+            all_clients,
             tag_editor,
         };
 
         (
             file_details,
-            tag_editor_task.map(|action| action.map(DocumentDetailsMessage::TagEditor)),
+            task::batch([
+                tag_editor_task.map(|action| action.map(DocumentDetailsMessage::TagEditor)),
+                init_all_clients.map(ActionExt::map_into),
+            ]),
         )
     }
 
@@ -249,17 +267,52 @@ impl DocumentDetails {
     }
 
     pub fn view_context(&self) -> ContextView<'_, DocumentDetailsMessage> {
-        // let document_clients = self.document.get_client_selectors();
-        // let (_, missing_at) = self
-        //     .document_provider
-        //     .get_client_selectors()
-        //     .await
-        //     .into_iter()
-        //     .partition(|client| document_clients.contains(client));
+        let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
+
+        let content = match &self.all_clients.state {
+            LoadedState::Loaded(all_clients) => {
+                let document_clients = self.document.get_client_selectors();
+                let missing_at: Vec<_> = all_clients
+                    .iter()
+                    .filter(|client| !document_clients.contains(client))
+                    .collect();
+
+                if missing_at.is_empty() {
+                    text(fl!("document-details-available-everywhere")).into()
+                } else {
+                    let mut column = Column::new().spacing(space_xs);
+                    for client in missing_at {
+                        let (icon_name, label) = match client {
+                            ClientSelector::Local => (
+                                "go-down-symbolic",
+                                fl!("document-details-download-to-local"),
+                            ),
+                            ClientSelector::Remote(url) => (
+                                "go-up-symbolic",
+                                fl!(
+                                    "document-details-upload-to",
+                                    host = url.host_str().unwrap_or("Remote")
+                                ),
+                            ),
+                        };
+                        column = column.push(
+                            widget::button::text(label)
+                                .trailing_icon(widget::icon::from_name(icon_name))
+                                .on_press(DocumentDetailsMessage::SendToClient(client.clone())),
+                        );
+                    }
+                    column.into()
+                }
+            }
+            LoadedState::Loading | LoadedState::New => {
+                text(fl!("document-details-loading-sources")).into()
+            }
+            LoadedState::Failed(error) => text(fl!("generic-error", error = error.as_str())).into(),
+        };
 
         ContextView {
-            title: "FileDetails".to_string(),
-            content: text("TODO").into(),
+            title: fl!("document-details-send-to"),
+            content,
         }
     }
 
@@ -382,6 +435,27 @@ impl DocumentDetails {
                 }
                 Err(err) => {
                     tracing::warn!("Failed to refresh file: {}", err);
+                    Task::none()
+                }
+            },
+            DocumentDetailsMessage::AllClients(message) => {
+                self.all_clients.update(message).map(ActionExt::map_into)
+            }
+            DocumentDetailsMessage::SendToClient(client) => {
+                let document = self.document.clone();
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    let result = document_provider
+                        .send_document_to_client(document, client)
+                        .await
+                        .map_err(|err| format!("{err}"));
+                    DocumentDetailsMessage::SentToClient(result)
+                })
+            }
+            DocumentDetailsMessage::SentToClient(result) => match result {
+                Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),
+                Err(err) => {
+                    tracing::error!("Failed to send document to client: {err}");
                     Task::none()
                 }
             },

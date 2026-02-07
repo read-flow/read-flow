@@ -254,6 +254,25 @@ impl DocumentProvider {
         }
     }
 
+    /// Send a document to a client that doesn't have it yet.
+    ///
+    /// Finds an existing source for the document, downloads if needed,
+    /// then imports to the target client. Automatically invalidates the cache.
+    pub async fn send_document_to_client(
+        &self,
+        document: Document,
+        target: ClientSelector,
+    ) -> Result<(), FilesClientError> {
+        let result = self
+            .aggregator
+            .read()
+            .await
+            .send_document_to_client(&document, &target)
+            .await;
+        self.set_expired().await;
+        result.map(|_| ())
+    }
+
     /// Open a document using the system's default application.
     ///
     /// Prefers local sources over remote sources.

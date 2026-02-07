@@ -275,6 +275,10 @@ impl FileDataSource for FilesClient {
 
         Ok(())
     }
+
+    async fn import_file(&self, path: &Path) -> Result<File, Error> {
+        self.upload_file(path).await
+    }
 }
 
 async fn fingerprint_of(filename: &Path) -> Result<String, Error> {

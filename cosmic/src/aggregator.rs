@@ -4,6 +4,7 @@ use std::collections::hash_map::Entry;
 use std::collections::hash_map::IntoValues;
 use std::fmt;
 use std::iter::repeat_n;
+use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -235,6 +236,58 @@ impl Aggregator {
         let mut tags: Vec<_> = retval.into_iter().collect();
         tags.sort();
         Ok(tags)
+    }
+
+    /// Send a document to a client that doesn't have it yet.
+    ///
+    /// Finds an existing source for the document (preferring local),
+    /// downloads the file if needed, then imports it to the target client.
+    pub async fn send_document_to_client(
+        &self,
+        document: &Document,
+        target: &ClientSelector,
+    ) -> Result<File, FilesClientError> {
+        let target_client = self
+            .client_for(target)
+            .ok_or(FilesClientError::NoSourcesAvailable)?;
+
+        // Find a source to get the file from (prefer local)
+        let sources = document.sources_by_priority();
+
+        let local_source = sources.iter().find(|s| s.client.is_local());
+
+        let local_path = if let Some(source) = local_source {
+            // File exists locally, use its path directly
+            PathBuf::from(&source.path)
+        } else {
+            // Need to download from a remote source
+            let source = sources
+                .first()
+                .ok_or(FilesClientError::NoSourcesAvailable)?;
+            let source_client = self
+                .client_for(&source.client)
+                .ok_or(FilesClientError::NoSourcesAvailable)?;
+
+            match source_client {
+                Client::Remote(files_client) => {
+                    let tempdir = std::env::temp_dir().join("archive-organizer");
+                    let _ = tokio::fs::create_dir_all(&tempdir).await;
+                    let file_path = PathBuf::from(&source.path);
+                    let filename = tempdir.join(file_path.file_name().unwrap());
+                    files_client
+                        .download_file(source.id, &filename)
+                        .await
+                        .map_err(FilesClientError::Remote)?
+                }
+                Client::Local(_) => {
+                    // This shouldn't happen - we checked for local sources above
+                    return Err(FilesClientError::NoSourcesAvailable);
+                }
+            }
+        };
+
+        // Import the file to the target client
+        target_client.import_file(&local_path).await
     }
 }
 

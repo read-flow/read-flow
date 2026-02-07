@@ -1,4 +1,5 @@
 use std::fmt;
+use std::path::Path;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
@@ -164,5 +165,9 @@ impl FileDataSource for Client {
 
     async fn delete_file(&self, file: File) -> Result<(), Self::Error> {
         delegate!(self, delete_file, file)
+    }
+
+    async fn import_file(&self, path: &Path) -> Result<File, Self::Error> {
+        delegate!(self, import_file, path)
     }
 }

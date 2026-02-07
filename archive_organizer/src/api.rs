@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::path::Path;
 use std::process::ExitStatus;
 use std::result::Result;
 use std::str::FromStr;
@@ -167,4 +168,10 @@ pub trait FileDataSource {
 
     /// Delete a file both from the database and the filesystem
     async fn delete_file(&self, file: File) -> Result<(), Self::Error>;
+
+    /// Import a file from a local filesystem path into this data source.
+    ///
+    /// For local data sources, this registers the file in the database.
+    /// For remote data sources, this uploads the file to the server.
+    async fn import_file(&self, path: &Path) -> Result<File, Self::Error>;
 }

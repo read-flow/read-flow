@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
@@ -12,9 +13,11 @@ use super::dao::FileDao;
 use super::dao::FileTagDao;
 use crate::api::File;
 use crate::api::FileDataSource;
+use crate::api::ReadingStatus;
 use crate::api::Status;
 use crate::db::models::File as DbFile;
 use crate::db::models::FileTag as DbFileTag;
+use crate::db::models::NewFile;
 use crate::db::schema::file_tags;
 use crate::db::schema::files;
 
@@ -167,6 +170,59 @@ impl FileDataSource for DbClient {
             diesel::delete(files::table.filter(files::id.eq(file.id))).execute(&mut connection)?;
 
             Ok(())
+        })
+    }
+
+    async fn import_file(&self, path: &Path) -> Result<File, Self::Error> {
+        // Compute SHA256 fingerprint
+        let output = Command::new("sha256sum")
+            .arg(path)
+            .output()
+            .await
+            .map_err(|e| Error::IO(Arc::new(e)))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let fingerprint = stdout
+            .split(' ')
+            .next()
+            .expect("expected fingerprint")
+            .to_string();
+
+        // Get file metadata
+        let metadata = tokio::fs::metadata(path)
+            .await
+            .map_err(|e| Error::IO(Arc::new(e)))?;
+        let size: i32 = metadata
+            .len()
+            .try_into()
+            .expect("file size too large for i32");
+
+        // Get extension
+        let extension = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        let path_str = path.display().to_string();
+        let new_file = NewFile {
+            path: path_str.clone(),
+            type_: extension,
+            size,
+            fingerprint,
+            status: ReadingStatus::Unread.into(),
+        };
+
+        // Upsert into database and fetch back
+        tokio::task::block_in_place(|| {
+            self.connection_pool.upsert_file(new_file)?;
+            let db_file = self
+                .connection_pool
+                .select_file_by_path(&path_str)?
+                .expect("file should exist after upsert");
+            let file_tags = self
+                .connection_pool
+                .select_file_tags_by_file_id(db_file.id)?;
+            Ok((db_file, file_tags).into())
         })
     }
 }
