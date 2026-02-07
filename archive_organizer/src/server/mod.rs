@@ -3,13 +3,17 @@ mod authn;
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
+use std::path::PathBuf;
 
 use authn::AuthorizedUser;
 use figment::Figment;
 use indexmap::IndexMap;
 use provider::sync::AndThen;
 use provider::sync::Provider;
+use rocket::Build;
+use rocket::Ignite;
 use rocket::Responder;
+use rocket::Rocket;
 use rocket::State;
 use rocket::delete;
 use rocket::form::Form;
@@ -104,15 +108,17 @@ pub fn create_cors() -> Cors {
     cors.to_cors().unwrap()
 }
 
-struct FigmentProvider;
+struct FigmentProvider {
+    config_path: PathBuf,
+}
 
 impl Provider<Figment> for FigmentProvider {
     type Error = SettingsError;
     fn provide(&self) -> Result<Figment, Self::Error> {
-        Ok({
-            let figment = rocket::Config::figment();
-            settings::decorate_with(figment, settings::config_path())
-        })
+        Ok(settings::decorate_with(
+            rocket::Config::figment(),
+            self.config_path.clone(),
+        ))
     }
 }
 
@@ -123,9 +129,10 @@ fn extract_settings(figment: Figment) -> Result<Settings, SettingsError> {
     Ok(figment.extract()?)
 }
 
-#[rocket::launch]
-pub fn serve() -> _ {
-    let figment_provider = FigmentProvider;
+fn serve(config_path: PathBuf) -> Rocket<Build> {
+    let figment_provider = FigmentProvider {
+        config_path: config_path.clone(),
+    };
     // unwrap is safe because FigmentProvider technically doesn't err
     let figment = figment_provider.provide().unwrap();
 
@@ -133,8 +140,7 @@ pub fn serve() -> _ {
         .and_then(extract_settings as fn(Figment) -> Result<Settings, SettingsError>);
 
     let application_module: ApplicationModule<SettingsProvider> =
-        ApplicationModule::new(settings_provider, settings::config_path())
-            .expect("extract settings");
+        ApplicationModule::new(settings_provider, config_path).expect("extract settings");
 
     let cors = create_cors();
 
@@ -156,6 +162,12 @@ pub fn serve() -> _ {
         .mount("/", routes)
         .manage(application_module)
         .attach(cors)
+}
+
+pub fn main(config_path: PathBuf) -> Result<Rocket<Ignite>, Box<rocket::Error>> {
+    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    let result = rt.block_on(async { serve(config_path).launch().await })?;
+    Ok(result)
 }
 
 #[get("/status")]

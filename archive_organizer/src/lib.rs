@@ -81,8 +81,8 @@ impl Provider<Settings> for ScanSettingsProvider {
 }
 
 impl ApplicationModule<SettingsProvider> {
-    pub fn instantiate() -> Result<Self, SettingsError> {
-        Self::new(SettingsProvider, settings::config_path())
+    pub fn instantiate(config_path: PathBuf) -> Result<Self, SettingsError> {
+        Self::new(SettingsProvider, config_path)
     }
 }
 
