@@ -5,6 +5,7 @@ use archive_organizer::ApplicationModule;
 use archive_organizer::ScanSettingsProvider;
 #[cfg(feature = "server")]
 use archive_organizer::server;
+use archive_organizer::settings;
 use clap::Parser;
 use clap::Subcommand;
 use tracing_subscriber::filter::EnvFilter;
@@ -45,7 +46,8 @@ fn main() -> Result<()> {
             ApplicationModule::instantiate()?.extract_scan_directories()
         }
         Commands::Scan { dry_run, path } => {
-            ApplicationModule::new(ScanSettingsProvider { dry_run })?.scan(path)?
+            ApplicationModule::new(ScanSettingsProvider { dry_run }, settings::config_path())?
+                .scan(path)?
         }
         #[cfg(feature = "server")]
         Commands::Serve => server::main(),

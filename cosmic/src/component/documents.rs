@@ -57,7 +57,7 @@ impl Provider<Vec<String>> for DocumentState {
 pub enum DocumentsOutput {
     DocumentClicked(Document),
     BatchTagEditor(TagEditorOutput),
-    SelectionChanged(Vec<Document>),
+    SelectionChanged,
 }
 
 #[derive(Debug, Clone)]
@@ -299,17 +299,9 @@ impl DocumentsComponent {
     }
 
     fn notify_selection_changed(&self) -> Task<Action<DocumentsMessage>> {
-        if let DocumentState::Loaded(files) = &self.documents {
-            let selected_docs: Vec<Document> = files
-                .unfiltered()
-                .iter()
-                .filter(|doc| self.selected_documents.contains(&doc.metadata.fingerprint))
-                .cloned()
-                .collect();
-            cosmic::task::message(DocumentsMessage::Out(DocumentsOutput::SelectionChanged(
-                selected_docs,
-            )))
-            .chain(task::message(DocumentsMessage::ResetBatchTagEditor))
+        if let DocumentState::Loaded(_) = &self.documents {
+            cosmic::task::message(DocumentsMessage::Out(DocumentsOutput::SelectionChanged))
+                .chain(task::message(DocumentsMessage::ResetBatchTagEditor))
         } else {
             Task::none()
         }

@@ -534,7 +534,7 @@ impl DocumentList {
                     DocumentsOutput::BatchTagEditor(msg) => {
                         self.handle_batch_tag_editor_output(msg)
                     }
-                    DocumentsOutput::SelectionChanged(_) => {
+                    DocumentsOutput::SelectionChanged => {
                         // Reset DocumentList's batch tag editor when selection changes
                         Task::none()
                     }

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use archive_organizer::Builder;
 use archive_organizer::ExpandedPath;
-use archive_organizer::SettingsProvider;
 use archive_organizer::scan::DirectorySettings;
+use archive_organizer::settings;
 use archive_organizer::settings::HashedPassword;
 use archive_organizer::settings::Settings;
 use cosmic::Action;
@@ -22,9 +22,7 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::container;
 use cosmic::widget::icon;
-use cosmic::widget::settings;
 use provider::sync::HasSetExpired;
-use provider::sync::Provider;
 use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 
@@ -84,9 +82,6 @@ pub struct SettingsPage {
 }
 
 #[derive(Debug, Clone)]
-pub enum SettingsOutput {}
-
-#[derive(Debug, Clone)]
 pub enum SettingsMessage {
     /// Toggle dry run mode
     ToggleDryRun(bool),
@@ -130,8 +125,6 @@ pub enum SettingsMessage {
     SaveDirectory(ExpandedPath, DirectorySettings),
     /// Cancel directory editing and close the editor
     CancelEditDirectory,
-    /// Output message (for parent component)
-    Out(SettingsOutput),
 }
 
 impl From<TagEditorMessage> for SettingsMessage {
@@ -157,7 +150,9 @@ impl SettingsPage {
         application_module: Arc<ApplicationModule>,
         document_provider: Arc<DocumentProvider>,
     ) -> (Self, Task<Action<SettingsMessage>>) {
-        let settings: Arc<Settings> = SettingsProvider.provide().unwrap().into();
+        let settings: Arc<Settings> = Arc::new(
+            settings::extract_from(application_module.config_path()).expect("settings are present"),
+        );
         let document_provider_clone = document_provider.clone();
         let (tag_editor, tag_editor_task) = TagEditor::new(
             document_provider_clone.clone(),
@@ -208,14 +203,14 @@ impl SettingsPage {
         let mut content = Vec::new();
 
         // Database section (read-only)
-        let database_section = settings::section()
+        let database_section = widget::settings::section()
             .title(fl!("settings-database-section"))
             .add(
-                settings::item::builder(fl!("settings-database-location"))
+                widget::settings::item::builder(fl!("settings-database-location"))
                     .description(fl!("settings-database-location-description"))
                     .icon(widget::icon::from_name("package-x-generic-symbolic").size(ICON_SIZE))
                     .control(
-                        settings::item_row(vec![
+                        widget::settings::item_row(vec![
                             widget::text::monotext(self.settings.database.url()).into(),
                             widget::button::text("Select")
                                 .on_press(SettingsMessage::SelectDatabaseLocation)
@@ -234,12 +229,12 @@ impl SettingsPage {
             .iter()
             .enumerate()
             .fold(
-                settings::section().title(fl!("settings-server-authorized-users")),
+                widget::settings::section().title(fl!("settings-server-authorized-users")),
                 |acc, (_index, (user_id, hashed_password))| {
                     acc.add(self.view_authorized_user_input(user_id, hashed_password))
                 },
             )
-            .add(settings::item_row(vec![
+            .add(widget::settings::item_row(vec![
                 widget::horizontal_space()
                     .width(Length::FillPortion(5))
                     .into(),
@@ -253,14 +248,14 @@ impl SettingsPage {
                     .into(),
             ]));
 
-        let server_section = settings::section()
+        let server_section = widget::settings::section()
             .title(fl!("settings-server-section"))
             .add(
-                settings::item::builder(fl!("settings-server-download-folder"))
+                widget::settings::item::builder(fl!("settings-server-download-folder"))
                     .description(fl!("settings-server-download-folder-description"))
                     .icon(widget::icon::from_name("folder-download-symbolic").size(ICON_SIZE))
                     .control(
-                        settings::item_row(vec![
+                        widget::settings::item_row(vec![
                             widget::text::monotext(format!(
                                 "{}",
                                 self.settings.server.download_folder.display()
@@ -282,12 +277,14 @@ impl SettingsPage {
         }
 
         // Scan section
-        let scan_section = settings::section().title(fl!("settings-scan-section")).add(
-            settings::item::builder(fl!("settings-scan-dry-run"))
-                .description(fl!("settings-scan-dry-run-description"))
-                .icon(widget::icon::from_name("system-run-symbolic").size(ICON_SIZE))
-                .toggler(self.settings.scan.dry_run, SettingsMessage::ToggleDryRun),
-        );
+        let scan_section = widget::settings::section()
+            .title(fl!("settings-scan-section"))
+            .add(
+                widget::settings::item::builder(fl!("settings-scan-dry-run"))
+                    .description(fl!("settings-scan-dry-run-description"))
+                    .icon(widget::icon::from_name("system-run-symbolic").size(ICON_SIZE))
+                    .toggler(self.settings.scan.dry_run, SettingsMessage::ToggleDryRun),
+            );
         content.push(scan_section.into());
 
         // Scan directories section with add/edit functionality
@@ -297,10 +294,10 @@ impl SettingsPage {
             .directories
             .iter()
             .fold(
-                settings::section().title(fl!("settings-scan-directories-section")),
+                widget::settings::section().title(fl!("settings-scan-directories-section")),
                 |section, (path, dir_settings)| section.add(view_directory(path, dir_settings)),
             )
-            .add(settings::item_row(vec![
+            .add(widget::settings::item_row(vec![
                 widget::horizontal_space()
                     .width(Length::FillPortion(5))
                     .into(),
@@ -345,7 +342,7 @@ impl SettingsPage {
             .padding(space_s);
         content.push(save_section.into());
 
-        layout(settings::view_column(content))
+        layout(widget::settings::view_column(content))
             .apply(widget::scrollable::vertical)
             .apply(widget::container)
             .height(Length::Fill)
@@ -358,10 +355,10 @@ impl SettingsPage {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
         // UI Privacy section
-        let ui_section = settings::section()
+        let ui_section = widget::settings::section()
             .title(fl!("settings-ui-section"))
             .add(
-                settings::item::builder(fl!("settings-ui-private-mode"))
+                widget::settings::item::builder(fl!("settings-ui-private-mode"))
                     .icon(
                         widget::icon::from_name("preferences-system-privacy-symbolic")
                             .size(ICON_SIZE),
@@ -372,7 +369,7 @@ impl SettingsPage {
                     ),
             )
             .add(
-                settings::item::builder(fl!("settings-ui-private-tags"))
+                widget::settings::item::builder(fl!("settings-ui-private-tags"))
                     .icon(widget::icon::from_name("starred-symbolic").size(ICON_SIZE))
                     .flex_control(self.tag_editor.view().map(SettingsMessage::TagEditor)),
             );
@@ -576,8 +573,9 @@ impl SettingsPage {
             SettingsMessage::Save => {
                 self.save_state = SaveState::Saving;
                 let settings = self.settings.clone();
+                let config_path = self.application_module.config_path().to_owned();
                 task::future(async move {
-                    match archive_organizer::settings::save(&settings) {
+                    match archive_organizer::settings::save(&settings, &config_path) {
                         Ok(()) => SettingsMessage::SaveComplete,
                         Err(e) => SettingsMessage::SaveError(e.to_string()),
                     }
@@ -653,9 +651,6 @@ impl SettingsPage {
                     None => task::none(),
                 },
             },
-            SettingsMessage::Out(message) => {
-                panic!("{message:?} should be handled by the parent component")
-            }
         }
     }
 
@@ -666,9 +661,9 @@ impl SettingsPage {
     ) -> Element<'a, SettingsMessage> {
         let is_editing = self.is_editing_authorized_user(user_id);
 
-        settings::item::builder(user_id)
+        widget::settings::item::builder(user_id)
             .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))
-            .control(settings::item_row(vec![
+            .control(widget::settings::item_row(vec![
                 widget::text_input("", format!("{passphrase}")).into(),
                 widget::button::icon(
                     widget::icon::from_name(if is_editing {
@@ -731,8 +726,8 @@ fn view_directory<'a>(
         .apply(container)
         .align_right(Length::Shrink);
 
-    settings::item_row(vec![
-        settings::item_row(vec![
+    widget::settings::item_row(vec![
+        widget::settings::item_row(vec![
             widget::icon::from_name("folder-symbolic")
                 .size(ICON_SIZE)
                 .apply(widget::container)

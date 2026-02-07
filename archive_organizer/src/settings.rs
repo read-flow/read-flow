@@ -116,36 +116,36 @@ pub fn config_path() -> PathBuf {
     }
 }
 
-pub fn decorate(figment: Figment) -> Figment {
-    let path = config_path();
-
-    if Path::new("Cargo.toml").exists() && Path::new("archive-organizer.toml").exists() {
-        tracing::warn!(
-            "detected `archive-organizer.toml` and `Cargo.toml` in current directory, loading `{}`",
-            path.display()
-        );
-    } else if !path.exists() {
+pub fn decorate_with(figment: Figment, path: PathBuf) -> Figment {
+    if !path.exists() {
         tracing::error!(
             "No configuration file found, please create one in: `{}`",
             path.display()
         );
         panic!("No configuration file found");
-    } else {
-        tracing::info!("using configuration from `{}`", path.display());
     }
 
+    tracing::info!("using configuration from `{}`", path.display());
     figment.merge(Toml::file(path))
 }
 
 pub fn extract() -> Result<Settings, SettingsError> {
-    let figment = decorate(Figment::new());
+    let figment = {
+        let figment = Figment::new();
+        decorate_with(figment, config_path())
+    };
+    let settings = figment.extract()?;
+    Ok(settings)
+}
+
+pub fn extract_from(path: &Path) -> Result<Settings, SettingsError> {
+    let figment = decorate_with(Figment::new(), path.to_path_buf());
     let settings = figment.extract()?;
     Ok(settings)
 }
 
 /// Save settings to the configuration file
-pub fn save(settings: &Settings) -> Result<(), SettingsError> {
-    let path = config_path();
+pub fn save(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
     let toml_string = toml::to_string_pretty(settings)?;
     std::fs::write(path, toml_string)?;
     Ok(())

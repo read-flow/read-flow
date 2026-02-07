@@ -14,6 +14,7 @@ mod layout;
 mod page;
 mod state;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use archive_organizer::ApplicationModule as GenericApplicationModule;
@@ -29,6 +30,9 @@ pub type ApplicationModule = GenericApplicationModule<AppSettings>;
 
 #[derive(Debug, clap::Parser)]
 pub struct Cli {
+    #[clap(long)]
+    /// Path to the configuration file to use instead of the default
+    configuration_file: Option<PathBuf>,
     #[clap(long, default_value = "false")]
     /// Enable private mode, which makes all `--private-tags` visible
     private_mode: bool,
@@ -42,16 +46,29 @@ pub struct AppSettings {
     cli_parameters: Cli,
 }
 
+impl AppSettings {
+    fn config_path(&self) -> PathBuf {
+        self.cli_parameters
+            .configuration_file
+            .clone()
+            .unwrap_or_else(settings::config_path)
+    }
+}
+
 impl Provider<Settings> for AppSettings {
     type Error = SettingsError;
     fn provide(&self) -> Result<Settings, Self::Error> {
         let Cli {
+            configuration_file,
             private_mode,
             private_tags,
         } = &self.cli_parameters;
 
         // Extract settings from the application's configuration.
-        let mut settings = settings::extract().expect("settings are present");
+        let mut settings = match configuration_file {
+            Some(path) => settings::extract_from(path).expect("settings are present"),
+            None => settings::extract().expect("settings are present"),
+        };
         // Merge commandline parameters with settings.
         settings
             .ui
@@ -76,7 +93,8 @@ fn main() -> anyhow::Result<()> {
         cli_parameters: Cli::parse(),
     };
 
-    let application_module = Arc::new(ApplicationModule::new(settings)?);
+    let config_path = settings.config_path();
+    let application_module = Arc::new(ApplicationModule::new(settings, config_path)?);
 
     // Settings for configuring the application window and iced runtime.
     let settings = cosmic::app::Settings::default().size_limits(

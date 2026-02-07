@@ -369,14 +369,7 @@ fn map_document_details_message(
 }
 
 fn map_settings_message(msg: SettingsMessage) -> PageMessage {
-    match msg {
-        SettingsMessage::Out(_message) => {
-            // No output messages yet, but this is where they would be handled
-            unreachable!("No settings output messages defined yet")
-        }
-        // All other messages are handled by the settings page itself
-        msg => PageMessage::Settings(msg),
-    }
+    PageMessage::Settings(msg)
 }
 
 pub fn settings_invalidation_subscription<M, F>(

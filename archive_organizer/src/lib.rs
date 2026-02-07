@@ -52,6 +52,7 @@ type ClientCache<P> = ObservableCache<
 
 #[derive(Debug)]
 pub struct ApplicationModule<P> {
+    config_path: PathBuf,
     settings: Arc<SettingsCache<P>>,
     connection_pool: Arc<ConnectionPoolCache<P>>,
     db_client: Arc<ClientCache<P>>,
@@ -81,7 +82,7 @@ impl Provider<Settings> for ScanSettingsProvider {
 
 impl ApplicationModule<SettingsProvider> {
     pub fn instantiate() -> Result<Self, SettingsError> {
-        Self::new(SettingsProvider)
+        Self::new(SettingsProvider, settings::config_path())
     }
 }
 
@@ -89,7 +90,7 @@ impl<P> ApplicationModule<P>
 where
     P: Provider<Settings, Error = SettingsError>,
 {
-    pub fn new(settings_provider: P) -> Result<Self, SettingsError> {
+    pub fn new(settings_provider: P, config_path: PathBuf) -> Result<Self, SettingsError> {
         let settings = settings_provider.observable_cache().arc();
         let connection_pool = settings
             .clone()
@@ -106,10 +107,15 @@ where
         db_client.provide()?;
 
         Ok(Self {
+            config_path,
             settings,
             connection_pool,
             db_client,
         })
+    }
+
+    pub fn config_path(&self) -> &Path {
+        &self.config_path
     }
 
     pub fn settings(&self) -> Settings {

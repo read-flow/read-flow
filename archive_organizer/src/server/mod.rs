@@ -109,7 +109,10 @@ struct FigmentProvider;
 impl Provider<Figment> for FigmentProvider {
     type Error = SettingsError;
     fn provide(&self) -> Result<Figment, Self::Error> {
-        Ok(settings::decorate(rocket::Config::figment()))
+        Ok({
+            let figment = rocket::Config::figment();
+            settings::decorate_with(figment, settings::config_path())
+        })
     }
 }
 
@@ -130,7 +133,8 @@ pub fn serve() -> _ {
         .and_then(extract_settings as fn(Figment) -> Result<Settings, SettingsError>);
 
     let application_module: ApplicationModule<SettingsProvider> =
-        ApplicationModule::new(settings_provider).expect("extract settings");
+        ApplicationModule::new(settings_provider, settings::config_path())
+            .expect("extract settings");
 
     let cors = create_cors();
 

@@ -37,7 +37,7 @@ impl Aggregator {
         }
     }
 
-    pub async fn add_available(&mut self, clients: Vec<Client>) {
+    pub async fn _add_available(&mut self, clients: Vec<Client>) {
         stream::iter(clients)
             .fold(self, |acc, client| async move {
                 match client.status().await {

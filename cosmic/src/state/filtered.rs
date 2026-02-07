@@ -14,7 +14,7 @@ impl<T> Filtered<T> {
         }
     }
 
-    pub fn unfiltered_len(&self) -> usize {
+    pub fn _unfiltered_len(&self) -> usize {
         self.unfiltered.len()
     }
 
