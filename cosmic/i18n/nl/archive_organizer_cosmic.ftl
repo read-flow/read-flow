@@ -84,6 +84,7 @@ document-details-download-to-local = Downloaden naar lokaal
 document-details-loading-sources = Bronnen laden...
 document-details-no-sources = Geen bronnen beschikbaar
 document-details-send-to = Verzenden naar
+document-details-send-to-missing = Verzenden naar
 document-details-source-local = Lokaal
 document-details-sources = Bronnen
 document-details-upload-to = Uploaden naar { $host }

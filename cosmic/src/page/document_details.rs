@@ -255,10 +255,6 @@ impl DocumentDetails {
                     .into(),
             ]));
 
-        let sources_section = widget::settings::section()
-            .title(fl!("document-details-sources"))
-            .add(self.sources_view());
-
         // Main layout using settings view_column
         let mut sections: Vec<Element<'_, DocumentDetailsMessage>> = vec![
             header.into(),
@@ -300,7 +296,7 @@ impl DocumentDetails {
             );
         }
 
-        sections.push(sources_section.into());
+        sections.extend(self.sources_view());
 
         let content = widget::settings::view_column(sections);
 
@@ -315,52 +311,9 @@ impl DocumentDetails {
     }
 
     pub fn view_context(&self) -> ContextView<'_, DocumentDetailsMessage> {
-        let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
-
-        let content = match &self.all_clients.state {
-            LoadedState::Loaded(all_clients) => {
-                let document_clients = self.document.get_client_selectors();
-                let missing_at: Vec<_> = all_clients
-                    .iter()
-                    .filter(|client| !document_clients.contains(client))
-                    .collect();
-
-                if missing_at.is_empty() {
-                    text(fl!("document-details-available-everywhere")).into()
-                } else {
-                    let mut column = Column::new().spacing(space_xs);
-                    for client in missing_at {
-                        let (icon_name, label) = match client {
-                            ClientSelector::Local => (
-                                "go-down-symbolic",
-                                fl!("document-details-download-to-local"),
-                            ),
-                            ClientSelector::Remote(url) => (
-                                "go-up-symbolic",
-                                fl!(
-                                    "document-details-upload-to",
-                                    host = url.host_str().unwrap_or("Remote")
-                                ),
-                            ),
-                        };
-                        column = column.push(
-                            widget::button::text(label)
-                                .trailing_icon(widget::icon::from_name(icon_name))
-                                .on_press(DocumentDetailsMessage::SendToClient(client.clone())),
-                        );
-                    }
-                    column.into()
-                }
-            }
-            LoadedState::Loading | LoadedState::New => {
-                text(fl!("document-details-loading-sources")).into()
-            }
-            LoadedState::Failed(error) => text(fl!("generic-error", error = error.as_str())).into(),
-        };
-
         ContextView {
             title: fl!("document-details-send-to"),
-            content,
+            content: widget::horizontal_space().into(),
         }
     }
 
@@ -595,8 +548,8 @@ impl DocumentDetails {
         }
     }
 
-    // Sources view showing all locations where this document exists
-    fn sources_view(&self) -> Element<'_, DocumentDetailsMessage> {
+    // Sources sections showing all locations where this document exists
+    fn sources_view(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
         let cosmic_theme::Spacing {
             space_xxs,
             space_xs,
@@ -604,7 +557,7 @@ impl DocumentDetails {
             ..
         } = theme::active().cosmic().spacing;
 
-        let mut column = Column::new().spacing(space_s);
+        let mut sections = Vec::new();
 
         // Edit toggle button, right-aligned
         let edit_button = if self.editing_sources {
@@ -617,11 +570,8 @@ impl DocumentDetails {
                 .tooltip(fl!("document-details-edit-sources"))
         };
 
-        column = column.push(
-            Row::new()
-                .push(widget::horizontal_space())
-                .push(edit_button),
-        );
+        let mut sources_section =
+            widget::settings::section().title(fl!("document-details-sources"));
 
         // Sort sources to show local first, then remotes
         let mut sources: Vec<_> = self.document.sources.iter().collect();
@@ -694,13 +644,69 @@ impl DocumentDetails {
                 }
             }
 
-            column = column.push(source_row);
+            sources_section =
+                sources_section.add(widget::settings::item_row(vec![source_row.into()]));
         }
 
         if self.document.sources.is_empty() {
-            column = column.push(text(fl!("document-details-no-sources")));
+            sources_section = sources_section.add(widget::settings::item_row(vec![
+                text(fl!("document-details-no-sources")).into(),
+            ]));
         }
 
-        column.into()
+        sources_section = sources_section.add(widget::settings::item_row(vec![
+            Row::new()
+                .push(widget::horizontal_space())
+                .push(edit_button)
+                .into(),
+        ]));
+
+        sections.push(sources_section.into());
+
+        // In edit mode, show "Send To" buttons for clients where the document is missing
+        if self.editing_sources
+            && let LoadedState::Loaded(all_clients) = &self.all_clients.state
+        {
+            let document_clients = self.document.get_client_selectors();
+            let missing_at: Vec<_> = all_clients
+                .iter()
+                .filter(|client| !document_clients.contains(client))
+                .collect();
+
+            if !missing_at.is_empty() {
+                let mut send_to_section =
+                    widget::settings::section().title(fl!("document-details-send-to-missing"));
+
+                for client in missing_at {
+                    let (icon_name, label, button_label) = match client {
+                        ClientSelector::Local => (
+                            "computer-symbolic",
+                            fl!("document-details-source-local"),
+                            fl!("document-details-download-to-local"),
+                        ),
+                        ClientSelector::Remote(url) => (
+                            "network-server-symbolic",
+                            url.host_str().unwrap_or("Remote").to_string(),
+                            fl!(
+                                "document-details-upload-to",
+                                host = url.host_str().unwrap_or("Remote")
+                            ),
+                        ),
+                    };
+                    send_to_section = send_to_section.add(
+                        widget::settings::item::builder(label)
+                            .icon(widget::icon::from_name(icon_name).size(ICON_SIZE))
+                            .control(
+                                widget::button::suggested(button_label)
+                                    .on_press(DocumentDetailsMessage::SendToClient(client.clone())),
+                            ),
+                    );
+                }
+
+                sections.push(send_to_section.into());
+            }
+        }
+
+        sections
     }
 }

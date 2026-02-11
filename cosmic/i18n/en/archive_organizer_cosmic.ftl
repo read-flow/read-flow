@@ -61,6 +61,7 @@ document-details-download-to-local = Download to Local
 document-details-loading-sources = Loading sources...
 document-details-no-sources = No sources available
 document-details-send-to = Send To
+document-details-send-to-missing = Send to
 document-details-source-local = Local
 document-details-sources = Sources
 document-details-edit-sources = Edit sources

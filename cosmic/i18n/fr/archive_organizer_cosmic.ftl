@@ -83,6 +83,7 @@ document-details-download-to-local = Télécharger en local
 document-details-loading-sources = Chargement des sources...
 document-details-no-sources = Aucune source disponible
 document-details-send-to = Envoyer à
+document-details-send-to-missing = Envoyer vers
 document-details-source-local = Local
 document-details-sources = Sources
 document-details-upload-to = Envoyer vers { $host }
