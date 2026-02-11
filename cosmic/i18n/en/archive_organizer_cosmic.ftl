@@ -63,6 +63,13 @@ document-details-no-sources = No sources available
 document-details-send-to = Send To
 document-details-source-local = Local
 document-details-sources = Sources
+document-details-edit-sources = Edit sources
+document-details-done-editing-sources = Done editing sources
+document-details-delete-source = Delete source
+document-details-delete-source-confirm-title = Delete Source
+document-details-delete-source-confirm-body = Are you sure you want to delete this source? This action cannot be undone.
+document-details-delete-source-confirm-delete = Delete
+document-details-delete-source-confirm-cancel = Cancel
 document-details-upload-to = Upload to { $host }
 
 # Document list

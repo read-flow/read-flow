@@ -16,6 +16,8 @@ use tokio::sync::broadcast;
 
 use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
+use crate::aggregator::DocumentMetadata;
+use crate::aggregator::DocumentSource;
 use crate::aggregator::Documents;
 use crate::client::Client;
 use crate::client::ClientSelector;
@@ -271,6 +273,24 @@ impl DocumentProvider {
             .await;
         self.set_expired().await;
         result.map(|_| ())
+    }
+
+    /// Delete a single source of a document.
+    ///
+    /// Automatically invalidates the cache after the deletion.
+    pub async fn delete_document_source(
+        &self,
+        source: DocumentSource,
+        metadata: DocumentMetadata,
+    ) -> Result<(), FilesClientError> {
+        let result = self
+            .aggregator
+            .read()
+            .await
+            .delete_document_source(source, metadata)
+            .await;
+        self.set_expired().await;
+        result
     }
 
     /// Open a document using the system's default application.

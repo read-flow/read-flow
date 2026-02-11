@@ -238,6 +238,21 @@ impl Aggregator {
         Ok(tags)
     }
 
+    /// Delete a single source of a document.
+    ///
+    /// Finds the client for the source and calls `delete_file` on it.
+    pub async fn delete_document_source(
+        &self,
+        source: DocumentSource,
+        metadata: DocumentMetadata,
+    ) -> Result<(), FilesClientError> {
+        let client = self
+            .client_for(&source.client)
+            .ok_or(FilesClientError::NoSourcesAvailable)?;
+        let file = File::from(SingleDocumentSource(source, metadata));
+        client.delete_file(file).await
+    }
+
     /// Send a document to a client that doesn't have it yet.
     ///
     /// Finds an existing source for the document (preferring local),

@@ -15,10 +15,12 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Row;
+use cosmic::widget::row;
 use cosmic::widget::text;
 
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
+use crate::aggregator::DocumentSource;
 use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::component::provided_state::ProvidedState;
@@ -38,6 +40,8 @@ pub struct DocumentDetails {
     document_provider: Arc<DocumentProvider>,
     all_clients: ProvidedState<Arc<DocumentProvider>, Vec<ClientSelector>>,
     tag_editor: TagEditor<Arc<DocumentProvider>>,
+    editing_sources: bool,
+    pending_source_deletion: Option<DocumentSource>,
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +60,12 @@ pub enum DocumentDetailsMessage {
     UpdateReadingStatus(ReadingStatus),
     ReadingStatusUpdated(Result<(), String>),
     OpenDocument,
+    ToggleEditSources,
+    RequestDeleteSource(DocumentSource),
+    ConfirmDeleteSource,
+    CancelDeleteSource,
+    DeleteSource(DocumentSource),
+    SourceDeleted(Result<(), String>),
     AllClients(ProvidedStateMessage<Vec<ClientSelector>>),
     SendToClient(ClientSelector),
     SentToClient(Result<(), String>),
@@ -93,6 +103,8 @@ impl DocumentDetails {
             document_provider,
             all_clients,
             tag_editor,
+            editing_sources: false,
+            pending_source_deletion: None,
         };
 
         (
@@ -248,13 +260,49 @@ impl DocumentDetails {
             .add(self.sources_view());
 
         // Main layout using settings view_column
-        let content = widget::settings::view_column(vec![
+        let mut sections: Vec<Element<'_, DocumentDetailsMessage>> = vec![
             header.into(),
             basic_info_section.into(),
             technical_section.into(),
             tags_section.into(),
-            sources_section.into(),
-        ]);
+        ];
+
+        // Show confirmation dialog just above the sources section
+        if let Some(source) = &self.pending_source_deletion {
+            let dialog = widget::dialog()
+                .title(fl!("document-details-delete-source-confirm-title"))
+                .body(fl!("document-details-delete-source-confirm-body"))
+                .icon(widget::icon::from_name("dialog-warning-symbolic").size(64))
+                .control(
+                    widget::text::monotext(&source.path)
+                        .apply(widget::container)
+                        .class(theme::Container::Card)
+                        .padding(space_s)
+                        .width(Length::Fill),
+                )
+                .primary_action(
+                    widget::button::destructive(fl!(
+                        "document-details-delete-source-confirm-delete"
+                    ))
+                    .on_press(DocumentDetailsMessage::ConfirmDeleteSource),
+                )
+                .secondary_action(
+                    widget::button::standard(fl!("document-details-delete-source-confirm-cancel"))
+                        .on_press(DocumentDetailsMessage::CancelDeleteSource),
+                );
+
+            sections.push(
+                row()
+                    .push(widget::horizontal_space())
+                    .push(dialog.width(Length::FillPortion(10)))
+                    .push(widget::horizontal_space())
+                    .into(),
+            );
+        }
+
+        sections.push(sources_section.into());
+
+        let content = widget::settings::view_column(sections);
 
         // Wrap content in a scrollable container
         layout(content)
@@ -459,6 +507,44 @@ impl DocumentDetails {
                     Task::none()
                 }
             },
+            DocumentDetailsMessage::ToggleEditSources => {
+                self.editing_sources = !self.editing_sources;
+                self.pending_source_deletion = None;
+                Task::none()
+            }
+            DocumentDetailsMessage::RequestDeleteSource(source) => {
+                self.pending_source_deletion = Some(source);
+                Task::none()
+            }
+            DocumentDetailsMessage::ConfirmDeleteSource => {
+                if let Some(source) = self.pending_source_deletion.take() {
+                    task::message(DocumentDetailsMessage::DeleteSource(source))
+                } else {
+                    Task::none()
+                }
+            }
+            DocumentDetailsMessage::CancelDeleteSource => {
+                self.pending_source_deletion = None;
+                Task::none()
+            }
+            DocumentDetailsMessage::DeleteSource(source) => {
+                let metadata = self.document.metadata.clone();
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    let result = document_provider
+                        .delete_document_source(source, metadata)
+                        .await
+                        .map_err(|err| format!("{err}"));
+                    DocumentDetailsMessage::SourceDeleted(result)
+                })
+            }
+            DocumentDetailsMessage::SourceDeleted(result) => match result {
+                Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),
+                Err(err) => {
+                    tracing::error!("Failed to delete source: {err}");
+                    Task::none()
+                }
+            },
         }
     }
 
@@ -520,6 +606,23 @@ impl DocumentDetails {
 
         let mut column = Column::new().spacing(space_s);
 
+        // Edit toggle button, right-aligned
+        let edit_button = if self.editing_sources {
+            widget::button::icon(widget::icon::from_name("edit-undo-symbolic").size(ICON_SIZE))
+                .on_press(DocumentDetailsMessage::ToggleEditSources)
+                .tooltip(fl!("document-details-done-editing-sources"))
+        } else {
+            widget::button::icon(widget::icon::from_name("edit-symbolic").size(ICON_SIZE))
+                .on_press(DocumentDetailsMessage::ToggleEditSources)
+                .tooltip(fl!("document-details-edit-sources"))
+        };
+
+        column = column.push(
+            Row::new()
+                .push(widget::horizontal_space())
+                .push(edit_button),
+        );
+
         // Sort sources to show local first, then remotes
         let mut sources: Vec<_> = self.document.sources.iter().collect();
         sources.sort_by(|a, b| match (&a.client, &b.client) {
@@ -534,7 +637,7 @@ impl DocumentDetails {
             ) => url_a.cmp(url_b).then(a.path.cmp(&b.path)),
         });
 
-        for source in sources {
+        for source in &sources {
             let (icon_name, source_label) = match &source.client {
                 crate::client::ClientSelector::Local => {
                     ("computer-symbolic", fl!("document-details-source-local"))
@@ -552,7 +655,7 @@ impl DocumentDetails {
                 .and_then(|n| n.to_str())
                 .unwrap_or(&source.path);
 
-            let source_row = Row::new()
+            let mut source_row = Row::new()
                 .spacing(space_s)
                 .align_y(Vertical::Center)
                 .push(widget::icon::from_name(icon_name).size(ICON_SIZE).icon())
@@ -572,6 +675,24 @@ impl DocumentDetails {
                         .push(text(folder).size(12))
                         .width(Length::Fill),
                 );
+
+            // Show delete button in edit mode for sources where the client has multiple entries
+            if self.editing_sources {
+                let client_source_count =
+                    sources.iter().filter(|s| s.client == source.client).count();
+                if client_source_count > 1 {
+                    source_row = source_row.push(
+                        widget::button::icon(
+                            widget::icon::from_name("list-remove-symbolic").size(ICON_SIZE),
+                        )
+                        .class(theme::Button::Destructive)
+                        .on_press(DocumentDetailsMessage::RequestDeleteSource(
+                            (*source).clone(),
+                        ))
+                        .tooltip(fl!("document-details-delete-source")),
+                    );
+                }
+            }
 
             column = column.push(source_row);
         }
