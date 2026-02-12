@@ -571,7 +571,11 @@ impl DocumentDetails {
         };
 
         let mut sources_section =
-            widget::settings::section().title(fl!("document-details-sources"));
+            widget::settings::section().header(widget::settings::item_row(vec![
+                text::heading(fl!("document-details-sources")).into(),
+                widget::horizontal_space().into(),
+                edit_button.into(),
+            ]));
 
         // Sort sources to show local first, then remotes
         let mut sources: Vec<_> = self.document.sources.iter().collect();
@@ -653,13 +657,6 @@ impl DocumentDetails {
                 text(fl!("document-details-no-sources")).into(),
             ]));
         }
-
-        sources_section = sources_section.add(widget::settings::item_row(vec![
-            Row::new()
-                .push(widget::horizontal_space())
-                .push(edit_button)
-                .into(),
-        ]));
 
         sections.push(sources_section.into());
 
