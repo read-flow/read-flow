@@ -17,6 +17,7 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Id;
+use cosmic::widget::ListColumn;
 use cosmic::widget::Row;
 use cosmic::widget::text;
 use provider::r#async::Provider;
@@ -152,7 +153,7 @@ where
                 .width(Length::Shrink)
                 .push(self.view_current_tags(space_xs))
                 .push(horizontal_rule(1))
-                .push(self.view_tags_form(space_xs, space_s))
+                .push(self.view_tags_form(space_xs))
                 .into()
         } else {
             Row::new()
@@ -165,7 +166,7 @@ where
                         .width(Length::FillPortion(1)),
                 )
                 .push(
-                    self.view_tags_form(space_xs, space_s)
+                    self.view_tags_form(space_xs)
                         .apply(widget::container)
                         .width(Length::FillPortion(1)),
                 )
@@ -199,10 +200,10 @@ where
         }
     }
 
-    fn view_tags_form(&self, space_xs: u16, space_s: u16) -> Element<'_, TagEditorMessage> {
+    fn view_tags_form(&self, space_xs: u16) -> Element<'_, TagEditorMessage> {
         match &self.tags {
             TagsState::Loaded(Tags { available_tags, .. }) => {
-                let mut column = Column::new();
+                let mut column = ListColumn::default();
 
                 // Add combo box for tag selection
                 let combo = combo_box(
@@ -221,13 +222,9 @@ where
                     })
                     .width(Length::Shrink);
 
-                let input_row = Row::new()
-                    .push(combo)
-                    .push(add_button)
-                    .spacing(space_s)
-                    .align_y(Vertical::Center);
+                let input_row = widget::settings::item_row(vec![combo.into(), add_button.into()]);
 
-                column = column.push(input_row);
+                column = column.add(input_row);
 
                 // Text input for entering new tags
                 let input = widget::text_input(&self.enter_placeholder, &self.entered_tag)
@@ -236,12 +233,9 @@ where
                     .on_submit(TagEditorMessage::AddEnteredTag)
                     .width(Length::Fill);
 
-                let input_row = Row::new()
-                    .push(input)
-                    .spacing(space_s)
-                    .align_y(Vertical::Center);
+                let input_row = widget::settings::item_row(vec![input.into()]);
 
-                column.push(input_row).into()
+                column.add(input_row).into()
             }
             TagsState::Loading => Row::new()
                 .spacing(space_xs)
