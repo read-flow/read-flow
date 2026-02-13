@@ -21,6 +21,7 @@ use cosmic::widget::text;
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::aggregator::DocumentSource;
+use crate::aggregator::DocumentType;
 use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::component::provided_state::ProvidedState;
@@ -48,6 +49,7 @@ pub struct DocumentDetails {
 pub enum DocumentDetailsOutput {
     Close(String), // Fingerprint
     RefreshDocument(Document),
+    ViewPdf(Document),
 }
 
 #[derive(Debug, Clone)]
@@ -369,14 +371,22 @@ impl DocumentDetails {
                 }
             }
             DocumentDetailsMessage::OpenDocument => {
-                let document = self.document.clone();
-                let document_provider = self.document_provider.clone();
-                task::future(async move {
-                    if let Err(e) = document_provider.open_document(document).await {
-                        tracing::error!("Failed to open file: {e}");
-                    }
-                    DocumentDetailsMessage::RefreshDocument
-                })
+                if self.document.metadata.type_ == DocumentType::Pdf {
+                    // Open PDF documents in the built-in viewer
+                    task::message(DocumentDetailsMessage::Out(DocumentDetailsOutput::ViewPdf(
+                        self.document.clone(),
+                    )))
+                } else {
+                    // Open other document types with xdg-open
+                    let document = self.document.clone();
+                    let document_provider = self.document_provider.clone();
+                    task::future(async move {
+                        if let Err(e) = document_provider.open_document(document).await {
+                            tracing::error!("Failed to open file: {e}");
+                        }
+                        DocumentDetailsMessage::RefreshDocument
+                    })
+                }
             }
             DocumentDetailsMessage::TagsAdded(result) => {
                 match result {

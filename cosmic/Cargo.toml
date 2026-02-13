@@ -33,6 +33,7 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 archive-organizer = { path = "../archive_organizer", default-features = false }
+mupdf = { git = "https://github.com/jackpot51/mupdf-rs", branch = "0.5", features = ["sys-lib"] }
 provider = { path = "../provider" }
 
 [dependencies.libcosmic]

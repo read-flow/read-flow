@@ -314,7 +314,7 @@ impl Provider<Documents> for Aggregator {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DocumentType {
     Pdf,
     Epub,

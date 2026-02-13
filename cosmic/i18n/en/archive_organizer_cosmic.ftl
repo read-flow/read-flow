@@ -204,3 +204,8 @@ settings-remove-directory-tag = Remove tag
 settings-database-location-description = The location of the database
 settings-server-download-folder-description = Specifies the folder where downloaded files will go
 settings-scan-dry-run-description = If true, will not make changes to the database
+
+# PDF viewer
+pdf-viewer-back = Back
+pdf-viewer-loading = Loading PDF...
+pdf-viewer-view-pdf = View PDF

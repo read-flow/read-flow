@@ -2,6 +2,7 @@
 // pages
 mod document_details;
 mod document_list;
+pub(crate) mod pdf_viewer;
 mod settings;
 mod sources;
 
@@ -40,6 +41,9 @@ use crate::page::document_details::DocumentDetailsOutput;
 use crate::page::document_list::DocumentList;
 use crate::page::document_list::DocumentListMessage;
 use crate::page::document_list::DocumentListOutput;
+use crate::page::pdf_viewer::PdfViewer;
+use crate::page::pdf_viewer::PdfViewerMessage;
+use crate::page::pdf_viewer::PdfViewerOutput;
 use crate::page::settings::SettingsMessage;
 use crate::page::settings::SettingsPage;
 use crate::page::sources::SourcesMessage;
@@ -54,6 +58,7 @@ pub struct Pages {
     sources: SourcesPage,
     documents: DocumentList,
     document_details: IndexMap<Fingerprint, DocumentDetails>,
+    pdf_viewers: IndexMap<Fingerprint, PdfViewer>,
     settings: SettingsPage,
 }
 
@@ -62,6 +67,7 @@ pub enum PageSelector {
     Sources,
     Documents,
     DocumentDetails(Fingerprint),
+    PdfViewer(Fingerprint),
     Settings,
 }
 
@@ -82,6 +88,9 @@ pub enum PageMessage {
     DocumentDetails(Fingerprint, DocumentDetailsMessage),
     OpenDocumentDetails(Document),
     CloseDocumentDetails(Fingerprint),
+    PdfViewer(Fingerprint, PdfViewerMessage),
+    OpenPdfViewer(Document),
+    ClosePdfViewer(Fingerprint),
     Settings(SettingsMessage),
     Refresh,
     Noop,
@@ -160,6 +169,7 @@ impl Pages {
                 sources,
                 documents,
                 document_details: Default::default(),
+                pdf_viewers: Default::default(),
                 settings,
             },
             task::batch(tasks),
@@ -173,6 +183,7 @@ impl Pages {
             PageSelector::DocumentDetails(fingerprint) => {
                 self.document_details[fingerprint].display_name()
             }
+            PageSelector::PdfViewer(fingerprint) => self.pdf_viewers[fingerprint].display_name(),
             PageSelector::Settings => fl!("settings-page-title"),
         }
     }
@@ -187,6 +198,22 @@ impl Pages {
                 .map(|page| {
                     page.view()
                         .map(|msg| map_document_details_message(fingerprint.clone(), msg))
+                })
+                .unwrap_or_else(|| {
+                    widget::text::title1(fl!("page-not-found"))
+                        .apply(widget::container)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_x(Horizontal::Center)
+                        .align_y(Vertical::Center)
+                        .into()
+                }),
+            PageSelector::PdfViewer(fingerprint) => self
+                .pdf_viewers
+                .get(fingerprint)
+                .map(|page| {
+                    page.view()
+                        .map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg))
                 })
                 .unwrap_or_else(|| {
                     widget::text::title1(fl!("page-not-found"))
@@ -214,6 +241,23 @@ impl Pages {
                 .map(|page| {
                     page.view_context()
                         .map(|msg| map_document_details_message(fingerprint.clone(), msg))
+                })
+                .unwrap_or_else(|| ContextView {
+                    title: fl!("page-not-found"),
+                    content: widget::text::title1(fl!("page-not-found"))
+                        .apply(widget::container)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_x(Horizontal::Center)
+                        .align_y(Vertical::Center)
+                        .into(),
+                }),
+            PageSelector::PdfViewer(fingerprint) => self
+                .pdf_viewers
+                .get(fingerprint)
+                .map(|page| {
+                    page.view_context()
+                        .map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg))
                 })
                 .unwrap_or_else(|| ContextView {
                     title: fl!("page-not-found"),
@@ -320,6 +364,40 @@ impl Pages {
                         ))))
                 }
             }
+            PageMessage::PdfViewer(fingerprint, message) => self.pdf_viewers[&fingerprint]
+                .update(message)
+                .map(move |action| {
+                    action.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg))
+                }),
+            PageMessage::OpenPdfViewer(document) => {
+                let fingerprint = document.metadata.fingerprint.clone();
+
+                if self.pdf_viewers.contains_key(&fingerprint) {
+                    task::message(PageMessage::Out(PageOutput::TogglePage(
+                        PageSelector::PdfViewer(fingerprint),
+                    )))
+                } else {
+                    let fingerprint_1 = fingerprint.clone();
+                    let fingerprint_2 = fingerprint.clone();
+                    let (pdf_viewer, initialization) = PdfViewer::new(document);
+                    self.pdf_viewers.insert(fingerprint.clone(), pdf_viewer);
+                    initialization
+                        .map(move |action| {
+                            let fingerprint = fingerprint_1.clone();
+                            action.map(move |msg| map_pdf_viewer_message(fingerprint, msg))
+                        })
+                        .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
+                            PageSelector::PdfViewer(fingerprint_2),
+                            "application-pdf-symbolic",
+                        ))))
+                }
+            }
+            PageMessage::ClosePdfViewer(fingerprint) => {
+                let _ = self.pdf_viewers.swap_remove(&fingerprint);
+                task::message(PageMessage::Out(PageOutput::PageRemoved(
+                    PageSelector::PdfViewer(fingerprint),
+                )))
+            }
             PageMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }
@@ -363,8 +441,18 @@ fn map_document_details_message(
             DocumentDetailsOutput::RefreshDocument(document) => {
                 PageMessage::Documents(DocumentListMessage::RefreshDocument(document))
             }
+            DocumentDetailsOutput::ViewPdf(document) => PageMessage::OpenPdfViewer(document),
         },
         msg => PageMessage::DocumentDetails(fingerprint, msg),
+    }
+}
+
+fn map_pdf_viewer_message(fingerprint: Fingerprint, msg: PdfViewerMessage) -> PageMessage {
+    match msg {
+        PdfViewerMessage::Out(message) => match message {
+            PdfViewerOutput::Close(fingerprint) => PageMessage::ClosePdfViewer(fingerprint),
+        },
+        msg => PageMessage::PdfViewer(fingerprint, msg),
     }
 }
 
