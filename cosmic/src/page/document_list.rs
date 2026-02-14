@@ -11,16 +11,11 @@ use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
-use cosmic::cosmic_theme;
 use cosmic::iced;
 use cosmic::iced::Length;
-use cosmic::iced::alignment::Horizontal;
-use cosmic::iced::alignment::Vertical;
 use cosmic::task;
-use cosmic::theme;
 use cosmic::widget;
 
-use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::aggregator::Documents;
 use crate::app::ContextView;
@@ -38,7 +33,6 @@ use crate::component::tag_filter::TagFilterOutput;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
-use crate::layout::layout;
 use crate::state::filtered::Filtered;
 
 /// Sort options for the document list
@@ -101,7 +95,6 @@ pub struct DocumentList {
 #[derive(Debug, Clone)]
 pub enum DocumentListOutput {
     OpenDetails(Document),
-    ToggleContextPage,
 }
 
 #[derive(Debug, Clone)]
@@ -221,83 +214,29 @@ impl DocumentList {
     }
 
     pub fn view(&self) -> Element<'_, DocumentListMessage> {
-        let cosmic_theme::Spacing {
-            space_xxs, space_s, ..
-        } = theme::active().cosmic().spacing;
+        self.archive
+            .view()
+            .map(Into::into)
+            .apply(widget::scrollable::vertical)
+            .into()
+    }
 
-        let header_row = widget::row().align_y(Vertical::Center).spacing(space_s);
-
-        let header_row = header_row.push(
-            widget::button::icon(widget::icon::from_name("open-menu-symbolic").size(ICON_SIZE))
-                .on_press(DocumentListMessage::Out(
-                    DocumentListOutput::ToggleContextPage,
-                ))
-                .apply(widget::container)
-                .width(Length::Shrink)
-                .height(Length::Shrink)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center),
-        );
-
-        let search_input =
+    pub fn view_header_center(&self) -> Vec<Element<'_, DocumentListMessage>> {
+        let mut elements: Vec<Element<'_, DocumentListMessage>> = vec![
             widget::search_input(fl!("document-list-search-placeholder"), &self.search_query)
                 .id(self.search_input_id.clone())
                 .always_active()
                 .on_input(DocumentListMessage::SearchChanged)
-                .width(Length::FillPortion(2));
+                .on_clear(DocumentListMessage::ClearSearch)
+                .width(Length::Fixed(300.0))
+                .into(),
+        ];
 
-        let header_row = header_row.push(
-            search_input
-                .apply(widget::container)
-                .height(Length::Shrink)
-                .align_x(Horizontal::Left)
-                .align_y(Vertical::Center),
-        );
+        if self.is_filtering {
+            elements.push(widget::text(fl!("document-list-filtering")).size(12).into());
+        }
 
-        let header_row = header_row.push(
-            widget::button::icon(widget::icon::from_name("edit-clear-symbolic").size(ICON_SIZE))
-                .on_press(DocumentListMessage::ClearSearch)
-                .apply(widget::container)
-                .width(Length::Shrink)
-                .height(Length::Shrink)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center),
-        );
-
-        let header_row = if self.is_filtering {
-            // Show filtering indicator in the header
-            header_row.push(
-                widget::text(fl!("document-list-filtering"))
-                    .size(12)
-                    .apply(widget::container)
-                    .width(Length::Shrink)
-                    .height(Length::Shrink)
-                    .align_x(Horizontal::Center)
-                    .align_y(Vertical::Center),
-            )
-        } else {
-            header_row
-        };
-
-        let header_row = header_row.push(
-            widget::horizontal_space()
-                .apply(widget::container)
-                .width(Length::FillPortion(1))
-                .height(Length::Shrink)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center),
-        );
-
-        widget::column()
-            .spacing(space_xxs)
-            .push(layout(header_row))
-            .push(
-                self.archive
-                    .view()
-                    .map(Into::into)
-                    .apply(widget::scrollable::vertical),
-            )
-            .into()
+        elements
     }
 
     pub fn view_context(&self) -> ContextView<'_, DocumentListMessage> {

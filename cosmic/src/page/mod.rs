@@ -79,7 +79,6 @@ pub enum PageOutput {
     PageAdded(PageSelector, &'static str),
     TogglePage(PageSelector),
     PageRemoved(PageSelector),
-    ToggleContextPage(PageSelector),
 }
 
 #[derive(Debug, Clone)]
@@ -238,6 +237,12 @@ impl Pages {
         active_page: &'a PageSelector,
     ) -> Vec<Element<'a, PageMessage>> {
         match &active_page {
+            PageSelector::Documents => self
+                .documents
+                .view_header_center()
+                .into_iter()
+                .map(|e| e.map(map_document_list_message))
+                .collect(),
             PageSelector::PdfViewer(fingerprint) => self
                 .pdf_viewers
                 .get(fingerprint)
@@ -461,9 +466,6 @@ fn map_document_list_message(msg: DocumentListMessage) -> PageMessage {
     match msg {
         DocumentListMessage::Out(message) => match message {
             DocumentListOutput::OpenDetails(document) => PageMessage::OpenDocumentDetails(document),
-            DocumentListOutput::ToggleContextPage => {
-                PageMessage::Out(PageOutput::ToggleContextPage(PageSelector::Documents))
-            }
         },
         msg => PageMessage::Documents(msg),
     }

@@ -89,9 +89,6 @@ impl From<PageOutput> for Message {
             PageOutput::PageAdded(page, icon_name) => Message::PageAdded(page, icon_name),
             PageOutput::TogglePage(page_selector) => Message::ActivatePage(page_selector),
             PageOutput::PageRemoved(page) => Message::ActivePageRemoved(page),
-            PageOutput::ToggleContextPage(page_selector) => {
-                Message::ToggleContextPage(ContextPage::PageContext(page_selector))
-            }
         }
     }
 }
@@ -260,6 +257,16 @@ impl cosmic::Application for AppModel {
         } else {
             Vec::new()
         }
+    }
+
+    /// Elements to pack at the end of the header bar.
+    fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
+        vec![
+            widget::button::icon(widget::icon::from_name("open-menu-symbolic").size(16))
+                .on_press(Message::ToggleActivePageContext)
+                .tooltip(fl!("context"))
+                .into(),
+        ]
     }
 
     /// Enables the COSMIC application to create a nav bar with this model.
