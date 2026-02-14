@@ -261,12 +261,24 @@ impl cosmic::Application for AppModel {
 
     /// Elements to pack at the end of the header bar.
     fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
-        vec![
+        let mut elements = if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
+            self.pages
+                .view_header_end(page)
+                .into_iter()
+                .map(|e| e.map(Into::into))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        elements.push(
             widget::button::icon(widget::icon::from_name("open-menu-symbolic").size(16))
                 .on_press(Message::ToggleActivePageContext)
                 .tooltip(fl!("context"))
                 .into(),
-        ]
+        );
+
+        elements
     }
 
     /// Enables the COSMIC application to create a nav bar with this model.

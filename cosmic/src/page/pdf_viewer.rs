@@ -315,8 +315,6 @@ impl PdfViewer {
     }
 
     pub fn view_header_center(&self) -> Vec<Element<'_, PdfViewerMessage>> {
-        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
-
         let path = Path::new(&self.document.sources.iter().next().unwrap().path);
         let filename = path
             .file_stem()
@@ -329,20 +327,22 @@ impl PdfViewer {
             String::new()
         };
 
-        let mut elements: Vec<Element<'_, PdfViewerMessage>> = vec![
+        vec![
             widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
                 .on_press(PdfViewerMessage::Out(PdfViewerOutput::Close(
                     self.fingerprint.clone(),
                 )))
                 .tooltip(fl!("pdf-viewer-back"))
                 .into(),
-            widget::icon::from_name("application-pdf-symbolic")
-                .size(24)
-                .icon()
-                .into(),
             widget::text::heading(filename).into(),
             widget::text::body(page_info).into(),
-        ];
+        ]
+    }
+
+    pub fn view_header_end(&self) -> Vec<Element<'_, PdfViewerMessage>> {
+        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+
+        let mut elements = Vec::new();
 
         // Search
         if self.search_active {

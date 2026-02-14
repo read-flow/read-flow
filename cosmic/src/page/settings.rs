@@ -382,6 +382,14 @@ impl SettingsPage {
         }
     }
 
+    pub fn view_header_center(&self) -> Vec<Element<'_, SettingsMessage>> {
+        Default::default()
+    }
+
+    pub fn view_header_end(&self) -> Vec<Element<'_, SettingsMessage>> {
+        Default::default()
+    }
+
     pub fn update(&mut self, message: SettingsMessage) -> Task<Action<SettingsMessage>> {
         tracing::debug!("received: {message:?}");
         match message {

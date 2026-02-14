@@ -237,12 +237,30 @@ impl Pages {
         active_page: &'a PageSelector,
     ) -> Vec<Element<'a, PageMessage>> {
         match &active_page {
+            PageSelector::Sources => self
+                .sources
+                .view_header_center()
+                .into_iter()
+                .map(|e| e.map(Into::into))
+                .collect(),
             PageSelector::Documents => self
                 .documents
                 .view_header_center()
                 .into_iter()
                 .map(|e| e.map(map_document_list_message))
                 .collect(),
+            PageSelector::DocumentDetails(fingerprint) => self
+                .document_details
+                .get(fingerprint)
+                .map(|page| {
+                    page.view_header_center()
+                        .into_iter()
+                        .map(|e| {
+                            e.map(|msg| map_document_details_message(fingerprint.clone(), msg))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             PageSelector::PdfViewer(fingerprint) => self
                 .pdf_viewers
                 .get(fingerprint)
@@ -253,7 +271,60 @@ impl Pages {
                         .collect()
                 })
                 .unwrap_or_default(),
-            _ => Vec::new(),
+            PageSelector::Settings => self
+                .settings
+                .view_header_center()
+                .into_iter()
+                .map(|e| e.map(Into::into))
+                .collect(),
+        }
+    }
+
+    pub fn view_header_end<'a>(
+        &'a self,
+        active_page: &'a PageSelector,
+    ) -> Vec<Element<'a, PageMessage>> {
+        match &active_page {
+            PageSelector::Sources => self
+                .sources
+                .view_header_end()
+                .into_iter()
+                .map(|e| e.map(Into::into))
+                .collect(),
+            PageSelector::Documents => self
+                .documents
+                .view_header_end()
+                .into_iter()
+                .map(|e| e.map(map_document_list_message))
+                .collect(),
+            PageSelector::DocumentDetails(fingerprint) => self
+                .document_details
+                .get(fingerprint)
+                .map(|page| {
+                    page.view_header_end()
+                        .into_iter()
+                        .map(|e| {
+                            e.map(|msg| map_document_details_message(fingerprint.clone(), msg))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+            PageSelector::PdfViewer(fingerprint) => self
+                .pdf_viewers
+                .get(fingerprint)
+                .map(|page| {
+                    page.view_header_end()
+                        .into_iter()
+                        .map(|e| e.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg)))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            PageSelector::Settings => self
+                .settings
+                .view_header_end()
+                .into_iter()
+                .map(|e| e.map(Into::into))
+                .collect(),
         }
     }
 

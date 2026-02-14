@@ -126,13 +126,35 @@ impl DocumentDetails {
             .to_string()
     }
 
+    pub fn view_header_center(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
+        let filename_without_extension =
+            Path::new(&self.document.sources.iter().next().unwrap().path)
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Unknown");
+
+        vec![text::heading(filename_without_extension).into()]
+    }
+
+    pub fn view_header_end(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
+        vec![
+            widget::button::icon(
+                widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
+            )
+            .on_press(DocumentDetailsMessage::OpenDocument)
+            .tooltip(fl!("document-details-open-file"))
+            .into(),
+            widget::button::icon(widget::icon::from_name("window-close-symbolic").size(ICON_SIZE))
+                .on_press(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
+                    self.document.metadata.fingerprint.clone(),
+                )))
+                .tooltip(fl!("document-details-close"))
+                .into(),
+        ]
+    }
+
     pub fn view(&self) -> Element<'_, DocumentDetailsMessage> {
-        let cosmic_theme::Spacing {
-            space_xxs,
-            space_xs,
-            space_s,
-            ..
-        } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
         // Extract filename and folder using std::path
         let path = Path::new(&self.document.sources.iter().next().unwrap().path);
@@ -143,55 +165,11 @@ impl DocumentDetails {
             .and_then(|name| name.to_str())
             .unwrap_or("Unknown");
 
-        let filename_without_extension = path
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .unwrap_or(filename);
-
         // Get the folder path
         let folder = path
             .parent()
             .and_then(|parent| parent.to_str())
             .unwrap_or("");
-
-        // Header with file icon, name, and actions
-        let file_icon = self.document.metadata.type_.get_file_type_icon();
-
-        let header = Row::new()
-            .spacing(space_s)
-            .align_y(Vertical::Center)
-            .push(widget::icon::from_name(file_icon).size(48).icon())
-            .push(
-                Column::new()
-                    .spacing(space_xxs)
-                    .push(
-                        text(filename_without_extension)
-                            .size(24)
-                            .width(Length::Fill),
-                    )
-                    .push(text(folder).size(14))
-                    .width(Length::Fill),
-            )
-            .push(
-                Row::new()
-                    .spacing(space_xs)
-                    .push(
-                        widget::button::icon(
-                            widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
-                        )
-                        .on_press(DocumentDetailsMessage::OpenDocument)
-                        .tooltip(fl!("document-details-open-file")),
-                    )
-                    .push(
-                        widget::button::icon(
-                            widget::icon::from_name("window-close-symbolic").size(ICON_SIZE),
-                        )
-                        .on_press(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
-                            self.document.metadata.fingerprint.clone(),
-                        )))
-                        .tooltip(fl!("document-details-close")),
-                    ),
-            );
 
         // Build settings sections
         let basic_info_section = widget::settings::section()
@@ -259,7 +237,6 @@ impl DocumentDetails {
 
         // Main layout using settings view_column
         let mut sections: Vec<Element<'_, DocumentDetailsMessage>> = vec![
-            header.into(),
             basic_info_section.into(),
             technical_section.into(),
             tags_section.into(),

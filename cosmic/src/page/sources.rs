@@ -355,6 +355,14 @@ impl SourcesPage {
         }
     }
 
+    pub fn view_header_center(&self) -> Vec<Element<'_, SourcesMessage>> {
+        Default::default()
+    }
+
+    pub fn view_header_end(&self) -> Vec<Element<'_, SourcesMessage>> {
+        Default::default()
+    }
+
     pub fn update(&mut self, message: SourcesMessage) -> Task<Action<SourcesMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
