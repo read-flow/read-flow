@@ -226,3 +226,9 @@ settings-database-location-description = L'emplacement de la base de données
 settings-server-download-folder-description = Spécifie le dossier où les fichiers téléchargés seront placés
 settings-scan-dry-run-description = Si vrai, n'apportera pas de modifications à la base de données
 
+# PDF viewer
+pdf-viewer-back = Retour
+pdf-viewer-loading = Chargement du PDF...
+pdf-viewer-no-local-source = Aucune source locale disponible pour ce document
+pdf-viewer-view-pdf = Voir le PDF
+

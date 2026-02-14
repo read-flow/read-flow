@@ -208,4 +208,5 @@ settings-scan-dry-run-description = If true, will not make changes to the databa
 # PDF viewer
 pdf-viewer-back = Back
 pdf-viewer-loading = Loading PDF...
+pdf-viewer-no-local-source = No local source available for this document
 pdf-viewer-view-pdf = View PDF

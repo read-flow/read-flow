@@ -11,6 +11,9 @@ use cosmic::iced::Length;
 use cosmic::iced::Subscription;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
+use cosmic::iced::event;
+use cosmic::iced::event::Event;
+use cosmic::iced::keyboard::Event as KeyEvent;
 use cosmic::prelude::*;
 use cosmic::task;
 use cosmic::widget;
@@ -72,6 +75,12 @@ pub enum Message {
     SwitchLanguage(LanguageIdentifier),
     ExpireDocumentProvider,
     Scan,
+    KeyboardEvent(
+        cosmic::iced::keyboard::Modifiers,
+        cosmic::iced::keyboard::Key,
+        Option<cosmic::iced::core::SmolStr>,
+    ),
+    ModifiersChanged(cosmic::iced::keyboard::Modifiers),
 }
 
 impl From<PageOutput> for Message {
@@ -310,6 +319,8 @@ impl cosmic::Application for AppModel {
 
                     Message::UpdateConfig(update.config)
                 }),
+            // Forward keyboard events to the active page
+            event::listen_with(filter_keyboard_events),
         ])
     }
 
@@ -432,6 +443,24 @@ impl cosmic::Application for AppModel {
                     Message::ExpireDocumentProvider
                 })
             }
+            Message::KeyboardEvent(modifiers, key, text) => {
+                if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
+                    self.pages
+                        .update(PageMessage::KeyEvent(page.clone(), modifiers, key, text))
+                        .map(ActionExt::map_into)
+                } else {
+                    Task::none()
+                }
+            }
+            Message::ModifiersChanged(modifiers) => {
+                if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
+                    self.pages
+                        .update(PageMessage::ModifiersChanged(page.clone(), modifiers))
+                        .map(ActionExt::map_into)
+                } else {
+                    Task::none()
+                }
+            }
         }
     }
 
@@ -507,5 +536,27 @@ impl menu::action::MenuAction for MenuAction {
             MenuAction::Scan => Message::Scan,
             MenuAction::SwitchTo(language) => Message::SwitchLanguage(language.parse().unwrap()),
         }
+    }
+}
+
+fn filter_keyboard_events(
+    event: cosmic::iced::Event,
+    status: event::Status,
+    _window_id: cosmic::iced::window::Id,
+) -> Option<Message> {
+    match event {
+        Event::Keyboard(KeyEvent::KeyPressed {
+            key,
+            modifiers,
+            text,
+            ..
+        }) => match status {
+            event::Status::Ignored => Some(Message::KeyboardEvent(modifiers, key, text)),
+            event::Status::Captured => None,
+        },
+        Event::Keyboard(KeyEvent::ModifiersChanged(modifiers)) => {
+            Some(Message::ModifiersChanged(modifiers))
+        }
+        _ => None,
     }
 }

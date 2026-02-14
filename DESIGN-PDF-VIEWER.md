@@ -290,6 +290,7 @@ These only apply when the `PdfViewer` page is active. Keyboard events are delive
 - [x] Add i18n strings (`pdf-viewer-back`, `pdf-viewer-loading`, `pdf-viewer-view-pdf`)
 
 ### Phase 4: Polish
-- [ ] Keyboard shortcuts (Key/ModifiersChanged variants exist but not yet wired to subscriptions)
-- [ ] Loading states / spinners
+- [x] Keyboard shortcuts (wired via `filter_keyboard_events` subscription in `app.rs`, routed to active PdfViewer)
+- [x] Loading states (loading indicator + no-local-source warning with icons)
+- [x] i18n: Added `pdf-viewer-no-local-source` to all locales (en/fr/nl)
 - [ ] Testing

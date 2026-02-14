@@ -20,6 +20,9 @@ use cosmic::iced::Length;
 use cosmic::iced::Subscription;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
+use cosmic::iced::core::SmolStr;
+use cosmic::iced::keyboard::Key;
+use cosmic::iced::keyboard::Modifiers;
 use cosmic::task;
 use cosmic::widget;
 use indexmap::IndexMap;
@@ -92,6 +95,8 @@ pub enum PageMessage {
     OpenPdfViewer(Document),
     ClosePdfViewer(Fingerprint),
     Settings(SettingsMessage),
+    KeyEvent(PageSelector, Modifiers, Key, Option<SmolStr>),
+    ModifiersChanged(PageSelector, Modifiers),
     Refresh,
     Noop,
     Out(PageOutput),
@@ -364,6 +369,22 @@ impl Pages {
                         ))))
                 }
             }
+            PageMessage::KeyEvent(page, modifiers, key, text) => match page {
+                PageSelector::PdfViewer(fingerprint) => self.pdf_viewers[&fingerprint]
+                    .update(PdfViewerMessage::Key(modifiers, key, text))
+                    .map(move |action| {
+                        action.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg))
+                    }),
+                _ => Task::none(),
+            },
+            PageMessage::ModifiersChanged(page, modifiers) => match page {
+                PageSelector::PdfViewer(fingerprint) => self.pdf_viewers[&fingerprint]
+                    .update(PdfViewerMessage::ModifiersChanged(modifiers))
+                    .map(move |action| {
+                        action.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg))
+                    }),
+                _ => Task::none(),
+            },
             PageMessage::PdfViewer(fingerprint, message) => self.pdf_viewers[&fingerprint]
                 .update(message)
                 .map(move |action| {

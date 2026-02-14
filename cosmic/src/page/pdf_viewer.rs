@@ -217,24 +217,53 @@ impl PdfViewer {
     }
 
     pub fn view(&self) -> Element<'_, PdfViewerMessage> {
-        let cosmic_theme::Spacing {
-            space_xxs,
-            space_xs,
-            space_s,
-            ..
-        } = theme::active().cosmic().spacing;
+        if self.file_path.is_none() {
+            // No local source available
+            let no_source = widget::column()
+                .align_x(cosmic::iced::Alignment::Center)
+                .spacing(16)
+                .push(
+                    widget::icon::from_name("dialog-warning-symbolic")
+                        .size(48)
+                        .icon(),
+                )
+                .push(widget::text::body(fl!("pdf-viewer-no-local-source")));
 
-        if self.pages.is_empty() {
-            // Loading state
             return widget::column()
                 .push(self.view_header())
                 .push(
-                    widget::container(widget::text::body(fl!("pdf-viewer-loading")))
+                    widget::container(no_source)
                         .width(Length::Fill)
                         .height(Length::Fill)
                         .align_x(cosmic::iced::alignment::Horizontal::Center)
                         .align_y(Vertical::Center),
                 )
+                .height(Length::Fill)
+                .into();
+        }
+
+        if self.pages.is_empty() {
+            // Loading state with icon and text
+            let loading = widget::column()
+                .align_x(cosmic::iced::Alignment::Center)
+                .spacing(16)
+                .push(
+                    widget::icon::from_name("content-loading-symbolic")
+                        .size(48)
+                        .icon(),
+                )
+                .push(widget::text::body(fl!("pdf-viewer-loading")));
+
+            return widget::column()
+                .push(self.view_header())
+                .push(
+                    widget::container(loading)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .align_x(cosmic::iced::alignment::Horizontal::Center)
+                        .align_y(Vertical::Center),
+                )
+                .height(Length::Fill)
                 .into();
         }
 
@@ -383,7 +412,7 @@ impl PdfViewer {
         widget::container(
             widget::scrollable(column)
                 .id(self.thumbnail_scroll_id.clone())
-                .on_scroll(|v| PdfViewerMessage::ThumbnailScroll(v))
+                .on_scroll(PdfViewerMessage::ThumbnailScroll)
                 .width(Length::Fixed(
                     (THUMBNAIL_WIDTH as f32) + (space_xxs as f32) * 2.0,
                 )),
@@ -449,56 +478,55 @@ impl PdfViewer {
         let mut tasks = Vec::with_capacity(2);
 
         // Auto-scroll thumbnails to keep active page visible
-        if let Some(viewport) = &self.thumbnail_viewport {
-            if let Some(page) = self.pages.get(self.active_page) {
-                let mut bounds = viewport.bounds();
-                let offset = viewport.absolute_offset();
-                bounds.x = offset.x;
-                bounds.y = offset.y;
+        if let Some(viewport) = &self.thumbnail_viewport
+            && let Some(page) = self.pages.get(self.active_page)
+        {
+            let mut bounds = viewport.bounds();
+            let offset = viewport.absolute_offset();
+            bounds.x = offset.x;
+            bounds.y = offset.y;
 
-                if let Some(icon_bounds) = page.icon_bounds.get() {
-                    if bounds.y > icon_bounds.y {
-                        tasks.push(scrollable::scroll_to(
-                            self.thumbnail_scroll_id.clone(),
-                            scrollable::AbsoluteOffset {
-                                x: 0.0,
-                                y: icon_bounds.y,
-                            },
-                        ));
-                    } else if bounds.y + bounds.height < icon_bounds.y + icon_bounds.height {
-                        tasks.push(scrollable::scroll_to(
-                            self.thumbnail_scroll_id.clone(),
-                            scrollable::AbsoluteOffset {
-                                x: 0.0,
-                                y: icon_bounds.y + icon_bounds.height - bounds.height,
-                            },
-                        ));
-                    }
+            if let Some(icon_bounds) = page.icon_bounds.get() {
+                if bounds.y > icon_bounds.y {
+                    tasks.push(scrollable::scroll_to(
+                        self.thumbnail_scroll_id.clone(),
+                        scrollable::AbsoluteOffset {
+                            x: 0.0,
+                            y: icon_bounds.y,
+                        },
+                    ));
+                } else if bounds.y + bounds.height < icon_bounds.y + icon_bounds.height {
+                    tasks.push(scrollable::scroll_to(
+                        self.thumbnail_scroll_id.clone(),
+                        scrollable::AbsoluteOffset {
+                            x: 0.0,
+                            y: icon_bounds.y + icon_bounds.height - bounds.height,
+                        },
+                    ));
                 }
             }
         }
 
         // Generate SVG for active page if not already available
-        if let Some(page) = self.pages.get(self.active_page) {
-            if page.svg_handle.is_none() {
-                if let Some(display_list) = page.display_list.clone() {
-                    let index = page.index;
-                    tasks.push(Task::perform(
-                        async move {
-                            tokio::task::spawn_blocking(move || {
-                                let svg = display_list.to_svg(&mupdf::Matrix::IDENTITY).unwrap();
-                                PdfViewerMessage::SvgReady(
-                                    index,
-                                    widget::svg::Handle::from_memory(svg.into_bytes()),
-                                )
-                            })
-                            .await
-                            .unwrap()
-                        },
-                        cosmic::action::app,
-                    ));
-                }
-            }
+        if let Some(page) = self.pages.get(self.active_page)
+            && page.svg_handle.is_none()
+            && let Some(display_list) = page.display_list.clone()
+        {
+            let index = page.index;
+            tasks.push(Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        let svg = display_list.to_svg(&mupdf::Matrix::IDENTITY).unwrap();
+                        PdfViewerMessage::SvgReady(
+                            index,
+                            widget::svg::Handle::from_memory(svg.into_bytes()),
+                        )
+                    })
+                    .await
+                    .unwrap()
+                },
+                cosmic::action::app,
+            ));
         }
 
         Task::batch(tasks)
