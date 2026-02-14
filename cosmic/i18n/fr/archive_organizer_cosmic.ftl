@@ -231,4 +231,17 @@ pdf-viewer-back = Retour
 pdf-viewer-loading = Chargement du PDF...
 pdf-viewer-no-local-source = Aucune source locale disponible pour ce document
 pdf-viewer-view-pdf = Voir le PDF
+pdf-viewer-zoom = Zoom
+pdf-viewer-keyboard-shortcuts = Raccourcis clavier
+pdf-viewer-shortcut-previous-page = Page précédente
+pdf-viewer-shortcut-next-page = Page suivante
+pdf-viewer-shortcut-zoom-reset = Réinitialiser le zoom (100%)
+pdf-viewer-shortcut-zoom-out = Dézoomer
+pdf-viewer-shortcut-zoom-in = Zoomer
+pdf-viewer-shortcut-fit-both = Ajuster largeur et hauteur
+pdf-viewer-shortcut-fit-height = Ajuster la hauteur
+pdf-viewer-shortcut-fit-width = Ajuster la largeur
+pdf-viewer-shortcut-ctrl-scroll = Zoomer avec la souris
+pdf-viewer-shortcut-search = Rechercher
+pdf-viewer-shortcut-close-search = Fermer la recherche
 

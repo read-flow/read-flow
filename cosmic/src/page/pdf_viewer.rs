@@ -284,9 +284,49 @@ impl PdfViewer {
     }
 
     pub fn view_context(&self) -> ContextView<'_, PdfViewerMessage> {
+        let zoom_section = widget::settings::section()
+            .title(fl!("pdf-viewer-zoom"))
+            .add(
+                widget::settings::item::builder(fl!("pdf-viewer-zoom")).control(widget::dropdown(
+                    &self.zoom_names,
+                    Zoom::all().iter().position(|z| z == &self.zoom),
+                    PdfViewerMessage::ZoomDropdown,
+                )),
+            );
+
+        let shortcuts_section = widget::settings::section()
+            .title(fl!("pdf-viewer-keyboard-shortcuts"))
+            .add(shortcut_item(
+                "↑ ← PgUp",
+                fl!("pdf-viewer-shortcut-previous-page"),
+            ))
+            .add(shortcut_item(
+                "↓ → PgDn",
+                fl!("pdf-viewer-shortcut-next-page"),
+            ))
+            .add(shortcut_item("0", fl!("pdf-viewer-shortcut-zoom-reset")))
+            .add(shortcut_item("−", fl!("pdf-viewer-shortcut-zoom-out")))
+            .add(shortcut_item("+", fl!("pdf-viewer-shortcut-zoom-in")))
+            .add(shortcut_item("F", fl!("pdf-viewer-shortcut-fit-both")))
+            .add(shortcut_item("H", fl!("pdf-viewer-shortcut-fit-height")))
+            .add(shortcut_item("W", fl!("pdf-viewer-shortcut-fit-width")))
+            .add(shortcut_item(
+                "Ctrl+Scroll",
+                fl!("pdf-viewer-shortcut-ctrl-scroll"),
+            ))
+            .add(shortcut_item("S /", fl!("pdf-viewer-shortcut-search")))
+            .add(shortcut_item(
+                "Esc",
+                fl!("pdf-viewer-shortcut-close-search"),
+            ));
+
         ContextView {
             title: self.display_name(),
-            content: widget::horizontal_space().into(),
+            content: widget::settings::view_column(vec![
+                zoom_section.into(),
+                shortcuts_section.into(),
+            ])
+            .into(),
         }
     }
 
@@ -348,13 +388,6 @@ impl PdfViewer {
                 .padding(space_xxs),
             );
         }
-
-        // Zoom dropdown
-        row = row.push(widget::dropdown(
-            &self.zoom_names,
-            Zoom::all().iter().position(|z| z == &self.zoom),
-            PdfViewerMessage::ZoomDropdown,
-        ));
 
         widget::container(row).padding(space_xs).into()
     }
@@ -733,6 +766,12 @@ impl PdfViewer {
             }
         }
     }
+}
+
+fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, PdfViewerMessage> {
+    widget::settings::item::builder(description)
+        .control(widget::text::monotext(key))
+        .into()
 }
 
 /// Load PDF pages (bounds only) from a file path. Runs on a blocking thread.
