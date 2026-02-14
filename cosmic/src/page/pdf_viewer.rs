@@ -229,16 +229,11 @@ impl PdfViewer {
                 )
                 .push(widget::text::body(fl!("pdf-viewer-no-local-source")));
 
-            return widget::column()
-                .push(self.view_header())
-                .push(
-                    widget::container(no_source)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_x(cosmic::iced::alignment::Horizontal::Center)
-                        .align_y(Vertical::Center),
-                )
+            return widget::container(no_source)
+                .width(Length::Fill)
                 .height(Length::Fill)
+                .align_x(cosmic::iced::alignment::Horizontal::Center)
+                .align_y(Vertical::Center)
                 .into();
         }
 
@@ -254,31 +249,20 @@ impl PdfViewer {
                 )
                 .push(widget::text::body(fl!("pdf-viewer-loading")));
 
-            return widget::column()
-                .push(self.view_header())
-                .push(
-                    widget::container(loading)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_x(cosmic::iced::alignment::Horizontal::Center)
-                        .align_y(Vertical::Center),
-                )
+            return widget::container(loading)
+                .width(Length::Fill)
                 .height(Length::Fill)
+                .align_x(cosmic::iced::alignment::Horizontal::Center)
+                .align_y(Vertical::Center)
                 .into();
         }
 
-        let header = self.view_header();
         let thumbnails = self.view_thumbnails();
         let content = self.view_content();
 
-        let body = widget::row()
+        widget::row()
             .push(thumbnails)
             .push(content)
-            .height(Length::Fill);
-
-        widget::column()
-            .push(header)
-            .push(body)
             .height(Length::Fill)
             .into()
     }
@@ -330,13 +314,8 @@ impl PdfViewer {
         }
     }
 
-    fn view_header(&self) -> Element<'_, PdfViewerMessage> {
-        let cosmic_theme::Spacing {
-            space_xxs,
-            space_xs,
-            space_s,
-            ..
-        } = theme::active().cosmic().spacing;
+    pub fn view_header_center(&self) -> Vec<Element<'_, PdfViewerMessage>> {
+        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
         let path = Path::new(&self.document.sources.iter().next().unwrap().path);
         let filename = path
@@ -350,46 +329,43 @@ impl PdfViewer {
             String::new()
         };
 
-        let mut row = widget::row()
-            .spacing(space_s)
-            .align_y(Vertical::Center)
-            .push(
-                widget::button::icon(
-                    widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE),
-                )
+        let mut elements: Vec<Element<'_, PdfViewerMessage>> = vec![
+            widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
                 .on_press(PdfViewerMessage::Out(PdfViewerOutput::Close(
                     self.fingerprint.clone(),
                 )))
-                .tooltip(fl!("pdf-viewer-back")),
-            )
-            .push(
-                widget::icon::from_name("application-pdf-symbolic")
-                    .size(24)
-                    .icon(),
-            )
-            .push(widget::text::heading(filename).width(Length::Fill))
-            .push(widget::text::body(page_info));
+                .tooltip(fl!("pdf-viewer-back"))
+                .into(),
+            widget::icon::from_name("application-pdf-symbolic")
+                .size(24)
+                .icon()
+                .into(),
+            widget::text::heading(filename).into(),
+            widget::text::body(page_info).into(),
+        ];
 
         // Search
         if self.search_active {
-            row = row.push(
+            elements.push(
                 widget::text_input::search_input("", &self.search_term)
                     .width(Length::Fixed(240.0))
                     .id(self.search_id.clone())
                     .on_clear(PdfViewerMessage::SearchClear)
-                    .on_input(PdfViewerMessage::SearchInput),
+                    .on_input(PdfViewerMessage::SearchInput)
+                    .into(),
             );
         } else {
-            row = row.push(
+            elements.push(
                 widget::button::icon(
                     widget::icon::from_name("system-search-symbolic").size(ICON_SIZE),
                 )
                 .on_press(PdfViewerMessage::SearchActivate)
-                .padding(space_xxs),
+                .padding(space_xxs)
+                .into(),
             );
         }
 
-        widget::container(row).padding(space_xs).into()
+        elements
     }
 
     fn view_thumbnails(&self) -> Element<'_, PdfViewerMessage> {

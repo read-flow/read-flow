@@ -249,6 +249,19 @@ impl cosmic::Application for AppModel {
         vec![menu_bar.into()]
     }
 
+    /// Elements to pack at the center of the header bar.
+    fn header_center(&self) -> Vec<Element<'_, Self::Message>> {
+        if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
+            self.pages
+                .view_header_center(page)
+                .into_iter()
+                .map(|e| e.map(Into::into))
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
     /// Enables the COSMIC application to create a nav bar with this model.
     fn nav_model(&self) -> Option<&nav_bar::Model> {
         Some(&self.nav)

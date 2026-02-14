@@ -2,7 +2,7 @@
 // pages
 mod document_details;
 mod document_list;
-pub(crate) mod pdf_viewer;
+mod pdf_viewer;
 mod settings;
 mod sources;
 
@@ -230,6 +230,25 @@ impl Pages {
                         .into()
                 }),
             PageSelector::Settings => self.settings.view().map(Into::into),
+        }
+    }
+
+    pub fn view_header_center<'a>(
+        &'a self,
+        active_page: &'a PageSelector,
+    ) -> Vec<Element<'a, PageMessage>> {
+        match &active_page {
+            PageSelector::PdfViewer(fingerprint) => self
+                .pdf_viewers
+                .get(fingerprint)
+                .map(|page| {
+                    page.view_header_center()
+                        .into_iter()
+                        .map(|e| e.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg)))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            _ => Vec::new(),
         }
     }
 
