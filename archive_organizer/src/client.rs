@@ -17,6 +17,7 @@ use tokio::process::Command;
 
 use crate::api::File;
 use crate::api::FileDataSource;
+use crate::api::ReadingProgress;
 use crate::api::Status;
 use crate::extension_of;
 use crate::to_unique_file;
@@ -278,6 +279,44 @@ impl FileDataSource for FilesClient {
 
     async fn import_file(&self, path: &Path) -> Result<File, Error> {
         self.upload_file(path).await
+    }
+
+    async fn get_reading_progress(
+        &self,
+        fingerprint: &str,
+    ) -> Result<Option<ReadingProgress>, Error> {
+        let response = self
+            .client
+            .get(
+                self.base_url
+                    .join(&format!("reading-progress/{fingerprint}"))?,
+            )
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, self.get_auth_header())
+            .send()
+            .await?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        let result = response.json().await?;
+        Ok(Some(result))
+    }
+
+    async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Error> {
+        let response = self
+            .client
+            .put(self.base_url.join("reading-progress")?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, self.get_auth_header())
+            .json(&progress)
+            .send()
+            .await?;
+
+        response.error_for_status_ref()?;
+
+        Ok(())
     }
 }
 

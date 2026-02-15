@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
+use archive_organizer::api::ReadingProgress;
 use archive_organizer::api::Status;
 use archive_organizer::client;
 use archive_organizer::client::FilesClient;
@@ -169,5 +170,16 @@ impl FileDataSource for Client {
 
     async fn import_file(&self, path: &Path) -> Result<File, Self::Error> {
         delegate!(self, import_file, path)
+    }
+
+    async fn get_reading_progress(
+        &self,
+        fingerprint: &str,
+    ) -> Result<Option<ReadingProgress>, Self::Error> {
+        delegate!(self, get_reading_progress, fingerprint)
+    }
+
+    async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error> {
+        delegate!(self, upsert_reading_progress, progress)
     }
 }

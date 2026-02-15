@@ -11,8 +11,10 @@ use super::ConnectionPool;
 use super::dao::Error;
 use super::dao::FileDao;
 use super::dao::FileTagDao;
+use super::dao::ReadingProgressDao;
 use crate::api::File;
 use crate::api::FileDataSource;
+use crate::api::ReadingProgress;
 use crate::api::ReadingStatus;
 use crate::api::Status;
 use crate::db::models::File as DbFile;
@@ -171,6 +173,18 @@ impl FileDataSource for DbClient {
 
             Ok(())
         })
+    }
+
+    async fn get_reading_progress(
+        &self,
+        fingerprint: &str,
+    ) -> Result<Option<ReadingProgress>, Self::Error> {
+        let fingerprint = fingerprint.to_string();
+        tokio::task::block_in_place(|| self.connection_pool.get_reading_progress(&fingerprint))
+    }
+
+    async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error> {
+        tokio::task::block_in_place(|| self.connection_pool.upsert_reading_progress(progress))
     }
 
     async fn import_file(&self, path: &Path) -> Result<File, Self::Error> {

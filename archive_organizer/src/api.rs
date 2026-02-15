@@ -11,6 +11,7 @@ use strum::EnumIter;
 
 use crate::db::models::File as DbFile;
 use crate::db::models::FileTag as DbTag;
+pub use crate::db::models::ReadingProgress;
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, PartialOrd, Ord, EnumIter, Hash,
@@ -174,4 +175,11 @@ pub trait FileDataSource {
     /// For local data sources, this registers the file in the database.
     /// For remote data sources, this uploads the file to the server.
     async fn import_file(&self, path: &Path) -> Result<File, Self::Error>;
+
+    async fn get_reading_progress(
+        &self,
+        fingerprint: &str,
+    ) -> Result<Option<ReadingProgress>, Self::Error>;
+
+    async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error>;
 }

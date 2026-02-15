@@ -26,6 +26,7 @@ use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::app::ContextView;
 use crate::client::ClientSelector;
+use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::page::Page;
 
@@ -108,12 +109,13 @@ fn display_list_to_image(display_list: &mupdf::DisplayList, scale: f32) -> widge
 
 #[derive(Debug, Clone)]
 pub enum PdfViewerOutput {
-    Close(Fingerprint),
+    Close(Fingerprint, Option<usize>),
 }
 
 #[derive(Clone, Debug)]
 pub enum PdfViewerMessage {
     // PDF loading pipeline
+    ReadingProgressLoaded(Option<usize>),
     PagesLoaded(Vec<PdfPage>),
     DisplayListReady(i32, Arc<mupdf::DisplayList>),
     ThumbnailReady(i32, widget::image::Handle),
@@ -151,6 +153,7 @@ pub struct PdfViewer {
     // PDF state
     pages: Vec<PdfPage>,
     active_page: usize,
+    initial_page: Option<usize>,
     zoom: Zoom,
     zoom_names: Vec<String>,
     search_active: bool,
@@ -167,7 +170,10 @@ pub struct PdfViewer {
 }
 
 impl PdfViewer {
-    pub fn new(document: Document) -> (Self, Task<Action<PdfViewerMessage>>) {
+    pub fn new(
+        document: Document,
+        document_provider: Arc<DocumentProvider>,
+    ) -> (Self, Task<Action<PdfViewerMessage>>) {
         let fingerprint = document.metadata.fingerprint.clone();
 
         // Resolve local file path from document sources
@@ -178,11 +184,12 @@ impl PdfViewer {
         let zoom_names: Vec<String> = Zoom::all().iter().map(|z| z.to_string()).collect();
 
         let viewer = PdfViewer {
-            fingerprint,
+            fingerprint: fingerprint.clone(),
             document,
             file_path: file_path.clone(),
             pages: Vec::new(),
             active_page: 0,
+            initial_page: None,
             zoom: Zoom::FitBoth,
             zoom_names,
             search_active: false,
@@ -196,21 +203,38 @@ impl PdfViewer {
             thumbnail_viewport: None,
         };
 
+        let mut tasks = Vec::new();
+
         // Start loading the PDF if we have a local path
-        let task = if let Some(path) = file_path {
-            Task::perform(
+        if let Some(path) = file_path {
+            tasks.push(Task::perform(
                 async move {
                     tokio::task::spawn_blocking(move || load_pdf_pages(&path))
                         .await
                         .unwrap()
                 },
                 |pages| cosmic::action::app(PdfViewerMessage::PagesLoaded(pages)),
-            )
-        } else {
-            Task::none()
-        };
+            ));
+        }
 
-        (viewer, task)
+        // Fetch reading progress
+        let fp = fingerprint;
+        tasks.push(Task::perform(
+            async move {
+                let aggregator = document_provider.aggregator.read().await;
+                match aggregator.get_reading_progress(&fp).await {
+                    Ok(Some(progress)) => parse_page_from_progress(&progress.progress),
+                    Ok(None) => None,
+                    Err(e) => {
+                        tracing::warn!("failed to load reading progress: {e}");
+                        None
+                    }
+                }
+            },
+            |page| cosmic::action::app(PdfViewerMessage::ReadingProgressLoaded(page)),
+        ));
+
+        (viewer, Task::batch(tasks))
     }
 
     pub fn display_name(&self) -> String {
@@ -578,6 +602,11 @@ impl Page for PdfViewer {
             widget::button::icon(widget::icon::from_name("window-close-symbolic").size(ICON_SIZE))
                 .on_press(PdfViewerMessage::Out(PdfViewerOutput::Close(
                     self.fingerprint.clone(),
+                    if self.pages.is_empty() {
+                        None
+                    } else {
+                        Some(self.active_page)
+                    },
                 )))
                 .tooltip(fl!("pdf-viewer-back"))
                 .padding(space_xxs)
@@ -640,10 +669,22 @@ impl Page for PdfViewer {
 
     fn update(&mut self, message: PdfViewerMessage) -> Task<Action<PdfViewerMessage>> {
         match message {
+            PdfViewerMessage::ReadingProgressLoaded(page) => {
+                self.initial_page = page;
+                if !self.pages.is_empty() {
+                    if let Some(p) = page {
+                        if p < self.pages.len() {
+                            self.active_page = p;
+                            return self.update_active_page();
+                        }
+                    }
+                }
+                Task::none()
+            }
             PdfViewerMessage::PagesLoaded(pages) => {
                 self.pages = pages;
                 if !self.pages.is_empty() {
-                    self.active_page = 0;
+                    self.active_page = self.initial_page.unwrap_or(0).min(self.pages.len() - 1);
                     // Start generating display lists for all pages
                     let tasks: Vec<_> = self
                         .pages
@@ -848,6 +889,21 @@ fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, PdfViewer
     widget::settings::item::builder(description)
         .control(widget::text::monotext(key))
         .into()
+}
+
+/// Parse the page number from a progress JSON string like `{"page":5}`.
+fn parse_page_from_progress(progress: &str) -> Option<usize> {
+    // Simple parser to avoid serde_json dependency.
+    let progress = progress.trim();
+    let inner = progress.strip_prefix('{')?.strip_suffix('}')?;
+    for part in inner.split(',') {
+        let (key, value) = part.split_once(':')?;
+        let key = key.trim().trim_matches('"');
+        if key == "page" {
+            return value.trim().parse::<usize>().ok();
+        }
+    }
+    None
 }
 
 /// Load PDF pages (bounds only) from a file path. Runs on a blocking thread.

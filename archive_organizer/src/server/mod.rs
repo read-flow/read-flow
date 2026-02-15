@@ -33,11 +33,13 @@ use rocket_cors::CorsOptions;
 use crate::ApplicationModule;
 use crate::api::File;
 use crate::api::FileDataSource;
+use crate::api::ReadingProgress;
 use crate::api::Status;
 use crate::db;
 use crate::db::dao;
 use crate::db::dao::FileDao;
 use crate::db::dao::FileTagDao;
+use crate::db::dao::ReadingProgressDao;
 use crate::scan;
 use crate::settings;
 pub use crate::settings::ServerSettings;
@@ -97,10 +99,16 @@ pub fn create_cors() -> Cors {
     let cors = CorsOptions::default()
         .allowed_origins(AllowedOrigins::all())
         .allowed_methods(
-            vec![Method::Get, Method::Post, Method::Options, Method::Delete]
-                .into_iter()
-                .map(From::from)
-                .collect(),
+            vec![
+                Method::Get,
+                Method::Post,
+                Method::Put,
+                Method::Options,
+                Method::Delete,
+            ]
+            .into_iter()
+            .map(From::from)
+            .collect(),
         )
         .allowed_headers(rocket_cors::AllowedHeaders::All)
         .allow_credentials(true);
@@ -156,6 +164,8 @@ fn serve(config_path: PathBuf) -> Rocket<Build> {
         download_file,
         upload_file,
         delete_file,
+        get_reading_progress,
+        put_reading_progress,
     ];
 
     rocket::custom(figment)
@@ -402,6 +412,30 @@ async fn upload_file(
         .select_file_by_path(&target_file.display().to_string())?
         .unwrap();
     Ok(Json((result, vec![]).into()))
+}
+
+#[get("/reading-progress/<fingerprint>")]
+fn get_reading_progress(
+    fingerprint: &str,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Option<Json<ReadingProgress>>> {
+    let progress = application_module
+        .connection_pool()
+        .get_reading_progress(fingerprint)?;
+    Ok(progress.map(Json))
+}
+
+#[put("/reading-progress", data = "<progress>")]
+fn put_reading_progress(
+    progress: Json<ReadingProgress>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<()> {
+    application_module
+        .connection_pool()
+        .upsert_reading_progress(progress.into_inner())?;
+    Ok(())
 }
 
 fn extension_to_content_type(extension: &str) -> Result<ContentType> {

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::Integer;
+use diesel::sql_types::Text;
 
 use crate::api::get_update;
 use crate::db::ConnectionPool;
@@ -13,11 +14,13 @@ use crate::db::models::FileTag;
 use crate::db::models::NewDirectory;
 use crate::db::models::NewFile;
 use crate::db::models::NewRemote;
+use crate::db::models::ReadingProgress;
 use crate::db::models::Remote;
 use crate::db::models::UpdateFile;
 use crate::db::schema::directories;
 use crate::db::schema::file_tags;
 use crate::db::schema::files;
+use crate::db::schema::reading_progress;
 use crate::db::schema::remotes;
 
 pub trait FileDao {
@@ -65,6 +68,15 @@ pub trait RemoteDao {
     fn select_all_remotes(&self) -> Result<Vec<Remote>, Self::Error>;
     fn delete_remote_by_id(&self, id: i32) -> Result<(), Self::Error>;
     fn swap_order_of_remotes(&self, a: &Remote, b: &Remote) -> Result<(), Self::Error>;
+}
+
+pub trait ReadingProgressDao {
+    type Error;
+    fn get_reading_progress(
+        &self,
+        fingerprint: &str,
+    ) -> Result<Option<ReadingProgress>, Self::Error>;
+    fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -437,6 +449,42 @@ impl RemoteDao for ConnectionPool {
 
         sql_query("COMMIT").execute(&mut connection)?;
 
+        Ok(())
+    }
+}
+
+impl ReadingProgressDao for ConnectionPool {
+    type Error = Error;
+
+    fn get_reading_progress(
+        &self,
+        fingerprint: &str,
+    ) -> Result<Option<ReadingProgress>, Self::Error> {
+        let mut connection = self.get()?;
+        let result = reading_progress::table
+            .find(fingerprint)
+            .select(ReadingProgress::as_select())
+            .first(&mut connection)
+            .optional()?;
+        Ok(result)
+    }
+
+    fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error> {
+        let mut connection = self.get()?;
+        sql_query(
+            r#"
+            INSERT INTO reading_progress (fingerprint, progress, last_updated)
+            VALUES (?, ?, ?)
+            ON CONFLICT(fingerprint) DO UPDATE
+            SET progress = excluded.progress,
+                last_updated = excluded.last_updated
+            WHERE excluded.last_updated > reading_progress.last_updated
+            "#,
+        )
+        .bind::<Text, _>(&progress.fingerprint)
+        .bind::<Text, _>(&progress.progress)
+        .bind::<Text, _>(&progress.last_updated)
+        .execute(&mut connection)?;
         Ok(())
     }
 }

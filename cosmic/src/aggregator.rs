@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use archive_organizer::api::File;
 use archive_organizer::api::FileDataSource;
+use archive_organizer::api::ReadingProgress;
 use archive_organizer::api::ReadingStatus;
 use futures_util::stream;
 use futures_util::stream::StreamExt;
@@ -303,6 +304,66 @@ impl Aggregator {
 
         // Import the file to the target client
         target_client.import_file(&local_path).await
+    }
+
+    /// Get reading progress for a document, picking the most recently updated
+    /// progress across all sources.
+    pub async fn get_reading_progress(
+        &self,
+        fingerprint: &str,
+    ) -> Result<Option<ReadingProgress>, FilesClientError> {
+        let clients: Vec<Client> = self.clients.values().cloned().collect();
+
+        let results: Vec<Result<Option<ReadingProgress>, FilesClientError>> = stream::iter(clients)
+            .map(|client| {
+                let fp = fingerprint.to_string();
+                async move { client.get_reading_progress(&fp).await }
+            })
+            .buffer_unordered(self.clients.len())
+            .collect()
+            .await;
+
+        let best = results
+            .into_iter()
+            .filter_map(|result| match result {
+                Ok(Some(progress)) => Some(progress),
+                Ok(None) => None,
+                Err(error) => {
+                    tracing::warn!("ignoring error while retrieving reading progress: {error}");
+                    None
+                }
+            })
+            .max_by(|a, b| a.last_updated.cmp(&b.last_updated));
+
+        Ok(best)
+    }
+
+    /// Write reading progress to all sources in parallel.
+    /// Each source applies last-updated-wins independently.
+    pub async fn upsert_reading_progress(
+        &self,
+        progress: ReadingProgress,
+    ) -> Result<(), FilesClientError> {
+        let clients: Vec<Client> = self.clients.values().cloned().collect();
+        let num_clients = clients.len();
+
+        let results: Vec<Result<(), FilesClientError>> = stream::iter(clients)
+            .map(|client| {
+                let progress = progress.clone();
+                async move { client.upsert_reading_progress(progress).await }
+            })
+            .buffer_unordered(num_clients)
+            .collect()
+            .await;
+
+        results
+            .into_iter()
+            .filter_map(Result::err)
+            .for_each(|error| {
+                tracing::warn!("ignoring error during `upsert_reading_progress`: {error}")
+            });
+
+        Ok(())
     }
 }
 

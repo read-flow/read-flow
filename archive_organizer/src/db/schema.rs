@@ -36,6 +36,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    reading_progress (fingerprint) {
+        fingerprint -> Text,
+        progress -> Text,
+        last_updated -> Text,
+    }
+}
+
+diesel::table! {
     remotes (id) {
         id -> Integer,
         base_url -> Text,
@@ -53,5 +61,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     directory_tags,
     file_tags,
     files,
+    reading_progress,
     remotes,
 );

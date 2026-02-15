@@ -94,7 +94,7 @@ pub enum PageMessage {
     CloseDocumentDetails(Fingerprint),
     PdfViewer(Fingerprint, PdfViewerMessage),
     OpenPdfViewer(Document),
-    ClosePdfViewer(Fingerprint),
+    ClosePdfViewer(Fingerprint, Option<usize>),
     Settings(SettingsMessage),
     KeyEvent(PageSelector, Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(PageSelector, Modifiers),
@@ -497,7 +497,8 @@ impl Pages {
                 } else {
                     let fingerprint_1 = fingerprint.clone();
                     let fingerprint_2 = fingerprint.clone();
-                    let (pdf_viewer, initialization) = PdfViewer::new(document);
+                    let (pdf_viewer, initialization) =
+                        PdfViewer::new(document, self.document_provider.clone());
                     self.pdf_viewers.insert(fingerprint.clone(), pdf_viewer);
                     initialization
                         .map(move |action| {
@@ -510,11 +511,32 @@ impl Pages {
                         ))))
                 }
             }
-            PageMessage::ClosePdfViewer(fingerprint) => {
+            PageMessage::ClosePdfViewer(fingerprint, page) => {
                 let _ = self.pdf_viewers.swap_remove(&fingerprint);
-                task::message(PageMessage::Out(PageOutput::PageRemoved(
-                    PageSelector::PdfViewer(fingerprint),
-                )))
+
+                let mut tasks = vec![task::message(PageMessage::Out(PageOutput::PageRemoved(
+                    PageSelector::PdfViewer(fingerprint.clone()),
+                )))];
+
+                if let Some(page) = page {
+                    let document_provider = self.document_provider.clone();
+                    let fp = fingerprint;
+                    tasks.push(task::future(async move {
+                        let now = iso8601_now();
+                        let progress = archive_organizer::api::ReadingProgress {
+                            fingerprint: fp,
+                            progress: format!("{{\"page\":{page}}}"),
+                            last_updated: now,
+                        };
+                        let aggregator = document_provider.aggregator.read().await;
+                        if let Err(e) = aggregator.upsert_reading_progress(progress).await {
+                            tracing::warn!("failed to save reading progress: {e}");
+                        }
+                        PageMessage::Noop
+                    }));
+                }
+
+                Task::batch(tasks)
             }
             PageMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
@@ -565,7 +587,9 @@ fn map_document_details_message(
 fn map_pdf_viewer_message(fingerprint: Fingerprint, msg: PdfViewerMessage) -> PageMessage {
     match msg {
         PdfViewerMessage::Out(message) => match message {
-            PdfViewerOutput::Close(fingerprint) => PageMessage::ClosePdfViewer(fingerprint),
+            PdfViewerOutput::Close(fingerprint, page) => {
+                PageMessage::ClosePdfViewer(fingerprint, page)
+            }
         },
         msg => PageMessage::PdfViewer(fingerprint, msg),
     }
@@ -573,6 +597,37 @@ fn map_pdf_viewer_message(fingerprint: Fingerprint, msg: PdfViewerMessage) -> Pa
 
 fn map_settings_message(msg: SettingsMessage) -> PageMessage {
     PageMessage::Settings(msg)
+}
+
+/// Generate an ISO 8601 UTC timestamp string from the current system time.
+fn iso8601_now() -> String {
+    use std::time::SystemTime;
+    use std::time::UNIX_EPOCH;
+
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let days = (secs / 86400) as i64;
+    let time_of_day = secs % 86400;
+    let hours = time_of_day / 3600;
+    let minutes = (time_of_day % 3600) / 60;
+    let seconds = time_of_day % 60;
+
+    // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm)
+    let z = days + 719468;
+    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    format!("{y:04}-{m:02}-{d:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
 }
 
 pub fn settings_invalidation_subscription<M, F>(
