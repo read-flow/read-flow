@@ -265,14 +265,30 @@ impl PdfViewer {
             y += height;
         }
 
-        widget::container(
+        let page_info = if !self.pages.is_empty() {
+            format!("{} / {}", self.active_page + 1, self.pages.len())
+        } else {
+            String::new()
+        };
+
+        widget::Column::with_children(vec![
+            widget::Column::with_children(vec![
+                widget::text::body(page_info)
+                    .wrapping(cosmic::iced::widget::text::Wrapping::None)
+                    .into(),
+            ])
+            .width(Length::Fill)
+            .align_x(Horizontal::Center)
+            .into(),
             widget::scrollable(column)
                 .id(self.thumbnail_scroll_id.clone())
                 .on_scroll(PdfViewerMessage::ThumbnailScroll)
-                .width(Length::Fixed(
-                    (THUMBNAIL_WIDTH as f32) + (space_xxs as f32) * 2.0,
-                )),
-        )
+                .width(Length::Fill)
+                .into(),
+        ])
+        .width(Length::Fixed(
+            (THUMBNAIL_WIDTH as f32) + (space_xxs as f32) * 2.0,
+        ))
         .height(Length::Fill)
         .into()
     }
@@ -466,17 +482,8 @@ impl Page for PdfViewer {
             .and_then(|name| name.to_str())
             .unwrap_or("PDF");
 
-        let page_info = if !self.pages.is_empty() {
-            format!("{} / {}", self.active_page + 1, self.pages.len())
-        } else {
-            String::new()
-        };
-
         vec![
             widget::text::heading(filename)
-                .wrapping(cosmic::iced::widget::text::Wrapping::None)
-                .into(),
-            widget::text::body(page_info)
                 .wrapping(cosmic::iced::widget::text::Wrapping::None)
                 .into(),
         ]
