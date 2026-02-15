@@ -226,10 +226,9 @@ impl PdfViewer {
 
         let x = space_xxs as f32;
         let mut y = space_xxs as f32;
-        let mut count = 0;
 
         for (idx, page) in self.pages.iter().enumerate() {
-            if count > 0 {
+            if idx > 0 {
                 y += space_xxs as f32;
             }
 
@@ -264,7 +263,6 @@ impl PdfViewer {
             }
 
             y += height;
-            count += 1;
         }
 
         widget::container(
@@ -393,7 +391,6 @@ impl PdfViewer {
     fn page_index_by_pdf_index(&self, pdf_index: i32) -> Option<usize> {
         self.pages.iter().position(|p| p.index == pdf_index)
     }
-
 }
 
 impl Page for PdfViewer {
