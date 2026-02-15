@@ -293,7 +293,8 @@ impl PdfViewer {
                 let width = page.bounds.width() * ratio;
                 let height = page.bounds.height() * ratio;
 
-                let mut container = widget::container(if let Some(handle) = &page.svg_handle {
+                // Inner container: white "paper" background for the PDF page
+                let paper = widget::container(if let Some(handle) = &page.svg_handle {
                     Element::from(
                         widget::svg(handle.clone())
                             .content_fit(ContentFit::Fill)
@@ -305,14 +306,25 @@ impl PdfViewer {
                 })
                 .style(|_theme| widget::container::background(cosmic::iced::Color::WHITE));
 
+                // Outer container: theme background surrounding the paper
+                let mut outer = widget::container(paper).style(|theme| {
+                    let c = theme.cosmic().bg_color();
+                    widget::container::background(cosmic::iced::Color::from_rgba(
+                        c.color.red,
+                        c.color.green,
+                        c.color.blue,
+                        c.alpha,
+                    ))
+                });
+
                 if size.width > width {
-                    container = container.center_x(size.width);
+                    outer = outer.center_x(size.width);
                 }
                 if size.height > height {
-                    container = container.center_y(size.height);
+                    outer = outer.center_y(size.height);
                 }
 
-                let mut mouse_area = widget::mouse_area(container);
+                let mut mouse_area = widget::mouse_area(outer);
                 if self.modifiers.contains(Modifiers::CTRL) {
                     mouse_area = mouse_area.on_scroll(PdfViewerMessage::ZoomScroll);
                 }
