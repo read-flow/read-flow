@@ -35,9 +35,9 @@ use crate::component::provided_state::ProvidedStateMessage;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::iter::find_with_next;
-use crate::page::Page;
 use crate::iter::find_with_previous;
 use crate::layout::layout;
+use crate::page::Page;
 use crate::state::LoadedState;
 
 pub type UrlVerificationState = LoadedState<Status>;

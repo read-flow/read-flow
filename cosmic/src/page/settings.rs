@@ -37,13 +37,13 @@ use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::forms::settings::authorized_user::AuthorizedUserForm;
-use crate::page::Page;
 use crate::forms::settings::authorized_user::AuthorizedUserFormMessage;
 use crate::forms::settings::authorized_user::AuthorizedUserFormOutput;
 use crate::forms::settings::directory_settings::DirectorySettingsForm;
 use crate::forms::settings::directory_settings::DirectorySettingsFormMessage;
 use crate::forms::settings::directory_settings::DirectorySettingsFormOutput;
 use crate::layout::layout;
+use crate::page::Page;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum EditState<T> {

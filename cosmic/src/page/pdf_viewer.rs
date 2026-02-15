@@ -461,14 +461,12 @@ impl Page for PdfViewer {
         };
 
         vec![
-            widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
-                .on_press(PdfViewerMessage::Out(PdfViewerOutput::Close(
-                    self.fingerprint.clone(),
-                )))
-                .tooltip(fl!("pdf-viewer-back"))
+            widget::text::heading(filename)
+                .wrapping(cosmic::iced::widget::text::Wrapping::None)
                 .into(),
-            widget::text::heading(filename).into(),
-            widget::text::body(page_info).into(),
+            widget::text::body(page_info)
+                .wrapping(cosmic::iced::widget::text::Wrapping::None)
+                .into(),
         ]
     }
 
@@ -497,6 +495,17 @@ impl Page for PdfViewer {
                 .into(),
             );
         }
+
+        // Close button (rightmost, matching standard dismiss placement)
+        elements.push(
+            widget::button::icon(widget::icon::from_name("window-close-symbolic").size(ICON_SIZE))
+                .on_press(PdfViewerMessage::Out(PdfViewerOutput::Close(
+                    self.fingerprint.clone(),
+                )))
+                .tooltip(fl!("pdf-viewer-back"))
+                .padding(space_xxs)
+                .into(),
+        );
 
         elements
     }

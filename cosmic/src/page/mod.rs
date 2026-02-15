@@ -7,8 +7,6 @@ mod settings;
 mod sources;
 mod traits;
 
-pub use traits::Page;
-
 use core::panic;
 use std::any::Any;
 use std::sync::Arc;
@@ -31,6 +29,7 @@ use cosmic::widget;
 use indexmap::IndexMap;
 use provider::sync::Invalidated;
 use tokio::sync::broadcast;
+pub use traits::Page;
 use url::Url;
 
 use crate::ApplicationModule;

@@ -480,7 +480,11 @@ impl Page for DocumentDetails {
                 .and_then(|name| name.to_str())
                 .unwrap_or("Unknown");
 
-        vec![text::heading(filename_without_extension).into()]
+        vec![
+            text::heading(filename_without_extension)
+                .wrapping(cosmic::iced::widget::text::Wrapping::None)
+                .into(),
+        ]
     }
 
     fn view_header_end(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
@@ -507,10 +511,7 @@ impl Page for DocumentDetails {
         }
     }
 
-    fn update(
-        &mut self,
-        message: DocumentDetailsMessage,
-    ) -> Task<Action<DocumentDetailsMessage>> {
+    fn update(&mut self, message: DocumentDetailsMessage) -> Task<Action<DocumentDetailsMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
             DocumentDetailsMessage::Out(_) => {
