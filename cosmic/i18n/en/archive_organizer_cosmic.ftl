@@ -211,6 +211,7 @@ pdf-viewer-loading = Loading PDF...
 pdf-viewer-no-local-source = No local source available for this document
 pdf-viewer-view-pdf = View PDF
 pdf-viewer-zoom = Zoom
+pdf-viewer-theme-colors = Theme colors
 pdf-viewer-keyboard-shortcuts = Keyboard shortcuts
 pdf-viewer-shortcut-previous-page = Previous page
 pdf-viewer-shortcut-next-page = Next page

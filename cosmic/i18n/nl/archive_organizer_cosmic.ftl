@@ -233,6 +233,7 @@ pdf-viewer-loading = PDF laden...
 pdf-viewer-no-local-source = Geen lokale bron beschikbaar voor dit document
 pdf-viewer-view-pdf = PDF bekijken
 pdf-viewer-zoom = Zoom
+pdf-viewer-theme-colors = Themakleuren
 pdf-viewer-keyboard-shortcuts = Sneltoetsen
 pdf-viewer-shortcut-previous-page = Vorige pagina
 pdf-viewer-shortcut-next-page = Volgende pagina

@@ -11,6 +11,7 @@ use cosmic::cosmic_theme;
 use cosmic::iced::ContentFit;
 use cosmic::iced::Length;
 use cosmic::iced::Rectangle;
+use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::iced::core::SmolStr;
 use cosmic::iced::keyboard::Key;
@@ -125,6 +126,7 @@ pub enum PdfViewerMessage {
     // Zoom
     ZoomDropdown(usize),
     ZoomScroll(ScrollDelta),
+    ThemeColors(bool),
 
     // Search
     SearchActivate,
@@ -157,6 +159,7 @@ pub struct PdfViewer {
     modifiers: Modifiers,
     view_ratio: Cell<f32>,
     zoom_scroll: f32,
+    theme_colors: bool,
 
     // Thumbnail panel state
     thumbnail_scroll_id: widget::Id,
@@ -188,6 +191,7 @@ impl PdfViewer {
             modifiers: Modifiers::default(),
             view_ratio: Cell::new(1.0),
             zoom_scroll: 0.0,
+            theme_colors: false,
             thumbnail_scroll_id: widget::Id::unique(),
             thumbnail_viewport: None,
         };
@@ -320,11 +324,25 @@ impl PdfViewer {
                 } else {
                     Element::from(widget::Space::new(width, height))
                 })
-                .style(|_theme| widget::container::background(cosmic::iced::Color::WHITE));
+                .style(if self.theme_colors {
+                    |theme: &cosmic::Theme| {
+                        let c = theme.cosmic().bg_color();
+                        widget::container::background(cosmic::iced::Color::from_rgba(
+                            c.color.red,
+                            c.color.green,
+                            c.color.blue,
+                            c.alpha,
+                        ))
+                    }
+                } else {
+                    |_theme: &cosmic::Theme| {
+                        widget::container::background(cosmic::iced::Color::WHITE)
+                    }
+                });
 
                 // Outer container: theme background surrounding the paper
                 let mut outer = widget::container(paper).style(|theme| {
-                    let c = theme.cosmic().bg_color();
+                    let c = theme.cosmic().bg_component_color();
                     widget::container::background(cosmic::iced::Color::from_rgba(
                         c.color.red,
                         c.color.green,
@@ -397,10 +415,50 @@ impl PdfViewer {
             && let Some(display_list) = page.display_list.clone()
         {
             let index = page.index;
+            let theme_css = if self.theme_colors {
+                let active = theme::active();
+                let cosmic = active.cosmic();
+                let text = cosmic.on_bg_color();
+                let bg = cosmic.bg_color();
+                let text_hex = format!(
+                    "#{:02x}{:02x}{:02x}",
+                    (text.color.red * 255.0) as u8,
+                    (text.color.green * 255.0) as u8,
+                    (text.color.blue * 255.0) as u8,
+                );
+                let bg_hex = format!(
+                    "#{:02x}{:02x}{:02x}",
+                    (bg.color.red * 255.0) as u8,
+                    (bg.color.green * 255.0) as u8,
+                    (bg.color.blue * 255.0) as u8,
+                );
+                Some((text_hex, bg_hex))
+            } else {
+                None
+            };
             tasks.push(Task::perform(
                 async move {
                     tokio::task::spawn_blocking(move || {
-                        let svg = display_list.to_svg(&mupdf::Matrix::IDENTITY).unwrap();
+                        let mut svg = display_list.to_svg(&mupdf::Matrix::IDENTITY).unwrap();
+                        if let Some((text_hex, bg_hex)) = theme_css {
+                            let style = format!(
+                                "<style>\
+                                [fill=\"#000000\"],[fill=\"#000\"]{{fill:{text_hex} !important}}\
+                                [stroke=\"#000000\"],[stroke=\"#000\"]{{stroke:{text_hex} !important}}\
+                                [fill=\"#ffffff\"],[fill=\"#fff\"],[fill=\"white\"]{{fill:{bg_hex} !important}}\
+                                [stroke=\"#ffffff\"],[stroke=\"#fff\"],[stroke=\"white\"]{{stroke:{bg_hex} !important}}\
+                                text{{fill:{text_hex} !important}}\
+                                </style>"
+                            );
+                            if let Some(pos) = svg.find('>') {
+                                // Set default fill on <svg> element so elements
+                                // without an explicit fill attribute (e.g. text
+                                // rendered as paths) inherit the theme text color.
+                                svg.insert_str(pos, &format!(" fill=\"{text_hex}\""));
+                                let pos = pos + format!(" fill=\"{text_hex}\"").len();
+                                svg.insert_str(pos + 1, &style);
+                            }
+                        }
                         PdfViewerMessage::SvgReady(
                             index,
                             widget::svg::Handle::from_memory(svg.into_bytes()),
@@ -538,6 +596,10 @@ impl Page for PdfViewer {
                     Zoom::all().iter().position(|z| z == &self.zoom),
                     PdfViewerMessage::ZoomDropdown,
                 )),
+            )
+            .add(
+                widget::settings::item::builder(fl!("pdf-viewer-theme-colors"))
+                    .toggler(self.theme_colors, PdfViewerMessage::ThemeColors),
             );
 
         let shortcuts_section = widget::settings::section()
@@ -767,6 +829,13 @@ impl Page for PdfViewer {
             PdfViewerMessage::ModifiersChanged(modifiers) => {
                 self.modifiers = modifiers;
                 Task::none()
+            }
+            PdfViewerMessage::ThemeColors(use_theme_colors) => {
+                self.theme_colors = use_theme_colors;
+                for page in &mut self.pages {
+                    page.svg_handle = None;
+                }
+                self.update_active_page()
             }
             PdfViewerMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
