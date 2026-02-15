@@ -33,6 +33,7 @@ use crate::component::tag_filter::TagFilterOutput;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
+use crate::page::Page;
 use crate::state::filtered::Filtered;
 
 /// Sort options for the document list
@@ -213,7 +214,169 @@ impl DocumentList {
         )
     }
 
-    pub fn view(&self) -> Element<'_, DocumentListMessage> {
+    fn handle_batch_tag_editor_output(
+        &mut self,
+        msg: TagEditorOutput,
+    ) -> Task<Action<DocumentListMessage>> {
+        match msg {
+            TagEditorOutput::TagAdded(new_tag) => self.batch_add_tags(new_tag),
+            TagEditorOutput::TagRemoved(removed_tag) => self.batch_remove_tags(removed_tag),
+            TagEditorOutput::TagsUpdated(_tags) => Task::none(),
+        }
+    }
+
+    fn batch_remove_tags(&mut self, removed_tag: String) -> Task<Action<DocumentListMessage>> {
+        let selected_documents = self.archive.get_selected_documents();
+        let document_provider = self.document_provider.clone();
+        task::future(async move {
+            let _ = document_provider
+                .batch_delete_document_tags(selected_documents, slice::from_ref(&removed_tag))
+                .await;
+            DocumentListMessage::LoadArchive
+        })
+    }
+
+    fn batch_add_tags(&mut self, new_tag: String) -> Task<Action<DocumentListMessage>> {
+        let selected_documents = self.archive.get_selected_documents();
+        let document_provider = self.document_provider.clone();
+        task::future(async move {
+            let _ = document_provider
+                .batch_add_document_tags(selected_documents, slice::from_ref(&new_tag))
+                .await;
+
+            DocumentListMessage::LoadArchive
+        })
+    }
+
+    fn filter_now(&mut self) -> Task<Action<DocumentListMessage>> {
+        // Increment debounce counter to invalidate previous timers
+        self.debounce_counter += 1;
+
+        if self.archive.is_loaded() && !self.is_filtering {
+            self.is_filtering = true;
+            self.start_background_filtering(
+                self.search_query.clone(),
+                self.status_filter,
+                self.source_filter.clone(),
+                self.tag_filter.allow_tags.clone(),
+                self.tag_filter.deny_tags.clone(),
+                self.archive.unfiltered().to_vec(),
+            )
+        } else {
+            Task::none()
+        }
+    }
+
+    fn sort_now(&mut self) -> Task<Action<DocumentListMessage>> {
+        if self.archive.is_loaded() {
+            // Sort the unfiltered documents in place
+            self.archive
+                .sort_unfiltered(|docs| sort_documents(docs, self.sort_option));
+            // Re-apply the current filter to update the filtered view
+            self.filter_now()
+        } else {
+            Task::none()
+        }
+    }
+}
+
+/// Sort documents based on the selected sort option
+fn sort_documents(documents: &mut [Document], sort_option: DocumentSortOption) {
+    documents.sort_by(|a, b| compare_documents(a, b, sort_option));
+}
+
+/// Compare two documents based on the sort option
+fn compare_documents(a: &Document, b: &Document, sort_option: DocumentSortOption) -> Ordering {
+    match sort_option {
+        DocumentSortOption::FilenameAsc => get_filename(a)
+            .to_lowercase()
+            .cmp(&get_filename(b).to_lowercase()),
+        DocumentSortOption::FilenameDesc => get_filename(b)
+            .to_lowercase()
+            .cmp(&get_filename(a).to_lowercase()),
+        DocumentSortOption::SizeAsc => a.metadata.size.cmp(&b.metadata.size),
+        DocumentSortOption::SizeDesc => b.metadata.size.cmp(&a.metadata.size),
+        DocumentSortOption::TypeAsc => a.metadata.type_.as_str().cmp(b.metadata.type_.as_str()),
+        DocumentSortOption::TypeDesc => b.metadata.type_.as_str().cmp(a.metadata.type_.as_str()),
+        DocumentSortOption::StatusAsc => {
+            status_order(&a.metadata.status).cmp(&status_order(&b.metadata.status))
+        }
+        DocumentSortOption::StatusDesc => {
+            status_order(&b.metadata.status).cmp(&status_order(&a.metadata.status))
+        }
+    }
+}
+
+/// Get the filename from a document (uses local source if available, otherwise any source)
+fn get_filename(doc: &Document) -> &str {
+    let source = doc.local_or_any_source();
+    source.path.rsplit('/').next().unwrap_or(&source.path)
+}
+
+/// Convert reading status to a sortable order (Unread=0, Reading=1, Read=2)
+fn status_order(status: &ReadingStatus) -> u8 {
+    match status {
+        ReadingStatus::Unread => 0,
+        ReadingStatus::Reading => 1,
+        ReadingStatus::Read => 2,
+    }
+}
+
+fn filter_document(
+    search_query: &str,
+    status_filter: Option<ReadingStatus>,
+    source_filter: Option<&ClientSelector>,
+    allow_tags: &HashSet<String>,
+    deny_tags: &HashSet<String>,
+    document: &&Document,
+) -> bool {
+    // Filter by search query
+    let matches_search = if search_query.is_empty() {
+        true
+    } else {
+        let query = search_query.to_lowercase();
+        let path_matches = document
+            .sources
+            .iter()
+            .map(|source| source.path.to_lowercase())
+            .filter(|path| path.contains(&query))
+            .count();
+        let tags_lower = document.metadata.tags.join(" ").to_lowercase();
+        path_matches > 0 || tags_lower.contains(&query)
+    };
+
+    // Filter by reading status
+    let matches_status = status_filter.is_none_or(|status| document.metadata.status == status);
+
+    // Filter by source (document must exist on the selected source)
+    let matches_source = source_filter.is_none_or(|source| {
+        document
+            .sources
+            .iter()
+            .any(|doc_source| &doc_source.client == source)
+    });
+
+    // Filter by allowed tags (file must have ALL allowed tags)
+    let matches_allow_tags = allow_tags.is_empty()
+        || allow_tags
+            .iter()
+            .all(|tag| document.metadata.tags.contains(tag));
+
+    // Filter by denied tags (file must have NONE of the denied tags)
+    let matches_deny_tags = deny_tags.is_empty()
+        || !document
+            .metadata
+            .tags
+            .iter()
+            .any(|tag| deny_tags.contains(tag));
+
+    matches_search && matches_status && matches_source && matches_allow_tags && matches_deny_tags
+}
+
+impl Page for DocumentList {
+    type Message = DocumentListMessage;
+
+    fn view(&self) -> Element<'_, DocumentListMessage> {
         self.archive
             .view()
             .map(Into::into)
@@ -221,7 +384,7 @@ impl DocumentList {
             .into()
     }
 
-    pub fn view_header_center(&self) -> Vec<Element<'_, DocumentListMessage>> {
+    fn view_header_center(&self) -> Vec<Element<'_, DocumentListMessage>> {
         let mut elements: Vec<Element<'_, DocumentListMessage>> = vec![
             widget::search_input(fl!("document-list-search-placeholder"), &self.search_query)
                 .id(self.search_input_id.clone())
@@ -239,11 +402,11 @@ impl DocumentList {
         elements
     }
 
-    pub fn view_header_end(&self) -> Vec<Element<'_, DocumentListMessage>> {
+    fn view_header_end(&self) -> Vec<Element<'_, DocumentListMessage>> {
         Default::default()
     }
 
-    pub fn view_context(&self) -> ContextView<'_, DocumentListMessage> {
+    fn view_context(&self) -> ContextView<'_, DocumentListMessage> {
         // Sort Section
         let sort_section = widget::settings::section()
             .title(fl!("document-list-sort-by"))
@@ -306,7 +469,7 @@ impl DocumentList {
         }
     }
 
-    pub fn update(&mut self, message: DocumentListMessage) -> Task<Action<DocumentListMessage>> {
+    fn update(&mut self, message: DocumentListMessage) -> Task<Action<DocumentListMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
             DocumentListMessage::LoadArchive => {
@@ -503,162 +666,4 @@ impl DocumentList {
             }
         }
     }
-
-    fn handle_batch_tag_editor_output(
-        &mut self,
-        msg: TagEditorOutput,
-    ) -> Task<Action<DocumentListMessage>> {
-        match msg {
-            TagEditorOutput::TagAdded(new_tag) => self.batch_add_tags(new_tag),
-            TagEditorOutput::TagRemoved(removed_tag) => self.batch_remove_tags(removed_tag),
-            TagEditorOutput::TagsUpdated(_tags) => Task::none(),
-        }
-    }
-
-    fn batch_remove_tags(&mut self, removed_tag: String) -> Task<Action<DocumentListMessage>> {
-        let selected_documents = self.archive.get_selected_documents();
-        let document_provider = self.document_provider.clone();
-        task::future(async move {
-            let _ = document_provider
-                .batch_delete_document_tags(selected_documents, slice::from_ref(&removed_tag))
-                .await;
-            DocumentListMessage::LoadArchive
-        })
-    }
-
-    fn batch_add_tags(&mut self, new_tag: String) -> Task<Action<DocumentListMessage>> {
-        let selected_documents = self.archive.get_selected_documents();
-        let document_provider = self.document_provider.clone();
-        task::future(async move {
-            let _ = document_provider
-                .batch_add_document_tags(selected_documents, slice::from_ref(&new_tag))
-                .await;
-
-            DocumentListMessage::LoadArchive
-        })
-    }
-
-    fn filter_now(&mut self) -> Task<Action<DocumentListMessage>> {
-        // Increment debounce counter to invalidate previous timers
-        self.debounce_counter += 1;
-
-        if self.archive.is_loaded() && !self.is_filtering {
-            self.is_filtering = true;
-            self.start_background_filtering(
-                self.search_query.clone(),
-                self.status_filter,
-                self.source_filter.clone(),
-                self.tag_filter.allow_tags.clone(),
-                self.tag_filter.deny_tags.clone(),
-                self.archive.unfiltered().to_vec(),
-            )
-        } else {
-            Task::none()
-        }
-    }
-
-    fn sort_now(&mut self) -> Task<Action<DocumentListMessage>> {
-        if self.archive.is_loaded() {
-            // Sort the unfiltered documents in place
-            self.archive
-                .sort_unfiltered(|docs| sort_documents(docs, self.sort_option));
-            // Re-apply the current filter to update the filtered view
-            self.filter_now()
-        } else {
-            Task::none()
-        }
-    }
-}
-
-/// Sort documents based on the selected sort option
-fn sort_documents(documents: &mut [Document], sort_option: DocumentSortOption) {
-    documents.sort_by(|a, b| compare_documents(a, b, sort_option));
-}
-
-/// Compare two documents based on the sort option
-fn compare_documents(a: &Document, b: &Document, sort_option: DocumentSortOption) -> Ordering {
-    match sort_option {
-        DocumentSortOption::FilenameAsc => get_filename(a)
-            .to_lowercase()
-            .cmp(&get_filename(b).to_lowercase()),
-        DocumentSortOption::FilenameDesc => get_filename(b)
-            .to_lowercase()
-            .cmp(&get_filename(a).to_lowercase()),
-        DocumentSortOption::SizeAsc => a.metadata.size.cmp(&b.metadata.size),
-        DocumentSortOption::SizeDesc => b.metadata.size.cmp(&a.metadata.size),
-        DocumentSortOption::TypeAsc => a.metadata.type_.as_str().cmp(b.metadata.type_.as_str()),
-        DocumentSortOption::TypeDesc => b.metadata.type_.as_str().cmp(a.metadata.type_.as_str()),
-        DocumentSortOption::StatusAsc => {
-            status_order(&a.metadata.status).cmp(&status_order(&b.metadata.status))
-        }
-        DocumentSortOption::StatusDesc => {
-            status_order(&b.metadata.status).cmp(&status_order(&a.metadata.status))
-        }
-    }
-}
-
-/// Get the filename from a document (uses local source if available, otherwise any source)
-fn get_filename(doc: &Document) -> &str {
-    let source = doc.local_or_any_source();
-    source.path.rsplit('/').next().unwrap_or(&source.path)
-}
-
-/// Convert reading status to a sortable order (Unread=0, Reading=1, Read=2)
-fn status_order(status: &ReadingStatus) -> u8 {
-    match status {
-        ReadingStatus::Unread => 0,
-        ReadingStatus::Reading => 1,
-        ReadingStatus::Read => 2,
-    }
-}
-
-fn filter_document(
-    search_query: &str,
-    status_filter: Option<ReadingStatus>,
-    source_filter: Option<&ClientSelector>,
-    allow_tags: &HashSet<String>,
-    deny_tags: &HashSet<String>,
-    document: &&Document,
-) -> bool {
-    // Filter by search query
-    let matches_search = if search_query.is_empty() {
-        true
-    } else {
-        let query = search_query.to_lowercase();
-        let path_matches = document
-            .sources
-            .iter()
-            .map(|source| source.path.to_lowercase())
-            .filter(|path| path.contains(&query))
-            .count();
-        let tags_lower = document.metadata.tags.join(" ").to_lowercase();
-        path_matches > 0 || tags_lower.contains(&query)
-    };
-
-    // Filter by reading status
-    let matches_status = status_filter.is_none_or(|status| document.metadata.status == status);
-
-    // Filter by source (document must exist on the selected source)
-    let matches_source = source_filter.is_none_or(|source| {
-        document
-            .sources
-            .iter()
-            .any(|doc_source| &doc_source.client == source)
-    });
-
-    // Filter by allowed tags (file must have ALL allowed tags)
-    let matches_allow_tags = allow_tags.is_empty()
-        || allow_tags
-            .iter()
-            .all(|tag| document.metadata.tags.contains(tag));
-
-    // Filter by denied tags (file must have NONE of the denied tags)
-    let matches_deny_tags = deny_tags.is_empty()
-        || !document
-            .metadata
-            .tags
-            .iter()
-            .any(|tag| deny_tags.contains(tag));
-
-    matches_search && matches_status && matches_source && matches_allow_tags && matches_deny_tags
 }

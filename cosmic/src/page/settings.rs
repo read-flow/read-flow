@@ -37,6 +37,7 @@ use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::forms::settings::authorized_user::AuthorizedUserForm;
+use crate::page::Page;
 use crate::forms::settings::authorized_user::AuthorizedUserFormMessage;
 use crate::forms::settings::authorized_user::AuthorizedUserFormOutput;
 use crate::forms::settings::directory_settings::DirectorySettingsForm;
@@ -195,7 +196,50 @@ impl SettingsPage {
         self.authorized_user_form.is_none() && self.directory_settings_form.is_none()
     }
 
-    pub fn view(&self) -> Element<'_, SettingsMessage> {
+    fn view_authorized_user_input<'a>(
+        &'a self,
+        user_id: &'a String,
+        passphrase: &'a HashedPassword,
+    ) -> Element<'a, SettingsMessage> {
+        let is_editing = self.is_editing_authorized_user(user_id);
+
+        widget::settings::item::builder(user_id)
+            .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))
+            .control(widget::settings::item_row(vec![
+                widget::text_input("", format!("{passphrase}")).into(),
+                widget::button::icon(
+                    widget::icon::from_name(if is_editing {
+                        "edit-clear-symbolic"
+                    } else {
+                        "edit-symbolic"
+                    })
+                    .size(ICON_SIZE),
+                )
+                .apply_if(!is_editing, |button| {
+                    button.on_press(SettingsMessage::EditAuthorizedUser(user_id.clone()))
+                })
+                .into(),
+                widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
+                    .on_press(SettingsMessage::DeleteAuthorizedUser(user_id.clone()))
+                    .class(widget::button::ButtonClass::Destructive)
+                    .into(),
+            ]))
+            .into()
+    }
+
+    fn is_editing_authorized_user<'a>(&'a self, user_id: &'a String) -> bool {
+        self.authorized_user_form
+            .as_ref()
+            .map(|form| form.original_user_id.as_ref())
+            .unwrap_or(None)
+            == Some(user_id)
+    }
+}
+
+impl Page for SettingsPage {
+    type Message = SettingsMessage;
+
+    fn view(&self) -> Element<'_, SettingsMessage> {
         let cosmic_theme::Spacing {
             space_s, space_m, ..
         } = theme::active().cosmic().spacing;
@@ -351,7 +395,15 @@ impl SettingsPage {
             .into()
     }
 
-    pub fn view_context(&self) -> ContextView<'_, SettingsMessage> {
+    fn view_header_center(&self) -> Vec<Element<'_, SettingsMessage>> {
+        Default::default()
+    }
+
+    fn view_header_end(&self) -> Vec<Element<'_, SettingsMessage>> {
+        Default::default()
+    }
+
+    fn view_context(&self) -> ContextView<'_, SettingsMessage> {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
         // UI Privacy section
@@ -382,15 +434,7 @@ impl SettingsPage {
         }
     }
 
-    pub fn view_header_center(&self) -> Vec<Element<'_, SettingsMessage>> {
-        Default::default()
-    }
-
-    pub fn view_header_end(&self) -> Vec<Element<'_, SettingsMessage>> {
-        Default::default()
-    }
-
-    pub fn update(&mut self, message: SettingsMessage) -> Task<Action<SettingsMessage>> {
+    fn update(&mut self, message: SettingsMessage) -> Task<Action<SettingsMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
             SettingsMessage::ToggleDryRun(value) => {
@@ -660,45 +704,6 @@ impl SettingsPage {
                 },
             },
         }
-    }
-
-    fn view_authorized_user_input<'a>(
-        &'a self,
-        user_id: &'a String,
-        passphrase: &'a HashedPassword,
-    ) -> Element<'a, SettingsMessage> {
-        let is_editing = self.is_editing_authorized_user(user_id);
-
-        widget::settings::item::builder(user_id)
-            .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))
-            .control(widget::settings::item_row(vec![
-                widget::text_input("", format!("{passphrase}")).into(),
-                widget::button::icon(
-                    widget::icon::from_name(if is_editing {
-                        "edit-clear-symbolic"
-                    } else {
-                        "edit-symbolic"
-                    })
-                    .size(ICON_SIZE),
-                )
-                .apply_if(!is_editing, |button| {
-                    button.on_press(SettingsMessage::EditAuthorizedUser(user_id.clone()))
-                })
-                .into(),
-                widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
-                    .on_press(SettingsMessage::DeleteAuthorizedUser(user_id.clone()))
-                    .class(widget::button::ButtonClass::Destructive)
-                    .into(),
-            ]))
-            .into()
-    }
-
-    fn is_editing_authorized_user<'a>(&'a self, user_id: &'a String) -> bool {
-        self.authorized_user_form
-            .as_ref()
-            .map(|form| form.original_user_id.as_ref())
-            .unwrap_or(None)
-            == Some(user_id)
     }
 }
 

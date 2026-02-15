@@ -26,6 +26,7 @@ use crate::aggregator::Document;
 use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::fl;
+use crate::page::Page;
 
 type Fingerprint = String;
 
@@ -216,158 +217,6 @@ impl PdfViewer {
             .to_string()
     }
 
-    pub fn view(&self) -> Element<'_, PdfViewerMessage> {
-        if self.file_path.is_none() {
-            // No local source available
-            let no_source = widget::column()
-                .align_x(cosmic::iced::Alignment::Center)
-                .spacing(16)
-                .push(
-                    widget::icon::from_name("dialog-warning-symbolic")
-                        .size(48)
-                        .icon(),
-                )
-                .push(widget::text::body(fl!("pdf-viewer-no-local-source")));
-
-            return widget::container(no_source)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(cosmic::iced::alignment::Horizontal::Center)
-                .align_y(Vertical::Center)
-                .into();
-        }
-
-        if self.pages.is_empty() {
-            // Loading state with icon and text
-            let loading = widget::column()
-                .align_x(cosmic::iced::Alignment::Center)
-                .spacing(16)
-                .push(
-                    widget::icon::from_name("content-loading-symbolic")
-                        .size(48)
-                        .icon(),
-                )
-                .push(widget::text::body(fl!("pdf-viewer-loading")));
-
-            return widget::container(loading)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(cosmic::iced::alignment::Horizontal::Center)
-                .align_y(Vertical::Center)
-                .into();
-        }
-
-        let thumbnails = self.view_thumbnails();
-        let content = self.view_content();
-
-        widget::row()
-            .push(thumbnails)
-            .push(content)
-            .height(Length::Fill)
-            .into()
-    }
-
-    pub fn view_context(&self) -> ContextView<'_, PdfViewerMessage> {
-        let zoom_section = widget::settings::section()
-            .title(fl!("pdf-viewer-zoom"))
-            .add(
-                widget::settings::item::builder(fl!("pdf-viewer-zoom")).control(widget::dropdown(
-                    &self.zoom_names,
-                    Zoom::all().iter().position(|z| z == &self.zoom),
-                    PdfViewerMessage::ZoomDropdown,
-                )),
-            );
-
-        let shortcuts_section = widget::settings::section()
-            .title(fl!("pdf-viewer-keyboard-shortcuts"))
-            .add(shortcut_item(
-                "↑ ← PgUp",
-                fl!("pdf-viewer-shortcut-previous-page"),
-            ))
-            .add(shortcut_item(
-                "↓ → PgDn",
-                fl!("pdf-viewer-shortcut-next-page"),
-            ))
-            .add(shortcut_item("0", fl!("pdf-viewer-shortcut-zoom-reset")))
-            .add(shortcut_item("−", fl!("pdf-viewer-shortcut-zoom-out")))
-            .add(shortcut_item("+", fl!("pdf-viewer-shortcut-zoom-in")))
-            .add(shortcut_item("F", fl!("pdf-viewer-shortcut-fit-both")))
-            .add(shortcut_item("H", fl!("pdf-viewer-shortcut-fit-height")))
-            .add(shortcut_item("W", fl!("pdf-viewer-shortcut-fit-width")))
-            .add(shortcut_item(
-                "Ctrl+Scroll",
-                fl!("pdf-viewer-shortcut-ctrl-scroll"),
-            ))
-            .add(shortcut_item("S /", fl!("pdf-viewer-shortcut-search")))
-            .add(shortcut_item(
-                "Esc",
-                fl!("pdf-viewer-shortcut-close-search"),
-            ));
-
-        ContextView {
-            title: self.display_name(),
-            content: widget::settings::view_column(vec![
-                zoom_section.into(),
-                shortcuts_section.into(),
-            ])
-            .into(),
-        }
-    }
-
-    pub fn view_header_center(&self) -> Vec<Element<'_, PdfViewerMessage>> {
-        let path = Path::new(&self.document.sources.iter().next().unwrap().path);
-        let filename = path
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .unwrap_or("PDF");
-
-        let page_info = if !self.pages.is_empty() {
-            format!("{} / {}", self.active_page + 1, self.pages.len())
-        } else {
-            String::new()
-        };
-
-        vec![
-            widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
-                .on_press(PdfViewerMessage::Out(PdfViewerOutput::Close(
-                    self.fingerprint.clone(),
-                )))
-                .tooltip(fl!("pdf-viewer-back"))
-                .into(),
-            widget::text::heading(filename).into(),
-            widget::text::body(page_info).into(),
-        ]
-    }
-
-    pub fn view_header_end(&self) -> Vec<Element<'_, PdfViewerMessage>> {
-        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
-
-        let mut elements = Vec::new();
-
-        // Search
-        if self.search_active {
-            elements.push(
-                widget::text_input::search_input("", &self.search_term)
-                    .width(Length::Fixed(240.0))
-                    .id(self.search_id.clone())
-                    .on_clear(PdfViewerMessage::SearchClear)
-                    .on_input(PdfViewerMessage::SearchInput)
-                    .into(),
-            );
-        } else {
-            elements.push(
-                widget::button::icon(
-                    widget::icon::from_name("system-search-symbolic").size(ICON_SIZE),
-                )
-                .on_press(PdfViewerMessage::SearchActivate)
-                .padding(space_xxs)
-                .into(),
-            );
-        }
-
-        elements
-    }
-
     fn view_thumbnails(&self) -> Element<'_, PdfViewerMessage> {
         let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
@@ -545,7 +394,164 @@ impl PdfViewer {
         self.pages.iter().position(|p| p.index == pdf_index)
     }
 
-    pub fn update(&mut self, message: PdfViewerMessage) -> Task<Action<PdfViewerMessage>> {
+}
+
+impl Page for PdfViewer {
+    type Message = PdfViewerMessage;
+
+    fn view(&self) -> Element<'_, PdfViewerMessage> {
+        if self.file_path.is_none() {
+            // No local source available
+            let no_source = widget::column()
+                .align_x(cosmic::iced::Alignment::Center)
+                .spacing(16)
+                .push(
+                    widget::icon::from_name("dialog-warning-symbolic")
+                        .size(48)
+                        .icon(),
+                )
+                .push(widget::text::body(fl!("pdf-viewer-no-local-source")));
+
+            return widget::container(no_source)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(cosmic::iced::alignment::Horizontal::Center)
+                .align_y(Vertical::Center)
+                .into();
+        }
+
+        if self.pages.is_empty() {
+            // Loading state with icon and text
+            let loading = widget::column()
+                .align_x(cosmic::iced::Alignment::Center)
+                .spacing(16)
+                .push(
+                    widget::icon::from_name("content-loading-symbolic")
+                        .size(48)
+                        .icon(),
+                )
+                .push(widget::text::body(fl!("pdf-viewer-loading")));
+
+            return widget::container(loading)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(cosmic::iced::alignment::Horizontal::Center)
+                .align_y(Vertical::Center)
+                .into();
+        }
+
+        let thumbnails = self.view_thumbnails();
+        let content = self.view_content();
+
+        widget::row()
+            .push(thumbnails)
+            .push(content)
+            .height(Length::Fill)
+            .into()
+    }
+
+    fn view_header_center(&self) -> Vec<Element<'_, PdfViewerMessage>> {
+        let path = Path::new(&self.document.sources.iter().next().unwrap().path);
+        let filename = path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("PDF");
+
+        let page_info = if !self.pages.is_empty() {
+            format!("{} / {}", self.active_page + 1, self.pages.len())
+        } else {
+            String::new()
+        };
+
+        vec![
+            widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
+                .on_press(PdfViewerMessage::Out(PdfViewerOutput::Close(
+                    self.fingerprint.clone(),
+                )))
+                .tooltip(fl!("pdf-viewer-back"))
+                .into(),
+            widget::text::heading(filename).into(),
+            widget::text::body(page_info).into(),
+        ]
+    }
+
+    fn view_header_end(&self) -> Vec<Element<'_, PdfViewerMessage>> {
+        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+
+        let mut elements = Vec::new();
+
+        // Search
+        if self.search_active {
+            elements.push(
+                widget::text_input::search_input("", &self.search_term)
+                    .width(Length::Fixed(240.0))
+                    .id(self.search_id.clone())
+                    .on_clear(PdfViewerMessage::SearchClear)
+                    .on_input(PdfViewerMessage::SearchInput)
+                    .into(),
+            );
+        } else {
+            elements.push(
+                widget::button::icon(
+                    widget::icon::from_name("system-search-symbolic").size(ICON_SIZE),
+                )
+                .on_press(PdfViewerMessage::SearchActivate)
+                .padding(space_xxs)
+                .into(),
+            );
+        }
+
+        elements
+    }
+
+    fn view_context(&self) -> ContextView<'_, PdfViewerMessage> {
+        let zoom_section = widget::settings::section()
+            .title(fl!("pdf-viewer-zoom"))
+            .add(
+                widget::settings::item::builder(fl!("pdf-viewer-zoom")).control(widget::dropdown(
+                    &self.zoom_names,
+                    Zoom::all().iter().position(|z| z == &self.zoom),
+                    PdfViewerMessage::ZoomDropdown,
+                )),
+            );
+
+        let shortcuts_section = widget::settings::section()
+            .title(fl!("pdf-viewer-keyboard-shortcuts"))
+            .add(shortcut_item(
+                "↑ ← PgUp",
+                fl!("pdf-viewer-shortcut-previous-page"),
+            ))
+            .add(shortcut_item(
+                "↓ → PgDn",
+                fl!("pdf-viewer-shortcut-next-page"),
+            ))
+            .add(shortcut_item("0", fl!("pdf-viewer-shortcut-zoom-reset")))
+            .add(shortcut_item("−", fl!("pdf-viewer-shortcut-zoom-out")))
+            .add(shortcut_item("+", fl!("pdf-viewer-shortcut-zoom-in")))
+            .add(shortcut_item("F", fl!("pdf-viewer-shortcut-fit-both")))
+            .add(shortcut_item("H", fl!("pdf-viewer-shortcut-fit-height")))
+            .add(shortcut_item("W", fl!("pdf-viewer-shortcut-fit-width")))
+            .add(shortcut_item(
+                "Ctrl+Scroll",
+                fl!("pdf-viewer-shortcut-ctrl-scroll"),
+            ))
+            .add(shortcut_item("S /", fl!("pdf-viewer-shortcut-search")))
+            .add(shortcut_item(
+                "Esc",
+                fl!("pdf-viewer-shortcut-close-search"),
+            ));
+
+        ContextView {
+            title: self.display_name(),
+            content: widget::settings::view_column(vec![
+                zoom_section.into(),
+                shortcuts_section.into(),
+            ])
+            .into(),
+        }
+    }
+
+    fn update(&mut self, message: PdfViewerMessage) -> Task<Action<PdfViewerMessage>> {
         match message {
             PdfViewerMessage::PagesLoaded(pages) => {
                 self.pages = pages;

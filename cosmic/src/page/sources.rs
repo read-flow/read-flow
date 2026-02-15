@@ -35,6 +35,7 @@ use crate::component::provided_state::ProvidedStateMessage;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::iter::find_with_next;
+use crate::page::Page;
 use crate::iter::find_with_previous;
 use crate::layout::layout;
 use crate::state::LoadedState;
@@ -158,7 +159,64 @@ impl SourcesPage {
         )
     }
 
-    pub fn view(&self) -> Element<'_, SourcesMessage> {
+    fn view_source<'a>(
+        &self,
+        source: &'a Remote,
+        is_first: bool,
+        is_last: bool,
+    ) -> Element<'a, SourcesMessage> {
+        widget::settings::item::builder(&source.base_url)
+            .icon(icon::from_name("network-server-symbolic").size(ICON_SIZE))
+            .control(widget::settings::item_row(vec![
+                widget::button::icon(icon::from_name("go-up-symbolic").size(ICON_SIZE))
+                    .class(theme::Button::Icon)
+                    .apply_if(!is_first, |button| {
+                        button.on_press(SourcesMessage::MoveSourceUp(source.clone()))
+                    })
+                    .into(),
+                widget::button::icon(icon::from_name("go-down-symbolic").size(ICON_SIZE))
+                    .class(theme::Button::Icon)
+                    .apply_if(!is_last, |button| {
+                        button.on_press(SourcesMessage::MoveSourceDown(source.clone()))
+                    })
+                    .into(),
+                widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
+                    .class(theme::Button::Destructive)
+                    .on_press(SourcesMessage::RequestDeleteSource(source.clone()))
+                    .into(),
+            ]))
+            .into()
+    }
+
+    fn verify_entered_url(&mut self, widget: widget::Id) -> Task<Action<SourcesMessage>> {
+        self.url_verification_state = UrlVerificationState::New;
+        if self.entered_url.is_empty()
+            || self.entered_user_id.is_empty()
+            || self.entered_passphrase.is_empty()
+        {
+            widget::text_input::focus(widget.clone())
+        } else {
+            match self.entered_url.parse::<Url>() {
+                Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
+                    url,
+                    user_id: self.entered_user_id.clone(),
+                    passphrase: self.entered_passphrase.clone(),
+                    do_submit: false,
+                    widget: widget.clone(),
+                }),
+                Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
+                    widget.clone(),
+                    fl!("sources-invalid-url"),
+                )),
+            }
+        }
+    }
+}
+
+impl Page for SourcesPage {
+    type Message = SourcesMessage;
+
+    fn view(&self) -> Element<'_, SourcesMessage> {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
         let mut content = Vec::new();
@@ -348,22 +406,22 @@ impl SourcesPage {
             .into()
     }
 
-    pub fn view_context(&self) -> ContextView<'_, SourcesMessage> {
+    fn view_header_center(&self) -> Vec<Element<'_, SourcesMessage>> {
+        Default::default()
+    }
+
+    fn view_header_end(&self) -> Vec<Element<'_, SourcesMessage>> {
+        Default::default()
+    }
+
+    fn view_context(&self) -> ContextView<'_, SourcesMessage> {
         ContextView {
             title: "Sources".to_string(),
             content: widget::text("TODO").into(),
         }
     }
 
-    pub fn view_header_center(&self) -> Vec<Element<'_, SourcesMessage>> {
-        Default::default()
-    }
-
-    pub fn view_header_end(&self) -> Vec<Element<'_, SourcesMessage>> {
-        Default::default()
-    }
-
-    pub fn update(&mut self, message: SourcesMessage) -> Task<Action<SourcesMessage>> {
+    fn update(&mut self, message: SourcesMessage) -> Task<Action<SourcesMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
             SourcesMessage::Remotes(message) => {
@@ -555,59 +613,6 @@ impl SourcesPage {
             }
             SourcesMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
-            }
-        }
-    }
-
-    fn view_source<'a>(
-        &self,
-        source: &'a Remote,
-        is_first: bool,
-        is_last: bool,
-    ) -> Element<'a, SourcesMessage> {
-        widget::settings::item::builder(&source.base_url)
-            .icon(icon::from_name("network-server-symbolic").size(ICON_SIZE))
-            .control(widget::settings::item_row(vec![
-                widget::button::icon(icon::from_name("go-up-symbolic").size(ICON_SIZE))
-                    .class(theme::Button::Icon)
-                    .apply_if(!is_first, |button| {
-                        button.on_press(SourcesMessage::MoveSourceUp(source.clone()))
-                    })
-                    .into(),
-                widget::button::icon(icon::from_name("go-down-symbolic").size(ICON_SIZE))
-                    .class(theme::Button::Icon)
-                    .apply_if(!is_last, |button| {
-                        button.on_press(SourcesMessage::MoveSourceDown(source.clone()))
-                    })
-                    .into(),
-                widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
-                    .class(theme::Button::Destructive)
-                    .on_press(SourcesMessage::RequestDeleteSource(source.clone()))
-                    .into(),
-            ]))
-            .into()
-    }
-
-    fn verify_entered_url(&mut self, widget: widget::Id) -> Task<Action<SourcesMessage>> {
-        self.url_verification_state = UrlVerificationState::New;
-        if self.entered_url.is_empty()
-            || self.entered_user_id.is_empty()
-            || self.entered_passphrase.is_empty()
-        {
-            widget::text_input::focus(widget.clone())
-        } else {
-            match self.entered_url.parse::<Url>() {
-                Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
-                    url,
-                    user_id: self.entered_user_id.clone(),
-                    passphrase: self.entered_passphrase.clone(),
-                    do_submit: false,
-                    widget: widget.clone(),
-                }),
-                Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
-                    widget.clone(),
-                    fl!("sources-invalid-url"),
-                )),
             }
         }
     }

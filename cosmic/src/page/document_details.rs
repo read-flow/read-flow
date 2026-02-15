@@ -34,6 +34,7 @@ use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::layout::layout;
+use crate::page::Page;
 use crate::state::LoadedState;
 
 pub struct DocumentDetails {
@@ -124,368 +125,6 @@ impl DocumentDetails {
             .and_then(|name| name.to_str())
             .unwrap_or("Unknown")
             .to_string()
-    }
-
-    pub fn view_header_center(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
-        let filename_without_extension =
-            Path::new(&self.document.sources.iter().next().unwrap().path)
-                .file_stem()
-                .and_then(|name| name.to_str())
-                .unwrap_or("Unknown");
-
-        vec![text::heading(filename_without_extension).into()]
-    }
-
-    pub fn view_header_end(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
-        vec![
-            widget::button::icon(
-                widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
-            )
-            .on_press(DocumentDetailsMessage::OpenDocument)
-            .tooltip(fl!("document-details-open-file"))
-            .into(),
-            widget::button::icon(widget::icon::from_name("window-close-symbolic").size(ICON_SIZE))
-                .on_press(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
-                    self.document.metadata.fingerprint.clone(),
-                )))
-                .tooltip(fl!("document-details-close"))
-                .into(),
-        ]
-    }
-
-    pub fn view(&self) -> Element<'_, DocumentDetailsMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
-        // Extract filename and folder using std::path
-        let path = Path::new(&self.document.sources.iter().next().unwrap().path);
-
-        // Get filename without extension
-        let filename = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Unknown");
-
-        // Get the folder path
-        let folder = path
-            .parent()
-            .and_then(|parent| parent.to_str())
-            .unwrap_or("");
-
-        // Build settings sections
-        let basic_info_section = widget::settings::section()
-            .title(fl!("document-details-basic-info"))
-            .add(
-                widget::settings::item::builder(fl!("document-details-filename"))
-                    .icon(widget::icon::from_name("document-open-symbolic").size(ICON_SIZE))
-                    .control(text(filename)),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-folder"))
-                    .icon(widget::icon::from_name("folder-symbolic").size(ICON_SIZE))
-                    .control(text(folder)),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-type"))
-                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
-                    .control(text(self.document.metadata.type_.as_str())),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-size"))
-                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
-                    .control(text(
-                        self.format_file_size(self.document.metadata.size.into()),
-                    )),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-status"))
-                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
-                    .control(
-                        cosmic::iced::widget::pick_list(
-                            [
-                                ReadingStatus::Unread,
-                                ReadingStatus::Reading,
-                                ReadingStatus::Read,
-                            ],
-                            Some(self.document.metadata.status),
-                            DocumentDetailsMessage::UpdateReadingStatus,
-                        )
-                        .placeholder(fl!("document-details-select-status")),
-                    ),
-            );
-
-        let technical_section = widget::settings::section()
-            .title(fl!("document-details-technical"))
-            .add(
-                widget::settings::item::builder(fl!("document-details-fingerprint"))
-                    .icon(widget::icon::from_name("auth-fingerprint-symbolic").size(ICON_SIZE))
-                    .control(text(&self.document.metadata.fingerprint)),
-            );
-
-        let tags_section = widget::settings::section()
-            .title(fl!("document-details-tags"))
-            .add(widget::settings::item_row(vec![
-                widget::icon::from_name("starred-symbolic")
-                    .size(ICON_SIZE)
-                    .into(),
-                self.tag_editor
-                    .view()
-                    .map(DocumentDetailsMessage::TagEditor)
-                    .apply(widget::container)
-                    .width(Length::Fill)
-                    .into(),
-            ]));
-
-        // Main layout using settings view_column
-        let mut sections: Vec<Element<'_, DocumentDetailsMessage>> = vec![
-            basic_info_section.into(),
-            technical_section.into(),
-            tags_section.into(),
-        ];
-
-        // Show confirmation dialog just above the sources section
-        if let Some(source) = &self.pending_source_deletion {
-            let dialog = widget::dialog()
-                .title(fl!("document-details-delete-source-confirm-title"))
-                .body(fl!("document-details-delete-source-confirm-body"))
-                .icon(widget::icon::from_name("dialog-warning-symbolic").size(64))
-                .control(
-                    widget::text::monotext(&source.path)
-                        .apply(widget::container)
-                        .class(theme::Container::Card)
-                        .padding(space_s)
-                        .width(Length::Fill),
-                )
-                .primary_action(
-                    widget::button::destructive(fl!(
-                        "document-details-delete-source-confirm-delete"
-                    ))
-                    .on_press(DocumentDetailsMessage::ConfirmDeleteSource),
-                )
-                .secondary_action(
-                    widget::button::standard(fl!("document-details-delete-source-confirm-cancel"))
-                        .on_press(DocumentDetailsMessage::CancelDeleteSource),
-                );
-
-            sections.push(
-                row()
-                    .push(widget::horizontal_space())
-                    .push(dialog.width(Length::FillPortion(10)))
-                    .push(widget::horizontal_space())
-                    .into(),
-            );
-        }
-
-        sections.extend(self.sources_view());
-
-        let content = widget::settings::view_column(sections);
-
-        // Wrap content in a scrollable container
-        layout(content)
-            .apply(widget::scrollable::vertical)
-            .apply(widget::container)
-            .height(Length::Fill)
-            .align_x(Horizontal::Center)
-            .align_y(Vertical::Top)
-            .into()
-    }
-
-    pub fn view_context(&self) -> ContextView<'_, DocumentDetailsMessage> {
-        ContextView {
-            title: fl!("document-details-send-to"),
-            content: widget::horizontal_space().into(),
-        }
-    }
-
-    pub fn update(
-        &mut self,
-        message: DocumentDetailsMessage,
-    ) -> Task<Action<DocumentDetailsMessage>> {
-        tracing::debug!("received: {message:?}");
-        match message {
-            DocumentDetailsMessage::Out(_) => {
-                panic!("{message:?} should be handled by the parent component")
-            }
-            DocumentDetailsMessage::TagEditor(tag_msg) => {
-                // Handle output messages from tag editor
-                match tag_msg {
-                    TagEditorMessage::Out(message) => match message {
-                        TagEditorOutput::TagAdded(tag) => self.add_tag(tag),
-                        TagEditorOutput::TagRemoved(tag) => self.remove_tag(tag),
-                        TagEditorOutput::TagsUpdated(_) => {
-                            // This is handled via TagAdded/TagRemoved
-                            Task::none()
-                        }
-                    },
-                    tag_msg => self
-                        .tag_editor
-                        .update(tag_msg)
-                        .map(|action| action.map(DocumentDetailsMessage::TagEditor)),
-                }
-            }
-            DocumentDetailsMessage::UpdateReadingStatus(status) => {
-                let mut updated_document = self.document.clone();
-                updated_document.metadata.status = status;
-                let document_provider = self.document_provider.clone();
-
-                task::future(async move {
-                    let result = document_provider
-                        .update_document(updated_document)
-                        .await
-                        .map_err(|err| format!("{err}"));
-                    DocumentDetailsMessage::ReadingStatusUpdated(result)
-                })
-            }
-            DocumentDetailsMessage::ReadingStatusUpdated(result) => {
-                match result {
-                    Ok(()) => {
-                        // Refresh the file to get updated status
-                        task::message(DocumentDetailsMessage::RefreshDocument)
-                    }
-                    Err(err) => {
-                        tracing::error!("Failed to update reading status: {err}");
-                        task::none()
-                    }
-                }
-            }
-            DocumentDetailsMessage::OpenDocument => {
-                if self.document.metadata.type_ == DocumentType::Pdf {
-                    // Open PDF documents in the built-in viewer
-                    task::message(DocumentDetailsMessage::Out(DocumentDetailsOutput::ViewPdf(
-                        self.document.clone(),
-                    )))
-                } else {
-                    // Open other document types with xdg-open
-                    let document = self.document.clone();
-                    let document_provider = self.document_provider.clone();
-                    task::future(async move {
-                        if let Err(e) = document_provider.open_document(document).await {
-                            tracing::error!("Failed to open file: {e}");
-                        }
-                        DocumentDetailsMessage::RefreshDocument
-                    })
-                }
-            }
-            DocumentDetailsMessage::TagsAdded(result) => {
-                match result {
-                    Ok(_tags) => {
-                        // Refresh the file to get updated tags
-                        return task::message(DocumentDetailsMessage::RefreshDocument);
-                    }
-                    Err(err) => {
-                        tracing::warn!("Failed to add tag: {}", err);
-                    }
-                }
-                task::none()
-            }
-            DocumentDetailsMessage::TagsRemoved(result) => {
-                match result {
-                    Ok(_) => {
-                        // Refresh the file to get updated tags
-                        return task::message(DocumentDetailsMessage::RefreshDocument);
-                    }
-                    Err(err) => {
-                        tracing::warn!("Failed to remove tag: {}", err);
-                    }
-                }
-                task::none()
-            }
-            DocumentDetailsMessage::RefreshDocument => {
-                let fingerprint = self.document.metadata.fingerprint.clone();
-                let document_provider = self.document_provider.clone();
-
-                task::future(async move {
-                    let result = document_provider
-                        .get_document(&fingerprint)
-                        .await
-                        .map_err(|err| format!("{err}"))
-                        .and_then(|document| {
-                            document.ok_or_else(|| {
-                                fl!("document-details-document-no-longer-accessible")
-                            })
-                        });
-                    DocumentDetailsMessage::DocumentRefreshed(result)
-                })
-            }
-            DocumentDetailsMessage::DocumentRefreshed(result) => match result {
-                Ok(document) => {
-                    self.document = document.clone();
-                    // Update the tag editor with the new tags
-                    let set_tags_task = self
-                        .tag_editor
-                        .update(TagEditorMessage::SetTags(document.metadata.tags.clone()))
-                        .map(|action| action.map(DocumentDetailsMessage::TagEditor));
-                    task::batch(vec![
-                        set_tags_task,
-                        task::message(DocumentDetailsMessage::Out(
-                            DocumentDetailsOutput::RefreshDocument(document),
-                        )),
-                    ])
-                }
-                Err(err) => {
-                    tracing::warn!("Failed to refresh file: {}", err);
-                    Task::none()
-                }
-            },
-            DocumentDetailsMessage::AllClients(message) => {
-                self.all_clients.update(message).map(ActionExt::map_into)
-            }
-            DocumentDetailsMessage::SendToClient(client) => {
-                let document = self.document.clone();
-                let document_provider = self.document_provider.clone();
-                task::future(async move {
-                    let result = document_provider
-                        .send_document_to_client(document, client)
-                        .await
-                        .map_err(|err| format!("{err}"));
-                    DocumentDetailsMessage::SentToClient(result)
-                })
-            }
-            DocumentDetailsMessage::SentToClient(result) => match result {
-                Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),
-                Err(err) => {
-                    tracing::error!("Failed to send document to client: {err}");
-                    Task::none()
-                }
-            },
-            DocumentDetailsMessage::ToggleEditSources => {
-                self.editing_sources = !self.editing_sources;
-                self.pending_source_deletion = None;
-                Task::none()
-            }
-            DocumentDetailsMessage::RequestDeleteSource(source) => {
-                self.pending_source_deletion = Some(source);
-                Task::none()
-            }
-            DocumentDetailsMessage::ConfirmDeleteSource => {
-                if let Some(source) = self.pending_source_deletion.take() {
-                    task::message(DocumentDetailsMessage::DeleteSource(source))
-                } else {
-                    Task::none()
-                }
-            }
-            DocumentDetailsMessage::CancelDeleteSource => {
-                self.pending_source_deletion = None;
-                Task::none()
-            }
-            DocumentDetailsMessage::DeleteSource(source) => {
-                let metadata = self.document.metadata.clone();
-                let document_provider = self.document_provider.clone();
-                task::future(async move {
-                    let result = document_provider
-                        .delete_document_source(source, metadata)
-                        .await
-                        .map_err(|err| format!("{err}"));
-                    DocumentDetailsMessage::SourceDeleted(result)
-                })
-            }
-            DocumentDetailsMessage::SourceDeleted(result) => match result {
-                Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),
-                Err(err) => {
-                    tracing::error!("Failed to delete source: {err}");
-                    Task::none()
-                }
-            },
-        }
     }
 
     fn add_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
@@ -692,5 +331,371 @@ impl DocumentDetails {
         }
 
         sections
+    }
+}
+
+impl Page for DocumentDetails {
+    type Message = DocumentDetailsMessage;
+
+    fn view(&self) -> Element<'_, DocumentDetailsMessage> {
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+
+        // Extract filename and folder using std::path
+        let path = Path::new(&self.document.sources.iter().next().unwrap().path);
+
+        // Get filename without extension
+        let filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Unknown");
+
+        // Get the folder path
+        let folder = path
+            .parent()
+            .and_then(|parent| parent.to_str())
+            .unwrap_or("");
+
+        // Build settings sections
+        let basic_info_section = widget::settings::section()
+            .title(fl!("document-details-basic-info"))
+            .add(
+                widget::settings::item::builder(fl!("document-details-filename"))
+                    .icon(widget::icon::from_name("document-open-symbolic").size(ICON_SIZE))
+                    .control(text(filename)),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-folder"))
+                    .icon(widget::icon::from_name("folder-symbolic").size(ICON_SIZE))
+                    .control(text(folder)),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-type"))
+                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
+                    .control(text(self.document.metadata.type_.as_str())),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-size"))
+                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
+                    .control(text(
+                        self.format_file_size(self.document.metadata.size.into()),
+                    )),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-status"))
+                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
+                    .control(
+                        cosmic::iced::widget::pick_list(
+                            [
+                                ReadingStatus::Unread,
+                                ReadingStatus::Reading,
+                                ReadingStatus::Read,
+                            ],
+                            Some(self.document.metadata.status),
+                            DocumentDetailsMessage::UpdateReadingStatus,
+                        )
+                        .placeholder(fl!("document-details-select-status")),
+                    ),
+            );
+
+        let technical_section = widget::settings::section()
+            .title(fl!("document-details-technical"))
+            .add(
+                widget::settings::item::builder(fl!("document-details-fingerprint"))
+                    .icon(widget::icon::from_name("auth-fingerprint-symbolic").size(ICON_SIZE))
+                    .control(text(&self.document.metadata.fingerprint)),
+            );
+
+        let tags_section = widget::settings::section()
+            .title(fl!("document-details-tags"))
+            .add(widget::settings::item_row(vec![
+                widget::icon::from_name("starred-symbolic")
+                    .size(ICON_SIZE)
+                    .into(),
+                self.tag_editor
+                    .view()
+                    .map(DocumentDetailsMessage::TagEditor)
+                    .apply(widget::container)
+                    .width(Length::Fill)
+                    .into(),
+            ]));
+
+        // Main layout using settings view_column
+        let mut sections: Vec<Element<'_, DocumentDetailsMessage>> = vec![
+            basic_info_section.into(),
+            technical_section.into(),
+            tags_section.into(),
+        ];
+
+        // Show confirmation dialog just above the sources section
+        if let Some(source) = &self.pending_source_deletion {
+            let dialog = widget::dialog()
+                .title(fl!("document-details-delete-source-confirm-title"))
+                .body(fl!("document-details-delete-source-confirm-body"))
+                .icon(widget::icon::from_name("dialog-warning-symbolic").size(64))
+                .control(
+                    widget::text::monotext(&source.path)
+                        .apply(widget::container)
+                        .class(theme::Container::Card)
+                        .padding(space_s)
+                        .width(Length::Fill),
+                )
+                .primary_action(
+                    widget::button::destructive(fl!(
+                        "document-details-delete-source-confirm-delete"
+                    ))
+                    .on_press(DocumentDetailsMessage::ConfirmDeleteSource),
+                )
+                .secondary_action(
+                    widget::button::standard(fl!("document-details-delete-source-confirm-cancel"))
+                        .on_press(DocumentDetailsMessage::CancelDeleteSource),
+                );
+
+            sections.push(
+                row()
+                    .push(widget::horizontal_space())
+                    .push(dialog.width(Length::FillPortion(10)))
+                    .push(widget::horizontal_space())
+                    .into(),
+            );
+        }
+
+        sections.extend(self.sources_view());
+
+        let content = widget::settings::view_column(sections);
+
+        // Wrap content in a scrollable container
+        layout(content)
+            .apply(widget::scrollable::vertical)
+            .apply(widget::container)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Top)
+            .into()
+    }
+
+    fn view_header_center(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
+        let filename_without_extension =
+            Path::new(&self.document.sources.iter().next().unwrap().path)
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Unknown");
+
+        vec![text::heading(filename_without_extension).into()]
+    }
+
+    fn view_header_end(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
+        vec![
+            widget::button::icon(
+                widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
+            )
+            .on_press(DocumentDetailsMessage::OpenDocument)
+            .tooltip(fl!("document-details-open-file"))
+            .into(),
+            widget::button::icon(widget::icon::from_name("window-close-symbolic").size(ICON_SIZE))
+                .on_press(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
+                    self.document.metadata.fingerprint.clone(),
+                )))
+                .tooltip(fl!("document-details-close"))
+                .into(),
+        ]
+    }
+
+    fn view_context(&self) -> ContextView<'_, DocumentDetailsMessage> {
+        ContextView {
+            title: fl!("document-details-send-to"),
+            content: widget::horizontal_space().into(),
+        }
+    }
+
+    fn update(
+        &mut self,
+        message: DocumentDetailsMessage,
+    ) -> Task<Action<DocumentDetailsMessage>> {
+        tracing::debug!("received: {message:?}");
+        match message {
+            DocumentDetailsMessage::Out(_) => {
+                panic!("{message:?} should be handled by the parent component")
+            }
+            DocumentDetailsMessage::TagEditor(tag_msg) => {
+                // Handle output messages from tag editor
+                match tag_msg {
+                    TagEditorMessage::Out(message) => match message {
+                        TagEditorOutput::TagAdded(tag) => self.add_tag(tag),
+                        TagEditorOutput::TagRemoved(tag) => self.remove_tag(tag),
+                        TagEditorOutput::TagsUpdated(_) => {
+                            // This is handled via TagAdded/TagRemoved
+                            Task::none()
+                        }
+                    },
+                    tag_msg => self
+                        .tag_editor
+                        .update(tag_msg)
+                        .map(|action| action.map(DocumentDetailsMessage::TagEditor)),
+                }
+            }
+            DocumentDetailsMessage::UpdateReadingStatus(status) => {
+                let mut updated_document = self.document.clone();
+                updated_document.metadata.status = status;
+                let document_provider = self.document_provider.clone();
+
+                task::future(async move {
+                    let result = document_provider
+                        .update_document(updated_document)
+                        .await
+                        .map_err(|err| format!("{err}"));
+                    DocumentDetailsMessage::ReadingStatusUpdated(result)
+                })
+            }
+            DocumentDetailsMessage::ReadingStatusUpdated(result) => {
+                match result {
+                    Ok(()) => {
+                        // Refresh the file to get updated status
+                        task::message(DocumentDetailsMessage::RefreshDocument)
+                    }
+                    Err(err) => {
+                        tracing::error!("Failed to update reading status: {err}");
+                        task::none()
+                    }
+                }
+            }
+            DocumentDetailsMessage::OpenDocument => {
+                if self.document.metadata.type_ == DocumentType::Pdf {
+                    // Open PDF documents in the built-in viewer
+                    task::message(DocumentDetailsMessage::Out(DocumentDetailsOutput::ViewPdf(
+                        self.document.clone(),
+                    )))
+                } else {
+                    // Open other document types with xdg-open
+                    let document = self.document.clone();
+                    let document_provider = self.document_provider.clone();
+                    task::future(async move {
+                        if let Err(e) = document_provider.open_document(document).await {
+                            tracing::error!("Failed to open file: {e}");
+                        }
+                        DocumentDetailsMessage::RefreshDocument
+                    })
+                }
+            }
+            DocumentDetailsMessage::TagsAdded(result) => {
+                match result {
+                    Ok(_tags) => {
+                        // Refresh the file to get updated tags
+                        return task::message(DocumentDetailsMessage::RefreshDocument);
+                    }
+                    Err(err) => {
+                        tracing::warn!("Failed to add tag: {}", err);
+                    }
+                }
+                task::none()
+            }
+            DocumentDetailsMessage::TagsRemoved(result) => {
+                match result {
+                    Ok(_) => {
+                        // Refresh the file to get updated tags
+                        return task::message(DocumentDetailsMessage::RefreshDocument);
+                    }
+                    Err(err) => {
+                        tracing::warn!("Failed to remove tag: {}", err);
+                    }
+                }
+                task::none()
+            }
+            DocumentDetailsMessage::RefreshDocument => {
+                let fingerprint = self.document.metadata.fingerprint.clone();
+                let document_provider = self.document_provider.clone();
+
+                task::future(async move {
+                    let result = document_provider
+                        .get_document(&fingerprint)
+                        .await
+                        .map_err(|err| format!("{err}"))
+                        .and_then(|document| {
+                            document.ok_or_else(|| {
+                                fl!("document-details-document-no-longer-accessible")
+                            })
+                        });
+                    DocumentDetailsMessage::DocumentRefreshed(result)
+                })
+            }
+            DocumentDetailsMessage::DocumentRefreshed(result) => match result {
+                Ok(document) => {
+                    self.document = document.clone();
+                    // Update the tag editor with the new tags
+                    let set_tags_task = self
+                        .tag_editor
+                        .update(TagEditorMessage::SetTags(document.metadata.tags.clone()))
+                        .map(|action| action.map(DocumentDetailsMessage::TagEditor));
+                    task::batch(vec![
+                        set_tags_task,
+                        task::message(DocumentDetailsMessage::Out(
+                            DocumentDetailsOutput::RefreshDocument(document),
+                        )),
+                    ])
+                }
+                Err(err) => {
+                    tracing::warn!("Failed to refresh file: {}", err);
+                    Task::none()
+                }
+            },
+            DocumentDetailsMessage::AllClients(message) => {
+                self.all_clients.update(message).map(ActionExt::map_into)
+            }
+            DocumentDetailsMessage::SendToClient(client) => {
+                let document = self.document.clone();
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    let result = document_provider
+                        .send_document_to_client(document, client)
+                        .await
+                        .map_err(|err| format!("{err}"));
+                    DocumentDetailsMessage::SentToClient(result)
+                })
+            }
+            DocumentDetailsMessage::SentToClient(result) => match result {
+                Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),
+                Err(err) => {
+                    tracing::error!("Failed to send document to client: {err}");
+                    Task::none()
+                }
+            },
+            DocumentDetailsMessage::ToggleEditSources => {
+                self.editing_sources = !self.editing_sources;
+                self.pending_source_deletion = None;
+                Task::none()
+            }
+            DocumentDetailsMessage::RequestDeleteSource(source) => {
+                self.pending_source_deletion = Some(source);
+                Task::none()
+            }
+            DocumentDetailsMessage::ConfirmDeleteSource => {
+                if let Some(source) = self.pending_source_deletion.take() {
+                    task::message(DocumentDetailsMessage::DeleteSource(source))
+                } else {
+                    Task::none()
+                }
+            }
+            DocumentDetailsMessage::CancelDeleteSource => {
+                self.pending_source_deletion = None;
+                Task::none()
+            }
+            DocumentDetailsMessage::DeleteSource(source) => {
+                let metadata = self.document.metadata.clone();
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    let result = document_provider
+                        .delete_document_source(source, metadata)
+                        .await
+                        .map_err(|err| format!("{err}"));
+                    DocumentDetailsMessage::SourceDeleted(result)
+                })
+            }
+            DocumentDetailsMessage::SourceDeleted(result) => match result {
+                Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),
+                Err(err) => {
+                    tracing::error!("Failed to delete source: {err}");
+                    Task::none()
+                }
+            },
+        }
     }
 }

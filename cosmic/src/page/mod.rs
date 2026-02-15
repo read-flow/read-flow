@@ -5,6 +5,9 @@ mod document_list;
 mod pdf_viewer;
 mod settings;
 mod sources;
+mod traits;
+
+pub use traits::Page;
 
 use core::panic;
 use std::any::Any;
