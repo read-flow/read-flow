@@ -15,14 +15,12 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Row;
-use cosmic::widget::row;
 use cosmic::widget::text;
 
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::aggregator::DocumentSource;
 use crate::aggregator::DocumentType;
-use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::component::provided_state::ProvidedState;
 use crate::component::provided_state::ProvidedStateMessage;
@@ -338,8 +336,6 @@ impl Page for DocumentDetails {
     type Message = DocumentDetailsMessage;
 
     fn view(&self) -> Element<'_, DocumentDetailsMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
         // Extract filename and folder using std::path
         let path = Path::new(&self.document.sources.iter().next().unwrap().path);
 
@@ -426,9 +422,26 @@ impl Page for DocumentDetails {
             tags_section.into(),
         ];
 
-        // Show confirmation dialog just above the sources section
-        if let Some(source) = &self.pending_source_deletion {
-            let dialog = widget::dialog()
+        sections.extend(self.sources_view());
+
+        let content = widget::settings::view_column(sections);
+
+        // Wrap content in a scrollable container
+        layout(content)
+            .apply(widget::scrollable::vertical)
+            .apply(widget::container)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Top)
+            .into()
+    }
+
+    fn dialog(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+
+        let source = self.pending_source_deletion.as_ref()?;
+        Some(
+            widget::dialog()
                 .title(fl!("document-details-delete-source-confirm-title"))
                 .body(fl!("document-details-delete-source-confirm-body"))
                 .icon(widget::icon::from_name("dialog-warning-symbolic").size(64))
@@ -448,29 +461,9 @@ impl Page for DocumentDetails {
                 .secondary_action(
                     widget::button::standard(fl!("document-details-delete-source-confirm-cancel"))
                         .on_press(DocumentDetailsMessage::CancelDeleteSource),
-                );
-
-            sections.push(
-                row()
-                    .push(widget::horizontal_space())
-                    .push(dialog.width(Length::FillPortion(10)))
-                    .push(widget::horizontal_space())
-                    .into(),
-            );
-        }
-
-        sections.extend(self.sources_view());
-
-        let content = widget::settings::view_column(sections);
-
-        // Wrap content in a scrollable container
-        layout(content)
-            .apply(widget::scrollable::vertical)
-            .apply(widget::container)
-            .height(Length::Fill)
-            .align_x(Horizontal::Center)
-            .align_y(Vertical::Top)
-            .into()
+                )
+                .into(),
+        )
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
@@ -502,13 +495,6 @@ impl Page for DocumentDetails {
                 .tooltip(fl!("document-details-close"))
                 .into(),
         ]
-    }
-
-    fn view_context(&self) -> ContextView<'_, DocumentDetailsMessage> {
-        ContextView {
-            title: fl!("document-details-send-to"),
-            content: widget::horizontal_space().into(),
-        }
     }
 
     fn update(&mut self, message: DocumentDetailsMessage) -> Task<Action<DocumentDetailsMessage>> {

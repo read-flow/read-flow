@@ -402,10 +402,6 @@ impl Page for DocumentList {
         elements
     }
 
-    fn view_header_end(&self) -> Vec<Element<'_, DocumentListMessage>> {
-        Default::default()
-    }
-
     fn view_context(&self) -> ContextView<'_, DocumentListMessage> {
         // Sort Section
         let sort_section = widget::settings::section()

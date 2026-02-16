@@ -22,14 +22,12 @@ use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::icon;
-use cosmic::widget::row;
 use cosmic::widget::settings;
 use provider::r#async::Provider;
 use url::Url;
 
 use crate::ApplicationModule;
 use crate::ICON_SIZE;
-use crate::app::ContextView;
 use crate::component::provided_state::ProvidedState;
 use crate::component::provided_state::ProvidedStateMessage;
 use crate::cosmic_ext::ActionExt;
@@ -217,66 +215,7 @@ impl Page for SourcesPage {
     type Message = SourcesMessage;
 
     fn view(&self) -> Element<'_, SourcesMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
         let mut content = Vec::new();
-
-        // Show confirmation dialog if there's a pending deletion
-        if let Some(remote) = &self.pending_deletion {
-            let dialog = widget::dialog()
-                .title(fl!("sources-delete-confirm-title"))
-                .body(fl!("sources-delete-confirm-body"))
-                .icon(icon::from_name("dialog-warning-symbolic").size(64))
-                .control(
-                    widget::text::monotext(&remote.base_url)
-                        .apply(widget::container)
-                        .class(cosmic::theme::Container::Card)
-                        .padding(space_s)
-                        .width(Length::Fill),
-                )
-                .primary_action(
-                    widget::button::destructive(fl!("sources-delete-confirm-delete"))
-                        .on_press(SourcesMessage::ConfirmDeleteSource),
-                )
-                .secondary_action(
-                    widget::button::standard(fl!("sources-delete-confirm-cancel"))
-                        .on_press(SourcesMessage::CancelDeleteSource),
-                );
-
-            content.push(
-                row()
-                    .push(widget::horizontal_space())
-                    .push(dialog.width(Length::FillPortion(10)))
-                    .push(widget::horizontal_space())
-                    .into(),
-            );
-        }
-
-        // Show error dialog if there's an operation error
-        if let Some(error) = &self.operation_error {
-            let dialog = widget::dialog()
-                .title(fl!("sources-error-title"))
-                .control(
-                    widget::text::monotext(error)
-                        .apply(widget::container)
-                        .class(cosmic::theme::Container::Card)
-                        .padding(space_s)
-                        .width(Length::Fill),
-                )
-                .icon(icon::from_name("dialog-error-symbolic").size(64))
-                .primary_action(
-                    widget::button::suggested(fl!("sources-error-close"))
-                        .on_press(SourcesMessage::ClearOperationError),
-                );
-
-            content.push(
-                row()
-                    .push(widget::horizontal_space())
-                    .push(dialog.width(Length::FillPortion(10)))
-                    .push(widget::horizontal_space())
-                    .into(),
-            );
-        }
 
         // Sources list section
         let sources_section = match &self.remotes_state.state {
@@ -406,19 +345,55 @@ impl Page for SourcesPage {
             .into()
     }
 
-    fn view_header_center(&self) -> Vec<Element<'_, SourcesMessage>> {
-        Default::default()
-    }
+    fn dialog(&self) -> Option<Element<'_, SourcesMessage>> {
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
-    fn view_header_end(&self) -> Vec<Element<'_, SourcesMessage>> {
-        Default::default()
-    }
-
-    fn view_context(&self) -> ContextView<'_, SourcesMessage> {
-        ContextView {
-            title: "Sources".to_string(),
-            content: widget::text("TODO").into(),
+        if let Some(remote) = &self.pending_deletion {
+            return Some(
+                widget::dialog()
+                    .title(fl!("sources-delete-confirm-title"))
+                    .body(fl!("sources-delete-confirm-body"))
+                    .icon(icon::from_name("dialog-warning-symbolic").size(64))
+                    .control(
+                        widget::text::monotext(&remote.base_url)
+                            .apply(widget::container)
+                            .class(cosmic::theme::Container::Card)
+                            .padding(space_s)
+                            .width(Length::Fill),
+                    )
+                    .primary_action(
+                        widget::button::destructive(fl!("sources-delete-confirm-delete"))
+                            .on_press(SourcesMessage::ConfirmDeleteSource),
+                    )
+                    .secondary_action(
+                        widget::button::standard(fl!("sources-delete-confirm-cancel"))
+                            .on_press(SourcesMessage::CancelDeleteSource),
+                    )
+                    .into(),
+            );
         }
+
+        if let Some(error) = &self.operation_error {
+            return Some(
+                widget::dialog()
+                    .title(fl!("sources-error-title"))
+                    .control(
+                        widget::text::monotext(error)
+                            .apply(widget::container)
+                            .class(cosmic::theme::Container::Card)
+                            .padding(space_s)
+                            .width(Length::Fill),
+                    )
+                    .icon(icon::from_name("dialog-error-symbolic").size(64))
+                    .primary_action(
+                        widget::button::suggested(fl!("sources-error-close"))
+                            .on_press(SourcesMessage::ClearOperationError),
+                    )
+                    .into(),
+            );
+        }
+
+        None
     }
 
     fn update(&mut self, message: SourcesMessage) -> Task<Action<SourcesMessage>> {

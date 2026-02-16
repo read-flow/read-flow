@@ -194,6 +194,30 @@ impl Pages {
         }
     }
 
+    pub fn dialog<'a>(&'a self, active_page: &'a PageSelector) -> Option<Element<'a, PageMessage>> {
+        match &active_page {
+            PageSelector::Sources => self.sources.dialog().map(|e| e.map(Into::into)),
+            PageSelector::Documents => self
+                .documents
+                .dialog()
+                .map(|e| e.map(map_document_list_message)),
+            PageSelector::DocumentDetails(fingerprint) => {
+                self.document_details.get(fingerprint).and_then(|page| {
+                    page.dialog().map(|e| {
+                        e.map(|msg| map_document_details_message(fingerprint.clone(), msg))
+                    })
+                })
+            }
+            PageSelector::PdfViewer(fingerprint) => {
+                self.pdf_viewers.get(fingerprint).and_then(|page| {
+                    page.dialog()
+                        .map(|e| e.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg)))
+                })
+            }
+            PageSelector::Settings => self.settings.dialog().map(|e| e.map(Into::into)),
+        }
+    }
+
     pub fn view<'a>(&'a self, active_page: &'a PageSelector) -> Element<'a, PageMessage> {
         match &active_page {
             PageSelector::Sources => self.sources.view().map(Into::into),

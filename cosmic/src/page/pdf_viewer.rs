@@ -671,13 +671,12 @@ impl Page for PdfViewer {
         match message {
             PdfViewerMessage::ReadingProgressLoaded(page) => {
                 self.initial_page = page;
-                if !self.pages.is_empty() {
-                    if let Some(p) = page {
-                        if p < self.pages.len() {
-                            self.active_page = p;
-                            return self.update_active_page();
-                        }
-                    }
+                if !self.pages.is_empty()
+                    && let Some(p) = page
+                    && p < self.pages.len()
+                {
+                    self.active_page = p;
+                    return self.update_active_page();
                 }
                 Task::none()
             }

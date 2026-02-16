@@ -395,14 +395,6 @@ impl Page for SettingsPage {
             .into()
     }
 
-    fn view_header_center(&self) -> Vec<Element<'_, SettingsMessage>> {
-        Default::default()
-    }
-
-    fn view_header_end(&self) -> Vec<Element<'_, SettingsMessage>> {
-        Default::default()
-    }
-
     fn view_context(&self) -> ContextView<'_, SettingsMessage> {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 

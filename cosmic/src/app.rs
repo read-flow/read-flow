@@ -309,6 +309,11 @@ impl cosmic::Application for AppModel {
         })
     }
 
+    fn dialog(&self) -> Option<Element<'_, Self::Message>> {
+        let page = self.nav.data::<PageSelector>(self.nav.active())?;
+        self.pages.dialog(page).map(|e| e.map(Into::into))
+    }
+
     /// Describes the interface based on the current state of the application model.
     ///
     /// Application events will be processed through the view. Any messages emitted by
