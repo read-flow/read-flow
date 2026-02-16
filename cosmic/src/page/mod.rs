@@ -121,6 +121,50 @@ impl From<SettingsMessage> for PageMessage {
     }
 }
 
+macro_rules! with_active_page {
+    ($self:expr, $selector:expr, |$page:ident, $mapper:ident| $body:expr) => {
+        match $selector {
+            PageSelector::Sources => {
+                let $page = Some(&$self.sources);
+                let $mapper = map_sources_message;
+                $body
+            }
+            PageSelector::Documents => {
+                let $page = Some(&$self.documents);
+                let $mapper = map_document_list_message;
+                $body
+            }
+            PageSelector::DocumentDetails(fingerprint) => {
+                let $page = $self.document_details.get(fingerprint);
+                let fingerprint = fingerprint.clone();
+                let $mapper = move |msg| map_document_details_message(fingerprint.clone(), msg);
+                $body
+            }
+            PageSelector::PdfViewer(fingerprint) => {
+                let $page = $self.pdf_viewers.get(fingerprint);
+                let fingerprint = fingerprint.clone();
+                let $mapper = move |msg| map_pdf_viewer_message(fingerprint.clone(), msg);
+                $body
+            }
+            PageSelector::Settings => {
+                let $page = Some(&$self.settings);
+                let $mapper = map_settings_message;
+                $body
+            }
+        }
+    };
+}
+
+fn page_not_found<'a, M: 'a>() -> Element<'a, M> {
+    widget::text::title1(fl!("page-not-found"))
+        .apply(widget::container)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Horizontal::Center)
+        .align_y(Vertical::Center)
+        .into()
+}
+
 impl Pages {
     pub fn new(application_module: Arc<ApplicationModule>) -> (Self, Task<Action<PageMessage>>) {
         let (sources, init_sources) = SourcesPage::new(application_module.clone());
@@ -195,208 +239,59 @@ impl Pages {
     }
 
     pub fn dialog<'a>(&'a self, active_page: &'a PageSelector) -> Option<Element<'a, PageMessage>> {
-        match &active_page {
-            PageSelector::Sources => self.sources.dialog().map(|e| e.map(Into::into)),
-            PageSelector::Documents => self
-                .documents
-                .dialog()
-                .map(|e| e.map(map_document_list_message)),
-            PageSelector::DocumentDetails(fingerprint) => {
-                self.document_details.get(fingerprint).and_then(|page| {
-                    page.dialog().map(|e| {
-                        e.map(|msg| map_document_details_message(fingerprint.clone(), msg))
-                    })
-                })
-            }
-            PageSelector::PdfViewer(fingerprint) => {
-                self.pdf_viewers.get(fingerprint).and_then(|page| {
-                    page.dialog()
-                        .map(|e| e.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg)))
-                })
-            }
-            PageSelector::Settings => self.settings.dialog().map(|e| e.map(Into::into)),
-        }
+        with_active_page!(self, active_page, |page, mapper| {
+            page.and_then(|p| p.dialog().map(|e| e.map(mapper)))
+        })
     }
 
     pub fn view<'a>(&'a self, active_page: &'a PageSelector) -> Element<'a, PageMessage> {
-        match &active_page {
-            PageSelector::Sources => self.sources.view().map(Into::into),
-            PageSelector::Documents => self.documents.view().map(map_document_list_message),
-            PageSelector::DocumentDetails(fingerprint) => self
-                .document_details
-                .get(fingerprint)
-                .map(|page| {
-                    page.view()
-                        .map(|msg| map_document_details_message(fingerprint.clone(), msg))
-                })
-                .unwrap_or_else(|| {
-                    widget::text::title1(fl!("page-not-found"))
-                        .apply(widget::container)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_x(Horizontal::Center)
-                        .align_y(Vertical::Center)
-                        .into()
-                }),
-            PageSelector::PdfViewer(fingerprint) => self
-                .pdf_viewers
-                .get(fingerprint)
-                .map(|page| {
-                    page.view()
-                        .map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg))
-                })
-                .unwrap_or_else(|| {
-                    widget::text::title1(fl!("page-not-found"))
-                        .apply(widget::container)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_x(Horizontal::Center)
-                        .align_y(Vertical::Center)
-                        .into()
-                }),
-            PageSelector::Settings => self.settings.view().map(Into::into),
-        }
+        with_active_page!(self, active_page, |page, mapper| {
+            page.map(|p| p.view().map(mapper))
+                .unwrap_or_else(page_not_found)
+        })
     }
 
     pub fn view_header_center<'a>(
         &'a self,
         active_page: &'a PageSelector,
     ) -> Vec<Element<'a, PageMessage>> {
-        match &active_page {
-            PageSelector::Sources => self
-                .sources
-                .view_header_center()
-                .into_iter()
-                .map(|e| e.map(Into::into))
-                .collect(),
-            PageSelector::Documents => self
-                .documents
-                .view_header_center()
-                .into_iter()
-                .map(|e| e.map(map_document_list_message))
-                .collect(),
-            PageSelector::DocumentDetails(fingerprint) => self
-                .document_details
-                .get(fingerprint)
-                .map(|page| {
-                    page.view_header_center()
-                        .into_iter()
-                        .map(|e| {
-                            e.map(|msg| map_document_details_message(fingerprint.clone(), msg))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            PageSelector::PdfViewer(fingerprint) => self
-                .pdf_viewers
-                .get(fingerprint)
-                .map(|page| {
-                    page.view_header_center()
-                        .into_iter()
-                        .map(|e| e.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg)))
-                        .collect()
-                })
-                .unwrap_or_default(),
-            PageSelector::Settings => self
-                .settings
-                .view_header_center()
-                .into_iter()
-                .map(|e| e.map(Into::into))
-                .collect(),
-        }
+        with_active_page!(self, active_page, |page, mapper| {
+            page.map(|p| {
+                p.view_header_center()
+                    .into_iter()
+                    .map(|e| e.map(mapper.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+        })
     }
 
     pub fn view_header_end<'a>(
         &'a self,
         active_page: &'a PageSelector,
     ) -> Vec<Element<'a, PageMessage>> {
-        match &active_page {
-            PageSelector::Sources => self
-                .sources
-                .view_header_end()
-                .into_iter()
-                .map(|e| e.map(Into::into))
-                .collect(),
-            PageSelector::Documents => self
-                .documents
-                .view_header_end()
-                .into_iter()
-                .map(|e| e.map(map_document_list_message))
-                .collect(),
-            PageSelector::DocumentDetails(fingerprint) => self
-                .document_details
-                .get(fingerprint)
-                .map(|page| {
-                    page.view_header_end()
-                        .into_iter()
-                        .map(|e| {
-                            e.map(|msg| map_document_details_message(fingerprint.clone(), msg))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
-            PageSelector::PdfViewer(fingerprint) => self
-                .pdf_viewers
-                .get(fingerprint)
-                .map(|page| {
-                    page.view_header_end()
-                        .into_iter()
-                        .map(|e| e.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg)))
-                        .collect()
-                })
-                .unwrap_or_default(),
-            PageSelector::Settings => self
-                .settings
-                .view_header_end()
-                .into_iter()
-                .map(|e| e.map(Into::into))
-                .collect(),
-        }
+        with_active_page!(self, active_page, |page, mapper| {
+            page.map(|p| {
+                p.view_header_end()
+                    .into_iter()
+                    .map(|e| e.map(mapper.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+        })
     }
 
     pub fn view_context<'a>(
         &'a self,
         active_page: &'a PageSelector,
     ) -> ContextView<'a, PageMessage> {
-        match &active_page {
-            PageSelector::Sources => self.sources.view_context().map(Into::into),
-            PageSelector::Documents => self.documents.view_context().map(map_document_list_message),
-            PageSelector::DocumentDetails(fingerprint) => self
-                .document_details
-                .get(fingerprint)
-                .map(|page| {
-                    page.view_context()
-                        .map(|msg| map_document_details_message(fingerprint.clone(), msg))
-                })
+        with_active_page!(self, active_page, |page, mapper| {
+            page.map(|p| p.view_context().map(mapper))
                 .unwrap_or_else(|| ContextView {
                     title: fl!("page-not-found"),
-                    content: widget::text::title1(fl!("page-not-found"))
-                        .apply(widget::container)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_x(Horizontal::Center)
-                        .align_y(Vertical::Center)
-                        .into(),
-                }),
-            PageSelector::PdfViewer(fingerprint) => self
-                .pdf_viewers
-                .get(fingerprint)
-                .map(|page| {
-                    page.view_context()
-                        .map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg))
+                    content: page_not_found(),
                 })
-                .unwrap_or_else(|| ContextView {
-                    title: fl!("page-not-found"),
-                    content: widget::text::title1(fl!("page-not-found"))
-                        .apply(widget::container)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .align_x(Horizontal::Center)
-                        .align_y(Vertical::Center)
-                        .into(),
-                }),
-            PageSelector::Settings => self.settings.view_context().map(Into::into),
-        }
+        })
     }
 
     pub fn update(&mut self, message: PageMessage) -> Task<Action<PageMessage>> {
