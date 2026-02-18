@@ -1,3 +1,4 @@
+pub mod content;
 pub mod domain;
 pub mod epub;
 pub mod error;
@@ -16,3 +17,6 @@ pub use renderer::RendererCapabilities;
 pub use renderer::RendererCommand;
 pub use renderer::RendererEvent;
 pub use renderer::TextRange;
+
+pub use content::ContentBlock;
+pub use content::ListItem;

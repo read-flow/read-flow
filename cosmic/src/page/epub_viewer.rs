@@ -15,6 +15,7 @@ use cosmic::iced::keyboard::Modifiers;
 use cosmic::iced::keyboard::key::Named;
 use cosmic::theme;
 use cosmic::widget;
+use epub::ContentBlock;
 use epub::Document as EpubDocumentTrait;
 use epub::EpubDocument;
 
@@ -35,7 +36,7 @@ const CHAPTER_SIDEBAR_WIDTH: f32 = 220.0;
 #[derive(Clone, Debug)]
 pub(crate) struct EpubChapter {
     label: String,
-    text_content: String,
+    blocks: Vec<ContentBlock>,
 }
 
 // --- Messages ---
@@ -179,17 +180,24 @@ impl EpubViewer {
     }
 
     fn view_content(&self) -> Element<'_, EpubViewerMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing {
+            space_s, space_xxs, ..
+        } = theme::active().cosmic().spacing;
 
         if let Some(chapter) = self.chapters.get(self.active_chapter) {
-            widget::scrollable(
-                widget::container(widget::text::body(&chapter.text_content).width(Length::Fill))
-                    .padding(space_s),
-            )
-            .id(self.content_scroll_id.clone())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+            let mut column = widget::column::with_capacity(chapter.blocks.len())
+                .spacing(space_xxs)
+                .width(Length::Fill);
+
+            for block in &chapter.blocks {
+                column = column.push(render_block(block));
+            }
+
+            widget::scrollable(widget::container(column).padding(space_s))
+                .id(self.content_scroll_id.clone())
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
         } else {
             widget::Space::new(Length::Fill, Length::Fill).into()
         }
@@ -368,33 +376,6 @@ fn parse_chapter_from_progress(progress: &str) -> Option<usize> {
     None
 }
 
-/// Strip HTML tags and decode basic HTML entities.
-fn strip_html(html: &str) -> String {
-    let mut result = String::with_capacity(html.len());
-    let mut in_tag = false;
-
-    for c in html.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' => {
-                in_tag = false;
-                // Add space after block-level closing tags to separate paragraphs
-            }
-            _ if !in_tag => result.push(c),
-            _ => {}
-        }
-    }
-
-    // Decode basic HTML entities
-    result
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&#39;", "'")
-}
-
 /// Load EPUB chapters from a file path. Runs on a blocking thread.
 fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
     let doc = match EpubDocument::open(path) {
@@ -417,22 +398,99 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
             item.id.clone()
         };
 
-        let text_content = match doc.resolve_resource(&item.href) {
+        let blocks = match doc.resolve_resource(&item.href) {
             Ok(data) => {
-                let html = String::from_utf8_lossy(&data);
-                strip_html(&html)
+                let href = &item.href;
+                epub::content::parse_xhtml(&data, href, &mut |img_path| {
+                    match doc.resolve_resource(img_path) {
+                        Ok(img_data) => {
+                            let media_type = epub::content::guess_media_type(img_path);
+                            Some((img_data, media_type))
+                        }
+                        Err(_) => None,
+                    }
+                })
             }
             Err(e) => {
                 tracing::warn!("failed to resolve spine item {}: {e}", item.href);
-                String::new()
+                Vec::new()
             }
         };
 
-        chapters.push(EpubChapter {
-            label,
-            text_content,
-        });
+        chapters.push(EpubChapter { label, blocks });
     }
 
     (title, chapters)
+}
+
+fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
+    let cosmic_theme::Spacing {
+        space_xxs, space_s, ..
+    } = theme::active().cosmic().spacing;
+
+    match block {
+        ContentBlock::Heading { level, text } => match level {
+            1 => widget::text::title1(text).width(Length::Fill).into(),
+            2 => widget::text::title2(text).width(Length::Fill).into(),
+            3 => widget::text::title3(text).width(Length::Fill).into(),
+            4 => widget::text::title4(text).width(Length::Fill).into(),
+            _ => widget::text::heading(text).width(Length::Fill).into(),
+        },
+        ContentBlock::Paragraph { text } => {
+            widget::text::body(text).width(Length::Fill).into()
+        }
+        ContentBlock::Preformatted { text } => {
+            widget::text::monotext(text).width(Length::Fill).into()
+        }
+        ContentBlock::BlockQuote { children } => {
+            let mut col = widget::column::with_capacity(children.len())
+                .spacing(space_xxs)
+                .width(Length::Fill);
+            for child in children {
+                col = col.push(render_block(child));
+            }
+            widget::container(col)
+                .padding([0, 0, 0, space_s as u16])
+                .width(Length::Fill)
+                .into()
+        }
+        ContentBlock::UnorderedList { items } => {
+            let mut col = widget::column::with_capacity(items.len())
+                .spacing(space_xxs)
+                .width(Length::Fill);
+            for item in items {
+                col = col.push(
+                    widget::text::body(format!("  \u{2022} {}", item.text)).width(Length::Fill),
+                );
+            }
+            col.into()
+        }
+        ContentBlock::OrderedList { start, items } => {
+            let mut col = widget::column::with_capacity(items.len())
+                .spacing(space_xxs)
+                .width(Length::Fill);
+            for (i, item) in items.iter().enumerate() {
+                let n = *start as usize + i;
+                col = col.push(
+                    widget::text::body(format!("  {n}. {}", item.text)).width(Length::Fill),
+                );
+            }
+            col.into()
+        }
+        ContentBlock::Image { data, .. } if !data.is_empty() => {
+            let handle = widget::image::Handle::from_bytes(data.clone());
+            widget::image(handle)
+                .width(Length::Fill)
+                .content_fit(cosmic::iced::ContentFit::ScaleDown)
+                .into()
+        }
+        ContentBlock::Image { alt, .. } => {
+            if !alt.is_empty() {
+                widget::text::body(format!("[{alt}]")).width(Length::Fill).into()
+            } else {
+                widget::Space::new(Length::Fill, 0).into()
+            }
+        }
+        ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
+    }
 }
