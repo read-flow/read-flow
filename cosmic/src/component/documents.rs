@@ -15,6 +15,7 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Row;
+use cosmic::widget::button::ButtonClass;
 use provider::r#async::Provider;
 
 use crate::ICON_SIZE;
@@ -364,42 +365,33 @@ impl DocumentsComponent {
 }
 
 fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, DocumentsMessage> {
-    let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
     let icon_name = document.metadata.type_.get_file_type_icon();
 
+    let (selected_icon_name, selected_icon_class) = if is_selected {
+        ("checkbox-checked-symbolic", ButtonClass::Suggested)
+    } else {
+        ("checkbox-symbolic", ButtonClass::Icon)
+    };
+
     // Create a button with icon and file path that fills the width
-    let button = widget::button::custom(
-        Row::new()
-            .push(
-                widget::button::icon(
-                    widget::icon::from_name(if is_selected {
-                        "checkbox-checked-symbolic"
-                    } else {
-                        "checkbox-symbolic"
-                    })
-                    .size(ICON_SIZE),
-                )
-                .class(if is_selected {
-                    widget::button::ButtonClass::Suggested
-                } else {
-                    widget::button::ButtonClass::Icon
-                })
-                .on_press(DocumentsMessage::ToggleDocumentSelected(document.clone())),
-            )
-            .push(widget::icon::from_name(icon_name).size(ICON_SIZE).icon())
-            .push(display_path(&document.local_or_any_source().path))
-            .spacing(space_s)
-            .align_y(cosmic::iced::Alignment::Center)
-            .width(Length::Fill),
-    )
-    .class(widget::button::ButtonClass::ListItem)
-    .width(Length::Fill)
+    vec![
+        widget::button::icon(widget::icon::from_name(selected_icon_name).size(ICON_SIZE))
+            .class(selected_icon_class)
+            .on_press(DocumentsMessage::ToggleDocumentSelected(document.clone()))
+            .into(),
+        widget::icon::from_name(icon_name)
+            .size(ICON_SIZE)
+            .icon()
+            .into(),
+        display_path(&document.local_or_any_source().path).into(),
+    ]
+    .apply(widget::settings::item_row)
+    .apply(widget::button::custom)
+    .class(ButtonClass::ListItem)
     .on_press(DocumentsMessage::Out(DocumentsOutput::DocumentClicked(
         document.clone(),
-    )));
-
-    button.into()
+    )))
+    .into()
 }
 
 fn display_path<'a>(path: &'a str) -> Element<'a, DocumentsMessage> {
