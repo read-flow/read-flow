@@ -1,0 +1,114 @@
+use serde::Deserialize;
+use serde::Serialize;
+
+/// A renderer-independent reading position within a document.
+///
+/// Encodes: spine index -> DOM node path -> character offset.
+/// Serializes to/from the `rf://` URI scheme.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Locator {
+    pub spine_index: u32,
+    pub node_path: Vec<u32>,
+    pub char_offset: u32,
+}
+
+impl Locator {
+    /// Serialize to an `rf://` URI.
+    ///
+    /// Format: `rf://doc/<document_hash>/spine/<i>/node/<path>/char/<o>`
+    pub fn to_uri(&self, document_hash: &str) -> String {
+        let node = self
+            .node_path
+            .iter()
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join("/");
+        format!(
+            "rf://doc/{}/spine/{}/node/{}/char/{}",
+            document_hash, self.spine_index, node, self.char_offset
+        )
+    }
+
+    /// Parse a `Locator` from an `rf://` URI.
+    ///
+    /// Returns `None` if the URI is malformed.
+    pub fn from_uri(uri: &str) -> Option<Self> {
+        let rest = uri.strip_prefix("rf://doc/")?;
+
+        let spine_marker = "/spine/";
+        let spine_pos = rest.find(spine_marker)?;
+        let after_spine = &rest[spine_pos + spine_marker.len()..];
+
+        let node_marker = "/node/";
+        let node_pos = after_spine.find(node_marker)?;
+        let spine_index: u32 = after_spine[..node_pos].parse().ok()?;
+        let after_node = &after_spine[node_pos + node_marker.len()..];
+
+        let char_marker = "/char/";
+        let char_pos = after_node.find(char_marker)?;
+        let node_str = &after_node[..char_pos];
+        let char_offset: u32 = after_node[char_pos + char_marker.len()..].parse().ok()?;
+
+        let node_path = node_str
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.parse().ok())
+            .collect::<Option<Vec<u32>>>()?;
+
+        Some(Locator {
+            spine_index,
+            node_path,
+            char_offset,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(
+        Locator { spine_index: 4, node_path: vec![0, 2, 5, 1], char_offset: 87 },
+        "sha256:9a3e",
+        "rf://doc/sha256:9a3e/spine/4/node/0/2/5/1/char/87"
+    )]
+    #[case(
+        Locator { spine_index: 0, node_path: vec![], char_offset: 0 },
+        "abc123",
+        "rf://doc/abc123/spine/0/node//char/0"
+    )]
+    fn test_to_uri(#[case] locator: Locator, #[case] hash: &str, #[case] expected: &str) {
+        assert_eq!(locator.to_uri(hash), expected);
+    }
+
+    #[rstest]
+    #[case(
+        "rf://doc/sha256:9a3e/spine/4/node/0/2/5/1/char/87",
+        Some(Locator { spine_index: 4, node_path: vec![0, 2, 5, 1], char_offset: 87 })
+    )]
+    #[case(
+        "rf://doc/abc123/spine/0/node//char/0",
+        Some(Locator { spine_index: 0, node_path: vec![], char_offset: 0 })
+    )]
+    #[case("not-a-valid-uri", None)]
+    #[case("rf://doc/hash/spine/notanum/node/0/char/0", None)]
+    fn test_from_uri(#[case] uri: &str, #[case] expected: Option<Locator>) {
+        assert_eq!(Locator::from_uri(uri), expected);
+    }
+
+    #[test]
+    fn test_roundtrip() {
+        let locator = Locator {
+            spine_index: 7,
+            node_path: vec![1, 3, 0],
+            char_offset: 42,
+        };
+        let hash = "sha256:deadbeef";
+        let uri = locator.to_uri(hash);
+        let parsed = Locator::from_uri(&uri).expect("should parse");
+        assert_eq!(parsed, locator);
+    }
+}
