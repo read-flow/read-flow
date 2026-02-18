@@ -1,6 +1,7 @@
 pub mod domain;
 pub mod epub;
 pub mod error;
+pub mod renderer;
 
 pub use domain::document::Document;
 pub use domain::locator::Locator;
@@ -8,3 +9,10 @@ pub use domain::metadata::DocumentMetadata;
 pub use domain::spine::SpineItem;
 pub use epub::document::EpubDocument;
 pub use error::EpubError;
+pub use renderer::RenderFrame;
+pub use renderer::RenderSurface;
+pub use renderer::Renderer;
+pub use renderer::RendererCapabilities;
+pub use renderer::RendererCommand;
+pub use renderer::RendererEvent;
+pub use renderer::TextRange;
