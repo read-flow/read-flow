@@ -246,3 +246,11 @@ pdf-viewer-shortcut-ctrl-scroll = Zoomer avec la souris
 pdf-viewer-shortcut-search = Rechercher
 pdf-viewer-shortcut-close-search = Fermer la recherche
 
+# EPUB viewer
+epub-viewer-back = Retour
+epub-viewer-loading = Chargement de l'EPUB...
+epub-viewer-no-local-source = Aucune source locale disponible pour ce document
+epub-viewer-keyboard-shortcuts = Raccourcis clavier
+epub-viewer-shortcut-previous-chapter = Chapitre précédent
+epub-viewer-shortcut-next-chapter = Chapitre suivant
+

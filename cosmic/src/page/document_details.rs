@@ -49,6 +49,7 @@ pub enum DocumentDetailsOutput {
     Close(String), // Fingerprint
     RefreshDocument(Document),
     ViewPdf(Document),
+    ViewEpub(Document),
 }
 
 #[derive(Debug, Clone)]
@@ -551,6 +552,11 @@ impl Page for DocumentDetails {
                     task::message(DocumentDetailsMessage::Out(DocumentDetailsOutput::ViewPdf(
                         self.document.clone(),
                     )))
+                } else if self.document.metadata.type_ == DocumentType::Epub {
+                    // Open EPUB documents in the built-in viewer
+                    task::message(DocumentDetailsMessage::Out(
+                        DocumentDetailsOutput::ViewEpub(self.document.clone()),
+                    ))
                 } else {
                     // Open other document types with xdg-open
                     let document = self.document.clone();

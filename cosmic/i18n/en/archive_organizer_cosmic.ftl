@@ -224,3 +224,11 @@ pdf-viewer-shortcut-fit-width = Fit width
 pdf-viewer-shortcut-ctrl-scroll = Zoom with mouse
 pdf-viewer-shortcut-search = Search
 pdf-viewer-shortcut-close-search = Close search
+
+# EPUB viewer
+epub-viewer-back = Back
+epub-viewer-loading = Loading EPUB...
+epub-viewer-no-local-source = No local source available for this document
+epub-viewer-keyboard-shortcuts = Keyboard shortcuts
+epub-viewer-shortcut-previous-chapter = Previous chapter
+epub-viewer-shortcut-next-chapter = Next chapter

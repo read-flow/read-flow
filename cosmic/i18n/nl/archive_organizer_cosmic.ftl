@@ -246,3 +246,11 @@ pdf-viewer-shortcut-fit-width = Breedte passend
 pdf-viewer-shortcut-ctrl-scroll = Zoomen met muis
 pdf-viewer-shortcut-search = Zoeken
 pdf-viewer-shortcut-close-search = Zoeken sluiten
+
+# EPUB viewer
+epub-viewer-back = Terug
+epub-viewer-loading = EPUB laden...
+epub-viewer-no-local-source = Geen lokale bron beschikbaar voor dit document
+epub-viewer-keyboard-shortcuts = Sneltoetsen
+epub-viewer-shortcut-previous-chapter = Vorig hoofdstuk
+epub-viewer-shortcut-next-chapter = Volgend hoofdstuk
