@@ -44,6 +44,9 @@ pub enum ContentBlock {
         data: Vec<u8>,
         media_type: String,
     },
+    Table {
+        rows: Vec<Vec<TableCell>>,
+    },
     HorizontalRule,
 }
 
@@ -51,4 +54,11 @@ pub enum ContentBlock {
 pub struct ListItem {
     pub text: String,
     pub spans: Vec<TextSpan>,
+}
+
+#[derive(Clone, Debug)]
+pub struct TableCell {
+    pub text: String,
+    pub spans: Vec<TextSpan>,
+    pub is_header: bool,
 }

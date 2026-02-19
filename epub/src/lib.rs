@@ -7,6 +7,7 @@ pub mod renderer;
 pub use content::ContentBlock;
 pub use content::InlineStyle;
 pub use content::ListItem;
+pub use content::TableCell;
 pub use content::TextSpan;
 pub use domain::document::Document;
 pub use domain::locator::Locator;

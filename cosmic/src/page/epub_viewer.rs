@@ -23,6 +23,7 @@ use cosmic::widget;
 use epub::ContentBlock;
 use epub::Document as EpubDocumentTrait;
 use epub::EpubDocument;
+use epub::TableCell;
 use epub::TextSpan;
 
 use crate::ICON_SIZE;
@@ -709,6 +710,69 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
                 widget::Space::new(Length::Fill, 0).into()
             }
         }
+        ContentBlock::Table { rows } => render_table(rows),
         ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
     }
+}
+
+fn render_table(rows: &[Vec<TableCell>]) -> Element<'_, EpubViewerMessage> {
+    let cosmic_theme::Spacing {
+        space_xxs, space_s, ..
+    } = theme::active().cosmic().spacing;
+
+    let mut col = widget::column::with_capacity(rows.len() + 1)
+        .spacing(0)
+        .width(Length::Fill);
+
+    let mut seen_header = false;
+    let mut divider_inserted = false;
+
+    for row in rows {
+        let is_header_row = row.iter().any(|c| c.is_header);
+
+        // Insert divider between header section and body section
+        if seen_header && !is_header_row && !divider_inserted {
+            col = col.push(widget::divider::horizontal::default());
+            divider_inserted = true;
+        }
+        if is_header_row {
+            seen_header = true;
+        }
+
+        let mut row_widget = widget::row().width(Length::Fill);
+
+        for cell in row {
+            let cell_spans: Vec<cosmic::iced::widget::text::Span<'_, EpubViewerMessage>> =
+                if !cell.spans.is_empty() {
+                    cell.spans.iter().map(styled_span).collect()
+                } else if !cell.text.is_empty() {
+                    let mut s = span(cell.text.as_str());
+                    if cell.is_header {
+                        s = s.font(Font {
+                            weight: font::Weight::Bold,
+                            ..Font::default()
+                        });
+                    }
+                    vec![s]
+                } else {
+                    vec![]
+                };
+
+            let cell_content: Element<'_, EpubViewerMessage> = if !cell_spans.is_empty() {
+                rich_text(cell_spans).size(16.0).width(Length::Fill).into()
+            } else {
+                widget::Space::new(Length::Fill, 0).into()
+            };
+
+            row_widget = row_widget.push(
+                widget::container(cell_content)
+                    .padding([space_xxs, space_s])
+                    .width(Length::FillPortion(1)),
+            );
+        }
+
+        col = col.push(row_widget);
+    }
+
+    widget::container(col).width(Length::Fill).into()
 }

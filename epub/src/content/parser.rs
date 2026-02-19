@@ -12,6 +12,7 @@ use html5ever::tokenizer::TokenizerOpts;
 use super::block::ContentBlock;
 use super::block::InlineStyle;
 use super::block::ListItem;
+use super::block::TableCell;
 use super::block::TextSpan;
 use super::resolve::base_dir;
 use super::resolve::guess_media_type;
@@ -31,6 +32,10 @@ struct StackEntry {
     inline_style: InlineStyle,
     /// Href from an enclosing `<a>` element, inherited by child entries.
     link: Option<String>,
+    /// Accumulated rows for `<table>` elements; each row is a `Vec<TableCell>`.
+    table_rows: Vec<Vec<TableCell>>,
+    /// Accumulated cells for the current `<tr>` element.
+    table_cells: Vec<TableCell>,
 }
 
 impl StackEntry {
@@ -44,6 +49,8 @@ impl StackEntry {
             spans: Vec::new(),
             inline_style: InlineStyle::default(),
             link: None,
+            table_rows: Vec::new(),
+            table_cells: Vec::new(),
         }
     }
 
@@ -57,6 +64,8 @@ impl StackEntry {
             spans: Vec::new(),
             inline_style: style,
             link,
+            table_rows: Vec::new(),
+            table_cells: Vec::new(),
         }
     }
 
@@ -152,13 +161,6 @@ const TRANSPARENT_TAGS: &[&str] = &[
     "figcaption",
     "details",
     "summary",
-    "table",
-    "thead",
-    "tbody",
-    "tfoot",
-    "tr",
-    "td",
-    "th",
     "dl",
     "dt",
     "dd",
@@ -465,6 +467,65 @@ impl TokenSink for ContentSink {
                             parent.list_items.push(ListItem { text, spans });
                         }
                         None
+                    }
+                    "td" | "th" => {
+                        if let Some(parent) = state.stack.last_mut() {
+                            let is_header = tag_name == "th";
+                            // Prefer inline content (spans/text); fall back to block children
+                            let (cell_text, cell_spans) = if !spans.is_empty() || !text.is_empty() {
+                                (text, spans)
+                            } else {
+                                // Collect text/spans from block-level children (e.g. <p> in <td>)
+                                let mut t = String::new();
+                                let mut s: Vec<TextSpan> = Vec::new();
+                                for child in &entry.children {
+                                    let (ct, cs) = match child {
+                                        ContentBlock::Paragraph { text, spans } => {
+                                            (text.as_str(), spans.as_slice())
+                                        }
+                                        ContentBlock::Heading { text, spans, .. } => {
+                                            (text.as_str(), spans.as_slice())
+                                        }
+                                        _ => continue,
+                                    };
+                                    if !t.is_empty() {
+                                        t.push(' ');
+                                    }
+                                    t.push_str(ct);
+                                    s.extend_from_slice(cs);
+                                }
+                                (t, s)
+                            };
+                            parent.table_cells.push(TableCell {
+                                text: cell_text,
+                                spans: cell_spans,
+                                is_header,
+                            });
+                        }
+                        None
+                    }
+                    "tr" => {
+                        if let Some(parent) = state.stack.last_mut() {
+                            if !entry.table_cells.is_empty() {
+                                parent.table_rows.push(entry.table_cells);
+                            }
+                        }
+                        None
+                    }
+                    "thead" | "tbody" | "tfoot" => {
+                        if let Some(parent) = state.stack.last_mut() {
+                            parent.table_rows.extend(entry.table_rows);
+                        }
+                        None
+                    }
+                    "table" => {
+                        if !entry.table_rows.is_empty() {
+                            Some(ContentBlock::Table {
+                                rows: entry.table_rows,
+                            })
+                        } else {
+                            None
+                        }
                     }
                     _ if TRANSPARENT_TAGS.contains(&tag_name) => {
                         promote_to_parent(
@@ -1016,6 +1077,78 @@ mod tests {
                 assert!(spans.iter().all(|s| s.link.is_none()));
             }
             other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_simple_table() {
+        let blocks = parse(
+            "<table>\
+               <thead><tr><th>Name</th><th>Value</th></tr></thead>\
+               <tbody><tr><td>Foo</td><td>42</td></tr></tbody>\
+             </table>",
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Table { rows } => {
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0].len(), 2);
+                assert!(rows[0][0].is_header);
+                assert_eq!(rows[0][0].text, "Name");
+                assert!(rows[0][1].is_header);
+                assert_eq!(rows[0][1].text, "Value");
+                assert!(!rows[1][0].is_header);
+                assert_eq!(rows[1][0].text, "Foo");
+                assert!(!rows[1][1].is_header);
+                assert_eq!(rows[1][1].text, "42");
+            }
+            other => panic!("expected Table, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_table_without_thead() {
+        let blocks =
+            parse("<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Table { rows } => {
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0][0].text, "A");
+                assert_eq!(rows[0][1].text, "B");
+                assert_eq!(rows[1][0].text, "C");
+            }
+            other => panic!("expected Table, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn table_cell_with_inline_styles() {
+        let blocks = parse("<table><tr><td>plain</td><td><strong>bold</strong></td></tr></table>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Table { rows } => {
+                assert_eq!(rows[0].len(), 2);
+                assert_eq!(rows[0][0].text, "plain");
+                assert_eq!(rows[0][1].text, "bold");
+                assert_eq!(rows[0][1].spans.len(), 1);
+                assert!(rows[0][1].spans[0].style.bold);
+            }
+            other => panic!("expected Table, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn table_cell_with_paragraph_child() {
+        // <p> inside <td> — content should be extracted from children
+        let blocks = parse("<table><tr><td><p>Cell content</p></td></tr></table>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Table { rows } => {
+                assert_eq!(rows[0].len(), 1);
+                assert_eq!(rows[0][0].text, "Cell content");
+            }
+            other => panic!("expected Table, got {other:?}"),
         }
     }
 }
