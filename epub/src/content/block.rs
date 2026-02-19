@@ -10,6 +10,8 @@ pub struct InlineStyle {
 pub struct TextSpan {
     pub text: String,
     pub style: InlineStyle,
+    /// Href from an enclosing `<a>` element, if any.
+    pub link: Option<String>,
 }
 
 #[derive(Clone, Debug)]

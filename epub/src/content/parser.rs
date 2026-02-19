@@ -29,6 +29,8 @@ struct StackEntry {
     spans: Vec<TextSpan>,
     /// The inherited inline style at this stack level.
     inline_style: InlineStyle,
+    /// Href from an enclosing `<a>` element, inherited by child entries.
+    link: Option<String>,
 }
 
 impl StackEntry {
@@ -41,10 +43,11 @@ impl StackEntry {
             ol_start: 1,
             spans: Vec::new(),
             inline_style: InlineStyle::default(),
+            link: None,
         }
     }
 
-    fn new_with_style(tag: &str, style: InlineStyle) -> Self {
+    fn new_with_style(tag: &str, style: InlineStyle, link: Option<String>) -> Self {
         StackEntry {
             tag: tag.to_string(),
             text: String::new(),
@@ -53,6 +56,7 @@ impl StackEntry {
             ol_start: 1,
             spans: Vec::new(),
             inline_style: style,
+            link,
         }
     }
 
@@ -62,6 +66,7 @@ impl StackEntry {
             self.spans.push(TextSpan {
                 text: std::mem::take(&mut self.text),
                 style: self.inline_style.clone(),
+                link: self.link.clone(),
             });
         }
     }
@@ -131,7 +136,6 @@ const TRANSPARENT_TAGS: &[&str] = &[
     "body",
     "html",
     "span",
-    "a",
     "small",
     "sub",
     "sup",
@@ -254,9 +258,30 @@ impl TokenSink for ContentSink {
                             spans: vec![TextSpan {
                                 text: format!("[{alt}]"),
                                 style: InlineStyle::default(),
+                                link: None,
                             }],
                         });
                     }
+                    return TokenSinkResult::Continue;
+                }
+
+                // Handle <a href="..."> — flush parent, push entry with inherited style + link
+                if tag_name == "a" {
+                    if let Some(parent) = state.stack.last_mut() {
+                        parent.flush_text();
+                    }
+                    let parent_style = state
+                        .stack
+                        .last()
+                        .map(|e| e.inline_style.clone())
+                        .unwrap_or_default();
+                    let parent_link = state.stack.last().and_then(|e| e.link.clone());
+                    let href = find_attr(attrs, "href");
+                    // Own href takes priority; fall back to inherited link context
+                    let link = href.or(parent_link);
+                    state
+                        .stack
+                        .push(StackEntry::new_with_style(tag_name, parent_style, link));
                     return TokenSinkResult::Continue;
                 }
 
@@ -266,16 +291,17 @@ impl TokenSink for ContentSink {
                     if let Some(parent) = state.stack.last_mut() {
                         parent.flush_text();
                     }
-
                     let parent_style = state
                         .stack
                         .last()
                         .map(|e| e.inline_style.clone())
                         .unwrap_or_default();
+                    // Inherit the enclosing link context (e.g. <a><strong>bold link</strong></a>)
+                    let parent_link = state.stack.last().and_then(|e| e.link.clone());
                     let style = style_for_tag(tag_name, &parent_style);
                     state
                         .stack
-                        .push(StackEntry::new_with_style(tag_name, style));
+                        .push(StackEntry::new_with_style(tag_name, style, parent_link));
                     return TokenSinkResult::Continue;
                 }
 
@@ -312,8 +338,8 @@ impl TokenSink for ContentSink {
                     return TokenSinkResult::Continue;
                 };
 
-                // Handle inline style tag end: promote spans to parent
-                if INLINE_STYLE_TAGS.contains(&tag_name) {
+                // Handle inline style and link tag end: promote spans to parent
+                if INLINE_STYLE_TAGS.contains(&tag_name) || tag_name == "a" {
                     let mut entry = entry;
                     entry.flush_text();
                     if let Some(parent) = state.stack.last_mut() {
@@ -612,6 +638,7 @@ fn resolve_images<F>(
                                 spans: vec![TextSpan {
                                     text: alt_text.clone(),
                                     style: InlineStyle::default(),
+                                    link: None,
                                 }],
                                 text: alt_text,
                             };
@@ -930,13 +957,12 @@ mod tests {
 
     #[test]
     fn link_text_not_duplicated() {
-        // Regression: <a> is transparent — its text must appear exactly once.
-        let blocks = parse("<p>Click <a href=\"#\">here</a> for more.</p>");
+        // Regression: <a> was transparent — its text must appear exactly once.
+        let blocks = parse("<p>Click <a href=\"ch2.xhtml\">here</a> for more.</p>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, spans } => {
                 assert_eq!(text, "Click here for more.");
-                // "here" must appear in exactly one span
                 let here_count = spans.iter().filter(|s| s.text.contains("here")).count();
                 assert_eq!(here_count, 1, "link text duplicated in spans: {spans:?}");
             }
@@ -945,9 +971,24 @@ mod tests {
     }
 
     #[test]
+    fn link_href_captured_on_span() {
+        let blocks = parse("<p>Go to <a href=\"ch2.xhtml\">chapter two</a>.</p>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                let linked: Vec<_> = spans.iter().filter(|s| s.link.is_some()).collect();
+                assert_eq!(linked.len(), 1);
+                assert_eq!(linked[0].text, "chapter two");
+                assert_eq!(linked[0].link.as_deref(), Some("ch2.xhtml"));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn link_with_styled_content_not_duplicated() {
         // Link containing bold text must not duplicate either the bold span or the plain text.
-        let blocks = parse("<p>See <a href=\"#\"><strong>bold link</strong></a> here.</p>");
+        let blocks = parse("<p>See <a href=\"ch2.xhtml\"><strong>bold link</strong></a> here.</p>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, spans } => {
@@ -957,6 +998,22 @@ mod tests {
                     .filter(|s| s.text.contains("bold link"))
                     .count();
                 assert_eq!(bold_link_count, 1, "bold link text duplicated: {spans:?}");
+                // The bold span must also carry the link
+                let bold_span = spans.iter().find(|s| s.text.contains("bold link")).unwrap();
+                assert!(bold_span.style.bold);
+                assert_eq!(bold_span.link.as_deref(), Some("ch2.xhtml"));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn plain_spans_have_no_link() {
+        let blocks = parse("<p>No links here.</p>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                assert!(spans.iter().all(|s| s.link.is_none()));
             }
             other => panic!("expected Paragraph, got {other:?}"),
         }

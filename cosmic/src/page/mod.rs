@@ -100,7 +100,7 @@ pub enum PageMessage {
     CloseDocumentDetails(Fingerprint),
     EpubViewer(Fingerprint, EpubViewerMessage),
     OpenEpubViewer(Document),
-    CloseEpubViewer(Fingerprint, Option<usize>),
+    CloseEpubViewer(Fingerprint, Option<String>),
     PdfViewer(Fingerprint, PdfViewerMessage),
     OpenPdfViewer(Document),
     ClosePdfViewer(Fingerprint, Option<usize>),
@@ -513,21 +513,21 @@ impl Pages {
                         ))))
                 }
             }
-            PageMessage::CloseEpubViewer(fingerprint, chapter) => {
+            PageMessage::CloseEpubViewer(fingerprint, progress_json) => {
                 let _ = self.epub_viewers.swap_remove(&fingerprint);
 
                 let mut tasks = vec![task::message(PageMessage::Out(PageOutput::PageRemoved(
                     PageSelector::EpubViewer(fingerprint.clone()),
                 )))];
 
-                if let Some(chapter) = chapter {
+                if let Some(progress_json) = progress_json {
                     let document_provider = self.document_provider.clone();
                     let fp = fingerprint;
                     tasks.push(task::future(async move {
                         let now = iso8601_now();
                         let progress = archive_organizer::api::ReadingProgress {
                             fingerprint: fp,
-                            progress: format!("{{\"chapter\":{chapter}}}"),
+                            progress: progress_json,
                             last_updated: now,
                         };
                         let aggregator = document_provider.aggregator.read().await;

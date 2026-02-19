@@ -16,6 +16,7 @@ use cosmic::iced::keyboard::Key;
 use cosmic::iced::keyboard::Modifiers;
 use cosmic::iced::keyboard::key::Named;
 use cosmic::iced::widget::rich_text;
+use cosmic::iced::widget::scrollable;
 use cosmic::iced::widget::span;
 use cosmic::theme;
 use cosmic::widget;
@@ -41,6 +42,8 @@ const CHAPTER_SIDEBAR_WIDTH: f32 = 220.0;
 #[derive(Clone, Debug)]
 pub(crate) struct EpubChapter {
     label: String,
+    /// Resolved zip path for this spine item (e.g. `OEBPS/Text/ch1.xhtml`).
+    href: String,
     blocks: Vec<ContentBlock>,
 }
 
@@ -48,15 +51,19 @@ pub(crate) struct EpubChapter {
 
 #[derive(Debug, Clone)]
 pub enum EpubViewerOutput {
-    Close(Fingerprint, Option<usize>),
+    /// Carries the fingerprint and the opaque progress JSON to persist, if any.
+    Close(Fingerprint, Option<String>),
 }
 
 #[derive(Clone, Debug)]
 pub enum EpubViewerMessage {
     EpubLoaded(String, Vec<EpubChapter>),
-    ReadingProgressLoaded(Option<usize>),
+    /// Carries (chapter_index, scroll_y) restored from saved progress.
+    ReadingProgressLoaded(Option<usize>, f32),
     SelectChapter(usize),
     ThemeColors(bool),
+    Scrolled(scrollable::Viewport),
+    FollowLink(String),
     Key(Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(Modifiers),
     Out(EpubViewerOutput),
@@ -72,6 +79,8 @@ pub struct EpubViewer {
     chapters: Vec<EpubChapter>,
     active_chapter: usize,
     initial_chapter: Option<usize>,
+    /// Scroll position (absolute y offset in pixels) within the current chapter.
+    scroll_y: f32,
     modifiers: Modifiers,
     theme_colors: bool,
     content_scroll_id: widget::Id,
@@ -96,6 +105,7 @@ impl EpubViewer {
             chapters: Vec::new(),
             active_chapter: 0,
             initial_chapter: None,
+            scroll_y: 0.0,
             modifiers: Modifiers::default(),
             theme_colors: true,
             content_scroll_id: widget::Id::unique(),
@@ -123,15 +133,17 @@ impl EpubViewer {
             async move {
                 let aggregator = document_provider.aggregator.read().await;
                 match aggregator.get_reading_progress(&fp).await {
-                    Ok(Some(progress)) => parse_chapter_from_progress(&progress.progress),
-                    Ok(None) => None,
+                    Ok(Some(progress)) => parse_reading_progress(&progress.progress),
+                    Ok(None) => (None, 0.0),
                     Err(e) => {
                         tracing::warn!("failed to load reading progress: {e}");
-                        None
+                        (None, 0.0)
                     }
                 }
             },
-            |chapter| cosmic::action::app(EpubViewerMessage::ReadingProgressLoaded(chapter)),
+            |(chapter, scroll_y)| {
+                cosmic::action::app(EpubViewerMessage::ReadingProgressLoaded(chapter, scroll_y))
+            },
         ));
 
         (viewer, Task::batch(tasks))
@@ -237,6 +249,7 @@ impl EpubViewer {
 
             widget::scrollable(outer)
                 .id(self.content_scroll_id.clone())
+                .on_scroll(EpubViewerMessage::Scrolled)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .into()
@@ -316,7 +329,7 @@ impl Page for EpubViewer {
                     if self.chapters.is_empty() {
                         None
                     } else {
-                        Some(self.active_chapter)
+                        Some(serialize_progress(self.active_chapter, self.scroll_y))
                     },
                 )))
                 .tooltip(fl!("epub-viewer-back"))
@@ -365,21 +378,45 @@ impl Page for EpubViewer {
                         .unwrap_or(0)
                         .min(self.chapters.len() - 1);
                 }
-                Task::none()
+                // Restore scroll position once content is available
+                if self.scroll_y > 0.0 {
+                    scrollable::scroll_to(
+                        self.content_scroll_id.clone(),
+                        scrollable::AbsoluteOffset {
+                            x: 0.0,
+                            y: self.scroll_y,
+                        },
+                    )
+                } else {
+                    Task::none()
+                }
             }
-            EpubViewerMessage::ReadingProgressLoaded(chapter) => {
+            EpubViewerMessage::ReadingProgressLoaded(chapter, scroll_y) => {
                 self.initial_chapter = chapter;
+                self.scroll_y = scroll_y;
                 if !self.chapters.is_empty()
                     && let Some(c) = chapter
                     && c < self.chapters.len()
                 {
                     self.active_chapter = c;
                 }
-                Task::none()
+                // Restore scroll if chapters are already loaded
+                if self.scroll_y > 0.0 && !self.chapters.is_empty() {
+                    scrollable::scroll_to(
+                        self.content_scroll_id.clone(),
+                        scrollable::AbsoluteOffset {
+                            x: 0.0,
+                            y: self.scroll_y,
+                        },
+                    )
+                } else {
+                    Task::none()
+                }
             }
             EpubViewerMessage::SelectChapter(idx) => {
                 if idx < self.chapters.len() {
                     self.active_chapter = idx;
+                    self.scroll_y = 0.0;
                 }
                 Task::none()
             }
@@ -387,16 +424,44 @@ impl Page for EpubViewer {
                 self.theme_colors = use_theme_colors;
                 Task::none()
             }
+            EpubViewerMessage::Scrolled(viewport) => {
+                self.scroll_y = viewport.absolute_offset().y;
+                Task::none()
+            }
+            EpubViewerMessage::FollowLink(href) => {
+                // Strip fragment identifier (#anchor)
+                let href_target = href.split('#').next().unwrap_or(&href);
+                if href_target.is_empty() {
+                    return Task::none();
+                }
+                // Resolve the href relative to the current chapter
+                if let Some(current) = self.chapters.get(self.active_chapter) {
+                    let base = epub::content::base_dir(&current.href);
+                    let resolved = epub::content::resolve_href(base, href_target);
+                    // Find the target spine item by matching stored hrefs
+                    if let Some(idx) = self
+                        .chapters
+                        .iter()
+                        .position(|c| c.href == resolved || c.href.ends_with(&resolved))
+                    {
+                        self.active_chapter = idx;
+                        self.scroll_y = 0.0;
+                    }
+                }
+                Task::none()
+            }
             EpubViewerMessage::Key(_modifiers, key, _text) => match &key {
                 Key::Named(Named::ArrowUp | Named::ArrowLeft | Named::PageUp) => {
                     if self.active_chapter > 0 {
                         self.active_chapter -= 1;
+                        self.scroll_y = 0.0;
                     }
                     Task::none()
                 }
                 Key::Named(Named::ArrowDown | Named::ArrowRight | Named::PageDown) => {
                     if self.active_chapter + 1 < self.chapters.len() {
                         self.active_chapter += 1;
+                        self.scroll_y = 0.0;
                     }
                     Task::none()
                 }
@@ -419,18 +484,29 @@ fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, EpubViewe
         .into()
 }
 
-/// Parse the chapter number from a progress JSON string like `{"chapter":2}`.
-fn parse_chapter_from_progress(progress: &str) -> Option<usize> {
+/// Serialize reading progress to a JSON string.
+fn serialize_progress(chapter: usize, scroll_y: f32) -> String {
+    format!("{{\"chapter\":{chapter},\"scroll\":{scroll_y}}}")
+}
+
+/// Parse reading progress from a JSON string like `{"chapter":2,"scroll":340.5}`.
+/// Returns `(chapter_index, scroll_y)`.
+fn parse_reading_progress(progress: &str) -> (Option<usize>, f32) {
+    let mut chapter = None;
+    let mut scroll_y = 0.0f32;
     let progress = progress.trim();
-    let inner = progress.strip_prefix('{')?.strip_suffix('}')?;
-    for part in inner.split(',') {
-        let (key, value) = part.split_once(':')?;
-        let key = key.trim().trim_matches('"');
-        if key == "chapter" {
-            return value.trim().parse::<usize>().ok();
+    if let Some(inner) = progress.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+        for part in inner.split(',') {
+            if let Some((key, value)) = part.split_once(':') {
+                match key.trim().trim_matches('"') {
+                    "chapter" => chapter = value.trim().parse().ok(),
+                    "scroll" => scroll_y = value.trim().parse().unwrap_or(0.0),
+                    _ => {}
+                }
+            }
         }
     }
-    None
+    (chapter, scroll_y)
 }
 
 /// Load EPUB chapters from a file path. Runs on a blocking thread.
@@ -474,7 +550,11 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
             }
         };
 
-        chapters.push(EpubChapter { label, blocks });
+        chapters.push(EpubChapter {
+            label,
+            href: item.href.clone(),
+            blocks,
+        });
     }
 
     (title, chapters)
@@ -507,6 +587,9 @@ fn styled_span<'a>(
     }
     if style.strikethrough {
         s = s.strikethrough(true);
+    }
+    if let Some(href) = &text_span.link {
+        s = s.link(EpubViewerMessage::FollowLink(href.clone()));
     }
     s
 }
