@@ -495,16 +495,20 @@ fn promote_to_parent(
     list_items: Vec<ListItem>,
 ) {
     if let Some(parent) = state.stack.last_mut() {
-        if !text.is_empty() {
+        if !spans.is_empty() {
+            // Child had styled (or any) content captured as spans.
+            // Flush the parent's own pending plain text into a span first, then
+            // append the child's spans. Do NOT also push `text` — it is the
+            // plain-text projection of `spans` and would cause duplication.
+            parent.flush_text();
+            parent.spans.extend(spans);
+        } else if !text.is_empty() {
+            // Child had only unstyled plain text (no spans produced).
+            // Append it to the parent's accumulating text buffer.
             if !parent.text.is_empty() && !parent.text.ends_with(char::is_whitespace) {
                 parent.text.push(' ');
             }
             parent.text.push_str(&text);
-        }
-        if !spans.is_empty() {
-            // Flush parent's own text before merging child spans
-            parent.flush_text();
-            parent.spans.extend(spans);
         }
         parent.children.extend(children);
         parent.list_items.extend(list_items);
@@ -919,6 +923,40 @@ mod tests {
                 assert!(text.contains("line one"));
                 assert!(text.contains("line two"));
                 assert!(text.contains('\n'));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn link_text_not_duplicated() {
+        // Regression: <a> is transparent — its text must appear exactly once.
+        let blocks = parse("<p>Click <a href=\"#\">here</a> for more.</p>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, spans } => {
+                assert_eq!(text, "Click here for more.");
+                // "here" must appear in exactly one span
+                let here_count = spans.iter().filter(|s| s.text.contains("here")).count();
+                assert_eq!(here_count, 1, "link text duplicated in spans: {spans:?}");
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn link_with_styled_content_not_duplicated() {
+        // Link containing bold text must not duplicate either the bold span or the plain text.
+        let blocks = parse("<p>See <a href=\"#\"><strong>bold link</strong></a> here.</p>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, spans } => {
+                assert_eq!(text, "See bold link here.");
+                let bold_link_count = spans
+                    .iter()
+                    .filter(|s| s.text.contains("bold link"))
+                    .count();
+                assert_eq!(bold_link_count, 1, "bold link text duplicated: {spans:?}");
             }
             other => panic!("expected Paragraph, got {other:?}"),
         }
