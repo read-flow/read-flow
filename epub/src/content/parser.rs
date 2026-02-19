@@ -505,10 +505,10 @@ impl TokenSink for ContentSink {
                         None
                     }
                     "tr" => {
-                        if let Some(parent) = state.stack.last_mut() {
-                            if !entry.table_cells.is_empty() {
-                                parent.table_rows.push(entry.table_cells);
-                            }
+                        if let Some(parent) = state.stack.last_mut()
+                            && !entry.table_cells.is_empty()
+                        {
+                            parent.table_rows.push(entry.table_cells);
                         }
                         None
                     }
@@ -760,6 +760,16 @@ mod tests {
 
     #[test]
     fn skips_empty_paragraphs() {
+        let blocks = parse("<p></p><p>  </p><p>content</p>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "content"),
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn condense_white_space() {
         let blocks = parse("<p></p><p>  </p><p>content</p>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {

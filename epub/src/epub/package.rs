@@ -13,6 +13,8 @@ pub struct ManifestItem {
     pub id: String,
     pub href: String,
     pub media_type: String,
+    /// Space-separated properties value (e.g. `"nav"` for the EPUB3 nav document).
+    pub properties: Option<String>,
 }
 
 #[derive(Debug)]
@@ -20,6 +22,10 @@ pub struct Package {
     pub metadata: DocumentMetadata,
     pub manifest: HashMap<String, ManifestItem>,
     pub spine: Vec<SpineItem>,
+    /// Resolved zip path to the EPUB3 Navigation Document, if present.
+    pub nav_href: Option<String>,
+    /// Resolved zip path to the EPUB2 NCX document, if present.
+    pub ncx_href: Option<String>,
 }
 
 impl Package {
@@ -33,6 +39,8 @@ impl Package {
 
         let mut in_metadata = false;
         let mut current_tag: Option<String> = None;
+        // `toc` attribute on `<spine>` references the NCX item id (EPUB2)
+        let mut ncx_idref: Option<String> = None;
 
         loop {
             match reader.read_event_into(&mut buf)? {
@@ -51,6 +59,9 @@ impl Package {
                                 manifest.insert(item.id.clone(), item);
                             }
                         }
+                        b"spine" => {
+                            ncx_idref = parse_toc_attr(e)?;
+                        }
                         b"itemref" => {
                             if let Some(spine_ref) = parse_spine_ref(e)? {
                                 spine_refs.push(spine_ref);
@@ -67,6 +78,9 @@ impl Package {
                             if let Some(item) = parse_manifest_item(e, opf_base)? {
                                 manifest.insert(item.id.clone(), item);
                             }
+                        }
+                        b"spine" => {
+                            ncx_idref = parse_toc_attr(e)?;
                         }
                         b"itemref" => {
                             if let Some(spine_ref) = parse_spine_ref(e)? {
@@ -106,6 +120,22 @@ impl Package {
             buf.clear();
         }
 
+        // Resolve nav href: EPUB3 nav item has properties containing "nav"
+        let nav_href = manifest
+            .values()
+            .find(|item| {
+                item.properties
+                    .as_deref()
+                    .is_some_and(|p| p.split_whitespace().any(|w| w == "nav"))
+            })
+            .map(|item| item.href.clone());
+
+        // Resolve NCX href: EPUB2 spine `toc` attribute references the NCX manifest id
+        let ncx_href = ncx_idref
+            .as_deref()
+            .and_then(|id| manifest.get(id))
+            .map(|item| item.href.clone());
+
         let spine = spine_refs
             .into_iter()
             .enumerate()
@@ -115,6 +145,7 @@ impl Package {
                     id: item.id.clone(),
                     href: item.href.clone(),
                     linear,
+                    label: None,
                 })
             })
             .collect();
@@ -123,6 +154,8 @@ impl Package {
             metadata,
             manifest,
             spine,
+            nav_href,
+            ncx_href,
         })
     }
 }
@@ -141,6 +174,7 @@ fn parse_manifest_item(
     let mut id = None;
     let mut href = None;
     let mut media_type = None;
+    let mut properties = None;
 
     for attr in e.attributes() {
         let attr =
@@ -156,6 +190,7 @@ fn parse_manifest_item(
                 });
             }
             b"media-type" => media_type = Some(String::from_utf8_lossy(&attr.value).into_owned()),
+            b"properties" => properties = Some(String::from_utf8_lossy(&attr.value).into_owned()),
             _ => {}
         }
     }
@@ -165,9 +200,22 @@ fn parse_manifest_item(
             id,
             href,
             media_type,
+            properties,
         })),
         _ => Ok(None),
     }
+}
+
+/// Extract the `toc` attribute from a `<spine>` element (EPUB2 NCX reference).
+fn parse_toc_attr(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<String>> {
+    for attr in e.attributes() {
+        let attr =
+            attr.map_err(|e| EpubError::InvalidPackage(format!("bad spine attribute: {e}")))?;
+        if attr.key.as_ref() == b"toc" {
+            return Ok(Some(String::from_utf8_lossy(&attr.value).into_owned()));
+        }
+    }
+    Ok(None)
 }
 
 fn parse_spine_ref(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<(String, bool)>> {
@@ -255,5 +303,41 @@ mod tests {
         let pkg = Package::parse(OPF, "").unwrap();
         let c1 = pkg.manifest.get("c1").unwrap();
         assert_eq!(c1.href, "chapter1.xhtml");
+    }
+
+    #[test]
+    fn detects_epub3_nav_item() {
+        let opf = br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>T</dc:title>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine><itemref idref="c1"/></spine>
+</package>"#;
+        let pkg = Package::parse(opf, "OEBPS").unwrap();
+        assert_eq!(pkg.nav_href.as_deref(), Some("OEBPS/nav.xhtml"));
+        assert_eq!(pkg.ncx_href, None);
+    }
+
+    #[test]
+    fn detects_epub2_ncx_item() {
+        let opf = br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>T</dc:title>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine toc="ncx"><itemref idref="c1"/></spine>
+</package>"#;
+        let pkg = Package::parse(opf, "OEBPS").unwrap();
+        assert_eq!(pkg.ncx_href.as_deref(), Some("OEBPS/toc.ncx"));
+        assert_eq!(pkg.nav_href, None);
     }
 }

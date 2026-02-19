@@ -281,6 +281,11 @@ pub trait Builder: Sized {
     fn apply_maybe<F, T>(self, option: Option<T>, fun: F) -> Self
     where
         F: FnOnce(Self, T) -> Self;
+
+    fn apply_when<P, F>(self, predicate: P, fun: F) -> Self
+    where
+        P: FnOnce(&Self) -> bool,
+        F: FnOnce(Self) -> Self;
 }
 
 impl<T> Builder for T {
@@ -300,6 +305,14 @@ impl<T> Builder for T {
         } else {
             self
         }
+    }
+
+    fn apply_when<P, F>(self, predicate: P, fun: F) -> Self
+    where
+        P: FnOnce(&Self) -> bool,
+        F: FnOnce(Self) -> Self,
+    {
+        if predicate(&self) { fun(self) } else { self }
     }
 }
 

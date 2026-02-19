@@ -7,4 +7,7 @@ pub struct SpineItem {
     pub id: String,
     pub href: String,
     pub linear: bool,
+    /// Human-readable label from the Navigation Document or NCX, if available.
+    #[serde(default)]
+    pub label: Option<String>,
 }

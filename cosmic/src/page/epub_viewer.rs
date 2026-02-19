@@ -2,6 +2,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use archive_organizer::Builder;
 use cosmic::Action;
 use cosmic::Element;
 use cosmic::Task;
@@ -526,11 +527,12 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
     let mut chapters = Vec::with_capacity(spine.len());
 
     for (idx, item) in spine.iter().enumerate() {
-        let label = if item.id.is_empty() {
-            format!("Chapter {}", idx + 1)
-        } else {
-            item.id.clone()
-        };
+        let label = item
+            .label
+            .clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| item.id.clone())
+            .apply_when(String::is_empty, |_| format!("Chapter {}", idx + 1));
 
         let blocks = match doc.resolve_resource(&item.href) {
             Ok(data) => {
