@@ -13,8 +13,8 @@ pub fn base_dir(href: &str) -> &str {
 ///
 /// Both `base` and the return value use `/` separators (zip paths).
 pub fn resolve_href(base: &str, relative: &str) -> String {
-    if relative.starts_with('/') {
-        return relative[1..].to_string();
+    if let Some(stripped) = relative.strip_prefix('/') {
+        return stripped.to_string();
     }
 
     let mut segments: Vec<&str> = if base.is_empty() {

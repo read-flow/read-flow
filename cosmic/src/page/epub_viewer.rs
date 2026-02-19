@@ -6,18 +6,23 @@ use cosmic::Action;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
+use cosmic::iced::Font;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::iced::core::SmolStr;
+use cosmic::iced::font;
 use cosmic::iced::keyboard::Key;
 use cosmic::iced::keyboard::Modifiers;
 use cosmic::iced::keyboard::key::Named;
+use cosmic::iced::widget::rich_text;
+use cosmic::iced::widget::span;
 use cosmic::theme;
 use cosmic::widget;
 use epub::ContentBlock;
 use epub::Document as EpubDocumentTrait;
 use epub::EpubDocument;
+use epub::TextSpan;
 
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
@@ -51,6 +56,7 @@ pub enum EpubViewerMessage {
     EpubLoaded(String, Vec<EpubChapter>),
     ReadingProgressLoaded(Option<usize>),
     SelectChapter(usize),
+    ThemeColors(bool),
     Key(Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(Modifiers),
     Out(EpubViewerOutput),
@@ -67,6 +73,7 @@ pub struct EpubViewer {
     active_chapter: usize,
     initial_chapter: Option<usize>,
     modifiers: Modifiers,
+    theme_colors: bool,
     content_scroll_id: widget::Id,
 }
 
@@ -90,6 +97,7 @@ impl EpubViewer {
             active_chapter: 0,
             initial_chapter: None,
             modifiers: Modifiers::default(),
+            theme_colors: true,
             content_scroll_id: widget::Id::unique(),
         };
 
@@ -193,7 +201,41 @@ impl EpubViewer {
                 column = column.push(render_block(block));
             }
 
-            widget::scrollable(widget::container(column).padding(space_s))
+            let theme_colors = self.theme_colors;
+
+            // Inner "paper" container with max-width for readability
+            let paper =
+                widget::container(widget::container(column).padding(space_s).max_width(800.0))
+                    .style(move |theme: &cosmic::Theme| {
+                        if theme_colors {
+                            let c = theme.cosmic().bg_color();
+                            widget::container::background(cosmic::iced::Color::from_rgba(
+                                c.color.red,
+                                c.color.green,
+                                c.color.blue,
+                                c.alpha,
+                            ))
+                        } else {
+                            widget::container::background(cosmic::iced::Color::WHITE)
+                        }
+                    })
+                    .width(Length::Fill)
+                    .align_x(Horizontal::Center);
+
+            // Outer "desk" container
+            let outer = widget::container(paper)
+                .style(|theme: &cosmic::Theme| {
+                    let c = theme.cosmic().bg_component_color();
+                    widget::container::background(cosmic::iced::Color::from_rgba(
+                        c.color.red,
+                        c.color.green,
+                        c.color.blue,
+                        c.alpha,
+                    ))
+                })
+                .width(Length::Fill);
+
+            widget::scrollable(outer)
                 .id(self.content_scroll_id.clone())
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -284,6 +326,13 @@ impl Page for EpubViewer {
     }
 
     fn view_context(&self) -> ContextView<'_, EpubViewerMessage> {
+        let display_section = widget::settings::section()
+            .title(fl!("epub-viewer-display"))
+            .add(
+                widget::settings::item::builder(fl!("epub-viewer-theme-colors"))
+                    .toggler(self.theme_colors, EpubViewerMessage::ThemeColors),
+            );
+
         let shortcuts_section = widget::settings::section()
             .title(fl!("epub-viewer-keyboard-shortcuts"))
             .add(shortcut_item(
@@ -297,7 +346,11 @@ impl Page for EpubViewer {
 
         ContextView {
             title: self.display_name(),
-            content: widget::settings::view_column(vec![shortcuts_section.into()]).into(),
+            content: widget::settings::view_column(vec![
+                display_section.into(),
+                shortcuts_section.into(),
+            ])
+            .into(),
         }
     }
 
@@ -328,6 +381,10 @@ impl Page for EpubViewer {
                 if idx < self.chapters.len() {
                     self.active_chapter = idx;
                 }
+                Task::none()
+            }
+            EpubViewerMessage::ThemeColors(use_theme_colors) => {
+                self.theme_colors = use_theme_colors;
                 Task::none()
             }
             EpubViewerMessage::Key(_modifiers, key, _text) => match &key {
@@ -401,14 +458,14 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
         let blocks = match doc.resolve_resource(&item.href) {
             Ok(data) => {
                 let href = &item.href;
-                epub::content::parse_xhtml(&data, href, &mut |img_path| {
-                    match doc.resolve_resource(img_path) {
-                        Ok(img_data) => {
-                            let media_type = epub::content::guess_media_type(img_path);
-                            Some((img_data, media_type))
-                        }
-                        Err(_) => None,
+                epub::content::parse_xhtml(&data, href, &mut |img_path| match doc
+                    .resolve_resource(img_path)
+                {
+                    Ok(img_data) => {
+                        let media_type = epub::content::guess_media_type(img_path);
+                        Some((img_data, media_type))
                     }
+                    Err(_) => None,
                 })
             }
             Err(e) => {
@@ -423,23 +480,86 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
     (title, chapters)
 }
 
+fn styled_span<'a>(
+    text_span: &'a TextSpan,
+) -> cosmic::iced::widget::text::Span<'a, EpubViewerMessage> {
+    let style = &text_span.style;
+    let mut s = span(text_span.text.as_str());
+
+    let weight = if style.bold {
+        font::Weight::Bold
+    } else {
+        font::Weight::Normal
+    };
+    let font_style = if style.italic {
+        font::Style::Italic
+    } else {
+        font::Style::Normal
+    };
+    s = s.font(Font {
+        weight,
+        style: font_style,
+        ..Font::default()
+    });
+
+    if style.underline {
+        s = s.underline(true);
+    }
+    if style.strikethrough {
+        s = s.strikethrough(true);
+    }
+    s
+}
+
+fn render_spans(spans: &[TextSpan], size: f32) -> Element<'_, EpubViewerMessage> {
+    let iced_spans: Vec<_> = spans.iter().map(styled_span).collect();
+    rich_text(iced_spans).size(size).width(Length::Fill).into()
+}
+
+fn render_list_item_spans<'a>(
+    prefix: String,
+    spans: &'a [TextSpan],
+    size: f32,
+) -> Element<'a, EpubViewerMessage> {
+    let mut iced_spans: Vec<cosmic::iced::widget::text::Span<'a, EpubViewerMessage>> =
+        Vec::with_capacity(spans.len() + 1);
+    iced_spans.push(span(prefix));
+    iced_spans.extend(spans.iter().map(styled_span));
+    rich_text(iced_spans).size(size).width(Length::Fill).into()
+}
+
 fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
     let cosmic_theme::Spacing {
         space_xxs, space_s, ..
     } = theme::active().cosmic().spacing;
 
     match block {
-        ContentBlock::Heading { level, text } => match level {
-            1 => widget::text::title1(text).width(Length::Fill).into(),
-            2 => widget::text::title2(text).width(Length::Fill).into(),
-            3 => widget::text::title3(text).width(Length::Fill).into(),
-            4 => widget::text::title4(text).width(Length::Fill).into(),
-            _ => widget::text::heading(text).width(Length::Fill).into(),
-        },
-        ContentBlock::Paragraph { text } => {
-            widget::text::body(text).width(Length::Fill).into()
+        ContentBlock::Heading { level, spans, text } => {
+            if spans.is_empty() {
+                return match level {
+                    1 => widget::text::title1(text).width(Length::Fill).into(),
+                    2 => widget::text::title2(text).width(Length::Fill).into(),
+                    3 => widget::text::title3(text).width(Length::Fill).into(),
+                    4 => widget::text::title4(text).width(Length::Fill).into(),
+                    _ => widget::text::heading(text).width(Length::Fill).into(),
+                };
+            }
+            let size = match level {
+                1 => 32.0,
+                2 => 28.0,
+                3 => 24.0,
+                4 => 20.0,
+                _ => 18.0,
+            };
+            render_spans(spans, size)
         }
-        ContentBlock::Preformatted { text } => {
+        ContentBlock::Paragraph { spans, text } => {
+            if spans.is_empty() {
+                return widget::text::body(text).width(Length::Fill).into();
+            }
+            render_spans(spans, 16.0)
+        }
+        ContentBlock::Preformatted { text, .. } => {
             widget::text::monotext(text).width(Length::Fill).into()
         }
         ContentBlock::BlockQuote { children } => {
@@ -450,7 +570,7 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
                 col = col.push(render_block(child));
             }
             widget::container(col)
-                .padding([0, 0, 0, space_s as u16])
+                .padding([0, 0, 0, space_s])
                 .width(Length::Fill)
                 .into()
         }
@@ -459,9 +579,17 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
                 .spacing(space_xxs)
                 .width(Length::Fill);
             for item in items {
-                col = col.push(
-                    widget::text::body(format!("  \u{2022} {}", item.text)).width(Length::Fill),
-                );
+                if item.spans.is_empty() {
+                    col = col.push(
+                        widget::text::body(format!("  \u{2022} {}", item.text)).width(Length::Fill),
+                    );
+                } else {
+                    col = col.push(render_list_item_spans(
+                        "  \u{2022} ".to_string(),
+                        &item.spans,
+                        16.0,
+                    ));
+                }
             }
             col.into()
         }
@@ -471,9 +599,14 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
                 .width(Length::Fill);
             for (i, item) in items.iter().enumerate() {
                 let n = *start as usize + i;
-                col = col.push(
-                    widget::text::body(format!("  {n}. {}", item.text)).width(Length::Fill),
-                );
+                if item.spans.is_empty() {
+                    col = col.push(
+                        widget::text::body(format!("  {n}. {}", item.text)).width(Length::Fill),
+                    );
+                } else {
+                    let prefix = format!("  {n}. ");
+                    col = col.push(render_list_item_spans(prefix, &item.spans, 16.0));
+                }
             }
             col.into()
         }
@@ -486,7 +619,9 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
         }
         ContentBlock::Image { alt, .. } => {
             if !alt.is_empty() {
-                widget::text::body(format!("[{alt}]")).width(Length::Fill).into()
+                widget::text::body(format!("[{alt}]"))
+                    .width(Length::Fill)
+                    .into()
             } else {
                 widget::Space::new(Length::Fill, 0).into()
             }

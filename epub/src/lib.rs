@@ -4,6 +4,10 @@ pub mod epub;
 pub mod error;
 pub mod renderer;
 
+pub use content::ContentBlock;
+pub use content::InlineStyle;
+pub use content::ListItem;
+pub use content::TextSpan;
 pub use domain::document::Document;
 pub use domain::locator::Locator;
 pub use domain::metadata::DocumentMetadata;
@@ -17,6 +21,3 @@ pub use renderer::RendererCapabilities;
 pub use renderer::RendererCommand;
 pub use renderer::RendererEvent;
 pub use renderer::TextRange;
-
-pub use content::ContentBlock;
-pub use content::ListItem;

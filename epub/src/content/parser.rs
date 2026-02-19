@@ -10,7 +10,9 @@ use html5ever::tokenizer::Tokenizer;
 use html5ever::tokenizer::TokenizerOpts;
 
 use super::block::ContentBlock;
+use super::block::InlineStyle;
 use super::block::ListItem;
+use super::block::TextSpan;
 use super::resolve::base_dir;
 use super::resolve::guess_media_type;
 use super::resolve::resolve_href;
@@ -23,6 +25,10 @@ struct StackEntry {
     list_items: Vec<ListItem>,
     /// For `<ol>` elements, the start attribute value.
     ol_start: u32,
+    /// Accumulated styled spans for this element.
+    spans: Vec<TextSpan>,
+    /// The inherited inline style at this stack level.
+    inline_style: InlineStyle,
 }
 
 impl StackEntry {
@@ -33,6 +39,30 @@ impl StackEntry {
             children: Vec::new(),
             list_items: Vec::new(),
             ol_start: 1,
+            spans: Vec::new(),
+            inline_style: InlineStyle::default(),
+        }
+    }
+
+    fn new_with_style(tag: &str, style: InlineStyle) -> Self {
+        StackEntry {
+            tag: tag.to_string(),
+            text: String::new(),
+            children: Vec::new(),
+            list_items: Vec::new(),
+            ol_start: 1,
+            spans: Vec::new(),
+            inline_style: style,
+        }
+    }
+
+    /// Flush any accumulated text into a TextSpan and add it to spans.
+    fn flush_text(&mut self) {
+        if !self.text.is_empty() {
+            self.spans.push(TextSpan {
+                text: std::mem::take(&mut self.text),
+                style: self.inline_style.clone(),
+            });
         }
     }
 }
@@ -80,7 +110,8 @@ impl ContentSink {
 
     fn into_blocks_and_pending(self) -> (Vec<ContentBlock>, Vec<(usize, PendingImage)>) {
         let mut state = self.state.into_inner();
-        if let Some(root) = state.stack.pop() {
+        if let Some(mut root) = state.stack.pop() {
+            root.flush_text();
             state.output.extend(root.children);
         }
         (state.output, state.pending_images)
@@ -89,15 +120,63 @@ impl ContentSink {
 
 const SKIP_TAGS: &[&str] = &["head", "style", "script", "title"];
 const VOID_ELEMENTS: &[&str] = &[
-    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param",
-    "source", "track", "wbr",
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
+    "track", "wbr",
 ];
+const INLINE_STYLE_TAGS: &[&str] = &["em", "strong", "b", "i", "u", "del", "s"];
 const TRANSPARENT_TAGS: &[&str] = &[
-    "div", "section", "article", "body", "html", "span", "a", "em", "strong", "b", "i", "u",
-    "small", "sub", "sup", "mark", "abbr", "cite", "del", "ins", "s", "nav", "main", "header",
-    "footer", "aside", "figure", "figcaption", "details", "summary", "table", "thead", "tbody",
-    "tfoot", "tr", "td", "th", "dl", "dt", "dd",
+    "div",
+    "section",
+    "article",
+    "body",
+    "html",
+    "span",
+    "a",
+    "small",
+    "sub",
+    "sup",
+    "mark",
+    "abbr",
+    "cite",
+    "ins",
+    "nav",
+    "main",
+    "header",
+    "footer",
+    "aside",
+    "figure",
+    "figcaption",
+    "details",
+    "summary",
+    "table",
+    "thead",
+    "tbody",
+    "tfoot",
+    "tr",
+    "td",
+    "th",
+    "dl",
+    "dt",
+    "dd",
 ];
+
+/// Compute the inline style for a given tag, inheriting from a parent style.
+fn style_for_tag(tag: &str, parent: &InlineStyle) -> InlineStyle {
+    let mut style = parent.clone();
+    match tag {
+        "strong" | "b" => style.bold = true,
+        "em" | "i" => style.italic = true,
+        "u" => style.underline = true,
+        "del" | "s" => style.strikethrough = true,
+        _ => {}
+    }
+    style
+}
+
+/// Collect plain text from spans.
+fn plain_text_from_spans(spans: &[TextSpan]) -> String {
+    spans.iter().map(|s| s.text.as_str()).collect()
+}
 
 impl TokenSink for ContentSink {
     type Handle = ();
@@ -167,22 +246,45 @@ impl TokenSink for ContentSink {
                                 alt,
                             },
                         ));
-                    } else if !alt.is_empty() {
-                        if let Some(entry) = state.stack.last_mut() {
-                            entry.children.push(ContentBlock::Paragraph {
+                    } else if !alt.is_empty()
+                        && let Some(entry) = state.stack.last_mut()
+                    {
+                        entry.children.push(ContentBlock::Paragraph {
+                            text: format!("[{alt}]"),
+                            spans: vec![TextSpan {
                                 text: format!("[{alt}]"),
-                            });
-                        }
+                                style: InlineStyle::default(),
+                            }],
+                        });
                     }
+                    return TokenSinkResult::Continue;
+                }
+
+                // Handle inline style tags: flush parent text, push styled entry
+                if INLINE_STYLE_TAGS.contains(&tag_name) {
+                    // Flush any accumulated text on the parent before entering the styled scope
+                    if let Some(parent) = state.stack.last_mut() {
+                        parent.flush_text();
+                    }
+
+                    let parent_style = state
+                        .stack
+                        .last()
+                        .map(|e| e.inline_style.clone())
+                        .unwrap_or_default();
+                    let style = style_for_tag(tag_name, &parent_style);
+                    state
+                        .stack
+                        .push(StackEntry::new_with_style(tag_name, style));
                     return TokenSinkResult::Continue;
                 }
 
                 let mut entry = StackEntry::new(tag_name);
 
-                if tag_name == "ol" {
-                    if let Some(start_str) = find_attr(attrs, "start") {
-                        entry.ol_start = start_str.parse().unwrap_or(1);
-                    }
+                if tag_name == "ol"
+                    && let Some(start_str) = find_attr(attrs, "start")
+                {
+                    entry.ol_start = start_str.parse().unwrap_or(1);
                 }
 
                 state.stack.push(entry);
@@ -210,23 +312,66 @@ impl TokenSink for ContentSink {
                     return TokenSinkResult::Continue;
                 };
 
-                let text = entry.text.trim().to_string();
+                // Handle inline style tag end: promote spans to parent
+                if INLINE_STYLE_TAGS.contains(&tag_name) {
+                    let mut entry = entry;
+                    entry.flush_text();
+                    if let Some(parent) = state.stack.last_mut() {
+                        parent.spans.extend(entry.spans);
+                    }
+                    return TokenSinkResult::Continue;
+                }
+
+                let mut entry = entry;
+                entry.flush_text();
+
+                let text = plain_text_from_spans(&entry.spans).trim().to_string();
+                let spans = if text.is_empty() {
+                    Vec::new()
+                } else {
+                    trim_spans(entry.spans)
+                };
+
                 let block = match tag_name {
-                    "h1" => Some(ContentBlock::Heading { level: 1, text }),
-                    "h2" => Some(ContentBlock::Heading { level: 2, text }),
-                    "h3" => Some(ContentBlock::Heading { level: 3, text }),
-                    "h4" => Some(ContentBlock::Heading { level: 4, text }),
-                    "h5" => Some(ContentBlock::Heading { level: 5, text }),
-                    "h6" => Some(ContentBlock::Heading { level: 6, text }),
+                    "h1" => Some(ContentBlock::Heading {
+                        level: 1,
+                        text,
+                        spans,
+                    }),
+                    "h2" => Some(ContentBlock::Heading {
+                        level: 2,
+                        text,
+                        spans,
+                    }),
+                    "h3" => Some(ContentBlock::Heading {
+                        level: 3,
+                        text,
+                        spans,
+                    }),
+                    "h4" => Some(ContentBlock::Heading {
+                        level: 4,
+                        text,
+                        spans,
+                    }),
+                    "h5" => Some(ContentBlock::Heading {
+                        level: 5,
+                        text,
+                        spans,
+                    }),
+                    "h6" => Some(ContentBlock::Heading {
+                        level: 6,
+                        text,
+                        spans,
+                    }),
                     "p" => {
                         if text.is_empty() && entry.children.is_empty() {
                             None
                         } else if entry.children.is_empty() {
-                            Some(ContentBlock::Paragraph { text })
+                            Some(ContentBlock::Paragraph { text, spans })
                         } else {
                             let mut blocks = Vec::new();
                             if !text.is_empty() {
-                                blocks.push(ContentBlock::Paragraph { text });
+                                blocks.push(ContentBlock::Paragraph { text, spans });
                             }
                             blocks.extend(entry.children);
                             if let Some(parent) = state.stack.last_mut() {
@@ -238,17 +383,23 @@ impl TokenSink for ContentSink {
                         }
                     }
                     "pre" | "code" => {
-                        if tag_name == "pre"
-                            || !state.stack.iter().any(|e| e.tag == "pre")
-                        {
-                            if !entry.text.is_empty() {
-                                Some(ContentBlock::Preformatted { text: entry.text })
+                        if tag_name == "pre" || !state.stack.iter().any(|e| e.tag == "pre") {
+                            if !entry.text.is_empty() || !spans.is_empty() {
+                                let raw_text = if spans.is_empty() {
+                                    entry.text
+                                } else {
+                                    plain_text_from_spans(&spans)
+                                };
+                                Some(ContentBlock::Preformatted {
+                                    text: raw_text,
+                                    spans,
+                                })
                             } else {
                                 None
                             }
                         } else {
                             if let Some(parent) = state.stack.last_mut() {
-                                parent.text.push_str(&entry.text);
+                                parent.text.push_str(&text);
                             }
                             None
                         }
@@ -256,7 +407,7 @@ impl TokenSink for ContentSink {
                     "blockquote" => {
                         let mut children = entry.children;
                         if !text.is_empty() {
-                            children.insert(0, ContentBlock::Paragraph { text });
+                            children.insert(0, ContentBlock::Paragraph { text, spans });
                         }
                         if !children.is_empty() {
                             Some(ContentBlock::BlockQuote { children })
@@ -285,16 +436,28 @@ impl TokenSink for ContentSink {
                     }
                     "li" => {
                         if let Some(parent) = state.stack.last_mut() {
-                            parent.list_items.push(ListItem { text });
+                            parent.list_items.push(ListItem { text, spans });
                         }
                         None
                     }
                     _ if TRANSPARENT_TAGS.contains(&tag_name) => {
-                        promote_to_parent(&mut state, text, entry.children, entry.list_items);
+                        promote_to_parent(
+                            &mut state,
+                            text,
+                            spans,
+                            entry.children,
+                            entry.list_items,
+                        );
                         None
                     }
                     _ => {
-                        promote_to_parent(&mut state, text, entry.children, entry.list_items);
+                        promote_to_parent(
+                            &mut state,
+                            text,
+                            spans,
+                            entry.children,
+                            entry.list_items,
+                        );
                         None
                     }
                 };
@@ -327,6 +490,7 @@ impl TokenSink for ContentSink {
 fn promote_to_parent(
     state: &mut SinkState,
     text: String,
+    spans: Vec<TextSpan>,
     children: Vec<ContentBlock>,
     list_items: Vec<ListItem>,
 ) {
@@ -337,11 +501,16 @@ fn promote_to_parent(
             }
             parent.text.push_str(&text);
         }
+        if !spans.is_empty() {
+            // Flush parent's own text before merging child spans
+            parent.flush_text();
+            parent.spans.extend(spans);
+        }
         parent.children.extend(children);
         parent.list_items.extend(list_items);
     } else {
         if !text.is_empty() {
-            state.output.push(ContentBlock::Paragraph { text });
+            state.output.push(ContentBlock::Paragraph { text, spans });
         }
         state.output.extend(children);
     }
@@ -355,6 +524,30 @@ fn find_attr(attrs: &[html5ever::Attribute], name: &str) -> Option<String> {
         .map(|a| a.value.to_string())
 }
 
+/// Trim leading and trailing whitespace from a span list, preserving interior whitespace.
+fn trim_spans(mut spans: Vec<TextSpan>) -> Vec<TextSpan> {
+    // Trim leading whitespace on first span
+    if let Some(first) = spans.first_mut() {
+        let trimmed = first.text.trim_start().to_string();
+        if trimmed.is_empty() {
+            spans.remove(0);
+            // Recurse in case next span also has leading whitespace
+            return trim_spans(spans);
+        }
+        first.text = trimmed;
+    }
+    // Trim trailing whitespace on last span
+    if let Some(last) = spans.last_mut() {
+        let trimmed = last.text.trim_end().to_string();
+        if trimmed.is_empty() {
+            spans.pop();
+            return trim_spans(spans);
+        }
+        last.text = trimmed;
+    }
+    spans
+}
+
 /// Parse XHTML content into structured content blocks.
 ///
 /// - `xhtml`: raw XHTML bytes
@@ -362,11 +555,10 @@ fn find_attr(attrs: &[html5ever::Attribute], name: &str) -> Option<String> {
 ///   used to resolve relative image paths
 /// - `resolve_image`: callback that takes a resolved zip path and returns
 ///   `(data, media_type)` or `None` if the resource can't be found
-pub fn parse_xhtml(
-    xhtml: &[u8],
-    chapter_href: &str,
-    resolve_image: &mut dyn FnMut(&str) -> Option<(Vec<u8>, String)>,
-) -> Vec<ContentBlock> {
+pub fn parse_xhtml<F>(xhtml: &[u8], chapter_href: &str, resolve_image: &mut F) -> Vec<ContentBlock>
+where
+    F: FnMut(&str) -> Option<(Vec<u8>, String)>,
+{
     let html_str = String::from_utf8_lossy(xhtml);
 
     let sink = ContentSink::new(chapter_href);
@@ -389,11 +581,13 @@ pub fn parse_xhtml(
 }
 
 /// Walk the block tree and resolve placeholder Image blocks.
-fn resolve_images(
-    blocks: &mut Vec<ContentBlock>,
+fn resolve_images<F>(
+    blocks: &mut [ContentBlock],
     pending: &[(usize, PendingImage)],
-    resolve_image: &mut dyn FnMut(&str) -> Option<(Vec<u8>, String)>,
-) {
+    resolve_image: &mut F,
+) where
+    F: FnMut(&str) -> Option<(Vec<u8>, String)>,
+{
     for block in blocks.iter_mut() {
         match block {
             ContentBlock::Image {
@@ -403,16 +597,19 @@ fn resolve_images(
             } if data.is_empty() => {
                 // This is a placeholder — find matching pending image
                 if let Some((_, img)) = pending.iter().find(|(_, img)| img.alt == *alt) {
-                    if let Some((resolved_data, resolved_mt)) =
-                        resolve_image(&img.resolved_path)
-                    {
+                    if let Some((resolved_data, resolved_mt)) = resolve_image(&img.resolved_path) {
                         *data = resolved_data;
                         *media_type = resolved_mt;
                     } else {
                         // Replace with alt-text paragraph fallback
                         if !alt.is_empty() {
+                            let alt_text = format!("[{}]", alt);
                             *block = ContentBlock::Paragraph {
-                                text: format!("[{}]", alt),
+                                spans: vec![TextSpan {
+                                    text: alt_text.clone(),
+                                    style: InlineStyle::default(),
+                                }],
+                                text: alt_text,
                             };
                         } else {
                             *block = ContentBlock::HorizontalRule; // will be filtered
@@ -441,7 +638,12 @@ mod tests {
         let blocks = parse("<html><body><p>Hello world</p></body></html>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text } => assert_eq!(text, "Hello world"),
+            ContentBlock::Paragraph { text, spans } => {
+                assert_eq!(text, "Hello world");
+                assert_eq!(spans.len(), 1);
+                assert_eq!(spans[0].text, "Hello world");
+                assert_eq!(spans[0].style, InlineStyle::default());
+            }
             other => panic!("expected Paragraph, got {other:?}"),
         }
     }
@@ -451,15 +653,15 @@ mod tests {
         let blocks = parse("<h1>Title</h1><h2>Subtitle</h2><h3>Section</h3>");
         assert_eq!(blocks.len(), 3);
         match &blocks[0] {
-            ContentBlock::Heading { level: 1, text } => assert_eq!(text, "Title"),
+            ContentBlock::Heading { level: 1, text, .. } => assert_eq!(text, "Title"),
             other => panic!("expected Heading h1, got {other:?}"),
         }
         match &blocks[1] {
-            ContentBlock::Heading { level: 2, text } => assert_eq!(text, "Subtitle"),
+            ContentBlock::Heading { level: 2, text, .. } => assert_eq!(text, "Subtitle"),
             other => panic!("expected Heading h2, got {other:?}"),
         }
         match &blocks[2] {
-            ContentBlock::Heading { level: 3, text } => assert_eq!(text, "Section"),
+            ContentBlock::Heading { level: 3, text, .. } => assert_eq!(text, "Section"),
             other => panic!("expected Heading h3, got {other:?}"),
         }
     }
@@ -469,7 +671,7 @@ mod tests {
         let blocks = parse("<p></p><p>  </p><p>content</p>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text } => assert_eq!(text, "content"),
+            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "content"),
             other => panic!("expected Paragraph, got {other:?}"),
         }
     }
@@ -511,7 +713,7 @@ mod tests {
             ContentBlock::BlockQuote { children } => {
                 assert_eq!(children.len(), 1);
                 match &children[0] {
-                    ContentBlock::Paragraph { text } => assert_eq!(text, "Quoted text"),
+                    ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Quoted text"),
                     other => panic!("expected Paragraph inside blockquote, got {other:?}"),
                 }
             }
@@ -524,7 +726,7 @@ mod tests {
         let blocks = parse("<pre>  code here\n  indented</pre>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Preformatted { text } => {
+            ContentBlock::Preformatted { text, .. } => {
                 assert!(text.contains("code here"));
                 assert!(text.contains("indented"));
             }
@@ -540,15 +742,77 @@ mod tests {
     }
 
     #[test]
-    fn flattens_inline_formatting() {
-        let blocks = parse("<p>This is <strong>bold</strong> and <em>italic</em> text</p>");
+    fn inline_bold_produces_styled_spans() {
+        let blocks = parse("<p>This is <strong>bold</strong> text</p>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text } => {
-                assert!(text.contains("bold"));
-                assert!(text.contains("italic"));
+            ContentBlock::Paragraph { text, spans } => {
+                assert_eq!(text, "This is bold text");
+                assert_eq!(spans.len(), 3);
+                assert_eq!(spans[0].text, "This is ");
+                assert!(!spans[0].style.bold);
+                assert_eq!(spans[1].text, "bold");
+                assert!(spans[1].style.bold);
+                assert_eq!(spans[2].text, " text");
+                assert!(!spans[2].style.bold);
             }
             other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inline_italic_produces_styled_spans() {
+        let blocks = parse("<p>This is <em>italic</em> text</p>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, spans } => {
+                assert_eq!(text, "This is italic text");
+                assert!(spans[1].style.italic);
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn nested_bold_italic_produces_combined_style() {
+        let blocks = parse("<p><strong><em>bold italic</em></strong></p>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, spans } => {
+                assert_eq!(text, "bold italic");
+                assert_eq!(spans.len(), 1);
+                assert!(spans[0].style.bold);
+                assert!(spans[0].style.italic);
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn underline_and_strikethrough() {
+        let blocks = parse("<p><u>underlined</u> and <del>deleted</del></p>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                assert!(spans[0].style.underline);
+                assert!(spans[2].style.strikethrough);
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inline_styling_in_list_items() {
+        let blocks = parse("<ul><li>normal <strong>bold</strong> text</li></ul>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::UnorderedList { items } => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].text, "normal bold text");
+                assert_eq!(items[0].spans.len(), 3);
+                assert!(items[0].spans[1].style.bold);
+            }
+            other => panic!("expected UnorderedList, got {other:?}"),
         }
     }
 
@@ -557,7 +821,7 @@ mod tests {
         let blocks = parse("<div><p>inside div</p></div><section><p>inside section</p></section>");
         assert_eq!(blocks.len(), 2);
         match &blocks[0] {
-            ContentBlock::Paragraph { text } => assert_eq!(text, "inside div"),
+            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "inside div"),
             other => panic!("expected Paragraph, got {other:?}"),
         }
     }
@@ -597,7 +861,7 @@ mod tests {
         let blocks = parse("<img src=\"missing.png\" alt=\"A picture\"/>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text } => assert_eq!(text, "[A picture]"),
+            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "[A picture]"),
             other => panic!("expected fallback Paragraph, got {other:?}"),
         }
     }
@@ -609,7 +873,7 @@ mod tests {
         );
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text } => assert_eq!(text, "Keep"),
+            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Keep"),
             other => panic!("expected Paragraph, got {other:?}"),
         }
     }
@@ -637,11 +901,11 @@ mod tests {
             blocks.len()
         );
         match &blocks[0] {
-            ContentBlock::Heading { level: 1, text } => assert_eq!(text, "Chapter One"),
+            ContentBlock::Heading { level: 1, text, .. } => assert_eq!(text, "Chapter One"),
             other => panic!("expected Heading h1, got {other:?}"),
         }
         match &blocks[1] {
-            ContentBlock::Paragraph { text } => assert_eq!(text, "Body text here."),
+            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Body text here."),
             other => panic!("expected Paragraph, got {other:?}"),
         }
     }
@@ -651,7 +915,7 @@ mod tests {
         let blocks = parse("<p>line one<br/>line two</p>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text } => {
+            ContentBlock::Paragraph { text, .. } => {
                 assert!(text.contains("line one"));
                 assert!(text.contains("line two"));
                 assert!(text.contains('\n'));

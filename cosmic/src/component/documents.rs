@@ -383,7 +383,7 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
             .size(ICON_SIZE)
             .icon()
             .into(),
-        display_path(&document.local_or_any_source().path).into(),
+        display_path(&document.local_or_any_source().path),
     ]
     .apply(widget::settings::item_row)
     .apply(widget::button::custom)

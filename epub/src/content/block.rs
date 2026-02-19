@@ -1,14 +1,31 @@
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct InlineStyle {
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strikethrough: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct TextSpan {
+    pub text: String,
+    pub style: InlineStyle,
+}
+
 #[derive(Clone, Debug)]
 pub enum ContentBlock {
     Heading {
         level: u8,
         text: String,
+        spans: Vec<TextSpan>,
     },
     Paragraph {
         text: String,
+        spans: Vec<TextSpan>,
     },
     Preformatted {
         text: String,
+        spans: Vec<TextSpan>,
     },
     BlockQuote {
         children: Vec<ContentBlock>,
@@ -31,4 +48,5 @@ pub enum ContentBlock {
 #[derive(Clone, Debug)]
 pub struct ListItem {
     pub text: String,
+    pub spans: Vec<TextSpan>,
 }
