@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use archive_organizer::Builder;
 use cosmic::Action;
+use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
@@ -699,8 +700,11 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
         ContentBlock::Image { data, .. } if !data.is_empty() => {
             let handle = widget::image::Handle::from_bytes(data.clone());
             widget::image(handle)
-                .width(Length::Fill)
+                .width(Length::Shrink)
                 .content_fit(cosmic::iced::ContentFit::ScaleDown)
+                .apply(widget::container)
+                .width(Length::Fill)
+                .align_x(Horizontal::Center)
                 .into()
         }
         ContentBlock::Image { alt, .. } => {
