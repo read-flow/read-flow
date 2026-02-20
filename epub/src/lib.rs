@@ -4,10 +4,12 @@ pub mod epub;
 pub mod error;
 pub mod renderer;
 
+pub use content::BlockStyle;
 pub use content::ContentBlock;
 pub use content::InlineStyle;
 pub use content::ListItem;
 pub use content::TableCell;
+pub use content::TextAlign;
 pub use content::TextSpan;
 pub use domain::document::Document;
 pub use domain::locator::Locator;

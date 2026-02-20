@@ -13,6 +13,33 @@ pub struct TextSpan {
     pub style: InlineStyle,
     /// Href from an enclosing `<a>` element, if any.
     pub link: Option<String>,
+    /// Per-span color override from `color: ...` in a `style` attribute.
+    pub color: Option<[u8; 3]>,
+    /// Per-span font-size multiplier from `font-size: ...` in a `style` attribute.
+    pub font_size_em: Option<f32>,
+}
+
+/// Horizontal text alignment derived from a `text-align` CSS property.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum TextAlign {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
+
+/// Block-level style properties extracted from a `style="..."` attribute.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BlockStyle {
+    pub text_align: Option<TextAlign>,
+    /// `font-size` expressed as an em multiplier (1.0 = normal body size).
+    pub font_size_em: Option<f32>,
+    /// RGB color from `color: #rrggbb` / `color: rgb(r,g,b)`.
+    pub color: Option<[u8; 3]>,
+    /// Top margin as em multiplier.
+    pub margin_top_em: Option<f32>,
+    /// Bottom margin as em multiplier.
+    pub margin_bottom_em: Option<f32>,
 }
 
 #[derive(Clone, Debug)]
@@ -21,14 +48,17 @@ pub enum ContentBlock {
         level: u8,
         text: String,
         spans: Vec<TextSpan>,
+        style: BlockStyle,
     },
     Paragraph {
         text: String,
         spans: Vec<TextSpan>,
+        style: BlockStyle,
     },
     Preformatted {
         text: String,
         spans: Vec<TextSpan>,
+        style: BlockStyle,
     },
     BlockQuote {
         children: Vec<ContentBlock>,
@@ -62,6 +92,7 @@ pub enum ContentBlock {
 pub struct ListItem {
     pub text: String,
     pub spans: Vec<TextSpan>,
+    pub style: BlockStyle,
 }
 
 #[derive(Clone, Debug)]

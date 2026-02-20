@@ -9,10 +9,12 @@ use html5ever::tokenizer::TokenSinkResult;
 use html5ever::tokenizer::Tokenizer;
 use html5ever::tokenizer::TokenizerOpts;
 
+use super::block::BlockStyle;
 use super::block::ContentBlock;
 use super::block::InlineStyle;
 use super::block::ListItem;
 use super::block::TableCell;
+use super::block::TextAlign;
 use super::block::TextSpan;
 use super::resolve::base_dir;
 use super::resolve::guess_media_type;
@@ -43,6 +45,8 @@ struct StackEntry {
     /// True when this element is a container of footnote items
     /// (`class="footnotes"`, `role="doc-endnotes"`, `epub:type="endnotes"`, etc.).
     is_footnote_container: bool,
+    /// Block-level style parsed from the element's `style="..."` attribute.
+    block_style: BlockStyle,
 }
 
 impl StackEntry {
@@ -61,6 +65,7 @@ impl StackEntry {
             element_id: None,
             is_footnote: false,
             is_footnote_container: false,
+            block_style: BlockStyle::default(),
         }
     }
 
@@ -79,6 +84,7 @@ impl StackEntry {
             element_id: None,
             is_footnote: false,
             is_footnote_container: false,
+            block_style: BlockStyle::default(),
         }
     }
 
@@ -89,6 +95,8 @@ impl StackEntry {
                 text: std::mem::take(&mut self.text),
                 style: self.inline_style.clone(),
                 link: self.link.clone(),
+                color: None,
+                font_size_em: None,
             });
         }
     }
@@ -303,7 +311,10 @@ impl TokenSink for ContentSink {
                                 text: format!("[{alt}]"),
                                 style: InlineStyle::default(),
                                 link: None,
+                                color: None,
+                                font_size_em: None,
                             }],
+                            style: BlockStyle::default(),
                         });
                     }
                     return TokenSinkResult::Continue;
@@ -352,6 +363,10 @@ impl TokenSink for ContentSink {
                 let mut entry = StackEntry::new(tag_name);
 
                 entry.element_id = find_attr(attrs, "id");
+
+                if let Some(style_attr) = find_attr(attrs, "style") {
+                    entry.block_style = parse_inline_style(&style_attr);
+                }
 
                 if tag_name == "ol"
                     && let Some(start_str) = find_attr(attrs, "start")
@@ -410,46 +425,61 @@ impl TokenSink for ContentSink {
                     trim_spans(entry.spans)
                 };
 
+                let block_style = entry.block_style.clone();
                 let block = match tag_name {
                     "h1" => Some(ContentBlock::Heading {
                         level: 1,
                         text,
                         spans,
+                        style: block_style,
                     }),
                     "h2" => Some(ContentBlock::Heading {
                         level: 2,
                         text,
                         spans,
+                        style: block_style,
                     }),
                     "h3" => Some(ContentBlock::Heading {
                         level: 3,
                         text,
                         spans,
+                        style: block_style,
                     }),
                     "h4" => Some(ContentBlock::Heading {
                         level: 4,
                         text,
                         spans,
+                        style: block_style,
                     }),
                     "h5" => Some(ContentBlock::Heading {
                         level: 5,
                         text,
                         spans,
+                        style: block_style,
                     }),
                     "h6" => Some(ContentBlock::Heading {
                         level: 6,
                         text,
                         spans,
+                        style: block_style,
                     }),
                     "p" => {
                         if text.is_empty() && entry.children.is_empty() {
                             None
                         } else if entry.children.is_empty() {
-                            Some(ContentBlock::Paragraph { text, spans })
+                            Some(ContentBlock::Paragraph {
+                                text,
+                                spans,
+                                style: block_style,
+                            })
                         } else {
                             let mut blocks = Vec::new();
                             if !text.is_empty() {
-                                blocks.push(ContentBlock::Paragraph { text, spans });
+                                blocks.push(ContentBlock::Paragraph {
+                                    text,
+                                    spans,
+                                    style: block_style,
+                                });
                             }
                             blocks.extend(entry.children);
                             if let Some(parent) = state.stack.last_mut() {
@@ -471,6 +501,7 @@ impl TokenSink for ContentSink {
                                 Some(ContentBlock::Preformatted {
                                     text: raw_text,
                                     spans,
+                                    style: block_style,
                                 })
                             } else {
                                 None
@@ -485,7 +516,14 @@ impl TokenSink for ContentSink {
                     "blockquote" => {
                         let mut children = entry.children;
                         if !text.is_empty() {
-                            children.insert(0, ContentBlock::Paragraph { text, spans });
+                            children.insert(
+                                0,
+                                ContentBlock::Paragraph {
+                                    text,
+                                    spans,
+                                    style: BlockStyle::default(),
+                                },
+                            );
                         }
                         if !children.is_empty() {
                             Some(ContentBlock::BlockQuote { children })
@@ -537,13 +575,24 @@ impl TokenSink for ContentSink {
                             let id = entry.element_id.unwrap_or_default();
                             let mut blocks = entry.children;
                             if !text.is_empty() || !spans.is_empty() {
-                                blocks.insert(0, ContentBlock::Paragraph { text, spans });
+                                blocks.insert(
+                                    0,
+                                    ContentBlock::Paragraph {
+                                        text,
+                                        spans,
+                                        style: block_style,
+                                    },
+                                );
                             }
                             if let Some(parent) = state.stack.last_mut() {
                                 parent.children.push(ContentBlock::Footnote { id, blocks });
                             }
                         } else if let Some(parent) = state.stack.last_mut() {
-                            parent.list_items.push(ListItem { text, spans });
+                            parent.list_items.push(ListItem {
+                                text,
+                                spans,
+                                style: block_style,
+                            });
                         }
                         None
                     }
@@ -552,7 +601,14 @@ impl TokenSink for ContentSink {
                             let id = entry.element_id.unwrap_or_default();
                             let mut blocks = entry.children;
                             if !text.is_empty() || !spans.is_empty() {
-                                blocks.insert(0, ContentBlock::Paragraph { text, spans });
+                                blocks.insert(
+                                    0,
+                                    ContentBlock::Paragraph {
+                                        text,
+                                        spans,
+                                        style: BlockStyle::default(),
+                                    },
+                                );
                             }
                             if !blocks.is_empty() {
                                 Some(ContentBlock::Footnote { id, blocks })
@@ -582,7 +638,7 @@ impl TokenSink for ContentSink {
                                 let mut s: Vec<TextSpan> = Vec::new();
                                 for child in &entry.children {
                                     let (ct, cs) = match child {
-                                        ContentBlock::Paragraph { text, spans } => {
+                                        ContentBlock::Paragraph { text, spans, .. } => {
                                             (text.as_str(), spans.as_slice())
                                         }
                                         ContentBlock::Heading { text, spans, .. } => {
@@ -715,7 +771,11 @@ fn promote_to_parent(
         parent.list_items.extend(list_items);
     } else {
         if !text.is_empty() {
-            state.output.push(ContentBlock::Paragraph { text, spans });
+            state.output.push(ContentBlock::Paragraph {
+                text,
+                spans,
+                style: BlockStyle::default(),
+            });
         }
         state.output.extend(children);
     }
@@ -745,12 +805,105 @@ fn normalize_html_whitespace(text: &str, prev_ends_with_space: bool) -> String {
         }
     }
     // Drop the leading space if the parent text already ends with one.
-    if prev_ends_with_space {
-        if let Some(stripped) = result.strip_prefix(' ') {
-            return stripped.to_string();
+    if prev_ends_with_space && let Some(stripped) = result.strip_prefix(' ') {
+        return stripped.to_string();
+    }
+    result
+}
+
+/// Parse a `style="..."` attribute value into a `BlockStyle`.
+/// Only a small subset of CSS properties is recognised; unknown properties are ignored.
+fn parse_inline_style(style_attr: &str) -> BlockStyle {
+    let mut result = BlockStyle::default();
+    for declaration in style_attr.split(';') {
+        let declaration = declaration.trim();
+        if declaration.is_empty() {
+            continue;
+        }
+        let Some((prop, value)) = declaration.split_once(':') else {
+            continue;
+        };
+        let prop = prop.trim().to_ascii_lowercase();
+        let value = value.trim();
+        match prop.as_str() {
+            "text-align" => {
+                result.text_align = match value.to_ascii_lowercase().as_str() {
+                    "center" => Some(TextAlign::Center),
+                    "right" => Some(TextAlign::Right),
+                    "left" => Some(TextAlign::Left),
+                    _ => None,
+                };
+            }
+            "font-size" => {
+                result.font_size_em = parse_css_length_as_em(value);
+            }
+            "color" => {
+                result.color = parse_css_color(value);
+            }
+            "margin-top" => {
+                result.margin_top_em = parse_css_length_as_em(value);
+            }
+            "margin-bottom" => {
+                result.margin_bottom_em = parse_css_length_as_em(value);
+            }
+            _ => {}
         }
     }
     result
+}
+
+/// Parse a CSS length value into an `em` multiplier.
+/// Supported units: `em`, `px` (converted as px/16), `%` (divided by 100).
+fn parse_css_length_as_em(value: &str) -> Option<f32> {
+    let v = value.trim().to_ascii_lowercase();
+    if let Some(n) = v.strip_suffix("em") {
+        n.trim().parse().ok()
+    } else if let Some(n) = v.strip_suffix("px") {
+        n.trim().parse::<f32>().ok().map(|px| px / 16.0)
+    } else if let Some(n) = v.strip_suffix('%') {
+        n.trim().parse::<f32>().ok().map(|pct| pct / 100.0)
+    } else {
+        None
+    }
+}
+
+/// Parse a CSS color value into `[r, g, b]`.
+/// Supports `#rrggbb`, `#rgb`, and `rgb(r, g, b)`.
+fn parse_css_color(value: &str) -> Option<[u8; 3]> {
+    let v = value.trim();
+    if let Some(hex) = v.strip_prefix('#') {
+        match hex.len() {
+            6 => {
+                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                Some([r, g, b])
+            }
+            3 => {
+                let r = u8::from_str_radix(&hex[0..1], 16).ok()? * 17;
+                let g = u8::from_str_radix(&hex[1..2], 16).ok()? * 17;
+                let b = u8::from_str_radix(&hex[2..3], 16).ok()? * 17;
+                Some([r, g, b])
+            }
+            _ => None,
+        }
+    } else if let Some(inner) = v
+        .to_ascii_lowercase()
+        .strip_prefix("rgb(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        let parts: Vec<&str> = inner.split(',').collect();
+        if parts.len() == 3 {
+            let r = parts[0].trim().parse().ok()?;
+            let g = parts[1].trim().parse().ok()?;
+            let b = parts[2].trim().parse().ok()?;
+            Some([r, g, b])
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }
 
 fn find_attr(attrs: &[html5ever::Attribute], name: &str) -> Option<String> {
@@ -846,8 +999,11 @@ fn resolve_images<F>(
                                     text: alt_text.clone(),
                                     style: InlineStyle::default(),
                                     link: None,
+                                    color: None,
+                                    font_size_em: None,
                                 }],
                                 text: alt_text,
+                                style: BlockStyle::default(),
                             };
                         } else {
                             *block = ContentBlock::HorizontalRule; // will be filtered
@@ -876,7 +1032,7 @@ mod tests {
         let blocks = parse("<html><body><p>Hello world</p></body></html>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, spans } => {
+            ContentBlock::Paragraph { text, spans, .. } => {
                 assert_eq!(text, "Hello world");
                 assert_eq!(spans.len(), 1);
                 assert_eq!(spans[0].text, "Hello world");
@@ -994,7 +1150,7 @@ mod tests {
         let blocks = parse("<p>This is <strong>bold</strong> text</p>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, spans } => {
+            ContentBlock::Paragraph { text, spans, .. } => {
                 assert_eq!(text, "This is bold text");
                 assert_eq!(spans.len(), 3);
                 assert_eq!(spans[0].text, "This is ");
@@ -1013,7 +1169,7 @@ mod tests {
         let blocks = parse("<p>This is <em>italic</em> text</p>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, spans } => {
+            ContentBlock::Paragraph { text, spans, .. } => {
                 assert_eq!(text, "This is italic text");
                 assert!(spans[1].style.italic);
             }
@@ -1026,7 +1182,7 @@ mod tests {
         let blocks = parse("<p><strong><em>bold italic</em></strong></p>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, spans } => {
+            ContentBlock::Paragraph { text, spans, .. } => {
                 assert_eq!(text, "bold italic");
                 assert_eq!(spans.len(), 1);
                 assert!(spans[0].style.bold);
@@ -1178,7 +1334,7 @@ mod tests {
         let blocks = parse("<p>Click <a href=\"ch2.xhtml\">here</a> for more.</p>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, spans } => {
+            ContentBlock::Paragraph { text, spans, .. } => {
                 assert_eq!(text, "Click here for more.");
                 let here_count = spans.iter().filter(|s| s.text.contains("here")).count();
                 assert_eq!(here_count, 1, "link text duplicated in spans: {spans:?}");
@@ -1208,7 +1364,7 @@ mod tests {
         let blocks = parse("<p>See <a href=\"ch2.xhtml\"><strong>bold link</strong></a> here.</p>");
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, spans } => {
+            ContentBlock::Paragraph { text, spans, .. } => {
                 assert_eq!(text, "See bold link here.");
                 let bold_link_count = spans
                     .iter()
@@ -1448,6 +1604,124 @@ mod tests {
                 // Must not have double spaces around the italic word
                 assert!(!text.contains("  "), "double space found: {text:?}");
                 assert_eq!(text, "plain italic text");
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    // --- parse_css_color unit tests ---
+
+    #[test]
+    fn css_color_hex6() {
+        assert_eq!(parse_css_color("#ff8800"), Some([0xff, 0x88, 0x00]));
+    }
+
+    #[test]
+    fn css_color_hex3() {
+        assert_eq!(parse_css_color("#f80"), Some([0xff, 0x88, 0x00]));
+    }
+
+    #[test]
+    fn css_color_rgb_fn() {
+        assert_eq!(parse_css_color("rgb(255, 136, 0)"), Some([255, 136, 0]));
+    }
+
+    #[test]
+    fn css_color_unknown_returns_none() {
+        assert_eq!(parse_css_color("red"), None);
+    }
+
+    // --- parse_css_length_as_em unit tests ---
+
+    #[test]
+    fn css_length_em() {
+        assert_eq!(parse_css_length_as_em("1.5em"), Some(1.5));
+    }
+
+    #[test]
+    fn css_length_px() {
+        assert_eq!(parse_css_length_as_em("32px"), Some(2.0));
+    }
+
+    #[test]
+    fn css_length_percent() {
+        assert_eq!(parse_css_length_as_em("200%"), Some(2.0));
+    }
+
+    // --- parse_inline_style unit tests ---
+
+    #[test]
+    fn inline_style_text_align_center() {
+        let s = parse_inline_style("text-align: center");
+        assert_eq!(s.text_align, Some(TextAlign::Center));
+    }
+
+    #[test]
+    fn inline_style_text_align_right() {
+        let s = parse_inline_style("text-align:right");
+        assert_eq!(s.text_align, Some(TextAlign::Right));
+    }
+
+    #[test]
+    fn inline_style_font_size_em() {
+        let s = parse_inline_style("font-size: 2em");
+        assert_eq!(s.font_size_em, Some(2.0));
+    }
+
+    #[test]
+    fn inline_style_color_hex() {
+        let s = parse_inline_style("color: #336699");
+        assert_eq!(s.color, Some([0x33, 0x66, 0x99]));
+    }
+
+    #[test]
+    fn inline_style_multiple_properties() {
+        let s = parse_inline_style("text-align:center; font-size:1.2em; color:#ff0000");
+        assert_eq!(s.text_align, Some(TextAlign::Center));
+        assert_eq!(s.font_size_em, Some(1.2));
+        assert_eq!(s.color, Some([255, 0, 0]));
+    }
+
+    #[test]
+    fn inline_style_unknown_property_ignored() {
+        let s = parse_inline_style("display:block; text-align:center");
+        assert_eq!(s.text_align, Some(TextAlign::Center));
+        assert_eq!(s.font_size_em, None);
+    }
+
+    // --- Integration-level block style tests ---
+
+    #[test]
+    fn paragraph_style_text_align_center() {
+        let blocks = parse(r#"<p style="text-align:center">Centered</p>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { style, .. } => {
+                assert_eq!(style.text_align, Some(TextAlign::Center));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn heading_style_font_size() {
+        let blocks = parse(r#"<h1 style="font-size:2em">Title</h1>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Heading { style, .. } => {
+                assert_eq!(style.font_size_em, Some(2.0));
+            }
+            other => panic!("expected Heading, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn paragraph_without_style_has_default_block_style() {
+        let blocks = parse("<p>No style</p>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { style, .. } => {
+                assert_eq!(*style, BlockStyle::default());
             }
             other => panic!("expected Paragraph, got {other:?}"),
         }

@@ -25,10 +25,12 @@ use cosmic::iced::widget::span;
 use cosmic::theme;
 use cosmic::theme::Container;
 use cosmic::widget;
+use epub::BlockStyle;
 use epub::ContentBlock;
 use epub::Document as EpubDocumentTrait;
 use epub::EpubDocument;
 use epub::TableCell;
+use epub::TextAlign;
 use epub::TextSpan;
 
 use crate::ICON_SIZE;
@@ -705,9 +707,18 @@ fn styled_span<'a>(
             cosmic::theme::active().cosmic().secondary.base.into(),
         ));
     }
+    if let Some([r, g, b]) = text_span.color {
+        s = s.color(cosmic::iced::Color::from_rgb8(r, g, b));
+    }
+    if let Some(em) = text_span.font_size_em {
+        s = s.size(em * 16.0);
+    }
     if let Some(href) = &text_span.link {
         s = s.link(EpubViewerMessage::FollowLink(href.clone()));
-        s = s.color(theme::active().cosmic().accent_color());
+        // Only apply accent color if no explicit color was set
+        if text_span.color.is_none() {
+            s = s.color(theme::active().cosmic().accent_color());
+        }
     }
     s
 }
@@ -729,36 +740,106 @@ fn render_list_item_spans<'a>(
     rich_text(iced_spans).size(size).width(Length::Fill).into()
 }
 
+/// Map `BlockStyle.text_align` to an iced `Horizontal` alignment.
+fn text_align_horizontal(style: &BlockStyle) -> cosmic::iced::alignment::Horizontal {
+    match style.text_align {
+        Some(TextAlign::Center) => cosmic::iced::alignment::Horizontal::Center,
+        Some(TextAlign::Right) => cosmic::iced::alignment::Horizontal::Right,
+        _ => cosmic::iced::alignment::Horizontal::Left,
+    }
+}
+
+/// Wrap `el` in a container that applies margin-top / margin-bottom from `style`.
+/// If no margins are set the element is returned as-is.
+fn apply_text_align<'a>(
+    el: Element<'a, EpubViewerMessage>,
+    style: &BlockStyle,
+) -> Element<'a, EpubViewerMessage> {
+    use cosmic::iced::widget::container;
+    let has_margin = style.margin_top_em.is_some() || style.margin_bottom_em.is_some();
+    if !has_margin {
+        return el;
+    }
+    // Convert em to pixels using 16px base
+    let top = style.margin_top_em.unwrap_or(0.0) * 16.0;
+    let bottom = style.margin_bottom_em.unwrap_or(0.0) * 16.0;
+    container(el)
+        .padding(cosmic::iced::Padding {
+            top,
+            bottom,
+            left: 0.0,
+            right: 0.0,
+        })
+        .width(Length::Fill)
+        .into()
+}
+
 fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
     let cosmic_theme::Spacing {
         space_xxs, space_s, ..
     } = theme::active().cosmic().spacing;
 
     match block {
-        ContentBlock::Heading { level, spans, text } => {
-            if spans.is_empty() {
-                return match level {
-                    1 => widget::text::title1(text).width(Length::Fill).into(),
-                    2 => widget::text::title2(text).width(Length::Fill).into(),
-                    3 => widget::text::title3(text).width(Length::Fill).into(),
-                    4 => widget::text::title4(text).width(Length::Fill).into(),
-                    _ => widget::text::heading(text).width(Length::Fill).into(),
-                };
-            }
-            let size = match level {
-                1 => 32.0,
+        ContentBlock::Heading {
+            level,
+            spans,
+            text,
+            style,
+        } => {
+            let base_size = match level {
+                1 => 32.0f32,
                 2 => 28.0,
                 3 => 24.0,
                 4 => 20.0,
                 _ => 18.0,
             };
-            render_spans(spans, size)
-        }
-        ContentBlock::Paragraph { spans, text } => {
+            let size = style
+                .font_size_em
+                .map(|em| em * base_size)
+                .unwrap_or(base_size);
+            let align = text_align_horizontal(style);
             if spans.is_empty() {
-                return widget::text::body(text).width(Length::Fill).into();
+                return apply_text_align(
+                    match level {
+                        1 => widget::text::title1(text)
+                            .width(Length::Fill)
+                            .align_x(align)
+                            .into(),
+                        2 => widget::text::title2(text)
+                            .width(Length::Fill)
+                            .align_x(align)
+                            .into(),
+                        3 => widget::text::title3(text)
+                            .width(Length::Fill)
+                            .align_x(align)
+                            .into(),
+                        4 => widget::text::title4(text)
+                            .width(Length::Fill)
+                            .align_x(align)
+                            .into(),
+                        _ => widget::text::heading(text)
+                            .width(Length::Fill)
+                            .align_x(align)
+                            .into(),
+                    },
+                    style,
+                );
             }
-            render_spans(spans, 16.0)
+            apply_text_align(render_spans(spans, size), style)
+        }
+        ContentBlock::Paragraph { spans, text, style } => {
+            let size = style.font_size_em.map(|em| em * 16.0).unwrap_or(16.0);
+            let align = text_align_horizontal(style);
+            if spans.is_empty() {
+                return apply_text_align(
+                    widget::text::body(text)
+                        .width(Length::Fill)
+                        .align_x(align)
+                        .into(),
+                    style,
+                );
+            }
+            apply_text_align(render_spans(spans, size), style)
         }
         ContentBlock::Preformatted { text, .. } => widget::text::monotext(text)
             .width(Length::Fill)
@@ -850,7 +931,7 @@ fn render_footnote(blocks: &[ContentBlock]) -> Element<'_, EpubViewerMessage> {
 
     for block in blocks {
         let el: Element<_> = match block {
-            ContentBlock::Paragraph { spans, text } => {
+            ContentBlock::Paragraph { spans, text, .. } => {
                 if spans.is_empty() {
                     widget::text::caption(text).width(Length::Fill).into()
                 } else {
