@@ -21,6 +21,7 @@ use cosmic::iced::widget::rich_text;
 use cosmic::iced::widget::scrollable;
 use cosmic::iced::widget::span;
 use cosmic::theme;
+use cosmic::theme::Container;
 use cosmic::widget;
 use epub::ContentBlock;
 use epub::Document as EpubDocumentTrait;
@@ -646,9 +647,12 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
             }
             render_spans(spans, 16.0)
         }
-        ContentBlock::Preformatted { text, .. } => {
-            widget::text::monotext(text).width(Length::Fill).into()
-        }
+        ContentBlock::Preformatted { text, .. } => widget::text::monotext(text)
+            .width(Length::Fill)
+            .apply(widget::container)
+            .padding([space_xxs, space_s])
+            .class(Container::Secondary)
+            .into(),
         ContentBlock::BlockQuote { children } => {
             let mut col = widget::column::with_capacity(children.len())
                 .spacing(space_xxs)
@@ -657,7 +661,7 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
                 col = col.push(render_block(child));
             }
             widget::container(col)
-                .padding([0, 0, 0, space_s])
+                .padding([space_xxs, space_s])
                 .width(Length::Fill)
                 .into()
         }
