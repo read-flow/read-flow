@@ -268,12 +268,13 @@ impl Pages {
         })
     }
 
+    #[allow(clippy::clone_on_copy)]
     pub fn view_header_center<'a>(
         &'a self,
         active_page: &'a PageSelector,
     ) -> Vec<Element<'a, PageMessage>> {
         with_active_page!(self, active_page, |page, mapper| {
-            page.map(|p| {
+            page.map(move |p| {
                 p.view_header_center()
                     .into_iter()
                     .map(|e| e.map(mapper.clone()))
@@ -283,12 +284,13 @@ impl Pages {
         })
     }
 
+    #[allow(clippy::clone_on_copy)]
     pub fn view_header_end<'a>(
         &'a self,
         active_page: &'a PageSelector,
     ) -> Vec<Element<'a, PageMessage>> {
         with_active_page!(self, active_page, |page, mapper| {
-            page.map(|p| {
+            page.map(move |p| {
                 p.view_header_end()
                     .into_iter()
                     .map(|e| e.map(mapper.clone()))

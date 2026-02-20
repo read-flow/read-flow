@@ -470,28 +470,28 @@ impl Page for EpubViewer {
 
                 if path.is_empty() {
                     // Pure fragment link — same-page navigation.
-                    if let Some(frag) = fragment.filter(|f| !f.is_empty()) {
-                        if let Some(chapter) = self.chapters.get(self.active_chapter) {
-                            if let Some(&target_y) = chapter.anchors.get(frag) {
-                                // Navigating to a footnote: save reading position (once).
-                                if self.scroll_before_jump.is_none() {
-                                    self.scroll_before_jump = Some(self.scroll_y);
-                                }
-                                return scrollable::scroll_to(
-                                    self.content_scroll_id.clone(),
-                                    scrollable::AbsoluteOffset {
-                                        x: 0.0,
-                                        y: target_y,
-                                    },
-                                );
-                            } else if let Some(saved_y) = self.scroll_before_jump.take() {
-                                // Unknown fragment (likely a back-reference ↩): restore
-                                // the position saved before the last footnote jump.
-                                return scrollable::scroll_to(
-                                    self.content_scroll_id.clone(),
-                                    scrollable::AbsoluteOffset { x: 0.0, y: saved_y },
-                                );
+                    if let Some(frag) = fragment.filter(|f| !f.is_empty())
+                        && let Some(chapter) = self.chapters.get(self.active_chapter)
+                    {
+                        if let Some(&target_y) = chapter.anchors.get(frag) {
+                            // Navigating to a footnote: save reading position (once).
+                            if self.scroll_before_jump.is_none() {
+                                self.scroll_before_jump = Some(self.scroll_y);
                             }
+                            return scrollable::scroll_to(
+                                self.content_scroll_id.clone(),
+                                scrollable::AbsoluteOffset {
+                                    x: 0.0,
+                                    y: target_y,
+                                },
+                            );
+                        } else if let Some(saved_y) = self.scroll_before_jump.take() {
+                            // Unknown fragment (likely a back-reference ↩): restore
+                            // the position saved before the last footnote jump.
+                            return scrollable::scroll_to(
+                                self.content_scroll_id.clone(),
+                                scrollable::AbsoluteOffset { x: 0.0, y: saved_y },
+                            );
                         }
                     }
                     return Task::none();
@@ -663,10 +663,10 @@ fn build_anchor_map(blocks: &[ContentBlock]) -> HashMap<String, f32> {
     let mut map = HashMap::new();
     let mut y = 0.0f32;
     for block in blocks {
-        if let ContentBlock::Footnote { id, .. } = block {
-            if !id.is_empty() {
-                map.insert(id.clone(), y);
-            }
+        if let ContentBlock::Footnote { id, .. } = block
+            && !id.is_empty()
+        {
+            map.insert(id.clone(), y);
         }
         y += estimated_block_height(block) + SPACING;
     }
