@@ -595,6 +595,7 @@ fn styled_span<'a>(
     }
     if let Some(href) = &text_span.link {
         s = s.link(EpubViewerMessage::FollowLink(href.clone()));
+        s = s.color(theme::active().cosmic().accent_color());
     }
     s
 }
