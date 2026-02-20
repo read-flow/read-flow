@@ -137,7 +137,7 @@ const VOID_ELEMENTS: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
     "track", "wbr",
 ];
-const INLINE_STYLE_TAGS: &[&str] = &["em", "strong", "b", "i", "u", "del", "s"];
+const INLINE_STYLE_TAGS: &[&str] = &["em", "strong", "b", "i", "u", "del", "s", "code"];
 const TRANSPARENT_TAGS: &[&str] = &[
     "div",
     "section",
@@ -174,6 +174,7 @@ fn style_for_tag(tag: &str, parent: &InlineStyle) -> InlineStyle {
         "em" | "i" => style.italic = true,
         "u" => style.underline = true,
         "del" | "s" => style.strikethrough = true,
+        "code" => style.monospaced = true,
         _ => {}
     }
     style
@@ -410,7 +411,7 @@ impl TokenSink for ContentSink {
                             None
                         }
                     }
-                    "pre" | "code" => {
+                    "pre" => {
                         if tag_name == "pre" || !state.stack.iter().any(|e| e.tag == "pre") {
                             if !entry.text.is_empty() || !spans.is_empty() {
                                 let raw_text = if spans.is_empty() {

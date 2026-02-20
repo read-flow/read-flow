@@ -4,6 +4,7 @@ pub struct InlineStyle {
     pub italic: bool,
     pub underline: bool,
     pub strikethrough: bool,
+    pub monospaced: bool,
 }
 
 #[derive(Clone, Debug)]

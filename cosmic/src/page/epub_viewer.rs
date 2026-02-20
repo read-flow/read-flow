@@ -8,6 +8,7 @@ use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
+use cosmic::iced::Background;
 use cosmic::iced::Font;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
@@ -592,6 +593,12 @@ fn styled_span<'a>(
     }
     if style.strikethrough {
         s = s.strikethrough(true);
+    }
+    if style.monospaced {
+        s = s.font(cosmic::font::mono());
+        s = s.background(Background::Color(
+            cosmic::theme::active().cosmic().secondary.base.into(),
+        ));
     }
     if let Some(href) = &text_span.link {
         s = s.link(EpubViewerMessage::FollowLink(href.clone()));
