@@ -664,8 +664,20 @@ impl TokenSink for ContentSink {
                 if state.skip_depth > 0 {
                     return TokenSinkResult::Continue;
                 }
-                if let Some(entry) = state.stack.last_mut() {
-                    entry.text.push_str(&text);
+                if in_preformatted(&state.stack) {
+                    if let Some(entry) = state.stack.last_mut() {
+                        entry.text.push_str(&text);
+                    }
+                } else if let Some(entry) = state.stack.last_mut() {
+                    // Check whether the accumulated content (text buffer or last span)
+                    // already ends with a space to avoid doubling.
+                    let prev_ends_with_space = if !entry.text.is_empty() {
+                        entry.text.ends_with(' ')
+                    } else {
+                        entry.spans.last().is_some_and(|s| s.text.ends_with(' '))
+                    };
+                    let normalized = normalize_html_whitespace(&text, prev_ends_with_space);
+                    entry.text.push_str(&normalized);
                 }
             }
 
@@ -707,6 +719,38 @@ fn promote_to_parent(
         }
         state.output.extend(children);
     }
+}
+
+/// Returns true when any ancestor stack entry (or the current one) is a `<pre>` element.
+fn in_preformatted(stack: &[StackEntry]) -> bool {
+    stack.iter().any(|e| e.tag == "pre")
+}
+
+/// Normalize a run of HTML character data per the HTML whitespace rules:
+/// collapse any sequence of ASCII whitespace (space, tab, CR, LF) to a single
+/// space.  If the already-accumulated text for this element ends with a space
+/// the leading space of the normalized result is suppressed to avoid doubling.
+fn normalize_html_whitespace(text: &str, prev_ends_with_space: bool) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut in_ws = false;
+    for ch in text.chars() {
+        if matches!(ch, ' ' | '\t' | '\r' | '\n') {
+            if !in_ws {
+                in_ws = true;
+                result.push(' ');
+            }
+        } else {
+            in_ws = false;
+            result.push(ch);
+        }
+    }
+    // Drop the leading space if the parent text already ends with one.
+    if prev_ends_with_space {
+        if let Some(stripped) = result.strip_prefix(' ') {
+            return stripped.to_string();
+        }
+    }
+    result
 }
 
 fn find_attr(attrs: &[html5ever::Attribute], name: &str) -> Option<String> {
@@ -1338,6 +1382,72 @@ mod tests {
             ContentBlock::Paragraph { spans, .. } => {
                 let linked = spans.iter().find(|s| s.link.is_some()).unwrap();
                 assert_eq!(linked.link.as_deref(), Some("#fn1"));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    // --- normalize_html_whitespace unit tests ---
+
+    #[test]
+    fn normalize_collapses_spaces() {
+        assert_eq!(normalize_html_whitespace("a  b   c", false), "a b c");
+    }
+
+    #[test]
+    fn normalize_collapses_tabs_and_newlines() {
+        assert_eq!(normalize_html_whitespace("a\t\nb", false), "a b");
+    }
+
+    #[test]
+    fn normalize_suppresses_leading_space_when_prev_ends_with_space() {
+        assert_eq!(normalize_html_whitespace(" world", true), "world");
+    }
+
+    #[test]
+    fn normalize_keeps_leading_space_when_prev_does_not_end_with_space() {
+        assert_eq!(normalize_html_whitespace(" world", false), " world");
+    }
+
+    // --- Integration-level whitespace tests ---
+
+    #[test]
+    fn inline_whitespace_collapsed_in_paragraph() {
+        // Multi-line source like EPUB XML often has newlines and extra spaces
+        let blocks = parse("<p>Hello\n  world</p>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Hello world"),
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn whitespace_preserved_inside_pre() {
+        let blocks = parse("<pre>line one\n  indented\nline three</pre>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Preformatted { text, .. } => {
+                assert!(text.contains('\n'), "newlines must be kept in <pre>");
+                assert!(
+                    text.contains("  indented"),
+                    "indentation must be kept in <pre>"
+                );
+            }
+            other => panic!("expected Preformatted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn whitespace_between_inline_elements_normalised() {
+        // Typical EPUB: "word <em>emphasis</em> word" with surrounding whitespace nodes
+        let blocks = parse("<p>plain <em>italic</em> text</p>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, .. } => {
+                // Must not have double spaces around the italic word
+                assert!(!text.contains("  "), "double space found: {text:?}");
+                assert_eq!(text, "plain italic text");
             }
             other => panic!("expected Paragraph, got {other:?}"),
         }
