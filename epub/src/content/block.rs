@@ -49,6 +49,13 @@ pub enum ContentBlock {
         rows: Vec<Vec<TableCell>>,
     },
     HorizontalRule,
+    /// A footnote body, identified by its HTML `id` attribute.
+    /// Produced by `<aside epub:type="footnote">` or `<li>` elements inside
+    /// a footnote-section container (`class="footnotes"`, `role="doc-endnotes"`, etc.).
+    Footnote {
+        id: String,
+        blocks: Vec<ContentBlock>,
+    },
 }
 
 #[derive(Clone, Debug)]

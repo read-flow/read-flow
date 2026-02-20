@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -50,6 +51,9 @@ pub(crate) struct EpubChapter {
     /// Resolved zip path for this spine item (e.g. `OEBPS/Text/ch1.xhtml`).
     href: String,
     blocks: Vec<ContentBlock>,
+    /// Map of HTML anchor id → estimated absolute y-offset in pixels.
+    /// Populated for `ContentBlock::Footnote` ids at chapter load time.
+    anchors: HashMap<String, f32>,
 }
 
 // --- Messages ---
@@ -86,6 +90,9 @@ pub struct EpubViewer {
     initial_chapter: Option<usize>,
     /// Scroll position (absolute y offset in pixels) within the current chapter.
     scroll_y: f32,
+    /// Scroll position saved before following a footnote fragment link.
+    /// Used to navigate back when a back-reference link (e.g. `↩`) is clicked.
+    scroll_before_jump: Option<f32>,
     modifiers: Modifiers,
     theme_colors: bool,
     content_scroll_id: widget::Id,
@@ -111,6 +118,7 @@ impl EpubViewer {
             active_chapter: 0,
             initial_chapter: None,
             scroll_y: 0.0,
+            scroll_before_jump: None,
             modifiers: Modifiers::default(),
             theme_colors: true,
             content_scroll_id: widget::Id::unique(),
@@ -422,6 +430,7 @@ impl Page for EpubViewer {
                 if idx < self.chapters.len() {
                     self.active_chapter = idx;
                     self.scroll_y = 0.0;
+                    self.scroll_before_jump = None;
                 }
                 Task::none()
             }
@@ -434,16 +443,44 @@ impl Page for EpubViewer {
                 Task::none()
             }
             EpubViewerMessage::FollowLink(href) => {
-                // Strip fragment identifier (#anchor)
-                let href_target = href.split('#').next().unwrap_or(&href);
-                if href_target.is_empty() {
+                let (path, fragment) = match href.split_once('#') {
+                    Some((p, f)) => (p, Some(f)),
+                    None => (href.as_str(), None),
+                };
+
+                if path.is_empty() {
+                    // Pure fragment link — same-page navigation.
+                    if let Some(frag) = fragment.filter(|f| !f.is_empty()) {
+                        if let Some(chapter) = self.chapters.get(self.active_chapter) {
+                            if let Some(&target_y) = chapter.anchors.get(frag) {
+                                // Navigating to a footnote: save reading position (once).
+                                if self.scroll_before_jump.is_none() {
+                                    self.scroll_before_jump = Some(self.scroll_y);
+                                }
+                                return scrollable::scroll_to(
+                                    self.content_scroll_id.clone(),
+                                    scrollable::AbsoluteOffset {
+                                        x: 0.0,
+                                        y: target_y,
+                                    },
+                                );
+                            } else if let Some(saved_y) = self.scroll_before_jump.take() {
+                                // Unknown fragment (likely a back-reference ↩): restore
+                                // the position saved before the last footnote jump.
+                                return scrollable::scroll_to(
+                                    self.content_scroll_id.clone(),
+                                    scrollable::AbsoluteOffset { x: 0.0, y: saved_y },
+                                );
+                            }
+                        }
+                    }
                     return Task::none();
                 }
-                // Resolve the href relative to the current chapter
+
+                // Cross-chapter link: resolve and navigate.
                 if let Some(current) = self.chapters.get(self.active_chapter) {
                     let base = epub::content::base_dir(&current.href);
-                    let resolved = epub::content::resolve_href(base, href_target);
-                    // Find the target spine item by matching stored hrefs
+                    let resolved = epub::content::resolve_href(base, path);
                     if let Some(idx) = self
                         .chapters
                         .iter()
@@ -451,6 +488,7 @@ impl Page for EpubViewer {
                     {
                         self.active_chapter = idx;
                         self.scroll_y = 0.0;
+                        self.scroll_before_jump = None;
                     }
                 }
                 Task::none()
@@ -556,14 +594,60 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
             }
         };
 
+        let anchors = build_anchor_map(&blocks);
         chapters.push(EpubChapter {
             label,
             href: item.href.clone(),
             blocks,
+            anchors,
         });
     }
 
     (title, chapters)
+}
+
+/// Estimate the rendered height of a block in pixels.
+/// Used to build approximate scroll-anchor positions for footnote navigation.
+fn estimated_block_height(block: &ContentBlock) -> f32 {
+    match block {
+        ContentBlock::Heading { level: 1, .. } => 56.0,
+        ContentBlock::Heading { level: 2, .. } => 48.0,
+        ContentBlock::Heading { level: 3, .. } => 40.0,
+        ContentBlock::Heading { .. } => 32.0,
+        ContentBlock::Paragraph { text, .. } => {
+            // ~80 chars per line at default width, ~22px per line
+            ((text.len() as f32 / 80.0).ceil() * 22.0).max(22.0)
+        }
+        ContentBlock::Preformatted { text, .. } => (text.lines().count() as f32 * 20.0).max(20.0),
+        ContentBlock::BlockQuote { children } => {
+            children.iter().map(estimated_block_height).sum::<f32>() + 16.0
+        }
+        ContentBlock::UnorderedList { items } => items.len() as f32 * 28.0,
+        ContentBlock::OrderedList { items, .. } => items.len() as f32 * 28.0,
+        ContentBlock::Image { .. } => 200.0,
+        ContentBlock::Table { rows } => rows.len() as f32 * 36.0 + 8.0,
+        ContentBlock::HorizontalRule => 16.0,
+        ContentBlock::Footnote { blocks, .. } => {
+            blocks.iter().map(estimated_block_height).sum::<f32>() + 16.0
+        }
+    }
+}
+
+/// Build a map of HTML anchor id → estimated absolute y-offset (pixels).
+/// Covers `ContentBlock::Footnote` ids.
+fn build_anchor_map(blocks: &[ContentBlock]) -> HashMap<String, f32> {
+    const SPACING: f32 = 8.0;
+    let mut map = HashMap::new();
+    let mut y = 0.0f32;
+    for block in blocks {
+        if let ContentBlock::Footnote { id, .. } = block {
+            if !id.is_empty() {
+                map.insert(id.clone(), y);
+            }
+        }
+        y += estimated_block_height(block) + SPACING;
+    }
+    map
 }
 
 fn styled_span<'a>(
@@ -730,7 +814,38 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
         }
         ContentBlock::Table { rows } => render_table(rows),
         ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
+        ContentBlock::Footnote { blocks, .. } => render_footnote(blocks),
     }
+}
+
+fn render_footnote(blocks: &[ContentBlock]) -> Element<'_, EpubViewerMessage> {
+    let cosmic_theme::Spacing {
+        space_xxs, space_s, ..
+    } = theme::active().cosmic().spacing;
+
+    let mut col = widget::column::with_capacity(blocks.len())
+        .spacing(space_xxs)
+        .width(Length::Fill);
+
+    for block in blocks {
+        let el: Element<_> = match block {
+            ContentBlock::Paragraph { spans, text } => {
+                if spans.is_empty() {
+                    widget::text::caption(text).width(Length::Fill).into()
+                } else {
+                    render_spans(spans, 13.0)
+                }
+            }
+            _ => render_block(block),
+        };
+        col = col.push(el);
+    }
+
+    widget::container(col)
+        .padding([space_xxs, space_s])
+        .class(Container::Secondary)
+        .width(Length::Fill)
+        .into()
 }
 
 fn render_table(rows: &[Vec<TableCell>]) -> Element<'_, EpubViewerMessage> {

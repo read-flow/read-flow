@@ -36,6 +36,13 @@ struct StackEntry {
     table_rows: Vec<Vec<TableCell>>,
     /// Accumulated cells for the current `<tr>` element.
     table_cells: Vec<TableCell>,
+    /// The `id` HTML attribute of this element, used for footnote anchoring.
+    element_id: Option<String>,
+    /// True when this is an `<aside epub:type="footnote">` element.
+    is_footnote: bool,
+    /// True when this element is a container of footnote items
+    /// (`class="footnotes"`, `role="doc-endnotes"`, `epub:type="endnotes"`, etc.).
+    is_footnote_container: bool,
 }
 
 impl StackEntry {
@@ -51,6 +58,9 @@ impl StackEntry {
             link: None,
             table_rows: Vec::new(),
             table_cells: Vec::new(),
+            element_id: None,
+            is_footnote: false,
+            is_footnote_container: false,
         }
     }
 
@@ -66,6 +76,9 @@ impl StackEntry {
             link,
             table_rows: Vec::new(),
             table_cells: Vec::new(),
+            element_id: None,
+            is_footnote: false,
+            is_footnote_container: false,
         }
     }
 
@@ -157,7 +170,6 @@ const TRANSPARENT_TAGS: &[&str] = &[
     "main",
     "header",
     "footer",
-    "aside",
     "figure",
     "figcaption",
     "details",
@@ -179,6 +191,34 @@ fn style_for_tag(tag: &str, parent: &InlineStyle) -> InlineStyle {
         _ => {}
     }
     style
+}
+
+/// Returns true when an `<aside>` element carries `epub:type="footnote"` (or "rearnote").
+fn is_footnote_aside(attrs: &[html5ever::Attribute]) -> bool {
+    find_attr(attrs, "epub:type").is_some_and(|v| {
+        v.split_whitespace()
+            .any(|t| matches!(t, "footnote" | "rearnote"))
+    })
+}
+
+/// Returns true when an element is a container of multiple footnote items.
+/// Matches `epub:type="endnotes"`, `role="doc-endnotes"`, and `class` containing "footnote"/"endnote".
+fn is_footnote_container_element(attrs: &[html5ever::Attribute]) -> bool {
+    let epub_type = find_attr(attrs, "epub:type").unwrap_or_default();
+    let role = find_attr(attrs, "role").unwrap_or_default();
+    let class = find_attr(attrs, "class").unwrap_or_default();
+    epub_type
+        .split_whitespace()
+        .any(|t| matches!(t, "endnotes" | "rearnotes" | "footnotes"))
+        || matches!(role.as_str(), "doc-endnotes" | "doc-footnotes")
+        || class
+            .split_whitespace()
+            .any(|c| c == "footnotes" || c == "endnotes" || c == "footnote")
+}
+
+/// Returns true when any ancestor stack entry is a footnote container.
+fn in_footnote_container(stack: &[StackEntry]) -> bool {
+    stack.iter().any(|e| e.is_footnote_container)
 }
 
 /// Collect plain text from spans.
@@ -311,10 +351,18 @@ impl TokenSink for ContentSink {
 
                 let mut entry = StackEntry::new(tag_name);
 
+                entry.element_id = find_attr(attrs, "id");
+
                 if tag_name == "ol"
                     && let Some(start_str) = find_attr(attrs, "start")
                 {
                     entry.ol_start = start_str.parse().unwrap_or(1);
+                }
+
+                if tag_name == "aside" {
+                    entry.is_footnote = is_footnote_aside(attrs);
+                } else if matches!(tag_name, "section" | "div" | "ol" | "ul") {
+                    entry.is_footnote_container = is_footnote_container_element(attrs);
                 }
 
                 state.stack.push(entry);
@@ -450,6 +498,16 @@ impl TokenSink for ContentSink {
                             Some(ContentBlock::UnorderedList {
                                 items: entry.list_items,
                             })
+                        } else if !entry.children.is_empty() {
+                            // Footnote blocks collected from <li> elements inside a footnote container
+                            promote_to_parent(
+                                &mut state,
+                                String::new(),
+                                Vec::new(),
+                                entry.children,
+                                Vec::new(),
+                            );
+                            None
                         } else {
                             None
                         }
@@ -460,15 +518,57 @@ impl TokenSink for ContentSink {
                                 start: entry.ol_start,
                                 items: entry.list_items,
                             })
+                        } else if !entry.children.is_empty() {
+                            // Footnote blocks collected from <li> elements inside a footnote container
+                            promote_to_parent(
+                                &mut state,
+                                String::new(),
+                                Vec::new(),
+                                entry.children,
+                                Vec::new(),
+                            );
+                            None
                         } else {
                             None
                         }
                     }
                     "li" => {
-                        if let Some(parent) = state.stack.last_mut() {
+                        if in_footnote_container(&state.stack) {
+                            let id = entry.element_id.unwrap_or_default();
+                            let mut blocks = entry.children;
+                            if !text.is_empty() || !spans.is_empty() {
+                                blocks.insert(0, ContentBlock::Paragraph { text, spans });
+                            }
+                            if let Some(parent) = state.stack.last_mut() {
+                                parent.children.push(ContentBlock::Footnote { id, blocks });
+                            }
+                        } else if let Some(parent) = state.stack.last_mut() {
                             parent.list_items.push(ListItem { text, spans });
                         }
                         None
+                    }
+                    "aside" => {
+                        if entry.is_footnote {
+                            let id = entry.element_id.unwrap_or_default();
+                            let mut blocks = entry.children;
+                            if !text.is_empty() || !spans.is_empty() {
+                                blocks.insert(0, ContentBlock::Paragraph { text, spans });
+                            }
+                            if !blocks.is_empty() {
+                                Some(ContentBlock::Footnote { id, blocks })
+                            } else {
+                                None
+                            }
+                        } else {
+                            promote_to_parent(
+                                &mut state,
+                                text,
+                                spans,
+                                entry.children,
+                                entry.list_items,
+                            );
+                            None
+                        }
                     }
                     "td" | "th" => {
                         if let Some(parent) = state.stack.last_mut() {
@@ -1161,6 +1261,85 @@ mod tests {
                 assert_eq!(rows[0][0].text, "Cell content");
             }
             other => panic!("expected Table, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn epub3_aside_footnote() {
+        let blocks = parse(
+            r##"<p>Text<sup><a href="#fn1">1</a></sup>.</p>
+               <aside epub:type="footnote" id="fn1"><p>Footnote text.</p></aside>"##,
+        );
+        // Should have a Paragraph and a Footnote
+        assert_eq!(blocks.len(), 2);
+        match &blocks[1] {
+            ContentBlock::Footnote { id, blocks } => {
+                assert_eq!(id, "fn1");
+                assert_eq!(blocks.len(), 1);
+                match &blocks[0] {
+                    ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Footnote text."),
+                    other => panic!("expected Paragraph inside Footnote, got {other:?}"),
+                }
+            }
+            other => panic!("expected Footnote, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pandoc_footnotes_section() {
+        // Pandoc-style: <section class="footnotes"><ol><li id="fn1">…</li></ol></section>
+        let blocks = parse(
+            r##"<p>Text<a href="#fn1"><sup>1</sup></a>.</p>
+               <section class="footnotes" role="doc-endnotes">
+                 <ol>
+                   <li id="fn1"><p>First note.</p></li>
+                   <li id="fn2"><p>Second note.</p></li>
+                 </ol>
+               </section>"##,
+        );
+        let footnotes: Vec<_> = blocks
+            .iter()
+            .filter(|b| matches!(b, ContentBlock::Footnote { .. }))
+            .collect();
+        assert_eq!(footnotes.len(), 2);
+        match &footnotes[0] {
+            ContentBlock::Footnote { id, blocks } => {
+                assert_eq!(id, "fn1");
+                match &blocks[0] {
+                    ContentBlock::Paragraph { text, .. } => assert_eq!(text, "First note."),
+                    other => panic!("expected Paragraph, got {other:?}"),
+                }
+            }
+            other => panic!("expected Footnote, got {other:?}"),
+        }
+        match &footnotes[1] {
+            ContentBlock::Footnote { id, .. } => assert_eq!(id, "fn2"),
+            other => panic!("expected Footnote, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn aside_without_footnote_type_is_transparent() {
+        // A plain <aside> with no epub:type should promote its children normally
+        let blocks = parse("<aside><p>Side content</p></aside>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Side content"),
+            other => panic!("expected transparent aside → Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fragment_only_link_does_not_create_footnote() {
+        // A pure #anchor link in the text body should still render as a linked span
+        let blocks = parse(r##"<p>See <a href="#fn1">note 1</a>.</p>"##);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                let linked = spans.iter().find(|s| s.link.is_some()).unwrap();
+                assert_eq!(linked.link.as_deref(), Some("#fn1"));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
         }
     }
 }
