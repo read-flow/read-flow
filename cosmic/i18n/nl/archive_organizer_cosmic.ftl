@@ -253,6 +253,7 @@ epub-viewer-loading = EPUB laden...
 epub-viewer-no-local-source = Geen lokale bron beschikbaar voor dit document
 epub-viewer-display = Weergave
 epub-viewer-theme-colors = Themakleuren
+epub-viewer-raw-html = Ruwe HTML tonen (debug)
 epub-viewer-keyboard-shortcuts = Sneltoetsen
 epub-viewer-shortcut-previous-chapter = Vorig hoofdstuk
 epub-viewer-shortcut-next-chapter = Volgend hoofdstuk

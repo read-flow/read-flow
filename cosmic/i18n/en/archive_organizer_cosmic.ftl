@@ -231,6 +231,7 @@ epub-viewer-loading = Loading EPUB...
 epub-viewer-no-local-source = No local source available for this document
 epub-viewer-display = Display
 epub-viewer-theme-colors = Theme colors
+epub-viewer-raw-html = Show raw HTML (debug)
 epub-viewer-keyboard-shortcuts = Keyboard shortcuts
 epub-viewer-shortcut-previous-chapter = Previous chapter
 epub-viewer-shortcut-next-chapter = Next chapter

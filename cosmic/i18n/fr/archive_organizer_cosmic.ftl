@@ -252,6 +252,7 @@ epub-viewer-loading = Chargement de l'EPUB...
 epub-viewer-no-local-source = Aucune source locale disponible pour ce document
 epub-viewer-display = Affichage
 epub-viewer-theme-colors = Couleurs du thème
+epub-viewer-raw-html = Afficher le HTML brut (débogage)
 epub-viewer-keyboard-shortcuts = Raccourcis clavier
 epub-viewer-shortcut-previous-chapter = Chapitre précédent
 epub-viewer-shortcut-next-chapter = Chapitre suivant

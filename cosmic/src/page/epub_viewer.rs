@@ -54,6 +54,8 @@ pub(crate) struct EpubChapter {
     /// Map of HTML anchor id → estimated absolute y-offset in pixels.
     /// Populated for `ContentBlock::Footnote` ids at chapter load time.
     anchors: HashMap<String, f32>,
+    /// Raw XHTML source for debug display.
+    raw_html: String,
 }
 
 // --- Messages ---
@@ -71,6 +73,7 @@ pub enum EpubViewerMessage {
     ReadingProgressLoaded(Option<usize>, f32),
     SelectChapter(usize),
     ThemeColors(bool),
+    ShowRawHtml(bool),
     Scrolled(scrollable::Viewport),
     FollowLink(String),
     Key(Modifiers, Key, Option<SmolStr>),
@@ -95,6 +98,7 @@ pub struct EpubViewer {
     scroll_before_jump: Option<f32>,
     modifiers: Modifiers,
     theme_colors: bool,
+    show_raw_html: bool,
     content_scroll_id: widget::Id,
 }
 
@@ -121,6 +125,7 @@ impl EpubViewer {
             scroll_before_jump: None,
             modifiers: Modifiers::default(),
             theme_colors: true,
+            show_raw_html: false,
             content_scroll_id: widget::Id::unique(),
         };
 
@@ -222,8 +227,13 @@ impl EpubViewer {
                 .spacing(space_xxs)
                 .width(Length::Fill);
 
-            for block in &chapter.blocks {
-                column = column.push(render_block(block));
+            if self.show_raw_html {
+                column = column
+                    .push(widget::text::monotext(chapter.raw_html.as_str()).width(Length::Fill));
+            } else {
+                for block in &chapter.blocks {
+                    column = column.push(render_block(block));
+                }
             }
 
             let theme_colors = self.theme_colors;
@@ -357,6 +367,10 @@ impl Page for EpubViewer {
             .add(
                 widget::settings::item::builder(fl!("epub-viewer-theme-colors"))
                     .toggler(self.theme_colors, EpubViewerMessage::ThemeColors),
+            )
+            .add(
+                widget::settings::item::builder(fl!("epub-viewer-raw-html"))
+                    .toggler(self.show_raw_html, EpubViewerMessage::ShowRawHtml),
             );
 
         let shortcuts_section = widget::settings::section()
@@ -436,6 +450,10 @@ impl Page for EpubViewer {
             }
             EpubViewerMessage::ThemeColors(use_theme_colors) => {
                 self.theme_colors = use_theme_colors;
+                Task::none()
+            }
+            EpubViewerMessage::ShowRawHtml(show) => {
+                self.show_raw_html = show;
                 Task::none()
             }
             EpubViewerMessage::Scrolled(viewport) => {
@@ -575,10 +593,11 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
             .unwrap_or_else(|| item.id.clone())
             .apply_when(String::is_empty, |_| format!("Chapter {}", idx + 1));
 
-        let blocks = match doc.resolve_resource(&item.href) {
+        let (blocks, raw_html) = match doc.resolve_resource(&item.href) {
             Ok(data) => {
                 let href = &item.href;
-                epub::content::parse_xhtml(&data, href, &mut |img_path| match doc
+                let raw = String::from_utf8_lossy(&data).into_owned();
+                let blocks = epub::content::parse_xhtml(&data, href, &mut |img_path| match doc
                     .resolve_resource(img_path)
                 {
                     Ok(img_data) => {
@@ -586,11 +605,12 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
                         Some((img_data, media_type))
                     }
                     Err(_) => None,
-                })
+                });
+                (blocks, raw)
             }
             Err(e) => {
                 tracing::warn!("failed to resolve spine item {}: {e}", item.href);
-                Vec::new()
+                (Vec::new(), String::new())
             }
         };
 
@@ -600,6 +620,7 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
             href: item.href.clone(),
             blocks,
             anchors,
+            raw_html,
         });
     }
 
