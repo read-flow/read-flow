@@ -154,7 +154,6 @@ where
 #[cfg(test)]
 mod tests {
     use assert4rs::Assert;
-    use assert4rs::AssertEquals;
     use rstest::rstest;
 
     use super::*;

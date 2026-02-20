@@ -91,7 +91,7 @@ impl Package {
                     }
                 }
                 Event::Text(ref e) if in_metadata && current_tag.is_some() => {
-                    let text = e.unescape().map_err(|err| {
+                    let text = e.xml_content().map_err(|err| {
                         EpubError::InvalidPackage(format!("text decode error: {err}"))
                     })?;
                     let text = text.trim().to_string();

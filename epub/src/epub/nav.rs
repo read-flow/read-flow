@@ -128,7 +128,7 @@ fn extract_nav_links(
                 }
             }
             Ok(Event::Text(ref e)) if in_anchor => {
-                if let Ok(t) = e.unescape() {
+                if let Ok(t) = e.xml_content() {
                     current_text.push_str(&t);
                 }
             }
@@ -215,7 +215,7 @@ pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> HashMap<String, String
                 }
             }
             Ok(Event::Text(ref e)) if in_navlabel_text => {
-                if let Ok(t) = e.unescape() {
+                if let Ok(t) = e.xml_content() {
                     pending_label.push_str(&t);
                 }
             }
