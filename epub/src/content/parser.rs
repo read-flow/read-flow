@@ -137,7 +137,10 @@ const VOID_ELEMENTS: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
     "track", "wbr",
 ];
-const INLINE_STYLE_TAGS: &[&str] = &["em", "strong", "b", "i", "u", "del", "s", "code"];
+const INLINE_STYLE_TAGS: &[&str] = &[
+    "em", "strong", "b", "i", "u", "del", "s", "code", "ins", "cite", "dfn", "var", "kbd", "samp",
+    "tt",
+];
 const TRANSPARENT_TAGS: &[&str] = &[
     "div",
     "section",
@@ -150,8 +153,6 @@ const TRANSPARENT_TAGS: &[&str] = &[
     "sup",
     "mark",
     "abbr",
-    "cite",
-    "ins",
     "nav",
     "main",
     "header",
@@ -171,10 +172,10 @@ fn style_for_tag(tag: &str, parent: &InlineStyle) -> InlineStyle {
     let mut style = parent.clone();
     match tag {
         "strong" | "b" => style.bold = true,
-        "em" | "i" => style.italic = true,
-        "u" => style.underline = true,
+        "em" | "i" | "cite" | "dfn" | "var" => style.italic = true,
+        "u" | "ins" => style.underline = true,
         "del" | "s" => style.strikethrough = true,
-        "code" => style.monospaced = true,
+        "code" | "kbd" | "samp" | "tt" => style.monospaced = true,
         _ => {}
     }
     style
