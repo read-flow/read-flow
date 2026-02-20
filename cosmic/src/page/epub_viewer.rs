@@ -529,7 +529,7 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
     let spine = doc.spine().to_vec();
     let mut chapters = Vec::with_capacity(spine.len());
 
-    for (idx, item) in spine.iter().enumerate() {
+    for (idx, item) in spine.iter().filter(|item| item.linear).enumerate() {
         let label = item
             .label
             .clone()
