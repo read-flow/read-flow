@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
@@ -45,6 +46,51 @@ type Fingerprint = String;
 
 const CHAPTER_SIDEBAR_WIDTH: f32 = 220.0;
 
+// --- View mode and pagination types ---
+
+/// Which reading mode the viewer uses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ViewMode {
+    #[default]
+    Scroll,
+    Paginated,
+}
+
+/// A page is a contiguous range of blocks from the chapter's block list.
+/// Stored as \[start .. end) (exclusive end).
+#[derive(Clone, Debug)]
+struct PageRange {
+    start: usize,
+    end: usize,
+}
+
+/// Cached pagination layout for a chapter at a particular viewport size.
+#[derive(Clone, Debug)]
+struct PaginationLayout {
+    /// The available content height (in pixels) used to compute pages.
+    page_height: f32,
+    /// The available content width (in pixels) used for height estimation.
+    page_width: f32,
+    /// Computed page ranges.
+    pages: Vec<PageRange>,
+}
+
+/// Whether to display two pages side by side in paginated mode.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum DualPageMode {
+    #[default]
+    Auto,
+    Off,
+    On,
+}
+
+/// Position saved before following a footnote link, for back-navigation.
+#[derive(Clone, Debug)]
+enum SavedPosition {
+    ScrollY(f32),
+    PageIndex(usize),
+}
+
 // --- Core types ---
 
 #[derive(Clone, Debug)]
@@ -71,14 +117,24 @@ pub enum EpubViewerOutput {
 #[derive(Clone, Debug)]
 pub enum EpubViewerMessage {
     EpubLoaded(String, Vec<EpubChapter>),
-    /// Carries (chapter_index, scroll_y) restored from saved progress.
-    ReadingProgressLoaded(Option<usize>, f32),
+    /// Carries restored reading position from saved progress.
+    ReadingProgressLoaded(ReadingPosition),
     SelectChapter(usize),
     ShowRawHtml(bool),
     Scrolled(scrollable::Viewport),
     FollowLink(String),
     Key(Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(Modifiers),
+    /// Switch between scroll and paginated view mode.
+    SetViewMode(ViewMode),
+    /// Navigate to the next page (may cross chapter boundary).
+    NextPage,
+    /// Navigate to the previous page (may cross chapter boundary).
+    PreviousPage,
+    /// Toggle dual-page display mode.
+    SetDualPage(DualPageMode),
+    /// Set the page height fraction (0.5..=1.0) for pagination.
+    SetPageHeightFraction(f32),
     Out(EpubViewerOutput),
 }
 
@@ -94,12 +150,30 @@ pub struct EpubViewer {
     initial_chapter: Option<usize>,
     /// Scroll position (absolute y offset in pixels) within the current chapter.
     scroll_y: f32,
-    /// Scroll position saved before following a footnote fragment link.
+    /// Position saved before following a footnote fragment link.
     /// Used to navigate back when a back-reference link (e.g. `↩`) is clicked.
-    scroll_before_jump: Option<f32>,
+    saved_position: Option<SavedPosition>,
     modifiers: Modifiers,
     show_raw_html: bool,
     content_scroll_id: widget::Id,
+    /// Current reading mode: scroll (default) or paginated.
+    view_mode: ViewMode,
+    /// In paginated mode, the current page index within the active chapter.
+    current_page: usize,
+    /// Cached pagination layout per chapter index.
+    pagination_cache: HashMap<usize, PaginationLayout>,
+    /// Most recently observed viewport dimensions, set from the `responsive`
+    /// closure (via Cell, since `view()` takes `&self`).
+    viewport_size: Cell<(f32, f32)>,
+    /// Whether to render two pages side by side in paginated mode.
+    dual_page: DualPageMode,
+    /// Fraction of viewport height used for page content (0.5..=1.0).
+    /// A value below 1.0 compensates for inaccurate height estimation.
+    page_height_fraction: f32,
+    /// Deferred block index for page restoration.  Set when reading progress
+    /// is loaded but pagination hasn't run yet (viewport_size still 0×0).
+    /// Consumed by `maybe_repaginate()` once a valid layout is available.
+    pending_block_index: Option<usize>,
 }
 
 impl EpubViewer {
@@ -122,10 +196,17 @@ impl EpubViewer {
             active_chapter: 0,
             initial_chapter: None,
             scroll_y: 0.0,
-            scroll_before_jump: None,
+            saved_position: None,
             modifiers: Modifiers::default(),
             show_raw_html: false,
             content_scroll_id: widget::Id::unique(),
+            view_mode: ViewMode::default(),
+            current_page: 0,
+            pagination_cache: HashMap::new(),
+            viewport_size: Cell::new((0.0, 0.0)),
+            dual_page: DualPageMode::default(),
+            page_height_fraction: 1.0,
+            pending_block_index: None,
         };
 
         let mut tasks = Vec::new();
@@ -151,16 +232,14 @@ impl EpubViewer {
                 let aggregator = document_provider.aggregator.read().await;
                 match aggregator.get_reading_progress(&fp).await {
                     Ok(Some(progress)) => parse_reading_progress(&progress.progress),
-                    Ok(None) => (None, 0.0),
+                    Ok(None) => ReadingPosition::default(),
                     Err(e) => {
                         tracing::warn!("failed to load reading progress: {e}");
-                        (None, 0.0)
+                        ReadingPosition::default()
                     }
                 }
             },
-            |(chapter, scroll_y)| {
-                cosmic::action::app(EpubViewerMessage::ReadingProgressLoaded(chapter, scroll_y))
-            },
+            |pos| cosmic::action::app(EpubViewerMessage::ReadingProgressLoaded(pos)),
         ));
 
         (viewer, Task::batch(tasks))
@@ -217,6 +296,13 @@ impl EpubViewer {
     }
 
     fn view_content(&self) -> Element<'_, EpubViewerMessage> {
+        match self.view_mode {
+            ViewMode::Scroll => self.view_content_scroll(),
+            ViewMode::Paginated => self.view_content_paginated(),
+        }
+    }
+
+    fn view_content_scroll(&self) -> Element<'_, EpubViewerMessage> {
         let cosmic_theme::Spacing {
             space_s, space_xxs, ..
         } = theme::active().cosmic().spacing;
@@ -238,29 +324,13 @@ impl EpubViewer {
             // Inner "paper" container with max-width for readability
             let paper =
                 widget::container(widget::container(column).padding(space_s).max_width(800.0))
-                    .style(move |theme: &cosmic::Theme| {
-                        let c = theme.cosmic().bg_color();
-                        widget::container::background(cosmic::iced::Color::from_rgba(
-                            c.color.red,
-                            c.color.green,
-                            c.color.blue,
-                            c.alpha,
-                        ))
-                    })
+                    .style(move |theme: &cosmic::Theme| paper_background(theme))
                     .width(Length::Shrink)
                     .align_x(Horizontal::Center);
 
             // Outer "desk" container
             let outer = widget::container(paper)
-                .style(|theme: &cosmic::Theme| {
-                    let c = theme.cosmic().bg_component_color();
-                    widget::container::background(cosmic::iced::Color::from_rgba(
-                        c.color.red,
-                        c.color.green,
-                        c.color.blue,
-                        c.alpha,
-                    ))
-                })
+                .style(desk_background)
                 .width(Length::Fill)
                 .align_x(Horizontal::Center);
 
@@ -273,6 +343,156 @@ impl EpubViewer {
         } else {
             widget::Space::new(Length::Fill, Length::Fill).into()
         }
+    }
+
+    fn view_content_paginated(&self) -> Element<'_, EpubViewerMessage> {
+        let cosmic_theme::Spacing {
+            space_s, space_xxs, ..
+        } = theme::active().cosmic().spacing;
+
+        let chapter = match self.chapters.get(self.active_chapter) {
+            Some(ch) => ch,
+            None => return widget::Space::new(Length::Fill, Length::Fill).into(),
+        };
+
+        let current_page = self.current_page;
+        let active_chapter = self.active_chapter;
+        let show_raw_html = self.show_raw_html;
+
+        let page_height_fraction = self.page_height_fraction;
+
+        widget::responsive(move |size| {
+            // Store viewport size so update() can trigger re-pagination.
+            self.viewport_size.set((size.width, size.height));
+
+            // In raw HTML mode, fall back to a simple scrollable view.
+            if show_raw_html {
+                return widget::container(
+                    widget::scrollable(
+                        widget::text::monotext(chapter.raw_html.as_str()).width(Length::Fill),
+                    )
+                    .width(Length::Fill)
+                    .height(Length::Fill),
+                )
+                .style(|theme: &cosmic::Theme| desk_background(theme))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
+            }
+
+            let dual = self.should_dual_page(size.width);
+
+            // Use cached layout if available, otherwise compute on-the-fly so
+            // the first render after switching to paginated mode isn't empty.
+            let cached_layout = self.pagination_cache.get(&active_chapter);
+            let computed_layout;
+            let layout = match cached_layout {
+                Some(l) => l,
+                None => {
+                    let sp_s = theme::active().cosmic().spacing.space_s as f32;
+                    let sp_xxs = theme::active().cosmic().spacing.space_xxs as f32;
+                    let pw = if dual {
+                        ((size.width - sp_xxs) / 2.0 - sp_s * 2.0).min(800.0)
+                    } else {
+                        800.0f32.min(size.width - sp_s * 2.0)
+                    };
+                    let ph = (size.height - sp_s * 2.0 - 24.0) * page_height_fraction;
+                    computed_layout = paginate_blocks(&chapter.blocks, ph, pw);
+                    &computed_layout
+                }
+            };
+            let total = layout.pages.len();
+            // Clamp page index to valid range (may be stale before update runs).
+            let current_page = current_page.min(total.saturating_sub(1));
+
+            // Build a single page "paper" element from a page index.
+            let make_paper = |page_idx: usize| -> Element<'_, EpubViewerMessage> {
+                let page_range = layout.pages.get(page_idx);
+
+                let mut column = widget::column().spacing(space_xxs).width(Length::Fill);
+                if let Some(range) = page_range {
+                    for block in &chapter.blocks[range.start..range.end] {
+                        column = column.push(render_block(block));
+                    }
+                }
+
+                let page_indicator =
+                    widget::text::caption(format!("{} / {}", page_idx + 1, total,))
+                        .width(Length::Fill)
+                        .align_x(Horizontal::Center);
+
+                // Wrap blocks in a scrollable so content that overflows the
+                // estimated page height is still accessible.
+                let paper_content = widget::column()
+                    .push(
+                        widget::scrollable(
+                            widget::container(column)
+                                .padding(space_s)
+                                .width(Length::Fill),
+                        )
+                        .height(Length::Fill),
+                    )
+                    .push(page_indicator)
+                    .height(Length::Fill);
+
+                widget::container(paper_content)
+                    .style(move |theme: &cosmic::Theme| paper_background(theme))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_x(Horizontal::Center)
+                    .into()
+            };
+
+            // Build the center content: single or dual page.
+            let center_content: Element<'_, EpubViewerMessage> = if dual {
+                let left_paper = make_paper(current_page);
+                let right_paper = if current_page + 1 < total {
+                    make_paper(current_page + 1)
+                } else {
+                    // Empty right page when on the last page.
+                    widget::container(widget::Space::new(Length::Fill, Length::Fill))
+                        .style(move |theme: &cosmic::Theme| paper_background(theme))
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into()
+                };
+                widget::row()
+                    .push(left_paper)
+                    .spacing(space_xxs)
+                    .push(right_paper)
+                    .height(Length::Fill)
+                    .into()
+            } else {
+                make_paper(current_page)
+            };
+
+            // Outer "desk" with click-to-turn zones.
+            let left_zone =
+                widget::mouse_area(widget::Space::new(Length::FillPortion(1), Length::Fill))
+                    .on_press(EpubViewerMessage::PreviousPage);
+
+            let center = widget::container(center_content)
+                .width(Length::FillPortion(8))
+                .height(Length::Fill);
+
+            let right_zone =
+                widget::mouse_area(widget::Space::new(Length::FillPortion(1), Length::Fill))
+                    .on_press(EpubViewerMessage::NextPage);
+
+            let outer = widget::container(
+                widget::row()
+                    .push(left_zone)
+                    .push(center)
+                    .push(right_zone)
+                    .height(Length::Fill),
+            )
+            .style(desk_background)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+            outer.into()
+        })
+        .into()
     }
 }
 
@@ -346,7 +566,18 @@ impl Page for EpubViewer {
                     if self.chapters.is_empty() {
                         None
                     } else {
-                        Some(serialize_progress(self.active_chapter, self.scroll_y))
+                        let first_block = self
+                            .pagination_cache
+                            .get(&self.active_chapter)
+                            .and_then(|l| l.pages.get(self.current_page))
+                            .map(|p| p.start)
+                            .unwrap_or(0);
+                        Some(serialize_progress(
+                            self.active_chapter,
+                            self.scroll_y,
+                            first_block,
+                            self.view_mode,
+                        ))
                     },
                 )))
                 .tooltip(fl!("epub-viewer-back"))
@@ -356,23 +587,79 @@ impl Page for EpubViewer {
     }
 
     fn view_context(&self) -> ContextView<'_, EpubViewerMessage> {
-        let display_section = widget::settings::section()
+        let mut display_section = widget::settings::section()
             .title(fl!("epub-viewer-display"))
             .add(
-                widget::settings::item::builder(fl!("epub-viewer-raw-html"))
-                    .toggler(self.show_raw_html, EpubViewerMessage::ShowRawHtml),
+                widget::settings::item::builder(fl!("epub-viewer-view-paginated")).toggler(
+                    self.view_mode == ViewMode::Paginated,
+                    |enabled| {
+                        EpubViewerMessage::SetViewMode(if enabled {
+                            ViewMode::Paginated
+                        } else {
+                            ViewMode::Scroll
+                        })
+                    },
+                ),
             );
 
-        let shortcuts_section = widget::settings::section()
-            .title(fl!("epub-viewer-keyboard-shortcuts"))
-            .add(shortcut_item(
-                "↑ ← PgUp",
-                fl!("epub-viewer-shortcut-previous-chapter"),
-            ))
-            .add(shortcut_item(
-                "↓ → PgDn",
-                fl!("epub-viewer-shortcut-next-chapter"),
-            ));
+        if self.view_mode == ViewMode::Paginated {
+            display_section = display_section.add(
+                widget::settings::item::builder(fl!("epub-viewer-dual-page")).toggler(
+                    self.dual_page != DualPageMode::Off,
+                    |enabled| {
+                        EpubViewerMessage::SetDualPage(if enabled {
+                            DualPageMode::Auto
+                        } else {
+                            DualPageMode::Off
+                        })
+                    },
+                ),
+            );
+
+            let pct = (self.page_height_fraction * 100.0).round() as u32;
+            display_section = display_section.add(
+                widget::settings::item::builder(format!(
+                    "{} ({}%)",
+                    fl!("epub-viewer-page-fill"),
+                    pct
+                ))
+                .control(
+                    widget::slider(50.0..=100.0, self.page_height_fraction * 100.0, |v| {
+                        EpubViewerMessage::SetPageHeightFraction(v / 100.0)
+                    })
+                    .step(5.0),
+                ),
+            );
+        }
+
+        let display_section = display_section.add(
+            widget::settings::item::builder(fl!("epub-viewer-raw-html"))
+                .toggler(self.show_raw_html, EpubViewerMessage::ShowRawHtml),
+        );
+
+        let shortcuts_section = if self.view_mode == ViewMode::Paginated {
+            widget::settings::section()
+                .title(fl!("epub-viewer-keyboard-shortcuts"))
+                .add(shortcut_item(
+                    "← PgUp",
+                    fl!("epub-viewer-shortcut-previous-page"),
+                ))
+                .add(shortcut_item(
+                    "→ PgDn",
+                    fl!("epub-viewer-shortcut-next-page"),
+                ))
+        } else {
+            widget::settings::section()
+                .title(fl!("epub-viewer-keyboard-shortcuts"))
+                .add(shortcut_item(
+                    "↑ ← PgUp",
+                    fl!("epub-viewer-shortcut-previous-chapter"),
+                ))
+                .add(shortcut_item(
+                    "↓ → PgDn",
+                    fl!("epub-viewer-shortcut-next-chapter"),
+                ))
+        };
 
         ContextView {
             title: self.display_name(),
@@ -385,6 +672,7 @@ impl Page for EpubViewer {
     }
 
     fn update(&mut self, message: EpubViewerMessage) -> Task<Action<EpubViewerMessage>> {
+        self.maybe_repaginate();
         match message {
             EpubViewerMessage::EpubLoaded(title, chapters) => {
                 self.title = title;
@@ -408,16 +696,25 @@ impl Page for EpubViewer {
                     Task::none()
                 }
             }
-            EpubViewerMessage::ReadingProgressLoaded(chapter, scroll_y) => {
-                self.initial_chapter = chapter;
-                self.scroll_y = scroll_y;
+            EpubViewerMessage::ReadingProgressLoaded(pos) => {
+                self.initial_chapter = pos.chapter;
+                self.scroll_y = pos.scroll_y;
                 if !self.chapters.is_empty()
-                    && let Some(c) = chapter
+                    && let Some(c) = pos.chapter
                     && c < self.chapters.len()
                 {
                     self.active_chapter = c;
                 }
-                // Restore scroll if chapters are already loaded
+                // Restore view mode if it was persisted.
+                if let Some(mode) = pos.view_mode {
+                    self.view_mode = mode;
+                }
+                // Store block index for deferred page restoration.
+                // Pagination can't run yet (viewport_size is 0×0 until the
+                // first render), so `maybe_repaginate()` will consume this
+                // once a valid layout is available.
+                self.pending_block_index = pos.block_index;
+                // Restore scroll if chapters are already loaded (scroll mode)
                 if self.scroll_y > 0.0 && !self.chapters.is_empty() {
                     scrollable::scroll_to(
                         self.content_scroll_id.clone(),
@@ -434,7 +731,8 @@ impl Page for EpubViewer {
                 if idx < self.chapters.len() {
                     self.active_chapter = idx;
                     self.scroll_y = 0.0;
-                    self.scroll_before_jump = None;
+                    self.current_page = 0;
+                    self.saved_position = None;
                 }
                 Task::none()
             }
@@ -459,8 +757,30 @@ impl Page for EpubViewer {
                     {
                         if let Some(&target_y) = chapter.anchors.get(frag) {
                             // Navigating to a footnote: save reading position (once).
-                            if self.scroll_before_jump.is_none() {
-                                self.scroll_before_jump = Some(self.scroll_y);
+                            if self.saved_position.is_none() {
+                                self.saved_position = Some(match self.view_mode {
+                                    ViewMode::Scroll => SavedPosition::ScrollY(self.scroll_y),
+                                    ViewMode::Paginated => {
+                                        SavedPosition::PageIndex(self.current_page)
+                                    }
+                                });
+                            }
+                            if self.view_mode == ViewMode::Paginated {
+                                // Find page containing the footnote block.
+                                if let Some(block_idx) = chapter.blocks.iter().position(|b| {
+                                    matches!(b, ContentBlock::Footnote { id, .. } if id == frag)
+                                }) {
+                                    if let Some(layout) =
+                                        self.pagination_cache.get(&self.active_chapter)
+                                    {
+                                        if let Some(page_idx) = layout.pages.iter().position(
+                                            |p| p.start <= block_idx && block_idx < p.end,
+                                        ) {
+                                            self.current_page = page_idx;
+                                        }
+                                    }
+                                }
+                                return Task::none();
                             }
                             return scrollable::scroll_to(
                                 self.content_scroll_id.clone(),
@@ -469,13 +789,21 @@ impl Page for EpubViewer {
                                     y: target_y,
                                 },
                             );
-                        } else if let Some(saved_y) = self.scroll_before_jump.take() {
+                        } else if let Some(saved) = self.saved_position.take() {
                             // Unknown fragment (likely a back-reference ↩): restore
                             // the position saved before the last footnote jump.
-                            return scrollable::scroll_to(
-                                self.content_scroll_id.clone(),
-                                scrollable::AbsoluteOffset { x: 0.0, y: saved_y },
-                            );
+                            match saved {
+                                SavedPosition::PageIndex(page) => {
+                                    self.current_page = page;
+                                    return Task::none();
+                                }
+                                SavedPosition::ScrollY(y) => {
+                                    return scrollable::scroll_to(
+                                        self.content_scroll_id.clone(),
+                                        scrollable::AbsoluteOffset { x: 0.0, y },
+                                    );
+                                }
+                            }
                         }
                     }
                     return Task::none();
@@ -492,20 +820,33 @@ impl Page for EpubViewer {
                     {
                         self.active_chapter = idx;
                         self.scroll_y = 0.0;
-                        self.scroll_before_jump = None;
+                        self.current_page = 0;
+                        self.saved_position = None;
                     }
                 }
                 Task::none()
             }
-            EpubViewerMessage::Key(_modifiers, key, _text) => match &key {
-                Key::Named(Named::ArrowUp | Named::ArrowLeft | Named::PageUp) => {
+            EpubViewerMessage::Key(_modifiers, key, _text) => match (&key, self.view_mode) {
+                (Key::Named(Named::ArrowLeft | Named::PageUp), ViewMode::Paginated) => {
+                    self.update(EpubViewerMessage::PreviousPage)
+                }
+                (Key::Named(Named::ArrowRight | Named::PageDown), ViewMode::Paginated) => {
+                    self.update(EpubViewerMessage::NextPage)
+                }
+                (
+                    Key::Named(Named::ArrowUp | Named::ArrowLeft | Named::PageUp),
+                    ViewMode::Scroll,
+                ) => {
                     if self.active_chapter > 0 {
                         self.active_chapter -= 1;
                         self.scroll_y = 0.0;
                     }
                     Task::none()
                 }
-                Key::Named(Named::ArrowDown | Named::ArrowRight | Named::PageDown) => {
+                (
+                    Key::Named(Named::ArrowDown | Named::ArrowRight | Named::PageDown),
+                    ViewMode::Scroll,
+                ) => {
                     if self.active_chapter + 1 < self.chapters.len() {
                         self.active_chapter += 1;
                         self.scroll_y = 0.0;
@@ -514,6 +855,68 @@ impl Page for EpubViewer {
                 }
                 _ => Task::none(),
             },
+            EpubViewerMessage::SetViewMode(mode) => {
+                self.view_mode = mode;
+                if mode == ViewMode::Paginated {
+                    self.maybe_repaginate();
+                    if self.pagination_cache.contains_key(&self.active_chapter) {
+                        // Cache available — map scroll position to page now.
+                        self.current_page = self.scroll_y_to_page();
+                    } else if self.scroll_y > 0.0 {
+                        // No cache yet (viewport_size unknown).  Find the
+                        // approximate first-visible block from scroll_y and
+                        // defer page restoration to maybe_repaginate().
+                        self.pending_block_index =
+                            self.approximate_block_at_scroll_y(self.scroll_y);
+                    }
+                } else {
+                    self.scroll_y = self.page_to_scroll_y();
+                }
+                Task::none()
+            }
+            EpubViewerMessage::NextPage => {
+                self.maybe_repaginate();
+                let total = self.total_pages();
+                let step = self.page_step();
+                if self.current_page + step < total {
+                    self.current_page += step;
+                } else if self.current_page + 1 < total {
+                    // Partial step: go to last page.
+                    self.current_page = total - 1;
+                } else if self.active_chapter + 1 < self.chapters.len() {
+                    self.active_chapter += 1;
+                    self.current_page = 0;
+                    self.maybe_repaginate();
+                }
+                Task::none()
+            }
+            EpubViewerMessage::PreviousPage => {
+                self.maybe_repaginate();
+                let step = self.page_step();
+                if self.current_page >= step {
+                    self.current_page -= step;
+                } else if self.current_page > 0 {
+                    self.current_page = 0;
+                } else if self.active_chapter > 0 {
+                    self.active_chapter -= 1;
+                    self.maybe_repaginate();
+                    self.current_page = self.total_pages().saturating_sub(1);
+                }
+                Task::none()
+            }
+            EpubViewerMessage::SetDualPage(mode) => {
+                self.dual_page = mode;
+                // Invalidate pagination cache since page width changes.
+                self.pagination_cache.clear();
+                self.maybe_repaginate();
+                Task::none()
+            }
+            EpubViewerMessage::SetPageHeightFraction(frac) => {
+                self.page_height_fraction = frac.clamp(0.5, 1.0);
+                self.pagination_cache.clear();
+                self.maybe_repaginate();
+                Task::none()
+            }
             EpubViewerMessage::ModifiersChanged(modifiers) => {
                 self.modifiers = modifiers;
                 Task::none()
@@ -525,6 +928,26 @@ impl Page for EpubViewer {
     }
 }
 
+fn paper_background(theme: &cosmic::Theme) -> widget::container::Style {
+    let c = theme.cosmic().bg_color();
+    widget::container::background(cosmic::iced::Color::from_rgba(
+        c.color.red,
+        c.color.green,
+        c.color.blue,
+        c.alpha,
+    ))
+}
+
+fn desk_background(theme: &cosmic::Theme) -> widget::container::Style {
+    let c = theme.cosmic().bg_component_color();
+    widget::container::background(cosmic::iced::Color::from_rgba(
+        c.color.red,
+        c.color.green,
+        c.color.blue,
+        c.alpha,
+    ))
+}
+
 fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, EpubViewerMessage> {
     widget::settings::item::builder(description)
         .control(widget::text::monotext(key))
@@ -532,28 +955,59 @@ fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, EpubViewe
 }
 
 /// Serialize reading progress to a JSON string.
-fn serialize_progress(chapter: usize, scroll_y: f32) -> String {
-    format!("{{\"chapter\":{chapter},\"scroll\":{scroll_y}}}")
+/// Includes scroll offset, block index, and view mode. The format is
+/// backward-compatible: older versions silently ignore unknown fields.
+fn serialize_progress(
+    chapter: usize,
+    scroll_y: f32,
+    first_block: usize,
+    view_mode: ViewMode,
+) -> String {
+    let mode = match view_mode {
+        ViewMode::Scroll => "scroll",
+        ViewMode::Paginated => "paginated",
+    };
+    format!(
+        "{{\"chapter\":{chapter},\"scroll\":{scroll_y},\"block\":{first_block},\"mode\":\"{mode}\"}}"
+    )
 }
 
-/// Parse reading progress from a JSON string like `{"chapter":2,"scroll":340.5}`.
-/// Returns `(chapter_index, scroll_y)`.
-fn parse_reading_progress(progress: &str) -> (Option<usize>, f32) {
-    let mut chapter = None;
-    let mut scroll_y = 0.0f32;
+/// Parsed reading position from a progress JSON string.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ReadingPosition {
+    chapter: Option<usize>,
+    scroll_y: f32,
+    /// Index of the first visible block (for paginated mode restoration).
+    block_index: Option<usize>,
+    /// View mode that was active when progress was saved.
+    view_mode: Option<ViewMode>,
+}
+
+/// Parse reading progress from a JSON string like
+/// `{"chapter":2,"scroll":340.5,"block":15}`.
+fn parse_reading_progress(progress: &str) -> ReadingPosition {
+    let mut pos = ReadingPosition::default();
     let progress = progress.trim();
     if let Some(inner) = progress.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
         for part in inner.split(',') {
             if let Some((key, value)) = part.split_once(':') {
                 match key.trim().trim_matches('"') {
-                    "chapter" => chapter = value.trim().parse().ok(),
-                    "scroll" => scroll_y = value.trim().parse().unwrap_or(0.0),
+                    "chapter" => pos.chapter = value.trim().parse().ok(),
+                    "scroll" => pos.scroll_y = value.trim().parse().unwrap_or(0.0),
+                    "block" => pos.block_index = value.trim().parse().ok(),
+                    "mode" => {
+                        pos.view_mode = match value.trim().trim_matches('"') {
+                            "paginated" => Some(ViewMode::Paginated),
+                            "scroll" => Some(ViewMode::Scroll),
+                            _ => None,
+                        }
+                    }
                     _ => {}
                 }
             }
         }
     }
-    (chapter, scroll_y)
+    pos
 }
 
 /// Load EPUB chapters from a file path. Runs on a blocking thread.
@@ -655,6 +1109,227 @@ fn build_anchor_map(blocks: &[ContentBlock]) -> HashMap<String, f32> {
         y += estimated_block_height(block) + SPACING;
     }
     map
+}
+
+/// Estimate the rendered height of a block given the available content width.
+/// Like [`estimated_block_height`] but adjusts chars-per-line based on width.
+fn estimated_block_height_for_width(block: &ContentBlock, content_width: f32) -> f32 {
+    // ~9.6px per character at 16px body text (roughly 0.6em average glyph width)
+    let chars_per_line = (content_width / 9.6).max(20.0);
+    match block {
+        ContentBlock::Heading { level: 1, .. } => 56.0,
+        ContentBlock::Heading { level: 2, .. } => 48.0,
+        ContentBlock::Heading { level: 3, .. } => 40.0,
+        ContentBlock::Heading { .. } => 32.0,
+        ContentBlock::Paragraph { text, .. } => {
+            ((text.len() as f32 / chars_per_line).ceil() * 22.0).max(22.0)
+        }
+        ContentBlock::Preformatted { text, .. } => (text.lines().count() as f32 * 20.0).max(20.0),
+        ContentBlock::BlockQuote { children } => {
+            children
+                .iter()
+                .map(|b| estimated_block_height_for_width(b, content_width - 16.0))
+                .sum::<f32>()
+                + 16.0
+        }
+        ContentBlock::UnorderedList { items } => items.len() as f32 * 28.0,
+        ContentBlock::OrderedList { items, .. } => items.len() as f32 * 28.0,
+        ContentBlock::Image { .. } => 200.0,
+        ContentBlock::Table { rows } => rows.len() as f32 * 36.0 + 8.0,
+        ContentBlock::HorizontalRule => 16.0,
+        ContentBlock::Footnote { blocks, .. } => {
+            blocks
+                .iter()
+                .map(|b| estimated_block_height_for_width(b, content_width - 16.0))
+                .sum::<f32>()
+                + 16.0
+        }
+    }
+}
+
+/// Split a chapter's blocks into pages that fit within `page_height` pixels.
+///
+/// Blocks that individually exceed `page_height` get their own page (no
+/// mid-block splitting).
+fn paginate_blocks(blocks: &[ContentBlock], page_height: f32, page_width: f32) -> PaginationLayout {
+    const SPACING: f32 = 8.0;
+
+    let mut pages = Vec::new();
+    let mut page_start = 0;
+    let mut accumulated = 0.0f32;
+
+    for (i, block) in blocks.iter().enumerate() {
+        let block_h = estimated_block_height_for_width(block, page_width);
+        let needed = if i == page_start {
+            block_h
+        } else {
+            SPACING + block_h
+        };
+
+        if i != page_start && accumulated + needed > page_height {
+            // Close current page, start a new one with this block.
+            pages.push(PageRange {
+                start: page_start,
+                end: i,
+            });
+            page_start = i;
+            accumulated = block_h;
+        } else {
+            accumulated += needed;
+        }
+    }
+
+    // Push the final page.
+    if page_start < blocks.len() {
+        pages.push(PageRange {
+            start: page_start,
+            end: blocks.len(),
+        });
+    }
+
+    if pages.is_empty() {
+        pages.push(PageRange { start: 0, end: 0 });
+    }
+
+    PaginationLayout {
+        page_height,
+        page_width,
+        pages,
+    }
+}
+
+impl EpubViewer {
+    /// Re-paginate the active chapter if the viewport size has changed.
+    fn maybe_repaginate(&mut self) {
+        if self.view_mode != ViewMode::Paginated {
+            return;
+        }
+        let (vw, vh) = self.viewport_size.get();
+        if vw <= 0.0 || vh <= 0.0 {
+            return;
+        }
+
+        let space_s = theme::active().cosmic().spacing.space_s as f32;
+        let space_xxs = theme::active().cosmic().spacing.space_xxs as f32;
+        // In dual-page mode, each page gets half the width minus the gap.
+        let per_page_width = if self.should_dual_page(vw) {
+            let available = vw - space_xxs; // gap between pages
+            (available / 2.0 - space_s * 2.0).min(800.0)
+        } else {
+            800.0f32.min(vw - space_s * 2.0)
+        };
+        let page_width = per_page_width;
+        // Reserve space for the page indicator line at the bottom.
+        // Apply the user-configurable height fraction to compensate for
+        // inaccurate height estimates — a value < 1.0 leaves extra headroom.
+        let page_height = (vh - space_s * 2.0 - 24.0) * self.page_height_fraction;
+
+        let needs_recompute = match self.pagination_cache.get(&self.active_chapter) {
+            Some(cached) => {
+                (cached.page_height - page_height).abs() > 1.0
+                    || (cached.page_width - page_width).abs() > 1.0
+            }
+            None => true,
+        };
+
+        if needs_recompute {
+            if let Some(chapter) = self.chapters.get(self.active_chapter) {
+                let layout = paginate_blocks(&chapter.blocks, page_height, page_width);
+                if self.current_page >= layout.pages.len() {
+                    self.current_page = layout.pages.len().saturating_sub(1);
+                }
+                self.pagination_cache.insert(self.active_chapter, layout);
+            }
+        }
+
+        // Consume deferred block index once a valid layout exists.
+        if let Some(block_idx) = self.pending_block_index.take() {
+            if let Some(layout) = self.pagination_cache.get(&self.active_chapter) {
+                self.current_page = layout
+                    .pages
+                    .iter()
+                    .position(|p| p.start <= block_idx && block_idx < p.end)
+                    .unwrap_or(0);
+            } else {
+                // Layout still not available — put the index back.
+                self.pending_block_index = Some(block_idx);
+            }
+        }
+    }
+
+    /// Total number of pages for the active chapter, or 0 if not paginated.
+    fn total_pages(&self) -> usize {
+        self.pagination_cache
+            .get(&self.active_chapter)
+            .map(|l| l.pages.len())
+            .unwrap_or(0)
+    }
+
+    /// Convert current scroll_y position to approximate page index.
+    fn scroll_y_to_page(&self) -> usize {
+        if let Some(layout) = self.pagination_cache.get(&self.active_chapter)
+            && let Some(chapter) = self.chapters.get(self.active_chapter)
+        {
+            let mut y = 0.0f32;
+            for (i, block) in chapter.blocks.iter().enumerate() {
+                let h = estimated_block_height_for_width(block, layout.page_width);
+                if y + h > self.scroll_y {
+                    return layout
+                        .pages
+                        .iter()
+                        .position(|p| p.start <= i && i < p.end)
+                        .unwrap_or(0);
+                }
+                y += h + 8.0;
+            }
+        }
+        0
+    }
+
+    /// Convert current page index to approximate scroll_y position.
+    fn page_to_scroll_y(&self) -> f32 {
+        if let Some(layout) = self.pagination_cache.get(&self.active_chapter)
+            && let Some(chapter) = self.chapters.get(self.active_chapter)
+            && let Some(page) = layout.pages.get(self.current_page)
+        {
+            let mut y = 0.0f32;
+            for block in &chapter.blocks[..page.start] {
+                y += estimated_block_height_for_width(block, layout.page_width) + 8.0;
+            }
+            return y;
+        }
+        0.0
+    }
+
+    /// Whether dual-page display should be active at the given viewport width.
+    fn should_dual_page(&self, viewport_width: f32) -> bool {
+        match self.dual_page {
+            DualPageMode::On => true,
+            DualPageMode::Off => false,
+            DualPageMode::Auto => viewport_width > 1200.0,
+        }
+    }
+
+    /// Find the block index closest to a given scroll_y offset using the
+    /// default 80-char estimation (no width info available).
+    fn approximate_block_at_scroll_y(&self, target_y: f32) -> Option<usize> {
+        let chapter = self.chapters.get(self.active_chapter)?;
+        let mut y = 0.0f32;
+        for (i, block) in chapter.blocks.iter().enumerate() {
+            let h = estimated_block_height(block);
+            if y + h > target_y {
+                return Some(i);
+            }
+            y += h + 8.0;
+        }
+        Some(chapter.blocks.len().saturating_sub(1))
+    }
+
+    /// How many pages to advance per navigation step (2 in dual-page mode, 1 otherwise).
+    fn page_step(&self) -> usize {
+        let (vw, _) = self.viewport_size.get();
+        if self.should_dual_page(vw) { 2 } else { 1 }
+    }
 }
 
 fn styled_span<'a>(

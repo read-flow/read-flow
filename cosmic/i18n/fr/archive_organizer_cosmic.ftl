@@ -254,6 +254,11 @@ epub-viewer-no-local-source = Aucune source locale disponible pour ce document
 epub-viewer-display = Affichage
 epub-viewer-raw-html = Afficher le HTML brut (débogage)
 epub-viewer-keyboard-shortcuts = Raccourcis clavier
+epub-viewer-view-paginated = Vue paginée
+epub-viewer-dual-page = Double page
 epub-viewer-shortcut-previous-chapter = Chapitre précédent
 epub-viewer-shortcut-next-chapter = Chapitre suivant
+epub-viewer-shortcut-previous-page = Page précédente
+epub-viewer-shortcut-next-page = Page suivante
+epub-viewer-page-fill = Remplissage de page
 
