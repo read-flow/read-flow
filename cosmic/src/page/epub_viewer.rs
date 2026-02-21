@@ -74,7 +74,6 @@ pub enum EpubViewerMessage {
     /// Carries (chapter_index, scroll_y) restored from saved progress.
     ReadingProgressLoaded(Option<usize>, f32),
     SelectChapter(usize),
-    ThemeColors(bool),
     ShowRawHtml(bool),
     Scrolled(scrollable::Viewport),
     FollowLink(String),
@@ -99,7 +98,6 @@ pub struct EpubViewer {
     /// Used to navigate back when a back-reference link (e.g. `↩`) is clicked.
     scroll_before_jump: Option<f32>,
     modifiers: Modifiers,
-    theme_colors: bool,
     show_raw_html: bool,
     content_scroll_id: widget::Id,
 }
@@ -126,7 +124,6 @@ impl EpubViewer {
             scroll_y: 0.0,
             scroll_before_jump: None,
             modifiers: Modifiers::default(),
-            theme_colors: true,
             show_raw_html: false,
             content_scroll_id: widget::Id::unique(),
         };
@@ -238,25 +235,19 @@ impl EpubViewer {
                 }
             }
 
-            let theme_colors = self.theme_colors;
-
             // Inner "paper" container with max-width for readability
             let paper =
                 widget::container(widget::container(column).padding(space_s).max_width(800.0))
                     .style(move |theme: &cosmic::Theme| {
-                        if theme_colors {
-                            let c = theme.cosmic().bg_color();
-                            widget::container::background(cosmic::iced::Color::from_rgba(
-                                c.color.red,
-                                c.color.green,
-                                c.color.blue,
-                                c.alpha,
-                            ))
-                        } else {
-                            widget::container::background(cosmic::iced::Color::WHITE)
-                        }
+                        let c = theme.cosmic().bg_color();
+                        widget::container::background(cosmic::iced::Color::from_rgba(
+                            c.color.red,
+                            c.color.green,
+                            c.color.blue,
+                            c.alpha,
+                        ))
                     })
-                    .width(Length::Fill)
+                    .width(Length::Shrink)
                     .align_x(Horizontal::Center);
 
             // Outer "desk" container
@@ -270,7 +261,8 @@ impl EpubViewer {
                         c.alpha,
                     ))
                 })
-                .width(Length::Fill);
+                .width(Length::Fill)
+                .align_x(Horizontal::Center);
 
             widget::scrollable(outer)
                 .id(self.content_scroll_id.clone())
@@ -367,10 +359,6 @@ impl Page for EpubViewer {
         let display_section = widget::settings::section()
             .title(fl!("epub-viewer-display"))
             .add(
-                widget::settings::item::builder(fl!("epub-viewer-theme-colors"))
-                    .toggler(self.theme_colors, EpubViewerMessage::ThemeColors),
-            )
-            .add(
                 widget::settings::item::builder(fl!("epub-viewer-raw-html"))
                     .toggler(self.show_raw_html, EpubViewerMessage::ShowRawHtml),
             );
@@ -448,10 +436,6 @@ impl Page for EpubViewer {
                     self.scroll_y = 0.0;
                     self.scroll_before_jump = None;
                 }
-                Task::none()
-            }
-            EpubViewerMessage::ThemeColors(use_theme_colors) => {
-                self.theme_colors = use_theme_colors;
                 Task::none()
             }
             EpubViewerMessage::ShowRawHtml(show) => {
