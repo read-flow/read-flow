@@ -828,17 +828,14 @@ impl Page for EpubViewer {
                                 // Find page containing the footnote block.
                                 if let Some(block_idx) = chapter.blocks.iter().position(|b| {
                                     matches!(b, ContentBlock::Footnote { id, .. } if id == frag)
-                                }) {
-                                    if let Some(layout) =
+                                })
+                                    && let Some(layout) =
                                         self.pagination_cache.get(&self.active_chapter)
-                                    {
-                                        if let Some(page_idx) = layout.pages.iter().position(
+                                        && let Some(page_idx) = layout.pages.iter().position(
                                             |p| p.start <= block_idx && block_idx < p.end,
                                         ) {
                                             self.current_page = page_idx;
                                         }
-                                    }
-                                }
                                 return Task::none();
                             }
                             return scrollable::scroll_to(
@@ -1302,14 +1299,12 @@ impl EpubViewer {
             None => true,
         };
 
-        if needs_recompute {
-            if let Some(chapter) = self.chapters.get(self.active_chapter) {
-                let layout = paginate_blocks(&chapter.blocks, page_height, page_width);
-                if self.current_page >= layout.pages.len() {
-                    self.current_page = layout.pages.len().saturating_sub(1);
-                }
-                self.pagination_cache.insert(self.active_chapter, layout);
+        if needs_recompute && let Some(chapter) = self.chapters.get(self.active_chapter) {
+            let layout = paginate_blocks(&chapter.blocks, page_height, page_width);
+            if self.current_page >= layout.pages.len() {
+                self.current_page = layout.pages.len().saturating_sub(1);
             }
+            self.pagination_cache.insert(self.active_chapter, layout);
         }
 
         // Consume deferred block index once a valid layout exists.

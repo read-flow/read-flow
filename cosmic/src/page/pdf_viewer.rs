@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use cosmic::Action;
+use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
@@ -132,6 +133,7 @@ pub enum PdfViewerMessage {
     // UI settings
     ThemeColors(bool),
     ShowThumbnails(bool),
+    DualPane(bool),
 
     // Search
     SearchActivate,
@@ -167,6 +169,7 @@ pub struct PdfViewer {
     zoom_scroll: f32,
     theme_colors: bool,
     show_thumbnails: bool,
+    dual_pane: bool,
 
     // Thumbnail panel state
     thumbnail_scroll_id: widget::Id,
@@ -204,6 +207,7 @@ impl PdfViewer {
             zoom_scroll: 0.0,
             theme_colors: false,
             show_thumbnails: true,
+            dual_pane: false,
             thumbnail_scroll_id: widget::Id::unique(),
             thumbnail_viewport: None,
         };
@@ -259,6 +263,7 @@ impl PdfViewer {
 
         let x = space_xxs as f32;
         let mut y = space_xxs as f32;
+        let visible = self.visible_page_indices();
 
         for (idx, page) in self.pages.iter().enumerate() {
             if idx > 0 {
@@ -280,7 +285,7 @@ impl PdfViewer {
                         .width(width)
                         .height(height)
                         .on_press(PdfViewerMessage::SelectPage(idx))
-                        .selected(idx == self.active_page),
+                        .selected(visible.contains(&idx)),
                 );
             } else {
                 column = column.push(
@@ -291,7 +296,7 @@ impl PdfViewer {
                     .width(width)
                     .height(height)
                     .on_press(PdfViewerMessage::SelectPage(idx))
-                    .selected(idx == self.active_page),
+                    .selected(visible.contains(&idx)),
                 );
             }
 
@@ -327,7 +332,24 @@ impl PdfViewer {
     }
 
     fn view_content(&self) -> Element<'_, PdfViewerMessage> {
-        if let Some(page) = self.pages.get(self.active_page) {
+        if self.dual_pane {
+            let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+
+            let first_page = (self.active_page / 2) * 2;
+            vec![
+                self.view_pdf_page(first_page),
+                self.view_pdf_page(first_page + 1),
+            ]
+            .apply(widget::Row::with_children)
+            .spacing(space_xxs)
+            .into()
+        } else {
+            self.view_pdf_page(self.active_page)
+        }
+    }
+
+    fn view_pdf_page(&self, page_idx: usize) -> Element<'_, PdfViewerMessage> {
+        if let Some(page) = self.pages.get(page_idx) {
             widget::responsive(move |size| {
                 let ratio = match self.zoom {
                     Zoom::FitHeight => size.height / page.bounds.height(),
@@ -438,66 +460,67 @@ impl PdfViewer {
             }
         }
 
-        // Generate SVG for active page if not already available
-        if let Some(page) = self.pages.get(self.active_page)
-            && page.svg_handle.is_none()
-            && let Some(display_list) = page.display_list.clone()
-        {
-            let index = page.index;
-            let theme_css = if self.theme_colors {
-                let active = theme::active();
-                let cosmic = active.cosmic();
-                let text = cosmic.on_bg_color();
-                let bg = cosmic.bg_color();
-                let text_hex = format!(
-                    "#{:02x}{:02x}{:02x}",
-                    (text.color.red * 255.0) as u8,
-                    (text.color.green * 255.0) as u8,
-                    (text.color.blue * 255.0) as u8,
-                );
-                let bg_hex = format!(
-                    "#{:02x}{:02x}{:02x}",
-                    (bg.color.red * 255.0) as u8,
-                    (bg.color.green * 255.0) as u8,
-                    (bg.color.blue * 255.0) as u8,
-                );
-                Some((text_hex, bg_hex))
-            } else {
-                None
-            };
-            tasks.push(Task::perform(
-                async move {
-                    tokio::task::spawn_blocking(move || {
-                        let mut svg = display_list.to_svg(&mupdf::Matrix::IDENTITY).unwrap();
-                        if let Some((text_hex, bg_hex)) = theme_css {
-                            let style = format!(
-                                "<style>\
-                                [fill=\"#000000\"],[fill=\"#000\"]{{fill:{text_hex} !important}}\
-                                [stroke=\"#000000\"],[stroke=\"#000\"]{{stroke:{text_hex} !important}}\
-                                [fill=\"#ffffff\"],[fill=\"#fff\"],[fill=\"white\"]{{fill:{bg_hex} !important}}\
-                                [stroke=\"#ffffff\"],[stroke=\"#fff\"],[stroke=\"white\"]{{stroke:{bg_hex} !important}}\
-                                text{{fill:{text_hex} !important}}\
-                                </style>"
-                            );
-                            if let Some(pos) = svg.find('>') {
-                                // Set default fill on <svg> element so elements
-                                // without an explicit fill attribute (e.g. text
-                                // rendered as paths) inherit the theme text color.
-                                svg.insert_str(pos, &format!(" fill=\"{text_hex}\""));
-                                let pos = pos + format!(" fill=\"{text_hex}\"").len();
-                                svg.insert_str(pos + 1, &style);
+        // Generate SVG for all currently visible pages (both pages of the
+        // spread in dual-pane mode) if not already available.
+        for &page_idx in &self.visible_page_indices() {
+            if let Some(page) = self.pages.get(page_idx)
+                && page.svg_handle.is_none()
+                && let Some(display_list) = page.display_list.clone()
+            {
+                let index = page.index;
+                let theme_css = if self.theme_colors {
+                    let active = theme::active();
+                    let cosmic = active.cosmic();
+                    let text = cosmic.on_bg_color();
+                    let bg = cosmic.bg_color();
+                    let text_hex = format!(
+                        "#{:02x}{:02x}{:02x}",
+                        (text.color.red * 255.0) as u8,
+                        (text.color.green * 255.0) as u8,
+                        (text.color.blue * 255.0) as u8,
+                    );
+                    let bg_hex = format!(
+                        "#{:02x}{:02x}{:02x}",
+                        (bg.color.red * 255.0) as u8,
+                        (bg.color.green * 255.0) as u8,
+                        (bg.color.blue * 255.0) as u8,
+                    );
+                    Some((text_hex, bg_hex))
+                } else {
+                    None
+                };
+                tasks.push(Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            let mut svg =
+                                display_list.to_svg(&mupdf::Matrix::IDENTITY).unwrap();
+                            if let Some((text_hex, bg_hex)) = theme_css {
+                                let style = format!(
+                                    "<style>\
+                                    [fill=\"#000000\"],[fill=\"#000\"]{{fill:{text_hex} !important}}\
+                                    [stroke=\"#000000\"],[stroke=\"#000\"]{{stroke:{text_hex} !important}}\
+                                    [fill=\"#ffffff\"],[fill=\"#fff\"],[fill=\"white\"]{{fill:{bg_hex} !important}}\
+                                    [stroke=\"#ffffff\"],[stroke=\"#fff\"],[stroke=\"white\"]{{stroke:{bg_hex} !important}}\
+                                    text{{fill:{text_hex} !important}}\
+                                    </style>"
+                                );
+                                if let Some(pos) = svg.find('>') {
+                                    svg.insert_str(pos, &format!(" fill=\"{text_hex}\""));
+                                    let pos = pos + format!(" fill=\"{text_hex}\"").len();
+                                    svg.insert_str(pos + 1, &style);
+                                }
                             }
-                        }
-                        PdfViewerMessage::SvgReady(
-                            index,
-                            widget::svg::Handle::from_memory(svg.into_bytes()),
-                        )
-                    })
-                    .await
-                    .unwrap()
-                },
-                cosmic::action::app,
-            ));
+                            PdfViewerMessage::SvgReady(
+                                index,
+                                widget::svg::Handle::from_memory(svg.into_bytes()),
+                            )
+                        })
+                        .await
+                        .unwrap()
+                    },
+                    cosmic::action::app,
+                ));
+            }
         }
 
         Task::batch(tasks)
@@ -505,6 +528,21 @@ impl PdfViewer {
 
     fn page_index_by_pdf_index(&self, pdf_index: i32) -> Option<usize> {
         self.pages.iter().position(|p| p.index == pdf_index)
+    }
+
+    /// Page indices currently visible on screen.  Returns one index in
+    /// single-pane mode, or both pages of the current spread in dual-pane mode.
+    fn visible_page_indices(&self) -> Vec<usize> {
+        if self.dual_pane {
+            let first = (self.active_page / 2) * 2;
+            let mut pages = vec![first];
+            if first + 1 < self.pages.len() {
+                pages.push(first + 1);
+            }
+            pages
+        } else {
+            vec![self.active_page]
+        }
     }
 }
 
@@ -638,6 +676,10 @@ impl Page for PdfViewer {
             .add(
                 widget::settings::item::builder(fl!("pdf-viewer-show-thumbnails"))
                     .toggler(self.show_thumbnails, PdfViewerMessage::ShowThumbnails),
+            )
+            .add(
+                widget::settings::item::builder(fl!("pdf-viewer-dual-pane"))
+                    .toggler(self.dual_pane, PdfViewerMessage::DualPane),
             );
 
         let shortcuts_section = widget::settings::section()
@@ -745,8 +787,8 @@ impl Page for PdfViewer {
                         cosmic::action::app,
                     ));
 
-                    // If this is the active page, trigger SVG generation
-                    if idx == self.active_page {
+                    // If this page is currently visible, trigger SVG generation
+                    if self.visible_page_indices().contains(&idx) {
                         tasks.push(self.update_active_page());
                     }
 
@@ -818,14 +860,14 @@ impl Page for PdfViewer {
             }
             PdfViewerMessage::Key(_modifiers, key, _text) => match &key {
                 Key::Named(Named::ArrowUp | Named::ArrowLeft | Named::PageUp) => {
-                    if self.active_page > 0 {
-                        self.active_page -= 1;
-                    }
+                    let step = if self.dual_pane { 2 } else { 1 };
+                    self.active_page = self.active_page.saturating_sub(step);
                     self.update_active_page()
                 }
                 Key::Named(Named::ArrowDown | Named::ArrowRight | Named::PageDown) => {
-                    if self.active_page + 1 < self.pages.len() {
-                        self.active_page += 1;
+                    let step = if self.dual_pane { 2 } else { 1 };
+                    if self.active_page + step < self.pages.len() {
+                        self.active_page += step;
                     }
                     self.update_active_page()
                 }
@@ -889,6 +931,10 @@ impl Page for PdfViewer {
             PdfViewerMessage::ShowThumbnails(show_thumbnails) => {
                 self.show_thumbnails = show_thumbnails;
                 Task::none()
+            }
+            PdfViewerMessage::DualPane(dual_pane) => {
+                self.dual_pane = dual_pane;
+                self.update_active_page()
             }
             PdfViewerMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")

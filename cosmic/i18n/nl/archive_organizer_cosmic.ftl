@@ -229,6 +229,7 @@ settings-scan-dry-run-description = Indien ingeschakeld, worden er geen wijzigin
 
 # PDF viewer
 pdf-viewer-back = Terug
+pdf-viewer-dual-pane = Twee panelen
 pdf-viewer-loading = PDF laden...
 pdf-viewer-no-local-source = Geen lokale bron beschikbaar voor dit document
 pdf-viewer-view-pdf = PDF bekijken
