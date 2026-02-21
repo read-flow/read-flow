@@ -418,11 +418,21 @@ impl TokenSink for ContentSink {
                 let mut entry = entry;
                 entry.flush_text();
 
-                let text = plain_text_from_spans(&entry.spans).trim().to_string();
-                let spans = if text.is_empty() {
-                    Vec::new()
+                // Skip whitespace trimming inside preformatted blocks.
+                // After popping the entry, check if the tag itself is <pre>
+                // or if a <pre> ancestor remains on the stack.
+                let in_pre = tag_name == "pre" || in_preformatted(&state.stack);
+                let (text, spans) = if in_pre {
+                    let text = plain_text_from_spans(&entry.spans);
+                    (text, entry.spans)
                 } else {
-                    trim_spans(entry.spans)
+                    let text = plain_text_from_spans(&entry.spans).trim().to_string();
+                    let spans = if text.is_empty() {
+                        Vec::new()
+                    } else {
+                        trim_spans(entry.spans)
+                    };
+                    (text, spans)
                 };
 
                 let block_style = entry.block_style.clone();
@@ -1131,8 +1141,11 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         match &blocks[0] {
             ContentBlock::Preformatted { text, .. } => {
-                assert!(text.contains("code here"));
-                assert!(text.contains("indented"));
+                assert!(
+                    text.starts_with("  code here"),
+                    "leading whitespace must be preserved: {text:?}"
+                );
+                assert!(text.contains("\n  indented"));
             }
             other => panic!("expected Preformatted, got {other:?}"),
         }
@@ -1589,6 +1602,57 @@ mod tests {
                     text.contains("  indented"),
                     "indentation must be kept in <pre>"
                 );
+            }
+            other => panic!("expected Preformatted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pre_with_styled_spans_preserves_whitespace() {
+        // <span> is a TRANSPARENT_TAG and goes through block-level handling.
+        // Whitespace inside spans nested in <pre> must NOT be trimmed.
+        let blocks = parse("<pre>  <span class=\"kw\">function</span> foo()</pre>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Preformatted { text, spans, .. } => {
+                assert_eq!(text, "  function foo()");
+                // Verify span ordering: whitespace before "function" is preserved
+                assert!(spans.len() >= 2, "expected multiple spans, got {spans:?}");
+                assert_eq!(spans[0].text, "  ", "leading whitespace span: {spans:?}");
+                assert_eq!(spans[1].text, "function", "styled span: {spans:?}");
+            }
+            other => panic!("expected Preformatted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pre_with_code_child_preserves_indentation() {
+        // <code> is an INLINE_STYLE_TAG (handled via the inline path).
+        let blocks = parse("<pre>  <code>indented code</code>\n  <code>more</code></pre>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Preformatted { text, .. } => {
+                assert!(
+                    text.starts_with("  "),
+                    "leading indentation must be preserved: {text:?}"
+                );
+                assert!(
+                    text.contains("\n  more"),
+                    "newline + indentation must be preserved: {text:?}"
+                );
+            }
+            other => panic!("expected Preformatted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn pre_with_multiple_styled_spans_preserves_whitespace() {
+        // Multiple styled inline elements with significant whitespace between them.
+        let blocks = parse("<pre>  <em>keyword</em> <strong>name</strong>(arg)</pre>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Preformatted { text, .. } => {
+                assert_eq!(text, "  keyword name(arg)");
             }
             other => panic!("expected Preformatted, got {other:?}"),
         }
