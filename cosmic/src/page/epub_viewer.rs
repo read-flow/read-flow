@@ -604,15 +604,30 @@ impl Page for EpubViewer {
 
         if self.view_mode == ViewMode::Paginated {
             display_section = display_section.add(
-                widget::settings::item::builder(fl!("epub-viewer-dual-page")).toggler(
-                    self.dual_page != DualPageMode::Off,
-                    |enabled| {
-                        EpubViewerMessage::SetDualPage(if enabled {
-                            DualPageMode::Auto
-                        } else {
-                            DualPageMode::Off
-                        })
-                    },
+                widget::settings::item::builder(fl!("epub-viewer-dual-page")).control(
+                    widget::settings::item_row(vec![
+                        widget::radio(
+                            widget::text::body(fl!("epub-viewer-dual-page-off")),
+                            DualPageMode::Off,
+                            Some(self.dual_page),
+                            EpubViewerMessage::SetDualPage,
+                        )
+                        .into(),
+                        widget::radio(
+                            widget::text::body(fl!("epub-viewer-dual-page-auto")),
+                            DualPageMode::Auto,
+                            Some(self.dual_page),
+                            EpubViewerMessage::SetDualPage,
+                        )
+                        .into(),
+                        widget::radio(
+                            widget::text::body(fl!("epub-viewer-dual-page-on")),
+                            DualPageMode::On,
+                            Some(self.dual_page),
+                            EpubViewerMessage::SetDualPage,
+                        )
+                        .into(),
+                    ]),
                 ),
             );
 
