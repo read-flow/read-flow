@@ -264,4 +264,6 @@ epub-viewer-shortcut-next-chapter = Chapitre suivant
 epub-viewer-shortcut-previous-page = Page précédente
 epub-viewer-shortcut-next-page = Page suivante
 epub-viewer-page-fill = Remplissage de page
+epub-viewer-show-sidebar = Volet de navigation
+epub-viewer-content-width = Largeur du contenu
 

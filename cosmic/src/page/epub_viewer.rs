@@ -135,6 +135,10 @@ pub enum EpubViewerMessage {
     SetDualPage(DualPageMode),
     /// Set the page height fraction (0.5..=1.0) for pagination.
     SetPageHeightFraction(f32),
+    /// Toggle chapter navigation sidebar visibility.
+    ShowSidebar(bool),
+    /// Set content column max-width as a percentage of the default (50..=150).
+    SetContentMaxWidth(f32),
     Out(EpubViewerOutput),
 }
 
@@ -174,6 +178,10 @@ pub struct EpubViewer {
     /// is loaded but pagination hasn't run yet (viewport_size still 0×0).
     /// Consumed by `maybe_repaginate()` once a valid layout is available.
     pending_block_index: Option<usize>,
+    /// Whether the chapter navigation sidebar is visible.
+    show_sidebar: bool,
+    /// Content column max width as a percentage of the default 800px (50..=150).
+    content_width_pct: f32,
 }
 
 impl EpubViewer {
@@ -207,6 +215,8 @@ impl EpubViewer {
             dual_page: DualPageMode::default(),
             page_height_fraction: 1.0,
             pending_block_index: None,
+            show_sidebar: true,
+            content_width_pct: 100.0,
         };
 
         let mut tasks = Vec::new();
@@ -321,12 +331,18 @@ impl EpubViewer {
                 }
             }
 
-            // Inner "paper" container with max-width for readability
-            let paper =
-                widget::container(widget::container(column).padding(space_s).max_width(800.0))
-                    .style(move |theme: &cosmic::Theme| paper_background(theme))
-                    .width(Length::Shrink)
-                    .align_x(Horizontal::Center);
+            // Inner "paper" container with max-width for readability.
+            // The inner container uses Fill + max_width so it expands up to
+            // max_w but no further; the outer paper Shrinks to wrap it.
+            let max_w = 800.0 * (self.content_width_pct / 100.0);
+            let paper = widget::container(
+                widget::container(column)
+                    .padding(space_s)
+                    .max_width(max_w)
+                    .width(Length::Fill),
+            )
+            .style(move |theme: &cosmic::Theme| paper_background(theme))
+            .width(Length::Shrink);
 
             // Outer "desk" container
             let outer = widget::container(paper)
@@ -360,6 +376,7 @@ impl EpubViewer {
         let show_raw_html = self.show_raw_html;
 
         let page_height_fraction = self.page_height_fraction;
+        let max_content_width = 800.0 * (self.content_width_pct / 100.0);
 
         widget::responsive(move |size| {
             // Store viewport size so update() can trigger re-pagination.
@@ -392,9 +409,9 @@ impl EpubViewer {
                     let sp_s = theme::active().cosmic().spacing.space_s as f32;
                     let sp_xxs = theme::active().cosmic().spacing.space_xxs as f32;
                     let pw = if dual {
-                        ((size.width - sp_xxs) / 2.0 - sp_s * 2.0).min(800.0)
+                        ((size.width - sp_xxs) / 2.0 - sp_s * 2.0).min(max_content_width)
                     } else {
-                        800.0f32.min(size.width - sp_s * 2.0)
+                        max_content_width.min(size.width - sp_s * 2.0)
                     };
                     let ph = (size.height - sp_s * 2.0 - 24.0) * page_height_fraction;
                     computed_layout = paginate_blocks(&chapter.blocks, ph, pw);
@@ -423,12 +440,20 @@ impl EpubViewer {
 
                 // Wrap blocks in a scrollable so content that overflows the
                 // estimated page height is still accessible.
+                // The inner container uses max_width to constrain the text
+                // column, and a centering wrapper keeps it horizontally centered
+                // within the paper.
                 let paper_content = widget::column()
                     .push(
                         widget::scrollable(
-                            widget::container(column)
-                                .padding(space_s)
-                                .width(Length::Fill),
+                            widget::container(
+                                widget::container(column)
+                                    .padding(space_s)
+                                    .max_width(max_content_width)
+                                    .width(Length::Shrink),
+                            )
+                            .width(Length::Fill)
+                            .align_x(Horizontal::Center),
                         )
                         .height(Length::Fill),
                     )
@@ -439,7 +464,6 @@ impl EpubViewer {
                     .style(move |theme: &cosmic::Theme| paper_background(theme))
                     .width(Length::Fill)
                     .height(Length::Fill)
-                    .align_x(Horizontal::Center)
                     .into()
             };
 
@@ -538,14 +562,14 @@ impl Page for EpubViewer {
                 .into();
         }
 
-        let sidebar = self.view_chapter_sidebar();
         let content = self.view_content();
 
-        widget::row()
-            .push(sidebar)
-            .push(content)
-            .height(Length::Fill)
-            .into()
+        let mut row = widget::row().height(Length::Fill);
+        if self.show_sidebar {
+            row = row.push(self.view_chapter_sidebar());
+        }
+        row = row.push(content);
+        row.into()
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, EpubViewerMessage>> {
@@ -646,6 +670,26 @@ impl Page for EpubViewer {
                 ),
             );
         }
+
+        display_section = display_section.add(
+            widget::settings::item::builder(fl!("epub-viewer-show-sidebar"))
+                .toggler(self.show_sidebar, EpubViewerMessage::ShowSidebar),
+        );
+
+        let width_pct = self.content_width_pct.round() as u32;
+        display_section = display_section.add(
+            widget::settings::item::builder(format!(
+                "{} ({}%)",
+                fl!("epub-viewer-content-width"),
+                width_pct
+            ))
+            .control(
+                widget::slider(50.0..=150.0, self.content_width_pct, |v| {
+                    EpubViewerMessage::SetContentMaxWidth(v)
+                })
+                .step(5.0),
+            ),
+        );
 
         let display_section = display_section.add(
             widget::settings::item::builder(fl!("epub-viewer-raw-html"))
@@ -928,6 +972,16 @@ impl Page for EpubViewer {
             }
             EpubViewerMessage::SetPageHeightFraction(frac) => {
                 self.page_height_fraction = frac.clamp(0.5, 1.0);
+                self.pagination_cache.clear();
+                self.maybe_repaginate();
+                Task::none()
+            }
+            EpubViewerMessage::ShowSidebar(show) => {
+                self.show_sidebar = show;
+                Task::none()
+            }
+            EpubViewerMessage::SetContentMaxWidth(pct) => {
+                self.content_width_pct = pct.clamp(50.0, 150.0);
                 self.pagination_cache.clear();
                 self.maybe_repaginate();
                 Task::none()
@@ -1226,12 +1280,13 @@ impl EpubViewer {
 
         let space_s = theme::active().cosmic().spacing.space_s as f32;
         let space_xxs = theme::active().cosmic().spacing.space_xxs as f32;
+        let max_content_width = 800.0 * (self.content_width_pct / 100.0);
         // In dual-page mode, each page gets half the width minus the gap.
         let per_page_width = if self.should_dual_page(vw) {
             let available = vw - space_xxs; // gap between pages
-            (available / 2.0 - space_s * 2.0).min(800.0)
+            (available / 2.0 - space_s * 2.0).min(max_content_width)
         } else {
-            800.0f32.min(vw - space_s * 2.0)
+            max_content_width.min(vw - space_s * 2.0)
         };
         let page_width = per_page_width;
         // Reserve space for the page indicator line at the bottom.
