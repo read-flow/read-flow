@@ -96,6 +96,7 @@ pub struct DocumentList {
 #[derive(Debug, Clone)]
 pub enum DocumentListOutput {
     OpenDetails(Document),
+    OpenDocument(Document),
 }
 
 #[derive(Debug, Clone)]
@@ -630,8 +631,8 @@ impl Page for DocumentList {
             },
             DocumentListMessage::DocumentsComponent(msg) => match msg {
                 DocumentsMessage::Out(msg) => match msg {
-                    DocumentsOutput::DocumentClicked(file) => cosmic::task::message(
-                        DocumentListMessage::Out(DocumentListOutput::OpenDetails(file)),
+                    DocumentsOutput::OpenDocumentDetails(document) => task::message(
+                        DocumentListMessage::Out(DocumentListOutput::OpenDetails(document)),
                     ),
                     DocumentsOutput::BatchTagEditor(msg) => {
                         self.handle_batch_tag_editor_output(msg)
@@ -640,6 +641,9 @@ impl Page for DocumentList {
                         // Reset DocumentList's batch tag editor when selection changes
                         Task::none()
                     }
+                    DocumentsOutput::OpenDocument(document) => task::message(
+                        DocumentListMessage::Out(DocumentListOutput::OpenDocument(document)),
+                    ),
                 },
                 msg => self.archive.update(msg).map(ActionExt::map_into),
             },

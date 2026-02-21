@@ -20,7 +20,6 @@ use cosmic::widget::text;
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::aggregator::DocumentSource;
-use crate::aggregator::DocumentType;
 use crate::client::ClientSelector;
 use crate::component::provided_state::ProvidedState;
 use crate::component::provided_state::ProvidedStateMessage;
@@ -48,8 +47,7 @@ pub struct DocumentDetails {
 pub enum DocumentDetailsOutput {
     Close(String), // Fingerprint
     RefreshDocument(Document),
-    ViewPdf(Document),
-    ViewEpub(Document),
+    OpenDocument(Document),
 }
 
 #[derive(Debug, Clone)]
@@ -546,29 +544,9 @@ impl Page for DocumentDetails {
                     }
                 }
             }
-            DocumentDetailsMessage::OpenDocument => {
-                if self.document.metadata.type_ == DocumentType::Pdf {
-                    // Open PDF documents in the built-in viewer
-                    task::message(DocumentDetailsMessage::Out(DocumentDetailsOutput::ViewPdf(
-                        self.document.clone(),
-                    )))
-                } else if self.document.metadata.type_ == DocumentType::Epub {
-                    // Open EPUB documents in the built-in viewer
-                    task::message(DocumentDetailsMessage::Out(
-                        DocumentDetailsOutput::ViewEpub(self.document.clone()),
-                    ))
-                } else {
-                    // Open other document types with xdg-open
-                    let document = self.document.clone();
-                    let document_provider = self.document_provider.clone();
-                    task::future(async move {
-                        if let Err(e) = document_provider.open_document(document).await {
-                            tracing::error!("Failed to open file: {e}");
-                        }
-                        DocumentDetailsMessage::RefreshDocument
-                    })
-                }
-            }
+            DocumentDetailsMessage::OpenDocument => task::message(DocumentDetailsMessage::Out(
+                DocumentDetailsOutput::OpenDocument(self.document.clone()),
+            )),
             DocumentDetailsMessage::TagsAdded(result) => {
                 match result {
                     Ok(_tags) => {

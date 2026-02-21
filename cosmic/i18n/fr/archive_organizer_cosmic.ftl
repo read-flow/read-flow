@@ -114,6 +114,7 @@ document-list-new = Nouveau
 document-list-no-files = Aucun fichier ne correspond aux filtres actuels
 document-list-no-tags-available = Aucune étiquette disponible dans le système
 document-list-no-tags-selected = Aucune étiquette sélectionnée
+document-list-open-document-details = Ouvrir
 document-list-options-title = Options de liste de fichiers
 document-list-search-placeholder = Rechercher des fichiers...
 document-list-select-tag = Sélectionner une étiquette

@@ -93,6 +93,7 @@ document-list-new = New
 document-list-no-files = No files match the current filters
 document-list-no-tags-available = No tags available in the system
 document-list-no-tags-selected = No tags selected
+document-list-open-document-details = Open details
 document-list-options-title = File List Options
 document-list-search-placeholder = Search files...
 document-list-select-tag = Select a tag

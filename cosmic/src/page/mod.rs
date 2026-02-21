@@ -36,6 +36,7 @@ use url::Url;
 use crate::ApplicationModule;
 use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
+use crate::aggregator::DocumentType;
 use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::cosmic_ext::ActionExt;
@@ -99,10 +100,9 @@ pub enum PageMessage {
     OpenDocumentDetails(Document),
     CloseDocumentDetails(Fingerprint),
     EpubViewer(Fingerprint, EpubViewerMessage),
-    OpenEpubViewer(Document),
+    OpenDocument(Document),
     CloseEpubViewer(Fingerprint, Option<String>),
     PdfViewer(Fingerprint, PdfViewerMessage),
-    OpenPdfViewer(Document),
     ClosePdfViewer(Fingerprint, Option<usize>),
     Settings(SettingsMessage),
     KeyEvent(PageSelector, Modifiers, Key, Option<SmolStr>),
@@ -435,30 +435,6 @@ impl Pages {
                 .map(move |action| {
                     action.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg))
                 }),
-            PageMessage::OpenPdfViewer(document) => {
-                let fingerprint = document.metadata.fingerprint.clone();
-
-                if self.pdf_viewers.contains_key(&fingerprint) {
-                    task::message(PageMessage::Out(PageOutput::TogglePage(
-                        PageSelector::PdfViewer(fingerprint),
-                    )))
-                } else {
-                    let fingerprint_1 = fingerprint.clone();
-                    let fingerprint_2 = fingerprint.clone();
-                    let (pdf_viewer, initialization) =
-                        PdfViewer::new(document, self.document_provider.clone());
-                    self.pdf_viewers.insert(fingerprint.clone(), pdf_viewer);
-                    initialization
-                        .map(move |action| {
-                            let fingerprint = fingerprint_1.clone();
-                            action.map(move |msg| map_pdf_viewer_message(fingerprint, msg))
-                        })
-                        .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
-                            PageSelector::PdfViewer(fingerprint_2),
-                            "application-pdf-symbolic",
-                        ))))
-                }
-            }
             PageMessage::ClosePdfViewer(fingerprint, page) => {
                 let _ = self.pdf_viewers.swap_remove(&fingerprint);
 
@@ -491,30 +467,19 @@ impl Pages {
                 .map(move |action| {
                     action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
                 }),
-            PageMessage::OpenEpubViewer(document) => {
-                let fingerprint = document.metadata.fingerprint.clone();
-
-                if self.epub_viewers.contains_key(&fingerprint) {
-                    task::message(PageMessage::Out(PageOutput::TogglePage(
-                        PageSelector::EpubViewer(fingerprint),
-                    )))
-                } else {
-                    let fingerprint_1 = fingerprint.clone();
-                    let fingerprint_2 = fingerprint.clone();
-                    let (epub_viewer, initialization) =
-                        EpubViewer::new(document, self.document_provider.clone());
-                    self.epub_viewers.insert(fingerprint.clone(), epub_viewer);
-                    initialization
-                        .map(move |action| {
-                            let fingerprint = fingerprint_1.clone();
-                            action.map(move |msg| map_epub_viewer_message(fingerprint, msg))
-                        })
-                        .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
-                            PageSelector::EpubViewer(fingerprint_2),
-                            "application-epub+zip",
-                        ))))
+            PageMessage::OpenDocument(document) => match &document.metadata.type_ {
+                DocumentType::Pdf => self.open_pdf_viewer(document),
+                DocumentType::Epub => self.open_epub_viewer(document),
+                DocumentType::Mobi => {
+                    let document_provider = self.document_provider.clone();
+                    task::future(async move {
+                        if let Err(e) = document_provider.open_document(document).await {
+                            tracing::error!("Failed to open file: {e}");
+                        }
+                        PageMessage::Noop
+                    })
                 }
-            }
+            },
             PageMessage::CloseEpubViewer(fingerprint, progress_json) => {
                 let _ = self.epub_viewers.swap_remove(&fingerprint);
 
@@ -547,6 +512,56 @@ impl Pages {
             }
         }
     }
+
+    fn open_pdf_viewer(&mut self, document: Document) -> Task<Action<PageMessage>> {
+        let fingerprint = document.metadata.fingerprint.clone();
+
+        if self.pdf_viewers.contains_key(&fingerprint) {
+            task::message(PageMessage::Out(PageOutput::TogglePage(
+                PageSelector::PdfViewer(fingerprint),
+            )))
+        } else {
+            let fingerprint_1 = fingerprint.clone();
+            let fingerprint_2 = fingerprint.clone();
+            let (pdf_viewer, initialization) =
+                PdfViewer::new(document, self.document_provider.clone());
+            self.pdf_viewers.insert(fingerprint.clone(), pdf_viewer);
+            initialization
+                .map(move |action| {
+                    let fingerprint = fingerprint_1.clone();
+                    action.map(move |msg| map_pdf_viewer_message(fingerprint, msg))
+                })
+                .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
+                    PageSelector::PdfViewer(fingerprint_2),
+                    "application-pdf-symbolic",
+                ))))
+        }
+    }
+
+    fn open_epub_viewer(&mut self, document: Document) -> Task<Action<PageMessage>> {
+        let fingerprint = document.metadata.fingerprint.clone();
+
+        if self.epub_viewers.contains_key(&fingerprint) {
+            task::message(PageMessage::Out(PageOutput::TogglePage(
+                PageSelector::EpubViewer(fingerprint),
+            )))
+        } else {
+            let fingerprint_1 = fingerprint.clone();
+            let fingerprint_2 = fingerprint.clone();
+            let (epub_viewer, initialization) =
+                EpubViewer::new(document, self.document_provider.clone());
+            self.epub_viewers.insert(fingerprint.clone(), epub_viewer);
+            initialization
+                .map(move |action| {
+                    let fingerprint = fingerprint_1.clone();
+                    action.map(move |msg| map_epub_viewer_message(fingerprint, msg))
+                })
+                .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
+                    PageSelector::EpubViewer(fingerprint_2),
+                    "application-epub+zip",
+                ))))
+        }
+    }
 }
 
 fn map_sources_message(msg: SourcesMessage) -> PageMessage {
@@ -565,6 +580,7 @@ fn map_document_list_message(msg: DocumentListMessage) -> PageMessage {
     match msg {
         DocumentListMessage::Out(message) => match message {
             DocumentListOutput::OpenDetails(document) => PageMessage::OpenDocumentDetails(document),
+            DocumentListOutput::OpenDocument(document) => PageMessage::OpenDocument(document),
         },
         msg => PageMessage::Documents(msg),
     }
@@ -582,8 +598,7 @@ fn map_document_details_message(
             DocumentDetailsOutput::RefreshDocument(document) => {
                 PageMessage::Documents(DocumentListMessage::RefreshDocument(document))
             }
-            DocumentDetailsOutput::ViewPdf(document) => PageMessage::OpenPdfViewer(document),
-            DocumentDetailsOutput::ViewEpub(document) => PageMessage::OpenEpubViewer(document),
+            DocumentDetailsOutput::OpenDocument(document) => PageMessage::OpenDocument(document),
         },
         msg => PageMessage::DocumentDetails(fingerprint, msg),
     }

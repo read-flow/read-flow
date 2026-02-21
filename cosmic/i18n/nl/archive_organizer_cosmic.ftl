@@ -115,6 +115,7 @@ document-list-new = Nieuw
 document-list-no-files = Geen bestanden voldoen aan de huidige filters
 document-list-no-tags-available = Geen tags beschikbaar in het systeem
 document-list-no-tags-selected = Geen tags geselecteerd
+document-list-open-document-details = Details openen
 document-list-options-title = Bestandslijst opties
 document-list-search-placeholder = Bestanden zoeken...
 document-list-select-tag = Selecteer een tag

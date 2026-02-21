@@ -56,8 +56,9 @@ impl Provider<Vec<String>> for DocumentState {
 
 #[derive(Debug, Clone)]
 pub enum DocumentsOutput {
-    DocumentClicked(Document),
+    OpenDocumentDetails(Document),
     BatchTagEditor(TagEditorOutput),
+    OpenDocument(Document),
     SelectionChanged,
 }
 
@@ -384,11 +385,17 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
             .icon()
             .into(),
         display_path(&document.local_or_any_source().path),
+        widget::button::icon(widget::icon::from_name("document-edit-symbolic").size(ICON_SIZE))
+            .on_press(DocumentsMessage::Out(DocumentsOutput::OpenDocumentDetails(
+                document.clone(),
+            )))
+            .tooltip(fl!("document-list-open-document-details"))
+            .into(),
     ]
     .apply(widget::settings::item_row)
     .apply(widget::button::custom)
     .class(ButtonClass::ListItem)
-    .on_press(DocumentsMessage::Out(DocumentsOutput::DocumentClicked(
+    .on_press(DocumentsMessage::Out(DocumentsOutput::OpenDocument(
         document.clone(),
     )))
     .into()
