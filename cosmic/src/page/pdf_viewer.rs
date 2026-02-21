@@ -128,7 +128,10 @@ pub enum PdfViewerMessage {
     // Zoom
     ZoomDropdown(usize),
     ZoomScroll(ScrollDelta),
+
+    // UI settings
     ThemeColors(bool),
+    ShowThumbnails(bool),
 
     // Search
     SearchActivate,
@@ -163,6 +166,7 @@ pub struct PdfViewer {
     view_ratio: Cell<f32>,
     zoom_scroll: f32,
     theme_colors: bool,
+    show_thumbnails: bool,
 
     // Thumbnail panel state
     thumbnail_scroll_id: widget::Id,
@@ -199,6 +203,7 @@ impl PdfViewer {
             view_ratio: Cell::new(1.0),
             zoom_scroll: 0.0,
             theme_colors: false,
+            show_thumbnails: true,
             thumbnail_scroll_id: widget::Id::unique(),
             thumbnail_viewport: None,
         };
@@ -547,11 +552,11 @@ impl Page for PdfViewer {
                 .into();
         }
 
-        let thumbnails = self.view_thumbnails();
+        let thumbnails = self.show_thumbnails.then(|| self.view_thumbnails());
         let content = self.view_content();
 
         widget::row()
-            .push(thumbnails)
+            .push_maybe(thumbnails)
             .push(content)
             .height(Length::Fill)
             .into()
@@ -629,6 +634,10 @@ impl Page for PdfViewer {
             .add(
                 widget::settings::item::builder(fl!("pdf-viewer-theme-colors"))
                     .toggler(self.theme_colors, PdfViewerMessage::ThemeColors),
+            )
+            .add(
+                widget::settings::item::builder(fl!("pdf-viewer-show-thumbnails"))
+                    .toggler(self.show_thumbnails, PdfViewerMessage::ShowThumbnails),
             );
 
         let shortcuts_section = widget::settings::section()
@@ -876,6 +885,10 @@ impl Page for PdfViewer {
                     page.svg_handle = None;
                 }
                 self.update_active_page()
+            }
+            PdfViewerMessage::ShowThumbnails(show_thumbnails) => {
+                self.show_thumbnails = show_thumbnails;
+                Task::none()
             }
             PdfViewerMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
