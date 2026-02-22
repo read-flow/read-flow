@@ -85,6 +85,39 @@ pub(crate) enum DualPageMode {
     On,
 }
 
+/// Font family for rendering EPUB content.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum FontFamily {
+    #[default]
+    SansSerif,
+    Serif,
+    Monospace,
+}
+
+impl FontFamily {
+    const ALL: [FontFamily; 3] = [
+        FontFamily::SansSerif,
+        FontFamily::Serif,
+        FontFamily::Monospace,
+    ];
+
+    fn to_family(self) -> font::Family {
+        match self {
+            FontFamily::SansSerif => font::Family::SansSerif,
+            FontFamily::Serif => font::Family::Serif,
+            FontFamily::Monospace => font::Family::Monospace,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            FontFamily::SansSerif => "Sans Serif",
+            FontFamily::Serif => "Serif",
+            FontFamily::Monospace => "Monospace",
+        }
+    }
+}
+
 /// Position saved before following a footnote link, for back-navigation.
 #[derive(Clone, Debug)]
 enum SavedPosition {
@@ -140,6 +173,8 @@ pub enum EpubViewerMessage {
     ShowSidebar(bool),
     /// Set content column max-width as a percentage of the default (50..=150).
     SetContentMaxWidth(f32),
+    /// Set the font family for rendering (index into FontFamily::ALL).
+    SetFontFamily(usize),
     Out(EpubViewerOutput),
 }
 
@@ -183,6 +218,10 @@ pub struct EpubViewer {
     show_sidebar: bool,
     /// Content column max width as a percentage of the default 800px (50..=150).
     content_width_pct: f32,
+    /// Font family used for rendering EPUB content.
+    font_family: FontFamily,
+    /// Pre-computed display names for the font family dropdown.
+    font_family_names: Vec<String>,
 }
 
 impl EpubViewer {
@@ -218,6 +257,11 @@ impl EpubViewer {
             pending_block_index: None,
             show_sidebar: false,
             content_width_pct: 100.0,
+            font_family: FontFamily::default(),
+            font_family_names: FontFamily::ALL
+                .iter()
+                .map(|f| f.label().to_string())
+                .collect(),
         };
 
         let mut tasks = Vec::new();
@@ -327,8 +371,9 @@ impl EpubViewer {
                 column = column
                     .push(widget::text::monotext(chapter.raw_html.as_str()).width(Length::Fill));
             } else {
+                let family = self.font_family.to_family();
                 for block in &chapter.blocks {
-                    column = column.push(render_block(block));
+                    column = column.push(render_block(block, family));
                 }
             }
 
@@ -424,13 +469,14 @@ impl EpubViewer {
             let current_page = current_page.min(total.saturating_sub(1));
 
             // Build a single page "paper" element from a page index.
+            let family = self.font_family.to_family();
             let make_paper = |page_idx: usize| -> Element<'_, EpubViewerMessage> {
                 let page_range = layout.pages.get(page_idx);
 
                 let mut column = widget::column().spacing(space_xxs).width(Length::Fill);
                 if let Some(range) = page_range {
                     for block in &chapter.blocks[range.start..range.end] {
-                        column = column.push(render_block(block));
+                        column = column.push(render_block(block, family));
                     }
                 }
 
@@ -690,6 +736,14 @@ impl Page for EpubViewer {
                 })
                 .step(5.0),
             ),
+        );
+
+        display_section = display_section.add(
+            widget::settings::item::builder(fl!("epub-viewer-font")).control(widget::dropdown(
+                &self.font_family_names,
+                Some(self.font_family as usize),
+                EpubViewerMessage::SetFontFamily,
+            )),
         );
 
         let display_section = display_section.add(
@@ -982,6 +1036,14 @@ impl Page for EpubViewer {
                 self.content_width_pct = pct.clamp(50.0, 150.0);
                 self.pagination_cache.clear();
                 self.maybe_repaginate();
+                Task::none()
+            }
+            EpubViewerMessage::SetFontFamily(idx) => {
+                if let Some(&family) = FontFamily::ALL.get(idx) {
+                    self.font_family = family;
+                    self.pagination_cache.clear();
+                    self.maybe_repaginate();
+                }
                 Task::none()
             }
             EpubViewerMessage::ModifiersChanged(modifiers) => {
@@ -1468,6 +1530,7 @@ impl EpubViewer {
 
 fn styled_span<'a>(
     text_span: &'a TextSpan,
+    family: font::Family,
 ) -> cosmic::iced::widget::text::Span<'a, EpubViewerMessage> {
     let style = &text_span.style;
     let mut s = span(text_span.text.as_str());
@@ -1483,6 +1546,7 @@ fn styled_span<'a>(
         font::Style::Normal
     };
     s = s.font(Font {
+        family,
         weight,
         style: font_style,
         ..Font::default()
@@ -1516,8 +1580,12 @@ fn styled_span<'a>(
     s
 }
 
-fn render_spans(spans: &[TextSpan], size: f32) -> Element<'_, EpubViewerMessage> {
-    let iced_spans: Vec<_> = spans.iter().map(styled_span).collect();
+fn render_spans(
+    spans: &[TextSpan],
+    size: f32,
+    family: font::Family,
+) -> Element<'_, EpubViewerMessage> {
+    let iced_spans: Vec<_> = spans.iter().map(|s| styled_span(s, family)).collect();
     rich_text(iced_spans).size(size).width(Length::Fill).into()
 }
 
@@ -1525,11 +1593,12 @@ fn render_list_item_spans<'a>(
     prefix: String,
     spans: &'a [TextSpan],
     size: f32,
+    family: font::Family,
 ) -> Element<'a, EpubViewerMessage> {
     let mut iced_spans: Vec<cosmic::iced::widget::text::Span<'a, EpubViewerMessage>> =
         Vec::with_capacity(spans.len() + 1);
     iced_spans.push(span(prefix));
-    iced_spans.extend(spans.iter().map(styled_span));
+    iced_spans.extend(spans.iter().map(|s| styled_span(s, family)));
     rich_text(iced_spans).size(size).width(Length::Fill).into()
 }
 
@@ -1567,10 +1636,15 @@ fn apply_text_align<'a>(
         .into()
 }
 
-fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
+fn render_block(block: &ContentBlock, family: font::Family) -> Element<'_, EpubViewerMessage> {
     let cosmic_theme::Spacing {
         space_xxs, space_s, ..
     } = theme::active().cosmic().spacing;
+
+    let font = Font {
+        family,
+        ..Font::default()
+    };
 
     match block {
         ContentBlock::Heading {
@@ -1595,22 +1669,27 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
                 return apply_text_align(
                     match level {
                         1 => widget::text::title1(text)
+                            .font(font)
                             .width(Length::Fill)
                             .align_x(align)
                             .into(),
                         2 => widget::text::title2(text)
+                            .font(font)
                             .width(Length::Fill)
                             .align_x(align)
                             .into(),
                         3 => widget::text::title3(text)
+                            .font(font)
                             .width(Length::Fill)
                             .align_x(align)
                             .into(),
                         4 => widget::text::title4(text)
+                            .font(font)
                             .width(Length::Fill)
                             .align_x(align)
                             .into(),
                         _ => widget::text::heading(text)
+                            .font(font)
                             .width(Length::Fill)
                             .align_x(align)
                             .into(),
@@ -1618,7 +1697,7 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
                     style,
                 );
             }
-            apply_text_align(render_spans(spans, size), style)
+            apply_text_align(render_spans(spans, size, family), style)
         }
         ContentBlock::Paragraph { spans, text, style } => {
             let size = style.font_size_em.map(|em| em * 16.0).unwrap_or(16.0);
@@ -1626,13 +1705,14 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
             if spans.is_empty() {
                 return apply_text_align(
                     widget::text::body(text)
+                        .font(font)
                         .width(Length::Fill)
                         .align_x(align)
                         .into(),
                     style,
                 );
             }
-            apply_text_align(render_spans(spans, size), style)
+            apply_text_align(render_spans(spans, size, family), style)
         }
         ContentBlock::Preformatted { text, .. } => widget::text::monotext(text)
             .width(Length::Fill)
@@ -1645,7 +1725,7 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
                 .spacing(space_xxs)
                 .width(Length::Fill);
             for child in children {
-                col = col.push(render_block(child));
+                col = col.push(render_block(child, family));
             }
             widget::container(col)
                 .padding([space_xxs, space_s])
@@ -1659,13 +1739,16 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
             for item in items {
                 if item.spans.is_empty() {
                     col = col.push(
-                        widget::text::body(format!("  \u{2022} {}", item.text)).width(Length::Fill),
+                        widget::text::body(format!("  \u{2022} {}", item.text))
+                            .font(font)
+                            .width(Length::Fill),
                     );
                 } else {
                     col = col.push(render_list_item_spans(
                         "  \u{2022} ".to_string(),
                         &item.spans,
                         16.0,
+                        family,
                     ));
                 }
             }
@@ -1679,11 +1762,13 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
                 let n = *start as usize + i;
                 if item.spans.is_empty() {
                     col = col.push(
-                        widget::text::body(format!("  {n}. {}", item.text)).width(Length::Fill),
+                        widget::text::body(format!("  {n}. {}", item.text))
+                            .font(font)
+                            .width(Length::Fill),
                     );
                 } else {
                     let prefix = format!("  {n}. ");
-                    col = col.push(render_list_item_spans(prefix, &item.spans, 16.0));
+                    col = col.push(render_list_item_spans(prefix, &item.spans, 16.0, family));
                 }
             }
             col.into()
@@ -1701,19 +1786,23 @@ fn render_block(block: &ContentBlock) -> Element<'_, EpubViewerMessage> {
         ContentBlock::Image { alt, .. } => {
             if !alt.is_empty() {
                 widget::text::body(format!("[{alt}]"))
+                    .font(font)
                     .width(Length::Fill)
                     .into()
             } else {
                 widget::Space::new(Length::Fill, 0).into()
             }
         }
-        ContentBlock::Table { rows } => render_table(rows),
+        ContentBlock::Table { rows } => render_table(rows, family),
         ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
-        ContentBlock::Footnote { blocks, .. } => render_footnote(blocks),
+        ContentBlock::Footnote { blocks, .. } => render_footnote(blocks, family),
     }
 }
 
-fn render_footnote(blocks: &[ContentBlock]) -> Element<'_, EpubViewerMessage> {
+fn render_footnote(
+    blocks: &[ContentBlock],
+    family: font::Family,
+) -> Element<'_, EpubViewerMessage> {
     let cosmic_theme::Spacing {
         space_xxs, space_s, ..
     } = theme::active().cosmic().spacing;
@@ -1728,10 +1817,10 @@ fn render_footnote(blocks: &[ContentBlock]) -> Element<'_, EpubViewerMessage> {
                 if spans.is_empty() {
                     widget::text::caption(text).width(Length::Fill).into()
                 } else {
-                    render_spans(spans, 13.0)
+                    render_spans(spans, 13.0, family)
                 }
             }
-            _ => render_block(block),
+            _ => render_block(block, family),
         };
         col = col.push(el);
     }
@@ -1743,7 +1832,7 @@ fn render_footnote(blocks: &[ContentBlock]) -> Element<'_, EpubViewerMessage> {
         .into()
 }
 
-fn render_table(rows: &[Vec<TableCell>]) -> Element<'_, EpubViewerMessage> {
+fn render_table(rows: &[Vec<TableCell>], family: font::Family) -> Element<'_, EpubViewerMessage> {
     let cosmic_theme::Spacing {
         space_xxs, space_s, ..
     } = theme::active().cosmic().spacing;
@@ -1772,12 +1861,18 @@ fn render_table(rows: &[Vec<TableCell>]) -> Element<'_, EpubViewerMessage> {
         for cell in row {
             let cell_spans: Vec<cosmic::iced::widget::text::Span<'_, EpubViewerMessage>> =
                 if !cell.spans.is_empty() {
-                    cell.spans.iter().map(styled_span).collect()
+                    cell.spans.iter().map(|s| styled_span(s, family)).collect()
                 } else if !cell.text.is_empty() {
                     let mut s = span(cell.text.as_str());
                     if cell.is_header {
                         s = s.font(Font {
+                            family,
                             weight: font::Weight::Bold,
+                            ..Font::default()
+                        });
+                    } else {
+                        s = s.font(Font {
+                            family,
                             ..Font::default()
                         });
                     }

@@ -268,4 +268,5 @@ epub-viewer-shortcut-next-page = Page suivante
 epub-viewer-page-fill = Remplissage de page
 epub-viewer-show-sidebar = Volet de navigation
 epub-viewer-content-width = Largeur du contenu
+epub-viewer-font = Police
 
