@@ -478,6 +478,19 @@ impl EpubViewer {
                 }
             };
             let total = layout.pages.len();
+            // Resolve deferred block index to the correct page.  The
+            // pending value is consumed by `maybe_repaginate()` on the next
+            // `update()`, but the viewport isn't available until this first
+            // render, so we peek at it here to show the right page
+            // immediately.
+            let current_page = match self.pending_block_index {
+                Some(block_idx) => layout
+                    .pages
+                    .iter()
+                    .position(|p| p.start <= block_idx && block_idx < p.end)
+                    .unwrap_or(0),
+                None => current_page,
+            };
             // Clamp page index to valid range (may be stale before update runs).
             let current_page = current_page.min(total.saturating_sub(1));
 
