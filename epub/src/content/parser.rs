@@ -47,6 +47,10 @@ struct StackEntry {
     is_footnote_container: bool,
     /// Block-level style parsed from the element's `style="..."` attribute.
     block_style: BlockStyle,
+    /// Per-span color override from a `style="color:..."` attribute on an inline element.
+    span_color: Option<[u8; 3]>,
+    /// Per-span font-size multiplier from a `style="font-size:..."` attribute on an inline element.
+    span_font_size_em: Option<f32>,
 }
 
 impl StackEntry {
@@ -66,6 +70,8 @@ impl StackEntry {
             is_footnote: false,
             is_footnote_container: false,
             block_style: BlockStyle::default(),
+            span_color: None,
+            span_font_size_em: None,
         }
     }
 
@@ -85,6 +91,8 @@ impl StackEntry {
             is_footnote: false,
             is_footnote_container: false,
             block_style: BlockStyle::default(),
+            span_color: None,
+            span_font_size_em: None,
         }
     }
 
@@ -95,8 +103,8 @@ impl StackEntry {
                 text: std::mem::take(&mut self.text),
                 style: self.inline_style.clone(),
                 link: self.link.clone(),
-                color: None,
-                font_size_em: None,
+                color: self.span_color,
+                font_size_em: self.span_font_size_em,
             });
         }
     }
@@ -168,7 +176,6 @@ const TRANSPARENT_TAGS: &[&str] = &[
     "article",
     "body",
     "html",
-    "span",
     "small",
     "sub",
     "sup",
@@ -334,9 +341,17 @@ impl TokenSink for ContentSink {
                     let href = find_attr(attrs, "href");
                     // Own href takes priority; fall back to inherited link context
                     let link = href.or(parent_link);
-                    state
-                        .stack
-                        .push(StackEntry::new_with_style(tag_name, parent_style, link));
+                    let mut span_color = None;
+                    let mut span_font_size_em = None;
+                    if let Some(style_attr) = find_attr(attrs, "style") {
+                        let parsed = parse_inline_style(&style_attr);
+                        span_color = parsed.color;
+                        span_font_size_em = parsed.font_size_em;
+                    }
+                    let mut entry = StackEntry::new_with_style(tag_name, parent_style, link);
+                    entry.span_color = span_color;
+                    entry.span_font_size_em = span_font_size_em;
+                    state.stack.push(entry);
                     return TokenSinkResult::Continue;
                 }
 
@@ -353,10 +368,48 @@ impl TokenSink for ContentSink {
                         .unwrap_or_default();
                     // Inherit the enclosing link context (e.g. <a><strong>bold link</strong></a>)
                     let parent_link = state.stack.last().and_then(|e| e.link.clone());
-                    let style = style_for_tag(tag_name, &parent_style);
-                    state
+                    let mut style = style_for_tag(tag_name, &parent_style);
+                    let mut span_color = None;
+                    let mut span_font_size_em = None;
+                    if let Some(style_attr) = find_attr(attrs, "style") {
+                        let parsed = parse_inline_style(&style_attr);
+                        style.bold |= parsed.inline.bold;
+                        style.italic |= parsed.inline.italic;
+                        style.underline |= parsed.inline.underline;
+                        style.strikethrough |= parsed.inline.strikethrough;
+                        style.monospaced |= parsed.inline.monospaced;
+                        span_color = parsed.color;
+                        span_font_size_em = parsed.font_size_em;
+                    }
+                    let mut entry = StackEntry::new_with_style(tag_name, style, parent_link);
+                    entry.span_color = span_color;
+                    entry.span_font_size_em = span_font_size_em;
+                    state.stack.push(entry);
+                    return TokenSinkResult::Continue;
+                }
+
+                // Handle <span> with style= as an inline-style element
+                if tag_name == "span" && find_attr(attrs, "style").is_some() {
+                    if let Some(parent) = state.stack.last_mut() {
+                        parent.flush_text();
+                    }
+                    let parent_style = state
                         .stack
-                        .push(StackEntry::new_with_style(tag_name, style, parent_link));
+                        .last()
+                        .map(|e| e.inline_style.clone())
+                        .unwrap_or_default();
+                    let parent_link = state.stack.last().and_then(|e| e.link.clone());
+                    let parsed = parse_inline_style(&find_attr(attrs, "style").unwrap());
+                    let mut style = parent_style;
+                    style.bold |= parsed.inline.bold;
+                    style.italic |= parsed.inline.italic;
+                    style.underline |= parsed.inline.underline;
+                    style.strikethrough |= parsed.inline.strikethrough;
+                    style.monospaced |= parsed.inline.monospaced;
+                    let mut entry = StackEntry::new_with_style("span", style, parent_link);
+                    entry.span_color = parsed.color;
+                    entry.span_font_size_em = parsed.font_size_em;
+                    state.stack.push(entry);
                     return TokenSinkResult::Continue;
                 }
 
@@ -365,7 +418,7 @@ impl TokenSink for ContentSink {
                 entry.element_id = find_attr(attrs, "id");
 
                 if let Some(style_attr) = find_attr(attrs, "style") {
-                    entry.block_style = parse_inline_style(&style_attr);
+                    entry.block_style = parse_inline_style(&style_attr).block;
                 }
 
                 if tag_name == "ol"
@@ -405,11 +458,16 @@ impl TokenSink for ContentSink {
                     return TokenSinkResult::Continue;
                 };
 
-                // Handle inline style and link tag end: promote spans to parent
-                if INLINE_STYLE_TAGS.contains(&tag_name) || tag_name == "a" {
+                // Handle inline style, link, and span tag end: promote spans to parent
+                if INLINE_STYLE_TAGS.contains(&tag_name) || tag_name == "a" || tag_name == "span" {
                     let mut entry = entry;
                     entry.flush_text();
                     if let Some(parent) = state.stack.last_mut() {
+                        // Flush parent's pending text so span ordering is preserved.
+                        // For inline-style/styled-span tags the parent was already
+                        // flushed at start-tag time (this is a no-op); for unstyled
+                        // <span> (generic start path) this is necessary.
+                        parent.flush_text();
                         parent.spans.extend(entry.spans);
                     }
                     return TokenSinkResult::Continue;
@@ -821,10 +879,26 @@ fn normalize_html_whitespace(text: &str, prev_ends_with_space: bool) -> String {
     result
 }
 
-/// Parse a `style="..."` attribute value into a `BlockStyle`.
+/// Result of parsing a `style="..."` attribute, containing both block-level
+/// and inline-level properties.
+struct ParsedStyle {
+    block: BlockStyle,
+    inline: InlineStyle,
+    /// Per-span color override (from `color:` property).
+    color: Option<[u8; 3]>,
+    /// Per-span font-size multiplier (from `font-size:` property).
+    font_size_em: Option<f32>,
+}
+
+/// Parse a `style="..."` attribute value into block-level and inline-level properties.
 /// Only a small subset of CSS properties is recognised; unknown properties are ignored.
-fn parse_inline_style(style_attr: &str) -> BlockStyle {
-    let mut result = BlockStyle::default();
+fn parse_inline_style(style_attr: &str) -> ParsedStyle {
+    let mut result = ParsedStyle {
+        block: BlockStyle::default(),
+        inline: InlineStyle::default(),
+        color: None,
+        font_size_em: None,
+    };
     for declaration in style_attr.split(';') {
         let declaration = declaration.trim();
         if declaration.is_empty() {
@@ -837,7 +911,7 @@ fn parse_inline_style(style_attr: &str) -> BlockStyle {
         let value = value.trim();
         match prop.as_str() {
             "text-align" => {
-                result.text_align = match value.to_ascii_lowercase().as_str() {
+                result.block.text_align = match value.to_ascii_lowercase().as_str() {
                     "center" => Some(TextAlign::Center),
                     "right" => Some(TextAlign::Right),
                     "left" => Some(TextAlign::Left),
@@ -845,16 +919,51 @@ fn parse_inline_style(style_attr: &str) -> BlockStyle {
                 };
             }
             "font-size" => {
-                result.font_size_em = parse_css_length_as_em(value);
+                let em = parse_css_length_as_em(value);
+                result.block.font_size_em = em;
+                result.font_size_em = em;
             }
             "color" => {
-                result.color = parse_css_color(value);
+                let c = parse_css_color(value);
+                result.block.color = c;
+                result.color = c;
             }
             "margin-top" => {
-                result.margin_top_em = parse_css_length_as_em(value);
+                result.block.margin_top_em = parse_css_length_as_em(value);
             }
             "margin-bottom" => {
-                result.margin_bottom_em = parse_css_length_as_em(value);
+                result.block.margin_bottom_em = parse_css_length_as_em(value);
+            }
+            "font-weight" => {
+                let v = value.to_ascii_lowercase();
+                if v == "bold" || v == "bolder" {
+                    result.inline.bold = true;
+                } else if let Ok(n) = v.parse::<u32>() {
+                    if n >= 700 {
+                        result.inline.bold = true;
+                    }
+                }
+            }
+            "font-style" => {
+                let v = value.to_ascii_lowercase();
+                if v == "italic" || v == "oblique" {
+                    result.inline.italic = true;
+                }
+            }
+            "text-decoration" => {
+                let v = value.to_ascii_lowercase();
+                if v.contains("underline") {
+                    result.inline.underline = true;
+                }
+                if v.contains("line-through") {
+                    result.inline.strikethrough = true;
+                }
+            }
+            "font-family" => {
+                let v = value.to_ascii_lowercase();
+                if v.contains("monospace") || v.contains("courier") || v.contains("consolas") {
+                    result.inline.monospaced = true;
+                }
             }
             _ => {}
         }
@@ -1717,13 +1826,13 @@ mod tests {
     #[test]
     fn inline_style_text_align_center() {
         let s = parse_inline_style("text-align: center");
-        assert_eq!(s.text_align, Some(TextAlign::Center));
+        assert_eq!(s.block.text_align, Some(TextAlign::Center));
     }
 
     #[test]
     fn inline_style_text_align_right() {
         let s = parse_inline_style("text-align:right");
-        assert_eq!(s.text_align, Some(TextAlign::Right));
+        assert_eq!(s.block.text_align, Some(TextAlign::Right));
     }
 
     #[test]
@@ -1741,7 +1850,7 @@ mod tests {
     #[test]
     fn inline_style_multiple_properties() {
         let s = parse_inline_style("text-align:center; font-size:1.2em; color:#ff0000");
-        assert_eq!(s.text_align, Some(TextAlign::Center));
+        assert_eq!(s.block.text_align, Some(TextAlign::Center));
         assert_eq!(s.font_size_em, Some(1.2));
         assert_eq!(s.color, Some([255, 0, 0]));
     }
@@ -1749,7 +1858,7 @@ mod tests {
     #[test]
     fn inline_style_unknown_property_ignored() {
         let s = parse_inline_style("display:block; text-align:center");
-        assert_eq!(s.text_align, Some(TextAlign::Center));
+        assert_eq!(s.block.text_align, Some(TextAlign::Center));
         assert_eq!(s.font_size_em, None);
     }
 
@@ -1789,5 +1898,159 @@ mod tests {
             }
             other => panic!("expected Paragraph, got {other:?}"),
         }
+    }
+
+    // --- Span-level style= attribute tests ---
+
+    #[test]
+    fn span_style_font_weight_bold() {
+        let blocks = parse(r#"<p>normal <span style="font-weight:bold">bold</span> normal</p>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, spans, .. } => {
+                assert_eq!(text, "normal bold normal");
+                assert_eq!(spans.len(), 3);
+                assert!(!spans[0].style.bold);
+                assert!(
+                    spans[1].style.bold,
+                    "span with font-weight:bold must be bold"
+                );
+                assert!(!spans[2].style.bold);
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn span_style_font_style_italic() {
+        let blocks = parse(r#"<p><span style="font-style:italic">ital</span></p>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                assert!(spans[0].style.italic);
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn span_style_text_decoration_underline() {
+        let blocks = parse(r#"<p><span style="text-decoration:underline">u</span></p>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                assert!(spans[0].style.underline);
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn span_style_text_decoration_line_through() {
+        let blocks = parse(r#"<p><span style="text-decoration:line-through">s</span></p>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                assert!(spans[0].style.strikethrough);
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn span_style_color() {
+        let blocks = parse(r#"<p><span style="color:#ff0000">red</span></p>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                assert_eq!(spans[0].color, Some([255, 0, 0]));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn span_style_font_size() {
+        let blocks = parse(r#"<p><span style="font-size:1.5em">big</span></p>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                assert_eq!(spans[0].font_size_em, Some(1.5));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn span_style_combined() {
+        let blocks = parse(
+            r#"<p><span style="font-weight:bold;font-style:italic;color:#00ff00">styled</span></p>"#,
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                assert!(spans[0].style.bold);
+                assert!(spans[0].style.italic);
+                assert_eq!(spans[0].color, Some([0, 255, 0]));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn em_style_override() {
+        // <em> gives italic from the tag; style= adds underline
+        let blocks = parse(r#"<p><em style="text-decoration:underline">both</em></p>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                assert!(spans[0].style.italic, "italic from <em> tag");
+                assert!(spans[0].style.underline, "underline from style=");
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unstyled_span_still_transparent() {
+        // Plain <span> without style= should produce a single span, no extra boundary
+        let blocks = parse("<p><span>text</span></p>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, spans, .. } => {
+                assert_eq!(text, "text");
+                assert_eq!(spans.len(), 1);
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn span_style_in_pre_preserves_whitespace() {
+        let blocks = parse(r#"<pre>  <span style="color:#ff0000">red code</span>  more</pre>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Preformatted { text, spans, .. } => {
+                assert_eq!(text, "  red code  more");
+                // The styled span should carry the color
+                let red_span = spans.iter().find(|s| s.text == "red code").unwrap();
+                assert_eq!(red_span.color, Some([255, 0, 0]));
+            }
+            other => panic!("expected Preformatted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_inline_style_font_weight_numeric() {
+        let s = parse_inline_style("font-weight: 700");
+        assert!(s.inline.bold, "font-weight:700 should be bold");
+        let s = parse_inline_style("font-weight: 400");
+        assert!(!s.inline.bold, "font-weight:400 should not be bold");
+    }
+
+    #[test]
+    fn parse_inline_style_font_family_monospace() {
+        let s = parse_inline_style("font-family: 'Courier New', monospace");
+        assert!(s.inline.monospaced);
     }
 }
