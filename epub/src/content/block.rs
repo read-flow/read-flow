@@ -28,7 +28,7 @@ pub enum TextAlign {
     Right,
 }
 
-/// Block-level style properties extracted from a `style="..."` attribute.
+/// Block-level style properties extracted from a `style="..."` attribute or CSS stylesheet.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BlockStyle {
     pub text_align: Option<TextAlign>,
@@ -40,6 +40,19 @@ pub struct BlockStyle {
     pub margin_top_em: Option<f32>,
     /// Bottom margin as em multiplier.
     pub margin_bottom_em: Option<f32>,
+}
+
+impl BlockStyle {
+    /// Merge `other` on top of `self`: values present in `other` override `self`.
+    pub fn merge(self, other: BlockStyle) -> BlockStyle {
+        BlockStyle {
+            text_align: other.text_align.or(self.text_align),
+            font_size_em: other.font_size_em.or(self.font_size_em),
+            color: other.color.or(self.color),
+            margin_top_em: other.margin_top_em.or(self.margin_top_em),
+            margin_bottom_em: other.margin_bottom_em.or(self.margin_bottom_em),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

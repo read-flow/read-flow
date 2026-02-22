@@ -30,6 +30,7 @@ use epub::BlockStyle;
 use epub::ContentBlock;
 use epub::Document as EpubDocumentTrait;
 use epub::EpubDocument;
+use epub::StyleSheet;
 use epub::TableCell;
 use epub::TextAlign;
 use epub::TextSpan;
@@ -1103,15 +1104,17 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
             Ok(data) => {
                 let href = &item.href;
                 let raw = String::from_utf8_lossy(&data).into_owned();
-                let blocks = epub::content::parse_xhtml(&data, href, &mut |img_path| match doc
-                    .resolve_resource(img_path)
-                {
-                    Ok(img_data) => {
-                        let media_type = epub::content::guess_media_type(img_path);
-                        Some((img_data, media_type))
-                    }
-                    Err(_) => None,
-                });
+                let stylesheet = load_chapter_stylesheets(&raw, href, &doc);
+                let blocks =
+                    epub::content::parse_xhtml(&data, href, &stylesheet, &mut |img_path| match doc
+                        .resolve_resource(img_path)
+                    {
+                        Ok(img_data) => {
+                            let media_type = epub::content::guess_media_type(img_path);
+                            Some((img_data, media_type))
+                        }
+                        Err(_) => None,
+                    });
                 (blocks, raw)
             }
             Err(e) => {
@@ -1131,6 +1134,72 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
     }
 
     (title, chapters)
+}
+
+/// Extract `<link rel="stylesheet" href="...">` references from XHTML and load
+/// the stylesheets from the EPUB archive. Returns a merged `StyleSheet`.
+fn load_chapter_stylesheets(xhtml: &str, chapter_href: &str, doc: &EpubDocument) -> StyleSheet {
+    let mut stylesheet = StyleSheet::empty();
+    let base = epub::content::base_dir(chapter_href);
+
+    // Simple scan for <link> tags in the <head> — no need for a full parser.
+    // Look for patterns like: <link rel="stylesheet" href="..." />
+    for segment in xhtml.split("<link") {
+        // Must be in a tag context (i.e. followed by attributes and '>'),
+        // and must have rel="stylesheet".
+        let Some(end) = segment.find('>') else {
+            continue;
+        };
+        let tag_content = &segment[..end];
+        let lower = tag_content.to_ascii_lowercase();
+        if !lower.contains("stylesheet") {
+            continue;
+        }
+        // Extract href value
+        let href = extract_attr_value(tag_content, "href");
+        let Some(href) = href else { continue };
+
+        let resolved = epub::content::resolve_href(base, href);
+        match doc.resolve_resource(&resolved) {
+            Ok(css_data) => {
+                let css_text = String::from_utf8_lossy(&css_data);
+                let sheet = epub::content::parse_css(&css_text);
+                stylesheet.merge(sheet);
+            }
+            Err(e) => {
+                tracing::debug!("failed to load stylesheet {resolved}: {e}");
+            }
+        }
+    }
+
+    stylesheet
+}
+
+/// Extract the value of an HTML attribute from a tag fragment.
+/// Handles both single and double-quoted values.
+fn extract_attr_value<'a>(tag_content: &'a str, attr_name: &str) -> Option<&'a str> {
+    // Find the attribute name (case-insensitive)
+    let lower = tag_content.to_ascii_lowercase();
+    let attr_pos = lower.find(attr_name)?;
+    let rest = &tag_content[attr_pos + attr_name.len()..];
+    // Skip whitespace and '='
+    let rest = rest.trim_start();
+    let rest = rest.strip_prefix('=')?;
+    let rest = rest.trim_start();
+    // Extract quoted value
+    if let Some(rest) = rest.strip_prefix('"') {
+        let end = rest.find('"')?;
+        Some(&rest[..end])
+    } else if let Some(rest) = rest.strip_prefix('\'') {
+        let end = rest.find('\'')?;
+        Some(&rest[..end])
+    } else {
+        // Unquoted value (up to whitespace or >)
+        let end = rest
+            .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
+            .unwrap_or(rest.len());
+        if end > 0 { Some(&rest[..end]) } else { None }
+    }
 }
 
 /// Estimate the rendered height of a block in pixels.

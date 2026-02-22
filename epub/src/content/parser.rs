@@ -19,6 +19,7 @@ use super::block::TextSpan;
 use super::resolve::base_dir;
 use super::resolve::guess_media_type;
 use super::resolve::resolve_href;
+use super::stylesheet::StyleSheet;
 
 /// An element on the parsing stack.
 struct StackEntry {
@@ -130,6 +131,8 @@ struct SinkState {
     pending_images: Vec<(usize, PendingImage)>,
     /// Counter for placeholder images inserted into the output.
     image_counter: usize,
+    /// CSS stylesheet for class-based styling.
+    stylesheet: StyleSheet,
 }
 
 /// Token sink that builds `Vec<ContentBlock>` from XHTML tokens.
@@ -138,7 +141,7 @@ struct ContentSink {
 }
 
 impl ContentSink {
-    fn new(base_href: &str) -> Self {
+    fn new(base_href: &str, stylesheet: StyleSheet) -> Self {
         ContentSink {
             state: RefCell::new(SinkState {
                 stack: vec![StackEntry::new("root")],
@@ -147,6 +150,7 @@ impl ContentSink {
                 base_href: base_href.to_string(),
                 pending_images: Vec::new(),
                 image_counter: 0,
+                stylesheet,
             }),
         }
     }
@@ -369,8 +373,17 @@ impl TokenSink for ContentSink {
                     // Inherit the enclosing link context (e.g. <a><strong>bold link</strong></a>)
                     let parent_link = state.stack.last().and_then(|e| e.link.clone());
                     let mut style = style_for_tag(tag_name, &parent_style);
-                    let mut span_color = None;
-                    let mut span_font_size_em = None;
+                    // Apply stylesheet styles from class
+                    let class_attr = find_attr(attrs, "class").unwrap_or_default();
+                    let css_resolved = state.stylesheet.resolve(tag_name, &class_attr);
+                    style.bold |= css_resolved.inline.bold;
+                    style.italic |= css_resolved.inline.italic;
+                    style.underline |= css_resolved.inline.underline;
+                    style.strikethrough |= css_resolved.inline.strikethrough;
+                    style.monospaced |= css_resolved.inline.monospaced;
+                    let mut span_color = css_resolved.color;
+                    let mut span_font_size_em = css_resolved.font_size_em;
+                    // Inline style= overrides stylesheet
                     if let Some(style_attr) = find_attr(attrs, "style") {
                         let parsed = parse_inline_style(&style_attr);
                         style.bold |= parsed.inline.bold;
@@ -378,8 +391,12 @@ impl TokenSink for ContentSink {
                         style.underline |= parsed.inline.underline;
                         style.strikethrough |= parsed.inline.strikethrough;
                         style.monospaced |= parsed.inline.monospaced;
-                        span_color = parsed.color;
-                        span_font_size_em = parsed.font_size_em;
+                        if parsed.color.is_some() {
+                            span_color = parsed.color;
+                        }
+                        if parsed.font_size_em.is_some() {
+                            span_font_size_em = parsed.font_size_em;
+                        }
                     }
                     let mut entry = StackEntry::new_with_style(tag_name, style, parent_link);
                     entry.span_color = span_color;
@@ -388,37 +405,67 @@ impl TokenSink for ContentSink {
                     return TokenSinkResult::Continue;
                 }
 
-                // Handle <span> with style= as an inline-style element
-                if tag_name == "span" && find_attr(attrs, "style").is_some() {
-                    if let Some(parent) = state.stack.last_mut() {
-                        parent.flush_text();
+                // Handle <span> with style= or class-based styling as an inline-style element
+                if tag_name == "span" {
+                    let style_attr = find_attr(attrs, "style");
+                    let class_attr = find_attr(attrs, "class").unwrap_or_default();
+                    let css_resolved = state.stylesheet.resolve("span", &class_attr);
+                    let has_style = style_attr.is_some();
+                    let has_css = css_resolved.inline != InlineStyle::default()
+                        || css_resolved.color.is_some()
+                        || css_resolved.font_size_em.is_some();
+                    if has_style || has_css {
+                        if let Some(parent) = state.stack.last_mut() {
+                            parent.flush_text();
+                        }
+                        let parent_style = state
+                            .stack
+                            .last()
+                            .map(|e| e.inline_style.clone())
+                            .unwrap_or_default();
+                        let parent_link = state.stack.last().and_then(|e| e.link.clone());
+                        // Start with parent, merge CSS, then merge inline style= (inline wins)
+                        let mut style = parent_style;
+                        style.bold |= css_resolved.inline.bold;
+                        style.italic |= css_resolved.inline.italic;
+                        style.underline |= css_resolved.inline.underline;
+                        style.strikethrough |= css_resolved.inline.strikethrough;
+                        style.monospaced |= css_resolved.inline.monospaced;
+                        let mut span_color = css_resolved.color;
+                        let mut span_font_size_em = css_resolved.font_size_em;
+                        if let Some(ref sa) = style_attr {
+                            let parsed = parse_inline_style(sa);
+                            style.bold |= parsed.inline.bold;
+                            style.italic |= parsed.inline.italic;
+                            style.underline |= parsed.inline.underline;
+                            style.strikethrough |= parsed.inline.strikethrough;
+                            style.monospaced |= parsed.inline.monospaced;
+                            if parsed.color.is_some() {
+                                span_color = parsed.color;
+                            }
+                            if parsed.font_size_em.is_some() {
+                                span_font_size_em = parsed.font_size_em;
+                            }
+                        }
+                        let mut entry = StackEntry::new_with_style("span", style, parent_link);
+                        entry.span_color = span_color;
+                        entry.span_font_size_em = span_font_size_em;
+                        state.stack.push(entry);
+                        return TokenSinkResult::Continue;
                     }
-                    let parent_style = state
-                        .stack
-                        .last()
-                        .map(|e| e.inline_style.clone())
-                        .unwrap_or_default();
-                    let parent_link = state.stack.last().and_then(|e| e.link.clone());
-                    let parsed = parse_inline_style(&find_attr(attrs, "style").unwrap());
-                    let mut style = parent_style;
-                    style.bold |= parsed.inline.bold;
-                    style.italic |= parsed.inline.italic;
-                    style.underline |= parsed.inline.underline;
-                    style.strikethrough |= parsed.inline.strikethrough;
-                    style.monospaced |= parsed.inline.monospaced;
-                    let mut entry = StackEntry::new_with_style("span", style, parent_link);
-                    entry.span_color = parsed.color;
-                    entry.span_font_size_em = parsed.font_size_em;
-                    state.stack.push(entry);
-                    return TokenSinkResult::Continue;
                 }
 
                 let mut entry = StackEntry::new(tag_name);
 
                 entry.element_id = find_attr(attrs, "id");
 
+                // Resolve stylesheet styles from class, then merge inline style= on top
+                let class_attr = find_attr(attrs, "class").unwrap_or_default();
+                let css_resolved = state.stylesheet.resolve(tag_name, &class_attr);
+                entry.block_style = css_resolved.block;
                 if let Some(style_attr) = find_attr(attrs, "style") {
-                    entry.block_style = parse_inline_style(&style_attr).block;
+                    let inline = parse_inline_style(&style_attr).block;
+                    entry.block_style = entry.block_style.merge(inline);
                 }
 
                 if tag_name == "ol"
@@ -879,15 +926,23 @@ fn normalize_html_whitespace(text: &str, prev_ends_with_space: bool) -> String {
     result
 }
 
-/// Result of parsing a `style="..."` attribute, containing both block-level
-/// and inline-level properties.
-struct ParsedStyle {
-    block: BlockStyle,
-    inline: InlineStyle,
+/// Result of parsing a `style="..."` attribute or CSS declaration block,
+/// containing both block-level and inline-level properties.
+pub(super) struct ParsedStyle {
+    pub(super) block: BlockStyle,
+    pub(super) inline: InlineStyle,
     /// Per-span color override (from `color:` property).
-    color: Option<[u8; 3]>,
+    pub(super) color: Option<[u8; 3]>,
     /// Per-span font-size multiplier (from `font-size:` property).
-    font_size_em: Option<f32>,
+    pub(super) font_size_em: Option<f32>,
+}
+
+/// Parse CSS declarations (from a `style="..."` attribute or a CSS rule body)
+/// into block-level and inline-level properties.
+///
+/// Exposed as `pub(super)` so the stylesheet module can reuse the same property parsing.
+pub(super) fn parse_css_declarations(style_attr: &str) -> ParsedStyle {
+    parse_inline_style(style_attr)
 }
 
 /// Parse a `style="..."` attribute value into block-level and inline-level properties.
@@ -938,10 +993,10 @@ fn parse_inline_style(style_attr: &str) -> ParsedStyle {
                 let v = value.to_ascii_lowercase();
                 if v == "bold" || v == "bolder" {
                     result.inline.bold = true;
-                } else if let Ok(n) = v.parse::<u32>() {
-                    if n >= 700 {
-                        result.inline.bold = true;
-                    }
+                } else if let Ok(n) = v.parse::<u32>()
+                    && n >= 700
+                {
+                    result.inline.bold = true;
                 }
             }
             "font-style" => {
@@ -1062,15 +1117,21 @@ fn trim_spans(mut spans: Vec<TextSpan>) -> Vec<TextSpan> {
 /// - `xhtml`: raw XHTML bytes
 /// - `chapter_href`: the zip path of this chapter (e.g. `"OEBPS/Text/ch1.xhtml"`),
 ///   used to resolve relative image paths
+/// - `stylesheet`: CSS stylesheet for class-based styling
 /// - `resolve_image`: callback that takes a resolved zip path and returns
 ///   `(data, media_type)` or `None` if the resource can't be found
-pub fn parse_xhtml<F>(xhtml: &[u8], chapter_href: &str, resolve_image: &mut F) -> Vec<ContentBlock>
+pub fn parse_xhtml<F>(
+    xhtml: &[u8],
+    chapter_href: &str,
+    stylesheet: &StyleSheet,
+    resolve_image: &mut F,
+) -> Vec<ContentBlock>
 where
     F: FnMut(&str) -> Option<(Vec<u8>, String)>,
 {
     let html_str = String::from_utf8_lossy(xhtml);
 
-    let sink = ContentSink::new(chapter_href);
+    let sink = ContentSink::new(chapter_href, stylesheet.clone());
 
     let tokenizer = Tokenizer::new(sink, TokenizerOpts::default());
 
@@ -1143,7 +1204,12 @@ mod tests {
     use super::*;
 
     fn parse(html: &str) -> Vec<ContentBlock> {
-        parse_xhtml(html.as_bytes(), "OEBPS/Text/ch1.xhtml", &mut |_| None)
+        parse_xhtml(
+            html.as_bytes(),
+            "OEBPS/Text/ch1.xhtml",
+            &StyleSheet::empty(),
+            &mut |_| None,
+        )
     }
 
     #[test]
@@ -1359,6 +1425,7 @@ mod tests {
         let blocks = parse_xhtml(
             b"<img src=\"../Images/cover.png\" alt=\"Cover\"/>",
             "OEBPS/Text/ch1.xhtml",
+            &StyleSheet::empty(),
             &mut move |path| {
                 if path == "OEBPS/Images/cover.png" {
                     Some((data_clone.clone(), "image/png".to_string()))
@@ -2052,5 +2119,178 @@ mod tests {
     fn parse_inline_style_font_family_monospace() {
         let s = parse_inline_style("font-family: 'Courier New', monospace");
         assert!(s.inline.monospaced);
+    }
+
+    // --- Stylesheet integration tests ---
+
+    use crate::content::parse_css;
+
+    fn parse_with_css(html: &str, css: &str) -> Vec<ContentBlock> {
+        let sheet = parse_css(css);
+        parse_xhtml(html.as_bytes(), "OEBPS/Text/ch1.xhtml", &sheet, &mut |_| {
+            None
+        })
+    }
+
+    #[test]
+    fn stylesheet_class_applies_text_align() {
+        let blocks = parse_with_css(
+            r#"<p class="verse">text</p>"#,
+            ".verse { text-align: center; }",
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { style, .. } => {
+                assert_eq!(style.text_align, Some(TextAlign::Center));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stylesheet_tag_applies_style() {
+        let blocks = parse_with_css("<p>text</p>", "p { text-align: center; }");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { style, .. } => {
+                assert_eq!(style.text_align, Some(TextAlign::Center));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stylesheet_tag_and_class_applies_style() {
+        let blocks = parse_with_css(
+            r#"<p class="indent">text</p>"#,
+            "p.indent { margin-top: 0.5em; }",
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { style, .. } => {
+                assert_eq!(style.margin_top_em, Some(0.5));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn inline_style_overrides_stylesheet() {
+        let blocks = parse_with_css(
+            r#"<p class="verse" style="text-align:left">text</p>"#,
+            ".verse { text-align: center; }",
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { style, .. } => {
+                assert_eq!(
+                    style.text_align,
+                    Some(TextAlign::Left),
+                    "inline style= must override stylesheet"
+                );
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stylesheet_justify_falls_back_to_left() {
+        let blocks = parse_with_css("<p>text</p>", "p { text-align: justify; }");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { style, .. } => {
+                assert_eq!(style.text_align, Some(TextAlign::Left));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stylesheet_span_class_applies_inline_style() {
+        let blocks = parse_with_css(
+            r#"<p><span class="bold">text</span></p>"#,
+            ".bold { font-weight: bold; }",
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                assert!(
+                    spans[0].style.bold,
+                    "stylesheet .bold should make span bold"
+                );
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stylesheet_heading_applies_style() {
+        let blocks = parse_with_css(
+            r#"<h1 class="chapter-heading">Title</h1>"#,
+            ".chapter-heading { text-align: center; }",
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Heading { style, .. } => {
+                assert_eq!(style.text_align, Some(TextAlign::Center));
+            }
+            other => panic!("expected Heading, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_stylesheet_identical_to_no_stylesheet() {
+        let with_empty = parse_with_css("<p>text</p>", "");
+        let without = parse("<p>text</p>");
+        assert_eq!(with_empty.len(), without.len());
+        match (&with_empty[0], &without[0]) {
+            (
+                ContentBlock::Paragraph {
+                    text: t1,
+                    style: s1,
+                    ..
+                },
+                ContentBlock::Paragraph {
+                    text: t2,
+                    style: s2,
+                    ..
+                },
+            ) => {
+                assert_eq!(t1, t2);
+                assert_eq!(s1, s2);
+            }
+            _ => panic!("expected matching Paragraphs"),
+        }
+    }
+
+    #[test]
+    fn stylesheet_span_color() {
+        let blocks = parse_with_css(
+            r#"<p><span class="red">text</span></p>"#,
+            ".red { color: #ff0000; }",
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                assert_eq!(spans[0].color, Some([255, 0, 0]));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stylesheet_inline_tag_with_class() {
+        let blocks = parse_with_css(
+            r#"<p><em class="special">text</em></p>"#,
+            ".special { text-decoration: underline; }",
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { spans, .. } => {
+                assert!(spans[0].style.italic, "italic from <em> tag");
+                assert!(spans[0].style.underline, "underline from stylesheet class");
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
     }
 }
