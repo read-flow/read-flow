@@ -251,6 +251,7 @@ pdf-viewer-shortcut-close-search = Zoeken sluiten
 pdf-viewer-show-thumbnails = Toon thumbnails
 
 # EPUB viewer
+epub-viewer = EPUB weergave
 epub-viewer-back = Terug
 epub-viewer-loading = EPUB laden...
 epub-viewer-no-local-source = Geen lokale bron beschikbaar voor dit document

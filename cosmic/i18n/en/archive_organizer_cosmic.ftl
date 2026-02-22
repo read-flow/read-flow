@@ -229,6 +229,7 @@ pdf-viewer-shortcut-close-search = Close search
 pdf-viewer-show-thumbnails = Show thumbnails
 
 # EPUB viewer
+epub-viewer = EPUB viewer
 epub-viewer-back = Back
 epub-viewer-loading = Loading EPUB...
 epub-viewer-no-local-source = No local source available for this document

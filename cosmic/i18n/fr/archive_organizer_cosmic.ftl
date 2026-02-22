@@ -250,6 +250,7 @@ pdf-viewer-shortcut-close-search = Fermer la recherche
 pdf-viewer-show-thumbnails = Show thumbnails # TODO
 
 # EPUB viewer
+epub-viewer = EPUB viewer
 epub-viewer-back = Retour
 epub-viewer-loading = Chargement de l'EPUB...
 epub-viewer-no-local-source = Aucune source locale disponible pour ce document

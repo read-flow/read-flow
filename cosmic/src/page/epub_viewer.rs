@@ -671,20 +671,25 @@ impl Page for EpubViewer {
     }
 
     fn view_context(&self) -> ContextView<'_, EpubViewerMessage> {
-        let mut display_section = widget::settings::section()
-            .title(fl!("epub-viewer-display"))
-            .add(
-                widget::settings::item::builder(fl!("epub-viewer-view-paginated")).toggler(
-                    self.view_mode == ViewMode::Paginated,
-                    |enabled| {
-                        EpubViewerMessage::SetViewMode(if enabled {
-                            ViewMode::Paginated
-                        } else {
-                            ViewMode::Scroll
-                        })
-                    },
-                ),
-            );
+        let mut display_section = widget::settings::section().title(fl!("epub-viewer-display"));
+
+        display_section = display_section.add(
+            widget::settings::item::builder(fl!("epub-viewer-show-sidebar"))
+                .toggler(self.show_sidebar, EpubViewerMessage::ShowSidebar),
+        );
+
+        display_section = display_section.add(
+            widget::settings::item::builder(fl!("epub-viewer-view-paginated")).toggler(
+                self.view_mode == ViewMode::Paginated,
+                |enabled| {
+                    EpubViewerMessage::SetViewMode(if enabled {
+                        ViewMode::Paginated
+                    } else {
+                        ViewMode::Scroll
+                    })
+                },
+            ),
+        );
 
         if self.view_mode == ViewMode::Paginated {
             display_section = display_section.add(
@@ -730,11 +735,6 @@ impl Page for EpubViewer {
                 ),
             );
         }
-
-        display_section = display_section.add(
-            widget::settings::item::builder(fl!("epub-viewer-show-sidebar"))
-                .toggler(self.show_sidebar, EpubViewerMessage::ShowSidebar),
-        );
 
         let width_pct = self.content_width_pct.round() as u32;
         display_section = display_section.add(
@@ -790,7 +790,7 @@ impl Page for EpubViewer {
         };
 
         ContextView {
-            title: self.display_name(),
+            title: fl!("epub-viewer"),
             content: widget::settings::view_column(vec![
                 display_section.into(),
                 shortcuts_section.into(),
