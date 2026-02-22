@@ -207,7 +207,7 @@ impl PdfViewer {
             zoom_scroll: 0.0,
             theme_colors: false,
             show_thumbnails: true,
-            dual_pane: false,
+            dual_pane: true,
             thumbnail_scroll_id: widget::Id::unique(),
             thumbnail_viewport: None,
         };

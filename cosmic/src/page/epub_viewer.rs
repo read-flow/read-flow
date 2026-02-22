@@ -52,8 +52,8 @@ const CHAPTER_SIDEBAR_WIDTH: f32 = 220.0;
 /// Which reading mode the viewer uses.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum ViewMode {
-    #[default]
     Scroll,
+    #[default]
     Paginated,
 }
 
@@ -216,7 +216,7 @@ impl EpubViewer {
             dual_page: DualPageMode::default(),
             page_height_fraction: 1.0,
             pending_block_index: None,
-            show_sidebar: true,
+            show_sidebar: false,
             content_width_pct: 100.0,
         };
 
