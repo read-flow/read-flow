@@ -228,6 +228,7 @@ settings-server-download-folder-description = Spécifie le dossier où les fichi
 settings-scan-dry-run-description = Si vrai, n'apportera pas de modifications à la base de données
 
 # PDF viewer
+pdf-viewer = PDF viewer
 pdf-viewer-back = Retour
 pdf-viewer-dual-pane = Dual pane layout
 pdf-viewer-loading = Chargement du PDF...

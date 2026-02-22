@@ -229,6 +229,7 @@ settings-server-download-folder-description = Specificeert de map waar gedownloa
 settings-scan-dry-run-description = Indien ingeschakeld, worden er geen wijzigingen aangebracht in de database
 
 # PDF viewer
+pdf-viewer = PDF weergave
 pdf-viewer-back = Terug
 pdf-viewer-dual-pane = Twee panelen
 pdf-viewer-loading = PDF laden...

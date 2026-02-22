@@ -207,6 +207,7 @@ settings-server-download-folder-description = Specifies the folder where downloa
 settings-scan-dry-run-description = If true, will not make changes to the database
 
 # PDF viewer
+pdf-viewer = PDF viewer
 pdf-viewer-back = Back
 pdf-viewer-dual-pane = Dual pane layout
 pdf-viewer-loading = Loading PDF...

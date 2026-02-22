@@ -709,7 +709,7 @@ impl Page for PdfViewer {
             ));
 
         ContextView {
-            title: self.display_name(),
+            title: fl!("pdf-viewer"),
             content: widget::settings::view_column(vec![
                 zoom_section.into(),
                 shortcuts_section.into(),
