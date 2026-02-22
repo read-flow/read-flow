@@ -7,6 +7,7 @@ mod component;
 mod config;
 mod cosmic_ext;
 mod document_provider;
+mod fonts;
 mod forms;
 mod i18n;
 mod iter;

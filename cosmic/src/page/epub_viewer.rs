@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::fmt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -41,6 +42,7 @@ use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
+use crate::fonts::fonts;
 use crate::page::Page;
 
 type Fingerprint = String;
@@ -88,24 +90,37 @@ pub(crate) enum DualPageMode {
 /// Font family for rendering EPUB content.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum FontFamily {
-    #[default]
     SansSerif,
+    #[default]
     Serif,
     Monospace,
+    Named(&'static str),
+}
+
+impl fmt::Display for FontFamily {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.label())
+    }
 }
 
 impl FontFamily {
-    const ALL: [FontFamily; 3] = [
-        FontFamily::SansSerif,
-        FontFamily::Serif,
-        FontFamily::Monospace,
-    ];
+    fn all() -> Vec<FontFamily> {
+        [
+            FontFamily::SansSerif,
+            FontFamily::Serif,
+            FontFamily::Monospace,
+        ]
+        .into_iter()
+        .chain(fonts().into_iter().map(FontFamily::Named))
+        .collect()
+    }
 
     fn to_family(self) -> font::Family {
         match self {
             FontFamily::SansSerif => font::Family::SansSerif,
             FontFamily::Serif => font::Family::Serif,
             FontFamily::Monospace => font::Family::Monospace,
+            FontFamily::Named(name) => font::Family::Name(name),
         }
     }
 
@@ -114,6 +129,7 @@ impl FontFamily {
             FontFamily::SansSerif => "Sans Serif",
             FontFamily::Serif => "Serif",
             FontFamily::Monospace => "Monospace",
+            FontFamily::Named(name) => name,
         }
     }
 }
@@ -174,7 +190,7 @@ pub enum EpubViewerMessage {
     /// Set content column max-width as a percentage of the default (50..=150).
     SetContentMaxWidth(f32),
     /// Set the font family for rendering (index into FontFamily::ALL).
-    SetFontFamily(usize),
+    SetFontFamily(FontFamily),
     Out(EpubViewerOutput),
 }
 
@@ -221,7 +237,7 @@ pub struct EpubViewer {
     /// Font family used for rendering EPUB content.
     font_family: FontFamily,
     /// Pre-computed display names for the font family dropdown.
-    font_family_names: Vec<String>,
+    font_family_names: widget::combo_box::State<FontFamily>,
 }
 
 impl EpubViewer {
@@ -258,10 +274,7 @@ impl EpubViewer {
             show_sidebar: false,
             content_width_pct: 100.0,
             font_family: FontFamily::default(),
-            font_family_names: FontFamily::ALL
-                .iter()
-                .map(|f| f.label().to_string())
-                .collect(),
+            font_family_names: widget::combo_box::State::new(FontFamily::all()),
         };
 
         let mut tasks = Vec::new();
@@ -739,9 +752,10 @@ impl Page for EpubViewer {
         );
 
         display_section = display_section.add(
-            widget::settings::item::builder(fl!("epub-viewer-font")).control(widget::dropdown(
+            widget::settings::item::builder(fl!("epub-viewer-font")).control(widget::combo_box(
                 &self.font_family_names,
-                Some(self.font_family as usize),
+                &fl!("epub-viewer-font"),
+                Some(&self.font_family),
                 EpubViewerMessage::SetFontFamily,
             )),
         );
@@ -1038,12 +1052,10 @@ impl Page for EpubViewer {
                 self.maybe_repaginate();
                 Task::none()
             }
-            EpubViewerMessage::SetFontFamily(idx) => {
-                if let Some(&family) = FontFamily::ALL.get(idx) {
-                    self.font_family = family;
-                    self.pagination_cache.clear();
-                    self.maybe_repaginate();
-                }
+            EpubViewerMessage::SetFontFamily(family) => {
+                self.font_family = family;
+                self.pagination_cache.clear();
+                self.maybe_repaginate();
                 Task::none()
             }
             EpubViewerMessage::ModifiersChanged(modifiers) => {
