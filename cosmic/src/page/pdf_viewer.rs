@@ -35,6 +35,15 @@ type Fingerprint = String;
 
 const THUMBNAIL_WIDTH: u16 = 128;
 
+/// Whether to display two pages side by side.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum DualPageMode {
+    #[default]
+    Auto,
+    Off,
+    On,
+}
+
 // --- Core types extracted from cosmic-reader ---
 
 #[derive(Clone, Debug)]
@@ -133,7 +142,7 @@ pub enum PdfViewerMessage {
     // UI settings
     ThemeColors(bool),
     ShowThumbnails(bool),
-    DualPane(bool),
+    DualPane(DualPageMode),
 
     // Search
     SearchActivate,
@@ -169,7 +178,10 @@ pub struct PdfViewer {
     zoom_scroll: f32,
     theme_colors: bool,
     show_thumbnails: bool,
-    dual_pane: bool,
+    dual_pane: DualPageMode,
+    /// Most recently observed content viewport dimensions, set from the
+    /// `responsive` closure in `view_content` (via Cell, since `view()` takes `&self`).
+    viewport_size: Cell<(f32, f32)>,
 
     // Thumbnail panel state
     thumbnail_scroll_id: widget::Id,
@@ -207,7 +219,8 @@ impl PdfViewer {
             zoom_scroll: 0.0,
             theme_colors: false,
             show_thumbnails: true,
-            dual_pane: true,
+            dual_pane: DualPageMode::default(),
+            viewport_size: Cell::new((0.0, 0.0)),
             thumbnail_scroll_id: widget::Id::unique(),
             thumbnail_viewport: None,
         };
@@ -332,19 +345,32 @@ impl PdfViewer {
     }
 
     fn view_content(&self) -> Element<'_, PdfViewerMessage> {
-        if self.dual_pane {
-            let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+        widget::responsive(move |size| {
+            self.viewport_size.set((size.width, size.height));
+            let dual = self.should_dual_pane(size.width);
+            if dual {
+                let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+                let first_page = (self.active_page / 2) * 2;
+                vec![
+                    self.view_pdf_page(first_page),
+                    self.view_pdf_page(first_page + 1),
+                ]
+                .apply(widget::Row::with_children)
+                .spacing(space_xxs)
+                .into()
+            } else {
+                self.view_pdf_page(self.active_page)
+            }
+        })
+        .into()
+    }
 
-            let first_page = (self.active_page / 2) * 2;
-            vec![
-                self.view_pdf_page(first_page),
-                self.view_pdf_page(first_page + 1),
-            ]
-            .apply(widget::Row::with_children)
-            .spacing(space_xxs)
-            .into()
-        } else {
-            self.view_pdf_page(self.active_page)
+    /// Whether dual-page display should be active at the given viewport width.
+    fn should_dual_pane(&self, viewport_width: f32) -> bool {
+        match self.dual_pane {
+            DualPageMode::On => true,
+            DualPageMode::Off => false,
+            DualPageMode::Auto => viewport_width > 1200.0,
         }
     }
 
@@ -533,7 +559,8 @@ impl PdfViewer {
     /// Page indices currently visible on screen.  Returns one index in
     /// single-pane mode, or both pages of the current spread in dual-pane mode.
     fn visible_page_indices(&self) -> Vec<usize> {
-        if self.dual_pane {
+        let (vw, _) = self.viewport_size.get();
+        if self.should_dual_pane(vw) {
             let first = (self.active_page / 2) * 2;
             let mut pages = vec![first];
             if first + 1 < self.pages.len() {
@@ -678,8 +705,31 @@ impl Page for PdfViewer {
                     .toggler(self.show_thumbnails, PdfViewerMessage::ShowThumbnails),
             )
             .add(
-                widget::settings::item::builder(fl!("pdf-viewer-dual-pane"))
-                    .toggler(self.dual_pane, PdfViewerMessage::DualPane),
+                widget::settings::item::builder(fl!("pdf-viewer-dual-pane")).control(
+                    widget::settings::item_row(vec![
+                        widget::radio(
+                            widget::text::body(fl!("pdf-viewer-dual-pane-off")),
+                            DualPageMode::Off,
+                            Some(self.dual_pane),
+                            PdfViewerMessage::DualPane,
+                        )
+                        .into(),
+                        widget::radio(
+                            widget::text::body(fl!("pdf-viewer-dual-pane-auto")),
+                            DualPageMode::Auto,
+                            Some(self.dual_pane),
+                            PdfViewerMessage::DualPane,
+                        )
+                        .into(),
+                        widget::radio(
+                            widget::text::body(fl!("pdf-viewer-dual-pane-on")),
+                            DualPageMode::On,
+                            Some(self.dual_pane),
+                            PdfViewerMessage::DualPane,
+                        )
+                        .into(),
+                    ]),
+                ),
             );
 
         let shortcuts_section = widget::settings::section()
@@ -860,12 +910,14 @@ impl Page for PdfViewer {
             }
             PdfViewerMessage::Key(_modifiers, key, _text) => match &key {
                 Key::Named(Named::ArrowUp | Named::ArrowLeft | Named::PageUp) => {
-                    let step = if self.dual_pane { 2 } else { 1 };
+                    let (vw, _) = self.viewport_size.get();
+                    let step = if self.should_dual_pane(vw) { 2 } else { 1 };
                     self.active_page = self.active_page.saturating_sub(step);
                     self.update_active_page()
                 }
                 Key::Named(Named::ArrowDown | Named::ArrowRight | Named::PageDown) => {
-                    let step = if self.dual_pane { 2 } else { 1 };
+                    let (vw, _) = self.viewport_size.get();
+                    let step = if self.should_dual_pane(vw) { 2 } else { 1 };
                     if self.active_page + step < self.pages.len() {
                         self.active_page += step;
                     }

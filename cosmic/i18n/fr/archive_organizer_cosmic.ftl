@@ -230,7 +230,10 @@ settings-scan-dry-run-description = Si vrai, n'apportera pas de modifications à
 # PDF viewer
 pdf-viewer = PDF viewer
 pdf-viewer-back = Retour
-pdf-viewer-dual-pane = Dual pane layout
+pdf-viewer-dual-pane = Double page
+pdf-viewer-dual-pane-off = Désactivé
+pdf-viewer-dual-pane-auto = Auto
+pdf-viewer-dual-pane-on = Activé
 pdf-viewer-loading = Chargement du PDF...
 pdf-viewer-no-local-source = Aucune source locale disponible pour ce document
 pdf-viewer-view-pdf = Voir le PDF
