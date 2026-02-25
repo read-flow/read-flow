@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
+use crate::content::resolve_href;
 use crate::domain::metadata::DocumentMetadata;
 use crate::domain::spine::SpineItem;
 use crate::error::EpubError;
@@ -186,7 +187,7 @@ fn parse_manifest_item(
                 href = Some(if opf_base.is_empty() {
                     raw
                 } else {
-                    format!("{opf_base}/{raw}")
+                    resolve_href(opf_base, &raw)
                 });
             }
             b"media-type" => media_type = Some(String::from_utf8_lossy(&attr.value).into_owned()),
@@ -339,5 +340,77 @@ mod tests {
         let pkg = Package::parse(opf, "OEBPS").unwrap();
         assert_eq!(pkg.ncx_href.as_deref(), Some("OEBPS/toc.ncx"));
         assert_eq!(pkg.nav_href, None);
+    }
+
+    #[test]
+    fn test_manifest_href_resolution() {
+        // Test relative path resolution in manifest items using full package parsing
+        let opf = br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata>
+    <dc:title>Test Book</dc:title>
+  </metadata>
+  <manifest>
+    <item id="chapter1" href="../Text/chapter1.xhtml" media-type="application/xhtml+xml"/>
+    <item id="style1" href="../Styles/style.css" media-type="text/css"/>
+  </manifest>
+  <spine>
+    <itemref idref="chapter1"/>
+  </spine>
+</package>"#;
+
+        let pkg = Package::parse(opf, "OEBPS").unwrap();
+
+        // Check that relative paths were resolved correctly
+        let chapter1 = pkg.manifest.get("chapter1").unwrap();
+        assert_eq!(chapter1.href, "Text/chapter1.xhtml"); // ../Text -> Text
+
+        let style1 = pkg.manifest.get("style1").unwrap();
+        assert_eq!(style1.href, "Styles/style.css"); // ../Styles -> Styles
+    }
+
+    #[test]
+    fn test_manifest_href_absolute() {
+        // Test absolute paths (starting with /) work correctly
+        let opf = br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata>
+    <dc:title>Test Book</dc:title>
+  </metadata>
+  <manifest>
+    <item id="style1" href="/absolute/path.css" media-type="text/css"/>
+  </manifest>
+  <spine>
+  </spine>
+</package>"#;
+
+        let pkg = Package::parse(opf, "OEBPS").unwrap();
+
+        let style1 = pkg.manifest.get("style1").unwrap();
+        // Absolute paths should have the leading / stripped
+        assert_eq!(style1.href, "absolute/path.css");
+    }
+
+    #[test]
+    fn test_manifest_href_no_base() {
+        // Test when opf_base is empty
+        let opf = br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata>
+    <dc:title>Test Book</dc:title>
+  </metadata>
+  <manifest>
+    <item id="chapter1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="chapter1"/>
+  </spine>
+</package>"#;
+
+        let pkg = Package::parse(opf, "").unwrap();
+
+        let chapter1 = pkg.manifest.get("chapter1").unwrap();
+        // Should remain unchanged when no base is provided
+        assert_eq!(chapter1.href, "chapter1.xhtml");
     }
 }
