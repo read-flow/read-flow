@@ -1,8 +1,8 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use std::sync::RwLock;
 
 use zip::ZipArchive;
 
@@ -20,7 +20,7 @@ pub struct EpubDocument {
     identifier: String,
     metadata: DocumentMetadata,
     spine: Vec<SpineItem>,
-    archive: RefCell<ZipArchive<BufReader<File>>>,
+    archive: RwLock<ZipArchive<BufReader<File>>>,
 }
 
 impl EpubDocument {
@@ -72,7 +72,7 @@ impl EpubDocument {
             identifier,
             metadata: package.metadata,
             spine,
-            archive: RefCell::new(archive),
+            archive: RwLock::new(archive),
         })
     }
 }
@@ -91,7 +91,7 @@ impl Document for EpubDocument {
     }
 
     fn resolve_resource(&self, href: &str) -> Result<Vec<u8>> {
-        let mut archive = self.archive.borrow_mut();
+        let mut archive = self.archive.write().unwrap();
         let mut file = archive
             .by_name(href)
             .map_err(|_| EpubError::ResourceNotFound(href.to_string()))?;

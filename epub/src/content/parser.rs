@@ -366,7 +366,7 @@ impl TokenSink for ContentSink {
                     entry.svg_content.push_str(tag_name);
                     for attr in attrs {
                         entry.svg_content.push(' ');
-                        entry.svg_content.push_str(&attr.name.local.to_string());
+                        entry.svg_content.push_str(attr.name.local.as_ref());
                         entry.svg_content.push_str("=\"");
                         entry.svg_content.push_str(&attr.value);
                         entry.svg_content.push('"');
@@ -387,7 +387,7 @@ impl TokenSink for ContentSink {
                     svg_entry.svg_content.push_str(tag_name);
                     for attr in attrs {
                         svg_entry.svg_content.push(' ');
-                        svg_entry.svg_content.push_str(&attr.name.local.to_string());
+                        svg_entry.svg_content.push_str(attr.name.local.as_ref());
                         svg_entry.svg_content.push_str("=\"");
                         svg_entry.svg_content.push_str(&attr.value);
                         svg_entry.svg_content.push('"');
@@ -1346,6 +1346,90 @@ fn resolve_images<F>(
             _ => {}
         }
     }
+}
+
+/// Resolve embedded image references in SVG content by converting xlink:href to data URIs.
+/// This allows SVG with embedded images to render properly when the SVG renderer doesn't
+/// have access to the EPUB's resource resolution system.
+pub fn resolve_svg_images<F>(svg_content: &str, chapter_href: &str, resolve_image: &mut F) -> String
+where
+    F: FnMut(&str) -> Option<(Vec<u8>, String)>,
+{
+    use regex::Regex;
+
+    // Simple regex-based approach to find and replace xlink:href attributes
+    let re = Regex::new(r#"<image([^>]*?)\s+xlink:href="([^"]*)"([^>]*?)>"#).unwrap();
+
+    let result = re.replace_all(svg_content, |caps: &regex::Captures| {
+        let before_href = &caps[1];
+        let href = &caps[2];
+        let after_href = &caps[3];
+
+        // Resolve relative paths against the chapter href
+        let resolved_path = if href.starts_with("../") || href.starts_with("./") {
+            // This is a relative path, resolve it against the chapter's directory
+            let chapter_dir = base_dir(chapter_href);
+            normalize_path(&format!("{}/{}", chapter_dir, href))
+        } else {
+            href.to_string()
+        };
+
+        // Resolve the image reference
+        if let Some((image_data, media_type)) = resolve_image(&resolved_path) {
+            // Convert to data URI
+            use base64::Engine;
+            let base64_data = base64::engine::general_purpose::STANDARD.encode(&image_data);
+            let data_uri = format!("data:{};base64,{}", media_type, base64_data);
+
+            format!(
+                r#"<image{} xlink:href="{}"{}>"#,
+                before_href, data_uri, after_href
+            )
+        } else {
+            // Keep original if resolution fails
+            format!(
+                r#"<image{} xlink:href="{}"{}>"#,
+                before_href, href, after_href
+            )
+        }
+    });
+
+    result.to_string()
+}
+
+/// Normalize path by resolving ".." and "." components
+fn normalize_path(path: &str) -> String {
+    let parts: Vec<&str> = path.split('/').collect();
+    let mut result: Vec<&str> = Vec::new();
+
+    for part in parts {
+        match part {
+            "." => continue, // Skip current directory
+            ".." => {
+                // Only go up if we have a previous directory that's not ".." and not root
+                if let Some(last) = result.last() {
+                    if !last.is_empty() && *last != ".." {
+                        result.pop();
+                    } else {
+                        // Preserve ".." when we can't go up
+                        result.push("..");
+                    }
+                } else {
+                    // Preserve ".." when result is empty
+                    result.push("..");
+                }
+            }
+            "" => {
+                // Handle empty parts (from leading/trailing slashes)
+                if result.is_empty() {
+                    result.push("");
+                }
+            }
+            _ => result.push(part),
+        }
+    }
+
+    result.join("/")
 }
 
 #[cfg(test)]
@@ -2564,6 +2648,197 @@ mod tests {
                 assert_eq!(style.text_align, Some(TextAlign::Right));
             }
             other => panic!("expected Svg with inline style, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn svg_with_relative_image_path() {
+        let blocks = parse(
+            r#"<svg width="200" height="200" viewBox="0 0 200 200">
+  <image width="200" height="200" xlink:href="../media/Cover.png"/>
+</svg>"#,
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Svg { content, .. } => {
+                assert!(content.contains("../media/Cover.png"));
+                assert!(content.contains("<image"));
+                assert!(content.contains("xlink:href"));
+            }
+            _ => panic!("Expected Svg block"),
+        }
+    }
+
+    #[test]
+    fn svg_image_resolution_with_relative_paths() {
+        let svg_content = r#"<svg width="200" height="200">
+  <image width="200" height="200" xlink:href="../media/Cover.png"/>
+</svg>"#;
+
+        let chapter_href = "OEBPS/Text/chapter1.xhtml";
+
+        // Mock resolver that simulates finding the image at the resolved path
+        let resolved_content = resolve_svg_images(svg_content, chapter_href, &mut |path| {
+            if path == "OEBPS/media/Cover.png" {
+                Some((vec![1, 2, 3, 4], "image/png".to_string()))
+            } else {
+                None
+            }
+        });
+
+        // Should have converted the relative path to a data URI
+        assert!(resolved_content.contains("data:image/png;base64,"));
+        assert!(!resolved_content.contains("../media/Cover.png"));
+    }
+
+    #[test]
+    fn svg_image_resolution_preserves_absolute_paths() {
+        let svg_content = r#"<svg width="200" height="200">
+  <image width="200" height="200" xlink:href="media/Cover.png"/>
+</svg>"#;
+
+        let chapter_href = "OEBPS/Text/chapter1.xhtml";
+
+        // Mock resolver
+        let resolved_content = resolve_svg_images(svg_content, chapter_href, &mut |path| {
+            if path == "media/Cover.png" {
+                Some((vec![1, 2, 3, 4], "image/png".to_string()))
+            } else {
+                None
+            }
+        });
+
+        // Should have converted to data URI
+        assert!(resolved_content.contains("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn svg_image_resolution_fallback_on_missing() {
+        let svg_content = r#"<svg width="200" height="200">
+  <image width="200" height="200" xlink:href="../media/Missing.png"/>
+</svg>"#;
+
+        let chapter_href = "OEBPS/Text/chapter1.xhtml";
+
+        // Mock resolver that returns None for all paths
+        let resolved_content = resolve_svg_images(svg_content, chapter_href, &mut |_| None);
+
+        // Should preserve original href when resolution fails
+        assert!(resolved_content.contains("../media/Missing.png"));
+        assert!(!resolved_content.contains("data:"));
+    }
+
+    #[test]
+    fn svg_relative_path_resolution_realistic_scenario() {
+        // Test the actual scenario: chapter in OEBPS/Text/ referencing image in OEBPS/media/
+        let svg_content = r#"<svg width="200" height="200">
+  <image width="200" height="200" xlink:href="../media/Cover.png"/>
+</svg>"#;
+
+        let chapter_href = "OEBPS/Text/chapter1.xhtml";
+
+        // Mock resolver that simulates the EPUB structure
+        let resolved_content =
+            resolve_svg_images(svg_content, chapter_href, &mut |path| match path {
+                "OEBPS/media/Cover.png" => Some((vec![1, 2, 3, 4], "image/png".to_string())),
+                _ => None,
+            });
+
+        // Verify the relative path was resolved correctly
+        assert!(resolved_content.contains("data:image/png;base64,"));
+        assert!(!resolved_content.contains("../media/Cover.png"));
+
+        // Verify the SVG structure is preserved
+        assert!(resolved_content.contains("<svg"));
+        assert!(resolved_content.contains("<image"));
+        assert!(resolved_content.contains("width=\"200\""));
+        assert!(resolved_content.contains("height=\"200\""));
+    }
+
+    #[test]
+    fn svg_relative_path_resolution_deeply_nested() {
+        // Test deeper nesting: chapter in OEBPS/Text/Subsection/ referencing image in OEBPS/media/
+        let svg_content = r#"<svg width="200" height="200">
+  <image width="200" height="200" xlink:href="../../media/Cover.png"/>
+</svg>"#;
+
+        let chapter_href = "OEBPS/Text/Subsection/chapter1.xhtml";
+
+        let resolved_content =
+            resolve_svg_images(svg_content, chapter_href, &mut |path| match path {
+                "OEBPS/media/Cover.png" => Some((vec![1, 2, 3, 4], "image/png".to_string())),
+                _ => None,
+            });
+
+        // Should resolve correctly
+        assert!(resolved_content.contains("data:image/png;base64,"));
+        assert!(!resolved_content.contains("../../media/Cover.png"));
+    }
+
+    #[test]
+    fn test_normalize_path() {
+        // Test relative paths (these should remain unchanged when no base is provided)
+        println!(
+            "Testing '../media/Cover.png' -> '{}'",
+            normalize_path("../media/Cover.png")
+        );
+        assert_eq!(normalize_path("../media/Cover.png"), "../media/Cover.png");
+
+        println!(
+            "Testing './image.png' -> '{}'",
+            normalize_path("./image.png")
+        );
+        assert_eq!(normalize_path("./image.png"), "image.png");
+
+        // Test path normalization with ".." components
+        println!(
+            "Testing 'OEBPS/../media/Cover.png' -> '{}'",
+            normalize_path("OEBPS/../media/Cover.png")
+        );
+        assert_eq!(
+            normalize_path("OEBPS/../media/Cover.png"),
+            "media/Cover.png"
+        ); // OEBPS + .. = remove OEBPS
+
+        println!(
+            "Testing 'OEBPS/Text/../../media/Cover.png' -> '{}'",
+            normalize_path("OEBPS/Text/../../media/Cover.png")
+        );
+        assert_eq!(
+            normalize_path("OEBPS/Text/../../media/Cover.png"),
+            "media/Cover.png"
+        ); // OEBPS/Text + ../.. = remove OEBPS/Text
+
+        // Test absolute paths
+        assert_eq!(normalize_path("/absolute/path"), "/absolute/path");
+
+        // Test empty path
+        assert_eq!(normalize_path(""), "");
+
+        // Test complex cases
+        assert_eq!(normalize_path("a/b/../c"), "a/c");
+        assert_eq!(normalize_path("a/./b/c"), "a/b/c");
+        assert_eq!(normalize_path("a//b/c"), "a/b/c");
+    }
+
+    #[test]
+    fn svg_with_embedded_image_tag() {
+        let blocks = parse(
+            r#"<svg width="200" height="200" viewBox="0 0 200 200">
+  <image width="200" height="200" xlink:href="image.svg"/>
+</svg>"#,
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Svg { content, .. } => {
+                assert!(content.contains("<svg"));
+                assert!(content.contains("width=\"200\""));
+                assert!(content.contains("height=\"200\""));
+                assert!(content.contains("<image"));
+                assert!(content.contains("xlink:href=\"image.svg\""));
+                assert!(content.contains("</svg>"));
+            }
+            other => panic!("expected Svg, got {other:?}"),
         }
     }
 

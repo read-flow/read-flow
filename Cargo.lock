@@ -2036,8 +2036,10 @@ name = "epub"
 version = "0.1.0"
 dependencies = [
  "assert4rs",
+ "base64 0.22.1",
  "html5ever",
  "quick-xml 0.39.2",
+ "regex",
  "rstest",
  "serde",
  "thiserror 2.0.18",

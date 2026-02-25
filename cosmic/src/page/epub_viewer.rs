@@ -156,17 +156,52 @@ pub(crate) struct EpubChapter {
     raw_html: String,
 }
 
+// Cloneable wrapper for EpubDocument
+#[derive(Clone)]
+pub(crate) struct CloneableEpubDocument(Arc<EpubDocument>);
+
+unsafe impl Send for CloneableEpubDocument {}
+unsafe impl Sync for CloneableEpubDocument {}
+
+impl std::fmt::Debug for CloneableEpubDocument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CloneableEpubDocument(...)")
+    }
+}
+
+impl CloneableEpubDocument {
+    fn as_ref(&self) -> &EpubDocument {
+        &self.0
+    }
+}
+
+impl From<EpubDocument> for CloneableEpubDocument {
+    fn from(doc: EpubDocument) -> Self {
+        Self(Arc::new(doc))
+    }
+}
+
 // --- Messages ---
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum EpubViewerOutput {
     /// Carries the fingerprint and the opaque progress JSON to persist, if any.
     Close(Fingerprint, Option<String>),
 }
 
-#[derive(Clone, Debug)]
+impl Clone for EpubViewerOutput {
+    fn clone(&self) -> Self {
+        match self {
+            EpubViewerOutput::Close(fp, progress) => {
+                EpubViewerOutput::Close(fp.clone(), progress.clone())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum EpubViewerMessage {
-    EpubLoaded(String, Vec<EpubChapter>),
+    EpubLoaded(String, Vec<EpubChapter>, CloneableEpubDocument),
     /// Carries restored reading position from saved progress.
     ReadingProgressLoaded(ReadingPosition),
     SelectChapter(usize),
@@ -199,6 +234,7 @@ pub enum EpubViewerMessage {
 pub struct EpubViewer {
     fingerprint: Fingerprint,
     document: Document,
+    epub_document: Option<CloneableEpubDocument>,
     file_path: Option<PathBuf>,
     title: String,
     chapters: Vec<EpubChapter>,
@@ -254,6 +290,7 @@ impl EpubViewer {
         let viewer = EpubViewer {
             fingerprint: fingerprint.clone(),
             document,
+            epub_document: None, // Will be loaded when chapters are loaded
             file_path: file_path.clone(),
             title: String::new(),
             chapters: Vec::new(),
@@ -287,8 +324,12 @@ impl EpubViewer {
                         .await
                         .unwrap()
                 },
-                |(title, chapters)| {
-                    cosmic::action::app(EpubViewerMessage::EpubLoaded(title, chapters))
+                |(title, chapters, epub_doc)| {
+                    cosmic::action::app(EpubViewerMessage::EpubLoaded(
+                        title,
+                        chapters,
+                        CloneableEpubDocument::from(epub_doc),
+                    ))
                 },
             ));
         }
@@ -386,7 +427,15 @@ impl EpubViewer {
             } else {
                 let family = self.font_family.to_family();
                 for block in &chapter.blocks {
-                    column = column.push(render_block(block, family));
+                    column = column.push(render_block(
+                        block,
+                        family,
+                        &self.document,
+                        &chapter.href,
+                        self.epub_document
+                            .as_ref()
+                            .map(CloneableEpubDocument::as_ref),
+                    ));
                 }
             }
 
@@ -502,7 +551,15 @@ impl EpubViewer {
                 let mut column = widget::column().spacing(space_xxs).width(Length::Fill);
                 if let Some(range) = page_range {
                     for block in &chapter.blocks[range.start..range.end] {
-                        column = column.push(render_block(block, family));
+                        column = column.push(render_block(
+                            block,
+                            family,
+                            &self.document,
+                            &chapter.href,
+                            self.epub_document
+                                .as_ref()
+                                .map(CloneableEpubDocument::as_ref),
+                        ));
                     }
                 }
 
@@ -815,9 +872,10 @@ impl Page for EpubViewer {
     fn update(&mut self, message: EpubViewerMessage) -> Task<Action<EpubViewerMessage>> {
         self.maybe_repaginate();
         match message {
-            EpubViewerMessage::EpubLoaded(title, chapters) => {
+            EpubViewerMessage::EpubLoaded(title, chapters, epub_doc) => {
                 self.title = title;
                 self.chapters = chapters;
+                self.epub_document = Some(epub_doc);
                 if !self.chapters.is_empty() {
                     self.active_chapter = self
                         .initial_chapter
@@ -1165,18 +1223,23 @@ fn parse_reading_progress(progress: &str) -> ReadingPosition {
 }
 
 /// Load EPUB chapters from a file path. Runs on a blocking thread.
-fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
-    let doc = match EpubDocument::open(path) {
+fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>, EpubDocument) {
+    let epub_doc = match EpubDocument::open(path) {
         Ok(doc) => doc,
         Err(e) => {
             tracing::error!("failed to open EPUB: {e}");
-            return (String::new(), Vec::new());
+            // Return empty chapters and a dummy document
+            let dummy_doc = EpubDocument::open(path).unwrap_or_else(|_| {
+                // Create a minimal document by trying again or panic
+                EpubDocument::open(path).expect("Failed to create EPUB document")
+            });
+            return (String::new(), Vec::new(), dummy_doc);
         }
     };
 
-    let title = doc.metadata().title.clone().unwrap_or_default();
+    let title = epub_doc.metadata().title.clone().unwrap_or_default();
 
-    let spine = doc.spine().to_vec();
+    let spine = epub_doc.spine().to_vec();
     let mut chapters = Vec::with_capacity(spine.len());
 
     for (idx, item) in spine.iter().filter(|item| item.linear).enumerate() {
@@ -1187,20 +1250,20 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
             .unwrap_or_else(|| item.id.clone())
             .apply_when(String::is_empty, |_| format!("Chapter {}", idx + 1));
 
-        let (blocks, raw_html) = match doc.resolve_resource(&item.href) {
+        let (blocks, raw_html) = match epub_doc.resolve_resource(&item.href) {
             Ok(data) => {
                 let href = &item.href;
                 let raw = String::from_utf8_lossy(&data).into_owned();
-                let stylesheet = load_chapter_stylesheets(&raw, href, &doc);
+                let stylesheet = load_chapter_stylesheets(&raw, href, &epub_doc);
                 let blocks =
-                    epub::content::parse_xhtml(&data, href, &stylesheet, &mut |img_path| match doc
-                        .resolve_resource(img_path)
-                    {
-                        Ok(img_data) => {
-                            let media_type = epub::content::guess_media_type(img_path);
-                            Some((img_data, media_type))
+                    epub::content::parse_xhtml(&data, href, &stylesheet, &mut |img_path| {
+                        match epub_doc.resolve_resource(img_path) {
+                            Ok(img_data) => {
+                                let media_type = epub::content::guess_media_type(img_path);
+                                Some((img_data, media_type))
+                            }
+                            Err(_) => None,
                         }
-                        Err(_) => None,
                     });
                 (blocks, raw)
             }
@@ -1220,7 +1283,7 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>) {
         });
     }
 
-    (title, chapters)
+    (title, chapters, epub_doc)
 }
 
 /// Extract `<link rel="stylesheet" href="...">` references from XHTML and load
@@ -1663,7 +1726,13 @@ fn apply_text_align<'a>(
         .into()
 }
 
-fn render_block(block: &ContentBlock, family: font::Family) -> Element<'_, EpubViewerMessage> {
+fn render_block<'a>(
+    block: &'a ContentBlock,
+    family: font::Family,
+    document: &'a Document,
+    chapter_href: &'a str,
+    epub_document: Option<&'a EpubDocument>,
+) -> Element<'a, EpubViewerMessage> {
     let cosmic_theme::Spacing {
         space_xxs, space_s, ..
     } = theme::active().cosmic().spacing;
@@ -1752,7 +1821,13 @@ fn render_block(block: &ContentBlock, family: font::Family) -> Element<'_, EpubV
                 .spacing(space_xxs)
                 .width(Length::Fill);
             for child in children {
-                col = col.push(render_block(child, family));
+                col = col.push(render_block(
+                    child,
+                    family,
+                    document,
+                    chapter_href,
+                    epub_document,
+                ));
             }
             widget::container(col)
                 .padding([space_xxs, space_s])
@@ -1821,7 +1896,23 @@ fn render_block(block: &ContentBlock, family: font::Family) -> Element<'_, EpubV
             }
         }
         ContentBlock::Svg { content, .. } => {
-            let handle = widget::svg::Handle::from_memory(content.clone().into_bytes());
+            // Process SVG content to resolve embedded image references
+            let processed_content = if let Some(epub_doc) = epub_document {
+                epub::content::resolve_svg_images(content, chapter_href, &mut |img_path| {
+                    match epub_doc.resolve_resource(img_path) {
+                        Ok(img_data) => {
+                            let media_type = epub::content::guess_media_type(img_path);
+                            Some((img_data, media_type))
+                        }
+                        Err(_) => None,
+                    }
+                })
+            } else {
+                // Fallback to original content if no epub document is available
+                content.clone()
+            };
+
+            let handle = widget::svg::Handle::from_memory(processed_content.into_bytes());
             widget::svg(handle)
                 .width(Length::Shrink)
                 .content_fit(cosmic::iced::ContentFit::ScaleDown)
@@ -1832,14 +1923,19 @@ fn render_block(block: &ContentBlock, family: font::Family) -> Element<'_, EpubV
         }
         ContentBlock::Table { rows } => render_table(rows, family),
         ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
-        ContentBlock::Footnote { blocks, .. } => render_footnote(blocks, family),
+        ContentBlock::Footnote { blocks, .. } => {
+            render_footnote(blocks, family, document, chapter_href, epub_document)
+        }
     }
 }
 
-fn render_footnote(
-    blocks: &[ContentBlock],
+fn render_footnote<'a>(
+    blocks: &'a [ContentBlock],
     family: font::Family,
-) -> Element<'_, EpubViewerMessage> {
+    document: &'a Document,
+    chapter_href: &'a str,
+    epub_document: Option<&'a EpubDocument>,
+) -> Element<'a, EpubViewerMessage> {
     let cosmic_theme::Spacing {
         space_xxs, space_s, ..
     } = theme::active().cosmic().spacing;
@@ -1857,7 +1953,7 @@ fn render_footnote(
                     render_spans(spans, 13.0, family)
                 }
             }
-            _ => render_block(block, family),
+            _ => render_block(block, family, document, chapter_href, epub_document),
         };
         col = col.push(el);
     }

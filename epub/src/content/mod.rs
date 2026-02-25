@@ -11,6 +11,7 @@ pub use block::TableCell;
 pub use block::TextAlign;
 pub use block::TextSpan;
 pub use parser::parse_xhtml;
+pub use parser::resolve_svg_images;
 pub use resolve::base_dir;
 pub use resolve::guess_media_type;
 pub use resolve::resolve_href;
