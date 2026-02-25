@@ -361,8 +361,42 @@ impl TokenSink for ContentSink {
                         entry.block_style = entry.block_style.merge(inline);
                     }
 
+                    // Start accumulating the SVG markup
+                    entry.svg_content.push('<');
+                    entry.svg_content.push_str(tag_name);
+                    for attr in attrs {
+                        entry.svg_content.push(' ');
+                        entry.svg_content.push_str(&attr.name.local.to_string());
+                        entry.svg_content.push_str("=\"");
+                        entry.svg_content.push_str(&attr.value);
+                        entry.svg_content.push('"');
+                    }
+                    if self_closing {
+                        entry.svg_content.push_str("/>");
+                    } else {
+                        entry.svg_content.push('>');
+                    }
+
                     state.stack.push(entry);
                     return TokenSinkResult::Continue;
+                }
+
+                // Capture tags within SVG elements
+                if let Some(svg_entry) = state.stack.iter_mut().find(|e| e.tag == "svg") {
+                    svg_entry.svg_content.push('<');
+                    svg_entry.svg_content.push_str(tag_name);
+                    for attr in attrs {
+                        svg_entry.svg_content.push(' ');
+                        svg_entry.svg_content.push_str(&attr.name.local.to_string());
+                        svg_entry.svg_content.push_str("=\"");
+                        svg_entry.svg_content.push_str(&attr.value);
+                        svg_entry.svg_content.push('"');
+                    }
+                    if self_closing {
+                        svg_entry.svg_content.push_str("/>");
+                    } else {
+                        svg_entry.svg_content.push('>');
+                    }
                 }
 
                 // Handle <a href="..."> — flush parent, push entry with inherited style + link
@@ -538,6 +572,15 @@ impl TokenSink for ContentSink {
                 } else {
                     return TokenSinkResult::Continue;
                 };
+
+                // Capture end tags within SVG elements (but not the SVG closing tag itself)
+                if tag_name != "svg"
+                    && let Some(svg_entry) = state.stack.iter_mut().find(|e| e.tag == "svg")
+                {
+                    svg_entry.svg_content.push_str("</");
+                    svg_entry.svg_content.push_str(tag_name);
+                    svg_entry.svg_content.push('>');
+                }
 
                 // Handle inline style, link, and span tag end: promote spans to parent
                 if INLINE_STYLE_TAGS.contains(&tag_name) || tag_name == "a" || tag_name == "span" {
@@ -835,7 +878,10 @@ impl TokenSink for ContentSink {
                         }
                     }
                     "svg" => {
-                        if !entry.svg_content.is_empty() {
+                        // Check if SVG has actual content beyond just the opening tag
+                        let has_content = entry.svg_content.len() > entry.tag.len() + 2; // > "<svg>"
+                        if has_content {
+                            entry.svg_content.push_str("</svg>");
                             Some(ContentBlock::Svg {
                                 alt: String::new(), // SVG elements don't have alt text
                                 content: entry.svg_content,
@@ -881,10 +927,14 @@ impl TokenSink for ContentSink {
                     return TokenSinkResult::Continue;
                 }
                 let in_pre = in_preformatted(&state.stack);
+                let in_svg = state.stack.iter().any(|e| e.tag == "svg");
                 if let Some(entry) = state.stack.last_mut() {
-                    // Accumulate raw content for SVG elements
-                    if entry.tag == "svg" {
-                        entry.svg_content.push_str(&text);
+                    // Accumulate raw content for SVG elements (including text and tags)
+                    if in_svg {
+                        // Find the SVG entry to accumulate content
+                        if let Some(svg_entry) = state.stack.iter_mut().find(|e| e.tag == "svg") {
+                            svg_entry.svg_content.push_str(&text);
+                        }
                     } else if in_pre {
                         entry.text.push_str(&text);
                     } else {
@@ -901,7 +951,11 @@ impl TokenSink for ContentSink {
                 }
             }
 
-            _ => {}
+            Token::DoctypeToken(_) => {}
+            Token::CommentToken(_) => {}
+            Token::NullCharacterToken => {}
+            Token::EOFToken => {}
+            Token::ParseError(_) => {}
         }
 
         TokenSinkResult::Continue
@@ -2387,5 +2441,135 @@ mod tests {
             }
             other => panic!("expected Paragraph, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_inline_svg() {
+        let blocks = parse("<svg><circle cx=\"50\" cy=\"50\" r=\"40\" fill=\"red\"/></svg>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Svg {
+                content,
+                alt,
+                style,
+            } => {
+                assert!(!content.is_empty());
+                assert!(content.contains("<circle"));
+                assert!(content.contains("cx=\"50\""));
+                assert!(content.contains("fill=\"red\""));
+                assert_eq!(alt, "");
+                assert_eq!(*style, BlockStyle::default());
+            }
+            other => panic!("expected Svg, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_inline_svg_with_text_content() {
+        let blocks = parse("<svg><text x=\"10\" y=\"20\">Hello SVG</text></svg>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Svg { content, .. } => {
+                assert!(content.contains("<text"));
+                assert!(content.contains("Hello SVG"));
+                assert!(content.contains("x=\"10\""));
+                assert!(content.contains("y=\"20\""));
+            }
+            other => panic!("expected Svg, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_svg_image_placeholder() {
+        let blocks = parse("<img src=\"diagram.svg\" alt=\"Diagram\">");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, .. } => {
+                // Image placeholder gets converted to fallback paragraph when resolution fails
+                assert_eq!(text, "[Diagram]");
+            }
+            other => panic!("expected fallback Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_raster_image_placeholder() {
+        let blocks = parse("<img src=\"photo.jpg\" alt=\"Photo\">");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, .. } => {
+                // Image placeholder gets converted to fallback paragraph when resolution fails
+                assert_eq!(text, "[Photo]");
+            }
+            other => panic!("expected fallback Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_mixed_svg_and_images() {
+        let blocks = parse(
+            "<svg><circle r=\"10\"/></svg><img src=\"icon.svg\" alt=\"Icon\"><img src=\"photo.jpg\" alt=\"Photo\">",
+        );
+        assert_eq!(blocks.len(), 3);
+
+        // First should be inline SVG
+        match &blocks[0] {
+            ContentBlock::Svg { content, .. } => {
+                assert!(!content.is_empty());
+                assert!(content.contains("<circle"));
+            }
+            other => panic!("expected inline Svg, got {other:?}"),
+        }
+
+        // Second should be fallback paragraph for SVG image
+        match &blocks[1] {
+            ContentBlock::Paragraph { text, .. } => {
+                assert_eq!(text, "[Icon]");
+            }
+            other => panic!("expected fallback Paragraph for SVG image, got {other:?}"),
+        }
+
+        // Third should be fallback paragraph for raster image
+        match &blocks[2] {
+            ContentBlock::Paragraph { text, .. } => {
+                assert_eq!(text, "[Photo]");
+            }
+            other => panic!("expected fallback Paragraph for raster image, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn svg_with_css_class_styling() {
+        let blocks = parse_with_css(
+            r#"<svg class="centered"><rect x="0" y="0" width="50" height="50"/></svg>"#,
+            ".centered { text-align: center; }",
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Svg { content, style, .. } => {
+                assert!(content.contains("<rect"));
+                assert_eq!(style.text_align, Some(TextAlign::Center));
+            }
+            other => panic!("expected Svg with styling, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn svg_with_inline_style() {
+        let blocks = parse("<svg style=\"text-align: right\"><circle r=\"20\"/></svg>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Svg { content, style, .. } => {
+                assert!(content.contains("<circle"));
+                assert_eq!(style.text_align, Some(TextAlign::Right));
+            }
+            other => panic!("expected Svg with inline style, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_svg_is_ignored() {
+        let blocks = parse("<svg></svg>");
+        assert_eq!(blocks.len(), 0); // Empty SVG should be filtered out
     }
 }
