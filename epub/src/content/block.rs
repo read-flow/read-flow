@@ -88,6 +88,11 @@ pub enum ContentBlock {
         data: Vec<u8>,
         media_type: String,
     },
+    Svg {
+        alt: String,
+        content: String,
+        style: BlockStyle,
+    },
     Table {
         rows: Vec<Vec<TableCell>>,
     },

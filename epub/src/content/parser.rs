@@ -52,6 +52,8 @@ struct StackEntry {
     span_color: Option<[u8; 3]>,
     /// Per-span font-size multiplier from a `style="font-size:..."` attribute on an inline element.
     span_font_size_em: Option<f32>,
+    /// Accumulated SVG XML content for `<svg>` elements.
+    svg_content: String,
 }
 
 impl StackEntry {
@@ -73,6 +75,7 @@ impl StackEntry {
             block_style: BlockStyle::default(),
             span_color: None,
             span_font_size_em: None,
+            svg_content: String::new(),
         }
     }
 
@@ -94,6 +97,7 @@ impl StackEntry {
             block_style: BlockStyle::default(),
             span_color: None,
             span_font_size_em: None,
+            svg_content: String::new(),
         }
     }
 
@@ -196,6 +200,7 @@ const TRANSPARENT_TAGS: &[&str] = &[
     "dl",
     "dt",
     "dd",
+    "svg",
 ];
 
 /// Compute the inline style for a given tag, inheriting from a parent style.
@@ -328,6 +333,24 @@ impl TokenSink for ContentSink {
                             style: BlockStyle::default(),
                         });
                     }
+                    return TokenSinkResult::Continue;
+                }
+
+                // Handle <svg> tags - start accumulating SVG content
+                if tag_name == "svg" {
+                    let mut entry = StackEntry::new(tag_name);
+                    entry.element_id = find_attr(attrs, "id");
+
+                    // Resolve stylesheet styles from class, then merge inline style= on top
+                    let class_attr = find_attr(attrs, "class").unwrap_or_default();
+                    let css_resolved = state.stylesheet.resolve(tag_name, &class_attr);
+                    entry.block_style = css_resolved.block;
+                    if let Some(style_attr) = find_attr(attrs, "style") {
+                        let inline = parse_inline_style(&style_attr).block;
+                        entry.block_style = entry.block_style.merge(inline);
+                    }
+
+                    state.stack.push(entry);
                     return TokenSinkResult::Continue;
                 }
 
@@ -800,6 +823,17 @@ impl TokenSink for ContentSink {
                             None
                         }
                     }
+                    "svg" => {
+                        if !entry.svg_content.is_empty() {
+                            Some(ContentBlock::Svg {
+                                alt: String::new(), // SVG elements don't have alt text
+                                content: entry.svg_content,
+                                style: block_style,
+                            })
+                        } else {
+                            None
+                        }
+                    }
                     _ if TRANSPARENT_TAGS.contains(&tag_name) => {
                         promote_to_parent(
                             &mut state,
@@ -835,20 +869,24 @@ impl TokenSink for ContentSink {
                 if state.skip_depth > 0 {
                     return TokenSinkResult::Continue;
                 }
-                if in_preformatted(&state.stack) {
-                    if let Some(entry) = state.stack.last_mut() {
+                let in_pre = in_preformatted(&state.stack);
+                if let Some(entry) = state.stack.last_mut() {
+                    // Accumulate raw content for SVG elements
+                    if entry.tag == "svg" {
+                        entry.svg_content.push_str(&text);
+                    } else if in_pre {
                         entry.text.push_str(&text);
-                    }
-                } else if let Some(entry) = state.stack.last_mut() {
-                    // Check whether the accumulated content (text buffer or last span)
-                    // already ends with a space to avoid doubling.
-                    let prev_ends_with_space = if !entry.text.is_empty() {
-                        entry.text.ends_with(' ')
                     } else {
-                        entry.spans.last().is_some_and(|s| s.text.ends_with(' '))
-                    };
-                    let normalized = normalize_html_whitespace(&text, prev_ends_with_space);
-                    entry.text.push_str(&normalized);
+                        // Check whether the accumulated content (text buffer or last span)
+                        // already ends with a space to avoid doubling.
+                        let prev_ends_with_space = if !entry.text.is_empty() {
+                            entry.text.ends_with(' ')
+                        } else {
+                            entry.spans.last().is_some_and(|s| s.text.ends_with(' '))
+                        };
+                        let normalized = normalize_html_whitespace(&text, prev_ends_with_space);
+                        entry.text.push_str(&normalized);
+                    }
                 }
             }
 

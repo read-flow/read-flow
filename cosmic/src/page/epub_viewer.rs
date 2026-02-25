@@ -1308,6 +1308,7 @@ fn estimated_block_height(block: &ContentBlock) -> f32 {
         ContentBlock::UnorderedList { items } => items.len() as f32 * 28.0,
         ContentBlock::OrderedList { items, .. } => items.len() as f32 * 28.0,
         ContentBlock::Image { .. } => 200.0,
+        ContentBlock::Svg { .. } => 200.0,
         ContentBlock::Table { rows } => rows.len() as f32 * 36.0 + 8.0,
         ContentBlock::HorizontalRule => 16.0,
         ContentBlock::Footnote { blocks, .. } => {
@@ -1357,6 +1358,7 @@ fn estimated_block_height_for_width(block: &ContentBlock, content_width: f32) ->
         ContentBlock::UnorderedList { items } => items.len() as f32 * 28.0,
         ContentBlock::OrderedList { items, .. } => items.len() as f32 * 28.0,
         ContentBlock::Image { .. } => 200.0,
+        ContentBlock::Svg { .. } => 200.0,
         ContentBlock::Table { rows } => rows.len() as f32 * 36.0 + 8.0,
         ContentBlock::HorizontalRule => 16.0,
         ContentBlock::Footnote { blocks, .. } => {
@@ -1817,6 +1819,16 @@ fn render_block(block: &ContentBlock, family: font::Family) -> Element<'_, EpubV
             } else {
                 widget::Space::new(Length::Fill, 0).into()
             }
+        }
+        ContentBlock::Svg { content, .. } => {
+            let handle = widget::svg::Handle::from_memory(content.clone().into_bytes());
+            widget::svg(handle)
+                .width(Length::Shrink)
+                .content_fit(cosmic::iced::ContentFit::ScaleDown)
+                .apply(widget::container)
+                .width(Length::Fill)
+                .align_x(Horizontal::Center)
+                .into()
         }
         ContentBlock::Table { rows } => render_table(rows, family),
         ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
