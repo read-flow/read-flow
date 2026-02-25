@@ -299,15 +299,26 @@ impl TokenSink for ContentSink {
                     if let Some(src) = src {
                         let base = base_dir(&state.base_href);
                         let resolved = resolve_href(base, &src);
+                        let media_type = guess_media_type(&resolved);
 
-                        // Insert a placeholder image block and record it for later resolution
+                        // Insert a placeholder block and record it for later resolution
                         let id = state.image_counter;
                         state.image_counter += 1;
-                        let placeholder = ContentBlock::Image {
-                            alt: alt.clone(),
-                            data: Vec::new(),
-                            media_type: guess_media_type(&resolved),
+
+                        let placeholder = if media_type == "image/svg+xml" {
+                            ContentBlock::Svg {
+                                alt: alt.clone(),
+                                content: String::new(), // Will be loaded during resolution
+                                style: BlockStyle::default(),
+                            }
+                        } else {
+                            ContentBlock::Image {
+                                alt: alt.clone(),
+                                data: Vec::new(),
+                                media_type,
+                            }
                         };
+
                         if let Some(entry) = state.stack.last_mut() {
                             entry.children.push(placeholder);
                         }
@@ -1208,6 +1219,52 @@ fn resolve_images<F>(
                     if let Some((resolved_data, resolved_mt)) = resolve_image(&img.resolved_path) {
                         *data = resolved_data;
                         *media_type = resolved_mt;
+                    } else {
+                        // Replace with alt-text paragraph fallback
+                        if !alt.is_empty() {
+                            let alt_text = format!("[{}]", alt);
+                            *block = ContentBlock::Paragraph {
+                                spans: vec![TextSpan {
+                                    text: alt_text.clone(),
+                                    style: InlineStyle::default(),
+                                    link: None,
+                                    color: None,
+                                    font_size_em: None,
+                                }],
+                                text: alt_text,
+                                style: BlockStyle::default(),
+                            };
+                        } else {
+                            *block = ContentBlock::HorizontalRule; // will be filtered
+                        }
+                    }
+                }
+            }
+            ContentBlock::Svg { alt, content, .. } if content.is_empty() => {
+                // This is a placeholder SVG from img tag - find matching pending image
+                if let Some((_, img)) = pending.iter().find(|(_, img)| img.alt == *alt) {
+                    if let Some((resolved_data, resolved_mt)) = resolve_image(&img.resolved_path) {
+                        if resolved_mt == "image/svg+xml" {
+                            *content = String::from_utf8_lossy(&resolved_data).into_owned();
+                        } else {
+                            // Wrong media type - replace with alt-text fallback
+                            if !alt.is_empty() {
+                                let alt_text = format!("[{}]", alt);
+                                *block = ContentBlock::Paragraph {
+                                    spans: vec![TextSpan {
+                                        text: alt_text.clone(),
+                                        style: InlineStyle::default(),
+                                        link: None,
+                                        color: None,
+                                        font_size_em: None,
+                                    }],
+                                    text: alt_text,
+                                    style: BlockStyle::default(),
+                                };
+                            } else {
+                                *block = ContentBlock::HorizontalRule; // will be filtered
+                            }
+                        }
                     } else {
                         // Replace with alt-text paragraph fallback
                         if !alt.is_empty() {
