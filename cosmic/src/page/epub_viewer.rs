@@ -1982,8 +1982,10 @@ fn render_table(rows: &[Vec<TableCell>], family: font::Family) -> Element<'_, Ep
 
         // Insert divider between header section and body section
         if seen_header && !is_header_row && !divider_inserted {
-            col = col.push(widget::divider::horizontal::default());
+            col = col.push(widget::divider::horizontal::heavy());
             divider_inserted = true;
+        } else {
+            col = col.push(widget::divider::horizontal::light());
         }
         if is_header_row {
             seen_header = true;
