@@ -3,7 +3,7 @@
 mod document_details;
 mod document_list;
 mod epub_viewer;
-mod pdf_viewer;
+mod mu_pdf_viewer;
 mod settings;
 mod sources;
 mod traits;
@@ -51,9 +51,9 @@ use crate::page::document_list::DocumentListOutput;
 use crate::page::epub_viewer::EpubViewer;
 use crate::page::epub_viewer::EpubViewerMessage;
 use crate::page::epub_viewer::EpubViewerOutput;
-use crate::page::pdf_viewer::PdfViewer;
-use crate::page::pdf_viewer::PdfViewerMessage;
-use crate::page::pdf_viewer::PdfViewerOutput;
+use crate::page::mu_pdf_viewer::MuPdfViewer;
+use crate::page::mu_pdf_viewer::MuPdfViewerMessage;
+use crate::page::mu_pdf_viewer::MuPdfViewerOutput;
 use crate::page::settings::SettingsMessage;
 use crate::page::settings::SettingsPage;
 use crate::page::sources::SourcesMessage;
@@ -69,7 +69,7 @@ pub struct Pages {
     documents: DocumentList,
     document_details: IndexMap<Fingerprint, DocumentDetails>,
     epub_viewers: IndexMap<Fingerprint, EpubViewer>,
-    pdf_viewers: IndexMap<Fingerprint, PdfViewer>,
+    mu_pdf_viewers: IndexMap<Fingerprint, MuPdfViewer>,
     settings: SettingsPage,
 }
 
@@ -79,7 +79,7 @@ pub enum PageSelector {
     Documents,
     DocumentDetails(Fingerprint),
     EpubViewer(Fingerprint),
-    PdfViewer(Fingerprint),
+    MuPdfViewer(Fingerprint),
     Settings,
 }
 
@@ -102,8 +102,8 @@ pub enum PageMessage {
     EpubViewer(Fingerprint, EpubViewerMessage),
     OpenDocument(Document),
     CloseEpubViewer(Fingerprint, Option<String>),
-    PdfViewer(Fingerprint, PdfViewerMessage),
-    ClosePdfViewer(Fingerprint, Option<usize>),
+    MuPdfViewer(Fingerprint, MuPdfViewerMessage),
+    CloseMuPdfViewer(Fingerprint, Option<usize>),
     Settings(SettingsMessage),
     KeyEvent(PageSelector, Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(PageSelector, Modifiers),
@@ -155,10 +155,10 @@ macro_rules! with_active_page {
                 let $mapper = move |msg| map_epub_viewer_message(fingerprint.clone(), msg);
                 $body
             }
-            PageSelector::PdfViewer(fingerprint) => {
-                let $page = $self.pdf_viewers.get(fingerprint);
+            PageSelector::MuPdfViewer(fingerprint) => {
+                let $page = $self.mu_pdf_viewers.get(fingerprint);
                 let fingerprint = fingerprint.clone();
-                let $mapper = move |msg| map_pdf_viewer_message(fingerprint.clone(), msg);
+                let $mapper = move |msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg);
                 $body
             }
             PageSelector::Settings => {
@@ -235,7 +235,7 @@ impl Pages {
                 documents,
                 document_details: Default::default(),
                 epub_viewers: Default::default(),
-                pdf_viewers: Default::default(),
+                mu_pdf_viewers: Default::default(),
                 settings,
             },
             task::batch(tasks),
@@ -250,7 +250,9 @@ impl Pages {
                 self.document_details[fingerprint].display_name()
             }
             PageSelector::EpubViewer(fingerprint) => self.epub_viewers[fingerprint].display_name(),
-            PageSelector::PdfViewer(fingerprint) => self.pdf_viewers[fingerprint].display_name(),
+            PageSelector::MuPdfViewer(fingerprint) => {
+                self.mu_pdf_viewers[fingerprint].display_name()
+            }
             PageSelector::Settings => fl!("settings-page-title"),
         }
     }
@@ -410,10 +412,10 @@ impl Pages {
                     .map(move |action| {
                         action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
                     }),
-                PageSelector::PdfViewer(fingerprint) => self.pdf_viewers[&fingerprint]
-                    .update(PdfViewerMessage::Key(modifiers, key, text))
+                PageSelector::MuPdfViewer(fingerprint) => self.mu_pdf_viewers[&fingerprint]
+                    .update(MuPdfViewerMessage::Key(modifiers, key, text))
                     .map(move |action| {
-                        action.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg))
+                        action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
                     }),
                 _ => Task::none(),
             },
@@ -423,23 +425,23 @@ impl Pages {
                     .map(move |action| {
                         action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
                     }),
-                PageSelector::PdfViewer(fingerprint) => self.pdf_viewers[&fingerprint]
-                    .update(PdfViewerMessage::ModifiersChanged(modifiers))
+                PageSelector::MuPdfViewer(fingerprint) => self.mu_pdf_viewers[&fingerprint]
+                    .update(MuPdfViewerMessage::ModifiersChanged(modifiers))
                     .map(move |action| {
-                        action.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg))
+                        action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
                     }),
                 _ => Task::none(),
             },
-            PageMessage::PdfViewer(fingerprint, message) => self.pdf_viewers[&fingerprint]
+            PageMessage::MuPdfViewer(fingerprint, message) => self.mu_pdf_viewers[&fingerprint]
                 .update(message)
                 .map(move |action| {
-                    action.map(|msg| map_pdf_viewer_message(fingerprint.clone(), msg))
+                    action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
                 }),
-            PageMessage::ClosePdfViewer(fingerprint, page) => {
-                let _ = self.pdf_viewers.swap_remove(&fingerprint);
+            PageMessage::CloseMuPdfViewer(fingerprint, page) => {
+                let _ = self.mu_pdf_viewers.swap_remove(&fingerprint);
 
                 let mut tasks = vec![task::message(PageMessage::Out(PageOutput::PageRemoved(
-                    PageSelector::PdfViewer(fingerprint.clone()),
+                    PageSelector::MuPdfViewer(fingerprint.clone()),
                 )))];
 
                 if let Some(page) = page {
@@ -467,19 +469,15 @@ impl Pages {
                 .map(move |action| {
                     action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
                 }),
-            PageMessage::OpenDocument(document) => match &document.metadata.type_ {
-                DocumentType::Pdf => self.open_pdf_viewer(document),
-                DocumentType::Epub => self.open_epub_viewer(document),
-                DocumentType::Mobi => {
-                    let document_provider = self.document_provider.clone();
-                    task::future(async move {
-                        if let Err(e) = document_provider.open_document(document).await {
-                            tracing::error!("Failed to open file: {e}");
-                        }
-                        PageMessage::Noop
-                    })
+            PageMessage::OpenDocument(document) =>
+            {
+                #[allow(unreachable_patterns)]
+                match &document.metadata.type_ {
+                    DocumentType::Mobi | DocumentType::Pdf => self.open_mupdf_viewer(document),
+                    DocumentType::Epub => self.open_epub_viewer(document),
+                    _ => self.open_in_external_viewer(document),
                 }
-            },
+            }
             PageMessage::CloseEpubViewer(fingerprint, progress_json) => {
                 let _ = self.epub_viewers.swap_remove(&fingerprint);
 
@@ -513,26 +511,35 @@ impl Pages {
         }
     }
 
-    fn open_pdf_viewer(&mut self, document: Document) -> Task<Action<PageMessage>> {
+    fn open_in_external_viewer(&mut self, document: Document) -> Task<Action<PageMessage>> {
+        let document_provider = self.document_provider.clone();
+        task::future(async move {
+            if let Err(e) = document_provider.open_document(document).await {
+                tracing::error!("Failed to open file: {e}");
+            }
+            PageMessage::Noop
+        })
+    }
+
+    fn open_mupdf_viewer(&mut self, document: Document) -> Task<Action<PageMessage>> {
         let fingerprint = document.metadata.fingerprint.clone();
 
-        if self.pdf_viewers.contains_key(&fingerprint) {
+        if self.mu_pdf_viewers.contains_key(&fingerprint) {
             task::message(PageMessage::Out(PageOutput::TogglePage(
-                PageSelector::PdfViewer(fingerprint),
+                PageSelector::MuPdfViewer(fingerprint),
             )))
         } else {
             let fingerprint_1 = fingerprint.clone();
-            let fingerprint_2 = fingerprint.clone();
             let (pdf_viewer, initialization) =
-                PdfViewer::new(document, self.document_provider.clone());
-            self.pdf_viewers.insert(fingerprint.clone(), pdf_viewer);
+                MuPdfViewer::new(document, self.document_provider.clone());
+            self.mu_pdf_viewers.insert(fingerprint.clone(), pdf_viewer);
             initialization
                 .map(move |action| {
                     let fingerprint = fingerprint_1.clone();
-                    action.map(move |msg| map_pdf_viewer_message(fingerprint, msg))
+                    action.map(move |msg| map_mu_pdf_viewer_message(fingerprint, msg))
                 })
                 .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
-                    PageSelector::PdfViewer(fingerprint_2),
+                    PageSelector::MuPdfViewer(fingerprint),
                     "application-pdf-symbolic",
                 ))))
         }
@@ -604,14 +611,14 @@ fn map_document_details_message(
     }
 }
 
-fn map_pdf_viewer_message(fingerprint: Fingerprint, msg: PdfViewerMessage) -> PageMessage {
+fn map_mu_pdf_viewer_message(fingerprint: Fingerprint, msg: MuPdfViewerMessage) -> PageMessage {
     match msg {
-        PdfViewerMessage::Out(message) => match message {
-            PdfViewerOutput::Close(fingerprint, page) => {
-                PageMessage::ClosePdfViewer(fingerprint, page)
+        MuPdfViewerMessage::Out(message) => match message {
+            MuPdfViewerOutput::Close(fingerprint, page) => {
+                PageMessage::CloseMuPdfViewer(fingerprint, page)
             }
         },
-        msg => PageMessage::PdfViewer(fingerprint, msg),
+        msg => PageMessage::MuPdfViewer(fingerprint, msg),
     }
 }
 

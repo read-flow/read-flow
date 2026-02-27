@@ -118,12 +118,12 @@ fn display_list_to_image(display_list: &mupdf::DisplayList, scale: f32) -> widge
 // --- Messages ---
 
 #[derive(Debug, Clone)]
-pub enum PdfViewerOutput {
+pub enum MuPdfViewerOutput {
     Close(Fingerprint, Option<usize>),
 }
 
 #[derive(Clone, Debug)]
-pub enum PdfViewerMessage {
+pub enum MuPdfViewerMessage {
     // PDF loading pipeline
     ReadingProgressLoaded(Option<usize>),
     PagesLoaded(Vec<PdfPage>),
@@ -149,12 +149,12 @@ pub enum PdfViewerMessage {
     ModifiersChanged(Modifiers),
 
     // Outgoing
-    Out(PdfViewerOutput),
+    Out(MuPdfViewerOutput),
 }
 
-// --- PdfViewer page ---
+// --- MuPdfViewer page ---
 
-pub struct PdfViewer {
+pub struct MuPdfViewer {
     fingerprint: Fingerprint,
     document: Document,
     file_path: Option<PathBuf>,
@@ -180,11 +180,11 @@ pub struct PdfViewer {
     thumbnail_viewport: Option<scrollable::Viewport>,
 }
 
-impl PdfViewer {
+impl MuPdfViewer {
     pub fn new(
         document: Document,
         document_provider: Arc<DocumentProvider>,
-    ) -> (Self, Task<Action<PdfViewerMessage>>) {
+    ) -> (Self, Task<Action<MuPdfViewerMessage>>) {
         let fingerprint = document.metadata.fingerprint.clone();
 
         // Resolve local file path from document sources
@@ -194,7 +194,7 @@ impl PdfViewer {
 
         let zoom_names: Vec<String> = Zoom::all().iter().map(|z| z.to_string()).collect();
 
-        let viewer = PdfViewer {
+        let viewer = MuPdfViewer {
             fingerprint: fingerprint.clone(),
             document,
             file_path: file_path.clone(),
@@ -224,7 +224,7 @@ impl PdfViewer {
                         .await
                         .unwrap()
                 },
-                |pages| cosmic::action::app(PdfViewerMessage::PagesLoaded(pages)),
+                |pages| cosmic::action::app(MuPdfViewerMessage::PagesLoaded(pages)),
             ));
         }
 
@@ -242,7 +242,7 @@ impl PdfViewer {
                     }
                 }
             },
-            |page| cosmic::action::app(PdfViewerMessage::ReadingProgressLoaded(page)),
+            |page| cosmic::action::app(MuPdfViewerMessage::ReadingProgressLoaded(page)),
         ));
 
         (viewer, Task::batch(tasks))
@@ -256,7 +256,7 @@ impl PdfViewer {
             .to_string()
     }
 
-    fn view_thumbnails(&self) -> Element<'_, PdfViewerMessage> {
+    fn view_thumbnails(&self) -> Element<'_, MuPdfViewerMessage> {
         let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
         let mut column = widget::column::with_capacity(self.pages.len())
@@ -286,7 +286,7 @@ impl PdfViewer {
                     widget::button::image(handle)
                         .width(width)
                         .height(height)
-                        .on_press(PdfViewerMessage::SelectPage(idx))
+                        .on_press(MuPdfViewerMessage::SelectPage(idx))
                         .selected(visible.contains(&idx)),
                 );
             } else {
@@ -297,7 +297,7 @@ impl PdfViewer {
                     )
                     .width(width)
                     .height(height)
-                    .on_press(PdfViewerMessage::SelectPage(idx))
+                    .on_press(MuPdfViewerMessage::SelectPage(idx))
                     .selected(visible.contains(&idx)),
                 );
             }
@@ -322,7 +322,7 @@ impl PdfViewer {
             .into(),
             widget::scrollable(column)
                 .id(self.thumbnail_scroll_id.clone())
-                .on_scroll(PdfViewerMessage::ThumbnailScroll)
+                .on_scroll(MuPdfViewerMessage::ThumbnailScroll)
                 .width(Length::Fill)
                 .into(),
         ])
@@ -333,7 +333,7 @@ impl PdfViewer {
         .into()
     }
 
-    fn view_content(&self) -> Element<'_, PdfViewerMessage> {
+    fn view_content(&self) -> Element<'_, MuPdfViewerMessage> {
         widget::responsive(move |size| {
             self.viewport_size.set((size.width, size.height));
             let dual = self.should_dual_pane(size.width);
@@ -363,7 +363,7 @@ impl PdfViewer {
         }
     }
 
-    fn view_pdf_page(&self, page_idx: usize) -> Element<'_, PdfViewerMessage> {
+    fn view_pdf_page(&self, page_idx: usize) -> Element<'_, MuPdfViewerMessage> {
         if let Some(page) = self.pages.get(page_idx) {
             widget::responsive(move |size| {
                 let ratio = match self.zoom {
@@ -426,7 +426,7 @@ impl PdfViewer {
 
                 let mut mouse_area = widget::mouse_area(outer);
                 if self.modifiers.contains(Modifiers::CTRL) {
-                    mouse_area = mouse_area.on_scroll(PdfViewerMessage::ZoomScroll);
+                    mouse_area = mouse_area.on_scroll(MuPdfViewerMessage::ZoomScroll);
                 }
 
                 widget::scrollable(mouse_area)
@@ -442,7 +442,7 @@ impl PdfViewer {
         }
     }
 
-    fn update_active_page(&mut self) -> Task<Action<PdfViewerMessage>> {
+    fn update_active_page(&mut self) -> Task<Action<MuPdfViewerMessage>> {
         let mut tasks = Vec::with_capacity(2);
 
         // Auto-scroll thumbnails to keep active page visible
@@ -525,7 +525,7 @@ impl PdfViewer {
                                     svg.insert_str(pos + 1, &style);
                                 }
                             }
-                            PdfViewerMessage::SvgReady(
+                            MuPdfViewerMessage::SvgReady(
                                 index,
                                 widget::svg::Handle::from_memory(svg.into_bytes()),
                             )
@@ -562,10 +562,10 @@ impl PdfViewer {
     }
 }
 
-impl Page for PdfViewer {
-    type Message = PdfViewerMessage;
+impl Page for MuPdfViewer {
+    type Message = MuPdfViewerMessage;
 
-    fn view(&self) -> Element<'_, PdfViewerMessage> {
+    fn view(&self) -> Element<'_, MuPdfViewerMessage> {
         if self.file_path.is_none() {
             // No local source available
             let no_source = widget::column()
@@ -616,7 +616,7 @@ impl Page for PdfViewer {
             .into()
     }
 
-    fn view_header_center(&self) -> Vec<Element<'_, PdfViewerMessage>> {
+    fn view_header_center(&self) -> Vec<Element<'_, MuPdfViewerMessage>> {
         let path = Path::new(&self.document.sources.iter().next().unwrap().path);
         let filename = path
             .file_stem()
@@ -630,7 +630,7 @@ impl Page for PdfViewer {
         ]
     }
 
-    fn view_header_end(&self) -> Vec<Element<'_, PdfViewerMessage>> {
+    fn view_header_end(&self) -> Vec<Element<'_, MuPdfViewerMessage>> {
         let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
         let mut elements = Vec::new();
@@ -638,7 +638,7 @@ impl Page for PdfViewer {
         // Close button (rightmost, matching standard dismiss placement)
         elements.push(
             widget::button::icon(widget::icon::from_name("window-close-symbolic").size(ICON_SIZE))
-                .on_press(PdfViewerMessage::Out(PdfViewerOutput::Close(
+                .on_press(MuPdfViewerMessage::Out(MuPdfViewerOutput::Close(
                     self.fingerprint.clone(),
                     if self.pages.is_empty() {
                         None
@@ -654,23 +654,23 @@ impl Page for PdfViewer {
         elements
     }
 
-    fn view_context(&self) -> ContextView<'_, PdfViewerMessage> {
+    fn view_context(&self) -> ContextView<'_, MuPdfViewerMessage> {
         let zoom_section = widget::settings::section()
             .title(fl!("pdf-viewer-zoom"))
             .add(
                 widget::settings::item::builder(fl!("pdf-viewer-zoom")).control(widget::dropdown(
                     &self.zoom_names,
                     Zoom::all().iter().position(|z| z == &self.zoom),
-                    PdfViewerMessage::ZoomDropdown,
+                    MuPdfViewerMessage::ZoomDropdown,
                 )),
             )
             .add(
                 widget::settings::item::builder(fl!("pdf-viewer-theme-colors"))
-                    .toggler(self.theme_colors, PdfViewerMessage::ThemeColors),
+                    .toggler(self.theme_colors, MuPdfViewerMessage::ThemeColors),
             )
             .add(
                 widget::settings::item::builder(fl!("pdf-viewer-show-thumbnails"))
-                    .toggler(self.show_thumbnails, PdfViewerMessage::ShowThumbnails),
+                    .toggler(self.show_thumbnails, MuPdfViewerMessage::ShowThumbnails),
             )
             .add(
                 widget::settings::item::builder(fl!("pdf-viewer-dual-pane")).control(
@@ -679,21 +679,21 @@ impl Page for PdfViewer {
                             widget::text::body(fl!("pdf-viewer-dual-pane-off")),
                             DualPageMode::Off,
                             Some(self.dual_pane),
-                            PdfViewerMessage::DualPane,
+                            MuPdfViewerMessage::DualPane,
                         )
                         .into(),
                         widget::radio(
                             widget::text::body(fl!("pdf-viewer-dual-pane-auto")),
                             DualPageMode::Auto,
                             Some(self.dual_pane),
-                            PdfViewerMessage::DualPane,
+                            MuPdfViewerMessage::DualPane,
                         )
                         .into(),
                         widget::radio(
                             widget::text::body(fl!("pdf-viewer-dual-pane-on")),
                             DualPageMode::On,
                             Some(self.dual_pane),
-                            PdfViewerMessage::DualPane,
+                            MuPdfViewerMessage::DualPane,
                         )
                         .into(),
                     ]),
@@ -731,9 +731,9 @@ impl Page for PdfViewer {
         }
     }
 
-    fn update(&mut self, message: PdfViewerMessage) -> Task<Action<PdfViewerMessage>> {
+    fn update(&mut self, message: MuPdfViewerMessage) -> Task<Action<MuPdfViewerMessage>> {
         match message {
-            PdfViewerMessage::ReadingProgressLoaded(page) => {
+            MuPdfViewerMessage::ReadingProgressLoaded(page) => {
                 self.initial_page = page;
                 if !self.pages.is_empty()
                     && let Some(p) = page
@@ -744,7 +744,7 @@ impl Page for PdfViewer {
                 }
                 Task::none()
             }
-            PdfViewerMessage::PagesLoaded(pages) => {
+            MuPdfViewerMessage::PagesLoaded(pages) => {
                 self.pages = pages;
                 if !self.pages.is_empty() {
                     self.active_page = self.initial_page.unwrap_or(0).min(self.pages.len() - 1);
@@ -761,7 +761,7 @@ impl Page for PdfViewer {
                                         let doc = mupdf::Document::open(path.as_os_str()).unwrap();
                                         let page = doc.load_page(index).unwrap();
                                         let display_list = page.to_display_list(false).unwrap();
-                                        PdfViewerMessage::DisplayListReady(
+                                        MuPdfViewerMessage::DisplayListReady(
                                             index,
                                             Arc::new(display_list),
                                         )
@@ -777,7 +777,7 @@ impl Page for PdfViewer {
                 }
                 Task::none()
             }
-            PdfViewerMessage::DisplayListReady(pdf_index, display_list) => {
+            MuPdfViewerMessage::DisplayListReady(pdf_index, display_list) => {
                 if let Some(idx) = self.page_index_by_pdf_index(pdf_index) {
                     self.pages[idx].display_list = Some(display_list.clone());
 
@@ -789,7 +789,7 @@ impl Page for PdfViewer {
                             tokio::task::spawn_blocking(move || {
                                 let scale =
                                     (THUMBNAIL_WIDTH as f32) / display_list.bounds().width();
-                                PdfViewerMessage::ThumbnailReady(
+                                MuPdfViewerMessage::ThumbnailReady(
                                     pdf_index,
                                     display_list_to_image(&display_list, scale),
                                 )
@@ -809,36 +809,36 @@ impl Page for PdfViewer {
                 }
                 Task::none()
             }
-            PdfViewerMessage::ThumbnailReady(pdf_index, handle) => {
+            MuPdfViewerMessage::ThumbnailReady(pdf_index, handle) => {
                 if let Some(idx) = self.page_index_by_pdf_index(pdf_index) {
                     self.pages[idx].icon_handle = Some(handle);
                 }
                 Task::none()
             }
-            PdfViewerMessage::SvgReady(pdf_index, handle) => {
+            MuPdfViewerMessage::SvgReady(pdf_index, handle) => {
                 if let Some(idx) = self.page_index_by_pdf_index(pdf_index) {
                     self.pages[idx].svg_handle = Some(handle);
                 }
                 Task::none()
             }
-            PdfViewerMessage::SelectPage(idx) => {
+            MuPdfViewerMessage::SelectPage(idx) => {
                 if idx < self.pages.len() {
                     self.active_page = idx;
                     return self.update_active_page();
                 }
                 Task::none()
             }
-            PdfViewerMessage::ThumbnailScroll(viewport) => {
+            MuPdfViewerMessage::ThumbnailScroll(viewport) => {
                 self.thumbnail_viewport = Some(viewport);
                 Task::none()
             }
-            PdfViewerMessage::ZoomDropdown(index) => {
+            MuPdfViewerMessage::ZoomDropdown(index) => {
                 if let Some(zoom) = Zoom::all().get(index) {
                     self.zoom = *zoom;
                 }
                 Task::none()
             }
-            PdfViewerMessage::ZoomScroll(delta) => {
+            MuPdfViewerMessage::ZoomScroll(delta) => {
                 self.zoom_scroll += match delta {
                     ScrollDelta::Lines { y, .. } => y,
                     ScrollDelta::Pixels { y, .. } => y / 20.0,
@@ -858,7 +858,7 @@ impl Page for PdfViewer {
                 self.zoom = Zoom::Percent(percent.clamp(25, 500));
                 Task::none()
             }
-            PdfViewerMessage::Key(_modifiers, key, _text) => match &key {
+            MuPdfViewerMessage::Key(_modifiers, key, _text) => match &key {
                 Key::Named(Named::ArrowUp | Named::ArrowLeft | Named::PageUp) => {
                     let (vw, _) = self.viewport_size.get();
                     let step = if self.should_dual_pane(vw) { 2 } else { 1 };
@@ -910,33 +910,33 @@ impl Page for PdfViewer {
                 },
                 _ => Task::none(),
             },
-            PdfViewerMessage::ModifiersChanged(modifiers) => {
+            MuPdfViewerMessage::ModifiersChanged(modifiers) => {
                 self.modifiers = modifiers;
                 Task::none()
             }
-            PdfViewerMessage::ThemeColors(use_theme_colors) => {
+            MuPdfViewerMessage::ThemeColors(use_theme_colors) => {
                 self.theme_colors = use_theme_colors;
                 for page in &mut self.pages {
                     page.svg_handle = None;
                 }
                 self.update_active_page()
             }
-            PdfViewerMessage::ShowThumbnails(show_thumbnails) => {
+            MuPdfViewerMessage::ShowThumbnails(show_thumbnails) => {
                 self.show_thumbnails = show_thumbnails;
                 Task::none()
             }
-            PdfViewerMessage::DualPane(dual_pane) => {
+            MuPdfViewerMessage::DualPane(dual_pane) => {
                 self.dual_pane = dual_pane;
                 self.update_active_page()
             }
-            PdfViewerMessage::Out(_) => {
+            MuPdfViewerMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }
         }
     }
 }
 
-fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, PdfViewerMessage> {
+fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, MuPdfViewerMessage> {
     widget::settings::item::builder(description)
         .control(widget::text::monotext(key))
         .into()
