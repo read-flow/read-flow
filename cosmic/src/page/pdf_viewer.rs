@@ -144,11 +144,6 @@ pub enum PdfViewerMessage {
     ShowThumbnails(bool),
     DualPane(DualPageMode),
 
-    // Search
-    SearchActivate,
-    SearchClear,
-    SearchInput(String),
-
     // Keyboard / input
     Key(Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(Modifiers),
@@ -170,9 +165,6 @@ pub struct PdfViewer {
     initial_page: Option<usize>,
     zoom: Zoom,
     zoom_names: Vec<String>,
-    search_active: bool,
-    search_id: widget::Id,
-    search_term: String,
     modifiers: Modifiers,
     view_ratio: Cell<f32>,
     zoom_scroll: f32,
@@ -211,9 +203,6 @@ impl PdfViewer {
             initial_page: None,
             zoom: Zoom::FitBoth,
             zoom_names,
-            search_active: false,
-            search_id: widget::Id::unique(),
-            search_term: String::new(),
             modifiers: Modifiers::default(),
             view_ratio: Cell::new(1.0),
             zoom_scroll: 0.0,
@@ -646,27 +635,6 @@ impl Page for PdfViewer {
 
         let mut elements = Vec::new();
 
-        // Search
-        if self.search_active {
-            elements.push(
-                widget::text_input::search_input("", &self.search_term)
-                    .width(Length::Fixed(240.0))
-                    .id(self.search_id.clone())
-                    .on_clear(PdfViewerMessage::SearchClear)
-                    .on_input(PdfViewerMessage::SearchInput)
-                    .into(),
-            );
-        } else {
-            elements.push(
-                widget::button::icon(
-                    widget::icon::from_name("system-search-symbolic").size(ICON_SIZE),
-                )
-                .on_press(PdfViewerMessage::SearchActivate)
-                .padding(space_xxs)
-                .into(),
-            );
-        }
-
         // Close button (rightmost, matching standard dismiss placement)
         elements.push(
             widget::button::icon(widget::icon::from_name("window-close-symbolic").size(ICON_SIZE))
@@ -751,11 +719,6 @@ impl Page for PdfViewer {
             .add(shortcut_item(
                 "Ctrl+Scroll",
                 fl!("pdf-viewer-shortcut-ctrl-scroll"),
-            ))
-            .add(shortcut_item("S /", fl!("pdf-viewer-shortcut-search")))
-            .add(shortcut_item(
-                "Esc",
-                fl!("pdf-viewer-shortcut-close-search"),
             ));
 
         ContextView {
@@ -895,19 +858,6 @@ impl Page for PdfViewer {
                 self.zoom = Zoom::Percent(percent.clamp(25, 500));
                 Task::none()
             }
-            PdfViewerMessage::SearchActivate => {
-                self.search_active = true;
-                widget::text_input::focus(self.search_id.clone())
-            }
-            PdfViewerMessage::SearchClear => {
-                self.search_active = false;
-                self.search_term.clear();
-                Task::none()
-            }
-            PdfViewerMessage::SearchInput(term) => {
-                self.search_term = term;
-                Task::none()
-            }
             PdfViewerMessage::Key(_modifiers, key, _text) => match &key {
                 Key::Named(Named::ArrowUp | Named::ArrowLeft | Named::PageUp) => {
                     let (vw, _) = self.viewport_size.get();
@@ -922,11 +872,6 @@ impl Page for PdfViewer {
                         self.active_page += step;
                     }
                     self.update_active_page()
-                }
-                Key::Named(Named::Escape) => {
-                    self.search_active = false;
-                    self.search_term.clear();
-                    Task::none()
                 }
                 Key::Character(c) => match c.as_str() {
                     "0" => {
@@ -960,10 +905,6 @@ impl Page for PdfViewer {
                     "w" => {
                         self.zoom = Zoom::FitWidth;
                         Task::none()
-                    }
-                    "s" | "/" => {
-                        self.search_active = true;
-                        widget::text_input::focus(self.search_id.clone())
                     }
                     _ => Task::none(),
                 },

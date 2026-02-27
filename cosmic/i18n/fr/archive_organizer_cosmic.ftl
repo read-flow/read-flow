@@ -249,8 +249,6 @@ pdf-viewer-shortcut-fit-both = Ajuster largeur et hauteur
 pdf-viewer-shortcut-fit-height = Ajuster la hauteur
 pdf-viewer-shortcut-fit-width = Ajuster la largeur
 pdf-viewer-shortcut-ctrl-scroll = Zoomer avec la souris
-pdf-viewer-shortcut-search = Rechercher
-pdf-viewer-shortcut-close-search = Fermer la recherche
 pdf-viewer-show-thumbnails = Show thumbnails # TODO
 
 # EPUB viewer

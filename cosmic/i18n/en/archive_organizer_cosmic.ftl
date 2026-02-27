@@ -228,8 +228,6 @@ pdf-viewer-shortcut-fit-both = Fit width and height
 pdf-viewer-shortcut-fit-height = Fit height
 pdf-viewer-shortcut-fit-width = Fit width
 pdf-viewer-shortcut-ctrl-scroll = Zoom with mouse
-pdf-viewer-shortcut-search = Search
-pdf-viewer-shortcut-close-search = Close search
 pdf-viewer-show-thumbnails = Show thumbnails
 
 # EPUB viewer
