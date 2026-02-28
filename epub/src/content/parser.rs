@@ -938,16 +938,18 @@ impl TokenSink for ContentSink {
 
                 // For non-transparent blocks (headings, paragraphs, etc.),
                 // emit an Anchor before the block itself when the element had an id.
-                if block.is_some() {
-                    if let Some(id) = &element_id
-                        && !id.is_empty()
-                    {
-                        let anchor = ContentBlock::Anchor { id: id.clone() };
-                        if let Some(parent) = state.stack.last_mut() {
-                            parent.children.push(anchor);
-                        } else {
-                            state.output.push(anchor);
-                        }
+                // Footnote blocks already carry their own id for anchor lookup, so
+                // skip them to avoid duplicating the anchor entry.
+                if block.is_some()
+                    && !matches!(block, Some(ContentBlock::Footnote { .. }))
+                    && let Some(id) = &element_id
+                    && !id.is_empty()
+                {
+                    let anchor = ContentBlock::Anchor { id: id.clone() };
+                    if let Some(parent) = state.stack.last_mut() {
+                        parent.children.push(anchor);
+                    } else {
+                        state.output.push(anchor);
                     }
                 }
                 if let Some(block) = block {
