@@ -178,6 +178,13 @@ const INLINE_STYLE_TAGS: &[&str] = &[
     "em", "strong", "b", "i", "u", "del", "s", "code", "ins", "cite", "dfn", "var", "kbd", "samp",
     "tt",
 ];
+/// Block-level structural containers whose `id` attributes are eligible
+/// as TOC navigation anchors.  A zero-height `ContentBlock::Anchor` is emitted
+/// before their promoted children whenever they carry a non-empty `id`.
+const ANCHOR_CONTAINER_TAGS: &[&str] = &[
+    "section", "article", "div", "nav", "main", "header", "footer",
+];
+
 const TRANSPARENT_TAGS: &[&str] = &[
     "div",
     "section",
@@ -618,6 +625,9 @@ impl TokenSink for ContentSink {
                 };
 
                 let block_style = entry.block_style.clone();
+                // Save element_id for Anchor emission (must be extracted before
+                // entry fields are moved into match arms or promote_to_parent).
+                let element_id = entry.element_id.clone();
                 let block = match tag_name {
                     "h1" => Some(ContentBlock::Heading {
                         level: 1,
@@ -892,6 +902,19 @@ impl TokenSink for ContentSink {
                         }
                     }
                     _ if TRANSPARENT_TAGS.contains(&tag_name) => {
+                        // Emit an Anchor before promoted children for structural
+                        // container elements that carry a non-empty id.
+                        if let Some(id) = &element_id
+                            && !id.is_empty()
+                            && ANCHOR_CONTAINER_TAGS.contains(&tag_name)
+                        {
+                            let anchor = ContentBlock::Anchor { id: id.clone() };
+                            if let Some(parent) = state.stack.last_mut() {
+                                parent.children.push(anchor);
+                            } else {
+                                state.output.push(anchor);
+                            }
+                        }
                         promote_to_parent(
                             &mut state,
                             text,
@@ -913,6 +936,20 @@ impl TokenSink for ContentSink {
                     }
                 };
 
+                // For non-transparent blocks (headings, paragraphs, etc.),
+                // emit an Anchor before the block itself when the element had an id.
+                if block.is_some() {
+                    if let Some(id) = &element_id
+                        && !id.is_empty()
+                    {
+                        let anchor = ContentBlock::Anchor { id: id.clone() };
+                        if let Some(parent) = state.stack.last_mut() {
+                            parent.children.push(anchor);
+                        } else {
+                            state.output.push(anchor);
+                        }
+                    }
+                }
                 if let Some(block) = block {
                     if let Some(parent) = state.stack.last_mut() {
                         parent.children.push(block);
@@ -2846,5 +2883,50 @@ mod tests {
     fn empty_svg_is_ignored() {
         let blocks = parse("<svg></svg>");
         assert_eq!(blocks.len(), 0); // Empty SVG should be filtered out
+    }
+
+    #[test]
+    fn heading_with_id_emits_anchor_before_heading() {
+        let blocks = parse(r#"<h2 id="section-1">Section One</h2>"#);
+        // Anchor precedes the Heading
+        assert_eq!(blocks.len(), 2);
+        match &blocks[0] {
+            ContentBlock::Anchor { id } => assert_eq!(id, "section-1"),
+            other => panic!("expected Anchor, got {other:?}"),
+        }
+        match &blocks[1] {
+            ContentBlock::Heading { level: 2, text, .. } => assert_eq!(text, "Section One"),
+            other => panic!("expected Heading h2, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn heading_without_id_emits_no_anchor() {
+        let blocks = parse("<h2>Section One</h2>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Heading { level: 2, .. } => {}
+            other => panic!("expected Heading h2, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn section_with_id_emits_anchor_before_children() {
+        let blocks =
+            parse(r#"<section id="ch1"><h2>Chapter Title</h2><p>Body text.</p></section>"#);
+        // Anchor, then Heading, then Paragraph
+        assert_eq!(blocks.len(), 3, "blocks: {blocks:?}");
+        match &blocks[0] {
+            ContentBlock::Anchor { id } => assert_eq!(id, "ch1"),
+            other => panic!("expected Anchor, got {other:?}"),
+        }
+        match &blocks[1] {
+            ContentBlock::Heading { level: 2, .. } => {}
+            other => panic!("expected Heading h2, got {other:?}"),
+        }
+        match &blocks[2] {
+            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Body text."),
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
     }
 }

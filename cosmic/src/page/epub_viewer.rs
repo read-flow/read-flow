@@ -978,16 +978,53 @@ impl Page for EpubViewer {
             }
             EpubViewerMessage::SelectNavEntry(nav_idx) => {
                 if let Some(entry) = self.nav_entries.get(nav_idx) {
-                    let base = entry
-                        .href
-                        .split_once('#')
-                        .map(|(b, _)| b)
-                        .unwrap_or(&entry.href);
+                    let (base, fragment) = match entry.href.split_once('#') {
+                        Some((b, f)) => (b, Some(f)),
+                        None => (entry.href.as_str(), None),
+                    };
                     if let Some(idx) = self.chapters.iter().position(|c| c.href == base) {
                         self.active_chapter = idx;
                         self.scroll_y = 0.0;
                         self.current_page = 0;
                         self.saved_position = None;
+
+                        // Navigate to the fragment position within the chapter.
+                        if let Some(frag) = fragment.filter(|f| !f.is_empty()) {
+                            let chapter = &self.chapters[idx];
+                            match self.view_mode {
+                                ViewMode::Scroll => {
+                                    if let Some(&target_y) = chapter.anchors.get(frag) {
+                                        self.scroll_y = target_y;
+                                        return scrollable::scroll_to(
+                                            self.content_scroll_id.clone(),
+                                            scrollable::AbsoluteOffset {
+                                                x: 0.0,
+                                                y: target_y,
+                                            },
+                                        );
+                                    }
+                                }
+                                ViewMode::Paginated => {
+                                    // Find the Anchor block with this id to determine
+                                    // which page to navigate to.
+                                    if let Some(block_idx) = chapter.blocks.iter().position(
+                                        |b| matches!(b, ContentBlock::Anchor { id } if id == frag),
+                                    ) {
+                                        if let Some(layout) = self.pagination_cache.get(&idx) {
+                                            self.current_page = layout
+                                                .pages
+                                                .iter()
+                                                .position(|p| {
+                                                    p.start <= block_idx && block_idx < p.end
+                                                })
+                                                .unwrap_or(0);
+                                        } else {
+                                            self.pending_block_index = Some(block_idx);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 Task::none()
@@ -1434,20 +1471,26 @@ fn estimated_block_height(block: &ContentBlock) -> f32 {
         ContentBlock::Footnote { blocks, .. } => {
             blocks.iter().map(estimated_block_height).sum::<f32>() + 16.0
         }
+        ContentBlock::Anchor { .. } => 0.0,
     }
 }
 
 /// Build a map of HTML anchor id → estimated absolute y-offset (pixels).
-/// Covers `ContentBlock::Footnote` ids.
+/// Covers `ContentBlock::Anchor` ids (headings, sections, etc.) and
+/// `ContentBlock::Footnote` ids.
 fn build_anchor_map(blocks: &[ContentBlock]) -> HashMap<String, f32> {
     const SPACING: f32 = 8.0;
     let mut map = HashMap::new();
     let mut y = 0.0f32;
     for block in blocks {
-        if let ContentBlock::Footnote { id, .. } = block
-            && !id.is_empty()
-        {
-            map.insert(id.clone(), y);
+        match block {
+            ContentBlock::Anchor { id } if !id.is_empty() => {
+                map.insert(id.clone(), y);
+            }
+            ContentBlock::Footnote { id, .. } if !id.is_empty() => {
+                map.entry(id.clone()).or_insert(y);
+            }
+            _ => {}
         }
         y += estimated_block_height(block) + SPACING;
     }
@@ -1488,6 +1531,7 @@ fn estimated_block_height_for_width(block: &ContentBlock, content_width: f32) ->
                 .sum::<f32>()
                 + 16.0
         }
+        ContentBlock::Anchor { .. } => 0.0,
     }
 }
 
@@ -1982,6 +2026,9 @@ fn render_block<'a>(
         ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
         ContentBlock::Footnote { blocks, .. } => {
             render_footnote(blocks, family, document, chapter_href, epub_document)
+        }
+        ContentBlock::Anchor { .. } => {
+            widget::Space::new(Length::Fixed(0.0), Length::Fixed(0.0)).into()
         }
     }
 }

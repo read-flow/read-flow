@@ -104,6 +104,13 @@ pub enum ContentBlock {
         id: String,
         blocks: Vec<ContentBlock>,
     },
+    /// A zero-height marker block representing an HTML element that carries an
+    /// `id` attribute.  Emitted immediately before the element's content so
+    /// that `build_anchor_map` can map the id to an absolute y-offset in the
+    /// rendered block stream.  Invisible in all rendered views.
+    Anchor {
+        id: String,
+    },
 }
 
 #[derive(Clone, Debug)]
