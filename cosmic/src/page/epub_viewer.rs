@@ -2190,7 +2190,21 @@ fn render_table(rows: &[Vec<TableCell>], family: font::Family) -> Element<'_, Ep
         for cell in row {
             let cell_spans: Vec<cosmic::iced::widget::text::Span<'_, EpubViewerMessage>> =
                 if !cell.spans.is_empty() {
-                    cell.spans.iter().map(|s| styled_span(s, family)).collect()
+                    cell.spans
+                        .iter()
+                        .map(|s| {
+                            let mut sp = styled_span(s, family);
+                            // Force bold for header cells whose spans aren't already bold.
+                            if cell.is_header && !s.style.bold {
+                                let font = sp.font.unwrap_or_default();
+                                sp = sp.font(Font {
+                                    weight: font::Weight::Bold,
+                                    ..font
+                                });
+                            }
+                            sp
+                        })
+                        .collect()
                 } else if !cell.text.is_empty() {
                     let mut s = span(cell.text.as_str());
                     if cell.is_header {
