@@ -8,6 +8,7 @@ use zip::ZipArchive;
 
 use crate::domain::document::Document;
 use crate::domain::metadata::DocumentMetadata;
+use crate::domain::nav::NavEntry;
 use crate::domain::spine::SpineItem;
 use crate::epub::container::Container;
 use crate::epub::nav::parse_epub2_ncx;
@@ -20,6 +21,7 @@ pub struct EpubDocument {
     identifier: String,
     metadata: DocumentMetadata,
     spine: Vec<SpineItem>,
+    nav: Vec<NavEntry>,
     archive: RwLock<ZipArchive<BufReader<File>>>,
 }
 
@@ -55,15 +57,28 @@ impl EpubDocument {
             .clone()
             .unwrap_or_else(|| container.rootfile_path.clone());
 
-        // Build href → label map from the Navigation Document (EPUB3) or NCX (EPUB2).
+        // Build nav entries from the Navigation Document (EPUB3) or NCX (EPUB2).
         // EPUB3 nav takes priority; fall back to NCX if nav is absent.
-        let label_map = read_label_map(&mut archive, &package);
+        let nav_entries = read_nav_entries(&mut archive, &package);
+
+        // Build a fragment-stripped href → label lookup (first match wins).
+        let mut label_by_href: HashMap<String, String> = HashMap::new();
+        for entry in &nav_entries {
+            let base = entry
+                .href
+                .split_once('#')
+                .map(|(b, _)| b)
+                .unwrap_or(&entry.href);
+            label_by_href
+                .entry(base.to_string())
+                .or_insert_with(|| entry.label.clone());
+        }
 
         let spine = package
             .spine
             .into_iter()
             .map(|mut item| {
-                item.label = label_map.get(&item.href).cloned();
+                item.label = label_by_href.get(&item.href).cloned();
                 item
             })
             .collect();
@@ -72,8 +87,13 @@ impl EpubDocument {
             identifier,
             metadata: package.metadata,
             spine,
+            nav: nav_entries,
             archive: RwLock::new(archive),
         })
+    }
+
+    pub fn nav(&self) -> &[NavEntry] {
+        &self.nav
     }
 }
 
@@ -101,21 +121,18 @@ impl Document for EpubDocument {
     }
 }
 
-/// Try to read a nav / NCX document from the archive and build an href→label map.
+/// Try to read a nav / NCX document from the archive and return ordered nav entries.
 /// Prefers EPUB3 nav; falls back to EPUB2 NCX.
-fn read_label_map(
-    archive: &mut ZipArchive<BufReader<File>>,
-    package: &Package,
-) -> HashMap<String, String> {
+fn read_nav_entries(archive: &mut ZipArchive<BufReader<File>>, package: &Package) -> Vec<NavEntry> {
     // Try EPUB3 nav first
     if let Some(nav_href) = &package.nav_href
         && let Ok(mut file) = archive.by_name(nav_href)
     {
         let mut buf = Vec::new();
         if std::io::Read::read_to_end(&mut file, &mut buf).is_ok() {
-            let map = parse_epub3_nav(&buf, nav_href);
-            if !map.is_empty() {
-                return map;
+            let entries = parse_epub3_nav(&buf, nav_href);
+            if !entries.is_empty() {
+                return entries;
             }
         }
     }
@@ -128,7 +145,7 @@ fn read_label_map(
             return parse_epub2_ncx(&buf, ncx_href);
         }
     }
-    HashMap::new()
+    Vec::new()
 }
 
 #[cfg(test)]

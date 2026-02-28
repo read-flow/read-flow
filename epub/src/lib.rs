@@ -16,6 +16,7 @@ pub use content::parse_css;
 pub use domain::document::Document;
 pub use domain::locator::Locator;
 pub use domain::metadata::DocumentMetadata;
+pub use domain::nav::NavEntry;
 pub use domain::spine::SpineItem;
 pub use epub::document::EpubDocument;
 pub use error::EpubError;

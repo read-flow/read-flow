@@ -31,6 +31,7 @@ use epub::BlockStyle;
 use epub::ContentBlock;
 use epub::Document as EpubDocumentTrait;
 use epub::EpubDocument;
+use epub::NavEntry;
 use epub::StyleSheet;
 use epub::TableCell;
 use epub::TextAlign;
@@ -205,6 +206,7 @@ pub enum EpubViewerMessage {
     /// Carries restored reading position from saved progress.
     ReadingProgressLoaded(ReadingPosition),
     SelectChapter(usize),
+    SelectNavEntry(usize),
     ShowRawHtml(bool),
     Scrolled(scrollable::Viewport),
     FollowLink(String),
@@ -274,6 +276,8 @@ pub struct EpubViewer {
     font_family: FontFamily,
     /// Pre-computed display names for the font family dropdown.
     font_family_names: widget::combo_box::State<FontFamily>,
+    /// Ordered nav entries from the EPUB TOC (with depth and fragment-preserving hrefs).
+    nav_entries: Vec<NavEntry>,
 }
 
 impl EpubViewer {
@@ -312,6 +316,7 @@ impl EpubViewer {
             content_width_pct: 100.0,
             font_family: FontFamily::default(),
             font_family_names: widget::combo_box::State::new(FontFamily::all()),
+            nav_entries: Vec::new(),
         };
 
         let mut tasks = Vec::new();
@@ -366,7 +371,9 @@ impl EpubViewer {
     }
 
     fn view_chapter_sidebar(&self) -> Element<'_, EpubViewerMessage> {
-        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing {
+            space_xxs, space_s, ..
+        } = theme::active().cosmic().spacing;
 
         let chapter_info = if !self.chapters.is_empty() {
             format!("{} / {}", self.active_chapter + 1, self.chapters.len())
@@ -374,18 +381,51 @@ impl EpubViewer {
             String::new()
         };
 
-        let mut column = widget::column::with_capacity(self.chapters.len())
+        let current_href = self
+            .chapters
+            .get(self.active_chapter)
+            .map(|c| c.href.as_str())
+            .unwrap_or("");
+
+        let capacity = if self.nav_entries.is_empty() {
+            self.chapters.len()
+        } else {
+            self.nav_entries.len()
+        };
+        let mut column = widget::column::with_capacity(capacity)
             .padding(space_xxs)
             .spacing(space_xxs);
 
-        for (idx, chapter) in self.chapters.iter().enumerate() {
-            let label = widget::text::body(&chapter.label)
-                .wrapping(cosmic::iced::widget::text::Wrapping::None);
-            let button = widget::button::custom(label)
-                .on_press(EpubViewerMessage::SelectChapter(idx))
-                .selected(idx == self.active_chapter)
-                .width(Length::Fill);
-            column = column.push(button);
+        if self.nav_entries.is_empty() {
+            for (idx, chapter) in self.chapters.iter().enumerate() {
+                let label = widget::text::body(&chapter.label)
+                    .wrapping(cosmic::iced::widget::text::Wrapping::None);
+                let button = widget::button::custom(label)
+                    .on_press(EpubViewerMessage::SelectChapter(idx))
+                    .selected(idx == self.active_chapter)
+                    .width(Length::Fill);
+                column = column.push(button);
+            }
+        } else {
+            for (idx, entry) in self.nav_entries.iter().enumerate() {
+                let base = entry
+                    .href
+                    .split_once('#')
+                    .map(|(b, _)| b)
+                    .unwrap_or(&entry.href);
+                let selected = base == current_href;
+                let label = widget::text::body(&entry.label)
+                    .wrapping(cosmic::iced::widget::text::Wrapping::None);
+                let button = widget::button::custom(label)
+                    .on_press(EpubViewerMessage::SelectNavEntry(idx))
+                    .selected(selected)
+                    .width(Length::Fill);
+                let indent = (entry.depth as f32) * (space_s as f32);
+                let row = widget::row()
+                    .push(widget::Space::with_width(Length::Fixed(indent)))
+                    .push(button);
+                column = column.push(row);
+            }
         }
 
         widget::Column::with_children(vec![
@@ -875,6 +915,7 @@ impl Page for EpubViewer {
             EpubViewerMessage::EpubLoaded(title, chapters, epub_doc) => {
                 self.title = title;
                 self.chapters = chapters;
+                self.nav_entries = epub_doc.as_ref().nav().to_vec();
                 self.epub_document = Some(epub_doc);
                 if !self.chapters.is_empty() {
                     self.active_chapter = self
@@ -932,6 +973,22 @@ impl Page for EpubViewer {
                     self.scroll_y = 0.0;
                     self.current_page = 0;
                     self.saved_position = None;
+                }
+                Task::none()
+            }
+            EpubViewerMessage::SelectNavEntry(nav_idx) => {
+                if let Some(entry) = self.nav_entries.get(nav_idx) {
+                    let base = entry
+                        .href
+                        .split_once('#')
+                        .map(|(b, _)| b)
+                        .unwrap_or(&entry.href);
+                    if let Some(idx) = self.chapters.iter().position(|c| c.href == base) {
+                        self.active_chapter = idx;
+                        self.scroll_y = 0.0;
+                        self.current_page = 0;
+                        self.saved_position = None;
+                    }
                 }
                 Task::none()
             }

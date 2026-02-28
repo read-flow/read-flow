@@ -1,17 +1,17 @@
-use std::collections::HashMap;
-
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
 use crate::content::base_dir;
 use crate::content::resolve_href;
+use crate::domain::nav::NavEntry;
 
-/// Parse an EPUB3 Navigation Document (`nav.xhtml`) and return a map from
-/// resolved zip-path hrefs to human-readable labels.
+/// Parse an EPUB3 Navigation Document (`nav.xhtml`) and return an ordered list
+/// of nav entries with labels, full hrefs (including fragments), and nesting depth.
 ///
 /// Only entries inside a `<nav epub:type="toc">` element are collected.
-/// If no typed nav element is found, all `<a href>` entries are used as a fallback.
-pub fn parse_epub3_nav(xml: &[u8], nav_zip_href: &str) -> HashMap<String, String> {
+/// If no typed nav element is found, all `<a href>` entries are used as a fallback
+/// (all at depth 0).
+pub fn parse_epub3_nav(xml: &[u8], nav_zip_href: &str) -> Vec<NavEntry> {
     let base = base_dir(nav_zip_href);
     let mut reader = Reader::from_reader(xml);
     reader.config_mut().trim_text(true);
@@ -35,12 +35,15 @@ fn extract_nav_links(
     buf: &mut Vec<u8>,
     base: &str,
     toc_only: bool,
-) -> HashMap<String, String> {
-    let mut map: HashMap<String, String> = HashMap::new();
+) -> Vec<NavEntry> {
+    let mut entries: Vec<NavEntry> = Vec::new();
 
     // Depth tracking for the toc nav element
     let mut in_toc_nav = !toc_only; // if not filtering, always "in" the nav
     let mut nav_depth: usize = 0; // nesting depth while inside the toc <nav>
+
+    // Track <ol> depth within the toc nav (determines entry indentation)
+    let mut ol_depth: usize = 0;
 
     // Current <a> state
     let mut current_href: Option<String> = None;
@@ -71,19 +74,40 @@ fn extract_nav_links(
                     b"nav" if in_toc_nav && nav_depth > 0 => {
                         nav_depth += 1;
                     }
+                    b"ol" if in_toc_nav => {
+                        ol_depth += 1;
+                    }
                     b"a" if in_toc_nav => {
                         let href = e.attributes().flatten().find_map(|a| {
                             if a.key.as_ref() == b"href" {
                                 let raw = String::from_utf8_lossy(&a.value).into_owned();
-                                // Strip fragment
-                                let stripped = raw
-                                    .split_once('#')
-                                    .map(|(h, _)| h.to_string())
-                                    .unwrap_or(raw);
-                                if stripped.is_empty() {
+                                // Resolve the full href (with fragment) against the base dir
+                                let (path_part, fragment) = match raw.split_once('#') {
+                                    Some((p, f)) => (p, Some(f.to_string())),
+                                    None => (raw.as_str(), None),
+                                };
+                                if path_part.is_empty() && fragment.is_none() {
+                                    return None;
+                                }
+                                let resolved_path = if path_part.is_empty() {
+                                    // Pure fragment: resolve against the nav document itself
+                                    String::new()
+                                } else {
+                                    resolve_href(base, path_part)
+                                };
+                                if resolved_path.is_empty() && fragment.is_none() {
+                                    return None;
+                                }
+                                let full_href = match fragment {
+                                    Some(f) if !f.is_empty() => {
+                                        format!("{}#{}", resolved_path, f)
+                                    }
+                                    _ => resolved_path,
+                                };
+                                if full_href.is_empty() {
                                     None
                                 } else {
-                                    Some(resolve_href(base, &stripped))
+                                    Some(full_href)
                                 }
                             } else {
                                 None
@@ -113,12 +137,18 @@ fn extract_nav_links(
                             in_toc_nav = false;
                         }
                     }
+                    b"ol" if in_toc_nav => {
+                        ol_depth = ol_depth.saturating_sub(1);
+                    }
                     b"a" if in_anchor => {
                         if let Some(href) = current_href.take() {
                             let label = current_text.trim().to_string();
                             if !label.is_empty() {
-                                // Use first label per href
-                                map.entry(href).or_insert(label);
+                                entries.push(NavEntry {
+                                    href,
+                                    label,
+                                    depth: ol_depth.saturating_sub(1),
+                                });
                             }
                         }
                         in_anchor = false;
@@ -137,21 +167,22 @@ fn extract_nav_links(
         }
     }
 
-    map
+    entries
 }
 
-/// Parse an EPUB2 NCX document (`toc.ncx`) and return a map from
-/// resolved zip-path hrefs to human-readable labels.
-pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> HashMap<String, String> {
+/// Parse an EPUB2 NCX document (`toc.ncx`) and return an ordered list of nav
+/// entries with labels, full hrefs (including fragments), and nesting depth.
+pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> Vec<NavEntry> {
     let base = base_dir(ncx_zip_href);
     let mut reader = Reader::from_reader(xml);
     reader.config_mut().trim_text(true);
     let mut buf = Vec::new();
-    let mut map: HashMap<String, String> = HashMap::new();
+    let mut entries: Vec<NavEntry> = Vec::new();
 
     let mut in_navlabel_text = false;
     let mut pending_label = String::new();
     let mut capturing_label = false;
+    let mut navpoint_depth: usize = 0;
 
     loop {
         buf.clear();
@@ -160,6 +191,9 @@ pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> HashMap<String, String
                 let name = e.name();
                 let local = local_name(name.as_ref());
                 match local {
+                    b"navPoint" => {
+                        navpoint_depth += 1;
+                    }
                     b"navLabel" => capturing_label = true,
                     b"text" if capturing_label => {
                         in_navlabel_text = true;
@@ -176,14 +210,22 @@ pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> HashMap<String, String
                     let src = e.attributes().flatten().find_map(|a| {
                         if a.key.as_ref() == b"src" {
                             let raw = String::from_utf8_lossy(&a.value).into_owned();
-                            let stripped = raw
-                                .split_once('#')
-                                .map(|(h, _)| h.to_string())
-                                .unwrap_or(raw);
-                            if stripped.is_empty() {
+                            let (path_part, fragment) = match raw.split_once('#') {
+                                Some((p, f)) => (p, Some(f.to_string())),
+                                None => (raw.as_str(), None),
+                            };
+                            if path_part.is_empty() {
+                                return None;
+                            }
+                            let resolved = resolve_href(base, path_part);
+                            let full_href = match fragment {
+                                Some(f) if !f.is_empty() => format!("{}#{}", resolved, f),
+                                _ => resolved,
+                            };
+                            if full_href.is_empty() {
                                 None
                             } else {
-                                Some(resolve_href(base, &stripped))
+                                Some(full_href)
                             }
                         } else {
                             None
@@ -192,7 +234,11 @@ pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> HashMap<String, String
                     if let Some(href) = src {
                         let label = pending_label.trim().to_string();
                         if !label.is_empty() {
-                            map.entry(href).or_insert(label);
+                            entries.push(NavEntry {
+                                href,
+                                label,
+                                depth: navpoint_depth.saturating_sub(1),
+                            });
                         }
                     }
                 }
@@ -210,6 +256,7 @@ pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> HashMap<String, String
                     b"navPoint" => {
                         // Reset pending label when the navPoint closes
                         pending_label.clear();
+                        navpoint_depth = navpoint_depth.saturating_sub(1);
                     }
                     _ => {}
                 }
@@ -224,7 +271,7 @@ pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> HashMap<String, String
         }
     }
 
-    map
+    entries
 }
 
 fn local_name(name: &[u8]) -> &[u8] {
@@ -252,26 +299,53 @@ mod tests {
   </nav>
 </body>
 </html>"#;
-        let map = parse_epub3_nav(nav, "OEBPS/nav.xhtml");
-        assert_eq!(
-            map.get("OEBPS/chapter1.xhtml").map(String::as_str),
-            Some("Chapter One")
-        );
-        assert_eq!(
-            map.get("OEBPS/chapter2.xhtml").map(String::as_str),
-            Some("Chapter Two")
-        );
+        let entries = parse_epub3_nav(nav, "OEBPS/nav.xhtml");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].href, "OEBPS/chapter1.xhtml");
+        assert_eq!(entries[0].label, "Chapter One");
+        assert_eq!(entries[0].depth, 0);
+        assert_eq!(entries[1].href, "OEBPS/chapter2.xhtml");
+        assert_eq!(entries[1].label, "Chapter Two");
+        assert_eq!(entries[1].depth, 0);
     }
 
     #[test]
-    fn parses_epub3_nav_strips_fragment() {
+    fn parses_epub3_nav_preserves_fragment() {
         let nav = br#"<html xmlns:epub="http://www.idpf.org/2007/ops">
 <body><nav epub:type="toc"><ol>
   <li><a href="ch1.xhtml#start">First Chapter</a></li>
 </ol></nav></body></html>"#;
-        let map = parse_epub3_nav(nav, "OEBPS/nav.xhtml");
-        assert!(map.contains_key("OEBPS/ch1.xhtml"));
-        assert!(!map.contains_key("OEBPS/ch1.xhtml#start"));
+        let entries = parse_epub3_nav(nav, "OEBPS/nav.xhtml");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].href, "OEBPS/ch1.xhtml#start");
+    }
+
+    #[test]
+    fn parses_epub3_nav_nested_depth() {
+        let nav = br#"<html xmlns:epub="http://www.idpf.org/2007/ops">
+<body><nav epub:type="toc">
+  <ol>
+    <li>
+      <a href="ch1.xhtml">Chapter 1</a>
+      <ol>
+        <li><a href="ch1.xhtml#sec1">Section 1.1</a></li>
+        <li><a href="ch1.xhtml#sec2">Section 1.2</a></li>
+      </ol>
+    </li>
+    <li><a href="ch2.xhtml">Chapter 2</a></li>
+  </ol>
+</nav></body></html>"#;
+        let entries = parse_epub3_nav(nav, "OEBPS/nav.xhtml");
+        assert_eq!(entries.len(), 4);
+        assert_eq!(entries[0].label, "Chapter 1");
+        assert_eq!(entries[0].depth, 0);
+        assert_eq!(entries[1].label, "Section 1.1");
+        assert_eq!(entries[1].depth, 1);
+        assert_eq!(entries[1].href, "OEBPS/ch1.xhtml#sec1");
+        assert_eq!(entries[2].label, "Section 1.2");
+        assert_eq!(entries[2].depth, 1);
+        assert_eq!(entries[3].label, "Chapter 2");
+        assert_eq!(entries[3].depth, 0);
     }
 
     #[test]
@@ -289,14 +363,37 @@ mod tests {
     </navPoint>
   </navMap>
 </ncx>"#;
-        let map = parse_epub2_ncx(ncx, "OEBPS/toc.ncx");
-        assert_eq!(
-            map.get("OEBPS/intro.xhtml").map(String::as_str),
-            Some("Introduction")
-        );
-        assert_eq!(
-            map.get("OEBPS/part1.xhtml").map(String::as_str),
-            Some("Part One")
-        );
+        let entries = parse_epub2_ncx(ncx, "OEBPS/toc.ncx");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].href, "OEBPS/intro.xhtml");
+        assert_eq!(entries[0].label, "Introduction");
+        assert_eq!(entries[0].depth, 0);
+        assert_eq!(entries[1].href, "OEBPS/part1.xhtml#ch1");
+        assert_eq!(entries[1].label, "Part One");
+        assert_eq!(entries[1].depth, 0);
+    }
+
+    #[test]
+    fn parses_epub2_ncx_nested_depth() {
+        let ncx = br#"<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <navMap>
+    <navPoint id="np1">
+      <navLabel><text>Part One</text></navLabel>
+      <content src="part1.xhtml"/>
+      <navPoint id="np1a">
+        <navLabel><text>Chapter 1</text></navLabel>
+        <content src="ch1.xhtml#intro"/>
+      </navPoint>
+    </navPoint>
+  </navMap>
+</ncx>"#;
+        let entries = parse_epub2_ncx(ncx, "OEBPS/toc.ncx");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].label, "Part One");
+        assert_eq!(entries[0].depth, 0);
+        assert_eq!(entries[1].label, "Chapter 1");
+        assert_eq!(entries[1].depth, 1);
+        assert_eq!(entries[1].href, "OEBPS/ch1.xhtml#intro");
     }
 }
