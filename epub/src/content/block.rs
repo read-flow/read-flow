@@ -111,6 +111,15 @@ pub enum ContentBlock {
     Anchor {
         id: String,
     },
+    /// A `<figure>` element: inner content blocks (typically an image) followed
+    /// by an optional `<figcaption>` rendered below as a smaller italic caption.
+    Figure {
+        blocks: Vec<ContentBlock>,
+        /// Spans from the `<figcaption>` element; may be empty.
+        caption: Vec<TextSpan>,
+        /// Plain-text version of the caption (concatenated span text).
+        caption_text: String,
+    },
 }
 
 #[derive(Clone, Debug)]

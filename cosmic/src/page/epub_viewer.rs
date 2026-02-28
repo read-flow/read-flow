@@ -1650,6 +1650,14 @@ fn block_contains(block: &ContentBlock, query: &str) -> bool {
         }),
         ContentBlock::BlockQuote { children } => children.iter().any(|b| block_contains(b, query)),
         ContentBlock::Footnote { blocks, .. } => blocks.iter().any(|b| block_contains(b, query)),
+        ContentBlock::Figure {
+            blocks,
+            caption_text,
+            ..
+        } => {
+            caption_text.to_lowercase().contains(query)
+                || blocks.iter().any(|b| block_contains(b, query))
+        }
         ContentBlock::Image { alt, .. } | ContentBlock::Svg { alt, .. } => {
             alt.to_lowercase().contains(query)
         }
@@ -1874,6 +1882,15 @@ fn estimated_block_height(block: &ContentBlock) -> f32 {
         ContentBlock::Footnote { blocks, .. } => {
             blocks.iter().map(estimated_block_height).sum::<f32>() + 16.0
         }
+        ContentBlock::Figure {
+            blocks,
+            caption_text,
+            ..
+        } => {
+            let blocks_h: f32 = blocks.iter().map(estimated_block_height).sum::<f32>();
+            let caption_h = if caption_text.is_empty() { 0.0 } else { 22.0 };
+            blocks_h + caption_h + 8.0
+        }
         ContentBlock::Anchor { .. } => 0.0,
     }
 }
@@ -1941,6 +1958,24 @@ fn estimated_block_height_for_width(
                 .map(|b| estimated_block_height_for_width(b, content_width - 16.0, font_size * 0.8))
                 .sum::<f32>()
                 + 16.0 * scale
+        }
+        ContentBlock::Figure {
+            blocks,
+            caption_text,
+            ..
+        } => {
+            let caption_size = font_size * 0.85;
+            let caption_chars_per_line = (content_width / (caption_size * 0.6)).max(20.0);
+            let caption_h = if caption_text.is_empty() {
+                0.0
+            } else {
+                (caption_text.len() as f32 / caption_chars_per_line).ceil() * caption_size * 1.375
+            };
+            let blocks_h: f32 = blocks
+                .iter()
+                .map(|b| estimated_block_height_for_width(b, content_width, font_size))
+                .sum::<f32>();
+            blocks_h + caption_h + 8.0 * scale
         }
         ContentBlock::Anchor { .. } => 0.0,
     }
@@ -2564,6 +2599,43 @@ fn render_block_inner<'a>(
             chapter_href,
             epub_document,
         ),
+        ContentBlock::Figure {
+            blocks,
+            caption,
+            caption_text,
+        } => {
+            let caption_size = (font_size * 0.85).max(10.0);
+            let mut col = widget::column::with_capacity(blocks.len() + 1)
+                .spacing(space_xxs)
+                .width(Length::Fill);
+            for block in blocks {
+                col = col.push(render_block_inner(
+                    block,
+                    font_size,
+                    family,
+                    document,
+                    chapter_href,
+                    epub_document,
+                ));
+            }
+            if !caption.is_empty() {
+                col = col.push(render_spans(caption, caption_size, family));
+            } else if !caption_text.is_empty() {
+                let caption_el: Element<'_, EpubViewerMessage> =
+                    widget::text::caption(caption_text.as_str())
+                        .size(caption_size)
+                        .font(Font {
+                            family,
+                            style: font::Style::Italic,
+                            ..Font::default()
+                        })
+                        .width(Length::Fill)
+                        .align_x(Horizontal::Center)
+                        .into();
+                col = col.push(caption_el);
+            }
+            col.into()
+        }
         ContentBlock::Anchor { .. } => {
             widget::Space::new(Length::Fixed(0.0), Length::Fixed(0.0)).into()
         }

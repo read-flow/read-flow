@@ -54,6 +54,10 @@ struct StackEntry {
     span_font_size_em: Option<f32>,
     /// Accumulated SVG XML content for `<svg>` elements.
     svg_content: String,
+    /// Caption spans from a `<figcaption>` child (populated when this entry is a `<figure>`).
+    figure_caption_spans: Vec<TextSpan>,
+    /// Plain-text caption from a `<figcaption>` child.
+    figure_caption_text: String,
 }
 
 impl StackEntry {
@@ -76,6 +80,8 @@ impl StackEntry {
             span_color: None,
             span_font_size_em: None,
             svg_content: String::new(),
+            figure_caption_spans: Vec::new(),
+            figure_caption_text: String::new(),
         }
     }
 
@@ -98,6 +104,8 @@ impl StackEntry {
             span_color: None,
             span_font_size_em: None,
             svg_content: String::new(),
+            figure_caption_spans: Vec::new(),
+            figure_caption_text: String::new(),
         }
     }
 
@@ -186,28 +194,8 @@ const ANCHOR_CONTAINER_TAGS: &[&str] = &[
 ];
 
 const TRANSPARENT_TAGS: &[&str] = &[
-    "div",
-    "section",
-    "article",
-    "body",
-    "html",
-    "small",
-    "sub",
-    "sup",
-    "mark",
-    "abbr",
-    "nav",
-    "main",
-    "header",
-    "footer",
-    "figure",
-    "figcaption",
-    "details",
-    "summary",
-    "dl",
-    "dt",
-    "dd",
-    "svg",
+    "div", "section", "article", "body", "html", "small", "sub", "sup", "mark", "abbr", "nav",
+    "main", "header", "footer", "details", "summary", "dl", "dt", "dd", "svg",
 ];
 
 /// Compute the inline style for a given tag, inheriting from a parent style.
@@ -896,6 +884,54 @@ impl TokenSink for ContentSink {
                                 alt: String::new(), // SVG elements don't have alt text
                                 content: entry.svg_content,
                                 style: block_style,
+                            })
+                        } else {
+                            None
+                        }
+                    }
+                    "figcaption" => {
+                        // Store caption on the parent <figure> entry.
+                        // If not inside a <figure> (malformed HTML), fall back
+                        // to rendering it as a plain paragraph.
+                        if state.stack.last().is_some_and(|e| e.tag == "figure") {
+                            if let Some(parent) = state.stack.last_mut() {
+                                parent.figure_caption_spans = spans;
+                                parent.figure_caption_text = text;
+                            }
+                        } else if !text.is_empty() || !spans.is_empty() {
+                            let block = ContentBlock::Paragraph {
+                                text,
+                                spans,
+                                style: block_style,
+                            };
+                            if let Some(parent) = state.stack.last_mut() {
+                                parent.children.push(block);
+                            } else {
+                                state.output.push(block);
+                            }
+                        }
+                        None
+                    }
+                    "figure" => {
+                        let mut blocks = entry.children;
+                        // Any text directly in <figure> (outside figcaption) becomes a paragraph.
+                        if !text.is_empty() || !spans.is_empty() {
+                            blocks.insert(
+                                0,
+                                ContentBlock::Paragraph {
+                                    text,
+                                    spans,
+                                    style: block_style,
+                                },
+                            );
+                        }
+                        let caption = entry.figure_caption_spans;
+                        let caption_text = entry.figure_caption_text;
+                        if !blocks.is_empty() || !caption.is_empty() || !caption_text.is_empty() {
+                            Some(ContentBlock::Figure {
+                                blocks,
+                                caption,
+                                caption_text,
                             })
                         } else {
                             None
@@ -2928,6 +2964,83 @@ mod tests {
         }
         match &blocks[2] {
             ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Body text."),
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn figure_with_caption() {
+        let blocks = parse(
+            r#"<figure><img src="photo.jpg" alt="A cat"/><figcaption>A sleeping cat.</figcaption></figure>"#,
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Figure {
+                blocks,
+                caption,
+                caption_text,
+            } => {
+                assert_eq!(
+                    blocks.len(),
+                    1,
+                    "expected one inner block (image placeholder)"
+                );
+                assert_eq!(caption_text, "A sleeping cat.");
+                assert!(!caption.is_empty(), "caption spans should be non-empty");
+                assert_eq!(caption[0].text, "A sleeping cat.");
+            }
+            other => panic!("expected Figure, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn figure_without_caption() {
+        let blocks = parse(r#"<figure><img src="photo.jpg" alt="An image"/></figure>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Figure {
+                blocks,
+                caption,
+                caption_text,
+            } => {
+                assert_eq!(blocks.len(), 1);
+                assert!(caption.is_empty());
+                assert!(caption_text.is_empty());
+            }
+            other => panic!("expected Figure, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn figure_caption_with_styled_span() {
+        let blocks = parse(
+            r#"<figure><img src="x.jpg"/><figcaption>See <em>figure one</em>.</figcaption></figure>"#,
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Figure {
+                caption,
+                caption_text,
+                ..
+            } => {
+                assert_eq!(caption_text, "See figure one.");
+                // Three spans: "See ", "figure one" (italic), "."
+                assert_eq!(caption.len(), 3);
+                assert!(!caption[1].style.italic == false || caption[1].style.italic);
+                assert_eq!(caption[1].text, "figure one");
+                assert!(caption[1].style.italic);
+            }
+            other => panic!("expected Figure, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn figcaption_outside_figure_becomes_paragraph() {
+        // Malformed HTML: figcaption not inside a figure — fallback to paragraph
+        let blocks = parse("<figcaption>Orphan caption.</figcaption>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Orphan caption."),
             other => panic!("expected Paragraph, got {other:?}"),
         }
     }
