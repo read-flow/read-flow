@@ -230,6 +230,8 @@ pub enum EpubViewerMessage {
     SetContentMaxWidth(f32),
     /// Set the font family for rendering (index into FontFamily::ALL).
     SetFontFamily(FontFamily),
+    /// Set the base body font size in pixels (12–24).
+    SetBaseFontSize(f32),
     Out(EpubViewerOutput),
     /// Clear the navigation-target block highlight after the flash timer expires.
     ClearHighlight,
@@ -282,6 +284,8 @@ pub struct EpubViewer {
     font_family_names: widget::combo_box::State<FontFamily>,
     /// Ordered nav entries from the EPUB TOC (with depth and fragment-preserving hrefs).
     nav_entries: Vec<NavEntry>,
+    /// Base body font size in pixels (12–24, default 16).
+    base_font_size: f32,
     /// Block index of the navigation target to highlight briefly after fragment navigation.
     /// Set to `Some(idx)` on arrival; cleared by the deferred `ClearHighlight` message.
     highlighted_block: Option<usize>,
@@ -324,6 +328,7 @@ impl EpubViewer {
             font_family: FontFamily::default(),
             font_family_names: widget::combo_box::State::new(FontFamily::all()),
             nav_entries: Vec::new(),
+            base_font_size: 16.0,
             highlighted_block: None,
         };
 
@@ -479,6 +484,7 @@ impl EpubViewer {
                     column = column.push(render_block(
                         block,
                         highlight,
+                        self.base_font_size,
                         family,
                         &self.document,
                         &chapter.href,
@@ -535,6 +541,7 @@ impl EpubViewer {
 
         let page_height_fraction = self.page_height_fraction;
         let max_content_width = 800.0 * (self.content_width_pct / 100.0);
+        let base_font_size = self.base_font_size;
 
         widget::responsive(move |size| {
             // Store viewport size so update() can trigger re-pagination.
@@ -572,7 +579,7 @@ impl EpubViewer {
                         max_content_width.min(size.width - sp_s * 2.0)
                     };
                     let ph = (size.height - sp_s * 2.0 - 24.0) * page_height_fraction;
-                    computed_layout = paginate_blocks(&chapter.blocks, ph, pw);
+                    computed_layout = paginate_blocks(&chapter.blocks, ph, pw, base_font_size);
                     &computed_layout
                 }
             };
@@ -606,6 +613,7 @@ impl EpubViewer {
                         column = column.push(render_block(
                             block,
                             highlight,
+                            base_font_size,
                             family,
                             &self.document,
                             &chapter.href,
@@ -881,6 +889,21 @@ impl Page for EpubViewer {
                 Some(&self.font_family),
                 EpubViewerMessage::SetFontFamily,
             )),
+        );
+
+        let font_size_px = self.base_font_size.round() as u32;
+        display_section = display_section.add(
+            widget::settings::item::builder(format!(
+                "{} ({}px)",
+                fl!("epub-viewer-font-size"),
+                font_size_px
+            ))
+            .control(
+                widget::slider(12.0..=24.0, self.base_font_size, |v| {
+                    EpubViewerMessage::SetBaseFontSize(v)
+                })
+                .step(1.0),
+            ),
         );
 
         let display_section = display_section.add(
@@ -1261,6 +1284,12 @@ impl Page for EpubViewer {
                 self.maybe_repaginate();
                 Task::none()
             }
+            EpubViewerMessage::SetBaseFontSize(size) => {
+                self.base_font_size = size.clamp(12.0, 24.0);
+                self.pagination_cache.clear();
+                self.maybe_repaginate();
+                Task::none()
+            }
             EpubViewerMessage::ModifiersChanged(modifiers) => {
                 self.modifiers = modifiers;
                 Task::none()
@@ -1559,39 +1588,47 @@ fn build_anchor_map(blocks: &[ContentBlock]) -> HashMap<String, f32> {
     map
 }
 
-/// Estimate the rendered height of a block given the available content width.
-/// Like [`estimated_block_height`] but adjusts chars-per-line based on width.
-fn estimated_block_height_for_width(block: &ContentBlock, content_width: f32) -> f32 {
-    // ~9.6px per character at 16px body text (roughly 0.6em average glyph width)
-    let chars_per_line = (content_width / 9.6).max(20.0);
+/// Estimate the rendered height of a block given the available content width and font size.
+/// Like [`estimated_block_height`] but adjusts chars-per-line based on width and font size.
+fn estimated_block_height_for_width(
+    block: &ContentBlock,
+    content_width: f32,
+    font_size: f32,
+) -> f32 {
+    let scale = font_size / 16.0;
+    // ~0.6em average glyph width
+    let chars_per_line = (content_width / (font_size * 0.6)).max(20.0);
+    let line_h = font_size * 1.375;
     match block {
-        ContentBlock::Heading { level: 1, .. } => 56.0,
-        ContentBlock::Heading { level: 2, .. } => 48.0,
-        ContentBlock::Heading { level: 3, .. } => 40.0,
-        ContentBlock::Heading { .. } => 32.0,
+        ContentBlock::Heading { level: 1, .. } => font_size * 2.0 * 1.75,
+        ContentBlock::Heading { level: 2, .. } => font_size * 1.75 * 1.75,
+        ContentBlock::Heading { level: 3, .. } => font_size * 1.5 * 1.75,
+        ContentBlock::Heading { .. } => font_size * 1.25 * 1.75,
         ContentBlock::Paragraph { text, .. } => {
-            ((text.len() as f32 / chars_per_line).ceil() * 22.0).max(22.0)
+            ((text.len() as f32 / chars_per_line).ceil() * line_h).max(line_h)
         }
-        ContentBlock::Preformatted { text, .. } => (text.lines().count() as f32 * 20.0).max(20.0),
+        ContentBlock::Preformatted { text, .. } => {
+            (text.lines().count() as f32 * line_h).max(line_h)
+        }
         ContentBlock::BlockQuote { children } => {
             children
                 .iter()
-                .map(|b| estimated_block_height_for_width(b, content_width - 16.0))
+                .map(|b| estimated_block_height_for_width(b, content_width - 16.0, font_size))
                 .sum::<f32>()
-                + 16.0
+                + 16.0 * scale
         }
-        ContentBlock::UnorderedList { items } => items.len() as f32 * 28.0,
-        ContentBlock::OrderedList { items, .. } => items.len() as f32 * 28.0,
+        ContentBlock::UnorderedList { items } => items.len() as f32 * line_h * 2.0,
+        ContentBlock::OrderedList { items, .. } => items.len() as f32 * line_h * 2.0,
         ContentBlock::Image { .. } => 200.0,
         ContentBlock::Svg { .. } => 200.0,
-        ContentBlock::Table { rows } => rows.len() as f32 * 36.0 + 8.0,
-        ContentBlock::HorizontalRule => 16.0,
+        ContentBlock::Table { rows } => rows.len() as f32 * (line_h * 2.0 + 4.0) + 8.0,
+        ContentBlock::HorizontalRule => 16.0 * scale,
         ContentBlock::Footnote { blocks, .. } => {
             blocks
                 .iter()
-                .map(|b| estimated_block_height_for_width(b, content_width - 16.0))
+                .map(|b| estimated_block_height_for_width(b, content_width - 16.0, font_size * 0.8))
                 .sum::<f32>()
-                + 16.0
+                + 16.0 * scale
         }
         ContentBlock::Anchor { .. } => 0.0,
     }
@@ -1601,7 +1638,12 @@ fn estimated_block_height_for_width(block: &ContentBlock, content_width: f32) ->
 ///
 /// Blocks that individually exceed `page_height` get their own page (no
 /// mid-block splitting).
-fn paginate_blocks(blocks: &[ContentBlock], page_height: f32, page_width: f32) -> PaginationLayout {
+fn paginate_blocks(
+    blocks: &[ContentBlock],
+    page_height: f32,
+    page_width: f32,
+    font_size: f32,
+) -> PaginationLayout {
     const SPACING: f32 = 8.0;
 
     let mut pages = Vec::new();
@@ -1609,7 +1651,7 @@ fn paginate_blocks(blocks: &[ContentBlock], page_height: f32, page_width: f32) -
     let mut accumulated = 0.0f32;
 
     for (i, block) in blocks.iter().enumerate() {
-        let block_h = estimated_block_height_for_width(block, page_width);
+        let block_h = estimated_block_height_for_width(block, page_width, font_size);
         let needed = if i == page_start {
             block_h
         } else {
@@ -1684,7 +1726,12 @@ impl EpubViewer {
         };
 
         if needs_recompute && let Some(chapter) = self.chapters.get(self.active_chapter) {
-            let layout = paginate_blocks(&chapter.blocks, page_height, page_width);
+            let layout = paginate_blocks(
+                &chapter.blocks,
+                page_height,
+                page_width,
+                self.base_font_size,
+            );
             if self.current_page >= layout.pages.len() {
                 self.current_page = layout.pages.len().saturating_sub(1);
             }
@@ -1721,7 +1768,8 @@ impl EpubViewer {
         {
             let mut y = 0.0f32;
             for (i, block) in chapter.blocks.iter().enumerate() {
-                let h = estimated_block_height_for_width(block, layout.page_width);
+                let h =
+                    estimated_block_height_for_width(block, layout.page_width, self.base_font_size);
                 if y + h > self.scroll_y {
                     return layout
                         .pages
@@ -1743,7 +1791,9 @@ impl EpubViewer {
         {
             let mut y = 0.0f32;
             for block in &chapter.blocks[..page.start] {
-                y += estimated_block_height_for_width(block, layout.page_width) + 8.0;
+                y +=
+                    estimated_block_height_for_width(block, layout.page_width, self.base_font_size)
+                        + 8.0;
             }
             return y;
         }
@@ -1892,12 +1942,20 @@ fn apply_text_align<'a>(
 fn render_block<'a>(
     block: &'a ContentBlock,
     highlight: bool,
+    font_size: f32,
     family: font::Family,
     document: &'a Document,
     chapter_href: &'a str,
     epub_document: Option<&'a EpubDocument>,
 ) -> Element<'a, EpubViewerMessage> {
-    let inner = render_block_inner(block, family, document, chapter_href, epub_document);
+    let inner = render_block_inner(
+        block,
+        font_size,
+        family,
+        document,
+        chapter_href,
+        epub_document,
+    );
     if highlight {
         widget::container(inner)
             .style(|theme: &cosmic::Theme| widget::container::Style {
@@ -1919,6 +1977,7 @@ fn render_block<'a>(
 
 fn render_block_inner<'a>(
     block: &'a ContentBlock,
+    font_size: f32,
     family: font::Family,
     document: &'a Document,
     chapter_href: &'a str,
@@ -1941,11 +2000,11 @@ fn render_block_inner<'a>(
             style,
         } => {
             let base_size = match level {
-                1 => 32.0f32,
-                2 => 28.0,
-                3 => 24.0,
-                4 => 20.0,
-                _ => 18.0,
+                1 => font_size * 2.0,
+                2 => font_size * 1.75,
+                3 => font_size * 1.5,
+                4 => font_size * 1.25,
+                _ => font_size * 1.125,
             };
             let size = style
                 .font_size_em
@@ -1987,11 +2046,15 @@ fn render_block_inner<'a>(
             apply_text_align(render_spans(spans, size, family), style)
         }
         ContentBlock::Paragraph { spans, text, style } => {
-            let size = style.font_size_em.map(|em| em * 16.0).unwrap_or(16.0);
+            let size = style
+                .font_size_em
+                .map(|em| em * font_size)
+                .unwrap_or(font_size);
             let align = text_align_horizontal(style);
             if spans.is_empty() {
                 return apply_text_align(
                     widget::text::body(text)
+                        .size(font_size)
                         .font(font)
                         .width(Length::Fill)
                         .align_x(align)
@@ -2014,6 +2077,7 @@ fn render_block_inner<'a>(
             for child in children {
                 col = col.push(render_block_inner(
                     child,
+                    font_size,
                     family,
                     document,
                     chapter_href,
@@ -2033,6 +2097,7 @@ fn render_block_inner<'a>(
                 if item.spans.is_empty() {
                     col = col.push(
                         widget::text::body(format!("  \u{2022} {}", item.text))
+                            .size(font_size)
                             .font(font)
                             .width(Length::Fill),
                     );
@@ -2040,7 +2105,7 @@ fn render_block_inner<'a>(
                     col = col.push(render_list_item_spans(
                         "  \u{2022} ".to_string(),
                         &item.spans,
-                        16.0,
+                        font_size,
                         family,
                     ));
                 }
@@ -2056,12 +2121,18 @@ fn render_block_inner<'a>(
                 if item.spans.is_empty() {
                     col = col.push(
                         widget::text::body(format!("  {n}. {}", item.text))
+                            .size(font_size)
                             .font(font)
                             .width(Length::Fill),
                     );
                 } else {
                     let prefix = format!("  {n}. ");
-                    col = col.push(render_list_item_spans(prefix, &item.spans, 16.0, family));
+                    col = col.push(render_list_item_spans(
+                        prefix,
+                        &item.spans,
+                        font_size,
+                        family,
+                    ));
                 }
             }
             col.into()
@@ -2112,11 +2183,16 @@ fn render_block_inner<'a>(
                 .align_x(Horizontal::Center)
                 .into()
         }
-        ContentBlock::Table { rows } => render_table(rows, family),
+        ContentBlock::Table { rows } => render_table(rows, font_size, family),
         ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
-        ContentBlock::Footnote { blocks, .. } => {
-            render_footnote(blocks, family, document, chapter_href, epub_document)
-        }
+        ContentBlock::Footnote { blocks, .. } => render_footnote(
+            blocks,
+            font_size,
+            family,
+            document,
+            chapter_href,
+            epub_document,
+        ),
         ContentBlock::Anchor { .. } => {
             widget::Space::new(Length::Fixed(0.0), Length::Fixed(0.0)).into()
         }
@@ -2125,6 +2201,7 @@ fn render_block_inner<'a>(
 
 fn render_footnote<'a>(
     blocks: &'a [ContentBlock],
+    font_size: f32,
     family: font::Family,
     document: &'a Document,
     chapter_href: &'a str,
@@ -2134,6 +2211,8 @@ fn render_footnote<'a>(
         space_xxs, space_s, ..
     } = theme::active().cosmic().spacing;
 
+    let caption_size = (font_size * 0.8).max(10.0);
+
     let mut col = widget::column::with_capacity(blocks.len())
         .spacing(space_xxs)
         .width(Length::Fill);
@@ -2142,12 +2221,22 @@ fn render_footnote<'a>(
         let el: Element<_> = match block {
             ContentBlock::Paragraph { spans, text, .. } => {
                 if spans.is_empty() {
-                    widget::text::caption(text).width(Length::Fill).into()
+                    widget::text::caption(text)
+                        .size(caption_size)
+                        .width(Length::Fill)
+                        .into()
                 } else {
-                    render_spans(spans, 13.0, family)
+                    render_spans(spans, caption_size, family)
                 }
             }
-            _ => render_block_inner(block, family, document, chapter_href, epub_document),
+            _ => render_block_inner(
+                block,
+                font_size,
+                family,
+                document,
+                chapter_href,
+                epub_document,
+            ),
         };
         col = col.push(el);
     }
@@ -2159,7 +2248,11 @@ fn render_footnote<'a>(
         .into()
 }
 
-fn render_table(rows: &[Vec<TableCell>], family: font::Family) -> Element<'_, EpubViewerMessage> {
+fn render_table(
+    rows: &[Vec<TableCell>],
+    font_size: f32,
+    family: font::Family,
+) -> Element<'_, EpubViewerMessage> {
     let cosmic_theme::Spacing {
         space_xxs, space_s, ..
     } = theme::active().cosmic().spacing;
@@ -2225,7 +2318,10 @@ fn render_table(rows: &[Vec<TableCell>], family: font::Family) -> Element<'_, Ep
                 };
 
             let cell_content: Element<'_, EpubViewerMessage> = if !cell_spans.is_empty() {
-                rich_text(cell_spans).size(16.0).width(Length::Fill).into()
+                rich_text(cell_spans)
+                    .size(font_size)
+                    .width(Length::Fill)
+                    .into()
             } else {
                 widget::Space::new(Length::Fill, 0).into()
             };

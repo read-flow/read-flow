@@ -273,3 +273,4 @@ epub-viewer-page-fill = Paginavulling
 epub-viewer-show-sidebar = Navigatiepaneel
 epub-viewer-content-width = Inhoudsbreedte
 epub-viewer-font = Lettertype
+epub-viewer-font-size = Lettergrootte

@@ -251,3 +251,4 @@ epub-viewer-page-fill = Page fill
 epub-viewer-show-sidebar = Navigation pane
 epub-viewer-content-width = Content width
 epub-viewer-font = Font
+epub-viewer-font-size = Font size
