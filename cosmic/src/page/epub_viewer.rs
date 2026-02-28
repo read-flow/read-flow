@@ -10,6 +10,9 @@ use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
+use cosmic::cosmic_config;
+use cosmic::cosmic_config::ConfigGet;
+use cosmic::cosmic_config::ConfigSet;
 use cosmic::cosmic_theme;
 use cosmic::iced::Background;
 use cosmic::iced::Border;
@@ -65,6 +68,67 @@ enum BlockHighlight {
 type Fingerprint = String;
 
 const CHAPTER_SIDEBAR_WIDTH: f32 = 220.0;
+
+// --- Persistent reader preferences ---
+
+/// APP_ID used when accessing the cosmic-config store.
+const APP_ID: &str = "com.github.peterpaul.archive-organizer-cosmic";
+
+/// Config version for EPUB reader preferences (individual key access).
+const EPUB_PREFS_VERSION: u64 = 1;
+
+/// Config key for the saved font family.
+const KEY_FONT_FAMILY: &str = "epub_font_family";
+
+/// Config key for the saved base font size (stored as integer pixels).
+const KEY_BASE_FONT_SIZE: &str = "epub_base_font_size";
+
+/// Convert a `FontFamily` to the string stored in config.
+fn font_family_to_str(family: FontFamily) -> String {
+    match family {
+        FontFamily::SansSerif => "SansSerif".to_string(),
+        FontFamily::Serif => "Serif".to_string(),
+        FontFamily::Monospace => "Monospace".to_string(),
+        FontFamily::Named(name) => name.to_string(),
+    }
+}
+
+/// Convert a config string back to `FontFamily`.
+/// Named fonts are matched against the available system fonts; unrecognised
+/// strings fall back to the default.
+fn str_to_font_family(s: &str) -> FontFamily {
+    match s {
+        "SansSerif" => FontFamily::SansSerif,
+        "Serif" | "" => FontFamily::Serif,
+        "Monospace" => FontFamily::Monospace,
+        name => fonts()
+            .into_iter()
+            .find(|&f| f == name)
+            .map(FontFamily::Named)
+            .unwrap_or_default(),
+    }
+}
+
+/// Load saved EPUB reader font preferences from cosmic-config.
+/// Returns `(font_family, base_font_size_px)`.
+fn load_epub_font_prefs() -> (FontFamily, f32) {
+    let Ok(ctx) = cosmic_config::Config::new(APP_ID, EPUB_PREFS_VERSION) else {
+        return (FontFamily::default(), 16.0);
+    };
+    let family_str: String = ctx.get(KEY_FONT_FAMILY).unwrap_or_default();
+    let size_px: u32 = ctx.get(KEY_BASE_FONT_SIZE).unwrap_or(16);
+    let font_size = (size_px as f32).clamp(12.0, 24.0);
+    (str_to_font_family(&family_str), font_size)
+}
+
+/// Save EPUB reader font preferences to cosmic-config.
+fn save_epub_font_prefs(font_family: FontFamily, base_font_size: f32) {
+    let Ok(ctx) = cosmic_config::Config::new(APP_ID, EPUB_PREFS_VERSION) else {
+        return;
+    };
+    let _ = ctx.set(KEY_FONT_FAMILY, font_family_to_str(font_family));
+    let _ = ctx.set(KEY_BASE_FONT_SIZE, base_font_size.round() as u32);
+}
 
 // --- View mode and pagination types ---
 
@@ -336,6 +400,8 @@ impl EpubViewer {
         let local_source = sources.iter().find(|s| s.client == ClientSelector::Local);
         let file_path = local_source.map(|s| PathBuf::from(&s.path));
 
+        let (saved_font_family, saved_font_size) = load_epub_font_prefs();
+
         let viewer = EpubViewer {
             fingerprint: fingerprint.clone(),
             document,
@@ -359,10 +425,10 @@ impl EpubViewer {
             pending_block_index: None,
             show_sidebar: true,
             content_width_pct: 100.0,
-            font_family: FontFamily::default(),
+            font_family: saved_font_family,
             font_family_names: widget::combo_box::State::new(FontFamily::all()),
             nav_entries: Vec::new(),
-            base_font_size: 16.0,
+            base_font_size: saved_font_size,
             highlighted_block: None,
             search_visible: false,
             search_query: String::new(),
@@ -1412,12 +1478,14 @@ impl Page for EpubViewer {
                 self.font_family = family;
                 self.pagination_cache.clear();
                 self.maybe_repaginate();
+                save_epub_font_prefs(self.font_family, self.base_font_size);
                 Task::none()
             }
             EpubViewerMessage::SetBaseFontSize(size) => {
                 self.base_font_size = size.clamp(12.0, 24.0);
                 self.pagination_cache.clear();
                 self.maybe_repaginate();
+                save_epub_font_prefs(self.font_family, self.base_font_size);
                 Task::none()
             }
             EpubViewerMessage::ModifiersChanged(modifiers) => {
