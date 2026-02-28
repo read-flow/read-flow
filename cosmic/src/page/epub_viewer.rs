@@ -1917,8 +1917,32 @@ fn build_anchor_map(blocks: &[ContentBlock]) -> HashMap<String, f32> {
     map
 }
 
+/// Count how many visual lines `text` occupies when wrapped at `chars_per_line` characters,
+/// using a greedy word-breaking algorithm (words are never split mid-word).
+fn count_wrapped_lines(text: &str, chars_per_line: f32) -> usize {
+    if chars_per_line <= 0.0 {
+        return 1;
+    }
+    let mut lines = 1usize;
+    let mut current = 0.0f32;
+    for word in text.split_whitespace() {
+        let wlen = word.len() as f32;
+        if current > 0.0 && current + 1.0 + wlen > chars_per_line {
+            lines += 1;
+            current = wlen;
+        } else {
+            if current > 0.0 {
+                current += 1.0; // inter-word space
+            }
+            current += wlen;
+        }
+    }
+    lines
+}
+
 /// Estimate the rendered height of a block given the available content width and font size.
-/// Like [`estimated_block_height`] but adjusts chars-per-line based on width and font size.
+/// Like [`estimated_block_height`] but adjusts chars-per-line based on width and font size,
+/// and uses word-boundary line breaking (Phase 4a) for more accurate estimates.
 fn estimated_block_height_for_width(
     block: &ContentBlock,
     content_width: f32,
@@ -1929,12 +1953,21 @@ fn estimated_block_height_for_width(
     let chars_per_line = (content_width / (font_size * 0.6)).max(20.0);
     let line_h = font_size * 1.375;
     match block {
-        ContentBlock::Heading { level: 1, .. } => font_size * 2.0 * 1.75,
-        ContentBlock::Heading { level: 2, .. } => font_size * 1.75 * 1.75,
-        ContentBlock::Heading { level: 3, .. } => font_size * 1.5 * 1.75,
-        ContentBlock::Heading { .. } => font_size * 1.25 * 1.75,
+        ContentBlock::Heading { level, text, .. } => {
+            let heading_size = match level {
+                1 => font_size * 2.0,
+                2 => font_size * 1.75,
+                3 => font_size * 1.5,
+                4 => font_size * 1.25,
+                _ => font_size * 1.125,
+            };
+            let heading_chars_per_line = (content_width / (heading_size * 0.6)).max(10.0);
+            let heading_line_h = heading_size * 1.375;
+            (count_wrapped_lines(text, heading_chars_per_line) as f32 * heading_line_h)
+                .max(heading_line_h)
+        }
         ContentBlock::Paragraph { text, .. } => {
-            ((text.len() as f32 / chars_per_line).ceil() * line_h).max(line_h)
+            (count_wrapped_lines(text, chars_per_line) as f32 * line_h).max(line_h)
         }
         ContentBlock::Preformatted { text, .. } => {
             (text.lines().count() as f32 * line_h).max(line_h)
@@ -1946,8 +1979,25 @@ fn estimated_block_height_for_width(
                 .sum::<f32>()
                 + 16.0 * scale
         }
-        ContentBlock::UnorderedList { items } => items.len() as f32 * line_h * 2.0,
-        ContentBlock::OrderedList { items, .. } => items.len() as f32 * line_h * 2.0,
+        ContentBlock::UnorderedList { items } => items
+            .iter()
+            .map(|item| {
+                // Subtract prefix width ("  • ") ≈ 4 chars
+                (count_wrapped_lines(&item.text, (chars_per_line - 4.0).max(10.0)) as f32 * line_h)
+                    .max(line_h)
+            })
+            .sum::<f32>(),
+        ContentBlock::OrderedList { items, .. } => items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
+                // Subtract prefix width ("  N. ") ≈ 4–6 chars depending on number
+                let prefix_chars = 4.0 + (i + 1).to_string().len() as f32;
+                (count_wrapped_lines(&item.text, (chars_per_line - prefix_chars).max(10.0)) as f32
+                    * line_h)
+                    .max(line_h)
+            })
+            .sum::<f32>(),
         ContentBlock::Image { .. } => 200.0,
         ContentBlock::Svg { .. } => 200.0,
         ContentBlock::Table { rows } => rows.len() as f32 * (line_h * 2.0 + 4.0) + 8.0,
@@ -1969,7 +2019,9 @@ fn estimated_block_height_for_width(
             let caption_h = if caption_text.is_empty() {
                 0.0
             } else {
-                (caption_text.len() as f32 / caption_chars_per_line).ceil() * caption_size * 1.375
+                count_wrapped_lines(caption_text, caption_chars_per_line) as f32
+                    * caption_size
+                    * 1.375
             };
             let blocks_h: f32 = blocks
                 .iter()
