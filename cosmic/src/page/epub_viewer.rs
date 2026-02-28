@@ -12,6 +12,8 @@ use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
 use cosmic::iced::Background;
+use cosmic::iced::Border;
+use cosmic::iced::Color;
 use cosmic::iced::Font;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
@@ -229,6 +231,8 @@ pub enum EpubViewerMessage {
     /// Set the font family for rendering (index into FontFamily::ALL).
     SetFontFamily(FontFamily),
     Out(EpubViewerOutput),
+    /// Clear the navigation-target block highlight after the flash timer expires.
+    ClearHighlight,
 }
 
 // --- EpubViewer page ---
@@ -278,6 +282,9 @@ pub struct EpubViewer {
     font_family_names: widget::combo_box::State<FontFamily>,
     /// Ordered nav entries from the EPUB TOC (with depth and fragment-preserving hrefs).
     nav_entries: Vec<NavEntry>,
+    /// Block index of the navigation target to highlight briefly after fragment navigation.
+    /// Set to `Some(idx)` on arrival; cleared by the deferred `ClearHighlight` message.
+    highlighted_block: Option<usize>,
 }
 
 impl EpubViewer {
@@ -312,11 +319,12 @@ impl EpubViewer {
             dual_page: DualPageMode::default(),
             page_height_fraction: 1.0,
             pending_block_index: None,
-            show_sidebar: false,
+            show_sidebar: true,
             content_width_pct: 100.0,
             font_family: FontFamily::default(),
             font_family_names: widget::combo_box::State::new(FontFamily::all()),
             nav_entries: Vec::new(),
+            highlighted_block: None,
         };
 
         let mut tasks = Vec::new();
@@ -466,9 +474,11 @@ impl EpubViewer {
                     .push(widget::text::monotext(chapter.raw_html.as_str()).width(Length::Fill));
             } else {
                 let family = self.font_family.to_family();
-                for block in &chapter.blocks {
+                for (idx, block) in chapter.blocks.iter().enumerate() {
+                    let highlight = self.highlighted_block == Some(idx);
                     column = column.push(render_block(
                         block,
+                        highlight,
                         family,
                         &self.document,
                         &chapter.href,
@@ -590,9 +600,12 @@ impl EpubViewer {
 
                 let mut column = widget::column().spacing(space_xxs).width(Length::Fill);
                 if let Some(range) = page_range {
-                    for block in &chapter.blocks[range.start..range.end] {
+                    for (i, block) in chapter.blocks[range.start..range.end].iter().enumerate() {
+                        let abs_idx = range.start + i;
+                        let highlight = self.highlighted_block == Some(abs_idx);
                         column = column.push(render_block(
                             block,
+                            highlight,
                             family,
                             &self.document,
                             &chapter.href,
@@ -973,6 +986,7 @@ impl Page for EpubViewer {
                     self.scroll_y = 0.0;
                     self.current_page = 0;
                     self.saved_position = None;
+                    self.highlighted_block = None;
                 }
                 Task::none()
             }
@@ -987,15 +1001,25 @@ impl Page for EpubViewer {
                         self.scroll_y = 0.0;
                         self.current_page = 0;
                         self.saved_position = None;
+                        self.highlighted_block = None;
 
                         // Navigate to the fragment position within the chapter.
                         if let Some(frag) = fragment.filter(|f| !f.is_empty()) {
                             let chapter = &self.chapters[idx];
+
+                            // Find the Anchor block index — used for both highlighting
+                            // and paginated navigation.
+                            let block_idx = chapter.blocks.iter().position(
+                                |b| matches!(b, ContentBlock::Anchor { id } if id == frag),
+                            );
+
+                            let mut nav_task = Task::none();
+
                             match self.view_mode {
                                 ViewMode::Scroll => {
                                     if let Some(&target_y) = chapter.anchors.get(frag) {
                                         self.scroll_y = target_y;
-                                        return scrollable::scroll_to(
+                                        nav_task = scrollable::scroll_to(
                                             self.content_scroll_id.clone(),
                                             scrollable::AbsoluteOffset {
                                                 x: 0.0,
@@ -1007,23 +1031,37 @@ impl Page for EpubViewer {
                                 ViewMode::Paginated => {
                                     // Find the Anchor block with this id to determine
                                     // which page to navigate to.
-                                    if let Some(block_idx) = chapter.blocks.iter().position(
-                                        |b| matches!(b, ContentBlock::Anchor { id } if id == frag),
-                                    ) {
+                                    if let Some(bi) = block_idx {
                                         if let Some(layout) = self.pagination_cache.get(&idx) {
                                             self.current_page = layout
                                                 .pages
                                                 .iter()
-                                                .position(|p| {
-                                                    p.start <= block_idx && block_idx < p.end
-                                                })
+                                                .position(|p| p.start <= bi && bi < p.end)
                                                 .unwrap_or(0);
                                         } else {
-                                            self.pending_block_index = Some(block_idx);
+                                            self.pending_block_index = Some(bi);
                                         }
                                     }
                                 }
                             }
+
+                            // Set highlight on the block immediately following the Anchor
+                            // and schedule a deferred clear.
+                            if let Some(bi) = block_idx
+                                && bi + 1 < chapter.blocks.len()
+                            {
+                                self.highlighted_block = Some(bi + 1);
+                                let clear_task = Task::perform(
+                                    async {
+                                        tokio::time::sleep(std::time::Duration::from_millis(1500))
+                                            .await;
+                                    },
+                                    |_| cosmic::action::app(EpubViewerMessage::ClearHighlight),
+                                );
+                                return Task::batch([nav_task, clear_task]);
+                            }
+
+                            return nav_task;
                         }
                     }
                 }
@@ -1227,6 +1265,10 @@ impl Page for EpubViewer {
                 self.modifiers = modifiers;
                 Task::none()
             }
+            EpubViewerMessage::ClearHighlight => {
+                self.highlighted_block = None;
+                Task::none()
+            }
             EpubViewerMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }
@@ -1252,6 +1294,26 @@ fn desk_background(theme: &cosmic::Theme) -> widget::container::Style {
         c.color.blue,
         c.alpha,
     ))
+}
+
+fn highlight_background(theme: &cosmic::Theme) -> cosmic::iced::Color {
+    let accent = theme.cosmic().accent.base;
+    cosmic::iced::Color::from_rgba(
+        accent.color.red,
+        accent.color.green,
+        accent.color.blue,
+        accent.alpha,
+    )
+}
+
+fn highlight_text_color(theme: &cosmic::Theme) -> cosmic::iced::Color {
+    let accent = theme.cosmic().accent.on;
+    cosmic::iced::Color::from_rgba(
+        accent.color.red,
+        accent.color.green,
+        accent.color.blue,
+        accent.alpha,
+    )
 }
 
 fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, EpubViewerMessage> {
@@ -1829,6 +1891,34 @@ fn apply_text_align<'a>(
 
 fn render_block<'a>(
     block: &'a ContentBlock,
+    highlight: bool,
+    family: font::Family,
+    document: &'a Document,
+    chapter_href: &'a str,
+    epub_document: Option<&'a EpubDocument>,
+) -> Element<'a, EpubViewerMessage> {
+    let inner = render_block_inner(block, family, document, chapter_href, epub_document);
+    if highlight {
+        widget::container(inner)
+            .style(|theme: &cosmic::Theme| widget::container::Style {
+                background: Some(highlight_background(theme).into()),
+                text_color: Some(highlight_text_color(theme)),
+                border: Border {
+                    radius: theme.cosmic().corner_radii.radius_xl.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                ..Default::default()
+            })
+            .width(Length::Fill)
+            .into()
+    } else {
+        inner
+    }
+}
+
+fn render_block_inner<'a>(
+    block: &'a ContentBlock,
     family: font::Family,
     document: &'a Document,
     chapter_href: &'a str,
@@ -1922,7 +2012,7 @@ fn render_block<'a>(
                 .spacing(space_xxs)
                 .width(Length::Fill);
             for child in children {
-                col = col.push(render_block(
+                col = col.push(render_block_inner(
                     child,
                     family,
                     document,
@@ -2057,7 +2147,7 @@ fn render_footnote<'a>(
                     render_spans(spans, 13.0, family)
                 }
             }
-            _ => render_block(block, family, document, chapter_href, epub_document),
+            _ => render_block_inner(block, family, document, chapter_href, epub_document),
         };
         col = col.push(el);
     }
