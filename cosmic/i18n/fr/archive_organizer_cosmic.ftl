@@ -273,4 +273,11 @@ epub-viewer-show-sidebar = Volet de navigation
 epub-viewer-content-width = Largeur du contenu
 epub-viewer-font = Police
 epub-viewer-font-size = Taille de police
+epub-viewer-search = Rechercher
+epub-viewer-search-placeholder = Rechercher dans le chapitre...
+epub-viewer-search-no-matches = Aucun résultat
+epub-viewer-search-match-count = { $current } sur { $total }
+epub-viewer-search-prev = Résultat précédent
+epub-viewer-search-next = Résultat suivant
+epub-viewer-search-close = Fermer la recherche
 

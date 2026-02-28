@@ -24,3 +24,16 @@ where
     ]
     .apply(Row::with_children)
 }
+
+pub fn full_page<'a, E, M>(element: E) -> Element<'a, M>
+where
+    E: Into<Element<'a, M>>,
+    M: 'a,
+{
+    widget::container(element)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Horizontal::Center)
+        .align_y(Vertical::Center)
+        .into()
+}

@@ -18,10 +18,7 @@ use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
-use cosmic::iced::Length;
 use cosmic::iced::Subscription;
-use cosmic::iced::alignment::Horizontal;
-use cosmic::iced::alignment::Vertical;
 use cosmic::iced::core::SmolStr;
 use cosmic::iced::keyboard::Key;
 use cosmic::iced::keyboard::Modifiers;
@@ -42,6 +39,7 @@ use crate::client::ClientSelector;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
+use crate::layout::full_page;
 use crate::page::document_details::DocumentDetails;
 use crate::page::document_details::DocumentDetailsMessage;
 use crate::page::document_details::DocumentDetailsOutput;
@@ -171,13 +169,7 @@ macro_rules! with_active_page {
 }
 
 fn page_not_found<'a, M: 'a>() -> Element<'a, M> {
-    widget::text::title1(fl!("page-not-found"))
-        .apply(widget::container)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(Horizontal::Center)
-        .align_y(Vertical::Center)
-        .into()
+    widget::text::title1(fl!("page-not-found")).apply(full_page)
 }
 
 impl Pages {

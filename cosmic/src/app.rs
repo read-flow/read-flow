@@ -7,10 +7,7 @@ use archive_organizer::scan::DirectorySettings;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config;
 use cosmic::cosmic_config::CosmicConfigEntry;
-use cosmic::iced::Length;
 use cosmic::iced::Subscription;
-use cosmic::iced::alignment::Horizontal;
-use cosmic::iced::alignment::Vertical;
 use cosmic::iced::event;
 use cosmic::iced::event::Event;
 use cosmic::iced::keyboard::Event as KeyEvent;
@@ -29,6 +26,7 @@ use crate::ApplicationModule;
 use crate::config::Config;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
+use crate::layout::full_page;
 use crate::page::PageMessage;
 use crate::page::PageOutput;
 use crate::page::PageSelector;
@@ -322,13 +320,7 @@ impl cosmic::Application for AppModel {
         if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
             self.pages.view(page).map(Into::into)
         } else {
-            widget::text::title1(fl!("welcome"))
-                .apply(widget::container)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center)
-                .into()
+            widget::text::title1(fl!("welcome")).apply(full_page)
         }
     }
 

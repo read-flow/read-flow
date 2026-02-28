@@ -46,7 +46,21 @@ use crate::client::ClientSelector;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::fonts::fonts;
+use crate::layout::full_page;
 use crate::page::Page;
+
+// --- Block highlight ---
+
+/// How a block should be visually highlighted.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BlockHighlight {
+    /// No highlight.
+    None,
+    /// Subtle tint — a search match that is not the current one.
+    SearchMatch,
+    /// Strong accent — the current search match or a nav-target flash.
+    Current,
+}
 
 type Fingerprint = String;
 
@@ -235,6 +249,16 @@ pub enum EpubViewerMessage {
     Out(EpubViewerOutput),
     /// Clear the navigation-target block highlight after the flash timer expires.
     ClearHighlight,
+    /// Toggle the search bar open/closed.
+    ToggleSearch,
+    /// Update the search query and recompute matches.
+    SetSearchQuery(String),
+    /// Navigate to the next search match.
+    SearchNext,
+    /// Navigate to the previous search match.
+    SearchPrevious,
+    /// Close and clear the search bar.
+    CloseSearch,
 }
 
 // --- EpubViewer page ---
@@ -289,6 +313,16 @@ pub struct EpubViewer {
     /// Block index of the navigation target to highlight briefly after fragment navigation.
     /// Set to `Some(idx)` on arrival; cleared by the deferred `ClearHighlight` message.
     highlighted_block: Option<usize>,
+    /// Whether the search bar is currently visible.
+    search_visible: bool,
+    /// Current search query (lowercased when used for matching).
+    search_query: String,
+    /// Block indices in the active chapter that contain the search query.
+    search_matches: Vec<usize>,
+    /// Index into `search_matches` indicating the currently focused match.
+    search_current: usize,
+    /// Widget ID for the search text input (used to focus it on open).
+    search_input_id: widget::Id,
 }
 
 impl EpubViewer {
@@ -330,6 +364,11 @@ impl EpubViewer {
             nav_entries: Vec::new(),
             base_font_size: 16.0,
             highlighted_block: None,
+            search_visible: false,
+            search_query: String::new(),
+            search_matches: Vec::new(),
+            search_current: 0,
+            search_input_id: widget::Id::unique(),
         };
 
         let mut tasks = Vec::new();
@@ -457,6 +496,71 @@ impl EpubViewer {
         .into()
     }
 
+    fn view_search_bar(&self) -> Element<'_, EpubViewerMessage> {
+        let cosmic_theme::Spacing {
+            space_xxs, space_s, ..
+        } = theme::active().cosmic().spacing;
+
+        let input = widget::text_input(fl!("epub-viewer-search-placeholder"), &self.search_query)
+            .id(self.search_input_id.clone())
+            .on_input(EpubViewerMessage::SetSearchQuery)
+            .on_submit(|_| EpubViewerMessage::SearchNext)
+            .width(Length::Fill);
+
+        let match_label: Element<'_, EpubViewerMessage> = if !self.search_query.is_empty() {
+            if self.search_matches.is_empty() {
+                widget::text::body(fl!("epub-viewer-search-no-matches"))
+                    .width(Length::Shrink)
+                    .into()
+            } else {
+                let current = self.search_current + 1;
+                widget::text::body(fl!(
+                    "epub-viewer-search-match-count",
+                    current = current,
+                    total = self.search_matches.len()
+                ))
+                .width(Length::Shrink)
+                .into()
+            }
+        } else {
+            widget::Space::with_width(Length::Shrink).into()
+        };
+
+        widget::container(
+            widget::row()
+                .push(input)
+                .push(match_label)
+                .push(
+                    widget::button::icon(widget::icon::from_name("go-up-symbolic").size(ICON_SIZE))
+                        .on_press(EpubViewerMessage::SearchPrevious)
+                        .tooltip(fl!("epub-viewer-search-prev"))
+                        .padding(space_xxs),
+                )
+                .push(
+                    widget::button::icon(
+                        widget::icon::from_name("go-down-symbolic").size(ICON_SIZE),
+                    )
+                    .on_press(EpubViewerMessage::SearchNext)
+                    .tooltip(fl!("epub-viewer-search-next"))
+                    .padding(space_xxs),
+                )
+                .push(
+                    widget::button::icon(
+                        widget::icon::from_name("window-close-symbolic").size(ICON_SIZE),
+                    )
+                    .on_press(EpubViewerMessage::CloseSearch)
+                    .tooltip(fl!("epub-viewer-search-close"))
+                    .padding(space_xxs),
+                )
+                .spacing(space_xxs)
+                .align_y(Vertical::Center)
+                .padding([space_xxs, space_s]),
+        )
+        .class(Container::Secondary)
+        .width(Length::Fill)
+        .into()
+    }
+
     fn view_content(&self) -> Element<'_, EpubViewerMessage> {
         match self.view_mode {
             ViewMode::Scroll => self.view_content_scroll(),
@@ -480,7 +584,14 @@ impl EpubViewer {
             } else {
                 let family = self.font_family.to_family();
                 for (idx, block) in chapter.blocks.iter().enumerate() {
-                    let highlight = self.highlighted_block == Some(idx);
+                    let highlight = if self.highlighted_block == Some(idx) {
+                        BlockHighlight::Current
+                    } else if !self.search_matches.is_empty() && self.search_matches.contains(&idx)
+                    {
+                        BlockHighlight::SearchMatch
+                    } else {
+                        BlockHighlight::None
+                    };
                     column = column.push(render_block(
                         block,
                         highlight,
@@ -609,7 +720,15 @@ impl EpubViewer {
                 if let Some(range) = page_range {
                     for (i, block) in chapter.blocks[range.start..range.end].iter().enumerate() {
                         let abs_idx = range.start + i;
-                        let highlight = self.highlighted_block == Some(abs_idx);
+                        let highlight = if self.highlighted_block == Some(abs_idx) {
+                            BlockHighlight::Current
+                        } else if !self.search_matches.is_empty()
+                            && self.search_matches.contains(&abs_idx)
+                        {
+                            BlockHighlight::SearchMatch
+                        } else {
+                            BlockHighlight::None
+                        };
                         column = column.push(render_block(
                             block,
                             highlight,
@@ -726,12 +845,7 @@ impl Page for EpubViewer {
                 )
                 .push(widget::text::body(fl!("epub-viewer-no-local-source")));
 
-            return widget::container(no_source)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center)
-                .into();
+            return no_source.apply(full_page);
         }
 
         if self.chapters.is_empty() {
@@ -745,22 +859,19 @@ impl Page for EpubViewer {
                 )
                 .push(widget::text::body(fl!("epub-viewer-loading")));
 
-            return widget::container(loading)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center)
-                .into();
+            return loading.apply(full_page);
         }
 
-        let content = self.view_content();
+        let main_col = widget::column()
+            .height(Length::Fill)
+            .push_maybe(self.search_visible.then(|| self.view_search_bar()))
+            .push(self.view_content());
 
-        let mut row = widget::row().height(Length::Fill);
-        if self.show_sidebar {
-            row = row.push(self.view_chapter_sidebar());
-        }
-        row = row.push(content);
-        row.into()
+        widget::row()
+            .height(Length::Fill)
+            .push_maybe(self.show_sidebar.then(|| self.view_chapter_sidebar()))
+            .push(main_col)
+            .into()
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, EpubViewerMessage>> {
@@ -775,6 +886,11 @@ impl Page for EpubViewer {
         let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
         vec![
+            widget::button::icon(widget::icon::from_name("system-search-symbolic").size(ICON_SIZE))
+                .on_press(EpubViewerMessage::ToggleSearch)
+                .tooltip(fl!("epub-viewer-search"))
+                .padding(space_xxs)
+                .into(),
             widget::button::icon(widget::icon::from_name("window-close-symbolic").size(ICON_SIZE))
                 .on_press(EpubViewerMessage::Out(EpubViewerOutput::Close(
                     self.fingerprint.clone(),
@@ -1010,6 +1126,8 @@ impl Page for EpubViewer {
                     self.current_page = 0;
                     self.saved_position = None;
                     self.highlighted_block = None;
+                    self.search_matches.clear();
+                    self.search_current = 0;
                 }
                 Task::none()
             }
@@ -1025,6 +1143,8 @@ impl Page for EpubViewer {
                         self.current_page = 0;
                         self.saved_position = None;
                         self.highlighted_block = None;
+                        self.search_matches.clear();
+                        self.search_current = 0;
 
                         // Navigate to the fragment position within the chapter.
                         if let Some(frag) = fragment.filter(|f| !f.is_empty()) {
@@ -1177,35 +1297,45 @@ impl Page for EpubViewer {
                 }
                 Task::none()
             }
-            EpubViewerMessage::Key(_modifiers, key, _text) => match (&key, self.view_mode) {
-                (Key::Named(Named::ArrowLeft | Named::PageUp), ViewMode::Paginated) => {
-                    self.update(EpubViewerMessage::PreviousPage)
+            EpubViewerMessage::Key(modifiers, key, _text) => {
+                // Ctrl+F: toggle search bar.
+                if modifiers.control() && matches!(&key, Key::Character(c) if c.as_str() == "f") {
+                    return self.update(EpubViewerMessage::ToggleSearch);
                 }
-                (Key::Named(Named::ArrowRight | Named::PageDown), ViewMode::Paginated) => {
-                    self.update(EpubViewerMessage::NextPage)
+                // Escape: close search if open, otherwise ignore.
+                if matches!(&key, Key::Named(Named::Escape)) && self.search_visible {
+                    return self.update(EpubViewerMessage::CloseSearch);
                 }
-                (
-                    Key::Named(Named::ArrowUp | Named::ArrowLeft | Named::PageUp),
-                    ViewMode::Scroll,
-                ) => {
-                    if self.active_chapter > 0 {
-                        self.active_chapter -= 1;
-                        self.scroll_y = 0.0;
+                match (&key, self.view_mode) {
+                    (Key::Named(Named::ArrowLeft | Named::PageUp), ViewMode::Paginated) => {
+                        self.update(EpubViewerMessage::PreviousPage)
                     }
-                    Task::none()
-                }
-                (
-                    Key::Named(Named::ArrowDown | Named::ArrowRight | Named::PageDown),
-                    ViewMode::Scroll,
-                ) => {
-                    if self.active_chapter + 1 < self.chapters.len() {
-                        self.active_chapter += 1;
-                        self.scroll_y = 0.0;
+                    (Key::Named(Named::ArrowRight | Named::PageDown), ViewMode::Paginated) => {
+                        self.update(EpubViewerMessage::NextPage)
                     }
-                    Task::none()
+                    (
+                        Key::Named(Named::ArrowUp | Named::ArrowLeft | Named::PageUp),
+                        ViewMode::Scroll,
+                    ) => {
+                        if self.active_chapter > 0 {
+                            self.active_chapter -= 1;
+                            self.scroll_y = 0.0;
+                        }
+                        Task::none()
+                    }
+                    (
+                        Key::Named(Named::ArrowDown | Named::ArrowRight | Named::PageDown),
+                        ViewMode::Scroll,
+                    ) => {
+                        if self.active_chapter + 1 < self.chapters.len() {
+                            self.active_chapter += 1;
+                            self.scroll_y = 0.0;
+                        }
+                        Task::none()
+                    }
+                    _ => Task::none(),
                 }
-                _ => Task::none(),
-            },
+            }
             EpubViewerMessage::SetViewMode(mode) => {
                 self.view_mode = mode;
                 if mode == ViewMode::Paginated {
@@ -1298,6 +1428,65 @@ impl Page for EpubViewer {
                 self.highlighted_block = None;
                 Task::none()
             }
+            EpubViewerMessage::ToggleSearch => {
+                self.search_visible = !self.search_visible;
+                if self.search_visible {
+                    widget::text_input::focus(self.search_input_id.clone())
+                } else {
+                    self.search_query.clear();
+                    self.search_matches.clear();
+                    self.search_current = 0;
+                    self.highlighted_block = None;
+                    Task::none()
+                }
+            }
+            EpubViewerMessage::SetSearchQuery(query) => {
+                self.search_query = query;
+                self.highlighted_block = None;
+                if self.search_query.is_empty() {
+                    self.search_matches.clear();
+                    self.search_current = 0;
+                    return Task::none();
+                }
+                let lower = self.search_query.to_lowercase();
+                if let Some(chapter) = self.chapters.get(self.active_chapter) {
+                    self.search_matches = chapter
+                        .blocks
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, b)| block_contains(b, &lower))
+                        .map(|(i, _)| i)
+                        .collect();
+                }
+                self.search_current = 0;
+                self.navigate_to_search_match()
+            }
+            EpubViewerMessage::SearchNext => {
+                if !self.search_matches.is_empty() {
+                    self.search_current = (self.search_current + 1) % self.search_matches.len();
+                    return self.navigate_to_search_match();
+                }
+                Task::none()
+            }
+            EpubViewerMessage::SearchPrevious => {
+                if !self.search_matches.is_empty() {
+                    self.search_current = if self.search_current == 0 {
+                        self.search_matches.len() - 1
+                    } else {
+                        self.search_current - 1
+                    };
+                    return self.navigate_to_search_match();
+                }
+                Task::none()
+            }
+            EpubViewerMessage::CloseSearch => {
+                self.search_visible = false;
+                self.search_query.clear();
+                self.search_matches.clear();
+                self.search_current = 0;
+                self.highlighted_block = None;
+                Task::none()
+            }
             EpubViewerMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }
@@ -1343,6 +1532,61 @@ fn highlight_text_color(theme: &cosmic::Theme) -> cosmic::iced::Color {
         accent.color.blue,
         accent.alpha,
     )
+}
+
+fn search_match_background(theme: &cosmic::Theme) -> cosmic::iced::Color {
+    let accent = theme.cosmic().accent.base;
+    cosmic::iced::Color::from_rgba(accent.color.red, accent.color.green, accent.color.blue, 0.2)
+}
+
+/// Return true if `block` contains `query` (lowercased) anywhere in its text.
+fn block_contains(block: &ContentBlock, query: &str) -> bool {
+    match block {
+        ContentBlock::Heading { text, spans, .. }
+        | ContentBlock::Paragraph { text, spans, .. }
+        | ContentBlock::Preformatted { text, spans, .. } => {
+            if !spans.is_empty() {
+                spans.iter().any(|s| s.text.to_lowercase().contains(query))
+            } else {
+                text.to_lowercase().contains(query)
+            }
+        }
+        ContentBlock::UnorderedList { items } => items.iter().any(|item| {
+            if !item.spans.is_empty() {
+                item.spans
+                    .iter()
+                    .any(|s| s.text.to_lowercase().contains(query))
+            } else {
+                item.text.to_lowercase().contains(query)
+            }
+        }),
+        ContentBlock::OrderedList { items, .. } => items.iter().any(|item| {
+            if !item.spans.is_empty() {
+                item.spans
+                    .iter()
+                    .any(|s| s.text.to_lowercase().contains(query))
+            } else {
+                item.text.to_lowercase().contains(query)
+            }
+        }),
+        ContentBlock::Table { rows } => rows.iter().any(|row| {
+            row.iter().any(|cell| {
+                if !cell.spans.is_empty() {
+                    cell.spans
+                        .iter()
+                        .any(|s| s.text.to_lowercase().contains(query))
+                } else {
+                    cell.text.to_lowercase().contains(query)
+                }
+            })
+        }),
+        ContentBlock::BlockQuote { children } => children.iter().any(|b| block_contains(b, query)),
+        ContentBlock::Footnote { blocks, .. } => blocks.iter().any(|b| block_contains(b, query)),
+        ContentBlock::Image { alt, .. } | ContentBlock::Svg { alt, .. } => {
+            alt.to_lowercase().contains(query)
+        }
+        ContentBlock::Anchor { .. } | ContentBlock::HorizontalRule => false,
+    }
 }
 
 fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, EpubViewerMessage> {
@@ -1829,6 +2073,54 @@ impl EpubViewer {
         let (vw, _) = self.viewport_size.get();
         if self.should_dual_page(vw) { 2 } else { 1 }
     }
+
+    /// Set `highlighted_block` to the current search match and navigate to it.
+    fn navigate_to_search_match(&mut self) -> Task<Action<EpubViewerMessage>> {
+        let Some(&block_idx) = self.search_matches.get(self.search_current) else {
+            self.highlighted_block = None;
+            return Task::none();
+        };
+        self.highlighted_block = Some(block_idx);
+
+        match self.view_mode {
+            ViewMode::Scroll => {
+                // Estimate the y-position of the target block.
+                let content_w = 800.0 * (self.content_width_pct / 100.0);
+                let y = self
+                    .chapters
+                    .get(self.active_chapter)
+                    .map(|ch| {
+                        ch.blocks[..block_idx].iter().fold(0.0f32, |acc, b| {
+                            acc + estimated_block_height_for_width(
+                                b,
+                                content_w,
+                                self.base_font_size,
+                            ) + 8.0
+                        })
+                    })
+                    .unwrap_or(0.0);
+                self.scroll_y = y;
+                scrollable::scroll_to(
+                    self.content_scroll_id.clone(),
+                    scrollable::AbsoluteOffset { x: 0.0, y },
+                )
+            }
+            ViewMode::Paginated => {
+                if let Some(layout) = self.pagination_cache.get(&self.active_chapter) {
+                    if let Some(page_idx) = layout
+                        .pages
+                        .iter()
+                        .position(|p| p.start <= block_idx && block_idx < p.end)
+                    {
+                        self.current_page = page_idx;
+                    }
+                } else {
+                    self.pending_block_index = Some(block_idx);
+                }
+                Task::none()
+            }
+        }
+    }
 }
 
 fn styled_span<'a>(
@@ -1941,7 +2233,7 @@ fn apply_text_align<'a>(
 
 fn render_block<'a>(
     block: &'a ContentBlock,
-    highlight: bool,
+    highlight: BlockHighlight,
     font_size: f32,
     family: font::Family,
     document: &'a Document,
@@ -1956,8 +2248,9 @@ fn render_block<'a>(
         chapter_href,
         epub_document,
     );
-    if highlight {
-        widget::container(inner)
+    match highlight {
+        BlockHighlight::None => inner,
+        BlockHighlight::Current => widget::container(inner)
             .style(|theme: &cosmic::Theme| widget::container::Style {
                 background: Some(highlight_background(theme).into()),
                 text_color: Some(highlight_text_color(theme)),
@@ -1969,9 +2262,19 @@ fn render_block<'a>(
                 ..Default::default()
             })
             .width(Length::Fill)
-            .into()
-    } else {
-        inner
+            .into(),
+        BlockHighlight::SearchMatch => widget::container(inner)
+            .style(|theme: &cosmic::Theme| widget::container::Style {
+                background: Some(search_match_background(theme).into()),
+                border: Border {
+                    radius: theme.cosmic().corner_radii.radius_s.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                ..Default::default()
+            })
+            .width(Length::Fill)
+            .into(),
     }
 }
 
