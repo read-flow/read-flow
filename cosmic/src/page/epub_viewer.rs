@@ -144,10 +144,19 @@ pub(crate) enum ViewMode {
 
 /// A page is a contiguous range of blocks from the chapter's block list.
 /// Stored as \[start .. end) (exclusive end).
+///
+/// When `start_char_offset > 0`, the first block (`blocks[start]`) is shown
+/// starting from that character offset (continuation from the previous page).
+/// When `end_char_offset > 0`, the last block (`blocks[end - 1]`) is shown only
+/// up to that character offset (paragraph continues on the next page).
 #[derive(Clone, Debug)]
 struct PageRange {
     start: usize,
+    /// First character of `blocks[start]` shown on this page (0 = from beginning).
+    start_char_offset: usize,
     end: usize,
+    /// Last character (exclusive) of `blocks[end - 1]` shown on this page (0 = to end).
+    end_char_offset: usize,
 }
 
 /// Cached pagination layout for a chapter at a particular viewport size.
@@ -797,6 +806,7 @@ impl EpubViewer {
 
                 let mut column = widget::column().spacing(space_xxs).width(Length::Fill);
                 if let Some(range) = page_range {
+                    let block_count = range.end - range.start;
                     for (i, block) in chapter.blocks[range.start..range.end].iter().enumerate() {
                         let abs_idx = range.start + i;
                         let highlight = if self.highlighted_block == Some(abs_idx) {
@@ -808,17 +818,56 @@ impl EpubViewer {
                         } else {
                             BlockHighlight::None
                         };
-                        column = column.push(render_block(
-                            block,
-                            highlight,
-                            base_font_size,
-                            family,
-                            &self.document,
-                            &chapter.href,
-                            self.epub_document
-                                .as_ref()
-                                .map(CloneableEpubDocument::as_ref),
-                        ));
+                        // For split paragraphs, render only the visible char range using
+                        // owned data so the element lifetime does not depend on locals.
+                        let start_off = if i == 0 { range.start_char_offset } else { 0 };
+                        let end_off = if i + 1 == block_count && range.end_char_offset > 0 {
+                            range.end_char_offset
+                        } else {
+                            usize::MAX
+                        };
+                        let el = if start_off > 0 || end_off < usize::MAX {
+                            if let ContentBlock::Paragraph { text, spans, style } = block {
+                                let char_count = text.chars().count();
+                                let s = start_off.min(char_count);
+                                let e = end_off.min(char_count);
+                                render_partial_paragraph(
+                                    text[char_offset_to_byte(text, s)
+                                        ..char_offset_to_byte(text, e)]
+                                        .to_string(),
+                                    slice_spans(spans, s, e),
+                                    style,
+                                    highlight,
+                                    base_font_size,
+                                    family,
+                                )
+                            } else {
+                                render_block(
+                                    block,
+                                    highlight,
+                                    base_font_size,
+                                    family,
+                                    &self.document,
+                                    &chapter.href,
+                                    self.epub_document
+                                        .as_ref()
+                                        .map(CloneableEpubDocument::as_ref),
+                                )
+                            }
+                        } else {
+                            render_block(
+                                block,
+                                highlight,
+                                base_font_size,
+                                family,
+                                &self.document,
+                                &chapter.href,
+                                self.epub_document
+                                    .as_ref()
+                                    .map(CloneableEpubDocument::as_ref),
+                            )
+                        };
+                        column = column.push(el);
                     }
                 }
 
@@ -1955,6 +2004,143 @@ fn measure_text_height(
         .unwrap_or(line_height)
 }
 
+/// Return the byte offset in `text` corresponding to `char_offset` Unicode code points.
+/// Returns `text.len()` when `char_offset >= text.chars().count()`.
+fn char_offset_to_byte(text: &str, char_offset: usize) -> usize {
+    text.char_indices()
+        .nth(char_offset)
+        .map(|(i, _)| i)
+        .unwrap_or(text.len())
+}
+
+/// Extract the character range `[start_char .. end_char)` from a `TextSpan` slice,
+/// preserving all span metadata (style, link, color, font_size_em).
+fn slice_spans(spans: &[TextSpan], start_char: usize, end_char: usize) -> Vec<TextSpan> {
+    if start_char >= end_char {
+        return Vec::new();
+    }
+    let mut result = Vec::new();
+    let mut pos = 0usize;
+    for span in spans {
+        let span_char_len = span.text.chars().count();
+        let span_end = pos + span_char_len;
+        if span_end <= start_char || pos >= end_char {
+            pos = span_end;
+            continue;
+        }
+        let local_start = start_char.saturating_sub(pos);
+        let local_end = (end_char - pos).min(span_char_len);
+        let byte_start = char_offset_to_byte(&span.text, local_start);
+        let byte_end = char_offset_to_byte(&span.text, local_end);
+        let sliced = span.text[byte_start..byte_end].to_string();
+        if !sliced.is_empty() {
+            result.push(TextSpan {
+                text: sliced,
+                ..span.clone()
+            });
+        }
+        pos = span_end;
+    }
+    result
+}
+
+/// Shape `text` and return the character offset at which lines first exceed
+/// `available_height` pixels.  Returns `None` when all lines fit or the text is empty.
+fn find_split_char_offset(
+    text: &str,
+    content_width: f32,
+    font_size: f32,
+    available_height: f32,
+    font_system: &mut FontSystem,
+) -> Option<usize> {
+    if text.is_empty() || available_height <= 0.0 {
+        return None;
+    }
+    use cosmic_text::Attrs;
+    use cosmic_text::Buffer;
+    use cosmic_text::Metrics;
+    use cosmic_text::Shaping;
+    let line_height = font_size * 1.375;
+    let metrics = Metrics::new(font_size, line_height);
+    let mut buffer = Buffer::new(font_system, metrics);
+    buffer.set_size(font_system, Some(content_width), None);
+    buffer.set_text(font_system, text, &Attrs::new(), Shaping::Advanced, None);
+    buffer.shape_until_scroll(font_system, false);
+    let mut last_byte_end: Option<usize> = None;
+    for run in buffer.layout_runs() {
+        if run.line_y + run.line_height > available_height {
+            break;
+        }
+        if let Some(g) = run.glyphs.last() {
+            last_byte_end = Some(g.end);
+        }
+    }
+    last_byte_end.map(|b| text[..b].chars().count())
+}
+
+/// Height of `block` starting from `start_char_offset` characters in.
+/// Falls back to the full block height when `start_char_offset == 0` or when the
+/// block type does not support partial measurement.
+fn effective_block_height(
+    block: &ContentBlock,
+    start_char_offset: usize,
+    content_width: f32,
+    font_size: f32,
+    font_system: &mut FontSystem,
+) -> f32 {
+    if start_char_offset == 0 {
+        return estimated_block_height_for_width(block, content_width, font_size, font_system);
+    }
+    match block {
+        ContentBlock::Paragraph { text, .. } => {
+            let suffix = &text[char_offset_to_byte(text, start_char_offset)..];
+            measure_text_height(suffix, content_width, font_size, font_system)
+                .max(font_size * 1.375)
+        }
+        ContentBlock::Heading { text, level, .. } => {
+            let heading_size = match level {
+                1 => font_size * 2.0,
+                2 => font_size * 1.75,
+                3 => font_size * 1.5,
+                4 => font_size * 1.25,
+                _ => font_size * 1.125,
+            };
+            let suffix = &text[char_offset_to_byte(text, start_char_offset)..];
+            measure_text_height(suffix, content_width, heading_size, font_system)
+                .max(heading_size * 1.375)
+        }
+        _ => estimated_block_height_for_width(block, content_width, font_size, font_system),
+    }
+}
+
+/// Attempt to split `block` so that text up to `available_height` pixels fits on the current
+/// page.  `start_char_offset` is the offset already skipped (for continued splits).
+/// Returns the absolute char offset where the split should occur, or `None` if unsplittable.
+fn try_split_block(
+    block: &ContentBlock,
+    content_width: f32,
+    font_size: f32,
+    available_height: f32,
+    start_char_offset: usize,
+    font_system: &mut FontSystem,
+) -> Option<usize> {
+    match block {
+        ContentBlock::Paragraph { text, .. } => {
+            let byte_start = char_offset_to_byte(text, start_char_offset);
+            let suffix = &text[byte_start..];
+            find_split_char_offset(
+                suffix,
+                content_width,
+                font_size,
+                available_height,
+                font_system,
+            )
+            .map(|rel| start_char_offset + rel)
+        }
+        _ => None,
+    }
+}
+
 /// Estimate the rendered height of a block given the available content width and font size.
 /// Uses [`measure_text_height`] (cosmic-text shaping) for text blocks (Phase 4b), and
 /// word-boundary line counting (Phase 4a) for list items and other block types.
@@ -2084,8 +2270,9 @@ fn estimated_block_height_for_width(
 
 /// Split a chapter's blocks into pages that fit within `page_height` pixels.
 ///
-/// Blocks that individually exceed `page_height` get their own page (no
-/// mid-block splitting).
+/// Paragraphs that straddle a page boundary are split at a word-boundary
+/// character offset computed via cosmic-text layout runs (Phase 4c).
+/// Other block types that exceed `page_height` get their own page unchanged.
 fn paginate_blocks(
     blocks: &[ContentBlock],
     page_height: f32,
@@ -2095,41 +2282,119 @@ fn paginate_blocks(
 ) -> PaginationLayout {
     const SPACING: f32 = 8.0;
 
-    let mut pages = Vec::new();
-    let mut page_start = 0;
+    let mut pages: Vec<PageRange> = Vec::new();
+    let mut page_start = 0usize;
+    let mut page_start_char_offset = 0usize;
     let mut accumulated = 0.0f32;
+    let mut i = 0usize;
 
-    for (i, block) in blocks.iter().enumerate() {
-        let block_h = estimated_block_height_for_width(block, page_width, font_size, font_system);
-        let needed = if i == page_start {
+    while i < blocks.len() {
+        let block = &blocks[i];
+        let is_first_on_page = i == page_start;
+        let start_off = if is_first_on_page {
+            page_start_char_offset
+        } else {
+            0
+        };
+        let block_h = effective_block_height(block, start_off, page_width, font_size, font_system);
+        let needed = if is_first_on_page {
             block_h
         } else {
             SPACING + block_h
         };
 
-        if i != page_start && accumulated + needed > page_height {
-            // Close current page, start a new one with this block.
-            pages.push(PageRange {
-                start: page_start,
-                end: i,
-            });
-            page_start = i;
-            accumulated = block_h;
-        } else {
+        if accumulated + needed <= page_height {
+            // Block fits on the current page.
             accumulated += needed;
+            i += 1;
+        } else if is_first_on_page {
+            // First block on the page but still too tall — try to split it so
+            // we don't produce an infinite empty-page loop.
+            let available = (page_height - accumulated).max(0.0);
+            match try_split_block(
+                block,
+                page_width,
+                font_size,
+                available,
+                start_off,
+                font_system,
+            ) {
+                Some(abs_off) if abs_off > start_off => {
+                    pages.push(PageRange {
+                        start: page_start,
+                        start_char_offset: page_start_char_offset,
+                        end: i + 1,
+                        end_char_offset: abs_off,
+                    });
+                    page_start = i;
+                    page_start_char_offset = abs_off;
+                    accumulated = 0.0;
+                    // Re-process block `i` on the new page.
+                }
+                _ => {
+                    // Cannot split — let it overflow rather than loop forever.
+                    pages.push(PageRange {
+                        start: page_start,
+                        start_char_offset: page_start_char_offset,
+                        end: i + 1,
+                        end_char_offset: 0,
+                    });
+                    page_start = i + 1;
+                    page_start_char_offset = 0;
+                    accumulated = 0.0;
+                    i += 1;
+                }
+            }
+        } else {
+            // Block doesn't fit — try to place its top portion on the current page.
+            let available = (page_height - accumulated - SPACING).max(0.0);
+            match try_split_block(block, page_width, font_size, available, 0, font_system) {
+                Some(abs_off) if abs_off > 0 => {
+                    pages.push(PageRange {
+                        start: page_start,
+                        start_char_offset: page_start_char_offset,
+                        end: i + 1,
+                        end_char_offset: abs_off,
+                    });
+                    page_start = i;
+                    page_start_char_offset = abs_off;
+                    accumulated = 0.0;
+                    // Re-process block `i` on the new page.
+                }
+                _ => {
+                    // Nothing fits on this page — close it and start block on next page.
+                    pages.push(PageRange {
+                        start: page_start,
+                        start_char_offset: page_start_char_offset,
+                        end: i,
+                        end_char_offset: 0,
+                    });
+                    page_start = i;
+                    page_start_char_offset = 0;
+                    accumulated = 0.0;
+                    // Re-process block `i` on the new page.
+                }
+            }
         }
     }
 
-    // Push the final page.
+    // Final page (may be a continuation of a split block).
     if page_start < blocks.len() {
         pages.push(PageRange {
             start: page_start,
+            start_char_offset: page_start_char_offset,
             end: blocks.len(),
+            end_char_offset: 0,
         });
     }
 
     if pages.is_empty() {
-        pages.push(PageRange { start: 0, end: 0 });
+        pages.push(PageRange {
+            start: 0,
+            start_char_offset: 0,
+            end: 0,
+            end_char_offset: 0,
+        });
     }
 
     PaginationLayout {
@@ -2447,6 +2712,129 @@ fn apply_text_align<'a>(
         })
         .width(Length::Fill)
         .into()
+}
+
+/// Build an iced `Span` from an owned `TextSpan`, producing a `'static` element
+/// that does not borrow the source span data.
+fn owned_styled_span(
+    text_span: TextSpan,
+    family: font::Family,
+) -> cosmic::iced::widget::text::Span<'static, EpubViewerMessage> {
+    let style = text_span.style;
+    let link = text_span.link;
+    let color = text_span.color;
+    let font_size_em = text_span.font_size_em;
+    let weight = if style.bold {
+        font::Weight::Bold
+    } else {
+        font::Weight::Normal
+    };
+    let font_style = if style.italic {
+        font::Style::Italic
+    } else {
+        font::Style::Normal
+    };
+    let mut s = span(text_span.text); // String → Cow::Owned → 'static
+    s = s.font(Font {
+        family,
+        weight,
+        style: font_style,
+        ..Font::default()
+    });
+    if style.underline {
+        s = s.underline(true);
+    }
+    if style.strikethrough {
+        s = s.strikethrough(true);
+    }
+    if style.monospaced {
+        s = s.font(cosmic::font::mono());
+        s = s.background(Background::Color(
+            cosmic::theme::active().cosmic().secondary.base.into(),
+        ));
+    }
+    if let Some([r, g, b]) = color {
+        s = s.color(cosmic::iced::Color::from_rgb8(r, g, b));
+    }
+    if let Some(em) = font_size_em {
+        s = s.size(em * 16.0);
+    }
+    if let Some(href) = link {
+        s = s.link(EpubViewerMessage::FollowLink(href));
+        if color.is_none() {
+            s = s.color(theme::active().cosmic().accent_color());
+        }
+    }
+    s
+}
+
+/// Render a partial paragraph (split at page boundary) using owned text and span data.
+/// The returned element is self-contained — it does not borrow from any local variables.
+fn render_partial_paragraph<'a>(
+    text: String,
+    spans: Vec<TextSpan>,
+    style: &'a BlockStyle,
+    highlight: BlockHighlight,
+    font_size: f32,
+    family: font::Family,
+) -> Element<'a, EpubViewerMessage> {
+    let size = style
+        .font_size_em
+        .map(|em| em * font_size)
+        .unwrap_or(font_size);
+    let align = text_align_horizontal(style);
+    let font = Font {
+        family,
+        ..Font::default()
+    };
+    let inner: Element<'a, EpubViewerMessage> = if spans.is_empty() {
+        apply_text_align(
+            widget::text::body(text)
+                .size(font_size)
+                .font(font)
+                .width(Length::Fill)
+                .align_x(align)
+                .into(),
+            style,
+        )
+    } else {
+        let iced_spans: Vec<_> = spans
+            .into_iter()
+            .map(|s| owned_styled_span(s, family))
+            .collect();
+        apply_text_align(
+            rich_text(iced_spans).size(size).width(Length::Fill).into(),
+            style,
+        )
+    };
+    match highlight {
+        BlockHighlight::None => inner,
+        BlockHighlight::Current => widget::container(inner)
+            .style(|theme: &cosmic::Theme| widget::container::Style {
+                background: Some(highlight_background(theme).into()),
+                text_color: Some(highlight_text_color(theme)),
+                border: Border {
+                    radius: theme.cosmic().corner_radii.radius_xl.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                ..Default::default()
+            })
+            .width(Length::Fill)
+            .into(),
+        BlockHighlight::SearchMatch => widget::container(inner)
+            .style(|theme: &cosmic::Theme| widget::container::Style {
+                background: Some(search_match_background(theme).into()),
+                border: Border {
+                    radius: theme.cosmic().corner_radii.radius_s.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                ..Default::default()
+            })
+            .width(Length::Fill)
+            .into(),
+    }
 }
 
 fn render_block<'a>(
