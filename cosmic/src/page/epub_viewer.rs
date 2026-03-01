@@ -2060,7 +2060,27 @@ fn find_split_char_offset(
             last_byte_end = Some(g.end);
         }
     }
-    last_byte_end.map(|b| text[..b].chars().count())
+
+    let b = last_byte_end?;
+    let prefix = &text[..b];
+
+    // Cosmic-text wraps at word boundaries, but force-breaks long words at
+    // character boundaries.  If the raw split point is mid-word, walk back to
+    // the nearest preceding whitespace so we never split inside a word.
+    if !prefix.ends_with(char::is_whitespace)
+        && let Some(ws_byte) = prefix.rfind(char::is_whitespace)
+    {
+        // Put the whitespace on the current page; next page starts with
+        // the first letter of the word that would have been split.
+        let ws_char_len = text[ws_byte..].chars().next().map_or(1, |c| c.len_utf8());
+        return Some(text[..ws_byte + ws_char_len].chars().count());
+    }
+    // No whitespace before the force-break (one very long word with no
+    // preceding space in the suffix): fall through and return the raw
+    // character offset — the caller will let the block overflow rather
+    // than loop forever.
+
+    Some(prefix.chars().count())
 }
 
 /// Height of `block` starting from `start_char_offset` characters in.
