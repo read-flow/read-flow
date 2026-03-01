@@ -241,9 +241,6 @@ pub(crate) struct EpubChapter {
     /// Resolved zip path for this spine item (e.g. `OEBPS/Text/ch1.xhtml`).
     href: String,
     blocks: Vec<ContentBlock>,
-    /// Map of HTML anchor id → estimated absolute y-offset in pixels.
-    /// Populated for `ContentBlock::Footnote` ids at chapter load time.
-    anchors: HashMap<String, f32>,
     /// Raw XHTML source for debug display.
     raw_html: String,
 }
@@ -1291,7 +1288,18 @@ impl Page for EpubViewer {
 
                             match self.view_mode {
                                 ViewMode::Scroll => {
-                                    if let Some(&target_y) = chapter.anchors.get(frag) {
+                                    let content_w = 800.0 * (self.content_width_pct / 100.0);
+                                    let target_y = {
+                                        let mut fs = self.font_system.borrow_mut();
+                                        compute_anchor_y(
+                                            &chapter.blocks,
+                                            frag,
+                                            content_w,
+                                            self.base_font_size,
+                                            &mut fs,
+                                        )
+                                    };
+                                    if let Some(target_y) = target_y {
                                         self.scroll_y = target_y;
                                         nav_task = scrollable::scroll_to(
                                             self.content_scroll_id.clone(),
@@ -1360,7 +1368,19 @@ impl Page for EpubViewer {
                     if let Some(frag) = fragment.filter(|f| !f.is_empty())
                         && let Some(chapter) = self.chapters.get(self.active_chapter)
                     {
-                        if let Some(&target_y) = chapter.anchors.get(frag) {
+                        // Compute scroll-mode target using accurate shaped measurement.
+                        let content_w = 800.0 * (self.content_width_pct / 100.0);
+                        let target_y = {
+                            let mut fs = self.font_system.borrow_mut();
+                            compute_anchor_y(
+                                &chapter.blocks,
+                                frag,
+                                content_w,
+                                self.base_font_size,
+                                &mut fs,
+                            )
+                        };
+                        if let Some(target_y) = target_y {
                             // Navigating to a footnote: save reading position (once).
                             if self.saved_position.is_none() {
                                 self.saved_position = Some(match self.view_mode {
@@ -1843,12 +1863,10 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>, EpubDocument) {
             }
         };
 
-        let anchors = build_anchor_map(&blocks);
         chapters.push(EpubChapter {
             label,
             href: item.href.clone(),
             blocks,
-            anchors,
             raw_html,
         });
     }
@@ -1922,64 +1940,28 @@ fn extract_attr_value<'a>(tag_content: &'a str, attr_name: &str) -> Option<&'a s
     }
 }
 
-/// Estimate the rendered height of a block in pixels.
-/// Used to build approximate scroll-anchor positions for footnote navigation.
-fn estimated_block_height(block: &ContentBlock) -> f32 {
-    match block {
-        ContentBlock::Heading { level: 1, .. } => 56.0,
-        ContentBlock::Heading { level: 2, .. } => 48.0,
-        ContentBlock::Heading { level: 3, .. } => 40.0,
-        ContentBlock::Heading { .. } => 32.0,
-        ContentBlock::Paragraph { text, .. } => {
-            // ~80 chars per line at default width, ~22px per line
-            ((text.len() as f32 / 80.0).ceil() * 22.0).max(22.0)
-        }
-        ContentBlock::Preformatted { text, .. } => (text.lines().count() as f32 * 20.0).max(20.0),
-        ContentBlock::BlockQuote { children } => {
-            children.iter().map(estimated_block_height).sum::<f32>() + 16.0
-        }
-        ContentBlock::UnorderedList { items } => items.len() as f32 * 28.0,
-        ContentBlock::OrderedList { items, .. } => items.len() as f32 * 28.0,
-        ContentBlock::Image { .. } => 200.0,
-        ContentBlock::Svg { .. } => 200.0,
-        ContentBlock::Table { rows } => rows.len() as f32 * 36.0 + 8.0,
-        ContentBlock::HorizontalRule => 16.0,
-        ContentBlock::Footnote { blocks, .. } => {
-            blocks.iter().map(estimated_block_height).sum::<f32>() + 16.0
-        }
-        ContentBlock::Figure {
-            blocks,
-            caption_text,
-            ..
-        } => {
-            let blocks_h: f32 = blocks.iter().map(estimated_block_height).sum::<f32>();
-            let caption_h = if caption_text.is_empty() { 0.0 } else { 22.0 };
-            blocks_h + caption_h + 8.0
-        }
-        ContentBlock::Anchor { .. } => 0.0,
-    }
-}
-
-/// Build a map of HTML anchor id → estimated absolute y-offset (pixels).
-/// Covers `ContentBlock::Anchor` ids (headings, sections, etc.) and
-/// `ContentBlock::Footnote` ids.
-fn build_anchor_map(blocks: &[ContentBlock]) -> HashMap<String, f32> {
+/// Walk `blocks` with shaped height measurement and return the accumulated y-offset of the
+/// first `Anchor` or `Footnote` block whose `id` matches `anchor_id`.  Returns `None` if
+/// no matching block is found.
+fn compute_anchor_y(
+    blocks: &[ContentBlock],
+    anchor_id: &str,
+    content_width: f32,
+    font_size: f32,
+    font_system: &mut FontSystem,
+) -> Option<f32> {
     const SPACING: f32 = 8.0;
-    let mut map = HashMap::new();
     let mut y = 0.0f32;
     for block in blocks {
         match block {
-            ContentBlock::Anchor { id } if !id.is_empty() => {
-                map.insert(id.clone(), y);
-            }
-            ContentBlock::Footnote { id, .. } if !id.is_empty() => {
-                map.entry(id.clone()).or_insert(y);
-            }
+            ContentBlock::Anchor { id } if id == anchor_id => return Some(y),
+            ContentBlock::Footnote { id, .. } if id == anchor_id => return Some(y),
             _ => {}
         }
-        y += estimated_block_height(block) + SPACING;
+        y += estimated_block_height_for_width(block, content_width, font_size, font_system)
+            + SPACING;
     }
-    map
+    None
 }
 
 /// Measure the pixel height that `text` occupies when shaped at `font_size` and wrapped to
@@ -2540,9 +2522,12 @@ impl EpubViewer {
     /// default 80-char estimation (no width info available).
     fn approximate_block_at_scroll_y(&self, target_y: f32) -> Option<usize> {
         let chapter = self.chapters.get(self.active_chapter)?;
+        let content_w = 800.0 * (self.content_width_pct / 100.0);
+        let mut fs = self.font_system.borrow_mut();
         let mut y = 0.0f32;
         for (i, block) in chapter.blocks.iter().enumerate() {
-            let h = estimated_block_height(block);
+            let h =
+                estimated_block_height_for_width(block, content_w, self.base_font_size, &mut fs);
             if y + h > target_y {
                 return Some(i);
             }
