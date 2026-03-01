@@ -684,6 +684,7 @@ impl EpubViewer {
                         self.epub_document
                             .as_ref()
                             .map(CloneableEpubDocument::as_ref),
+                        f32::MAX,
                     ));
                 }
             }
@@ -852,6 +853,7 @@ impl EpubViewer {
                                     self.epub_document
                                         .as_ref()
                                         .map(CloneableEpubDocument::as_ref),
+                                    layout.page_height * 0.9,
                                 )
                             }
                         } else {
@@ -865,6 +867,7 @@ impl EpubViewer {
                                 self.epub_document
                                     .as_ref()
                                     .map(CloneableEpubDocument::as_ref),
+                                layout.page_height * 0.9,
                             )
                         };
                         column = column.push(el);
@@ -2845,6 +2848,7 @@ fn render_block<'a>(
     document: &'a Document,
     chapter_href: &'a str,
     epub_document: Option<&'a EpubDocument>,
+    max_image_height: f32,
 ) -> Element<'a, EpubViewerMessage> {
     let inner = render_block_inner(
         block,
@@ -2853,6 +2857,7 @@ fn render_block<'a>(
         document,
         chapter_href,
         epub_document,
+        max_image_height,
     );
     match highlight {
         BlockHighlight::None => inner,
@@ -2891,6 +2896,7 @@ fn render_block_inner<'a>(
     document: &'a Document,
     chapter_href: &'a str,
     epub_document: Option<&'a EpubDocument>,
+    max_image_height: f32,
 ) -> Element<'a, EpubViewerMessage> {
     let cosmic_theme::Spacing {
         space_xxs, space_s, ..
@@ -2991,6 +2997,7 @@ fn render_block_inner<'a>(
                     document,
                     chapter_href,
                     epub_document,
+                    max_image_height,
                 ));
             }
             widget::container(col)
@@ -3053,6 +3060,7 @@ fn render_block_inner<'a>(
                 .content_fit(cosmic::iced::ContentFit::ScaleDown)
                 .apply(widget::container)
                 .width(Length::Fill)
+                .max_height(max_image_height)
                 .align_x(Horizontal::Center)
                 .into()
         }
@@ -3089,6 +3097,7 @@ fn render_block_inner<'a>(
                 .content_fit(cosmic::iced::ContentFit::ScaleDown)
                 .apply(widget::container)
                 .width(Length::Fill)
+                .max_height(max_image_height)
                 .align_x(Horizontal::Center)
                 .into()
         }
@@ -3119,6 +3128,7 @@ fn render_block_inner<'a>(
                     document,
                     chapter_href,
                     epub_document,
+                    max_image_height,
                 ));
             }
             if !caption.is_empty() {
@@ -3182,6 +3192,7 @@ fn render_footnote<'a>(
                 document,
                 chapter_href,
                 epub_document,
+                f32::MAX,
             ),
         };
         col = col.push(el);
