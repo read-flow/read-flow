@@ -68,3 +68,5 @@ This is a tool to help discover and organize files locally and on remote servers
   - [ ] For all (reachable) sources: Check whether the file still exists
 - [ ] Add role-based authorization for server REST API, read/write access
   - [ ] Update cosmic settings editor
+- [ ] PDF Viewer, 'stream' the pages while loading, so that each page becomes visible/accessible the moment it is rendered.
+- [ ] Investigate/use ~pdfium_render~ crate to render PDFs.
