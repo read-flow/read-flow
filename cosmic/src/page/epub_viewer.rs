@@ -85,6 +85,46 @@ const KEY_FONT_FAMILY: &str = "epub_font_family";
 /// Config key for the saved base font size (stored as integer pixels).
 const KEY_BASE_FONT_SIZE: &str = "epub_base_font_size";
 
+/// Config key for the saved view mode ("scroll" or "paginated").
+const KEY_VIEW_MODE: &str = "epub_view_mode";
+
+/// Config key for sidebar visibility (bool).
+const KEY_SHOW_SIDEBAR: &str = "epub_show_sidebar";
+
+/// Config key for content column width percentage (stored as u32, 50–150).
+const KEY_CONTENT_WIDTH_PCT: &str = "epub_content_width_pct";
+
+/// Config key for dual-page mode ("auto", "off", "on").
+const KEY_DUAL_PAGE: &str = "epub_dual_page";
+
+/// Config key for page-height fraction (stored as u32 percentage, 50–100).
+const KEY_PAGE_HEIGHT_FRACTION: &str = "epub_page_height_fraction";
+
+/// All EPUB reader preferences stored in cosmic-config.
+struct EpubPrefs {
+    font_family: FontFamily,
+    base_font_size: f32,
+    view_mode: ViewMode,
+    show_sidebar: bool,
+    content_width_pct: f32,
+    dual_page: DualPageMode,
+    page_height_fraction: f32,
+}
+
+impl Default for EpubPrefs {
+    fn default() -> Self {
+        EpubPrefs {
+            font_family: FontFamily::default(),
+            base_font_size: 16.0,
+            view_mode: ViewMode::default(),
+            show_sidebar: true,
+            content_width_pct: 100.0,
+            dual_page: DualPageMode::default(),
+            page_height_fraction: 1.0,
+        }
+    }
+}
+
 /// Convert a `FontFamily` to the string stored in config.
 fn font_family_to_str(family: FontFamily) -> String {
     match family {
@@ -111,25 +151,77 @@ fn str_to_font_family(s: &str) -> FontFamily {
     }
 }
 
-/// Load saved EPUB reader font preferences from cosmic-config.
-/// Returns `(font_family, base_font_size_px)`.
-fn load_epub_font_prefs() -> (FontFamily, f32) {
+/// Load all saved EPUB reader preferences from cosmic-config.
+fn load_epub_prefs() -> EpubPrefs {
     let Ok(ctx) = cosmic_config::Config::new(APP_ID, EPUB_PREFS_VERSION) else {
-        return (FontFamily::default(), 16.0);
+        return EpubPrefs::default();
     };
+    let mut prefs = EpubPrefs::default();
+
     let family_str: String = ctx.get(KEY_FONT_FAMILY).unwrap_or_default();
+    prefs.font_family = str_to_font_family(&family_str);
+
     let size_px: u32 = ctx.get(KEY_BASE_FONT_SIZE).unwrap_or(16);
-    let font_size = (size_px as f32).clamp(12.0, 24.0);
-    (str_to_font_family(&family_str), font_size)
+    prefs.base_font_size = (size_px as f32).clamp(12.0, 24.0);
+
+    if let Ok(mode_str) = ctx.get::<String>(KEY_VIEW_MODE) {
+        prefs.view_mode = match mode_str.as_str() {
+            "scroll" => ViewMode::Scroll,
+            "paginated" => ViewMode::Paginated,
+            _ => ViewMode::default(),
+        };
+    }
+
+    if let Ok(show) = ctx.get::<bool>(KEY_SHOW_SIDEBAR) {
+        prefs.show_sidebar = show;
+    }
+
+    if let Ok(pct) = ctx.get::<u32>(KEY_CONTENT_WIDTH_PCT) {
+        prefs.content_width_pct = (pct as f32).clamp(50.0, 150.0);
+    }
+
+    if let Ok(dp_str) = ctx.get::<String>(KEY_DUAL_PAGE) {
+        prefs.dual_page = match dp_str.as_str() {
+            "off" => DualPageMode::Off,
+            "on" => DualPageMode::On,
+            _ => DualPageMode::Auto,
+        };
+    }
+
+    if let Ok(frac) = ctx.get::<u32>(KEY_PAGE_HEIGHT_FRACTION) {
+        prefs.page_height_fraction = (frac as f32 / 100.0).clamp(0.5, 1.0);
+    }
+
+    prefs
 }
 
-/// Save EPUB reader font preferences to cosmic-config.
-fn save_epub_font_prefs(font_family: FontFamily, base_font_size: f32) {
+/// Save all EPUB reader preferences to cosmic-config.
+fn save_epub_prefs(prefs: &EpubPrefs) {
     let Ok(ctx) = cosmic_config::Config::new(APP_ID, EPUB_PREFS_VERSION) else {
         return;
     };
-    let _ = ctx.set(KEY_FONT_FAMILY, font_family_to_str(font_family));
-    let _ = ctx.set(KEY_BASE_FONT_SIZE, base_font_size.round() as u32);
+    let _ = ctx.set(KEY_FONT_FAMILY, font_family_to_str(prefs.font_family));
+    let _ = ctx.set(KEY_BASE_FONT_SIZE, prefs.base_font_size.round() as u32);
+    let mode_str = match prefs.view_mode {
+        ViewMode::Scroll => "scroll",
+        ViewMode::Paginated => "paginated",
+    };
+    let _ = ctx.set(KEY_VIEW_MODE, mode_str);
+    let _ = ctx.set(KEY_SHOW_SIDEBAR, prefs.show_sidebar);
+    let _ = ctx.set(
+        KEY_CONTENT_WIDTH_PCT,
+        prefs.content_width_pct.round() as u32,
+    );
+    let dp_str = match prefs.dual_page {
+        DualPageMode::Auto => "auto",
+        DualPageMode::Off => "off",
+        DualPageMode::On => "on",
+    };
+    let _ = ctx.set(KEY_DUAL_PAGE, dp_str);
+    let _ = ctx.set(
+        KEY_PAGE_HEIGHT_FRACTION,
+        (prefs.page_height_fraction * 100.0).round() as u32,
+    );
 }
 
 // --- View mode and pagination types ---
@@ -412,7 +504,7 @@ impl EpubViewer {
         let local_source = sources.iter().find(|s| s.client == ClientSelector::Local);
         let file_path = local_source.map(|s| PathBuf::from(&s.path));
 
-        let (saved_font_family, saved_font_size) = load_epub_font_prefs();
+        let saved_prefs = load_epub_prefs();
 
         let viewer = EpubViewer {
             fingerprint: fingerprint.clone(),
@@ -428,19 +520,19 @@ impl EpubViewer {
             modifiers: Modifiers::default(),
             show_raw_html: false,
             content_scroll_id: widget::Id::unique(),
-            view_mode: ViewMode::default(),
+            view_mode: saved_prefs.view_mode,
             current_page: 0,
             pagination_cache: HashMap::new(),
             viewport_size: Cell::new((0.0, 0.0)),
-            dual_page: DualPageMode::default(),
-            page_height_fraction: 1.0,
+            dual_page: saved_prefs.dual_page,
+            page_height_fraction: saved_prefs.page_height_fraction,
             pending_block_index: None,
-            show_sidebar: true,
-            content_width_pct: 100.0,
-            font_family: saved_font_family,
+            show_sidebar: saved_prefs.show_sidebar,
+            content_width_pct: saved_prefs.content_width_pct,
+            font_family: saved_prefs.font_family,
             font_family_names: widget::combo_box::State::new(FontFamily::all()),
             nav_entries: Vec::new(),
-            base_font_size: saved_font_size,
+            base_font_size: saved_prefs.base_font_size,
             highlighted_block: None,
             search_visible: false,
             search_query: String::new(),
@@ -488,6 +580,19 @@ impl EpubViewer {
         ));
 
         (viewer, Task::batch(tasks))
+    }
+
+    /// Snapshot the current viewer preferences and persist them to cosmic-config.
+    fn save_current_prefs(&self) {
+        save_epub_prefs(&EpubPrefs {
+            font_family: self.font_family,
+            base_font_size: self.base_font_size,
+            view_mode: self.view_mode,
+            show_sidebar: self.show_sidebar,
+            content_width_pct: self.content_width_pct,
+            dual_page: self.dual_page,
+            page_height_fraction: self.page_height_fraction,
+        });
     }
 
     pub fn display_name(&self) -> String {
@@ -1025,17 +1130,29 @@ impl Page for EpubViewer {
                     if self.chapters.is_empty() {
                         None
                     } else {
-                        let first_block = self
-                            .pagination_cache
-                            .get(&self.active_chapter)
-                            .and_then(|l| l.pages.get(self.current_page))
-                            .map(|p| p.start)
-                            .unwrap_or(0);
+                        // In paginated mode use the first block of the current page.
+                        // In scroll mode derive the block index from scroll_y so the
+                        // position can be accurately restored on any device regardless
+                        // of display dimensions.
+                        let first_block = match self.view_mode {
+                            ViewMode::Paginated => self
+                                .pagination_cache
+                                .get(&self.active_chapter)
+                                .and_then(|l| l.pages.get(self.current_page))
+                                .map(|p| p.start)
+                                .unwrap_or(0),
+                            ViewMode::Scroll => self
+                                .approximate_block_at_scroll_y(self.scroll_y)
+                                .unwrap_or(0),
+                        };
                         Some(serialize_progress(
                             self.active_chapter,
                             self.scroll_y,
                             first_block,
                             self.view_mode,
+                            self.base_font_size,
+                            self.content_width_pct,
+                            self.page_height_fraction,
                         ))
                     },
                 )))
@@ -1203,14 +1320,36 @@ impl Page for EpubViewer {
                         .unwrap_or(0)
                         .min(self.chapters.len() - 1);
                 }
-                // Restore scroll position once content is available
-                if self.scroll_y > 0.0 {
+                // Restore scroll position once content is available.
+                // In scroll mode, prefer block_index over raw scroll_y so
+                // the position is layout-independent (accurate across devices
+                // with different display dimensions or font size settings).
+                let target_y = if self.view_mode == ViewMode::Scroll {
+                    if let Some(bi) = self.pending_block_index.take() {
+                        let content_w = 800.0 * (self.content_width_pct / 100.0);
+                        let mut fs = self.font_system.borrow_mut();
+                        self.chapters.get(self.active_chapter).map(|ch| {
+                            compute_y_for_block_index(
+                                &ch.blocks,
+                                bi,
+                                content_w,
+                                self.base_font_size,
+                                &mut fs,
+                            )
+                        })
+                    } else if self.scroll_y > 0.0 {
+                        Some(self.scroll_y)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                if let Some(y) = target_y {
+                    self.scroll_y = y;
                     scrollable::scroll_to(
                         self.content_scroll_id.clone(),
-                        scrollable::AbsoluteOffset {
-                            x: 0.0,
-                            y: self.scroll_y,
-                        },
+                        scrollable::AbsoluteOffset { x: 0.0, y },
                     )
                 } else {
                     Task::none()
@@ -1229,23 +1368,40 @@ impl Page for EpubViewer {
                 if let Some(mode) = pos.view_mode {
                     self.view_mode = mode;
                 }
-                // Store block index for deferred page restoration.
-                // Pagination can't run yet (viewport_size is 0×0 until the
-                // first render), so `maybe_repaginate()` will consume this
-                // once a valid layout is available.
+                // Store block index for deferred restoration in both modes.
+                // For paginated mode, `maybe_repaginate()` consumes it to
+                // find the right page once a valid viewport is known.
+                // For scroll mode, if chapters are already loaded we compute
+                // the y offset immediately; otherwise EpubLoaded will do it.
                 self.pending_block_index = pos.block_index;
-                // Restore scroll if chapters are already loaded (scroll mode)
-                if self.scroll_y > 0.0 && !self.chapters.is_empty() {
-                    scrollable::scroll_to(
-                        self.content_scroll_id.clone(),
-                        scrollable::AbsoluteOffset {
-                            x: 0.0,
-                            y: self.scroll_y,
-                        },
-                    )
-                } else {
-                    Task::none()
+                if self.view_mode == ViewMode::Scroll && !self.chapters.is_empty() {
+                    // Chapters loaded before progress — compute y now.
+                    let target_y = if let Some(bi) = self.pending_block_index.take() {
+                        let content_w = 800.0 * (self.content_width_pct / 100.0);
+                        let mut fs = self.font_system.borrow_mut();
+                        self.chapters.get(self.active_chapter).map(|ch| {
+                            compute_y_for_block_index(
+                                &ch.blocks,
+                                bi,
+                                content_w,
+                                self.base_font_size,
+                                &mut fs,
+                            )
+                        })
+                    } else if self.scroll_y > 0.0 {
+                        Some(self.scroll_y)
+                    } else {
+                        None
+                    };
+                    if let Some(y) = target_y {
+                        self.scroll_y = y;
+                        return scrollable::scroll_to(
+                            self.content_scroll_id.clone(),
+                            scrollable::AbsoluteOffset { x: 0.0, y },
+                        );
+                    }
                 }
+                Task::none()
             }
             EpubViewerMessage::SelectChapter(idx) => {
                 if idx < self.chapters.len() {
@@ -1504,6 +1660,7 @@ impl Page for EpubViewer {
                 } else {
                     self.scroll_y = self.page_to_scroll_y();
                 }
+                self.save_current_prefs();
                 Task::none()
             }
             EpubViewerMessage::NextPage => {
@@ -1541,36 +1698,40 @@ impl Page for EpubViewer {
                 // Invalidate pagination cache since page width changes.
                 self.pagination_cache.clear();
                 self.maybe_repaginate();
+                self.save_current_prefs();
                 Task::none()
             }
             EpubViewerMessage::SetPageHeightFraction(frac) => {
                 self.page_height_fraction = frac.clamp(0.5, 1.0);
                 self.pagination_cache.clear();
                 self.maybe_repaginate();
+                self.save_current_prefs();
                 Task::none()
             }
             EpubViewerMessage::ShowSidebar(show) => {
                 self.show_sidebar = show;
+                self.save_current_prefs();
                 Task::none()
             }
             EpubViewerMessage::SetContentMaxWidth(pct) => {
                 self.content_width_pct = pct.clamp(50.0, 150.0);
                 self.pagination_cache.clear();
                 self.maybe_repaginate();
+                self.save_current_prefs();
                 Task::none()
             }
             EpubViewerMessage::SetFontFamily(family) => {
                 self.font_family = family;
                 self.pagination_cache.clear();
                 self.maybe_repaginate();
-                save_epub_font_prefs(self.font_family, self.base_font_size);
+                self.save_current_prefs();
                 Task::none()
             }
             EpubViewerMessage::SetBaseFontSize(size) => {
                 self.base_font_size = size.clamp(12.0, 24.0);
                 self.pagination_cache.clear();
                 self.maybe_repaginate();
-                save_epub_font_prefs(self.font_family, self.base_font_size);
+                self.save_current_prefs();
                 Task::none()
             }
             EpubViewerMessage::ModifiersChanged(modifiers) => {
@@ -1757,20 +1918,29 @@ fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, EpubViewe
 }
 
 /// Serialize reading progress to a JSON string.
-/// Includes scroll offset, block index, and view mode. The format is
-/// backward-compatible: older versions silently ignore unknown fields.
+/// Includes scroll offset, block index, view mode, and the layout-affecting
+/// settings (font_size, content_width_pct, page_height_fraction) so that
+/// the position can be accurately restored even on a device with different
+/// display dimensions.  The format is backward-compatible: older readers
+/// silently ignore unknown fields.
 fn serialize_progress(
     chapter: usize,
     scroll_y: f32,
     first_block: usize,
     view_mode: ViewMode,
+    font_size: f32,
+    content_width_pct: f32,
+    page_height_fraction: f32,
 ) -> String {
     let mode = match view_mode {
         ViewMode::Scroll => "scroll",
         ViewMode::Paginated => "paginated",
     };
     format!(
-        "{{\"chapter\":{chapter},\"scroll\":{scroll_y},\"block\":{first_block},\"mode\":\"{mode}\"}}"
+        "{{\"chapter\":{chapter},\"scroll\":{scroll_y},\"block\":{first_block},\
+\"mode\":\"{mode}\",\"font_size\":{font_size},\
+\"content_width_pct\":{content_width_pct},\
+\"page_height_fraction\":{page_height_fraction}}}"
     )
 }
 
@@ -1779,14 +1949,20 @@ fn serialize_progress(
 pub(crate) struct ReadingPosition {
     chapter: Option<usize>,
     scroll_y: f32,
-    /// Index of the first visible block (for paginated mode restoration).
+    /// Index of the first visible block (for paginated and scroll mode restoration).
     block_index: Option<usize>,
     /// View mode that was active when progress was saved.
     view_mode: Option<ViewMode>,
+    /// Base font size that was active when progress was saved (px).
+    font_size: Option<f32>,
+    /// Content column width percentage when progress was saved.
+    content_width_pct: Option<f32>,
+    /// Page height fraction when progress was saved.
+    page_height_fraction: Option<f32>,
 }
 
 /// Parse reading progress from a JSON string like
-/// `{"chapter":2,"scroll":340.5,"block":15}`.
+/// `{"chapter":2,"scroll":340.5,"block":15,"mode":"paginated"}`.
 fn parse_reading_progress(progress: &str) -> ReadingPosition {
     let mut pos = ReadingPosition::default();
     let progress = progress.trim();
@@ -1804,6 +1980,9 @@ fn parse_reading_progress(progress: &str) -> ReadingPosition {
                             _ => None,
                         }
                     }
+                    "font_size" => pos.font_size = value.trim().parse().ok(),
+                    "content_width_pct" => pos.content_width_pct = value.trim().parse().ok(),
+                    "page_height_fraction" => pos.page_height_fraction = value.trim().parse().ok(),
                     _ => {}
                 }
             }
@@ -1938,6 +2117,25 @@ fn extract_attr_value<'a>(tag_content: &'a str, attr_name: &str) -> Option<&'a s
             .unwrap_or(rest.len());
         if end > 0 { Some(&rest[..end]) } else { None }
     }
+}
+
+/// Sum the shaped heights of the first `block_idx` blocks to obtain the pixel y-offset
+/// at which block `block_idx` would be rendered.  Used to convert a saved block index
+/// back to a scroll position when restoring reading progress.
+fn compute_y_for_block_index(
+    blocks: &[ContentBlock],
+    block_idx: usize,
+    content_width: f32,
+    font_size: f32,
+    font_system: &mut FontSystem,
+) -> f32 {
+    const SPACING: f32 = 8.0;
+    let mut y = 0.0f32;
+    for block in blocks.iter().take(block_idx) {
+        y += estimated_block_height_for_width(block, content_width, font_size, font_system)
+            + SPACING;
+    }
+    y
 }
 
 /// Walk `blocks` with shaped height measurement and return the accumulated y-offset of the
