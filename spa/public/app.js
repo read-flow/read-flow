@@ -1,7 +1,6 @@
 // === Constants and Configuration ===
 const CONFIG = {
   API_URL: "http://localhost:8000",
-  AUTH_TOKEN: "bearer secret",
   PAGE_SIZE: 20,
   TAG_COLORS: {
     allowed: "bg-green-500 text-white",
@@ -9,6 +8,72 @@ const CONFIG = {
     default: "bg-blue-500 text-white",
   },
 };
+
+// === Authentication ===
+const AUTH_STORAGE_KEY = "readflow_credentials";
+
+function getStoredCredentials() {
+  const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+  if (!stored) return null;
+  try {
+    return JSON.parse(stored);
+  } catch {
+    return null;
+  }
+}
+
+function storeCredentials(username, password) {
+  localStorage.setItem(
+    AUTH_STORAGE_KEY,
+    JSON.stringify({ username, password }),
+  );
+}
+
+function clearCredentials() {
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+function getAuthToken() {
+  const creds = getStoredCredentials();
+  if (!creds) return "";
+  return "Basic " + btoa(`${creds.username}:${creds.password}`);
+}
+
+function showLoginModal(errorMessage) {
+  const modal = document.getElementById("login-modal");
+  const errorEl = document.getElementById("login-error");
+  if (errorMessage) {
+    errorEl.textContent = errorMessage;
+    errorEl.classList.remove("hidden");
+  } else {
+    errorEl.classList.add("hidden");
+  }
+  modal.classList.remove("hidden");
+}
+
+function hideLoginModal() {
+  document.getElementById("login-modal").classList.add("hidden");
+}
+
+function handleUnauthorized() {
+  clearCredentials();
+  showLoginModal("Invalid credentials. Please sign in again.");
+}
+
+async function apiFetch(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...options.headers,
+      Authorization: getAuthToken(),
+    },
+  });
+  if (response.status === 401) {
+    handleUnauthorized();
+    throw new Error("Unauthorized");
+  }
+  return response;
+}
 
 // === Fuzzy Search Setup ===
 // Initialize Fuse.js for fuzzy searching
@@ -146,11 +211,7 @@ function parseFilePath(path) {
  */
 async function getAllTags() {
   try {
-    const response = await fetch(`${CONFIG.API_URL}/files`, {
-      headers: {
-        Authorization: CONFIG.AUTH_TOKEN,
-      },
-    });
+    const response = await apiFetch(`${CONFIG.API_URL}/files`);
 
     if (!response.ok) {
       throw new Error("Failed to fetch files");
@@ -177,12 +238,9 @@ async function getAllTags() {
  */
 async function addFileTag(fileId, tag) {
   try {
-    const response = await fetch(`${CONFIG.API_URL}/files/${fileId}/tags`, {
+    const response = await apiFetch(`${CONFIG.API_URL}/files/${fileId}/tags`, {
       method: "POST",
-      headers: {
-        Authorization: CONFIG.AUTH_TOKEN,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify([tag]),
     });
 
@@ -205,12 +263,9 @@ async function addFileTag(fileId, tag) {
  */
 async function removeFileTag(fileId, tag) {
   try {
-    const response = await fetch(`${CONFIG.API_URL}/files/${fileId}/tags`, {
+    const response = await apiFetch(`${CONFIG.API_URL}/files/${fileId}/tags`, {
       method: "DELETE",
-      headers: {
-        Authorization: CONFIG.AUTH_TOKEN,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify([tag]),
     });
 
@@ -242,13 +297,8 @@ const resizeHandle = document.getElementById("resize-handle");
  */
 async function downloadFile(fileId, fileName) {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `${CONFIG.API_URL}/files/${fileId}/download-as/${encodeURIComponent(fileName)}`,
-      {
-        headers: {
-          Authorization: CONFIG.AUTH_TOKEN,
-        },
-      },
     );
 
     if (!response.ok) {
@@ -644,11 +694,9 @@ function createEmptyStateRow() {
  */
 async function updateTagState(fileId, tag) {
   // Get the updated file details
-  const updatedFileResponse = await fetch(`${CONFIG.API_URL}/files/${fileId}`, {
-    headers: {
-      Authorization: CONFIG.AUTH_TOKEN,
-    },
-  });
+  const updatedFileResponse = await apiFetch(
+    `${CONFIG.API_URL}/files/${fileId}`,
+  );
 
   if (!updatedFileResponse.ok) {
     throw new Error("Failed to fetch updated file details");
@@ -913,11 +961,7 @@ async function updateFileList() {
       closeDetailsPaneBtn.onclick = hideFileDetailsPane;
     }
 
-    const response = await fetch(`${CONFIG.API_URL}/files`, {
-      headers: {
-        Authorization: CONFIG.AUTH_TOKEN,
-      },
-    });
+    const response = await apiFetch(`${CONFIG.API_URL}/files`);
 
     if (!response.ok) {
       throw new Error(
@@ -1229,20 +1273,38 @@ function handleWindowResize() {
 }
 
 // === Initialization ===
-getAllTags().then(() => {
-  updateFileList();
+function initializeApp() {
+  getAllTags().then(() => {
+    updateFileList();
 
-  // Set up details pane close button
-  if (closeDetailsPaneBtn) {
-    closeDetailsPaneBtn.onclick = hideFileDetailsPane;
-  }
+    // Set up details pane close button
+    if (closeDetailsPaneBtn) {
+      closeDetailsPaneBtn.onclick = hideFileDetailsPane;
+    }
 
-  // Initialize resize functionality
-  initializeResize();
+    // Initialize resize functionality
+    initializeResize();
 
-  // Load saved pane width
-  loadPaneWidth();
+    // Load saved pane width
+    loadPaneWidth();
 
-  // Handle window resize
-  window.addEventListener("resize", debounce(handleWindowResize, 250));
+    // Handle window resize
+    window.addEventListener("resize", debounce(handleWindowResize, 250));
+  });
+}
+
+document.getElementById("login-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const username = document.getElementById("login-username").value.trim();
+  const password = document.getElementById("login-password").value;
+  storeCredentials(username, password);
+  hideLoginModal();
+  initializeApp();
 });
+
+if (getStoredCredentials()) {
+  hideLoginModal();
+  initializeApp();
+} else {
+  showLoginModal();
+}
