@@ -33,6 +33,7 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 archive-organizer = { path = "../archive_organizer", default-features = false }
+cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git" }
 epub = { path = "../epub" }
 # mupdf = { git = "https://github.com/jackpot51/mupdf-rs", branch = "0.5", features = ["sys-lib"] }
 mupdf = { version = "0.6", features = ["sys-lib"] }

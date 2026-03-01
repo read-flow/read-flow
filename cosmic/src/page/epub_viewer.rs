@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
@@ -32,6 +33,7 @@ use cosmic::iced::widget::span;
 use cosmic::theme;
 use cosmic::theme::Container;
 use cosmic::widget;
+use cosmic_text::FontSystem;
 use epub::BlockStyle;
 use epub::ContentBlock;
 use epub::Document as EpubDocumentTrait;
@@ -387,6 +389,10 @@ pub struct EpubViewer {
     search_current: usize,
     /// Widget ID for the search text input (used to focus it on open).
     search_input_id: widget::Id,
+    /// Shared font system for shaped text measurement (Phase 4b).
+    /// Wrapped in `RefCell` for interior mutability: shaping mutates the font system
+    /// cache but is logically read-only from the viewer's perspective.
+    font_system: RefCell<FontSystem>,
 }
 
 impl EpubViewer {
@@ -435,6 +441,7 @@ impl EpubViewer {
             search_matches: Vec::new(),
             search_current: 0,
             search_input_id: widget::Id::unique(),
+            font_system: RefCell::new(FontSystem::new()),
         };
 
         let mut tasks = Vec::new();
@@ -756,7 +763,13 @@ impl EpubViewer {
                         max_content_width.min(size.width - sp_s * 2.0)
                     };
                     let ph = (size.height - sp_s * 2.0 - 24.0) * page_height_fraction;
-                    computed_layout = paginate_blocks(&chapter.blocks, ph, pw, base_font_size);
+                    computed_layout = paginate_blocks(
+                        &chapter.blocks,
+                        ph,
+                        pw,
+                        base_font_size,
+                        &mut self.font_system.borrow_mut(),
+                    );
                     &computed_layout
                 }
             };
@@ -1917,40 +1930,41 @@ fn build_anchor_map(blocks: &[ContentBlock]) -> HashMap<String, f32> {
     map
 }
 
-/// Count how many visual lines `text` occupies when wrapped at `chars_per_line` characters,
-/// using a greedy word-breaking algorithm (words are never split mid-word).
-fn count_wrapped_lines(text: &str, chars_per_line: f32) -> usize {
-    if chars_per_line <= 0.0 {
-        return 1;
-    }
-    let mut lines = 1usize;
-    let mut current = 0.0f32;
-    for word in text.split_whitespace() {
-        let wlen = word.len() as f32;
-        if current > 0.0 && current + 1.0 + wlen > chars_per_line {
-            lines += 1;
-            current = wlen;
-        } else {
-            if current > 0.0 {
-                current += 1.0; // inter-word space
-            }
-            current += wlen;
-        }
-    }
-    lines
+/// Measure the pixel height that `text` occupies when shaped at `font_size` and wrapped to
+/// `content_width`, using `cosmic-text` for accurate glyph metrics (Phase 4b).
+fn measure_text_height(
+    text: &str,
+    content_width: f32,
+    font_size: f32,
+    font_system: &mut FontSystem,
+) -> f32 {
+    use cosmic_text::Attrs;
+    use cosmic_text::Buffer;
+    use cosmic_text::Metrics;
+    use cosmic_text::Shaping;
+    let line_height = font_size * 1.375;
+    let metrics = Metrics::new(font_size, line_height);
+    let mut buffer = Buffer::new(font_system, metrics);
+    buffer.set_size(font_system, Some(content_width), None);
+    buffer.set_text(font_system, text, &Attrs::new(), Shaping::Advanced, None);
+    buffer.shape_until_scroll(font_system, false);
+    buffer
+        .layout_runs()
+        .last()
+        .map(|r| r.line_y + r.line_height)
+        .unwrap_or(line_height)
 }
 
 /// Estimate the rendered height of a block given the available content width and font size.
-/// Like [`estimated_block_height`] but adjusts chars-per-line based on width and font size,
-/// and uses word-boundary line breaking (Phase 4a) for more accurate estimates.
+/// Uses [`measure_text_height`] (cosmic-text shaping) for text blocks (Phase 4b), and
+/// word-boundary line counting (Phase 4a) for list items and other block types.
 fn estimated_block_height_for_width(
     block: &ContentBlock,
     content_width: f32,
     font_size: f32,
+    font_system: &mut FontSystem,
 ) -> f32 {
     let scale = font_size / 16.0;
-    // ~0.6em average glyph width
-    let chars_per_line = (content_width / (font_size * 0.6)).max(20.0);
     let line_h = font_size * 1.375;
     match block {
         ContentBlock::Heading { level, text, .. } => {
@@ -1961,13 +1975,11 @@ fn estimated_block_height_for_width(
                 4 => font_size * 1.25,
                 _ => font_size * 1.125,
             };
-            let heading_chars_per_line = (content_width / (heading_size * 0.6)).max(10.0);
-            let heading_line_h = heading_size * 1.375;
-            (count_wrapped_lines(text, heading_chars_per_line) as f32 * heading_line_h)
-                .max(heading_line_h)
+            measure_text_height(text, content_width, heading_size, font_system)
+                .max(heading_size * 1.375)
         }
         ContentBlock::Paragraph { text, .. } => {
-            (count_wrapped_lines(text, chars_per_line) as f32 * line_h).max(line_h)
+            measure_text_height(text, content_width, font_size, font_system).max(line_h)
         }
         ContentBlock::Preformatted { text, .. } => {
             (text.lines().count() as f32 * line_h).max(line_h)
@@ -1975,27 +1987,43 @@ fn estimated_block_height_for_width(
         ContentBlock::BlockQuote { children } => {
             children
                 .iter()
-                .map(|b| estimated_block_height_for_width(b, content_width - 16.0, font_size))
+                .map(|b| {
+                    estimated_block_height_for_width(
+                        b,
+                        content_width - 16.0,
+                        font_size,
+                        font_system,
+                    )
+                })
                 .sum::<f32>()
                 + 16.0 * scale
         }
         ContentBlock::UnorderedList { items } => items
             .iter()
             .map(|item| {
-                // Subtract prefix width ("  • ") ≈ 4 chars
-                (count_wrapped_lines(&item.text, (chars_per_line - 4.0).max(10.0)) as f32 * line_h)
-                    .max(line_h)
+                // Subtract bullet prefix width (≈ 24 px)
+                measure_text_height(
+                    &item.text,
+                    (content_width - 24.0).max(40.0),
+                    font_size,
+                    font_system,
+                )
+                .max(line_h)
             })
             .sum::<f32>(),
         ContentBlock::OrderedList { items, .. } => items
             .iter()
             .enumerate()
             .map(|(i, item)| {
-                // Subtract prefix width ("  N. ") ≈ 4–6 chars depending on number
-                let prefix_chars = 4.0 + (i + 1).to_string().len() as f32;
-                (count_wrapped_lines(&item.text, (chars_per_line - prefix_chars).max(10.0)) as f32
-                    * line_h)
-                    .max(line_h)
+                // Subtract number prefix width (≈ 24 + digit_count * 8 px)
+                let prefix_px = 24.0 + (i + 1).to_string().len() as f32 * 8.0;
+                measure_text_height(
+                    &item.text,
+                    (content_width - prefix_px).max(40.0),
+                    font_size,
+                    font_system,
+                )
+                .max(line_h)
             })
             .sum::<f32>(),
         ContentBlock::Image { .. } => 200.0,
@@ -2005,7 +2033,14 @@ fn estimated_block_height_for_width(
         ContentBlock::Footnote { blocks, .. } => {
             blocks
                 .iter()
-                .map(|b| estimated_block_height_for_width(b, content_width - 16.0, font_size * 0.8))
+                .map(|b| {
+                    estimated_block_height_for_width(
+                        b,
+                        content_width - 16.0,
+                        font_size * 0.8,
+                        font_system,
+                    )
+                })
                 .sum::<f32>()
                 + 16.0 * scale
         }
@@ -2015,17 +2050,14 @@ fn estimated_block_height_for_width(
             ..
         } => {
             let caption_size = font_size * 0.85;
-            let caption_chars_per_line = (content_width / (caption_size * 0.6)).max(20.0);
             let caption_h = if caption_text.is_empty() {
                 0.0
             } else {
-                count_wrapped_lines(caption_text, caption_chars_per_line) as f32
-                    * caption_size
-                    * 1.375
+                measure_text_height(caption_text, content_width, caption_size, font_system)
             };
             let blocks_h: f32 = blocks
                 .iter()
-                .map(|b| estimated_block_height_for_width(b, content_width, font_size))
+                .map(|b| estimated_block_height_for_width(b, content_width, font_size, font_system))
                 .sum::<f32>();
             blocks_h + caption_h + 8.0 * scale
         }
@@ -2042,6 +2074,7 @@ fn paginate_blocks(
     page_height: f32,
     page_width: f32,
     font_size: f32,
+    font_system: &mut FontSystem,
 ) -> PaginationLayout {
     const SPACING: f32 = 8.0;
 
@@ -2050,7 +2083,7 @@ fn paginate_blocks(
     let mut accumulated = 0.0f32;
 
     for (i, block) in blocks.iter().enumerate() {
-        let block_h = estimated_block_height_for_width(block, page_width, font_size);
+        let block_h = estimated_block_height_for_width(block, page_width, font_size, font_system);
         let needed = if i == page_start {
             block_h
         } else {
@@ -2130,6 +2163,7 @@ impl EpubViewer {
                 page_height,
                 page_width,
                 self.base_font_size,
+                &mut self.font_system.borrow_mut(),
             );
             if self.current_page >= layout.pages.len() {
                 self.current_page = layout.pages.len().saturating_sub(1);
@@ -2165,10 +2199,15 @@ impl EpubViewer {
         if let Some(layout) = self.pagination_cache.get(&self.active_chapter)
             && let Some(chapter) = self.chapters.get(self.active_chapter)
         {
+            let mut fs = self.font_system.borrow_mut();
             let mut y = 0.0f32;
             for (i, block) in chapter.blocks.iter().enumerate() {
-                let h =
-                    estimated_block_height_for_width(block, layout.page_width, self.base_font_size);
+                let h = estimated_block_height_for_width(
+                    block,
+                    layout.page_width,
+                    self.base_font_size,
+                    &mut fs,
+                );
                 if y + h > self.scroll_y {
                     return layout
                         .pages
@@ -2188,11 +2227,15 @@ impl EpubViewer {
             && let Some(chapter) = self.chapters.get(self.active_chapter)
             && let Some(page) = layout.pages.get(self.current_page)
         {
+            let mut fs = self.font_system.borrow_mut();
             let mut y = 0.0f32;
             for block in &chapter.blocks[..page.start] {
-                y +=
-                    estimated_block_height_for_width(block, layout.page_width, self.base_font_size)
-                        + 8.0;
+                y += estimated_block_height_for_width(
+                    block,
+                    layout.page_width,
+                    self.base_font_size,
+                    &mut fs,
+                ) + 8.0;
             }
             return y;
         }
@@ -2241,6 +2284,7 @@ impl EpubViewer {
             ViewMode::Scroll => {
                 // Estimate the y-position of the target block.
                 let content_w = 800.0 * (self.content_width_pct / 100.0);
+                let mut fs = self.font_system.borrow_mut();
                 let y = self
                     .chapters
                     .get(self.active_chapter)
@@ -2250,10 +2294,12 @@ impl EpubViewer {
                                 b,
                                 content_w,
                                 self.base_font_size,
+                                &mut fs,
                             ) + 8.0
                         })
                     })
                     .unwrap_or(0.0);
+                drop(fs);
                 self.scroll_y = y;
                 scrollable::scroll_to(
                     self.content_scroll_id.clone(),
