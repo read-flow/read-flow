@@ -54,6 +54,8 @@ struct StackEntry {
     span_font_size_em: Option<f32>,
     /// Accumulated SVG XML content for `<svg>` elements.
     svg_content: String,
+    /// Aspect ratio (width/height) from the `viewBox` attribute of the `<svg>` element.
+    svg_aspect_ratio: Option<f32>,
     /// Caption spans from a `<figcaption>` child (populated when this entry is a `<figure>`).
     figure_caption_spans: Vec<TextSpan>,
     /// Plain-text caption from a `<figcaption>` child.
@@ -80,6 +82,7 @@ impl StackEntry {
             span_color: None,
             span_font_size_em: None,
             svg_content: String::new(),
+            svg_aspect_ratio: None,
             figure_caption_spans: Vec::new(),
             figure_caption_text: String::new(),
         }
@@ -104,6 +107,7 @@ impl StackEntry {
             span_color: None,
             span_font_size_em: None,
             svg_content: String::new(),
+            svg_aspect_ratio: None,
             figure_caption_spans: Vec::new(),
             figure_caption_text: String::new(),
         }
@@ -305,12 +309,15 @@ impl TokenSink for ContentSink {
                                 alt: alt.clone(),
                                 content: String::new(), // Will be loaded during resolution
                                 style: BlockStyle::default(),
+                                aspect_ratio: None, // Set during resolution
                             }
                         } else {
                             ContentBlock::Image {
                                 alt: alt.clone(),
                                 data: Vec::new(),
                                 media_type,
+                                natural_width: 0, // Set during resolution
+                                natural_height: 0,
                             }
                         };
 
@@ -346,6 +353,9 @@ impl TokenSink for ContentSink {
                 if tag_name == "svg" {
                     let mut entry = StackEntry::new(tag_name);
                     entry.element_id = find_attr(attrs, "id");
+                    entry.svg_aspect_ratio = find_attr(attrs, "viewbox")
+                        .as_deref()
+                        .and_then(parse_viewbox_str);
 
                     // Resolve stylesheet styles from class, then merge inline style= on top
                     let class_attr = find_attr(attrs, "class").unwrap_or_default();
@@ -884,6 +894,7 @@ impl TokenSink for ContentSink {
                                 alt: String::new(), // SVG elements don't have alt text
                                 content: entry.svg_content,
                                 style: block_style,
+                                aspect_ratio: entry.svg_aspect_ratio,
                             })
                         } else {
                             None
@@ -1328,6 +1339,43 @@ where
     blocks
 }
 
+/// Decode the pixel dimensions of a raster image from raw bytes without full decoding.
+/// Returns `(0, 0)` if the format is unsupported or the data is corrupt.
+fn decode_image_dimensions(data: &[u8]) -> (u32, u32) {
+    image::ImageReader::new(std::io::Cursor::new(data))
+        .with_guessed_format()
+        .ok()
+        .and_then(|r| r.into_dimensions().ok())
+        .unwrap_or((0, 0))
+}
+
+/// Parse the width-to-height ratio from a `viewBox="min-x min-y w h"` attribute value.
+fn parse_viewbox_str(viewbox: &str) -> Option<f32> {
+    let mut parts = viewbox.split_whitespace();
+    let _min_x: f32 = parts.next()?.parse().ok()?;
+    let _min_y: f32 = parts.next()?.parse().ok()?;
+    let w: f32 = parts.next()?.parse().ok()?;
+    let h: f32 = parts.next()?.parse().ok()?;
+    if h > 0.0 { Some(w / h) } else { None }
+}
+
+/// Search an SVG source string for a `viewBox` attribute and return the width/height ratio.
+fn parse_viewbox_aspect_ratio(svg: &str) -> Option<f32> {
+    let idx = svg.find("viewBox")?;
+    let rest = svg[idx + "viewBox".len()..]
+        .trim_start()
+        .strip_prefix('=')?;
+    let rest = rest.trim_start();
+    let vb = if let Some(s) = rest.strip_prefix('"') {
+        s.split('"').next()?
+    } else if let Some(s) = rest.strip_prefix('\'') {
+        s.split('\'').next()?
+    } else {
+        return None;
+    };
+    parse_viewbox_str(vb)
+}
+
 /// Walk the block tree and resolve placeholder Image blocks.
 fn resolve_images<F>(
     blocks: &mut [ContentBlock],
@@ -1342,10 +1390,13 @@ fn resolve_images<F>(
                 alt,
                 data,
                 media_type,
+                natural_width,
+                natural_height,
             } if data.is_empty() => {
                 // This is a placeholder — find matching pending image
                 if let Some((_, img)) = pending.iter().find(|(_, img)| img.alt == *alt) {
                     if let Some((resolved_data, resolved_mt)) = resolve_image(&img.resolved_path) {
+                        (*natural_width, *natural_height) = decode_image_dimensions(&resolved_data);
                         *data = resolved_data;
                         *media_type = resolved_mt;
                     } else {
@@ -1369,12 +1420,19 @@ fn resolve_images<F>(
                     }
                 }
             }
-            ContentBlock::Svg { alt, content, .. } if content.is_empty() => {
+            ContentBlock::Svg {
+                alt,
+                content,
+                aspect_ratio,
+                ..
+            } if content.is_empty() => {
                 // This is a placeholder SVG from img tag - find matching pending image
                 if let Some((_, img)) = pending.iter().find(|(_, img)| img.alt == *alt) {
                     if let Some((resolved_data, resolved_mt)) = resolve_image(&img.resolved_path) {
                         if resolved_mt == "image/svg+xml" {
-                            *content = String::from_utf8_lossy(&resolved_data).into_owned();
+                            let svg_str = String::from_utf8_lossy(&resolved_data).into_owned();
+                            *aspect_ratio = parse_viewbox_aspect_ratio(&svg_str);
+                            *content = svg_str;
                         } else {
                             // Wrong media type - replace with alt-text fallback
                             if !alt.is_empty() {
@@ -1748,6 +1806,7 @@ mod tests {
                 alt,
                 data,
                 media_type,
+                ..
             } => {
                 assert_eq!(alt, "Cover");
                 assert_eq!(data, &png_data);
@@ -2611,6 +2670,7 @@ mod tests {
                 content,
                 alt,
                 style,
+                ..
             } => {
                 assert!(!content.is_empty());
                 assert!(content.contains("<circle"));
@@ -2723,6 +2783,52 @@ mod tests {
                 assert_eq!(style.text_align, Some(TextAlign::Right));
             }
             other => panic!("expected Svg with inline style, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn svg_viewbox_aspect_ratio_square() {
+        let blocks = parse(r#"<svg viewBox="0 0 100 100"><circle r="40"/></svg>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Svg { aspect_ratio, .. } => {
+                assert!(
+                    aspect_ratio.is_some_and(|ar| (ar - 1.0).abs() < 0.001),
+                    "expected aspect_ratio ≈ 1.0, got {aspect_ratio:?}"
+                );
+            }
+            other => panic!("expected Svg, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn svg_viewbox_aspect_ratio_wide() {
+        // viewBox="0 0 200 100" → w=200, h=100, ratio=2.0
+        let blocks = parse(r#"<svg viewBox="0 0 200 100"><rect width="200" height="100"/></svg>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Svg { aspect_ratio, .. } => {
+                assert!(
+                    aspect_ratio.is_some_and(|ar| (ar - 2.0).abs() < 0.001),
+                    "expected aspect_ratio ≈ 2.0, got {aspect_ratio:?}"
+                );
+            }
+            other => panic!("expected Svg, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn svg_without_viewbox_has_no_aspect_ratio() {
+        let blocks = parse(r#"<svg width="100" height="100"><circle r="40"/></svg>"#);
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Svg { aspect_ratio, .. } => {
+                assert!(
+                    aspect_ratio.is_none(),
+                    "expected no aspect_ratio, got {aspect_ratio:?}"
+                );
+            }
+            other => panic!("expected Svg, got {other:?}"),
         }
     }
 
@@ -3026,9 +3132,12 @@ mod tests {
                 assert_eq!(caption_text, "See figure one.");
                 // Three spans: "See ", "figure one" (italic), "."
                 assert_eq!(caption.len(), 3);
-                assert!(!caption[1].style.italic == false || caption[1].style.italic);
-                assert_eq!(caption[1].text, "figure one");
+                assert!(!caption[0].style.italic);
+                assert_eq!(caption[0].text, "See ");
                 assert!(caption[1].style.italic);
+                assert_eq!(caption[1].text, "figure one");
+                assert!(!caption[2].style.italic);
+                assert_eq!(caption[2].text, ".");
             }
             other => panic!("expected Figure, got {other:?}"),
         }

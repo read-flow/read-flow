@@ -87,11 +87,18 @@ pub enum ContentBlock {
         alt: String,
         data: Vec<u8>,
         media_type: String,
+        /// Natural pixel width decoded from image data; 0 if unknown.
+        natural_width: u32,
+        /// Natural pixel height decoded from image data; 0 if unknown.
+        natural_height: u32,
     },
     Svg {
         alt: String,
         content: String,
         style: BlockStyle,
+        /// Width-to-height ratio from the SVG `viewBox` attribute (`w / h`).
+        /// `None` if no viewBox was found or it could not be parsed.
+        aspect_ratio: Option<f32>,
     },
     Table {
         rows: Vec<Vec<TableCell>>,

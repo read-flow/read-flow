@@ -2026,8 +2026,25 @@ fn estimated_block_height_for_width(
                 .max(line_h)
             })
             .sum::<f32>(),
-        ContentBlock::Image { .. } => 200.0,
-        ContentBlock::Svg { .. } => 200.0,
+        ContentBlock::Image {
+            natural_width,
+            natural_height,
+            ..
+        } => {
+            if *natural_width > 0 && *natural_height > 0 {
+                content_width * (*natural_height as f32 / *natural_width as f32)
+            } else {
+                200.0
+            }
+        }
+        ContentBlock::Svg { aspect_ratio, .. } => {
+            // aspect_ratio = width / height → height = content_width / aspect_ratio
+            if let Some(ar) = aspect_ratio {
+                if *ar > 0.0 { content_width / ar } else { 200.0 }
+            } else {
+                200.0
+            }
+        }
         ContentBlock::Table { rows } => rows.len() as f32 * (line_h * 2.0 + 4.0) + 8.0,
         ContentBlock::HorizontalRule => 16.0 * scale,
         ContentBlock::Footnote { blocks, .. } => {

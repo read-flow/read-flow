@@ -21,6 +21,7 @@ figment = { version = "0.10.19", default-features = false }
 futures = "0.3.31"
 futures-util = "0.3.31"
 html5ever = "0.38.0"
+image = "0.25"
 i18n-embed = "0.16.0"
 i18n-embed-fl = "0.10.0"
 indexmap = "2.12.0"

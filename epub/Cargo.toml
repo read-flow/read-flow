@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 base64 = { workspace = true }
 html5ever = { workspace = true }
+image = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
