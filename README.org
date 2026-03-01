@@ -1,10 +1,10 @@
-#+TITLE: Archive Organizer
+#+TITLE: Read Flow
 #+AUTHOR: Peterpaul Klein Haneveld
 #+EMAIL: pp.kleinhaneveld@gmail.com
 
 * Overview
 
-Archive Organizer is a cross-platform document management system designed to help organize and manage files across multiple machines. The project provides multiple interfaces for interacting with your document archive:
+Read Flow is a cross-platform document management system designed to help organize and manage files across multiple machines. The project provides multiple interfaces for interacting with your document archive:
 
 - A *REST API server* for programmatic access
 - A *Cosmic desktop application* for Linux desktop environments
@@ -17,7 +17,7 @@ The project is structured as a Rust workspace with three main crates and a separ
 
 ** Core Components
 
-*** =archive_organizer= (Core Library & Server)
+*** =core= (Core Library & Server)
 The main library and server implementation providing:
 - Database management using Diesel ORM with SQLite
 - REST API server using Rocket framework
@@ -36,7 +36,7 @@ The main library and server implementation providing:
 - =settings/= - Configuration parsing and settings management
 
 *Binary:*
-- =archive-organizer= - Main CLI entry point with commands:
+- =read-flow-cli= - Main CLI entry point with commands:
   - =scan <path>= - Scan directories for files
   - =apply-tags= - Apply automatic tagging rules
   - =serve= - Start the REST API server
@@ -57,7 +57,7 @@ A native Linux desktop application built with libcosmic (COSMIC desktop environm
 - =forms/= - Form handling and validation
 - =state/= - Application state management
 - =i18n/= - Internationalization resources
-- =client/= - Integration with archive organizer backend
+- =client/= - Integration with read flow backend
 - =document_provider/= - Document data provisioning
 
 *Features:*
@@ -90,11 +90,11 @@ A vanilla JavaScript web interface served independently:
 * Project Structure
 
 #+BEGIN_EXAMPLE
-archive-organizer/
-├── archive_organizer/           # Core library and server
+read-flow/
+├── core/           # Core library and server
 │   ├── src/
 │   │   ├── bin/
-│   │   │   └── archive-organizer.rs   # Main CLI entry point
+│   │   │   └── read-flow-cli.rs       # Main CLI entry point
 │   │   ├── api/                       # API definitions
 │   │   ├── client/                    # Remote client
 │   │   ├── db/                        # Database layer
@@ -135,8 +135,8 @@ archive-organizer/
 │
 ├── Cargo.toml                         # Workspace manifest
 ├── Cargo.lock                         # Dependency lock file
-├── archive-organizer.toml             # Application configuration
-├── archive-organizer.template.toml    # Configuration template
+├── read-flow.toml             # Application configuration
+├── read-flow.template.toml    # Configuration template
 ├── openapi.yaml                       # REST API specification
 ├── rest-api.http                      # HTTP test requests
 ├── diesel.toml                        # Diesel CLI configuration
@@ -148,7 +148,7 @@ archive-organizer/
 
 * Configuration
 
-The application is configured via =archive-organizer.toml= with the following sections:
+The application is configured via =read-flow.toml= with the following sections:
 
 ** =[database]=
 Database connection settings:
@@ -215,7 +215,7 @@ The REST API (documented in =openapi.yaml=) provides:
 
 * Database Schema
 
-The application uses SQLite with Diesel ORM. Migrations are located in =archive_organizer/migrations/= and include:
+The application uses SQLite with Diesel ORM. Migrations are located in =core/migrations/= and include:
 
 - Initial database schema (files, tags, file_tags)
 - Remote server support
@@ -239,13 +239,13 @@ The application uses SQLite with Diesel ORM. Migrations are located in =archive_
 cargo build --release
 
 # Run the server
-cargo run --bin archive-organizer -- serve
+cargo run --bin read-flow-cli -- serve
 
 # Scan a directory
-cargo run --bin archive-organizer -- scan /path/to/directory
+cargo run --bin read-flow-cli -- scan /path/to/directory
 
 # Apply automatic tags
-cargo run --bin archive-organizer -- apply-tags
+cargo run --bin read-flow-cli -- apply-tags
 #+END_SRC
 
 *** Desktop Application
@@ -283,13 +283,13 @@ The workspace uses centralized dependency management. Common dependencies includ
 
 ** Testing
 Test files and configurations can be found in:
-- =archive_organizer/src/= - Unit tests
+- =core/src/= - Unit tests
 - =rest-api.http= - HTTP endpoint tests
 
 * License
 
-- =archive_organizer= and =provider=: MIT License
-- =cosmic= desktop application: GPL-2 License
+- =read-flow-core=, =epub= and =provider=: MIT License
+- =read-flow= desktop application: GPL-2 License
 
 * Author
 

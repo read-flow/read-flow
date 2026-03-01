@@ -9,13 +9,13 @@ use std::process::ExitStatus;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use archive_organizer::api::File;
-use archive_organizer::api::FileDataSource;
-use archive_organizer::api::ReadingProgress;
-use archive_organizer::api::ReadingStatus;
 use futures_util::stream;
 use futures_util::stream::StreamExt;
 use provider::r#async::Provider;
+use read_flow_core::api::File;
+use read_flow_core::api::FileDataSource;
+use read_flow_core::api::ReadingProgress;
+use read_flow_core::api::ReadingStatus;
 
 use crate::ApplicationModule;
 use crate::client::Client;
@@ -286,7 +286,7 @@ impl Aggregator {
 
             match source_client {
                 Client::Remote(files_client) => {
-                    let tempdir = std::env::temp_dir().join("archive-organizer");
+                    let tempdir = std::env::temp_dir().join("read-flow");
                     let _ = tokio::fs::create_dir_all(&tempdir).await;
                     let file_path = PathBuf::from(&source.path);
                     let filename = tempdir.join(file_path.file_name().unwrap());

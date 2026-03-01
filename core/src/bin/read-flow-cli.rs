@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use archive_organizer::ApplicationModule;
-use archive_organizer::ScanSettingsProvider;
-#[cfg(feature = "server")]
-use archive_organizer::server;
-use archive_organizer::settings;
 use clap::Parser;
 use clap::Subcommand;
+use read_flow_core::ApplicationModule;
+use read_flow_core::ScanSettingsProvider;
+#[cfg(feature = "server")]
+use read_flow_core::server;
+use read_flow_core::settings;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::*;

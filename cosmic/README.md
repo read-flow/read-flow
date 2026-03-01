@@ -1,4 +1,4 @@
-# Archive Organizer Cosmic
+# Read Flow
 
 Manage Documents Accross Multiple Machines
 
@@ -25,7 +25,7 @@ If packaging for a Linux distribution, vendor dependencies locally with the `ven
 ```sh
 just vendor
 just build-vendored
-just rootdir=debian/archive-organizer-cosmic prefix=/usr install
+just rootdir=debian/read-flow prefix=/usr install
 ```
 
 It is recommended to build a source tarball with the vendored dependencies, which can typically be done by running `just vendor` on the host system before it enters the build environment.

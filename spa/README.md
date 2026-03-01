@@ -1,4 +1,4 @@
-# Archive Organizer - Single Page Application
+# Read Flow - Single Page Application
 
 A modern web application for organizing and managing archive files with tagging capabilities.
 

@@ -3,13 +3,13 @@ use std::path::Path;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
-use archive_organizer::api::File;
-use archive_organizer::api::FileDataSource;
-use archive_organizer::api::ReadingProgress;
-use archive_organizer::api::Status;
-use archive_organizer::client;
-use archive_organizer::client::FilesClient;
-use archive_organizer::db::dao;
+use read_flow_core::api::File;
+use read_flow_core::api::FileDataSource;
+use read_flow_core::api::ReadingProgress;
+use read_flow_core::api::Status;
+use read_flow_core::client;
+use read_flow_core::client::FilesClient;
+use read_flow_core::db::dao;
 use url::Url;
 
 use crate::ApplicationModule;

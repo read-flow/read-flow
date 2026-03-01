@@ -1,6 +1,6 @@
 # The keys in each section (separated by a comment) are sorted alphabetically
 
-app-title = Archief Organizer Cosmic
+app-title = Read Flow
 about = Over
 actions = Acties
 context = Context
@@ -8,7 +8,7 @@ documents = Documenten
 repository = Repository
 scan = Scannen
 view = Weergave
-welcome = Welkom bij Archief Organizer Cosmic! ✨
+welcome = Welkom bij Read Flow! ✨
 page-id = Pagina { $num }
 git-description = Git commit { $hash } op { $date }
 unknown-remote = ⚠ Onbekende externe bron: { $url }

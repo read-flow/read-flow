@@ -6,7 +6,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use archive_organizer::Builder;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
@@ -43,6 +42,7 @@ use epub::StyleSheet;
 use epub::TableCell;
 use epub::TextAlign;
 use epub::TextSpan;
+use read_flow_core::Builder;
 
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
@@ -74,7 +74,7 @@ const CHAPTER_SIDEBAR_WIDTH: f32 = 220.0;
 // --- Persistent reader preferences ---
 
 /// APP_ID used when accessing the cosmic-config store.
-const APP_ID: &str = "com.github.peterpaul.archive-organizer-cosmic";
+const APP_ID: &str = "com.github.peterpaul.read-flow";
 
 /// Config version for EPUB reader preferences (individual key access).
 const EPUB_PREFS_VERSION: u64 = 1;

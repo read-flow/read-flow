@@ -1,6 +1,6 @@
 # Fuzzy Search Examples and Usage Guide
 
-This document provides examples and tips for using the fuzzy search functionality in the Archive Organizer SPA.
+This document provides examples and tips for using the fuzzy search functionality in the Read Flow SPA.
 
 ## How Fuzzy Search Works
 

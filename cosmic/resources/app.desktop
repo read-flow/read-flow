@@ -1,9 +1,9 @@
 [Desktop Entry]
-Name=Archive Organizer Cosmic
+Name=Read Flow
 Comment=Manage Documents Accross Multiple Machines
 Type=Application
-Icon=com.github.peterpaul.archive-organizer-cosmic
-Exec=archive-organizer-cosmic %F
+Icon=com.github.peterpaul.read-flow
+Exec=read-flow %F
 Terminal=false
 StartupNotify=true
 Categories=COSMIC

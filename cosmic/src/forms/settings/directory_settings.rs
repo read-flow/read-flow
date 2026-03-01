@@ -4,9 +4,6 @@ use std::mem::take;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use archive_organizer::Builder;
-use archive_organizer::ExpandedPath;
-use archive_organizer::scan::DirectorySettings;
 use cosmic::Action;
 use cosmic::Element;
 use cosmic::Task;
@@ -14,6 +11,9 @@ use cosmic::task;
 use cosmic::widget;
 use cosmic::widget::settings;
 use cosmic::widget::settings::Section;
+use read_flow_core::Builder;
+use read_flow_core::ExpandedPath;
+use read_flow_core::scan::DirectorySettings;
 use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 

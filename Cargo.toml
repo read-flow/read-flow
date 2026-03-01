@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "archive_organizer",
+    "core",
     "cosmic",
     "epub",
     "provider",
@@ -27,6 +27,7 @@ i18n-embed-fl = "0.10.0"
 indexmap = "2.12.0"
 itertools = "0.14.0"
 mime = "0.3.17"
+mupdf = "0.6"
 open = "5.3.3"
 pbkdf2 = "0.12.2"
 quick-xml = "0.39.2"

@@ -18,12 +18,12 @@ mod state;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use archive_organizer::ApplicationModule as GenericApplicationModule;
-use archive_organizer::settings;
-use archive_organizer::settings::Settings;
-use archive_organizer::settings::SettingsError;
 use clap::Parser;
 use provider::sync::Provider;
+use read_flow_core::ApplicationModule as GenericApplicationModule;
+use read_flow_core::settings;
+use read_flow_core::settings::Settings;
+use read_flow_core::settings::SettingsError;
 
 const ICON_SIZE: u16 = 16;
 

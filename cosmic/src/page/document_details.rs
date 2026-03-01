@@ -1,7 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use archive_organizer::api::ReadingStatus;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
@@ -16,6 +15,7 @@ use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Row;
 use cosmic::widget::text;
+use read_flow_core::api::ReadingStatus;
 
 use crate::ICON_SIZE;
 use crate::aggregator::Document;

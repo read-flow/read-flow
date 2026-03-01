@@ -1,5 +1,5 @@
-name := 'archive-organizer-cosmic'
-appid := 'com.github.peterpaul.archive-organizer-cosmic'
+name := 'read-flow'
+appid := 'com.github.peterpaul.read-flow'
 
 rootdir := ''
 prefix := '/usr'

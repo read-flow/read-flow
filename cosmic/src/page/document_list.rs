@@ -6,7 +6,6 @@ use std::fmt;
 use std::slice;
 use std::sync::Arc;
 
-use archive_organizer::api::ReadingStatus;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
@@ -15,6 +14,7 @@ use cosmic::iced;
 use cosmic::iced::Length;
 use cosmic::task;
 use cosmic::widget;
+use read_flow_core::api::ReadingStatus;
 
 use crate::aggregator::Document;
 use crate::aggregator::Documents;

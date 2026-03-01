@@ -241,7 +241,7 @@ impl FileDataSource for FilesClient {
     }
 
     async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Error> {
-        let tempdir = env::temp_dir().join("archive-organizer");
+        let tempdir = env::temp_dir().join("read-flow");
 
         if !tempdir.exists() {
             tokio::fs::create_dir(&tempdir).await?;

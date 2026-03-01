@@ -3,7 +3,6 @@ use std::iter::Skip;
 use std::iter::Take;
 use std::slice::Iter;
 
-use archive_organizer::Builder;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
@@ -15,6 +14,7 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::button;
 use cosmic::widget::icon;
+use read_flow_core::Builder;
 
 use crate::ICON_SIZE;
 use crate::fl;

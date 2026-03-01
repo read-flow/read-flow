@@ -12,8 +12,6 @@ use core::panic;
 use std::any::Any;
 use std::sync::Arc;
 
-use archive_organizer::client::FilesClient;
-use archive_organizer::db::dao::RemoteDao;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
@@ -26,6 +24,8 @@ use cosmic::task;
 use cosmic::widget;
 use indexmap::IndexMap;
 use provider::sync::Invalidated;
+use read_flow_core::client::FilesClient;
+use read_flow_core::db::dao::RemoteDao;
 use tokio::sync::broadcast;
 pub use traits::Page;
 use url::Url;
@@ -441,7 +441,7 @@ impl Pages {
                     let fp = fingerprint;
                     tasks.push(task::future(async move {
                         let now = iso8601_now();
-                        let progress = archive_organizer::api::ReadingProgress {
+                        let progress = read_flow_core::api::ReadingProgress {
                             fingerprint: fp,
                             progress: format!("{{\"page\":{page}}}"),
                             last_updated: now,
@@ -482,7 +482,7 @@ impl Pages {
                     let fp = fingerprint;
                     tasks.push(task::future(async move {
                         let now = iso8601_now();
-                        let progress = archive_organizer::api::ReadingProgress {
+                        let progress = read_flow_core::api::ReadingProgress {
                             fingerprint: fp,
                             progress: progress_json,
                             last_updated: now,

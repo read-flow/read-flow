@@ -2,7 +2,6 @@
 
 use std::fmt::Display;
 
-use archive_organizer::Builder;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
@@ -21,6 +20,7 @@ use cosmic::widget::ListColumn;
 use cosmic::widget::Row;
 use cosmic::widget::text;
 use provider::r#async::Provider;
+use read_flow_core::Builder;
 
 use super::provided_state::ProvidedState;
 use super::provided_state::ProvidedStateMessage;

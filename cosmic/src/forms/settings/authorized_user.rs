@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use archive_organizer::Builder;
 use cosmic::Action;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::iced::Length;
 use cosmic::task;
 use cosmic::widget;
+use read_flow_core::Builder;
 
 use crate::ICON_SIZE;
 use crate::fl;

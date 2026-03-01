@@ -3,12 +3,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use archive_organizer::Builder;
-use archive_organizer::ExpandedPath;
-use archive_organizer::scan::DirectorySettings;
-use archive_organizer::settings;
-use archive_organizer::settings::HashedPassword;
-use archive_organizer::settings::Settings;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
@@ -23,6 +17,12 @@ use cosmic::widget;
 use cosmic::widget::container;
 use cosmic::widget::icon;
 use provider::sync::HasSetExpired;
+use read_flow_core::Builder;
+use read_flow_core::ExpandedPath;
+use read_flow_core::scan::DirectorySettings;
+use read_flow_core::settings;
+use read_flow_core::settings::HashedPassword;
+use read_flow_core::settings::Settings;
 use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 
@@ -619,7 +619,7 @@ impl Page for SettingsPage {
                 let settings = self.settings.clone();
                 let config_path = self.application_module.config_path().to_owned();
                 task::future(async move {
-                    match archive_organizer::settings::save(&settings, &config_path) {
+                    match read_flow_core::settings::save(&settings, &config_path) {
                         Ok(()) => SettingsMessage::SaveComplete,
                         Err(e) => SettingsMessage::SaveError(e.to_string()),
                     }
@@ -706,10 +706,10 @@ fn view_directory<'a>(
     let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
     let action = match dir_settings {
-        archive_organizer::scan::DirectorySettings::Ignore { .. } => {
+        read_flow_core::scan::DirectorySettings::Ignore { .. } => {
             fl!("settings-directory-action-ignore")
         }
-        archive_organizer::scan::DirectorySettings::Scan { .. } => {
+        read_flow_core::scan::DirectorySettings::Scan { .. } => {
             fl!("settings-directory-action-scan")
         }
     };

@@ -86,9 +86,9 @@
 | ~FlatMapProvider<P, F>~   | Maps each item to a provider and flattens results                    |
 | ~OptionProvider<P>~       | Gracefully handles ~None~ cases, converts ~Option<T>~ errors         |
 
-* Priority Implementations for Archive Organizer 🎯
+* Priority Implementations for Read Flow 🎯
 
-Based on the archive-organizer application context, these providers would have the most impact:
+Based on the read-flow application context, these providers would have the most impact:
 
 1. *TtlCache* - For document metadata, thumbnails with time-based expiration
 2. *WatchingFileProvider* - For config files and document directories

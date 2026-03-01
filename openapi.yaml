@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: Archive Organizer API
+  title: Read Flow API
   version: 1.0.0
-  description: REST API for managing files in the archive organizer system
+  description: REST API for managing files in the read flow system
 servers:
   - url: http://localhost:8000
     description: Local development server

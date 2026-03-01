@@ -2,7 +2,7 @@
 
 ## Goal
 
-Integrate the `cosmic-reader` PDF viewer into the `archive-organizer-cosmic` application as a new page type, allowing users to view PDF documents directly from the document details page. The viewer must fit within the existing Pages framework, with thumbnails rendered inline (not in the nav-bar).
+Integrate the `cosmic-reader` PDF viewer into the `read-flow` application as a new page type, allowing users to view PDF documents directly from the document details page. The viewer must fit within the existing Pages framework, with thumbnails rendered inline (not in the nav-bar).
 
 ## Decisions
 
@@ -22,7 +22,7 @@ Integrate the `cosmic-reader` PDF viewer into the `archive-organizer-cosmic` app
 - Async pipeline: PDF load -> `DisplayList` per page -> thumbnail PNG + page SVG
 - Supports zoom (fit-width/height/both, percentage), search, keyboard navigation
 
-### archive-organizer-cosmic
+### read-flow
 
 - Pages framework: `PageSelector` enum routes to page structs via `Pages::view()`/`Pages::update()`
 - Dynamic pages supported (e.g., `DocumentDetails` keyed by `Fingerprint`)

@@ -1,11 +1,11 @@
 [package]
-name = "archive-organizer-cosmic"
+name = "read-flow"
 version = "0.1.0"
 edition = "2024"
 license = "GPL-2"
 description = "Manage Documents Accross Multiple Machines"
 repository = "raspberrypi:~/git/archive-organizer.git"
-# repository = "https://github.com/peterpaul/archive-organizer"
+# repository = "https://github.com/peterpaul/read-flow"
 
 authors = ["Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"]
 
@@ -22,6 +22,7 @@ futures-util.workspace = true
 i18n-embed = { workspace = true, features = ["fluent-system", "desktop-requester"] }
 i18n-embed-fl.workspace = true
 indexmap.workspace = true
+mupdf = { workspace = true, features = ["sys-lib"] }
 open.workspace = true
 rand.workspace = true
 rfd.workspace = true
@@ -32,12 +33,11 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
 
-archive-organizer = { path = "../archive_organizer", default-features = false }
 cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git" }
+
 epub = { path = "../epub" }
-# mupdf = { git = "https://github.com/jackpot51/mupdf-rs", branch = "0.5", features = ["sys-lib"] }
-mupdf = { version = "0.6", features = ["sys-lib"] }
 provider = { path = "../provider" }
+read-flow-core = { path = "../core", default-features = false }
 
 [dependencies.libcosmic]
 git = "https://github.com/pop-os/libcosmic.git"

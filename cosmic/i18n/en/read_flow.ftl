@@ -1,6 +1,6 @@
 # The keys in each section (separated by a comment) are sorted alphabetically
 
-app-title = Archive Organizer Cosmic
+app-title = Read Flow
 about = About
 actions = Actions
 context = Context
@@ -8,7 +8,7 @@ documents = Documents
 repository = Repository
 scan = Scan
 view = View
-welcome = Welcome to Archive Organizer Cosmic! ✨
+welcome = Welcome to Read Flow! ✨
 page-id = Page { $num }
 git-description = Git commit { $hash } on { $date }
 unknown-remote = ⚠ Unknown Remote: { $url }

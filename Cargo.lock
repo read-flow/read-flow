@@ -290,71 +290,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "archive-organizer"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "assert4rs",
- "async-trait",
- "base64 0.22.1",
- "clap",
- "diesel",
- "diesel_migrations",
- "expanduser",
- "figment",
- "futures",
- "indexmap",
- "itertools 0.14.0",
- "mime 0.3.17",
- "pbkdf2",
- "provider",
- "r2d2",
- "rayon",
- "reqwest",
- "rocket",
- "rocket_cors",
- "rstest",
- "serde",
- "strum",
- "thiserror 2.0.18",
- "tokio",
- "toml 0.9.12+spec-1.1.0",
- "tracing",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
-name = "archive-organizer-cosmic"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "archive-organizer",
- "async-trait",
- "clap",
- "cosmic-text",
- "derive_more",
- "epub",
- "futures",
- "futures-util",
- "i18n-embed",
- "i18n-embed-fl",
- "indexmap",
- "libcosmic",
- "mupdf",
- "open",
- "provider",
- "rand 0.10.0",
- "rfd 0.17.2",
- "rust-embed",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
 name = "arg_enum_proc_macro"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6007,6 +5942,71 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "read-flow"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "clap",
+ "cosmic-text",
+ "derive_more",
+ "epub",
+ "futures",
+ "futures-util",
+ "i18n-embed",
+ "i18n-embed-fl",
+ "indexmap",
+ "libcosmic",
+ "mupdf",
+ "open",
+ "provider",
+ "rand 0.10.0",
+ "read-flow-core",
+ "rfd 0.17.2",
+ "rust-embed",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "read-flow-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert4rs",
+ "async-trait",
+ "base64 0.22.1",
+ "clap",
+ "diesel",
+ "diesel_migrations",
+ "expanduser",
+ "figment",
+ "futures",
+ "indexmap",
+ "itertools 0.14.0",
+ "mime 0.3.17",
+ "pbkdf2",
+ "provider",
+ "r2d2",
+ "rayon",
+ "reqwest",
+ "rocket",
+ "rocket_cors",
+ "rstest",
+ "serde",
+ "strum",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

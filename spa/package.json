@@ -1,7 +1,7 @@
 {
   "name": "spa",
   "version": "1.0.0",
-  "description": "Single Page Application for Archive Organizer",
+  "description": "Single Page Application for Read Flow",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -11,8 +11,8 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
-    "archive",
-    "organizer",
+    "read",
+    "flow",
     "spa"
   ],
   "author": "",

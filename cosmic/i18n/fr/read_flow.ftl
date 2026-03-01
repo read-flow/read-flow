@@ -1,6 +1,6 @@
 # The keys in each section (separated by a comment) are sorted alphabetically
 
-app-title = Archive Organizer Cosmic
+app-title = Read Flow
 about = À propos
 actions = Actions
 app-file-sources = Sources de documents
@@ -9,7 +9,7 @@ documents = Documents
 repository = Dépôt
 scan = Analyser
 view = Affichage
-welcome = Bienvenue dans Archive Organizer Cosmic! ✨
+welcome = Bienvenue dans Read Flow! ✨
 page-id = Page { $num }
 git-description = Git commit { $hash } le { $date }
 unknown-remote = ⚠ Source distante inconnue: { $url }
@@ -280,4 +280,3 @@ epub-viewer-search-match-count = { $current } sur { $total }
 epub-viewer-search-prev = Résultat précédent
 epub-viewer-search-next = Résultat suivant
 epub-viewer-search-close = Fermer la recherche
-

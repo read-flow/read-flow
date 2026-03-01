@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use archive_organizer::scan::DirectorySettings;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config;
 use cosmic::cosmic_config::CosmicConfigEntry;
@@ -21,6 +20,7 @@ use cosmic::widget::nav_bar;
 use cosmic::widget::segmented_button::Entity;
 use i18n_embed::unic_langid::LanguageIdentifier;
 use provider::r#async::HasSetExpired;
+use read_flow_core::scan::DirectorySettings;
 
 use crate::ApplicationModule;
 use crate::config::Config;
@@ -112,7 +112,7 @@ impl cosmic::Application for AppModel {
     type Message = Message;
 
     /// Unique identifier in RDNN (reverse domain name notation) format.
-    const APP_ID: &'static str = "com.github.peterpaul.archive-organizer-cosmic";
+    const APP_ID: &'static str = "com.github.peterpaul.read-flow";
 
     fn core(&self) -> &cosmic::Core {
         &self.core

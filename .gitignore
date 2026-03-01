@@ -1,6 +1,6 @@
 /*.pdf
 /.env
-/archive-organizer.toml
+/read-flow.toml
 /database.db
 /database.db-shm
 /database.db-wal

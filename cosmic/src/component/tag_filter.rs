@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 use std::fmt::Display;
 
-use archive_organizer::Builder;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
@@ -13,6 +12,7 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
 use provider::r#async::Provider;
+use read_flow_core::Builder;
 
 use super::provided_state::ProvidedState;
 use super::provided_state::ProvidedStateMessage;

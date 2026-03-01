@@ -106,12 +106,12 @@ impl From<figment::Error> for SettingsError {
 
 /// Get the path to the configuration file
 pub fn config_path() -> PathBuf {
-    if Path::new("Cargo.toml").exists() && Path::new("archive-organizer.toml").exists() {
-        PathBuf::from("archive-organizer.toml")
+    if Path::new("Cargo.toml").exists() && Path::new("read-flow.toml").exists() {
+        PathBuf::from("read-flow.toml")
             .canonicalize()
             .expect("should work for valid file")
     } else {
-        expanduser::expanduser("~/.config/archive-organizer/archive-organizer.toml")
+        expanduser::expanduser("~/.config/read-flow/read-flow.toml")
             .expect("could not expand user home")
     }
 }
