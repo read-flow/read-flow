@@ -105,7 +105,7 @@ fn main() -> anyhow::Result<()> {
     );
 
     // Starts the application's event loop with `()` as the application's flags.
-    cosmic::app::run::<app::AppModel>(settings, application_module)?;
+    cosmic::app::run::<app::ReadFlow>(settings, application_module)?;
 
     Ok(())
 }

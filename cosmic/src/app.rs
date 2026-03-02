@@ -38,7 +38,7 @@ const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps
 
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
-pub struct AppModel {
+pub struct ReadFlow {
     /// Application state which is managed by the COSMIC runtime.
     core: cosmic::Core,
     /// Display a context drawer with the designated page if defined.
@@ -101,7 +101,7 @@ impl From<PageMessage> for Message {
 }
 
 /// Create a COSMIC application from the app model
-impl cosmic::Application for AppModel {
+impl cosmic::Application for ReadFlow {
     /// The async executor that will be used to run your application's commands.
     type Executor = cosmic::executor::Default;
 
@@ -182,7 +182,7 @@ impl cosmic::Application for AppModel {
             .license(env!("CARGO_PKG_LICENSE"));
 
         // Construct the app model with the runtime's core.
-        let mut app = AppModel {
+        let mut app = ReadFlow {
             core,
             context_page: ContextPage::default(),
             about,
@@ -506,7 +506,7 @@ impl cosmic::Application for AppModel {
     }
 }
 
-impl AppModel {
+impl ReadFlow {
     /// Updates the header and window titles.
     pub fn update_title(&mut self) -> Task<cosmic::Action<Message>> {
         let mut window_title = fl!("app-title");

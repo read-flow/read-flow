@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use cosmic::Action;
+use cosmic::Application;
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
@@ -13,7 +14,7 @@ use cosmic::widget;
 
 use crate::ICON_SIZE;
 use crate::app::ContextView;
-use crate::config::APP_ID;
+use crate::app::ReadFlow;
 use crate::config::Config;
 use crate::config::EpubViewerConfig;
 use crate::fl;
@@ -87,7 +88,7 @@ impl Page for AppSettingsPage {
         match message {
             AppSettingsMessage::SetEpubViewer(epub_viewer) => {
                 self.config.epub_viewer = epub_viewer;
-                if let Ok(ctx) = cosmic_config::Config::new(APP_ID, Config::VERSION) {
+                if let Ok(ctx) = cosmic_config::Config::new(ReadFlow::APP_ID, Config::VERSION) {
                     let _ = self.config.write_entry(&ctx);
                 }
                 Task::none()

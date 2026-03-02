@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use cosmic::Action;
+use cosmic::Application;
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
@@ -47,6 +48,7 @@ use read_flow_core::Builder;
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::app::ContextView;
+use crate::app::ReadFlow;
 use crate::client::ClientSelector;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
@@ -72,9 +74,6 @@ type Fingerprint = String;
 const CHAPTER_SIDEBAR_WIDTH: f32 = 220.0;
 
 // --- Persistent reader preferences ---
-
-/// APP_ID used when accessing the cosmic-config store.
-const APP_ID: &str = "com.github.peterpaul.read-flow";
 
 /// Config version for EPUB reader preferences (individual key access).
 const EPUB_PREFS_VERSION: u64 = 1;
@@ -153,7 +152,7 @@ fn str_to_font_family(s: &str) -> FontFamily {
 
 /// Load all saved EPUB reader preferences from cosmic-config.
 fn load_epub_prefs() -> EpubPrefs {
-    let Ok(ctx) = cosmic_config::Config::new(APP_ID, EPUB_PREFS_VERSION) else {
+    let Ok(ctx) = cosmic_config::Config::new(ReadFlow::APP_ID, EPUB_PREFS_VERSION) else {
         return EpubPrefs::default();
     };
     let mut prefs = EpubPrefs::default();
@@ -197,7 +196,7 @@ fn load_epub_prefs() -> EpubPrefs {
 
 /// Save all EPUB reader preferences to cosmic-config.
 fn save_epub_prefs(prefs: &EpubPrefs) {
-    let Ok(ctx) = cosmic_config::Config::new(APP_ID, EPUB_PREFS_VERSION) else {
+    let Ok(ctx) = cosmic_config::Config::new(ReadFlow::APP_ID, EPUB_PREFS_VERSION) else {
         return;
     };
     let _ = ctx.set(KEY_FONT_FAMILY, font_family_to_str(prefs.font_family));
