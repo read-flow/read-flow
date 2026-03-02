@@ -251,6 +251,7 @@ pdf-viewer-shortcut-fit-height = Ajuster la hauteur
 pdf-viewer-shortcut-fit-width = Ajuster la largeur
 pdf-viewer-shortcut-ctrl-scroll = Zoomer avec la souris
 pdf-viewer-show-thumbnails = Show thumbnails # TODO
+pdf-viewer-epub-font-size = Taille de police (refluable)
 
 # EPUB viewer
 epub-viewer = EPUB viewer

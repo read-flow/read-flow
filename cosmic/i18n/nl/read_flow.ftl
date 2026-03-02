@@ -252,6 +252,7 @@ pdf-viewer-shortcut-fit-height = Hoogte passend
 pdf-viewer-shortcut-fit-width = Breedte passend
 pdf-viewer-shortcut-ctrl-scroll = Zoomen met muis
 pdf-viewer-show-thumbnails = Toon thumbnails
+pdf-viewer-epub-font-size = Lettergrootte (herindeling)
 
 # EPUB viewer
 epub-viewer = EPUB weergave

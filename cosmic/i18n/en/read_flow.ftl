@@ -235,6 +235,7 @@ pdf-viewer-shortcut-fit-height = Fit height
 pdf-viewer-shortcut-fit-width = Fit width
 pdf-viewer-shortcut-ctrl-scroll = Zoom with mouse
 pdf-viewer-show-thumbnails = Show thumbnails
+pdf-viewer-epub-font-size = Font size (reflowable)
 
 # EPUB viewer
 epub-viewer = EPUB viewer

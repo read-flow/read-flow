@@ -5,9 +5,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use cosmic::Action;
+use cosmic::Application;
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
+use cosmic::cosmic_config;
+use cosmic::cosmic_config::ConfigGet;
+use cosmic::cosmic_config::ConfigSet;
 use cosmic::cosmic_theme;
 use cosmic::iced::ContentFit;
 use cosmic::iced::Length;
@@ -26,6 +30,7 @@ use cosmic::widget;
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::app::ContextView;
+use crate::app::ReadFlow;
 use crate::client::ClientSelector;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
@@ -34,6 +39,29 @@ use crate::page::Page;
 type Fingerprint = String;
 
 const THUMBNAIL_WIDTH: u16 = 128;
+
+const MUPDF_PREFS_VERSION: u64 = 1;
+const KEY_EPUB_FONT_SIZE: &str = "mupdf_epub_font_size";
+
+fn load_mupdf_prefs() -> f32 {
+    let Ok(ctx) = cosmic_config::Config::new(ReadFlow::APP_ID, MUPDF_PREFS_VERSION) else {
+        return 12.0;
+    };
+    let size_pt: u32 = ctx.get(KEY_EPUB_FONT_SIZE).unwrap_or(12);
+    (size_pt as f32).clamp(8.0, 24.0)
+}
+
+fn save_mupdf_epub_font_size(size: f32) {
+    let Ok(ctx) = cosmic_config::Config::new(ReadFlow::APP_ID, MUPDF_PREFS_VERSION) else {
+        return;
+    };
+    let _ = ctx.set(KEY_EPUB_FONT_SIZE, size.round() as u32);
+}
+
+enum DiscoveryItem {
+    Page(PdfPage),
+    Done(bool),
+}
 
 /// Whether to display two pages side by side.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -126,11 +154,11 @@ pub enum MuPdfViewerOutput {
 pub enum MuPdfViewerMessage {
     // PDF loading pipeline
     ReadingProgressLoaded(Option<usize>),
-    PageDiscovered(PdfPage),
-    PagesDiscoveryComplete,
-    DisplayListReady(i32, Arc<mupdf::DisplayList>),
-    ThumbnailReady(i32, widget::image::Handle),
-    SvgReady(i32, widget::svg::Handle),
+    PageDiscovered(u64, PdfPage),
+    PagesDiscoveryComplete(u64, bool),
+    DisplayListReady(u64, i32, Arc<mupdf::DisplayList>),
+    ThumbnailReady(u64, i32, widget::image::Handle),
+    SvgReady(u64, i32, widget::svg::Handle),
 
     // Navigation
     SelectPage(usize),
@@ -144,6 +172,7 @@ pub enum MuPdfViewerMessage {
     ThemeColors(bool),
     ShowThumbnails(bool),
     DualPane(DualPageMode),
+    EpubFontSize(f32),
 
     // Keyboard / input
     Key(Modifiers, Key, Option<SmolStr>),
@@ -172,6 +201,9 @@ pub struct MuPdfViewer {
     theme_colors: bool,
     show_thumbnails: bool,
     dual_pane: DualPageMode,
+    is_reflowable: bool,
+    epub_font_size: f32,
+    layout_gen: u64,
     /// Most recently observed content viewport dimensions, set from the
     /// `responsive` closure in `view_content` (via Cell, since `view()` takes `&self`).
     viewport_size: Cell<(f32, f32)>,
@@ -210,6 +242,9 @@ impl MuPdfViewer {
             theme_colors: false,
             show_thumbnails: true,
             dual_pane: DualPageMode::default(),
+            is_reflowable: false,
+            epub_font_size: load_mupdf_prefs(),
+            layout_gen: 0,
             viewport_size: Cell::new((0.0, 0.0)),
             thumbnail_scroll_id: widget::Id::unique(),
             thumbnail_viewport: None,
@@ -218,33 +253,7 @@ impl MuPdfViewer {
         let mut tasks = Vec::new();
 
         // Start loading the PDF if we have a local path, streaming one page at a time
-        if let Some(path) = file_path {
-            use futures::StreamExt as _;
-            let (tx, rx) = futures::channel::mpsc::unbounded::<PdfPage>();
-            tokio::task::spawn_blocking(move || {
-                let doc = mupdf::Document::open(path.as_os_str()).unwrap();
-                let count = doc.page_count().unwrap();
-                for index in 0..count {
-                    let page = doc.load_page(index).unwrap();
-                    let bounds = page.bounds().unwrap();
-                    let _ = tx.unbounded_send(PdfPage {
-                        index,
-                        bounds,
-                        display_list: None,
-                        icon_bounds: Cell::new(None),
-                        icon_handle: None,
-                        svg_handle: None,
-                    });
-                }
-            });
-            tasks.push(Task::run(
-                rx.map(MuPdfViewerMessage::PageDiscovered)
-                    .chain(futures::stream::once(async {
-                        MuPdfViewerMessage::PagesDiscoveryComplete
-                    })),
-                cosmic::action::app,
-            ));
-        }
+        tasks.push(viewer.start_discovery());
 
         // Fetch reading progress
         let fp = fingerprint;
@@ -264,6 +273,51 @@ impl MuPdfViewer {
         ));
 
         (viewer, Task::batch(tasks))
+    }
+
+    fn start_discovery(&self) -> Task<Action<MuPdfViewerMessage>> {
+        let Some(path) = self.file_path.clone() else {
+            return Task::none();
+        };
+        use futures::StreamExt as _;
+        let (tx, rx) = futures::channel::mpsc::unbounded::<DiscoveryItem>();
+        let layout_gen = self.layout_gen;
+        let em = self.epub_font_size;
+        tokio::task::spawn_blocking(move || {
+            let mut doc = mupdf::Document::open(path.as_os_str()).unwrap();
+            let is_reflowable = doc.is_reflowable().unwrap_or(false);
+            if is_reflowable {
+                let _ = doc.layout(595.0, 842.0, em);
+            }
+            let count = doc.page_count().unwrap();
+            for index in 0..count {
+                let page = doc.load_page(index).unwrap();
+                let bounds = page.bounds().unwrap();
+                let _ = tx.unbounded_send(DiscoveryItem::Page(PdfPage {
+                    index,
+                    bounds,
+                    display_list: None,
+                    icon_bounds: Cell::new(None),
+                    icon_handle: None,
+                    svg_handle: None,
+                }));
+            }
+            let _ = tx.unbounded_send(DiscoveryItem::Done(is_reflowable));
+        });
+        Task::run(
+            rx.map(move |item| match item {
+                DiscoveryItem::Page(p) => MuPdfViewerMessage::PageDiscovered(layout_gen, p),
+                DiscoveryItem::Done(r) => MuPdfViewerMessage::PagesDiscoveryComplete(layout_gen, r),
+            }),
+            cosmic::action::app,
+        )
+    }
+
+    fn repaginate(&mut self) -> Task<Action<MuPdfViewerMessage>> {
+        self.layout_gen += 1;
+        self.pages.clear();
+        self.active_page = 0;
+        self.start_discovery()
     }
 
     pub fn display_name(&self) -> String {
@@ -495,6 +549,7 @@ impl MuPdfViewer {
 
         // Generate SVG for all currently visible pages (both pages of the
         // spread in dual-pane mode) if not already available.
+        let layout_gen = self.layout_gen;
         for &page_idx in &self.visible_page_indices() {
             if let Some(page) = self.pages.get(page_idx)
                 && page.svg_handle.is_none()
@@ -544,6 +599,7 @@ impl MuPdfViewer {
                                 }
                             }
                             MuPdfViewerMessage::SvgReady(
+                                layout_gen,
                                 index,
                                 widget::svg::Handle::from_memory(svg.into_bytes()),
                             )
@@ -673,7 +729,7 @@ impl Page for MuPdfViewer {
     }
 
     fn view_context(&self) -> ContextView<'_, MuPdfViewerMessage> {
-        let zoom_section = widget::settings::section()
+        let zoom_base = widget::settings::section()
             .title(fl!("pdf-viewer-zoom"))
             .add(
                 widget::settings::item::builder(fl!("pdf-viewer-zoom")).control(widget::dropdown(
@@ -717,6 +773,21 @@ impl Page for MuPdfViewer {
                     ]),
                 ),
             );
+
+        let zoom_section = if self.is_reflowable {
+            zoom_base.add(
+                widget::settings::item::builder(fl!("pdf-viewer-epub-font-size")).control(
+                    widget::slider(
+                        8.0..=24.0,
+                        self.epub_font_size,
+                        MuPdfViewerMessage::EpubFontSize,
+                    )
+                    .step(1.0f32),
+                ),
+            )
+        } else {
+            zoom_base
+        };
 
         let shortcuts_section = widget::settings::section()
             .title(fl!("pdf-viewer-keyboard-shortcuts"))
@@ -762,26 +833,38 @@ impl Page for MuPdfViewer {
                 }
                 Task::none()
             }
-            MuPdfViewerMessage::PageDiscovered(page) => {
+            MuPdfViewerMessage::PageDiscovered(layout_gen, page) => {
+                if layout_gen != self.layout_gen {
+                    return Task::none();
+                }
                 let index = page.index;
                 self.pages.push(page);
 
                 // If initial_page matches the just-discovered page, update active_page early
-                if let Some(ip) = self.initial_page {
-                    if self.pages.len() - 1 == ip {
-                        self.active_page = ip;
-                    }
+                if let Some(ip) = self.initial_page
+                    && self.pages.len() - 1 == ip
+                {
+                    self.active_page = ip;
                 }
 
                 // Kick off display-list generation immediately
                 let path = self.file_path.clone().unwrap();
+                let current_gen = self.layout_gen;
+                let em = self.epub_font_size;
                 Task::perform(
                     async move {
                         tokio::task::spawn_blocking(move || {
-                            let doc = mupdf::Document::open(path.as_os_str()).unwrap();
+                            let mut doc = mupdf::Document::open(path.as_os_str()).unwrap();
+                            if doc.is_reflowable().unwrap_or(false) {
+                                let _ = doc.layout(595.0, 842.0, em);
+                            }
                             let page = doc.load_page(index).unwrap();
                             let display_list = page.to_display_list(false).unwrap();
-                            MuPdfViewerMessage::DisplayListReady(index, Arc::new(display_list))
+                            MuPdfViewerMessage::DisplayListReady(
+                                current_gen,
+                                index,
+                                Arc::new(display_list),
+                            )
                         })
                         .await
                         .unwrap()
@@ -789,7 +872,11 @@ impl Page for MuPdfViewer {
                     cosmic::action::app,
                 )
             }
-            MuPdfViewerMessage::PagesDiscoveryComplete => {
+            MuPdfViewerMessage::PagesDiscoveryComplete(layout_gen, is_reflowable) => {
+                if layout_gen != self.layout_gen {
+                    return Task::none();
+                }
+                self.is_reflowable = is_reflowable;
                 if !self.pages.is_empty() {
                     // Final clamp in case initial_page arrived after discovery started
                     if let Some(ip) = self.initial_page {
@@ -799,19 +886,24 @@ impl Page for MuPdfViewer {
                 }
                 Task::none()
             }
-            MuPdfViewerMessage::DisplayListReady(pdf_index, display_list) => {
+            MuPdfViewerMessage::DisplayListReady(layout_gen, pdf_index, display_list) => {
+                if layout_gen != self.layout_gen {
+                    return Task::none();
+                }
                 if let Some(idx) = self.page_index_by_pdf_index(pdf_index) {
                     self.pages[idx].display_list = Some(display_list.clone());
 
                     let mut tasks = Vec::with_capacity(2);
 
                     // Generate thumbnail
+                    let current_gen = self.layout_gen;
                     tasks.push(Task::perform(
                         async move {
                             tokio::task::spawn_blocking(move || {
                                 let scale =
                                     (THUMBNAIL_WIDTH as f32) / display_list.bounds().width();
                                 MuPdfViewerMessage::ThumbnailReady(
+                                    current_gen,
                                     pdf_index,
                                     display_list_to_image(&display_list, scale),
                                 )
@@ -831,13 +923,19 @@ impl Page for MuPdfViewer {
                 }
                 Task::none()
             }
-            MuPdfViewerMessage::ThumbnailReady(pdf_index, handle) => {
+            MuPdfViewerMessage::ThumbnailReady(layout_gen, pdf_index, handle) => {
+                if layout_gen != self.layout_gen {
+                    return Task::none();
+                }
                 if let Some(idx) = self.page_index_by_pdf_index(pdf_index) {
                     self.pages[idx].icon_handle = Some(handle);
                 }
                 Task::none()
             }
-            MuPdfViewerMessage::SvgReady(pdf_index, handle) => {
+            MuPdfViewerMessage::SvgReady(layout_gen, pdf_index, handle) => {
+                if layout_gen != self.layout_gen {
+                    return Task::none();
+                }
                 if let Some(idx) = self.page_index_by_pdf_index(pdf_index) {
                     self.pages[idx].svg_handle = Some(handle);
                 }
@@ -950,6 +1048,12 @@ impl Page for MuPdfViewer {
             MuPdfViewerMessage::DualPane(dual_pane) => {
                 self.dual_pane = dual_pane;
                 self.update_active_page()
+            }
+            MuPdfViewerMessage::EpubFontSize(size) => {
+                let size = size.clamp(8.0, 24.0);
+                self.epub_font_size = size;
+                save_mupdf_epub_font_size(size);
+                self.repaginate()
             }
             MuPdfViewerMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
