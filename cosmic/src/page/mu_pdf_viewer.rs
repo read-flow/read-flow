@@ -126,7 +126,8 @@ pub enum MuPdfViewerOutput {
 pub enum MuPdfViewerMessage {
     // PDF loading pipeline
     ReadingProgressLoaded(Option<usize>),
-    PagesLoaded(Vec<PdfPage>),
+    PageDiscovered(PdfPage),
+    PagesDiscoveryComplete,
     DisplayListReady(i32, Arc<mupdf::DisplayList>),
     ThumbnailReady(i32, widget::image::Handle),
     SvgReady(i32, widget::svg::Handle),
@@ -216,15 +217,32 @@ impl MuPdfViewer {
 
         let mut tasks = Vec::new();
 
-        // Start loading the PDF if we have a local path
+        // Start loading the PDF if we have a local path, streaming one page at a time
         if let Some(path) = file_path {
-            tasks.push(Task::perform(
-                async move {
-                    tokio::task::spawn_blocking(move || load_pdf_pages(&path))
-                        .await
-                        .unwrap()
-                },
-                |pages| cosmic::action::app(MuPdfViewerMessage::PagesLoaded(pages)),
+            use futures::StreamExt as _;
+            let (tx, rx) = futures::channel::mpsc::unbounded::<PdfPage>();
+            tokio::task::spawn_blocking(move || {
+                let doc = mupdf::Document::open(path.as_os_str()).unwrap();
+                let count = doc.page_count().unwrap();
+                for index in 0..count {
+                    let page = doc.load_page(index).unwrap();
+                    let bounds = page.bounds().unwrap();
+                    let _ = tx.unbounded_send(PdfPage {
+                        index,
+                        bounds,
+                        display_list: None,
+                        icon_bounds: Cell::new(None),
+                        icon_handle: None,
+                        svg_handle: None,
+                    });
+                }
+            });
+            tasks.push(Task::run(
+                rx.map(MuPdfViewerMessage::PageDiscovered)
+                    .chain(futures::stream::once(async {
+                        MuPdfViewerMessage::PagesDiscoveryComplete
+                    })),
+                cosmic::action::app,
             ));
         }
 
@@ -744,36 +762,40 @@ impl Page for MuPdfViewer {
                 }
                 Task::none()
             }
-            MuPdfViewerMessage::PagesLoaded(pages) => {
-                self.pages = pages;
-                if !self.pages.is_empty() {
-                    self.active_page = self.initial_page.unwrap_or(0).min(self.pages.len() - 1);
-                    // Start generating display lists for all pages
-                    let tasks: Vec<_> = self
-                        .pages
-                        .iter()
-                        .map(|page| {
-                            let path = self.file_path.clone().unwrap();
-                            let index = page.index;
-                            Task::perform(
-                                async move {
-                                    tokio::task::spawn_blocking(move || {
-                                        let doc = mupdf::Document::open(path.as_os_str()).unwrap();
-                                        let page = doc.load_page(index).unwrap();
-                                        let display_list = page.to_display_list(false).unwrap();
-                                        MuPdfViewerMessage::DisplayListReady(
-                                            index,
-                                            Arc::new(display_list),
-                                        )
-                                    })
-                                    .await
-                                    .unwrap()
-                                },
-                                cosmic::action::app,
-                            )
+            MuPdfViewerMessage::PageDiscovered(page) => {
+                let index = page.index;
+                self.pages.push(page);
+
+                // If initial_page matches the just-discovered page, update active_page early
+                if let Some(ip) = self.initial_page {
+                    if self.pages.len() - 1 == ip {
+                        self.active_page = ip;
+                    }
+                }
+
+                // Kick off display-list generation immediately
+                let path = self.file_path.clone().unwrap();
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            let doc = mupdf::Document::open(path.as_os_str()).unwrap();
+                            let page = doc.load_page(index).unwrap();
+                            let display_list = page.to_display_list(false).unwrap();
+                            MuPdfViewerMessage::DisplayListReady(index, Arc::new(display_list))
                         })
-                        .collect();
-                    return Task::batch(tasks).chain(self.update_active_page());
+                        .await
+                        .unwrap()
+                    },
+                    cosmic::action::app,
+                )
+            }
+            MuPdfViewerMessage::PagesDiscoveryComplete => {
+                if !self.pages.is_empty() {
+                    // Final clamp in case initial_page arrived after discovery started
+                    if let Some(ip) = self.initial_page {
+                        self.active_page = ip.min(self.pages.len() - 1);
+                    }
+                    return self.update_active_page();
                 }
                 Task::none()
             }
@@ -955,25 +977,4 @@ fn parse_page_from_progress(progress: &str) -> Option<usize> {
         }
     }
     None
-}
-
-/// Load PDF pages (bounds only) from a file path. Runs on a blocking thread.
-fn load_pdf_pages(path: &Path) -> Vec<PdfPage> {
-    let doc = mupdf::Document::open(path.as_os_str()).unwrap();
-    let page_count = doc.page_count().unwrap();
-
-    let mut pages = Vec::with_capacity(usize::try_from(page_count).unwrap());
-    for index in 0..page_count {
-        let page = doc.load_page(index).unwrap();
-        let bounds = page.bounds().unwrap();
-        pages.push(PdfPage {
-            index,
-            bounds,
-            display_list: None,
-            icon_bounds: Cell::new(None),
-            icon_handle: None,
-            svg_handle: None,
-        });
-    }
-    pages
 }
