@@ -14,6 +14,7 @@ git-description = Git commit { $hash } op { $date }
 unknown-remote = ⚠ Onbekende externe bron: { $url }
 
 app-file-sources = Document Bronnen
+app-settings-page-title = Voorkeuren
 
 # Generic messages
 generic-error = 🛑 Fout: { $error }
@@ -281,3 +282,9 @@ epub-viewer-search-match-count = { $current } van { $total }
 epub-viewer-search-prev = Vorig resultaat
 epub-viewer-search-next = Volgend resultaat
 epub-viewer-search-close = Zoeken sluiten
+
+settings-viewer-section = EPUB Weergave
+settings-epub-viewer = EPUB weergave voorkeur
+settings-epub-viewer-description = Kies welke weergave EPUB-bestanden opent
+settings-epub-viewer-native = Ingebouwde EPUB-weergave (experimenteel)
+settings-epub-viewer-mupdf = MuPDF weergave

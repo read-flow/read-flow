@@ -4,6 +4,7 @@ app-title = Read Flow
 about = À propos
 actions = Actions
 app-file-sources = Sources de documents
+app-settings-page-title = Préférences
 context = Contexte
 documents = Documents
 repository = Dépôt
@@ -280,3 +281,9 @@ epub-viewer-search-match-count = { $current } sur { $total }
 epub-viewer-search-prev = Résultat précédent
 epub-viewer-search-next = Résultat suivant
 epub-viewer-search-close = Fermer la recherche
+
+settings-viewer-section = Visionneuse EPUB
+settings-epub-viewer = Préférence de visionneuse EPUB
+settings-epub-viewer-description = Choisissez quelle visionneuse ouvre les fichiers EPUB
+settings-epub-viewer-native = Visionneuse EPUB native (expérimentale)
+settings-epub-viewer-mupdf = Visionneuse MuPDF

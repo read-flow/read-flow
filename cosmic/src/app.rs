@@ -131,7 +131,14 @@ impl cosmic::Application for AppModel {
         let mut nav = nav_bar::Model::default();
         let mut nav_mappings = HashMap::new();
 
-        let (pages, page_action) = Pages::new(application_module.clone());
+        let config = cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
+            .map(|context| match Config::get_entry(&context) {
+                Ok(config) => config,
+                Err((_errors, config)) => config,
+            })
+            .unwrap_or_default();
+
+        let (pages, page_action) = Pages::new(application_module.clone(), config.clone());
 
         nav.insert()
             .text(pages.display_name(&PageSelector::Documents))
@@ -148,6 +155,14 @@ impl cosmic::Application for AppModel {
             .icon(icon::from_name("network-server-symbolic"))
             .with_id(|nav_id| {
                 nav_mappings.insert(PageSelector::Sources, nav_id);
+            });
+
+        nav.insert()
+            .text(pages.display_name(&PageSelector::AppSettings))
+            .data::<PageSelector>(PageSelector::AppSettings)
+            .icon(icon::from_name("preferences-desktop-symbolic"))
+            .with_id(|nav_id| {
+                nav_mappings.insert(PageSelector::AppSettings, nav_id);
             });
 
         nav.insert()
@@ -174,19 +189,7 @@ impl cosmic::Application for AppModel {
             nav,
             nav_mappings,
             key_binds: HashMap::new(),
-            // Optional configuration file for an application.
-            config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
-                .map(|context| match Config::get_entry(&context) {
-                    Ok(config) => config,
-                    Err((_errors, config)) => {
-                        // for why in errors {
-                        //     tracing::error!(%why, "error loading app config");
-                        // }
-
-                        config
-                    }
-                })
-                .unwrap_or_default(),
+            config,
             application_module,
             pages,
         };
@@ -382,6 +385,7 @@ impl cosmic::Application for AppModel {
                 })
                 .unwrap_or_else(Task::none),
             Message::UpdateConfig(config) => {
+                self.pages.update_app_config(&config);
                 self.config = config;
                 Task::none()
             }

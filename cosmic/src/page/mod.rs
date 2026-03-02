@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // pages
+mod app_settings;
 mod document_details;
 mod document_list;
 mod epub_viewer;
@@ -36,10 +37,14 @@ use crate::aggregator::Document;
 use crate::aggregator::DocumentType;
 use crate::app::ContextView;
 use crate::client::ClientSelector;
+use crate::config::Config;
+use crate::config::EpubViewerConfig;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::layout::full_page;
+use crate::page::app_settings::AppSettingsMessage;
+use crate::page::app_settings::AppSettingsPage;
 use crate::page::document_details::DocumentDetails;
 use crate::page::document_details::DocumentDetailsMessage;
 use crate::page::document_details::DocumentDetailsOutput;
@@ -63,6 +68,8 @@ type Fingerprint = String;
 pub struct Pages {
     pub(crate) document_provider: Arc<DocumentProvider>,
 
+    epub_viewer_config: EpubViewerConfig,
+    app_settings: AppSettingsPage,
     sources: SourcesPage,
     documents: DocumentList,
     document_details: IndexMap<Fingerprint, DocumentDetails>,
@@ -78,6 +85,7 @@ pub enum PageSelector {
     DocumentDetails(Fingerprint),
     EpubViewer(Fingerprint),
     MuPdfViewer(Fingerprint),
+    AppSettings,
     Settings,
 }
 
@@ -102,6 +110,7 @@ pub enum PageMessage {
     CloseEpubViewer(Fingerprint, Option<String>),
     MuPdfViewer(Fingerprint, MuPdfViewerMessage),
     CloseMuPdfViewer(Fingerprint, Option<usize>),
+    AppSettings(AppSettingsMessage),
     Settings(SettingsMessage),
     KeyEvent(PageSelector, Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(PageSelector, Modifiers),
@@ -119,6 +128,12 @@ impl From<SourcesMessage> for PageMessage {
 impl From<DocumentListMessage> for PageMessage {
     fn from(source: DocumentListMessage) -> Self {
         Self::Documents(source)
+    }
+}
+
+impl From<AppSettingsMessage> for PageMessage {
+    fn from(source: AppSettingsMessage) -> Self {
+        Self::AppSettings(source)
     }
 }
 
@@ -159,6 +174,11 @@ macro_rules! with_active_page {
                 let $mapper = move |msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg);
                 $body
             }
+            PageSelector::AppSettings => {
+                let $page = Some(&$self.app_settings);
+                let $mapper = map_app_settings_message;
+                $body
+            }
             PageSelector::Settings => {
                 let $page = Some(&$self.settings);
                 let $mapper = map_settings_message;
@@ -173,7 +193,12 @@ fn page_not_found<'a, M: 'a>() -> Element<'a, M> {
 }
 
 impl Pages {
-    pub fn new(application_module: Arc<ApplicationModule>) -> (Self, Task<Action<PageMessage>>) {
+    pub fn new(
+        application_module: Arc<ApplicationModule>,
+        config: Config,
+    ) -> (Self, Task<Action<PageMessage>>) {
+        let epub_viewer_config = config.epub_viewer;
+        let (app_settings, init_app_settings) = AppSettingsPage::new(config);
         let (sources, init_sources) = SourcesPage::new(application_module.clone());
 
         // Get remote clients from the application module
@@ -215,6 +240,7 @@ impl Pages {
         let (documents, init_documents) = DocumentList::new(document_provider.clone());
 
         let tasks = vec![
+            init_app_settings.map(ActionExt::map_into),
             init_sources.map(ActionExt::map_into),
             init_documents.map(ActionExt::map_into),
             init_settings.map(ActionExt::map_into),
@@ -223,6 +249,8 @@ impl Pages {
         (
             Self {
                 document_provider,
+                epub_viewer_config,
+                app_settings,
                 sources,
                 documents,
                 document_details: Default::default(),
@@ -232,6 +260,11 @@ impl Pages {
             },
             task::batch(tasks),
         )
+    }
+
+    pub fn update_app_config(&mut self, config: &Config) {
+        self.epub_viewer_config = config.epub_viewer;
+        self.app_settings.update_config(config.clone());
     }
 
     pub fn display_name<'a>(&'a self, page_selector: &'a PageSelector) -> String {
@@ -245,6 +278,7 @@ impl Pages {
             PageSelector::MuPdfViewer(fingerprint) => {
                 self.mu_pdf_viewers[fingerprint].display_name()
             }
+            PageSelector::AppSettings => fl!("app-settings-page-title"),
             PageSelector::Settings => fl!("settings-page-title"),
         }
     }
@@ -360,6 +394,10 @@ impl Pages {
                 .documents
                 .update(document_list_message)
                 .map(move |action| action.map(map_document_list_message)),
+            PageMessage::AppSettings(message) => self
+                .app_settings
+                .update(message)
+                .map(move |action| action.map(map_app_settings_message)),
             PageMessage::Settings(settings_message) => self
                 .settings
                 .update(settings_message)
@@ -466,7 +504,10 @@ impl Pages {
                 #[allow(unreachable_patterns)]
                 match &document.metadata.type_ {
                     DocumentType::Mobi | DocumentType::Pdf => self.open_mupdf_viewer(document),
-                    DocumentType::Epub => self.open_epub_viewer(document),
+                    DocumentType::Epub => match self.epub_viewer_config {
+                        EpubViewerConfig::NativeEpub => self.open_epub_viewer(document),
+                        EpubViewerConfig::MuPdf => self.open_mupdf_viewer(document),
+                    },
                     _ => self.open_in_external_viewer(document),
                 }
             }
@@ -623,6 +664,10 @@ fn map_epub_viewer_message(fingerprint: Fingerprint, msg: EpubViewerMessage) -> 
         },
         msg => PageMessage::EpubViewer(fingerprint, msg),
     }
+}
+
+fn map_app_settings_message(msg: AppSettingsMessage) -> PageMessage {
+    PageMessage::AppSettings(msg)
 }
 
 fn map_settings_message(msg: SettingsMessage) -> PageMessage {

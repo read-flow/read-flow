@@ -14,6 +14,7 @@ git-description = Git commit { $hash } on { $date }
 unknown-remote = ⚠ Unknown Remote: { $url }
 
 app-file-sources = Document Sources
+app-settings-page-title = Preferences
 
 # Generic messages
 generic-error = 🛑 Error: { $error }
@@ -205,6 +206,11 @@ settings-remove-directory-tag = Remove tag
 settings-database-location-description = The location of the database
 settings-server-download-folder-description = Specifies the folder where downloaded files will go
 settings-scan-dry-run-description = If true, will not make changes to the database
+settings-viewer-section = EPUB Viewer
+settings-epub-viewer = EPUB viewer preference
+settings-epub-viewer-description = Choose which viewer opens EPUB files
+settings-epub-viewer-native = Native EPUB viewer (experimental)
+settings-epub-viewer-mupdf = MuPDF viewer
 
 # PDF viewer
 pdf-viewer = PDF viewer

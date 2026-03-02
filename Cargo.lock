@@ -5967,6 +5967,7 @@ dependencies = [
  "read-flow-core",
  "rfd 0.17.2",
  "rust-embed",
+ "serde",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

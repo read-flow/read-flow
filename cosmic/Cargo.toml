@@ -27,6 +27,7 @@ open.workspace = true
 rand.workspace = true
 rfd.workspace = true
 rust-embed.workspace = true
+serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
