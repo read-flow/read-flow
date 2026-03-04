@@ -82,6 +82,55 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] Recreate main ~README.md~peterpaul/read-flow
 - [ ] ~read-flow~: Make first-time setup wizard, when there is no configuration at all.
 
+* Provider Crate — Future Ideas
+
+** Composition & Control Flow
+
+- [ ] ~RetryProvider<P>~: Wraps provider with configurable retry logic (attempts, backoff strategy) for transient failures
+- [ ] ~TimeoutProvider<P>~: Adds timeout to async providers - critical for network operations in UI apps
+- [ ] ~ZipProvider<P1, P2>~: Combines two providers into a tuple ~(T1, T2)~ - useful when you need data from multiple sources together
+
+** Time-Based Caching
+
+- [ ] ~TtlCache<T, P>~: Time-to-live cache - expires after a duration. Perfect for API responses, thumbnails, metadata
+- [ ] ~RefreshingCache<T, P>~: Background refresh before expiration - keeps data fresh without blocking UI
+- [ ] ~StaleWhileRevalidate<T, P>~: Returns cached value immediately while fetching fresh data in background - great UX pattern
+
+** File & I/O Providers
+
+- [ ] ~FileProvider~: Reads file content, handles errors gracefully
+- [ ] ~WatchingFileProvider~: Uses inotify/notify to auto-invalidate cache when file changes - perfect for config
+- [ ] ~CommandProvider~: Executes shell command and provides output - useful for integrating with system tools
+- [ ] ~DirectoryProvider~: Lists directory contents with optional filtering
+
+** Network Providers
+
+- [ ] ~HttpProvider~: Fetches data from HTTP endpoints
+- [ ] ~ThrottledProvider<P>~: Rate-limits calls to underlying provider - prevents abuse
+- [ ] ~OfflineFirstProvider<P>~: Returns cached value when offline, syncs when online
+
+** Cosmic/Desktop-Specific
+
+- [ ] ~CosmicConfigProvider<T>~: Integrates with ~cosmic-config~ for app settings with automatic change detection
+- [ ] ~ThumbnailProvider~: Generates/caches thumbnails for files (integrates with freedesktop spec)
+- [ ] ~IconProvider~: Provides icons from icon themes based on file type/name
+- [ ] ~MimeTypeProvider~: Determines MIME type for files
+- [ ] ~XdgProvider~: Provides XDG directory paths (config, cache, data dirs)
+- [ ] ~MetadataProvider~: Extracts metadata (EXIF, PDF info, audio tags)
+
+** Reactive/Observable
+
+- [ ] ~StreamProvider<T>~: Produces a stream of values instead of single value - for real-time updates
+- [ ] ~PollingProvider<P>~: Periodically polls underlying provider and notifies on changes
+
+** Utility Providers
+
+- [ ] ~LazyProvider<P>~: Defers provider construction until first use
+- [ ] ~OnceProvider<P>~: Guarantees provider is called exactly once (like ~OnceCell~ pattern)
+- [ ] ~FilterMapProvider<P, F>~: Filters and maps in one step for collection providers
+- [ ] ~FlatMapProvider<P, F>~: Maps each item to a provider and flattens results
+- [ ] ~OptionProvider<P>~: Gracefully handles ~None~ cases, converts ~Option<T>~ errors
+
 * Completed
 
 - [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
