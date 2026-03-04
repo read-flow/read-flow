@@ -62,9 +62,9 @@ This is a tool to help discover and organize files locally and on remote servers
   - [ ] ~read-flow~: Update sources & settings pages to allow configuring the client and server
 
 
-** Prepare for public release [0/12]
+** Prepare for public release [1/13]
 
-- [ ] Move =justfile= from ~cosmic/~ to project root, and update to work for the whole repository
+- [X] Move =justfile= from ~cosmic/~ to project root, and update to work for the whole repository
 - [ ] Create read-flow application branding [0/1]
   - [ ] logo
 - [ ] Create read-flow website

@@ -10,14 +10,14 @@ bin-src := 'target' / 'release' / name
 bin-dst := base-dir / 'bin' / name
 
 desktop := appid + '.desktop'
-desktop-src := 'resources' / desktop
+desktop-src := 'cosmic' / 'resources' / desktop
 desktop-dst := clean(rootdir / prefix) / 'share' / 'applications' / desktop
 
 appdata := appid + '.metainfo.xml'
-appdata-src := 'resources' / appdata
+appdata-src := 'cosmic' / 'resources' / appdata
 appdata-dst := clean(rootdir / prefix) / 'share' / 'appdata' / appdata
 
-icons-src := 'resources' / 'icons' / 'hicolor'
+icons-src := 'cosmic' / 'resources' / 'icons' / 'hicolor'
 icons-dst := clean(rootdir / prefix) / 'share' / 'icons' / 'hicolor'
 
 icon-svg-src := icons-src / 'scalable' / 'apps' / 'icon.svg'
@@ -54,15 +54,15 @@ check *args:
 # Runs a clippy check with JSON message format
 check-json: (check '--message-format=json')
 
-# Run the application for testing purposes
+# Run the COSMIC desktop app for testing purposes
 run *args:
-    env RUST_BACKTRACE=full cargo run --release {{args}}
+    env RUST_BACKTRACE=full cargo run -p cosmic --release {{args}}
 
 # Installs files
 install:
     install -Dm0755 {{bin-src}} {{bin-dst}}
-    install -Dm0644 resources/app.desktop {{desktop-dst}}
-    install -Dm0644 resources/app.metainfo.xml {{appdata-dst}}
+    install -Dm0644 {{desktop-src}} {{desktop-dst}}
+    install -Dm0644 {{appdata-src}} {{appdata-dst}}
     install -Dm0644 {{icon-svg-src}} {{icon-svg-dst}}
 
 # Uninstalls installed files
@@ -93,4 +93,3 @@ vendor:
 vendor-extract:
     rm -rf vendor
     tar pxf vendor.tar
-
