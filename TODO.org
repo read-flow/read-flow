@@ -1,8 +1,88 @@
-* Archive Organizer
+* Read Flow
 
 This is a tool to help discover and organize files locally and on remote servers.
 
-* TODO: Implement the following items [29/49]
+* Open
+
+** Tier 1 — Quick Wins (High value, Low effort) [0/4]
+
+- [ ] ~read-flow~: Allow copying full paths from file details page
+- [ ] ~read-flow-core~: Make file download folder for HTTP ~client~ configurable
+- [ ] ~read-flow-core~: Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
+- [ ] ~read-flow-core~ & ~read-flow~: Check files in the database to see whether they still exist
+
+** Tier 2 — High Impact, Moderate Effort [1/5]
+
+- [ ] ~read-flow-core~: HTTP response code & error handling in ~client~ module
+- [ ] ~read-flow-core~: Proper HTTP error handling in ~server~ module, including tests
+- [ ] ~read-flow-core~ & ~read-flow~: Add allow/denylist for directories to scan
+- [ ] ~read-flow~: On the Sources page, add an indicator icon for each source whether they are available or not
+  - [ ] Allow adding sources that are not available at the time of adding(?)
+- [X] ~read-flow~: Allow deleting duplicate files (including from file storage) from file edit dialog
+
+** Tier 3 — Significant Features [0/5]
+
+- [-] ~read-flow~: Use context view of Document Details page for multiple actions: [3/4]
+  - [ ] Remove duplicates (including files)
+  - [X] For missing on local: Pull to local
+  - [X] For missing on remote: Push to remote
+  - [X] For all (reachable) sources: Check whether the file still exists
+- [ ] ~read-flow-core~ & ~read-flow~: Make it possible to correlate `books` of different file types
+- [ ] ~read-flow-core~ & ~read-flow~: Recognize duplicates accross local/remote repositories
+- [ ] Separate file discovery in multiple main categories:
+  - documents(.doc, .docx, .pdf, .epub, .mobi, etc.)
+  - images(.jpg, .png, .webp, etc.)
+  - videos(.mpeg, .mov, mp4, etc.)
+  - audio(.ogg, .mp3, .wav, etc.)
+- [ ] Add unit/integration tests
+
+** Tier 4 — Useful but Larger Scope [1/5]
+
+- [ ] Recognize calibre directories, and support calibre database to import data
+- [ ] Allow duplicating files to/from remote, with configuration/input of location.
+- [ ] Add role-based authorization for server REST API, read/write access
+  - [ ] Update cosmic settings editor
+- [X] PDF Viewer, 'stream' the pages while loading, so that each page becomes visible/accessible the moment it is rendered.
+- [ ] Investigate/use ~pdfium_render~ crate to render PDFs.
+- [ ] Add Google drive as document source/storage
+- [ ] Add Dropbox as document source/storage
+- [ ] Add OneDrive as document source/storage
+
+** Tier 5 — Refactoring / Technical Debt [0/4]
+
+- [ ] ~read-flow-core~: modify DAO traits to take the connection as a parameter, so we can add transactions
+- [ ] =page/mod.rs= contains a lot of initialization code (and messages) that might need to be handled by =app.rs=
+- [ ] ~read-flow~: Use same approach for ~Out~ messages, ~settings.rs~ uses different approach then ~page/mod.rs~
+- [ ] Change directory modules API so that they can match and still recurse into the directory
+
+** Tier 6 — Low Priority / Niche [0/1]
+
+- [ ] ~read-flow-core~ & ~read-flow~: Implement 2-way TLS (including configuration/database) [0/2]
+  - [ ] ~read-flow-core~: Update client and server modules, with configuration
+  - [ ] ~read-flow~: Update sources & settings pages to allow configuring the client and server
+
+
+** Prepare for public release [0/12]
+
+- [ ] Move =justfile= from ~cosmic/~ to project root, and update to work for the whole repository
+- [ ] Create read-flow application branding [0/1]
+  - [ ] logo
+- [ ] Create read-flow website
+- [ ] Create working Debian (sid?) package, including Desktop file
+  - [ ] Maybe both binaries in the same package
+- [ ] Convert org-mode files do markdown files (?)
+- [ ] Remove files that are not needed anymore
+- [ ] Try to build and run ~read-flow~ on Windows
+- [ ] Try to build and run ~read-flow~ on MacBook
+- [ ] Licensing [0/2]
+  - [ ] Investigate the license of all dependencies
+  - [ ] Set license on this repository
+- [ ] Extract the ~provider~ crate to a separate repository?
+- [ ] Extract the ~epub~ crate to a separate repository?
+- [ ] Recreate main ~README.md~peterpaul/read-flow
+- [ ] ~read-flow~: Make first-time setup wizard, when there is no configuration at all.
+
+* Completed
 
 - [X] Add error handling to ~serve/mod.rs~ instead of ~unwrap()~
 - [X] Make database URL configurable (using ~figment~)
@@ -17,32 +97,12 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] Create page to view/edit file/book/project details
 - [X] Add health endpoint, to check whether remote repository is up
 - [X] Store configuration in default location like =$HOME/.config/archive-organizer=
-- [ ] Add unit/integration tests
-- [ ] Implement 2-way TLS (including configuration/database)
-- [ ] HTTP response code & error handling in ~client~ module
-- [ ] Make file download folder for HTTP ~client~ configurable
-- [ ] Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
-- [ ] Proper HTTP error handling in ~server~ module, including tests
-- [ ] Make it possible to correlate `books` of different file types
-- [ ] Recognize duplicates accross local/remote repositories
-- [ ] Separate file discovery in multiple main categories:
-  - documents(.doc, .docx, .pdf, .epub, .mobi, etc.)
-  - images(.jpg, .png, .webp, etc.)
-  - videos(.mpeg, .mov, mp4, etc.)
-  - audio(.ogg, .mp3, .wav, etc.)
-- [ ] Recognize calibre directories, and support calibre database to import data
 - [X] Derive folders to scan from discovered files
 - [X] Store folders to scan in database, and add command to scan configured folders
-- [ ] Check files in the database to see whether they still exist
-- [ ] Change directory modules API so that they can match and still recurse into the directory
-- [ ] Add allow/denylist for directories to scan
-- [ ] Allow copying full paths from file details page
 - [X] In File Edit dialog, show all unused tags and allow to set them using a single click
 - [X] Open files from the gui
 - [X] Order files ascending or descending
 - [X] Add private mode, with configuration to hide documents by default
-- [ ] Allow deleting duplicate files (including from file storage) from file edit dialog
-- [ ] Allow duplicating files to/from remote, with configuration/input of location.
 - [X] Allow marking files as read/reading/unread
 - [X] Filter files on reading status
 - [X] Check if cosmic applications work better on chromeos
@@ -51,22 +111,8 @@ This is a tool to help discover and organize files locally and on remote servers
       This way related books, with the same name, but different extension will be stored in the same folder,
       Calibre can then import them as related to the same book.
 - [X] Make aggregator fail-safe for remotes that are unavailable at that moment. (use status endpoint)
-- [ ] Use same approach for ~Out~ messages, ~settings.rs~ uses different approach then ~page/mod.rs~
 - [X] Make settings page edit only the file, and apply the commandline arguments for the runtime settings
 - [X] Some settings, like the database url, are only effective after a restart, notify the user when they change those
 - [X] After adding a source, add the source to the active aggregator (needs Arc<Mutex<Aggregator>>)
-- [ ] =page/mod.rs= contains a lot of initialization code (and messages) that might need to be handled by =app.rs=
-- [ ] On the Sources page, add an indicator icon for each source whether they are available or not
-  - [ ] Allow adding sources that are not available at the time of adding(?)
-- [ ] modify DAO traits to take the connection as a parameter, so we can add transactions
 - [X] Hash and Salt all passphrases in the `server.authorized_users` settings field
 - [X] Update settings editor to also edit the user id
-- [ ] Use context view of File Details page for multiple actions:
-  - [ ] Remove duplicates (including files)
-  - [ ] For missing on local: Pull to local
-  - [ ] For missing on remote: Push to remote
-  - [ ] For all (reachable) sources: Check whether the file still exists
-- [ ] Add role-based authorization for server REST API, read/write access
-  - [ ] Update cosmic settings editor
-- [ ] PDF Viewer, 'stream' the pages while loading, so that each page becomes visible/accessible the moment it is rendered.
-- [ ] Investigate/use ~pdfium_render~ crate to render PDFs.
