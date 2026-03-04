@@ -1,53 +1,58 @@
 # -*- eval: (restclient-mode) -*-
+# The server must have a user with the following credentials:
+# - username: my-user
+# - password: my-password
+#
+# Never use these credentials on public servers!
 
 # status
 GET http://localhost:8000/status
 Accept: application/json
-Authorization: bearer secret
+Authorization: Basic bXktdXNlcjpteS1wYXNzd29yZA==
 
 # get all files
 GET http://localhost:8000/files
 Accept: application/json
-Authorization: bearer secret
+Authorization: Basic bXktdXNlcjpteS1wYXNzd29yZA==
 
 # get all file tags
 GET http://localhost:8000/files/tags
 Accept: application/json
-Authorization: bearer secret
+Authorization: Basic bXktdXNlcjpteS1wYXNzd29yZA==
 
 # get one file
 GET http://localhost:8000/files/1
 Accept: application/json
-Authorization: bearer secret
+Authorization: Basic bXktdXNlcjpteS1wYXNzd29yZA==
 
 # get tags of file
 GET http://localhost:8000/files/1/tags
 Accept: application/json
-Authorization: bearer secret
+Authorization: Basic bXktdXNlcjpteS1wYXNzd29yZA==
 
 # add tags to file
 POST http://localhost:8000/files/1/tags
 Content-Type: application/json
 Accept: application/json
-Authorization: bearer secret
+Authorization: Basic bXktdXNlcjpteS1wYXNzd29yZA==
 
 ["cowboys","horses"]
 
 # download the contents of a file
 GET http://localhost:8000/files/2/download-as/the_law_of_one_book_4.pdf
-Authorization: bearer secret
+Authorization: Basic bXktdXNlcjpteS1wYXNzd29yZA==
 
 # download the contents of a file, failing
 GET http://localhost:8000/files/2/download-as/horses.epub
 Accept: application/json
-Authorization: bearer secret
+Authorization: Basic bXktdXNlcjpteS1wYXNzd29yZA==
 
 # upload the contents of a file
 POST http://localhost:8000/files
 Content-Type: application/x-www-form-urlencoded
 Content-Type: multipart/form-data; boundary=MyBountary
 Accept: application/json
-Authorization: bearer secret
+Authorization: Basic bXktdXNlcjpteS1wYXNzd29yZA==
 
 --MyBoundary
 Content-Disposition: form-data; name="file"; filename="notes.txt";
