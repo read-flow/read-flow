@@ -3,6 +3,7 @@ pub mod datasource;
 pub mod models;
 pub mod schema;
 
+use std::str::FromStr;
 use std::time::Duration;
 
 use diesel::connection::SimpleConnection;
@@ -16,18 +17,29 @@ use diesel_migrations::embed_migrations;
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::ExpandedPath;
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DbSettings {
-    url: String,
+    url: ExpandedPath,
 }
 
 impl DbSettings {
-    pub fn url(&self) -> &str {
+    pub fn url(&self) -> &ExpandedPath {
         &self.url
     }
 
-    pub fn set_url(&mut self, url: String) {
+    pub fn set_url(&mut self, url: ExpandedPath) {
         self.url = url;
+    }
+}
+
+impl Default for DbSettings {
+    fn default() -> Self {
+        Self {
+            url: ExpandedPath::from_str("~/.local/share/read-flow/database.db")
+                .expect("should work"),
+        }
     }
 }
 
@@ -71,7 +83,9 @@ impl CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for ConnectionOp
 
 pub fn get_connection_pool(settings: &DbSettings) -> ConnectionPool {
     tracing::debug!("Creating db connection pool for: {}", &settings.url);
-    let manager = ConnectionManager::<SqliteConnection>::new(&settings.url);
+    tracing::debug!("Ensuring all directories exist for: {}", &settings.url);
+    crate::force_create_all_parents(&settings.url);
+    let manager = ConnectionManager::<SqliteConnection>::new(settings.url.to_string());
 
     let pool = Pool::builder()
         // .max_size(16) // SQLite only supports a single connection otherwise the logs will be cluttered with: ERROR r2d2: database is locked

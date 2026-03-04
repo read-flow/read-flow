@@ -67,8 +67,8 @@ impl Provider<Settings> for AppSettings {
 
         // Extract settings from the application's configuration.
         let mut settings = match configuration_file {
-            Some(path) => settings::extract_from(path).expect("settings are present"),
-            None => settings::extract().expect("settings are present"),
+            Some(path) => Settings::extract_from(path).expect("settings are present"),
+            None => Settings::extract().expect("settings are present"),
         };
         // Merge commandline parameters with settings.
         settings

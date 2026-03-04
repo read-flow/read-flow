@@ -1,4 +1,5 @@
 use std::fmt;
+use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -21,8 +22,9 @@ use crate::ExpandedPath;
 use crate::db::DbSettings;
 use crate::scan::ScanSettings;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
 pub struct Settings {
+    #[serde(default)]
     pub database: DbSettings,
     #[serde(default)]
     pub server: ServerSettings,
@@ -30,6 +32,33 @@ pub struct Settings {
     pub scan: ScanSettings,
     #[serde(default)]
     pub ui: UiSettings,
+}
+
+impl Settings {
+    pub fn extract() -> Result<Self, SettingsError> {
+        let figment = {
+            let figment = Figment::new();
+            decorate_with(figment, config_path())
+        };
+        Self::from_figment(figment)
+    }
+
+    pub fn extract_from(path: &Path) -> Result<Self, SettingsError> {
+        let figment = decorate_with(Figment::new(), path.to_path_buf());
+        Self::from_figment(figment)
+    }
+
+    /// Save settings to the configuration file
+    pub fn save(&self, path: &Path) -> Result<(), SettingsError> {
+        let toml_string = toml::to_string_pretty(self)?;
+        fs::write(path, toml_string)?;
+        Ok(())
+    }
+
+    fn from_figment(figment: Figment) -> Result<Settings, SettingsError> {
+        let settings: Option<Settings> = figment.extract()?;
+        Ok(settings.unwrap_or_default())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -118,37 +147,15 @@ pub fn config_path() -> PathBuf {
 
 pub fn decorate_with(figment: Figment, path: PathBuf) -> Figment {
     if !path.exists() {
-        tracing::error!(
-            "No configuration file found, please create one in: `{}`",
+        crate::force_create(&path);
+        tracing::warn!(
+            "No configuration file found, created empty one at: `{}`",
             path.display()
         );
-        panic!("No configuration file found");
     }
 
     tracing::info!("using configuration from `{}`", path.display());
     figment.merge(Toml::file(path))
-}
-
-pub fn extract() -> Result<Settings, SettingsError> {
-    let figment = {
-        let figment = Figment::new();
-        decorate_with(figment, config_path())
-    };
-    let settings = figment.extract()?;
-    Ok(settings)
-}
-
-pub fn extract_from(path: &Path) -> Result<Settings, SettingsError> {
-    let figment = decorate_with(Figment::new(), path.to_path_buf());
-    let settings = figment.extract()?;
-    Ok(settings)
-}
-
-/// Save settings to the configuration file
-pub fn save(settings: &Settings, path: &Path) -> Result<(), SettingsError> {
-    let toml_string = toml::to_string_pretty(settings)?;
-    std::fs::write(path, toml_string)?;
-    Ok(())
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]

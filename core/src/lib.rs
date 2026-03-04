@@ -8,6 +8,7 @@ pub mod settings;
 pub mod tag;
 
 use std::fmt;
+use std::fs;
 use std::hash::Hash;
 use std::ops::Deref;
 use std::path::Component;
@@ -63,7 +64,7 @@ pub struct SettingsProvider;
 impl Provider<Settings> for SettingsProvider {
     type Error = SettingsError;
     fn provide(&self) -> Result<Settings, Self::Error> {
-        settings::extract()
+        Settings::extract()
     }
 }
 
@@ -74,7 +75,7 @@ pub struct ScanSettingsProvider {
 impl Provider<Settings> for ScanSettingsProvider {
     type Error = SettingsError;
     fn provide(&self) -> Result<Settings, Self::Error> {
-        let mut settings = settings::extract()?;
+        let mut settings = Settings::extract()?;
         settings.scan.merge_dry_run(self.dry_run);
         Ok(settings)
     }
@@ -398,6 +399,16 @@ impl fmt::Display for ExpandedPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", &self.0.display())
     }
+}
+
+pub fn force_create(path: &PathBuf) -> fs::File {
+    force_create_all_parents(path);
+    fs::File::create(path).unwrap()
+}
+
+pub fn force_create_all_parents(path: &Path) {
+    let prefix = path.parent().unwrap();
+    fs::create_dir_all(prefix).unwrap();
 }
 
 #[cfg(test)]

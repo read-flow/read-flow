@@ -62,7 +62,7 @@ This is a tool to help discover and organize files locally and on remote servers
   - [ ] ~read-flow~: Update sources & settings pages to allow configuring the client and server
 
 
-** Prepare for public release [1/13]
+** Prepare for public release [2/13]
 
 - [X] Move =justfile= from ~cosmic/~ to project root, and update to work for the whole repository
 - [ ] Create read-flow application branding [0/1]
@@ -80,7 +80,8 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] Extract the ~provider~ crate to a separate repository?
 - [ ] Extract the ~epub~ crate to a separate repository?
 - [ ] Recreate main ~README.md~peterpaul/read-flow
-- [ ] ~read-flow~: Make first-time setup wizard, when there is no configuration at all.
+- [X] ~read-flow~: Make first-time setup wizard, when there is no configuration at all.
+  - Ensured the application creates default directories and files instead
 
 * Provider Crate — Future Ideas
 

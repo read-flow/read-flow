@@ -20,7 +20,6 @@ use provider::sync::HasSetExpired;
 use read_flow_core::Builder;
 use read_flow_core::ExpandedPath;
 use read_flow_core::scan::DirectorySettings;
-use read_flow_core::settings;
 use read_flow_core::settings::HashedPassword;
 use read_flow_core::settings::Settings;
 use rfd::AsyncFileDialog;
@@ -152,7 +151,7 @@ impl SettingsPage {
         document_provider: Arc<DocumentProvider>,
     ) -> (Self, Task<Action<SettingsMessage>>) {
         let settings: Arc<Settings> = Arc::new(
-            settings::extract_from(application_module.config_path()).expect("settings are present"),
+            Settings::extract_from(application_module.config_path()).expect("settings are present"),
         );
         let document_provider_clone = document_provider.clone();
         let (tag_editor, tag_editor_task) = TagEditor::new(
@@ -255,7 +254,7 @@ impl Page for SettingsPage {
                     .icon(widget::icon::from_name("package-x-generic-symbolic").size(ICON_SIZE))
                     .control(
                         widget::settings::item_row(vec![
-                            widget::text::monotext(self.settings.database.url()).into(),
+                            widget::text::monotext(self.settings.database.url().to_string()).into(),
                             widget::button::text("Select")
                                 .on_press(SettingsMessage::SelectDatabaseLocation)
                                 .into(),
@@ -476,13 +475,7 @@ impl Page for SettingsPage {
                 }
             },
             SettingsMessage::SelectDatabaseLocation => {
-                let path = self
-                    .settings
-                    .database
-                    .url()
-                    .parse::<ExpandedPath>()
-                    .unwrap()
-                    .get_full_path();
+                let path = self.settings.database.url().get_full_path();
                 let parent_str = path.parent().map(|path| path.display().to_string());
                 let file_name = path
                     .file_name()
@@ -504,7 +497,7 @@ impl Page for SettingsPage {
                 if let Some(file) = file_handle {
                     self.settings
                         .database
-                        .set_url(file.path().display().to_string());
+                        .set_url(file.path().to_path_buf().try_into().unwrap());
                     self.save_state = SaveState::Idle;
                 }
                 Task::none()
@@ -619,7 +612,7 @@ impl Page for SettingsPage {
                 let settings = self.settings.clone();
                 let config_path = self.application_module.config_path().to_owned();
                 task::future(async move {
-                    match read_flow_core::settings::save(&settings, &config_path) {
+                    match settings.save(&config_path) {
                         Ok(()) => SettingsMessage::SaveComplete,
                         Err(e) => SettingsMessage::SaveError(e.to_string()),
                     }
