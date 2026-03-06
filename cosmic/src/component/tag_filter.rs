@@ -21,6 +21,11 @@ use crate::fl;
 use crate::state::tags::Tags;
 use crate::state::tags::TagsState;
 
+enum TagKind {
+    Allow,
+    Deny,
+}
+
 pub struct TagFilter<P> {
     all_tags: ProvidedState<P, Vec<String>>,
     tags: TagsState,
@@ -80,25 +85,11 @@ where
         let mut content = Vec::new();
 
         // Allow Tags Section
-        let allow_section = self.view_tag_filter_section(
-            fl!("document-list-allow-tags"),
-            &self.allow_tags,
-            &self.new_allow_tag,
-            TagFilterMessage::UpdateNewAllowTag,
-            TagFilterMessage::AddAllowTag,
-            TagFilterMessage::RemoveAllowTag,
-        );
+        let allow_section = self.view_tag_filter_section(TagKind::Allow);
         content.push(allow_section.into());
 
         // Deny Tags Section
-        let deny_section = self.view_tag_filter_section(
-            fl!("document-list-deny-tags"),
-            &self.deny_tags,
-            &self.new_deny_tag,
-            TagFilterMessage::UpdateNewDenyTag,
-            TagFilterMessage::AddDenyTag,
-            TagFilterMessage::RemoveDenyTag,
-        );
+        let deny_section = self.view_tag_filter_section(TagKind::Deny);
         content.push(deny_section.into());
 
         // Clear all tag filters button
@@ -113,16 +104,36 @@ where
         settings::view_column(content).into()
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn view_tag_filter_section<'a>(
         &'a self,
-        section_title: String,
-        current_tags: &HashSet<String>,
-        new_tag_input: &String,
-        update_message: fn(String) -> TagFilterMessage,
-        add_message: TagFilterMessage,
-        remove_message_fn: fn(String) -> TagFilterMessage,
+        kind: TagKind,
     ) -> settings::Section<'a, TagFilterMessage> {
+        let (
+            section_title,
+            current_tags,
+            new_tag_input,
+            update_message,
+            add_message,
+            remove_message_fn,
+        ) = match kind {
+            TagKind::Allow => (
+                fl!("document-list-allow-tags"),
+                &self.allow_tags,
+                &self.new_allow_tag,
+                TagFilterMessage::UpdateNewAllowTag as fn(String) -> TagFilterMessage,
+                TagFilterMessage::AddAllowTag,
+                TagFilterMessage::RemoveAllowTag as fn(String) -> TagFilterMessage,
+            ),
+            TagKind::Deny => (
+                fl!("document-list-deny-tags"),
+                &self.deny_tags,
+                &self.new_deny_tag,
+                TagFilterMessage::UpdateNewDenyTag as fn(String) -> TagFilterMessage,
+                TagFilterMessage::AddDenyTag,
+                TagFilterMessage::RemoveDenyTag as fn(String) -> TagFilterMessage,
+            ),
+        };
+
         let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
 
         let mut section = settings::section().title(section_title);
