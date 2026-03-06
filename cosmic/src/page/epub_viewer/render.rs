@@ -21,9 +21,17 @@ use epub::TableCell;
 use epub::TextAlign;
 use epub::TextSpan;
 
-use crate::aggregator::Document;
 use crate::page::epub_viewer::BlockHighlight;
 use crate::page::epub_viewer::EpubViewerMessage;
+
+#[derive(Clone, Copy)]
+pub(super) struct RenderContext<'a> {
+    pub font_size: f32,
+    pub family: font::Family,
+    pub chapter_href: &'a str,
+    pub epub_document: Option<&'a EpubDocument>,
+    pub max_image_height: f32,
+}
 
 /// Render a partial paragraph (split at page boundary) using owned text and span data.
 /// The returned element is self-contained — it does not borrow from any local variables.
@@ -94,369 +102,322 @@ pub(super) fn render_partial_paragraph<'a>(
     }
 }
 
-pub(super) fn render_block<'a>(
-    block: &'a ContentBlock,
-    highlight: BlockHighlight,
-    font_size: f32,
-    family: font::Family,
-    document: &'a Document,
-    chapter_href: &'a str,
-    epub_document: Option<&'a EpubDocument>,
-    max_image_height: f32,
-) -> Element<'a, EpubViewerMessage> {
-    let inner = render_block_inner(
-        block,
-        font_size,
-        family,
-        document,
-        chapter_href,
-        epub_document,
-        max_image_height,
-    );
-    match highlight {
-        BlockHighlight::None => inner,
-        BlockHighlight::Current => widget::container(inner)
-            .style(|theme: &cosmic::Theme| widget::container::Style {
-                background: Some(highlight_background(theme).into()),
-                text_color: Some(highlight_text_color(theme)),
-                border: Border {
-                    radius: theme.cosmic().corner_radii.radius_xl.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
-                ..Default::default()
-            })
-            .width(Length::Fill)
-            .into(),
-        BlockHighlight::SearchMatch => widget::container(inner)
-            .style(|theme: &cosmic::Theme| widget::container::Style {
-                background: Some(search_match_background(theme).into()),
-                border: Border {
-                    radius: theme.cosmic().corner_radii.radius_s.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
-                ..Default::default()
-            })
-            .width(Length::Fill)
-            .into(),
-    }
-}
-
-fn render_block_inner<'a>(
-    block: &'a ContentBlock,
-    font_size: f32,
-    family: font::Family,
-    document: &'a Document,
-    chapter_href: &'a str,
-    epub_document: Option<&'a EpubDocument>,
-    max_image_height: f32,
-) -> Element<'a, EpubViewerMessage> {
-    let cosmic_theme::Spacing {
-        space_xxs, space_s, ..
-    } = theme::active().cosmic().spacing;
-
-    let font = Font {
-        family,
-        ..Font::default()
-    };
-
-    match block {
-        ContentBlock::Heading {
-            level,
-            spans,
-            text,
-            style,
-        } => {
-            let base_size = match level {
-                1 => font_size * 2.0,
-                2 => font_size * 1.75,
-                3 => font_size * 1.5,
-                4 => font_size * 1.25,
-                _ => font_size * 1.125,
-            };
-            let size = style
-                .font_size_em
-                .map(|em| em * base_size)
-                .unwrap_or(base_size);
-            let align = text_align_horizontal(style);
-            if spans.is_empty() {
-                return apply_text_align(
-                    match level {
-                        1 => widget::text::title1(text)
-                            .font(font)
-                            .width(Length::Fill)
-                            .align_x(align)
-                            .into(),
-                        2 => widget::text::title2(text)
-                            .font(font)
-                            .width(Length::Fill)
-                            .align_x(align)
-                            .into(),
-                        3 => widget::text::title3(text)
-                            .font(font)
-                            .width(Length::Fill)
-                            .align_x(align)
-                            .into(),
-                        4 => widget::text::title4(text)
-                            .font(font)
-                            .width(Length::Fill)
-                            .align_x(align)
-                            .into(),
-                        _ => widget::text::heading(text)
-                            .font(font)
-                            .width(Length::Fill)
-                            .align_x(align)
-                            .into(),
+impl<'a> RenderContext<'a> {
+    pub(super) fn render_block(
+        &self,
+        block: &'a ContentBlock,
+        highlight: BlockHighlight,
+    ) -> Element<'a, EpubViewerMessage> {
+        let inner = self.render_block_inner(block);
+        match highlight {
+            BlockHighlight::None => inner,
+            BlockHighlight::Current => widget::container(inner)
+                .style(|theme: &cosmic::Theme| widget::container::Style {
+                    background: Some(highlight_background(theme).into()),
+                    text_color: Some(highlight_text_color(theme)),
+                    border: Border {
+                        radius: theme.cosmic().corner_radii.radius_xl.into(),
+                        width: 0.0,
+                        color: Color::TRANSPARENT,
                     },
-                    style,
-                );
-            }
-            apply_text_align(render_spans(spans, size, family), style)
-        }
-        ContentBlock::Paragraph { spans, text, style } => {
-            let size = style
-                .font_size_em
-                .map(|em| em * font_size)
-                .unwrap_or(font_size);
-            let align = text_align_horizontal(style);
-            if spans.is_empty() {
-                return apply_text_align(
-                    widget::text::body(text)
-                        .size(font_size)
-                        .font(font)
-                        .width(Length::Fill)
-                        .align_x(align)
-                        .into(),
-                    style,
-                );
-            }
-            apply_text_align(render_spans(spans, size, family), style)
-        }
-        ContentBlock::Preformatted { text, .. } => widget::text::monotext(text)
-            .width(Length::Fill)
-            .apply(widget::container)
-            .padding([space_xxs, space_s])
-            .class(Container::Secondary)
-            .into(),
-        ContentBlock::BlockQuote { children } => {
-            let mut col = widget::column::with_capacity(children.len())
-                .spacing(space_xxs)
-                .width(Length::Fill);
-            for child in children {
-                col = col.push(render_block_inner(
-                    child,
-                    font_size,
-                    family,
-                    document,
-                    chapter_href,
-                    epub_document,
-                    max_image_height,
-                ));
-            }
-            widget::container(col)
-                .padding([space_xxs, space_s])
+                    ..Default::default()
+                })
                 .width(Length::Fill)
-                .into()
+                .into(),
+            BlockHighlight::SearchMatch => widget::container(inner)
+                .style(|theme: &cosmic::Theme| widget::container::Style {
+                    background: Some(search_match_background(theme).into()),
+                    border: Border {
+                        radius: theme.cosmic().corner_radii.radius_s.into(),
+                        width: 0.0,
+                        color: Color::TRANSPARENT,
+                    },
+                    ..Default::default()
+                })
+                .width(Length::Fill)
+                .into(),
         }
-        ContentBlock::UnorderedList { items } => {
-            let mut col = widget::column::with_capacity(items.len())
-                .spacing(space_xxs)
-                .width(Length::Fill);
-            for item in items {
-                if item.spans.is_empty() {
-                    col = col.push(
-                        widget::text::body(format!("  \u{2022} {}", item.text))
+    }
+
+    fn render_block_inner(&self, block: &'a ContentBlock) -> Element<'a, EpubViewerMessage> {
+        let font_size = self.font_size;
+        let family = self.family;
+        let chapter_href = self.chapter_href;
+        let epub_document = self.epub_document;
+        let max_image_height = self.max_image_height;
+
+        let cosmic_theme::Spacing {
+            space_xxs, space_s, ..
+        } = theme::active().cosmic().spacing;
+
+        let font = Font {
+            family,
+            ..Font::default()
+        };
+
+        match block {
+            ContentBlock::Heading {
+                level,
+                spans,
+                text,
+                style,
+            } => {
+                let base_size = match level {
+                    1 => font_size * 2.0,
+                    2 => font_size * 1.75,
+                    3 => font_size * 1.5,
+                    4 => font_size * 1.25,
+                    _ => font_size * 1.125,
+                };
+                let size = style
+                    .font_size_em
+                    .map(|em| em * base_size)
+                    .unwrap_or(base_size);
+                let align = text_align_horizontal(style);
+                if spans.is_empty() {
+                    return apply_text_align(
+                        match level {
+                            1 => widget::text::title1(text)
+                                .font(font)
+                                .width(Length::Fill)
+                                .align_x(align)
+                                .into(),
+                            2 => widget::text::title2(text)
+                                .font(font)
+                                .width(Length::Fill)
+                                .align_x(align)
+                                .into(),
+                            3 => widget::text::title3(text)
+                                .font(font)
+                                .width(Length::Fill)
+                                .align_x(align)
+                                .into(),
+                            4 => widget::text::title4(text)
+                                .font(font)
+                                .width(Length::Fill)
+                                .align_x(align)
+                                .into(),
+                            _ => widget::text::heading(text)
+                                .font(font)
+                                .width(Length::Fill)
+                                .align_x(align)
+                                .into(),
+                        },
+                        style,
+                    );
+                }
+                apply_text_align(render_spans(spans, size, family), style)
+            }
+            ContentBlock::Paragraph { spans, text, style } => {
+                let size = style
+                    .font_size_em
+                    .map(|em| em * font_size)
+                    .unwrap_or(font_size);
+                let align = text_align_horizontal(style);
+                if spans.is_empty() {
+                    return apply_text_align(
+                        widget::text::body(text)
                             .size(font_size)
                             .font(font)
-                            .width(Length::Fill),
+                            .width(Length::Fill)
+                            .align_x(align)
+                            .into(),
+                        style,
                     );
-                } else {
-                    col = col.push(render_list_item_spans(
-                        "  \u{2022} ".to_string(),
-                        &item.spans,
-                        font_size,
-                        family,
-                    ));
                 }
+                apply_text_align(render_spans(spans, size, family), style)
             }
-            col.into()
-        }
-        ContentBlock::OrderedList { start, items } => {
-            let mut col = widget::column::with_capacity(items.len())
-                .spacing(space_xxs)
-                .width(Length::Fill);
-            for (i, item) in items.iter().enumerate() {
-                let n = *start as usize + i;
-                if item.spans.is_empty() {
-                    col = col.push(
-                        widget::text::body(format!("  {n}. {}", item.text))
-                            .size(font_size)
-                            .font(font)
-                            .width(Length::Fill),
-                    );
-                } else {
-                    let prefix = format!("  {n}. ");
-                    col = col.push(render_list_item_spans(
-                        prefix,
-                        &item.spans,
-                        font_size,
-                        family,
-                    ));
-                }
-            }
-            col.into()
-        }
-        ContentBlock::Image { data, .. } if !data.is_empty() => {
-            let handle = widget::image::Handle::from_bytes(data.clone());
-            widget::image(handle)
-                .width(Length::Shrink)
-                .content_fit(cosmic::iced::ContentFit::ScaleDown)
+            ContentBlock::Preformatted { text, .. } => widget::text::monotext(text)
+                .width(Length::Fill)
                 .apply(widget::container)
-                .width(Length::Fill)
-                .max_height(max_image_height)
-                .align_x(Horizontal::Center)
-                .into()
-        }
-        ContentBlock::Image { alt, .. } => {
-            if !alt.is_empty() {
-                widget::text::body(format!("[{alt}]"))
-                    .font(font)
+                .padding([space_xxs, space_s])
+                .class(Container::Secondary)
+                .into(),
+            ContentBlock::BlockQuote { children } => {
+                let mut col = widget::column::with_capacity(children.len())
+                    .spacing(space_xxs)
+                    .width(Length::Fill);
+                for child in children {
+                    col = col.push(self.render_block_inner(child));
+                }
+                widget::container(col)
+                    .padding([space_xxs, space_s])
                     .width(Length::Fill)
                     .into()
-            } else {
-                widget::Space::new(Length::Fill, 0).into()
             }
-        }
-        ContentBlock::Svg { content, .. } => {
-            // Process SVG content to resolve embedded image references
-            let processed_content = if let Some(epub_doc) = epub_document {
-                epub::content::resolve_svg_images(content, chapter_href, &mut |img_path| {
-                    match epub_doc.resolve_resource(img_path) {
-                        Ok(img_data) => {
-                            let media_type = epub::content::guess_media_type(img_path);
-                            Some((img_data, media_type))
-                        }
-                        Err(_) => None,
-                    }
-                })
-            } else {
-                // Fallback to original content if no epub document is available
-                content.clone()
-            };
-
-            let handle = widget::svg::Handle::from_memory(processed_content.into_bytes());
-            widget::svg(handle)
-                .width(Length::Shrink)
-                .content_fit(cosmic::iced::ContentFit::ScaleDown)
-                .apply(widget::container)
-                .width(Length::Fill)
-                .max_height(max_image_height)
-                .align_x(Horizontal::Center)
-                .into()
-        }
-        ContentBlock::Table { rows } => render_table(rows, font_size, family),
-        ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
-        ContentBlock::Footnote { blocks, .. } => render_footnote(
-            blocks,
-            font_size,
-            family,
-            document,
-            chapter_href,
-            epub_document,
-        ),
-        ContentBlock::Figure {
-            blocks,
-            caption,
-            caption_text,
-        } => {
-            let caption_size = (font_size * 0.85).max(10.0);
-            let mut col = widget::column::with_capacity(blocks.len() + 1)
-                .spacing(space_xxs)
-                .width(Length::Fill);
-            for block in blocks {
-                col = col.push(render_block_inner(
-                    block,
-                    font_size,
-                    family,
-                    document,
-                    chapter_href,
-                    epub_document,
-                    max_image_height,
-                ));
-            }
-            if !caption.is_empty() {
-                col = col.push(render_spans(caption, caption_size, family));
-            } else if !caption_text.is_empty() {
-                let caption_el: Element<'_, EpubViewerMessage> =
-                    widget::text::caption(caption_text.as_str())
-                        .size(caption_size)
-                        .font(Font {
+            ContentBlock::UnorderedList { items } => {
+                let mut col = widget::column::with_capacity(items.len())
+                    .spacing(space_xxs)
+                    .width(Length::Fill);
+                for item in items {
+                    if item.spans.is_empty() {
+                        col = col.push(
+                            widget::text::body(format!("  \u{2022} {}", item.text))
+                                .size(font_size)
+                                .font(font)
+                                .width(Length::Fill),
+                        );
+                    } else {
+                        col = col.push(render_list_item_spans(
+                            "  \u{2022} ".to_string(),
+                            &item.spans,
+                            font_size,
                             family,
-                            style: font::Style::Italic,
-                            ..Font::default()
-                        })
-                        .width(Length::Fill)
-                        .align_x(Horizontal::Center)
-                        .into();
-                col = col.push(caption_el);
+                        ));
+                    }
+                }
+                col.into()
             }
-            col.into()
-        }
-        ContentBlock::Anchor { .. } => {
-            widget::Space::new(Length::Fixed(0.0), Length::Fixed(0.0)).into()
-        }
-    }
-}
-
-fn render_footnote<'a>(
-    blocks: &'a [ContentBlock],
-    font_size: f32,
-    family: font::Family,
-    document: &'a Document,
-    chapter_href: &'a str,
-    epub_document: Option<&'a EpubDocument>,
-) -> Element<'a, EpubViewerMessage> {
-    let cosmic_theme::Spacing {
-        space_xxs, space_s, ..
-    } = theme::active().cosmic().spacing;
-
-    let caption_size = (font_size * 0.8).max(10.0);
-
-    let mut col = widget::column::with_capacity(blocks.len())
-        .spacing(space_xxs)
-        .width(Length::Fill);
-
-    for block in blocks {
-        let el: Element<_> = match block {
-            ContentBlock::Paragraph { spans, text, .. } => {
-                if spans.is_empty() {
-                    widget::text::caption(text)
-                        .size(caption_size)
+            ContentBlock::OrderedList { start, items } => {
+                let mut col = widget::column::with_capacity(items.len())
+                    .spacing(space_xxs)
+                    .width(Length::Fill);
+                for (i, item) in items.iter().enumerate() {
+                    let n = *start as usize + i;
+                    if item.spans.is_empty() {
+                        col = col.push(
+                            widget::text::body(format!("  {n}. {}", item.text))
+                                .size(font_size)
+                                .font(font)
+                                .width(Length::Fill),
+                        );
+                    } else {
+                        let prefix = format!("  {n}. ");
+                        col = col.push(render_list_item_spans(
+                            prefix,
+                            &item.spans,
+                            font_size,
+                            family,
+                        ));
+                    }
+                }
+                col.into()
+            }
+            ContentBlock::Image { data, .. } if !data.is_empty() => {
+                let handle = widget::image::Handle::from_bytes(data.clone());
+                widget::image(handle)
+                    .width(Length::Shrink)
+                    .content_fit(cosmic::iced::ContentFit::ScaleDown)
+                    .apply(widget::container)
+                    .width(Length::Fill)
+                    .max_height(max_image_height)
+                    .align_x(Horizontal::Center)
+                    .into()
+            }
+            ContentBlock::Image { alt, .. } => {
+                if !alt.is_empty() {
+                    widget::text::body(format!("[{alt}]"))
+                        .font(font)
                         .width(Length::Fill)
                         .into()
                 } else {
-                    render_spans(spans, caption_size, family)
+                    widget::Space::new(Length::Fill, 0).into()
                 }
             }
-            _ => render_block_inner(
-                block,
-                font_size,
-                family,
-                document,
-                chapter_href,
-                epub_document,
-                f32::MAX,
-            ),
-        };
-        col = col.push(el);
+            ContentBlock::Svg { content, .. } => {
+                // Process SVG content to resolve embedded image references
+                let processed_content = if let Some(epub_doc) = epub_document {
+                    epub::content::resolve_svg_images(content, chapter_href, &mut |img_path| {
+                        match epub_doc.resolve_resource(img_path) {
+                            Ok(img_data) => {
+                                let media_type = epub::content::guess_media_type(img_path);
+                                Some((img_data, media_type))
+                            }
+                            Err(_) => None,
+                        }
+                    })
+                } else {
+                    // Fallback to original content if no epub document is available
+                    content.clone()
+                };
+
+                let handle = widget::svg::Handle::from_memory(processed_content.into_bytes());
+                widget::svg(handle)
+                    .width(Length::Shrink)
+                    .content_fit(cosmic::iced::ContentFit::ScaleDown)
+                    .apply(widget::container)
+                    .width(Length::Fill)
+                    .max_height(max_image_height)
+                    .align_x(Horizontal::Center)
+                    .into()
+            }
+            ContentBlock::Table { rows } => render_table(rows, font_size, family),
+            ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
+            ContentBlock::Footnote { blocks, .. } => self.render_footnote(blocks),
+            ContentBlock::Figure {
+                blocks,
+                caption,
+                caption_text,
+            } => {
+                let caption_size = (font_size * 0.85).max(10.0);
+                let mut col = widget::column::with_capacity(blocks.len() + 1)
+                    .spacing(space_xxs)
+                    .width(Length::Fill);
+                for block in blocks {
+                    col = col.push(self.render_block_inner(block));
+                }
+                if !caption.is_empty() {
+                    col = col.push(render_spans(caption, caption_size, family));
+                } else if !caption_text.is_empty() {
+                    let caption_el: Element<'_, EpubViewerMessage> =
+                        widget::text::caption(caption_text.as_str())
+                            .size(caption_size)
+                            .font(Font {
+                                family,
+                                style: font::Style::Italic,
+                                ..Font::default()
+                            })
+                            .width(Length::Fill)
+                            .align_x(Horizontal::Center)
+                            .into();
+                    col = col.push(caption_el);
+                }
+                col.into()
+            }
+            ContentBlock::Anchor { .. } => {
+                widget::Space::new(Length::Fixed(0.0), Length::Fixed(0.0)).into()
+            }
+        }
     }
 
-    widget::container(col)
-        .padding([space_xxs, space_s])
-        .class(Container::Secondary)
-        .width(Length::Fill)
-        .into()
+    fn render_footnote(&self, blocks: &'a [ContentBlock]) -> Element<'a, EpubViewerMessage> {
+        let cosmic_theme::Spacing {
+            space_xxs, space_s, ..
+        } = theme::active().cosmic().spacing;
+
+        let caption_size = (self.font_size * 0.8).max(10.0);
+        let inner_ctx = RenderContext {
+            max_image_height: f32::MAX,
+            ..*self
+        };
+
+        let mut col = widget::column::with_capacity(blocks.len())
+            .spacing(space_xxs)
+            .width(Length::Fill);
+
+        for block in blocks {
+            let el: Element<_> = match block {
+                ContentBlock::Paragraph { spans, text, .. } => {
+                    if spans.is_empty() {
+                        widget::text::caption(text)
+                            .size(caption_size)
+                            .width(Length::Fill)
+                            .into()
+                    } else {
+                        render_spans(spans, caption_size, self.family)
+                    }
+                }
+                _ => inner_ctx.render_block_inner(block),
+            };
+            col = col.push(el);
+        }
+
+        widget::container(col)
+            .padding([space_xxs, space_s])
+            .class(Container::Secondary)
+            .width(Length::Fill)
+            .into()
+    }
 }
 
 fn render_table(

@@ -48,7 +48,7 @@ use crate::fl;
 use crate::fonts::fonts;
 use crate::layout::full_page;
 use crate::page::Page;
-use crate::page::epub_viewer::render::render_block;
+use crate::page::epub_viewer::render::RenderContext;
 use crate::page::epub_viewer::render::render_partial_paragraph;
 
 // --- Block highlight ---
@@ -770,18 +770,19 @@ impl EpubViewer {
                     } else {
                         BlockHighlight::None
                     };
-                    column = column.push(render_block(
-                        block,
-                        highlight,
-                        self.base_font_size,
-                        family,
-                        &self.document,
-                        &chapter.href,
-                        self.epub_document
-                            .as_ref()
-                            .map(CloneableEpubDocument::as_ref),
-                        f32::MAX,
-                    ));
+                    column = column.push(
+                        RenderContext {
+                            font_size: self.base_font_size,
+                            family,
+                            chapter_href: &chapter.href,
+                            epub_document: self
+                                .epub_document
+                                .as_ref()
+                                .map(CloneableEpubDocument::as_ref),
+                            max_image_height: f32::MAX,
+                        }
+                        .render_block(block, highlight),
+                    );
                 }
             }
 
@@ -939,32 +940,30 @@ impl EpubViewer {
                                     family,
                                 )
                             } else {
-                                render_block(
-                                    block,
-                                    highlight,
-                                    base_font_size,
+                                RenderContext {
+                                    font_size: base_font_size,
                                     family,
-                                    &self.document,
-                                    &chapter.href,
-                                    self.epub_document
+                                    chapter_href: &chapter.href,
+                                    epub_document: self
+                                        .epub_document
                                         .as_ref()
                                         .map(CloneableEpubDocument::as_ref),
-                                    layout.page_height * 0.9,
-                                )
+                                    max_image_height: layout.page_height * 0.9,
+                                }
+                                .render_block(block, highlight)
                             }
                         } else {
-                            render_block(
-                                block,
-                                highlight,
-                                base_font_size,
+                            RenderContext {
+                                font_size: base_font_size,
                                 family,
-                                &self.document,
-                                &chapter.href,
-                                self.epub_document
+                                chapter_href: &chapter.href,
+                                epub_document: self
+                                    .epub_document
                                     .as_ref()
                                     .map(CloneableEpubDocument::as_ref),
-                                layout.page_height * 0.9,
-                            )
+                                max_image_height: layout.page_height * 0.9,
+                            }
+                            .render_block(block, highlight)
                         };
                         column = column.push(el);
                     }
