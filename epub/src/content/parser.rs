@@ -176,6 +176,18 @@ impl ContentSink {
         if let Some(mut root) = state.stack.pop() {
             root.flush_text();
             state.output.extend(root.children);
+            // Convert dangling root-level spans (e.g. from a standalone <a> directly
+            // in <body>) into a trailing paragraph so they are not silently discarded.
+            if !root.spans.is_empty() {
+                let text = plain_text_from_spans(&root.spans).trim().to_string();
+                if !text.is_empty() {
+                    state.output.push(ContentBlock::Paragraph {
+                        text,
+                        spans: root.spans,
+                        style: BlockStyle::default(),
+                    });
+                }
+            }
         }
         (state.output, state.pending_images)
     }
@@ -1475,6 +1487,12 @@ fn resolve_images<F>(
             }
             ContentBlock::BlockQuote { children } => {
                 resolve_images(children, pending, resolve_image);
+            }
+            ContentBlock::Figure { blocks, .. } => {
+                resolve_images(blocks, pending, resolve_image);
+            }
+            ContentBlock::Footnote { blocks, .. } => {
+                resolve_images(blocks, pending, resolve_image);
             }
             _ => {}
         }
@@ -3151,6 +3169,66 @@ mod tests {
         match &blocks[0] {
             ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Orphan caption."),
             other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn image_inside_figure_is_resolved() {
+        // Images inside <figure> must be resolved, not left as empty placeholders.
+        let png_data = vec![0x89, 0x50, 0x4E, 0x47];
+        let data_clone = png_data.clone();
+        let blocks = parse_xhtml(
+            b"<figure><img src=\"../Images/photo.png\" alt=\"A photo\"/><figcaption>Caption</figcaption></figure>",
+            "OEBPS/Text/ch1.xhtml",
+            &StyleSheet::empty(),
+            &mut move |path| {
+                if path == "OEBPS/Images/photo.png" {
+                    Some((data_clone.clone(), "image/png".to_string()))
+                } else {
+                    None
+                }
+            },
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Figure {
+                blocks,
+                caption_text,
+                ..
+            } => {
+                assert_eq!(caption_text, "Caption");
+                assert_eq!(blocks.len(), 1);
+                match &blocks[0] {
+                    ContentBlock::Image { alt, data, .. } => {
+                        assert_eq!(alt, "A photo");
+                        assert_eq!(data, &png_data);
+                    }
+                    other => panic!("expected Image inside Figure, got {other:?}"),
+                }
+            }
+            other => panic!("expected Figure, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn standalone_anchor_at_body_level_becomes_paragraph() {
+        // A bare <a href="..."> directly in <body> (not wrapped in <p>) must not be dropped.
+        let blocks = parse(
+            r#"<figure><img src="x.png" alt="img"/></figure><a href="desc.xhtml">Follow for extended description</a>"#,
+        );
+        // Should produce: Figure + Paragraph with link text
+        assert_eq!(
+            blocks.len(),
+            2,
+            "expected Figure + Paragraph, got {blocks:?}"
+        );
+        match &blocks[1] {
+            ContentBlock::Paragraph { text, spans, .. } => {
+                assert_eq!(text, "Follow for extended description");
+                assert_eq!(spans.len(), 1);
+                assert_eq!(spans[0].link.as_deref(), Some("desc.xhtml"));
+            }
+            other => panic!("expected Paragraph for anchor, got {other:?}"),
         }
     }
 }
