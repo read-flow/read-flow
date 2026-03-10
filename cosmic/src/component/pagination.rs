@@ -70,7 +70,8 @@ impl Pagination {
     }
 
     fn total_pages(&self) -> usize {
-        self.collection_size / self.page_size + 1
+        let collection_size = self.collection_size.saturating_sub(1);
+        collection_size / self.page_size + 1
     }
 
     pub fn view(&self) -> Element<'_, PaginationMessage> {
