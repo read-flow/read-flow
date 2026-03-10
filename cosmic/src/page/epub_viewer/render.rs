@@ -323,7 +323,12 @@ impl<'a> RenderContext<'a> {
                                 let media_type = epub::content::guess_media_type(img_path);
                                 Some((img_data, media_type))
                             }
-                            Err(_) => None,
+                            Err(e) => {
+                                tracing::info!(
+                                    "SVG image resource not found in chapter {chapter_href}: {img_path} ({e})"
+                                );
+                                None
+                            }
                         }
                     })
                 } else {

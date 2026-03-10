@@ -26,6 +26,7 @@ use cosmic::iced::keyboard::Key;
 use cosmic::iced::keyboard::Modifiers;
 use cosmic::iced::keyboard::key::Named;
 use cosmic::iced::widget::scrollable;
+use cosmic::iced::widget::text_editor;
 use cosmic::theme;
 use cosmic::theme::Container;
 use cosmic::widget;
@@ -382,6 +383,7 @@ pub enum EpubViewerMessage {
     SelectChapter(usize),
     SelectNavEntry(usize),
     ShowRawHtml(bool),
+    RawHtmlAction(text_editor::Action),
     Scrolled(scrollable::Viewport),
     FollowLink(String),
     Key(Modifiers, Key, Option<SmolStr>),
@@ -437,6 +439,7 @@ pub struct EpubViewer {
     saved_position: Option<SavedPosition>,
     modifiers: Modifiers,
     show_raw_html: bool,
+    raw_html_content: text_editor::Content,
     content_scroll_id: widget::Id,
     /// Current reading mode: scroll (default) or paginated.
     view_mode: ViewMode,
@@ -513,6 +516,7 @@ impl EpubViewer {
             saved_position: None,
             modifiers: Modifiers::default(),
             show_raw_html: false,
+            raw_html_content: text_editor::Content::new(),
             content_scroll_id: widget::Id::unique(),
             view_mode: saved_prefs.view_mode,
             current_page: 0,
@@ -757,8 +761,13 @@ impl EpubViewer {
                 .width(Length::Fill);
 
             if self.show_raw_html {
-                column = column
-                    .push(widget::text::monotext(chapter.raw_html.as_str()).width(Length::Fill));
+                column = column.push(
+                    widget::text_editor(&self.raw_html_content)
+                        .on_action(EpubViewerMessage::RawHtmlAction)
+                        .font(cosmic::font::mono())
+                        .apply(widget::container)
+                        .width(Length::Fill),
+                );
             } else {
                 let family = self.font_family.to_family();
                 for (idx, block) in chapter.blocks.iter().enumerate() {
@@ -841,11 +850,10 @@ impl EpubViewer {
             // In raw HTML mode, fall back to a simple scrollable view.
             if show_raw_html {
                 return widget::container(
-                    widget::scrollable(
-                        widget::text::monotext(chapter.raw_html.as_str()).width(Length::Fill),
-                    )
-                    .width(Length::Fill)
-                    .height(Length::Fill),
+                    widget::text_editor(&self.raw_html_content)
+                        .on_action(EpubViewerMessage::RawHtmlAction)
+                        .font(cosmic::font::mono())
+                        .height(Length::Fill),
                 )
                 .style(|theme: &cosmic::Theme| desk_background(theme))
                 .width(Length::Fill)
@@ -1313,6 +1321,7 @@ impl Page for EpubViewer {
                         .unwrap_or(0)
                         .min(self.chapters.len() - 1);
                 }
+                self.sync_raw_html_content();
                 // Restore scroll position once content is available.
                 // In scroll mode, prefer block_index over raw scroll_y so
                 // the position is layout-independent (accurate across devices
@@ -1356,6 +1365,7 @@ impl Page for EpubViewer {
                     && c < self.chapters.len()
                 {
                     self.active_chapter = c;
+                    self.sync_raw_html_content();
                 }
                 // Restore view mode if it was persisted.
                 if let Some(mode) = pos.view_mode {
@@ -1405,14 +1415,15 @@ impl Page for EpubViewer {
                     self.highlighted_block = None;
                     self.search_matches.clear();
                     self.search_current = 0;
+                    self.sync_raw_html_content();
                 }
                 Task::none()
             }
             EpubViewerMessage::SelectNavEntry(nav_idx) => {
                 if let Some(entry) = self.nav_entries.get(nav_idx) {
                     let (base, fragment) = match entry.href.split_once('#') {
-                        Some((b, f)) => (b, Some(f)),
-                        None => (entry.href.as_str(), None),
+                        Some((b, f)) => (b.to_owned(), Some(f.to_owned())),
+                        None => (entry.href.clone(), None),
                     };
                     if let Some(idx) = self.chapters.iter().position(|c| c.href == base) {
                         self.active_chapter = idx;
@@ -1422,6 +1433,7 @@ impl Page for EpubViewer {
                         self.highlighted_block = None;
                         self.search_matches.clear();
                         self.search_current = 0;
+                        self.sync_raw_html_content();
 
                         // Navigate to the fragment position within the chapter.
                         if let Some(frag) = fragment.filter(|f| !f.is_empty()) {
@@ -1430,7 +1442,7 @@ impl Page for EpubViewer {
                             // Find the Anchor block index — used for both highlighting
                             // and paginated navigation.
                             let block_idx = chapter.blocks.iter().position(
-                                |b| matches!(b, ContentBlock::Anchor { id } if id == frag),
+                                |b| matches!(b, ContentBlock::Anchor { id } if id == &frag),
                             );
 
                             let mut nav_task = Task::none();
@@ -1442,7 +1454,7 @@ impl Page for EpubViewer {
                                         let mut fs = self.font_system.borrow_mut();
                                         compute_anchor_y(
                                             &chapter.blocks,
-                                            frag,
+                                            &frag,
                                             content_w,
                                             self.base_font_size,
                                             &mut fs,
@@ -1502,6 +1514,12 @@ impl Page for EpubViewer {
                 self.show_raw_html = show;
                 Task::none()
             }
+            EpubViewerMessage::RawHtmlAction(action) => {
+                if !action.is_edit() {
+                    self.raw_html_content.perform(action);
+                }
+                Task::none()
+            }
             EpubViewerMessage::Scrolled(viewport) => {
                 self.scroll_y = viewport.absolute_offset().y;
                 Task::none()
@@ -1517,6 +1535,10 @@ impl Page for EpubViewer {
                     if let Some(frag) = fragment.filter(|f| !f.is_empty())
                         && let Some(chapter) = self.chapters.get(self.active_chapter)
                     {
+                        tracing::info!(
+                            "following fragment link #{frag} in chapter {}",
+                            chapter.href
+                        );
                         // Compute scroll-mode target using accurate shaped measurement.
                         let content_w = 800.0 * (self.content_width_pct / 100.0);
                         let target_y = {
@@ -1529,6 +1551,9 @@ impl Page for EpubViewer {
                                 &mut fs,
                             )
                         };
+                        if target_y.is_none() {
+                            tracing::info!("anchor #{frag} not found in chapter {}", chapter.href);
+                        }
                         if let Some(target_y) = target_y {
                             // Navigating to a footnote: save reading position (once).
                             if self.saved_position.is_none() {
@@ -1584,6 +1609,10 @@ impl Page for EpubViewer {
                 if let Some(current) = self.chapters.get(self.active_chapter) {
                     let base = epub::content::base_dir(&current.href);
                     let resolved = epub::content::resolve_href(base, path);
+                    tracing::info!(
+                        "following cross-chapter link: {path} → {resolved} (from {})",
+                        current.href
+                    );
                     if let Some(idx) = self
                         .chapters
                         .iter()
@@ -1593,6 +1622,12 @@ impl Page for EpubViewer {
                         self.scroll_y = 0.0;
                         self.current_page = 0;
                         self.saved_position = None;
+                        self.sync_raw_html_content();
+                    } else {
+                        tracing::info!(
+                            "cross-chapter link target not found among {} chapters: {resolved}",
+                            self.chapters.len()
+                        );
                     }
                 }
                 Task::none()
@@ -1620,6 +1655,7 @@ impl Page for EpubViewer {
                         if self.active_chapter > 0 {
                             self.active_chapter -= 1;
                             self.scroll_y = 0.0;
+                            self.sync_raw_html_content();
                         }
                         Task::none()
                     }
@@ -1630,6 +1666,7 @@ impl Page for EpubViewer {
                         if self.active_chapter + 1 < self.chapters.len() {
                             self.active_chapter += 1;
                             self.scroll_y = 0.0;
+                            self.sync_raw_html_content();
                         }
                         Task::none()
                     }
@@ -1669,6 +1706,7 @@ impl Page for EpubViewer {
                     self.active_chapter += 1;
                     self.current_page = 0;
                     self.maybe_repaginate();
+                    self.sync_raw_html_content();
                 }
                 Task::none()
             }
@@ -1683,6 +1721,7 @@ impl Page for EpubViewer {
                     self.active_chapter -= 1;
                     self.maybe_repaginate();
                     self.current_page = self.total_pages().saturating_sub(1);
+                    self.sync_raw_html_content();
                 }
                 Task::none()
             }
@@ -1999,7 +2038,12 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>, EpubDocument) {
                                 let media_type = epub::content::guess_media_type(img_path);
                                 Some((img_data, media_type))
                             }
-                            Err(_) => None,
+                            Err(e) => {
+                                tracing::info!(
+                                    "image resource not found in chapter {href}: {img_path} ({e})"
+                                );
+                                None
+                            }
                         }
                     });
                 (blocks, raw)
@@ -2576,6 +2620,14 @@ fn paginate_blocks(
 }
 
 impl EpubViewer {
+    fn sync_raw_html_content(&mut self) {
+        self.raw_html_content = self
+            .chapters
+            .get(self.active_chapter)
+            .map(|ch| text_editor::Content::with_text(&ch.raw_html))
+            .unwrap_or_default();
+    }
+
     /// Re-paginate the active chapter if the viewport size has changed.
     fn maybe_repaginate(&mut self) {
         if self.view_mode != ViewMode::Paginated {

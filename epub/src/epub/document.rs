@@ -112,9 +112,10 @@ impl Document for EpubDocument {
 
     fn resolve_resource(&self, href: &str) -> Result<Vec<u8>> {
         let mut archive = self.archive.write().unwrap();
-        let mut file = archive
-            .by_name(href)
-            .map_err(|_| EpubError::ResourceNotFound(href.to_string()))?;
+        let mut file = archive.by_name(href).map_err(|_| {
+            tracing::info!("resource not found in EPUB archive: {href}");
+            EpubError::ResourceNotFound(href.to_string())
+        })?;
         let mut buf = Vec::new();
         std::io::Read::read_to_end(&mut file, &mut buf)?;
         Ok(buf)
