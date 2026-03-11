@@ -21,6 +21,7 @@ use epub::TableCell;
 use epub::TextAlign;
 use epub::TextSpan;
 
+use crate::fl;
 use crate::page::epub_viewer::BlockHighlight;
 use crate::page::epub_viewer::EpubViewerMessage;
 
@@ -233,10 +234,18 @@ impl<'a> RenderContext<'a> {
                 } else {
                     render_spans(spans, font_size, font::Family::Monospace)
                 };
-                widget::container(inner)
+                let code_block = widget::container(inner)
                     .padding([space_xxs, space_s])
                     .class(Container::Secondary)
-                    .into()
+                    .width(Length::Fill);
+                let copy_button = widget::row::with_children(vec![
+                    widget::horizontal_space().width(Length::Fill).into(),
+                    widget::button::icon(widget::icon::from_name("edit-copy-symbolic").size(16))
+                        .on_press(EpubViewerMessage::CopyCodeBlock(text.clone()))
+                        .tooltip(fl!("epub-viewer-copy-code"))
+                        .into(),
+                ]);
+                cosmic::iced::widget::stack(vec![code_block.into(), copy_button.into()]).into()
             }
             ContentBlock::BlockQuote { children } => {
                 let mut col = widget::column::with_capacity(children.len())

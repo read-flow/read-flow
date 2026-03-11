@@ -419,6 +419,8 @@ pub enum EpubViewerMessage {
     SearchPrevious,
     /// Close and clear the search bar.
     CloseSearch,
+    /// Copy a code block's plain text to the clipboard.
+    CopyCodeBlock(String),
 }
 
 // --- EpubViewer page ---
@@ -1870,6 +1872,7 @@ impl Page for EpubViewer {
                 self.highlighted_block = None;
                 Task::none()
             }
+            EpubViewerMessage::CopyCodeBlock(text) => cosmic::iced::clipboard::write(text),
             EpubViewerMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }
