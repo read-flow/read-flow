@@ -227,12 +227,17 @@ impl<'a> RenderContext<'a> {
                 }
                 apply_text_align(render_spans(spans, size, family), style)
             }
-            ContentBlock::Preformatted { text, .. } => widget::text::monotext(text)
-                .width(Length::Fill)
-                .apply(widget::container)
-                .padding([space_xxs, space_s])
-                .class(Container::Secondary)
-                .into(),
+            ContentBlock::Preformatted { text, spans, .. } => {
+                let inner: Element<'a, EpubViewerMessage> = if spans.is_empty() {
+                    widget::text::monotext(text).width(Length::Fill).into()
+                } else {
+                    render_spans(spans, font_size, font::Family::Monospace)
+                };
+                widget::container(inner)
+                    .padding([space_xxs, space_s])
+                    .class(Container::Secondary)
+                    .into()
+            }
             ContentBlock::BlockQuote { children } => {
                 let mut col = widget::column::with_capacity(children.len())
                     .spacing(space_xxs)

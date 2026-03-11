@@ -2169,6 +2169,38 @@ mod tests {
     }
 
     #[test]
+    fn pre_with_css_class_colors_applied() {
+        // Pandoc syntax-highlighting: `code span.kw` rules should apply color to
+        // `<span class="kw">` inside `<pre><code>`.
+        use crate::content::stylesheet::parse_css;
+        let css = "code span.kw { color: #007020; font-weight: bold; }
+                   code span.co { color: #60a0b0; font-style: italic; }";
+        let stylesheet = parse_css(css);
+        let html = r#"<pre class="sourceCode"><code class="sourceCode rust"><span class="kw">fn</span> main() <span class="co">// comment</span></code></pre>"#;
+        let blocks = parse_xhtml(
+            html.as_bytes(),
+            "OEBPS/Text/ch1.xhtml",
+            &stylesheet,
+            &mut |_| None,
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Preformatted { spans, .. } => {
+                let kw = spans.iter().find(|s| s.text == "fn").expect("kw span");
+                assert_eq!(kw.color, Some([0x00, 0x70, 0x20]), "keyword color");
+                assert!(kw.style.bold, "keyword bold");
+                let co = spans
+                    .iter()
+                    .find(|s| s.text == "// comment")
+                    .expect("co span");
+                assert_eq!(co.color, Some([0x60, 0xa0, 0xb0]), "comment color");
+                assert!(co.style.italic, "comment italic");
+            }
+            other => panic!("expected Preformatted, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn pre_with_styled_spans_preserves_whitespace() {
         // <span> is a TRANSPARENT_TAG and goes through block-level handling.
         // Whitespace inside spans nested in <pre> must NOT be trimmed.

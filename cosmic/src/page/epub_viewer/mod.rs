@@ -2102,17 +2102,14 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>, EpubDocument) {
     (title, chapters, epub_doc)
 }
 
-/// Extract `<link rel="stylesheet" href="...">` references from XHTML and load
-/// the stylesheets from the EPUB archive. Returns a merged `StyleSheet`.
+/// Extract `<link rel="stylesheet" href="...">` references and inline `<style>` blocks
+/// from XHTML and load/parse them into a merged `StyleSheet`.
 fn load_chapter_stylesheets(xhtml: &str, chapter_href: &str, doc: &EpubDocument) -> StyleSheet {
     let mut stylesheet = StyleSheet::empty();
     let base = epub::content::base_dir(chapter_href);
 
-    // Simple scan for <link> tags in the <head> — no need for a full parser.
-    // Look for patterns like: <link rel="stylesheet" href="..." />
+    // Extract linked external stylesheets: <link rel="stylesheet" href="..." />
     for segment in xhtml.split("<link") {
-        // Must be in a tag context (i.e. followed by attributes and '>'),
-        // and must have rel="stylesheet".
         let Some(end) = segment.find('>') else {
             continue;
         };
@@ -2121,7 +2118,6 @@ fn load_chapter_stylesheets(xhtml: &str, chapter_href: &str, doc: &EpubDocument)
         if !lower.contains("stylesheet") {
             continue;
         }
-        // Extract href value
         let href = extract_attr_value(tag_content, "href");
         let Some(href) = href else { continue };
 
@@ -2136,6 +2132,25 @@ fn load_chapter_stylesheets(xhtml: &str, chapter_href: &str, doc: &EpubDocument)
                 tracing::debug!("failed to load stylesheet {resolved}: {e}");
             }
         }
+    }
+
+    // Extract inline <style> blocks from the <head>.
+    let lower_xhtml = xhtml.to_ascii_lowercase();
+    let mut search_start = 0;
+    while let Some(tag_start) = lower_xhtml[search_start..].find("<style") {
+        let abs_tag_start = search_start + tag_start;
+        // Find the closing '>' of the opening tag (may have attributes like type="text/css")
+        let Some(tag_end) = lower_xhtml[abs_tag_start..].find('>') else {
+            break;
+        };
+        let content_start = abs_tag_start + tag_end + 1;
+        let Some(close_pos) = lower_xhtml[content_start..].find("</style") else {
+            break;
+        };
+        let css_text = &xhtml[content_start..content_start + close_pos];
+        let sheet = epub::content::parse_css(css_text);
+        stylesheet.merge(sheet);
+        search_start = content_start + close_pos + "</style".len();
     }
 
     stylesheet

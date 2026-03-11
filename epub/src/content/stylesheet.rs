@@ -150,10 +150,13 @@ fn parse_rules(text: &str) -> StyleSheet {
 
 /// Parse a single simple CSS selector.
 /// Returns `None` for selectors we don't support (combinators, pseudo-classes, IDs, etc.).
+///
+/// For descendant selectors (space-separated, e.g. `code span.kw`), only the last
+/// segment is used. This handles Pandoc-style syntax-highlighting rules correctly.
 fn parse_selector(s: &str) -> Option<CssSelector> {
     let s = s.trim();
-    // Reject selectors with combinators or pseudo-classes
-    if s.contains(' ') || s.contains('>') || s.contains('+') || s.contains('~') || s.contains(':') {
+    // Reject selectors with child/sibling combinators or pseudo-classes
+    if s.contains('>') || s.contains('+') || s.contains('~') || s.contains(':') {
         return None;
     }
     // Reject ID selectors
@@ -164,6 +167,8 @@ fn parse_selector(s: &str) -> Option<CssSelector> {
     if s.contains('[') {
         return None;
     }
+    // For descendant selectors (e.g. `code span.kw`), use only the last segment.
+    let s = s.split_whitespace().last().unwrap_or(s);
 
     if let Some(dot_pos) = s.find('.') {
         let tag_part = &s[..dot_pos];
@@ -307,12 +312,30 @@ mod tests {
 
     #[test]
     fn combinator_selectors_ignored() {
-        let sheet = parse_css("div p { color: red; }");
+        // Child/sibling combinators are still rejected
+        let sheet = parse_css("div > p { color: red; }");
+        assert_eq!(sheet.rules.len(), 0, "child combinator should be ignored");
+        let sheet = parse_css("div + p { color: red; }");
         assert_eq!(
             sheet.rules.len(),
             0,
-            "descendant combinator should be ignored"
+            "adjacent sibling combinator should be ignored"
         );
+    }
+
+    #[test]
+    fn descendant_selector_uses_last_segment() {
+        // Pandoc syntax-highlighting pattern: `code span.kw { color: green; }`
+        // should be treated as `span.kw { color: green; }`.
+        let sheet = parse_css("code span.kw { color: #007020; font-weight: bold; }");
+        assert_eq!(sheet.rules.len(), 1, "should parse one rule");
+        assert_eq!(
+            sheet.rules[0].0,
+            CssSelector::TagAndClass("span".into(), "kw".into())
+        );
+        let resolved = sheet.resolve("span", "kw");
+        assert_eq!(resolved.color, Some([0x00, 0x70, 0x20]));
+        assert!(resolved.inline.bold);
     }
 
     #[test]
