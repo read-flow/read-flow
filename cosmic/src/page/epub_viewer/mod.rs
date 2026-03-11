@@ -1623,6 +1623,43 @@ impl Page for EpubViewer {
                         self.current_page = 0;
                         self.saved_position = None;
                         self.sync_raw_html_content();
+                    } else if let Some(epub_doc) = &self.epub_document {
+                        // Target is not in the spine (e.g. linear="no" item).
+                        // Try to load it on-demand from the archive.
+                        let doc = epub_doc.as_ref();
+                        if let Ok(data) = doc.resolve_resource(&resolved) {
+                            let raw_html = String::from_utf8_lossy(&data).into_owned();
+                            let stylesheet = load_chapter_stylesheets(&raw_html, &resolved, doc);
+                            let blocks = epub::content::parse_xhtml(
+                                &data,
+                                &resolved,
+                                &stylesheet,
+                                &mut |img_path| match doc.resolve_resource(img_path) {
+                                    Ok(img_data) => {
+                                        let media_type = epub::content::guess_media_type(img_path);
+                                        Some((img_data, media_type))
+                                    }
+                                    Err(_) => None,
+                                },
+                            );
+                            self.chapters.push(EpubChapter {
+                                label: resolved.clone(),
+                                href: resolved.clone(),
+                                blocks,
+                                raw_html,
+                            });
+                            self.active_chapter = self.chapters.len() - 1;
+                            self.scroll_y = 0.0;
+                            self.current_page = 0;
+                            self.saved_position = None;
+                            self.sync_raw_html_content();
+                        } else {
+                            tracing::info!(
+                                "cross-chapter link target not found among {} chapters \
+                                 and not in archive: {resolved}",
+                                self.chapters.len()
+                            );
+                        }
                     } else {
                         tracing::info!(
                             "cross-chapter link target not found among {} chapters: {resolved}",
