@@ -211,6 +211,7 @@ settings-epub-viewer = EPUB viewer preference
 settings-epub-viewer-description = Choose which viewer opens EPUB files
 settings-epub-viewer-native = Native EPUB viewer (experimental)
 settings-epub-viewer-mupdf = MuPDF viewer
+settings-epub-viewer-external = External viewer (system default)
 
 # PDF viewer
 pdf-viewer = PDF viewer

@@ -289,3 +289,4 @@ settings-epub-viewer = Préférence de visionneuse EPUB
 settings-epub-viewer-description = Choisissez quelle visionneuse ouvre les fichiers EPUB
 settings-epub-viewer-native = Visionneuse EPUB native (expérimentale)
 settings-epub-viewer-mupdf = Visionneuse MuPDF
+settings-epub-viewer-external = Visionneuse externe (par défaut du système)

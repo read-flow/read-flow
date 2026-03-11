@@ -9,6 +9,7 @@ pub enum EpubViewerConfig {
     #[default]
     NativeEpub,
     MuPdf,
+    ExternalViewer,
 }
 
 #[derive(Debug, Default, Clone, CosmicConfigEntry, Eq, PartialEq)]

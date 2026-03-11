@@ -69,6 +69,13 @@ impl Page for AppSettingsPage {
                                 AppSettingsMessage::SetEpubViewer,
                             )
                             .into(),
+                            widget::radio(
+                                widget::text::body(fl!("settings-epub-viewer-external")),
+                                EpubViewerConfig::ExternalViewer,
+                                Some(self.config.epub_viewer),
+                                AppSettingsMessage::SetEpubViewer,
+                            )
+                            .into(),
                         ])
                         .spacing(space_xs)
                         .align_x(Horizontal::Left),

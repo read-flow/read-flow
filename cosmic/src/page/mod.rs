@@ -507,6 +507,7 @@ impl Pages {
                     DocumentType::Epub => match self.epub_viewer_config {
                         EpubViewerConfig::NativeEpub => self.open_epub_viewer(document),
                         EpubViewerConfig::MuPdf => self.open_mupdf_viewer(document),
+                        EpubViewerConfig::ExternalViewer => self.open_in_external_viewer(document),
                     },
                     _ => self.open_in_external_viewer(document),
                 }
