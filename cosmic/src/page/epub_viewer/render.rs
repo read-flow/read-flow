@@ -362,7 +362,14 @@ impl<'a> RenderContext<'a> {
                     col = col.push(self.render_block_inner(block));
                 }
                 if !caption.is_empty() {
-                    col = col.push(render_spans(caption, caption_size, family));
+                    let iced_spans: Vec<_> =
+                        caption.iter().map(|s| styled_span(s, family)).collect();
+                    let caption_el: Element<'_, EpubViewerMessage> =
+                        widget::container(rich_text(iced_spans).size(caption_size))
+                            .width(Length::Fill)
+                            .align_x(Horizontal::Center)
+                            .into();
+                    col = col.push(caption_el);
                 } else if !caption_text.is_empty() {
                     let caption_el: Element<'_, EpubViewerMessage> =
                         widget::text::caption(caption_text.as_str())
