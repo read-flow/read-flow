@@ -223,7 +223,7 @@ impl DocumentsComponent {
             .add(self.pagination.view().map(Into::into));
 
         let file_content =
-            widget::settings::view_column(layout(files_section).apply(|row| vec![row.into()]));
+            widget::settings::view_column(layout(files_section).apply(|row| vec![row]));
 
         Column::new().push(file_content).into()
     }
