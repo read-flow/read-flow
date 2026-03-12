@@ -1,28 +1,29 @@
-use cosmic::Apply;
 use cosmic::Element;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::widget;
-use cosmic::widget::Row;
 
-pub fn layout<'a, E, M>(element: E) -> Row<'a, M>
+const MAX_CONTENT_WIDTH: f32 = 800.0;
+
+pub fn layout<'a, E, M>(element: E) -> Element<'a, M>
 where
     E: Into<Element<'a, M>>,
     M: 'a,
 {
-    vec![
-        widget::horizontal_space().into(),
-        element
-            .apply(widget::container)
-            .width(Length::FillPortion(4))
+    // Inner container: caps content width at MAX_CONTENT_WIDTH, fills on narrow screens.
+    // Outer container: fills full width and centers the (possibly narrower) inner container.
+    widget::container(
+        widget::container(element)
+            .max_width(MAX_CONTENT_WIDTH)
+            .width(Length::Fill)
             .height(Length::Shrink)
-            .align_x(Horizontal::Center)
-            .align_y(Vertical::Top)
-            .into(),
-        widget::horizontal_space().into(),
-    ]
-    .apply(Row::with_children)
+            .align_y(Vertical::Top),
+    )
+    .width(Length::Fill)
+    .align_x(Horizontal::Center)
+    .height(Length::Shrink)
+    .into()
 }
 
 pub fn full_page<'a, E, M>(element: E) -> Element<'a, M>
