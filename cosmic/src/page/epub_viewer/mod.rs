@@ -68,6 +68,8 @@ enum BlockHighlight {
 type Fingerprint = String;
 
 const CHAPTER_SIDEBAR_WIDTH: f32 = 220.0;
+/// Minimum total viewer width below which the chapter sidebar pane is hidden.
+const MIN_WIDTH_WITH_SIDEBAR: f32 = 600.0;
 
 // --- Persistent reader preferences ---
 
@@ -1098,16 +1100,22 @@ impl Page for EpubViewer {
             return loading.apply(full_page);
         }
 
-        let main_col = widget::column()
-            .height(Length::Fill)
-            .push_maybe(self.search_visible.then(|| self.view_search_bar()))
-            .push(self.view_content());
+        widget::responsive(move |size| {
+            let main_col = widget::column()
+                .height(Length::Fill)
+                .push_maybe(self.search_visible.then(|| self.view_search_bar()))
+                .push(self.view_content());
 
-        widget::row()
-            .height(Length::Fill)
-            .push_maybe(self.show_sidebar.then(|| self.view_chapter_sidebar()))
-            .push(main_col)
-            .into()
+            widget::row()
+                .height(Length::Fill)
+                .push_maybe(
+                    (self.show_sidebar && size.width >= MIN_WIDTH_WITH_SIDEBAR)
+                        .then(|| self.view_chapter_sidebar()),
+                )
+                .push(main_col)
+                .into()
+        })
+        .into()
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, EpubViewerMessage>> {

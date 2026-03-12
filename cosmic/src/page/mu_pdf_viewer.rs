@@ -39,6 +39,8 @@ use crate::page::Page;
 type Fingerprint = String;
 
 const THUMBNAIL_WIDTH: u16 = 128;
+/// Minimum total viewer width below which the thumbnail pane is hidden.
+const MIN_WIDTH_WITH_THUMBNAILS: f32 = 500.0;
 
 const MUPDF_PREFS_VERSION: u64 = 1;
 const KEY_EPUB_FONT_SIZE: &str = "mupdf_epub_font_size";
@@ -680,14 +682,18 @@ impl Page for MuPdfViewer {
                 .into();
         }
 
-        let thumbnails = self.show_thumbnails.then(|| self.view_thumbnails());
-        let content = self.view_content();
+        widget::responsive(move |size| {
+            let thumbnails = (self.show_thumbnails && size.width >= MIN_WIDTH_WITH_THUMBNAILS)
+                .then(|| self.view_thumbnails());
+            let content = self.view_content();
 
-        widget::row()
-            .push_maybe(thumbnails)
-            .push(content)
-            .height(Length::Fill)
-            .into()
+            widget::row()
+                .push_maybe(thumbnails)
+                .push(content)
+                .height(Length::Fill)
+                .into()
+        })
+        .into()
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, MuPdfViewerMessage>> {
