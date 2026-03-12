@@ -415,14 +415,14 @@ impl MuPdfViewer {
                 let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
                 let first_page = (self.active_page / 2) * 2;
                 vec![
-                    self.view_pdf_page(first_page),
-                    self.view_pdf_page(first_page + 1),
+                    self.view_pdf_page(first_page, Horizontal::Right),
+                    self.view_pdf_page(first_page + 1, Horizontal::Left),
                 ]
                 .apply(widget::Row::with_children)
                 .spacing(space_xxs)
                 .into()
             } else {
-                self.view_pdf_page(self.active_page)
+                self.view_pdf_page(self.active_page, Horizontal::Center)
             }
         })
         .into()
@@ -437,7 +437,11 @@ impl MuPdfViewer {
         }
     }
 
-    fn view_pdf_page(&self, page_idx: usize) -> Element<'_, MuPdfViewerMessage> {
+    fn view_pdf_page(
+        &self,
+        page_idx: usize,
+        align_x: Horizontal,
+    ) -> Element<'_, MuPdfViewerMessage> {
         if let Some(page) = self.pages.get(page_idx) {
             widget::responsive(move |size| {
                 let ratio = match self.zoom {
@@ -492,7 +496,7 @@ impl MuPdfViewer {
                 });
 
                 if size.width > width {
-                    outer = outer.center_x(size.width);
+                    outer = outer.align_x(align_x).width(size.width);
                 }
                 if size.height > height {
                     outer = outer.center_y(size.height);
