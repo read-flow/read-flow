@@ -1039,30 +1039,54 @@ impl EpubViewer {
             };
 
             // Outer "desk" with click-to-turn zones.
-            let left_zone =
-                widget::mouse_area(widget::Space::new(Length::FillPortion(1), Length::Fill))
-                    .on_press(EpubViewerMessage::PreviousPage);
+            let left_zone = widget::mouse_area(
+                widget::container(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
+                    .width(Length::FillPortion(1))
+                    .height(Length::Fill)
+                    .center(Length::Fill),
+            )
+            .on_press(EpubViewerMessage::PreviousPage);
 
             let center = widget::container(center_content)
                 .width(Length::FillPortion(8))
                 .height(Length::Fill);
 
-            let right_zone =
-                widget::mouse_area(widget::Space::new(Length::FillPortion(1), Length::Fill))
-                    .on_press(EpubViewerMessage::NextPage);
+            let right_zone = widget::mouse_area(
+                widget::container(widget::icon::from_name("go-next-symbolic").size(ICON_SIZE))
+                    .width(Length::FillPortion(1))
+                    .height(Length::Fill)
+                    .center(Length::Fill),
+            )
+            .on_press(EpubViewerMessage::NextPage);
 
-            let outer = widget::container(
+            // Cap the reading area so wide screens don't produce huge empty desk
+            // margins. The click zones are FillPortion(1) each and the center is
+            // FillPortion(8), so the center takes 80% of the row. We size the cap
+            // to just fit the page(s) plus proportional click zones.
+            let center_pages_width = if dual {
+                max_content_width * 2.0 + space_xxs as f32
+            } else {
+                max_content_width
+            };
+            let max_row_width = center_pages_width / 0.8;
+
+            let inner = widget::container(
                 widget::row()
                     .push(left_zone)
                     .push(center)
                     .push(right_zone)
                     .height(Length::Fill),
             )
-            .style(desk_background)
+            .max_width(max_row_width)
             .width(Length::Fill)
             .height(Length::Fill);
 
-            outer.into()
+            widget::container(inner)
+                .style(desk_background)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Horizontal::Center)
+                .into()
         })
         .into()
     }
