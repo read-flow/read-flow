@@ -1770,9 +1770,6 @@ impl Page for EpubViewer {
                 let step = self.page_step();
                 if self.current_page + step < total {
                     self.current_page += step;
-                } else if self.current_page + 1 < total {
-                    // Partial step: go to last page.
-                    self.current_page = total - 1;
                 } else if self.active_chapter + 1 < self.chapters.len() {
                     self.active_chapter += 1;
                     self.current_page = 0;
@@ -1791,7 +1788,10 @@ impl Page for EpubViewer {
                 } else if self.active_chapter > 0 {
                     self.active_chapter -= 1;
                     self.maybe_repaginate();
-                    self.current_page = self.total_pages().saturating_sub(1);
+                    // Land on the last spread, not the last single page, so
+                    // dual-page mode doesn't show a lone final page unnecessarily.
+                    let total = self.total_pages();
+                    self.current_page = (total.saturating_sub(1) / step) * step;
                     self.sync_raw_html_content();
                 }
                 Task::none()
