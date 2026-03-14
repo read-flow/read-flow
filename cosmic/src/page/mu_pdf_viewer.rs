@@ -411,6 +411,7 @@ impl MuPdfViewer {
                 .id(self.thumbnail_scroll_id.clone())
                 .on_scroll(MuPdfViewerMessage::ThumbnailScroll)
                 .width(Length::Fill)
+                .height(Length::Fill)
                 .into(),
         ])
         .width(Length::Fixed(
@@ -525,6 +526,8 @@ impl MuPdfViewer {
                         vertical: Default::default(),
                         horizontal: Default::default(),
                     })
+                    .width(Length::Fill)
+                    .height(Length::Fill)
                     .into()
             })
             .into()

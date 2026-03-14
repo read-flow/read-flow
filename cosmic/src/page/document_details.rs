@@ -428,6 +428,8 @@ impl Page for DocumentDetails {
         // Wrap content in a scrollable container
         layout(content)
             .apply(widget::scrollable::vertical)
+            .width(Length::Fill)
+            .height(Length::Fill)
             .apply(widget::container)
             .height(Length::Fill)
             .align_x(Horizontal::Center)

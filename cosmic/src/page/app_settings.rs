@@ -84,6 +84,8 @@ impl Page for AppSettingsPage {
 
         layout(widget::settings::view_column(vec![viewer_section.into()]))
             .apply(widget::scrollable::vertical)
+            .width(Length::Fill)
+            .height(Length::Fill)
             .apply(widget::container)
             .height(Length::Fill)
             .align_x(Horizontal::Center)

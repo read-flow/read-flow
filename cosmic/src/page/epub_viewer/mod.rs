@@ -679,7 +679,10 @@ impl EpubViewer {
             .width(Length::Fill)
             .align_x(Horizontal::Center)
             .into(),
-            widget::scrollable(column).width(Length::Fill).into(),
+            widget::scrollable(column)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
         ])
         .width(Length::Fixed(CHAPTER_SIDEBAR_WIDTH))
         .height(Length::Fill)

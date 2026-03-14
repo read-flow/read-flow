@@ -387,6 +387,8 @@ impl Page for SettingsPage {
 
         layout(widget::settings::view_column(content))
             .apply(widget::scrollable::vertical)
+            .width(Length::Fill)
+            .height(Length::Fill)
             .apply(widget::container)
             .height(Length::Fill)
             .align_x(Horizontal::Center)

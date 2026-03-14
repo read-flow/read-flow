@@ -149,8 +149,7 @@ where
         if matches!(self.orientation, Orientation::Vertical) {
             Column::new()
                 .spacing(space_s)
-                .height(Length::Shrink)
-                .width(Length::Shrink)
+                .width(Length::Fill)
                 .push(self.view_current_tags(space_xs))
                 .push(rule::horizontal(1))
                 .push(self.view_tags_form(space_xs))
@@ -158,8 +157,7 @@ where
         } else {
             Row::new()
                 .spacing(space_s)
-                .height(Length::Shrink)
-                .width(Length::Shrink)
+                .width(Length::Fill)
                 .push(
                     self.view_current_tags(space_xs)
                         .apply(widget::container)

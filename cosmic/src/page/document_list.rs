@@ -382,6 +382,8 @@ impl Page for DocumentList {
             .view()
             .map(Into::into)
             .apply(widget::scrollable::vertical)
+            .width(Length::Fill)
+            .height(Length::Fill)
             .into()
     }
 
