@@ -465,6 +465,9 @@ pub struct EpubViewer {
     pending_block_index: Option<usize>,
     /// Whether the chapter navigation sidebar is visible.
     show_sidebar: bool,
+    /// Whether the sidebar pane was visible in the last rendered frame.
+    /// Used for hysteresis when auto-hiding on narrow windows.
+    sidebar_pane_visible: Cell<bool>,
     /// Content column max width as a percentage of the default 800px (50..=150).
     content_width_pct: f32,
     /// Font family used for rendering EPUB content.
@@ -530,6 +533,7 @@ impl EpubViewer {
             page_height_fraction: saved_prefs.page_height_fraction,
             pending_block_index: None,
             show_sidebar: saved_prefs.show_sidebar,
+            sidebar_pane_visible: Cell::new(true),
             content_width_pct: saved_prefs.content_width_pct,
             font_family: saved_prefs.font_family,
             font_family_names: widget::combo_box::State::new(FontFamily::all()),
@@ -1124,22 +1128,36 @@ impl Page for EpubViewer {
             return loading.apply(full_page);
         }
 
-        widget::responsive(move |size| {
-            let main_col = widget::column()
-                .height(Length::Fill)
-                .push_maybe(self.search_visible.then(|| self.view_search_bar()))
-                .push(self.view_content());
+        // Use the content width recorded in the last layout pass (set inside
+        // view_content's responsive closure) to decide whether to show the
+        // sidebar pane. Hysteresis prevents oscillation when the window
+        // width straddles the threshold.
+        let (content_width, _) = self.viewport_size.get();
+        let was_visible = self.sidebar_pane_visible.get();
+        let show_sidebar_now = if !self.show_sidebar {
+            false
+        } else if content_width == 0.0 {
+            // First frame: default to showing sidebar
+            true
+        } else if was_visible {
+            // Pane is shown: total ≈ content + sidebar; hide only if total < threshold
+            content_width + CHAPTER_SIDEBAR_WIDTH >= MIN_WIDTH_WITH_SIDEBAR
+        } else {
+            // Pane is hidden: total ≈ content; show only if content >= threshold
+            content_width >= MIN_WIDTH_WITH_SIDEBAR
+        };
+        self.sidebar_pane_visible.set(show_sidebar_now);
 
-            widget::row()
-                .height(Length::Fill)
-                .push_maybe(
-                    (self.show_sidebar && size.width >= MIN_WIDTH_WITH_SIDEBAR)
-                        .then(|| self.view_chapter_sidebar()),
-                )
-                .push(main_col)
-                .into()
-        })
-        .into()
+        let main_col = widget::column()
+            .height(Length::Fill)
+            .push_maybe(self.search_visible.then(|| self.view_search_bar()))
+            .push(self.view_content());
+
+        widget::row()
+            .height(Length::Fill)
+            .push_maybe(show_sidebar_now.then(|| self.view_chapter_sidebar()))
+            .push(main_col)
+            .into()
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, EpubViewerMessage>> {
