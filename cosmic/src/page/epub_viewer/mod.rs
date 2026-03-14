@@ -1271,7 +1271,8 @@ impl Page for EpubViewer {
                             EpubViewerMessage::SetDualPage,
                         )
                         .into(),
-                    ]),
+                    ])
+                    .width(Length::Shrink),
                 ),
             );
 

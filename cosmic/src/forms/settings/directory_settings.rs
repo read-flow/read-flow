@@ -7,6 +7,7 @@ use std::sync::Arc;
 use cosmic::Action;
 use cosmic::Element;
 use cosmic::Task;
+use cosmic::iced::Length;
 use cosmic::task;
 use cosmic::widget;
 use cosmic::widget::settings;
@@ -194,22 +195,25 @@ impl DirectorySettingsForm {
 
         let action_selection = settings::item::builder(fl!("settings-directory-action"))
             .icon(widget::icon::from_name("system-run-symbolic").size(ICON_SIZE))
-            .control(settings::item_row(vec![
-                widget::radio(
-                    widget::text::body(fl!("settings-directory-action-scan-label")),
-                    DirectoryAction::Scan,
-                    Some(self.new_directory_action),
-                    DirectorySettingsFormMessage::UpdateDirectoryAction,
-                )
-                .into(),
-                widget::radio(
-                    widget::text::body(fl!("settings-directory-action-ignore-label")),
-                    DirectoryAction::Ignore,
-                    Some(self.new_directory_action),
-                    DirectorySettingsFormMessage::UpdateDirectoryAction,
-                )
-                .into(),
-            ]));
+            .control(
+                settings::item_row(vec![
+                    widget::radio(
+                        widget::text::body(fl!("settings-directory-action-scan-label")),
+                        DirectoryAction::Scan,
+                        Some(self.new_directory_action),
+                        DirectorySettingsFormMessage::UpdateDirectoryAction,
+                    )
+                    .into(),
+                    widget::radio(
+                        widget::text::body(fl!("settings-directory-action-ignore-label")),
+                        DirectoryAction::Ignore,
+                        Some(self.new_directory_action),
+                        DirectorySettingsFormMessage::UpdateDirectoryAction,
+                    )
+                    .into(),
+                ])
+                .width(Length::Shrink),
+            );
 
         section
             .add(path_input)

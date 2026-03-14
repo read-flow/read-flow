@@ -801,7 +801,8 @@ impl Page for MuPdfViewer {
                             MuPdfViewerMessage::DualPane,
                         )
                         .into(),
-                    ]),
+                    ])
+                    .width(Length::Shrink),
                 ),
             );
 

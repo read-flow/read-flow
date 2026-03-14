@@ -165,24 +165,27 @@ impl SourcesPage {
     ) -> Element<'a, SourcesMessage> {
         widget::settings::item::builder(&source.base_url)
             .icon(icon::from_name("network-server-symbolic").size(ICON_SIZE))
-            .control(widget::settings::item_row(vec![
-                widget::button::icon(icon::from_name("go-up-symbolic").size(ICON_SIZE))
-                    .class(theme::Button::Icon)
-                    .apply_if(!is_first, |button| {
-                        button.on_press(SourcesMessage::MoveSourceUp(source.clone()))
-                    })
-                    .into(),
-                widget::button::icon(icon::from_name("go-down-symbolic").size(ICON_SIZE))
-                    .class(theme::Button::Icon)
-                    .apply_if(!is_last, |button| {
-                        button.on_press(SourcesMessage::MoveSourceDown(source.clone()))
-                    })
-                    .into(),
-                widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
-                    .class(theme::Button::Destructive)
-                    .on_press(SourcesMessage::RequestDeleteSource(source.clone()))
-                    .into(),
-            ]))
+            .control(
+                widget::settings::item_row(vec![
+                    widget::button::icon(icon::from_name("go-up-symbolic").size(ICON_SIZE))
+                        .class(theme::Button::Icon)
+                        .apply_if(!is_first, |button| {
+                            button.on_press(SourcesMessage::MoveSourceUp(source.clone()))
+                        })
+                        .into(),
+                    widget::button::icon(icon::from_name("go-down-symbolic").size(ICON_SIZE))
+                        .class(theme::Button::Icon)
+                        .apply_if(!is_last, |button| {
+                            button.on_press(SourcesMessage::MoveSourceDown(source.clone()))
+                        })
+                        .into(),
+                    widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
+                        .class(theme::Button::Destructive)
+                        .on_press(SourcesMessage::RequestDeleteSource(source.clone()))
+                        .into(),
+                ])
+                .width(Length::Shrink),
+            )
             .into()
     }
 

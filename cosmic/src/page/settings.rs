@@ -259,7 +259,8 @@ impl Page for SettingsPage {
                                 .on_press(SettingsMessage::SelectDatabaseLocation)
                                 .into(),
                         ])
-                        .align_y(Vertical::Center),
+                        .align_y(Vertical::Center)
+                        .width(Length::Shrink),
                     ),
             );
         content.push(database_section.into());
@@ -308,7 +309,8 @@ impl Page for SettingsPage {
                                 .on_press(SettingsMessage::SelectServerDownloadFolder)
                                 .into(),
                         ])
-                        .align_y(Vertical::Center),
+                        .align_y(Vertical::Center)
+                        .width(Length::Shrink),
                     ),
             );
 
