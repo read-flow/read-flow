@@ -803,18 +803,12 @@ impl EpubViewer {
                 }
             }
 
-            // Inner "paper" container with max-width for readability.
-            // The inner container uses Fill + max_width so it expands up to
-            // max_w but no further; the outer paper Shrinks to wrap it.
             let max_w = 800.0 * (self.content_width_pct / 100.0);
-            let paper = widget::container(
-                widget::container(column)
-                    .padding(space_s)
-                    .max_width(max_w)
-                    .width(Length::Fill),
-            )
-            .style(move |theme: &cosmic::Theme| paper_background(theme))
-            .width(Length::Shrink);
+            let paper = widget::container(column)
+                .padding(space_s)
+                .max_width(max_w)
+                .width(Length::Fill)
+                .style(move |theme: &cosmic::Theme| paper_background(theme));
 
             // Outer "desk" container
             let outer = widget::container(paper)
@@ -1010,11 +1004,12 @@ impl EpubViewer {
                                 widget::container(column)
                                     .padding(space_s)
                                     .max_width(max_content_width)
-                                    .width(Length::Shrink),
+                                    .width(Length::Fill),
                             )
                             .width(Length::Fill)
                             .align_x(Horizontal::Center),
                         )
+                        .width(Length::Fill)
                         .height(Length::Fill),
                     )
                     .push(page_indicator)
