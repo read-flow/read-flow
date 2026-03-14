@@ -101,7 +101,7 @@ impl AuthorizedUserForm {
                     ),
             )
             .add(widget::settings::item_row(vec![
-                widget::horizontal_space().width(Length::Fill).into(),
+                widget::space::horizontal().width(Length::Fill).into(),
                 // Cancel button
                 widget::button::icon(
                     widget::icon::from_name("edit-clear-all-symbolic").size(ICON_SIZE),

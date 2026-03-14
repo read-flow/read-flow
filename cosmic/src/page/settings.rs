@@ -278,7 +278,7 @@ impl Page for SettingsPage {
                 },
             )
             .add(widget::settings::item_row(vec![
-                widget::horizontal_space()
+                widget::space::horizontal()
                     .width(Length::FillPortion(5))
                     .into(),
                 widget::button::icon(widget::icon::from_name("list-add-symbolic").size(ICON_SIZE))
@@ -341,7 +341,7 @@ impl Page for SettingsPage {
                 |section, (path, dir_settings)| section.add(view_directory(path, dir_settings)),
             )
             .add(widget::settings::item_row(vec![
-                widget::horizontal_space()
+                widget::space::horizontal()
                     .width(Length::FillPortion(5))
                     .into(),
                 widget::button::icon(icon::from_name("list-add-symbolic").size(ICON_SIZE))
@@ -379,7 +379,7 @@ impl Page for SettingsPage {
 
         let save_section = widget::row()
             .push(save_button)
-            .push(widget::horizontal_space())
+            .push(widget::space::horizontal())
             .push(save_status)
             .spacing(space_m)
             .padding(space_s);
@@ -665,7 +665,8 @@ impl Page for SettingsPage {
 
                             if original_user_id != user_id {
                                 authorized_users.shift_remove(&original_user_id);
-                                authorized_users.insert(user_id, passphrase.try_into().unwrap()); // TODO: error handling
+                                authorized_users.insert(user_id, passphrase.try_into().unwrap());
+                            // TODO: error handling
                             } else if let Some(value) = authorized_users.get_mut(&user_id) {
                                 *value = passphrase.try_into().unwrap(); // TODO: error handling
                             }

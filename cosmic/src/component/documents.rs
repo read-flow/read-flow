@@ -194,7 +194,8 @@ impl DocumentsComponent {
                 .spacing(space_s)
                 .align_y(Vertical::Center)
                 .push(
-                    widget::checkbox(checkbox_label, all_selected)
+                    widget::checkbox(all_selected)
+                        .label(checkbox_label)
                         .on_toggle(DocumentsMessage::ToggleAllSelected)
                         .width(Length::FillPortion(1)),
                 )

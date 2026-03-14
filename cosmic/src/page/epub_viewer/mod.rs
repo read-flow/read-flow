@@ -664,7 +664,7 @@ impl EpubViewer {
                     .width(Length::Fill);
                 let indent = (entry.depth as f32) * (space_s as f32);
                 let row = widget::row()
-                    .push(widget::Space::with_width(Length::Fixed(indent)))
+                    .push(widget::Space::new().width(Length::Fixed(indent)))
                     .push(button);
                 column = column.push(row);
             }
@@ -713,7 +713,7 @@ impl EpubViewer {
                 .into()
             }
         } else {
-            widget::Space::with_width(Length::Shrink).into()
+            widget::Space::new().width(Length::Shrink).into()
         };
 
         widget::container(
@@ -829,7 +829,10 @@ impl EpubViewer {
                 .height(Length::Fill)
                 .into()
         } else {
-            widget::Space::new(Length::Fill, Length::Fill).into()
+            widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
         }
     }
 
@@ -840,7 +843,12 @@ impl EpubViewer {
 
         let chapter = match self.chapters.get(self.active_chapter) {
             Some(ch) => ch,
-            None => return widget::Space::new(Length::Fill, Length::Fill).into(),
+            None => {
+                return widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into();
+            }
         };
 
         let current_page = self.current_page;
@@ -1026,11 +1034,15 @@ impl EpubViewer {
                     make_paper(current_page + 1)
                 } else {
                     // Empty right page when on the last page.
-                    widget::container(widget::Space::new(Length::Fill, Length::Fill))
-                        .style(move |theme: &cosmic::Theme| paper_background(theme))
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .into()
+                    widget::container(
+                        widget::Space::new()
+                            .width(Length::Fill)
+                            .height(Length::Fill),
+                    )
+                    .style(move |theme: &cosmic::Theme| paper_background(theme))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into()
                 };
                 widget::row()
                     .push(left_paper)
@@ -1403,7 +1415,7 @@ impl Page for EpubViewer {
                     self.scroll_y = y;
                     scrollable::scroll_to(
                         self.content_scroll_id.clone(),
-                        scrollable::AbsoluteOffset { x: 0.0, y },
+                        scrollable::AbsoluteOffset { x: 0.0, y }.into(),
                     )
                 } else {
                     Task::none()
@@ -1452,7 +1464,7 @@ impl Page for EpubViewer {
                         self.scroll_y = y;
                         return scrollable::scroll_to(
                             self.content_scroll_id.clone(),
-                            scrollable::AbsoluteOffset { x: 0.0, y },
+                            scrollable::AbsoluteOffset { x: 0.0, y }.into(),
                         );
                     }
                 }
@@ -1519,7 +1531,8 @@ impl Page for EpubViewer {
                                             scrollable::AbsoluteOffset {
                                                 x: 0.0,
                                                 y: target_y,
-                                            },
+                                            }
+                                            .into(),
                                         );
                                     }
                                 }
@@ -1635,7 +1648,8 @@ impl Page for EpubViewer {
                                 scrollable::AbsoluteOffset {
                                     x: 0.0,
                                     y: target_y,
-                                },
+                                }
+                                .into(),
                             );
                         } else if let Some(saved) = self.saved_position.take() {
                             // Unknown fragment (likely a back-reference ↩): restore
@@ -1648,7 +1662,7 @@ impl Page for EpubViewer {
                                 SavedPosition::ScrollY(y) => {
                                     return scrollable::scroll_to(
                                         self.content_scroll_id.clone(),
-                                        scrollable::AbsoluteOffset { x: 0.0, y },
+                                        scrollable::AbsoluteOffset { x: 0.0, y }.into(),
                                     );
                                 }
                             }
@@ -2916,7 +2930,7 @@ impl EpubViewer {
                 self.scroll_y = y;
                 scrollable::scroll_to(
                     self.content_scroll_id.clone(),
-                    scrollable::AbsoluteOffset { x: 0.0, y },
+                    scrollable::AbsoluteOffset { x: 0.0, y }.into(),
                 )
             }
             ViewMode::Paginated => {

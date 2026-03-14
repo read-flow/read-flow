@@ -34,6 +34,7 @@ indexmap = { workspace = true, features = ["serde"] }
 itertools.workspace = true
 mime.workspace = true
 pbkdf2 = { workspace = true, features = ["simple"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
 r2d2.workspace = true
 rayon.workspace = true
 reqwest = { workspace = true, features = ["json", "stream", "multipart"] }

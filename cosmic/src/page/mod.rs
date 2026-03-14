@@ -10,7 +10,6 @@ mod sources;
 mod traits;
 
 use core::panic;
-use std::any::Any;
 use std::sync::Arc;
 
 use cosmic::Action;
@@ -24,10 +23,8 @@ use cosmic::iced::keyboard::Modifiers;
 use cosmic::task;
 use cosmic::widget;
 use indexmap::IndexMap;
-use provider::sync::Invalidated;
 use read_flow_core::client::FilesClient;
 use read_flow_core::db::dao::RemoteDao;
-use tokio::sync::broadcast;
 pub use traits::Page;
 use url::Url;
 
@@ -62,6 +59,7 @@ use crate::page::settings::SettingsPage;
 use crate::page::sources::SourcesMessage;
 use crate::page::sources::SourcesOutput;
 use crate::page::sources::SourcesPage;
+use crate::subscription::SubscriberState;
 
 type Fingerprint = String;
 
@@ -717,35 +715,9 @@ pub fn settings_invalidation_subscription<M, F>(
 where
     M: Send + 'static,
     F: Fn() -> M + Send + 'static,
+    F: Send + Sync + 'static,
 {
-    use cosmic::iced_futures::futures::SinkExt;
-    use cosmic::iced_futures::futures::channel::mpsc;
+    let receiver = application_module.subscribe();
 
-    let mut receiver = application_module.subscribe();
-    Subscription::run_with_id(
-        Invalidated.type_id(),
-        cosmic::iced::stream::channel(4, move |mut sender: mpsc::Sender<M>| async move {
-            loop {
-                match receiver.recv().await {
-                    Ok(_) => {
-                        if sender.send(f()).await.is_err() {
-                            // Channel closed, stop the subscription
-                            break;
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Closed) => {
-                        // Sender dropped, stop the subscription
-                        break;
-                    }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {
-                        // Missed some messages, but continue listening
-                        // Still send a notification since data has changed
-                        if sender.send(f()).await.is_err() {
-                            break;
-                        }
-                    }
-                }
-            }
-        }),
-    )
+    Subscription::run_with(SubscriberState::new(receiver, f), |state| state.run())
 }

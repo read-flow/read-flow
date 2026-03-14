@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::collections::HashSet;
 use std::convert::Infallible;
 use std::process::ExitStatus;
@@ -22,6 +21,7 @@ use crate::aggregator::Documents;
 use crate::client::Client;
 use crate::client::ClientSelector;
 use crate::client::FilesClientError;
+use crate::subscription::SubscriberState;
 
 type DoocumentsCache =
     ObservableCache<Arc<RwLock<Aggregator>>, fn(Documents) -> Documents, Documents, Documents>;
@@ -91,38 +91,12 @@ impl DocumentProvider {
     pub fn invalidation_subscription<M, F>(&self, f: F) -> Subscription<M>
     where
         M: Send + 'static,
-        F: Fn() -> M + Send + 'static,
+        F: Fn() -> M + Send + Sync + 'static,
+        F: Send + Sync + 'static,
     {
-        use cosmic::iced_futures::futures::SinkExt;
-        use cosmic::iced_futures::futures::channel::mpsc;
+        let receiver = self.subscribe();
 
-        let mut receiver = self.subscribe();
-        Subscription::run_with_id(
-            Invalidated.type_id(),
-            cosmic::iced::stream::channel(4, move |mut sender: mpsc::Sender<M>| async move {
-                loop {
-                    match receiver.recv().await {
-                        Ok(_) => {
-                            if sender.send(f()).await.is_err() {
-                                // Channel closed, stop the subscription
-                                break;
-                            }
-                        }
-                        Err(broadcast::error::RecvError::Closed) => {
-                            // Sender dropped, stop the subscription
-                            break;
-                        }
-                        Err(broadcast::error::RecvError::Lagged(_)) => {
-                            // Missed some messages, but continue listening
-                            // Still send a notification since data has changed
-                            if sender.send(f()).await.is_err() {
-                                break;
-                            }
-                        }
-                    }
-                }
-            }),
-        )
+        Subscription::run_with(SubscriberState::new(receiver, f), |state| state.run())
     }
 
     /// Get all unique tags from all documents.

@@ -10,7 +10,7 @@ use cosmic::cosmic_theme;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Vertical;
 use cosmic::iced::widget::combo_box;
-use cosmic::iced_widget::horizontal_rule;
+use cosmic::iced_widget::rule;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
@@ -152,7 +152,7 @@ where
                 .height(Length::Shrink)
                 .width(Length::Shrink)
                 .push(self.view_current_tags(space_xs))
-                .push(horizontal_rule(1))
+                .push(rule::horizontal(1))
                 .push(self.view_tags_form(space_xs))
                 .into()
         } else {

@@ -196,7 +196,7 @@ impl DocumentDetails {
         let mut sources_section =
             widget::settings::section().header(widget::settings::item_row(vec![
                 text::heading(fl!("document-details-sources")).into(),
-                widget::horizontal_space().into(),
+                widget::space::horizontal().into(),
                 edit_button.into(),
             ]));
 

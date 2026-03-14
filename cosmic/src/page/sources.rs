@@ -320,7 +320,7 @@ impl Page for SourcesPage {
                 }),
             )
             .add(widget::settings::item_row(vec![
-                widget::horizontal_space().width(Length::Fill).into(),
+                widget::space::horizontal().width(Length::Fill).into(),
                 widget::button::suggested(fl!("sources-add-button"))
                     .apply_if(
                         !(self.entered_url.is_empty()

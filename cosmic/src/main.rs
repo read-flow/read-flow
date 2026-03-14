@@ -14,6 +14,7 @@ mod iter;
 mod layout;
 mod page;
 mod state;
+mod subscription;
 
 use std::path::PathBuf;
 use std::sync::Arc;

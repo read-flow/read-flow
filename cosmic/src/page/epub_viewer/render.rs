@@ -239,7 +239,7 @@ impl<'a> RenderContext<'a> {
                     .class(Container::Secondary)
                     .width(Length::Fill);
                 let copy_button = widget::row::with_children(vec![
-                    widget::horizontal_space().width(Length::Fill).into(),
+                    widget::space::horizontal().width(Length::Fill).into(),
                     widget::button::icon(widget::icon::from_name("edit-copy-symbolic").size(16))
                         .on_press(EpubViewerMessage::CopyCodeBlock(text.clone()))
                         .tooltip(fl!("epub-viewer-copy-code"))
@@ -325,7 +325,7 @@ impl<'a> RenderContext<'a> {
                         .width(Length::Fill)
                         .into()
                 } else {
-                    widget::Space::new(Length::Fill, 0).into()
+                    widget::Space::new().width(Length::Fill).height(0).into()
                 }
             }
             ContentBlock::Svg { content, .. } => {
@@ -400,9 +400,10 @@ impl<'a> RenderContext<'a> {
                 }
                 col.into()
             }
-            ContentBlock::Anchor { .. } => {
-                widget::Space::new(Length::Fixed(0.0), Length::Fixed(0.0)).into()
-            }
+            ContentBlock::Anchor { .. } => widget::Space::new()
+                .width(Length::Fixed(0.0))
+                .height(Length::Fixed(0.0))
+                .into(),
         }
     }
 
@@ -521,7 +522,7 @@ fn render_table(
                     .width(Length::Fill)
                     .into()
             } else {
-                widget::Space::new(Length::Fill, 0).into()
+                widget::Space::new().width(Length::Fill).height(0).into()
             };
 
             row_widget = row_widget.push(

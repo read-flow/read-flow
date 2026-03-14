@@ -379,7 +379,7 @@ impl MuPdfViewer {
             } else {
                 column = column.push(
                     widget::button::custom_image_button(
-                        widget::Space::with_height(Length::Fixed(height)),
+                        widget::Space::new().height(Length::Fixed(height)),
                         None,
                     )
                     .width(width)
@@ -479,7 +479,7 @@ impl MuPdfViewer {
                             .height(height),
                     )
                 } else {
-                    Element::from(widget::Space::new(width, height))
+                    Element::from(widget::Space::new().width(width).height(height))
                 })
                 .style(if self.theme_colors {
                     |theme: &cosmic::Theme| {
@@ -529,7 +529,10 @@ impl MuPdfViewer {
             })
             .into()
         } else {
-            widget::Space::new(Length::Fill, Length::Fill).into()
+            widget::Space::new()
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
         }
     }
 
@@ -552,7 +555,8 @@ impl MuPdfViewer {
                         scrollable::AbsoluteOffset {
                             x: 0.0,
                             y: icon_bounds.y,
-                        },
+                        }
+                        .into(),
                     ));
                 } else if bounds.y + bounds.height < icon_bounds.y + icon_bounds.height {
                     tasks.push(scrollable::scroll_to(
@@ -560,7 +564,8 @@ impl MuPdfViewer {
                         scrollable::AbsoluteOffset {
                             x: 0.0,
                             y: icon_bounds.y + icon_bounds.height - bounds.height,
-                        },
+                        }
+                        .into(),
                     ));
                 }
             }
