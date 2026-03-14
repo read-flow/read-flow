@@ -193,6 +193,7 @@ impl DocumentsComponent {
             widget::row()
                 .spacing(space_s)
                 .align_y(Vertical::Center)
+                .width(Length::Fill)
                 .push(
                     widget::checkbox(all_selected)
                         .label(checkbox_label)
@@ -395,6 +396,7 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
     ]
     .apply(widget::settings::item_row)
     .apply(widget::button::custom)
+    .width(Length::Fill)
     .class(ButtonClass::ListItem)
     .on_press(DocumentsMessage::Out(DocumentsOutput::OpenDocument(
         document.clone(),
