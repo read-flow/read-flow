@@ -567,15 +567,18 @@ impl Pages {
             let (pdf_viewer, initialization) =
                 MuPdfViewer::new(document, self.document_provider.clone());
             self.mu_pdf_viewers.insert(fingerprint.clone(), pdf_viewer);
-            initialization
-                .map(move |action| {
+            // PageAdded in a batch (not chained) so the viewer page opens
+            // immediately while the initialization stream runs in the background.
+            Task::batch([
+                initialization.map(move |action| {
                     let fingerprint = fingerprint_1.clone();
                     action.map(move |msg| map_mu_pdf_viewer_message(fingerprint, msg))
-                })
-                .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
+                }),
+                task::message(PageMessage::Out(PageOutput::PageAdded(
                     PageSelector::MuPdfViewer(fingerprint),
                     "application-pdf-symbolic",
-                ))))
+                ))),
+            ])
         }
     }
 
@@ -592,15 +595,16 @@ impl Pages {
             let (epub_viewer, initialization) =
                 EpubViewer::new(document, self.document_provider.clone());
             self.epub_viewers.insert(fingerprint.clone(), epub_viewer);
-            initialization
-                .map(move |action| {
+            Task::batch([
+                initialization.map(move |action| {
                     let fingerprint = fingerprint_1.clone();
                     action.map(move |msg| map_epub_viewer_message(fingerprint, msg))
-                })
-                .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
+                }),
+                task::message(PageMessage::Out(PageOutput::PageAdded(
                     PageSelector::EpubViewer(fingerprint_2),
                     "application-epub+zip",
-                ))))
+                ))),
+            ])
         }
     }
 }
