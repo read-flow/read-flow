@@ -3,6 +3,8 @@ use std::sync::Arc;
 use cosmic::iced_futures::futures::SinkExt;
 use cosmic::iced_futures::futures::channel::mpsc;
 use futures::stream::BoxStream;
+use rand::TryRng;
+use rand::rngs::SysRng;
 use tokio::sync::Mutex;
 use tokio::sync::broadcast;
 
@@ -25,7 +27,7 @@ where
     E: Clone + Send + 'static,
 {
     pub fn new(receiver: broadcast::Receiver<E>, f: F) -> Self {
-        let id = 42;
+        let id = SysRng.try_next_u64().unwrap();
         Self {
             id,
             receiver: Arc::new(Mutex::new(receiver)),

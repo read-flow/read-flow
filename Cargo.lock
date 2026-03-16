@@ -5675,7 +5675,7 @@ dependencies = [
  "pbkdf2",
  "provider",
  "r2d2",
- "rand_core 0.6.4",
+ "rand 0.10.0",
  "rayon",
  "reqwest",
  "rocket",
