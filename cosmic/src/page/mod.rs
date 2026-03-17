@@ -719,5 +719,5 @@ where
 {
     let receiver = application_module.subscribe();
 
-    Subscription::run_with(SubscriberState::new(receiver, f), |state| state.run())
+    Subscription::run_with(SubscriberState::new(receiver, f), SubscriberState::run)
 }

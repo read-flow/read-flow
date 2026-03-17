@@ -96,7 +96,7 @@ impl DocumentProvider {
     {
         let receiver = self.subscribe();
 
-        Subscription::run_with(SubscriberState::new(receiver, f), |state| state.run())
+        Subscription::run_with(SubscriberState::new(receiver, f), SubscriberState::run)
     }
 
     /// Get all unique tags from all documents.
