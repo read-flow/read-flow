@@ -669,8 +669,8 @@ impl Page for SettingsPage {
 
                             if original_user_id != user_id {
                                 authorized_users.shift_remove(&original_user_id);
+                                // TODO: error handling
                                 authorized_users.insert(user_id, passphrase.try_into().unwrap());
-                            // TODO: error handling
                             } else if let Some(value) = authorized_users.get_mut(&user_id) {
                                 *value = passphrase.try_into().unwrap(); // TODO: error handling
                             }
