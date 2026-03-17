@@ -1,4 +1,8 @@
-use std::cell::RefCell;
+mod classify;
+mod end_tag;
+mod start_tag;
+mod state;
+mod util;
 
 use html5ever::tokenizer::BufferQueue;
 use html5ever::tokenizer::Tag;
@@ -8,258 +12,18 @@ use html5ever::tokenizer::TokenSink;
 use html5ever::tokenizer::TokenSinkResult;
 use html5ever::tokenizer::Tokenizer;
 use html5ever::tokenizer::TokenizerOpts;
+use state::ContentSink;
+use state::in_preformatted;
+use util::PendingImage;
+// Re-export for stylesheet.rs (uses `super::parser::parse_css_declarations`)
+pub(crate) use util::parse_css_declarations;
 
 use super::block::BlockStyle;
 use super::block::ContentBlock;
 use super::block::InlineStyle;
-use super::block::ListItem;
-use super::block::TableCell;
-use super::block::TextAlign;
 use super::block::TextSpan;
 use super::resolve::base_dir;
-use super::resolve::guess_media_type;
-use super::resolve::resolve_href;
 use super::stylesheet::StyleSheet;
-
-/// An element on the parsing stack.
-struct StackEntry {
-    tag: String,
-    text: String,
-    children: Vec<ContentBlock>,
-    list_items: Vec<ListItem>,
-    /// For `<ol>` elements, the start attribute value.
-    ol_start: u32,
-    /// Accumulated styled spans for this element.
-    spans: Vec<TextSpan>,
-    /// The inherited inline style at this stack level.
-    inline_style: InlineStyle,
-    /// Href from an enclosing `<a>` element, inherited by child entries.
-    link: Option<String>,
-    /// Accumulated rows for `<table>` elements; each row is a `Vec<TableCell>`.
-    table_rows: Vec<Vec<TableCell>>,
-    /// Accumulated cells for the current `<tr>` element.
-    table_cells: Vec<TableCell>,
-    /// The `id` HTML attribute of this element, used for footnote anchoring.
-    element_id: Option<String>,
-    /// True when this is an `<aside epub:type="footnote">` element.
-    is_footnote: bool,
-    /// True when this element is a container of footnote items
-    /// (`class="footnotes"`, `role="doc-endnotes"`, `epub:type="endnotes"`, etc.).
-    is_footnote_container: bool,
-    /// Block-level style parsed from the element's `style="..."` attribute.
-    block_style: BlockStyle,
-    /// Per-span color override from a `style="color:..."` attribute on an inline element.
-    span_color: Option<[u8; 3]>,
-    /// Per-span font-size multiplier from a `style="font-size:..."` attribute on an inline element.
-    span_font_size_em: Option<f32>,
-    /// Accumulated SVG XML content for `<svg>` elements.
-    svg_content: String,
-    /// Aspect ratio (width/height) from the `viewBox` attribute of the `<svg>` element.
-    svg_aspect_ratio: Option<f32>,
-    /// Caption spans from a `<figcaption>` child (populated when this entry is a `<figure>`).
-    figure_caption_spans: Vec<TextSpan>,
-    /// Plain-text caption from a `<figcaption>` child.
-    figure_caption_text: String,
-}
-
-impl StackEntry {
-    fn new(tag: &str) -> Self {
-        StackEntry {
-            tag: tag.to_string(),
-            text: String::new(),
-            children: Vec::new(),
-            list_items: Vec::new(),
-            ol_start: 1,
-            spans: Vec::new(),
-            inline_style: InlineStyle::default(),
-            link: None,
-            table_rows: Vec::new(),
-            table_cells: Vec::new(),
-            element_id: None,
-            is_footnote: false,
-            is_footnote_container: false,
-            block_style: BlockStyle::default(),
-            span_color: None,
-            span_font_size_em: None,
-            svg_content: String::new(),
-            svg_aspect_ratio: None,
-            figure_caption_spans: Vec::new(),
-            figure_caption_text: String::new(),
-        }
-    }
-
-    fn new_with_style(tag: &str, style: InlineStyle, link: Option<String>) -> Self {
-        StackEntry {
-            tag: tag.to_string(),
-            text: String::new(),
-            children: Vec::new(),
-            list_items: Vec::new(),
-            ol_start: 1,
-            spans: Vec::new(),
-            inline_style: style,
-            link,
-            table_rows: Vec::new(),
-            table_cells: Vec::new(),
-            element_id: None,
-            is_footnote: false,
-            is_footnote_container: false,
-            block_style: BlockStyle::default(),
-            span_color: None,
-            span_font_size_em: None,
-            svg_content: String::new(),
-            svg_aspect_ratio: None,
-            figure_caption_spans: Vec::new(),
-            figure_caption_text: String::new(),
-        }
-    }
-
-    /// Flush any accumulated text into a TextSpan and add it to spans.
-    fn flush_text(&mut self) {
-        if !self.text.is_empty() {
-            self.spans.push(TextSpan {
-                text: std::mem::take(&mut self.text),
-                style: self.inline_style.clone(),
-                link: self.link.clone(),
-                color: self.span_color,
-                font_size_em: self.span_font_size_em,
-            });
-        }
-    }
-}
-
-/// A pending image to be resolved after parsing.
-struct PendingImage {
-    /// Resolved zip path for the image.
-    resolved_path: String,
-    /// Alt text from the `<img>` element.
-    alt: String,
-}
-
-/// State accumulated during tokenization.
-struct SinkState {
-    stack: Vec<StackEntry>,
-    output: Vec<ContentBlock>,
-    skip_depth: usize,
-    base_href: String,
-    /// Images collected during parsing, keyed to their position in the output.
-    /// Each entry is `(block_index_path, pending_image)` where block_index_path
-    /// identifies where in the output tree the placeholder lives.
-    pending_images: Vec<(usize, PendingImage)>,
-    /// Counter for placeholder images inserted into the output.
-    image_counter: usize,
-    /// CSS stylesheet for class-based styling.
-    stylesheet: StyleSheet,
-}
-
-/// Token sink that builds `Vec<ContentBlock>` from XHTML tokens.
-struct ContentSink {
-    state: RefCell<SinkState>,
-}
-
-impl ContentSink {
-    fn new(base_href: &str, stylesheet: StyleSheet) -> Self {
-        ContentSink {
-            state: RefCell::new(SinkState {
-                stack: vec![StackEntry::new("root")],
-                output: Vec::new(),
-                skip_depth: 0,
-                base_href: base_href.to_string(),
-                pending_images: Vec::new(),
-                image_counter: 0,
-                stylesheet,
-            }),
-        }
-    }
-
-    fn into_blocks_and_pending(self) -> (Vec<ContentBlock>, Vec<(usize, PendingImage)>) {
-        let mut state = self.state.into_inner();
-        if let Some(mut root) = state.stack.pop() {
-            root.flush_text();
-            state.output.extend(root.children);
-            // Convert dangling root-level spans (e.g. from a standalone <a> directly
-            // in <body>) into a trailing paragraph so they are not silently discarded.
-            if !root.spans.is_empty() {
-                let text = plain_text_from_spans(&root.spans).trim().to_string();
-                if !text.is_empty() {
-                    state.output.push(ContentBlock::Paragraph {
-                        text,
-                        spans: root.spans,
-                        style: BlockStyle::default(),
-                    });
-                }
-            }
-        }
-        (state.output, state.pending_images)
-    }
-}
-
-const SKIP_TAGS: &[&str] = &["head", "style", "script", "title"];
-const VOID_ELEMENTS: &[&str] = &[
-    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
-    "track", "wbr",
-];
-const INLINE_STYLE_TAGS: &[&str] = &[
-    "em", "strong", "b", "i", "u", "del", "s", "code", "ins", "cite", "dfn", "var", "kbd", "samp",
-    "tt",
-];
-/// Block-level structural containers whose `id` attributes are eligible
-/// as TOC navigation anchors.  A zero-height `ContentBlock::Anchor` is emitted
-/// before their promoted children whenever they carry a non-empty `id`.
-const ANCHOR_CONTAINER_TAGS: &[&str] = &[
-    "section", "article", "div", "nav", "main", "header", "footer",
-];
-
-const TRANSPARENT_TAGS: &[&str] = &[
-    "div", "section", "article", "body", "html", "small", "sub", "sup", "mark", "abbr", "nav",
-    "main", "header", "footer", "details", "summary", "dl", "dt", "dd", "svg",
-];
-
-/// Compute the inline style for a given tag, inheriting from a parent style.
-fn style_for_tag(tag: &str, parent: &InlineStyle) -> InlineStyle {
-    let mut style = parent.clone();
-    match tag {
-        "strong" | "b" => style.bold = true,
-        "em" | "i" | "cite" | "dfn" | "var" => style.italic = true,
-        "u" | "ins" => style.underline = true,
-        "del" | "s" => style.strikethrough = true,
-        "code" | "kbd" | "samp" | "tt" => style.monospaced = true,
-        _ => {}
-    }
-    style
-}
-
-/// Returns true when an `<aside>` element carries `epub:type="footnote"` (or "rearnote").
-fn is_footnote_aside(attrs: &[html5ever::Attribute]) -> bool {
-    find_attr(attrs, "epub:type").is_some_and(|v| {
-        v.split_whitespace()
-            .any(|t| matches!(t, "footnote" | "rearnote"))
-    })
-}
-
-/// Returns true when an element is a container of multiple footnote items.
-/// Matches `epub:type="endnotes"`, `role="doc-endnotes"`, and `class` containing "footnote"/"endnote".
-fn is_footnote_container_element(attrs: &[html5ever::Attribute]) -> bool {
-    let epub_type = find_attr(attrs, "epub:type").unwrap_or_default();
-    let role = find_attr(attrs, "role").unwrap_or_default();
-    let class = find_attr(attrs, "class").unwrap_or_default();
-    epub_type
-        .split_whitespace()
-        .any(|t| matches!(t, "endnotes" | "rearnotes" | "footnotes"))
-        || matches!(role.as_str(), "doc-endnotes" | "doc-footnotes")
-        || class
-            .split_whitespace()
-            .any(|c| c == "footnotes" || c == "endnotes" || c == "footnote")
-}
-
-/// Returns true when any ancestor stack entry is a footnote container.
-fn in_footnote_container(stack: &[StackEntry]) -> bool {
-    stack.iter().any(|e| e.is_footnote_container)
-}
-
-/// Collect plain text from spans.
-fn plain_text_from_spans(spans: &[TextSpan]) -> String {
-    spans.iter().map(|s| s.text.as_str()).collect()
-}
 
 impl TokenSink for ContentSink {
     type Handle = ();
@@ -276,300 +40,7 @@ impl TokenSink for ContentSink {
                 ..
             }) => {
                 let tag_name = name.as_ref();
-
-                if state.skip_depth > 0 {
-                    if !self_closing && !VOID_ELEMENTS.contains(&tag_name) {
-                        state.skip_depth += 1;
-                    }
-                    return TokenSinkResult::Continue;
-                }
-
-                if SKIP_TAGS.contains(&tag_name) {
-                    state.skip_depth = 1;
-                    return TokenSinkResult::Continue;
-                }
-
-                if tag_name == "br" {
-                    if let Some(entry) = state.stack.last_mut() {
-                        entry.text.push('\n');
-                    }
-                    return TokenSinkResult::Continue;
-                }
-
-                if tag_name == "hr" {
-                    if let Some(entry) = state.stack.last_mut() {
-                        entry.children.push(ContentBlock::HorizontalRule);
-                    }
-                    return TokenSinkResult::Continue;
-                }
-
-                if tag_name == "img" {
-                    let src = find_attr(attrs, "src");
-                    let alt = find_attr(attrs, "alt").unwrap_or_default();
-
-                    if let Some(src) = src {
-                        let base = base_dir(&state.base_href);
-                        let resolved = resolve_href(base, &src);
-                        let media_type = guess_media_type(&resolved);
-
-                        // Insert a placeholder block and record it for later resolution
-                        let id = state.image_counter;
-                        state.image_counter += 1;
-
-                        let placeholder = if media_type == "image/svg+xml" {
-                            ContentBlock::Svg {
-                                alt: alt.clone(),
-                                content: String::new(), // Will be loaded during resolution
-                                style: BlockStyle::default(),
-                                aspect_ratio: None, // Set during resolution
-                            }
-                        } else {
-                            ContentBlock::Image {
-                                alt: alt.clone(),
-                                data: Vec::new(),
-                                media_type,
-                                natural_width: 0, // Set during resolution
-                                natural_height: 0,
-                            }
-                        };
-
-                        if let Some(entry) = state.stack.last_mut() {
-                            entry.children.push(placeholder);
-                        }
-                        state.pending_images.push((
-                            id,
-                            PendingImage {
-                                resolved_path: resolved,
-                                alt,
-                            },
-                        ));
-                    } else if !alt.is_empty()
-                        && let Some(entry) = state.stack.last_mut()
-                    {
-                        entry.children.push(ContentBlock::Paragraph {
-                            text: format!("[{alt}]"),
-                            spans: vec![TextSpan {
-                                text: format!("[{alt}]"),
-                                style: InlineStyle::default(),
-                                link: None,
-                                color: None,
-                                font_size_em: None,
-                            }],
-                            style: BlockStyle::default(),
-                        });
-                    }
-                    return TokenSinkResult::Continue;
-                }
-
-                // Handle <svg> tags - start accumulating SVG content
-                if tag_name == "svg" {
-                    let mut entry = StackEntry::new(tag_name);
-                    entry.element_id = find_attr(attrs, "id");
-                    entry.svg_aspect_ratio = find_attr(attrs, "viewbox")
-                        .as_deref()
-                        .and_then(parse_viewbox_str);
-
-                    // Resolve stylesheet styles from class, then merge inline style= on top
-                    let class_attr = find_attr(attrs, "class").unwrap_or_default();
-                    let css_resolved = state.stylesheet.resolve(tag_name, &class_attr);
-                    entry.block_style = css_resolved.block;
-                    if let Some(style_attr) = find_attr(attrs, "style") {
-                        let inline = parse_inline_style(&style_attr).block;
-                        entry.block_style = entry.block_style.merge(inline);
-                    }
-
-                    // Start accumulating the SVG markup
-                    entry.svg_content.push('<');
-                    entry.svg_content.push_str(tag_name);
-                    for attr in attrs {
-                        entry.svg_content.push(' ');
-                        entry.svg_content.push_str(attr.name.local.as_ref());
-                        entry.svg_content.push_str("=\"");
-                        entry.svg_content.push_str(&attr.value);
-                        entry.svg_content.push('"');
-                    }
-                    if self_closing {
-                        entry.svg_content.push_str("/>");
-                    } else {
-                        entry.svg_content.push('>');
-                    }
-
-                    state.stack.push(entry);
-                    return TokenSinkResult::Continue;
-                }
-
-                // Capture tags within SVG elements
-                if let Some(svg_entry) = state.stack.iter_mut().find(|e| e.tag == "svg") {
-                    svg_entry.svg_content.push('<');
-                    svg_entry.svg_content.push_str(tag_name);
-                    for attr in attrs {
-                        svg_entry.svg_content.push(' ');
-                        svg_entry.svg_content.push_str(attr.name.local.as_ref());
-                        svg_entry.svg_content.push_str("=\"");
-                        svg_entry.svg_content.push_str(&attr.value);
-                        svg_entry.svg_content.push('"');
-                    }
-                    if self_closing {
-                        svg_entry.svg_content.push_str("/>");
-                    } else {
-                        svg_entry.svg_content.push('>');
-                    }
-                }
-
-                // Handle <a href="..."> — flush parent, push entry with inherited style + link
-                if tag_name == "a" {
-                    if let Some(parent) = state.stack.last_mut() {
-                        parent.flush_text();
-                    }
-                    let parent_style = state
-                        .stack
-                        .last()
-                        .map(|e| e.inline_style.clone())
-                        .unwrap_or_default();
-                    let parent_link = state.stack.last().and_then(|e| e.link.clone());
-                    let href = find_attr(attrs, "href");
-                    // Own href takes priority; fall back to inherited link context
-                    let link = href.or(parent_link);
-                    let mut span_color = None;
-                    let mut span_font_size_em = None;
-                    if let Some(style_attr) = find_attr(attrs, "style") {
-                        let parsed = parse_inline_style(&style_attr);
-                        span_color = parsed.color;
-                        span_font_size_em = parsed.font_size_em;
-                    }
-                    let mut entry = StackEntry::new_with_style(tag_name, parent_style, link);
-                    entry.span_color = span_color;
-                    entry.span_font_size_em = span_font_size_em;
-                    state.stack.push(entry);
-                    return TokenSinkResult::Continue;
-                }
-
-                // Handle inline style tags: flush parent text, push styled entry
-                if INLINE_STYLE_TAGS.contains(&tag_name) {
-                    // Flush any accumulated text on the parent before entering the styled scope
-                    if let Some(parent) = state.stack.last_mut() {
-                        parent.flush_text();
-                    }
-                    let parent_style = state
-                        .stack
-                        .last()
-                        .map(|e| e.inline_style.clone())
-                        .unwrap_or_default();
-                    // Inherit the enclosing link context (e.g. <a><strong>bold link</strong></a>)
-                    let parent_link = state.stack.last().and_then(|e| e.link.clone());
-                    let mut style = style_for_tag(tag_name, &parent_style);
-                    // Apply stylesheet styles from class
-                    let class_attr = find_attr(attrs, "class").unwrap_or_default();
-                    let css_resolved = state.stylesheet.resolve(tag_name, &class_attr);
-                    style.bold |= css_resolved.inline.bold;
-                    style.italic |= css_resolved.inline.italic;
-                    style.underline |= css_resolved.inline.underline;
-                    style.strikethrough |= css_resolved.inline.strikethrough;
-                    style.monospaced |= css_resolved.inline.monospaced;
-                    let mut span_color = css_resolved.color;
-                    let mut span_font_size_em = css_resolved.font_size_em;
-                    // Inline style= overrides stylesheet
-                    if let Some(style_attr) = find_attr(attrs, "style") {
-                        let parsed = parse_inline_style(&style_attr);
-                        style.bold |= parsed.inline.bold;
-                        style.italic |= parsed.inline.italic;
-                        style.underline |= parsed.inline.underline;
-                        style.strikethrough |= parsed.inline.strikethrough;
-                        style.monospaced |= parsed.inline.monospaced;
-                        if parsed.color.is_some() {
-                            span_color = parsed.color;
-                        }
-                        if parsed.font_size_em.is_some() {
-                            span_font_size_em = parsed.font_size_em;
-                        }
-                    }
-                    let mut entry = StackEntry::new_with_style(tag_name, style, parent_link);
-                    entry.span_color = span_color;
-                    entry.span_font_size_em = span_font_size_em;
-                    state.stack.push(entry);
-                    return TokenSinkResult::Continue;
-                }
-
-                // Handle <span> with style= or class-based styling as an inline-style element
-                if tag_name == "span" {
-                    let style_attr = find_attr(attrs, "style");
-                    let class_attr = find_attr(attrs, "class").unwrap_or_default();
-                    let css_resolved = state.stylesheet.resolve("span", &class_attr);
-                    let has_style = style_attr.is_some();
-                    let has_css = css_resolved.inline != InlineStyle::default()
-                        || css_resolved.color.is_some()
-                        || css_resolved.font_size_em.is_some();
-                    if has_style || has_css {
-                        if let Some(parent) = state.stack.last_mut() {
-                            parent.flush_text();
-                        }
-                        let parent_style = state
-                            .stack
-                            .last()
-                            .map(|e| e.inline_style.clone())
-                            .unwrap_or_default();
-                        let parent_link = state.stack.last().and_then(|e| e.link.clone());
-                        // Start with parent, merge CSS, then merge inline style= (inline wins)
-                        let mut style = parent_style;
-                        style.bold |= css_resolved.inline.bold;
-                        style.italic |= css_resolved.inline.italic;
-                        style.underline |= css_resolved.inline.underline;
-                        style.strikethrough |= css_resolved.inline.strikethrough;
-                        style.monospaced |= css_resolved.inline.monospaced;
-                        let mut span_color = css_resolved.color;
-                        let mut span_font_size_em = css_resolved.font_size_em;
-                        if let Some(ref sa) = style_attr {
-                            let parsed = parse_inline_style(sa);
-                            style.bold |= parsed.inline.bold;
-                            style.italic |= parsed.inline.italic;
-                            style.underline |= parsed.inline.underline;
-                            style.strikethrough |= parsed.inline.strikethrough;
-                            style.monospaced |= parsed.inline.monospaced;
-                            if parsed.color.is_some() {
-                                span_color = parsed.color;
-                            }
-                            if parsed.font_size_em.is_some() {
-                                span_font_size_em = parsed.font_size_em;
-                            }
-                        }
-                        let mut entry = StackEntry::new_with_style("span", style, parent_link);
-                        entry.span_color = span_color;
-                        entry.span_font_size_em = span_font_size_em;
-                        state.stack.push(entry);
-                        return TokenSinkResult::Continue;
-                    }
-                }
-
-                let mut entry = StackEntry::new(tag_name);
-
-                entry.element_id = find_attr(attrs, "id");
-
-                // Resolve stylesheet styles from class, then merge inline style= on top
-                let class_attr = find_attr(attrs, "class").unwrap_or_default();
-                let css_resolved = state.stylesheet.resolve(tag_name, &class_attr);
-                entry.block_style = css_resolved.block;
-                if let Some(style_attr) = find_attr(attrs, "style") {
-                    let inline = parse_inline_style(&style_attr).block;
-                    entry.block_style = entry.block_style.merge(inline);
-                }
-
-                if tag_name == "ol"
-                    && let Some(start_str) = find_attr(attrs, "start")
-                {
-                    entry.ol_start = start_str.parse().unwrap_or(1);
-                }
-
-                if tag_name == "aside" {
-                    entry.is_footnote = is_footnote_aside(attrs);
-                } else if matches!(tag_name, "section" | "div" | "ol" | "ul") {
-                    entry.is_footnote_container = is_footnote_container_element(attrs);
-                }
-
-                state.stack.push(entry);
-
-                if self_closing {
-                    let _ = state.stack.pop();
-                }
+                start_tag::handle_start_tag(&mut state, tag_name, attrs, self_closing);
             }
 
             Token::TagToken(Tag {
@@ -590,434 +61,7 @@ impl TokenSink for ContentSink {
                     return TokenSinkResult::Continue;
                 };
 
-                // Capture end tags within SVG elements (but not the SVG closing tag itself)
-                if tag_name != "svg"
-                    && let Some(svg_entry) = state.stack.iter_mut().find(|e| e.tag == "svg")
-                {
-                    svg_entry.svg_content.push_str("</");
-                    svg_entry.svg_content.push_str(tag_name);
-                    svg_entry.svg_content.push('>');
-                }
-
-                // Handle inline style, link, and span tag end: promote spans to parent
-                if INLINE_STYLE_TAGS.contains(&tag_name) || tag_name == "a" || tag_name == "span" {
-                    let mut entry = entry;
-                    entry.flush_text();
-                    if let Some(parent) = state.stack.last_mut() {
-                        // Flush parent's pending text so span ordering is preserved.
-                        // For inline-style/styled-span tags the parent was already
-                        // flushed at start-tag time (this is a no-op); for unstyled
-                        // <span> (generic start path) this is necessary.
-                        parent.flush_text();
-                        parent.spans.extend(entry.spans);
-                    }
-                    return TokenSinkResult::Continue;
-                }
-
-                let mut entry = entry;
-                entry.flush_text();
-
-                // Skip whitespace trimming inside preformatted blocks.
-                // After popping the entry, check if the tag itself is <pre>
-                // or if a <pre> ancestor remains on the stack.
-                let in_pre = tag_name == "pre" || in_preformatted(&state.stack);
-                let (text, spans) = if in_pre {
-                    let text = plain_text_from_spans(&entry.spans);
-                    (text, entry.spans)
-                } else {
-                    let text = plain_text_from_spans(&entry.spans).trim().to_string();
-                    let spans = if text.is_empty() {
-                        Vec::new()
-                    } else {
-                        trim_spans(entry.spans)
-                    };
-                    (text, spans)
-                };
-
-                let block_style = entry.block_style.clone();
-                // Save element_id for Anchor emission (must be extracted before
-                // entry fields are moved into match arms or promote_to_parent).
-                let element_id = entry.element_id.clone();
-                let block = match tag_name {
-                    "h1" => Some(ContentBlock::Heading {
-                        level: 1,
-                        text,
-                        spans,
-                        style: block_style,
-                    }),
-                    "h2" => Some(ContentBlock::Heading {
-                        level: 2,
-                        text,
-                        spans,
-                        style: block_style,
-                    }),
-                    "h3" => Some(ContentBlock::Heading {
-                        level: 3,
-                        text,
-                        spans,
-                        style: block_style,
-                    }),
-                    "h4" => Some(ContentBlock::Heading {
-                        level: 4,
-                        text,
-                        spans,
-                        style: block_style,
-                    }),
-                    "h5" => Some(ContentBlock::Heading {
-                        level: 5,
-                        text,
-                        spans,
-                        style: block_style,
-                    }),
-                    "h6" => Some(ContentBlock::Heading {
-                        level: 6,
-                        text,
-                        spans,
-                        style: block_style,
-                    }),
-                    "p" => {
-                        if text.is_empty() && entry.children.is_empty() {
-                            None
-                        } else if entry.children.is_empty() {
-                            Some(ContentBlock::Paragraph {
-                                text,
-                                spans,
-                                style: block_style,
-                            })
-                        } else {
-                            let mut blocks = Vec::new();
-                            if !text.is_empty() {
-                                blocks.push(ContentBlock::Paragraph {
-                                    text,
-                                    spans,
-                                    style: block_style,
-                                });
-                            }
-                            blocks.extend(entry.children);
-                            if let Some(parent) = state.stack.last_mut() {
-                                parent.children.extend(blocks);
-                            } else {
-                                state.output.extend(blocks);
-                            }
-                            None
-                        }
-                    }
-                    "pre" => {
-                        if tag_name == "pre" || !state.stack.iter().any(|e| e.tag == "pre") {
-                            if !entry.text.is_empty() || !spans.is_empty() {
-                                let raw_text = if spans.is_empty() {
-                                    entry.text
-                                } else {
-                                    plain_text_from_spans(&spans)
-                                };
-                                Some(ContentBlock::Preformatted {
-                                    text: raw_text,
-                                    spans,
-                                    style: block_style,
-                                })
-                            } else {
-                                None
-                            }
-                        } else {
-                            if let Some(parent) = state.stack.last_mut() {
-                                parent.text.push_str(&text);
-                            }
-                            None
-                        }
-                    }
-                    "blockquote" => {
-                        let mut children = entry.children;
-                        if !text.is_empty() {
-                            children.insert(
-                                0,
-                                ContentBlock::Paragraph {
-                                    text,
-                                    spans,
-                                    style: BlockStyle::default(),
-                                },
-                            );
-                        }
-                        if !children.is_empty() {
-                            Some(ContentBlock::BlockQuote { children })
-                        } else {
-                            None
-                        }
-                    }
-                    "ul" => {
-                        if !entry.list_items.is_empty() {
-                            Some(ContentBlock::UnorderedList {
-                                items: entry.list_items,
-                            })
-                        } else if !entry.children.is_empty() {
-                            // Footnote blocks collected from <li> elements inside a footnote container
-                            promote_to_parent(
-                                &mut state,
-                                String::new(),
-                                Vec::new(),
-                                entry.children,
-                                Vec::new(),
-                            );
-                            None
-                        } else {
-                            None
-                        }
-                    }
-                    "ol" => {
-                        if !entry.list_items.is_empty() {
-                            Some(ContentBlock::OrderedList {
-                                start: entry.ol_start,
-                                items: entry.list_items,
-                            })
-                        } else if !entry.children.is_empty() {
-                            // Footnote blocks collected from <li> elements inside a footnote container
-                            promote_to_parent(
-                                &mut state,
-                                String::new(),
-                                Vec::new(),
-                                entry.children,
-                                Vec::new(),
-                            );
-                            None
-                        } else {
-                            None
-                        }
-                    }
-                    "li" => {
-                        if in_footnote_container(&state.stack) {
-                            let id = entry.element_id.unwrap_or_default();
-                            let mut blocks = entry.children;
-                            if !text.is_empty() || !spans.is_empty() {
-                                blocks.insert(
-                                    0,
-                                    ContentBlock::Paragraph {
-                                        text,
-                                        spans,
-                                        style: block_style,
-                                    },
-                                );
-                            }
-                            if let Some(parent) = state.stack.last_mut() {
-                                parent.children.push(ContentBlock::Footnote { id, blocks });
-                            }
-                        } else if let Some(parent) = state.stack.last_mut() {
-                            parent.list_items.push(ListItem {
-                                text,
-                                spans,
-                                style: block_style,
-                            });
-                        }
-                        None
-                    }
-                    "aside" => {
-                        if entry.is_footnote {
-                            let id = entry.element_id.unwrap_or_default();
-                            let mut blocks = entry.children;
-                            if !text.is_empty() || !spans.is_empty() {
-                                blocks.insert(
-                                    0,
-                                    ContentBlock::Paragraph {
-                                        text,
-                                        spans,
-                                        style: BlockStyle::default(),
-                                    },
-                                );
-                            }
-                            if !blocks.is_empty() {
-                                Some(ContentBlock::Footnote { id, blocks })
-                            } else {
-                                None
-                            }
-                        } else {
-                            promote_to_parent(
-                                &mut state,
-                                text,
-                                spans,
-                                entry.children,
-                                entry.list_items,
-                            );
-                            None
-                        }
-                    }
-                    "td" | "th" => {
-                        if let Some(parent) = state.stack.last_mut() {
-                            let is_header = tag_name == "th";
-                            // Prefer inline content (spans/text); fall back to block children
-                            let (cell_text, cell_spans) = if !spans.is_empty() || !text.is_empty() {
-                                (text, spans)
-                            } else {
-                                // Collect text/spans from block-level children (e.g. <p> in <td>)
-                                let mut t = String::new();
-                                let mut s: Vec<TextSpan> = Vec::new();
-                                for child in &entry.children {
-                                    let (ct, cs) = match child {
-                                        ContentBlock::Paragraph { text, spans, .. } => {
-                                            (text.as_str(), spans.as_slice())
-                                        }
-                                        ContentBlock::Heading { text, spans, .. } => {
-                                            (text.as_str(), spans.as_slice())
-                                        }
-                                        _ => continue,
-                                    };
-                                    if !t.is_empty() {
-                                        t.push(' ');
-                                    }
-                                    t.push_str(ct);
-                                    s.extend_from_slice(cs);
-                                }
-                                (t, s)
-                            };
-                            parent.table_cells.push(TableCell {
-                                text: cell_text,
-                                spans: cell_spans,
-                                is_header,
-                            });
-                        }
-                        None
-                    }
-                    "tr" => {
-                        if let Some(parent) = state.stack.last_mut()
-                            && !entry.table_cells.is_empty()
-                        {
-                            parent.table_rows.push(entry.table_cells);
-                        }
-                        None
-                    }
-                    "thead" | "tbody" | "tfoot" => {
-                        if let Some(parent) = state.stack.last_mut() {
-                            parent.table_rows.extend(entry.table_rows);
-                        }
-                        None
-                    }
-                    "table" => {
-                        if !entry.table_rows.is_empty() {
-                            Some(ContentBlock::Table {
-                                rows: entry.table_rows,
-                            })
-                        } else {
-                            None
-                        }
-                    }
-                    "svg" => {
-                        // Check if SVG has actual content beyond just the opening tag
-                        let has_content = entry.svg_content.len() > entry.tag.len() + 2; // > "<svg>"
-                        if has_content {
-                            entry.svg_content.push_str("</svg>");
-                            Some(ContentBlock::Svg {
-                                alt: String::new(), // SVG elements don't have alt text
-                                content: entry.svg_content,
-                                style: block_style,
-                                aspect_ratio: entry.svg_aspect_ratio,
-                            })
-                        } else {
-                            None
-                        }
-                    }
-                    "figcaption" => {
-                        // Store caption on the parent <figure> entry.
-                        // If not inside a <figure> (malformed HTML), fall back
-                        // to rendering it as a plain paragraph.
-                        if state.stack.last().is_some_and(|e| e.tag == "figure") {
-                            if let Some(parent) = state.stack.last_mut() {
-                                parent.figure_caption_spans = spans;
-                                parent.figure_caption_text = text;
-                            }
-                        } else if !text.is_empty() || !spans.is_empty() {
-                            let block = ContentBlock::Paragraph {
-                                text,
-                                spans,
-                                style: block_style,
-                            };
-                            if let Some(parent) = state.stack.last_mut() {
-                                parent.children.push(block);
-                            } else {
-                                state.output.push(block);
-                            }
-                        }
-                        None
-                    }
-                    "figure" => {
-                        let mut blocks = entry.children;
-                        // Any text directly in <figure> (outside figcaption) becomes a paragraph.
-                        if !text.is_empty() || !spans.is_empty() {
-                            blocks.insert(
-                                0,
-                                ContentBlock::Paragraph {
-                                    text,
-                                    spans,
-                                    style: block_style,
-                                },
-                            );
-                        }
-                        let caption = entry.figure_caption_spans;
-                        let caption_text = entry.figure_caption_text;
-                        if !blocks.is_empty() || !caption.is_empty() || !caption_text.is_empty() {
-                            Some(ContentBlock::Figure {
-                                blocks,
-                                caption,
-                                caption_text,
-                            })
-                        } else {
-                            None
-                        }
-                    }
-                    _ if TRANSPARENT_TAGS.contains(&tag_name) => {
-                        // Emit an Anchor before promoted children for structural
-                        // container elements that carry a non-empty id.
-                        if let Some(id) = &element_id
-                            && !id.is_empty()
-                            && ANCHOR_CONTAINER_TAGS.contains(&tag_name)
-                        {
-                            let anchor = ContentBlock::Anchor { id: id.clone() };
-                            if let Some(parent) = state.stack.last_mut() {
-                                parent.children.push(anchor);
-                            } else {
-                                state.output.push(anchor);
-                            }
-                        }
-                        promote_to_parent(
-                            &mut state,
-                            text,
-                            spans,
-                            entry.children,
-                            entry.list_items,
-                        );
-                        None
-                    }
-                    _ => {
-                        promote_to_parent(
-                            &mut state,
-                            text,
-                            spans,
-                            entry.children,
-                            entry.list_items,
-                        );
-                        None
-                    }
-                };
-
-                // For non-transparent blocks (headings, paragraphs, etc.),
-                // emit an Anchor before the block itself when the element had an id.
-                // Footnote blocks already carry their own id for anchor lookup, so
-                // skip them to avoid duplicating the anchor entry.
-                if block.is_some()
-                    && !matches!(block, Some(ContentBlock::Footnote { .. }))
-                    && let Some(id) = &element_id
-                    && !id.is_empty()
-                {
-                    let anchor = ContentBlock::Anchor { id: id.clone() };
-                    if let Some(parent) = state.stack.last_mut() {
-                        parent.children.push(anchor);
-                    } else {
-                        state.output.push(anchor);
-                    }
-                }
-                if let Some(block) = block {
-                    if let Some(parent) = state.stack.last_mut() {
-                        parent.children.push(block);
-                    } else {
-                        state.output.push(block);
-                    }
-                }
+                end_tag::handle_end_tag(&mut state, tag_name, entry);
             }
 
             Token::CharacterTokens(text) => {
@@ -1043,7 +87,8 @@ impl TokenSink for ContentSink {
                         } else {
                             entry.spans.last().is_some_and(|s| s.text.ends_with(' '))
                         };
-                        let normalized = normalize_html_whitespace(&text, prev_ends_with_space);
+                        let normalized =
+                            util::normalize_html_whitespace(&text, prev_ends_with_space);
                         entry.text.push_str(&normalized);
                     }
                 }
@@ -1058,259 +103,6 @@ impl TokenSink for ContentSink {
 
         TokenSinkResult::Continue
     }
-}
-
-fn promote_to_parent(
-    state: &mut SinkState,
-    text: String,
-    spans: Vec<TextSpan>,
-    children: Vec<ContentBlock>,
-    list_items: Vec<ListItem>,
-) {
-    if let Some(parent) = state.stack.last_mut() {
-        if !spans.is_empty() {
-            // Child had styled (or any) content captured as spans.
-            // Flush the parent's own pending plain text into a span first, then
-            // append the child's spans. Do NOT also push `text` — it is the
-            // plain-text projection of `spans` and would cause duplication.
-            parent.flush_text();
-            parent.spans.extend(spans);
-        } else if !text.is_empty() {
-            // Child had only unstyled plain text (no spans produced).
-            // Append it to the parent's accumulating text buffer.
-            if !parent.text.is_empty() && !parent.text.ends_with(char::is_whitespace) {
-                parent.text.push(' ');
-            }
-            parent.text.push_str(&text);
-        }
-        parent.children.extend(children);
-        parent.list_items.extend(list_items);
-    } else {
-        if !text.is_empty() {
-            state.output.push(ContentBlock::Paragraph {
-                text,
-                spans,
-                style: BlockStyle::default(),
-            });
-        }
-        state.output.extend(children);
-    }
-}
-
-/// Returns true when any ancestor stack entry (or the current one) is a `<pre>` element.
-fn in_preformatted(stack: &[StackEntry]) -> bool {
-    stack.iter().any(|e| e.tag == "pre")
-}
-
-/// Normalize a run of HTML character data per the HTML whitespace rules:
-/// collapse any sequence of ASCII whitespace (space, tab, CR, LF) to a single
-/// space.  If the already-accumulated text for this element ends with a space
-/// the leading space of the normalized result is suppressed to avoid doubling.
-fn normalize_html_whitespace(text: &str, prev_ends_with_space: bool) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut in_ws = false;
-    for ch in text.chars() {
-        if matches!(ch, ' ' | '\t' | '\r' | '\n') {
-            if !in_ws {
-                in_ws = true;
-                result.push(' ');
-            }
-        } else {
-            in_ws = false;
-            result.push(ch);
-        }
-    }
-    // Drop the leading space if the parent text already ends with one.
-    if prev_ends_with_space && let Some(stripped) = result.strip_prefix(' ') {
-        return stripped.to_string();
-    }
-    result
-}
-
-/// Result of parsing a `style="..."` attribute or CSS declaration block,
-/// containing both block-level and inline-level properties.
-pub(super) struct ParsedStyle {
-    pub(super) block: BlockStyle,
-    pub(super) inline: InlineStyle,
-    /// Per-span color override (from `color:` property).
-    pub(super) color: Option<[u8; 3]>,
-    /// Per-span font-size multiplier (from `font-size:` property).
-    pub(super) font_size_em: Option<f32>,
-}
-
-/// Parse CSS declarations (from a `style="..."` attribute or a CSS rule body)
-/// into block-level and inline-level properties.
-///
-/// Exposed as `pub(super)` so the stylesheet module can reuse the same property parsing.
-pub(super) fn parse_css_declarations(style_attr: &str) -> ParsedStyle {
-    parse_inline_style(style_attr)
-}
-
-/// Parse a `style="..."` attribute value into block-level and inline-level properties.
-/// Only a small subset of CSS properties is recognised; unknown properties are ignored.
-fn parse_inline_style(style_attr: &str) -> ParsedStyle {
-    let mut result = ParsedStyle {
-        block: BlockStyle::default(),
-        inline: InlineStyle::default(),
-        color: None,
-        font_size_em: None,
-    };
-    for declaration in style_attr.split(';') {
-        let declaration = declaration.trim();
-        if declaration.is_empty() {
-            continue;
-        }
-        let Some((prop, value)) = declaration.split_once(':') else {
-            continue;
-        };
-        let prop = prop.trim().to_ascii_lowercase();
-        let value = value.trim();
-        match prop.as_str() {
-            "text-align" => {
-                result.block.text_align = match value.to_ascii_lowercase().as_str() {
-                    "center" => Some(TextAlign::Center),
-                    "right" => Some(TextAlign::Right),
-                    "left" => Some(TextAlign::Left),
-                    _ => None,
-                };
-            }
-            "font-size" => {
-                let em = parse_css_length_as_em(value);
-                result.block.font_size_em = em;
-                result.font_size_em = em;
-            }
-            "color" => {
-                let c = parse_css_color(value);
-                result.block.color = c;
-                result.color = c;
-            }
-            "margin-top" => {
-                result.block.margin_top_em = parse_css_length_as_em(value);
-            }
-            "margin-bottom" => {
-                result.block.margin_bottom_em = parse_css_length_as_em(value);
-            }
-            "font-weight" => {
-                let v = value.to_ascii_lowercase();
-                if v == "bold" || v == "bolder" {
-                    result.inline.bold = true;
-                } else if let Ok(n) = v.parse::<u32>()
-                    && n >= 700
-                {
-                    result.inline.bold = true;
-                }
-            }
-            "font-style" => {
-                let v = value.to_ascii_lowercase();
-                if v == "italic" || v == "oblique" {
-                    result.inline.italic = true;
-                }
-            }
-            "text-decoration" => {
-                let v = value.to_ascii_lowercase();
-                if v.contains("underline") {
-                    result.inline.underline = true;
-                }
-                if v.contains("line-through") {
-                    result.inline.strikethrough = true;
-                }
-            }
-            "font-family" => {
-                let v = value.to_ascii_lowercase();
-                if v.contains("monospace") || v.contains("courier") || v.contains("consolas") {
-                    result.inline.monospaced = true;
-                }
-            }
-            _ => {}
-        }
-    }
-    result
-}
-
-/// Parse a CSS length value into an `em` multiplier.
-/// Supported units: `em`, `px` (converted as px/16), `%` (divided by 100).
-fn parse_css_length_as_em(value: &str) -> Option<f32> {
-    let v = value.trim().to_ascii_lowercase();
-    if let Some(n) = v.strip_suffix("em") {
-        n.trim().parse().ok()
-    } else if let Some(n) = v.strip_suffix("px") {
-        n.trim().parse::<f32>().ok().map(|px| px / 16.0)
-    } else if let Some(n) = v.strip_suffix('%') {
-        n.trim().parse::<f32>().ok().map(|pct| pct / 100.0)
-    } else {
-        None
-    }
-}
-
-/// Parse a CSS color value into `[r, g, b]`.
-/// Supports `#rrggbb`, `#rgb`, and `rgb(r, g, b)`.
-fn parse_css_color(value: &str) -> Option<[u8; 3]> {
-    let v = value.trim();
-    if let Some(hex) = v.strip_prefix('#') {
-        match hex.len() {
-            6 => {
-                let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-                let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-                let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-                Some([r, g, b])
-            }
-            3 => {
-                let r = u8::from_str_radix(&hex[0..1], 16).ok()? * 17;
-                let g = u8::from_str_radix(&hex[1..2], 16).ok()? * 17;
-                let b = u8::from_str_radix(&hex[2..3], 16).ok()? * 17;
-                Some([r, g, b])
-            }
-            _ => None,
-        }
-    } else if let Some(inner) = v
-        .to_ascii_lowercase()
-        .strip_prefix("rgb(")
-        .and_then(|s| s.strip_suffix(')'))
-    {
-        let parts: Vec<&str> = inner.split(',').collect();
-        if parts.len() == 3 {
-            let r = parts[0].trim().parse().ok()?;
-            let g = parts[1].trim().parse().ok()?;
-            let b = parts[2].trim().parse().ok()?;
-            Some([r, g, b])
-        } else {
-            None
-        }
-    } else {
-        None
-    }
-}
-
-fn find_attr(attrs: &[html5ever::Attribute], name: &str) -> Option<String> {
-    let target = html5ever::LocalName::from(name);
-    attrs
-        .iter()
-        .find(|a| a.name.local == target)
-        .map(|a| a.value.to_string())
-}
-
-/// Trim leading and trailing whitespace from a span list, preserving interior whitespace.
-fn trim_spans(mut spans: Vec<TextSpan>) -> Vec<TextSpan> {
-    // Trim leading whitespace on first span
-    if let Some(first) = spans.first_mut() {
-        let trimmed = first.text.trim_start().to_string();
-        if trimmed.is_empty() {
-            spans.remove(0);
-            // Recurse in case next span also has leading whitespace
-            return trim_spans(spans);
-        }
-        first.text = trimmed;
-    }
-    // Trim trailing whitespace on last span
-    if let Some(last) = spans.last_mut() {
-        let trimmed = last.text.trim_end().to_string();
-        if trimmed.is_empty() {
-            spans.pop();
-            return trim_spans(spans);
-        }
-        last.text = trimmed;
-    }
-    spans
 }
 
 /// Parse XHTML content into structured content blocks.
@@ -1351,6 +143,55 @@ where
     blocks
 }
 
+/// Resolve embedded image references in SVG content by converting xlink:href to data URIs.
+/// This allows SVG with embedded images to render properly when the SVG renderer doesn't
+/// have access to the EPUB's resource resolution system.
+pub fn resolve_svg_images<F>(svg_content: &str, chapter_href: &str, resolve_image: &mut F) -> String
+where
+    F: FnMut(&str) -> Option<(Vec<u8>, String)>,
+{
+    use regex::Regex;
+
+    // Simple regex-based approach to find and replace xlink:href attributes
+    let re = Regex::new(r#"<image([^>]*?)\s+xlink:href="([^"]*)"([^>]*?)>"#).unwrap();
+
+    let result = re.replace_all(svg_content, |caps: &regex::Captures| {
+        let before_href = &caps[1];
+        let href = &caps[2];
+        let after_href = &caps[3];
+
+        // Resolve relative paths against the chapter href
+        let resolved_path = if href.starts_with("../") || href.starts_with("./") {
+            // This is a relative path, resolve it against the chapter's directory
+            let chapter_dir = base_dir(chapter_href);
+            normalize_path(&format!("{}/{}", chapter_dir, href))
+        } else {
+            href.to_string()
+        };
+
+        // Resolve the image reference
+        if let Some((image_data, media_type)) = resolve_image(&resolved_path) {
+            // Convert to data URI
+            use base64::Engine;
+            let base64_data = base64::engine::general_purpose::STANDARD.encode(&image_data);
+            let data_uri = format!("data:{};base64,{}", media_type, base64_data);
+
+            format!(
+                r#"<image{} xlink:href="{}"{}>"#,
+                before_href, data_uri, after_href
+            )
+        } else {
+            // Keep original if resolution fails
+            format!(
+                r#"<image{} xlink:href="{}"{}>"#,
+                before_href, href, after_href
+            )
+        }
+    });
+
+    result.to_string()
+}
+
 /// Decode the pixel dimensions of a raster image from raw bytes without full decoding.
 /// Returns `(0, 0)` if the format is unsupported or the data is corrupt.
 fn decode_image_dimensions(data: &[u8]) -> (u32, u32) {
@@ -1359,16 +200,6 @@ fn decode_image_dimensions(data: &[u8]) -> (u32, u32) {
         .ok()
         .and_then(|r| r.into_dimensions().ok())
         .unwrap_or((0, 0))
-}
-
-/// Parse the width-to-height ratio from a `viewBox="min-x min-y w h"` attribute value.
-fn parse_viewbox_str(viewbox: &str) -> Option<f32> {
-    let mut parts = viewbox.split_whitespace();
-    let _min_x: f32 = parts.next()?.parse().ok()?;
-    let _min_y: f32 = parts.next()?.parse().ok()?;
-    let w: f32 = parts.next()?.parse().ok()?;
-    let h: f32 = parts.next()?.parse().ok()?;
-    if h > 0.0 { Some(w / h) } else { None }
 }
 
 /// Search an SVG source string for a `viewBox` attribute and return the width/height ratio.
@@ -1385,7 +216,7 @@ fn parse_viewbox_aspect_ratio(svg: &str) -> Option<f32> {
     } else {
         return None;
     };
-    parse_viewbox_str(vb)
+    util::parse_viewbox_str(vb)
 }
 
 /// Walk the block tree and resolve placeholder Image blocks.
@@ -1499,55 +330,6 @@ fn resolve_images<F>(
     }
 }
 
-/// Resolve embedded image references in SVG content by converting xlink:href to data URIs.
-/// This allows SVG with embedded images to render properly when the SVG renderer doesn't
-/// have access to the EPUB's resource resolution system.
-pub fn resolve_svg_images<F>(svg_content: &str, chapter_href: &str, resolve_image: &mut F) -> String
-where
-    F: FnMut(&str) -> Option<(Vec<u8>, String)>,
-{
-    use regex::Regex;
-
-    // Simple regex-based approach to find and replace xlink:href attributes
-    let re = Regex::new(r#"<image([^>]*?)\s+xlink:href="([^"]*)"([^>]*?)>"#).unwrap();
-
-    let result = re.replace_all(svg_content, |caps: &regex::Captures| {
-        let before_href = &caps[1];
-        let href = &caps[2];
-        let after_href = &caps[3];
-
-        // Resolve relative paths against the chapter href
-        let resolved_path = if href.starts_with("../") || href.starts_with("./") {
-            // This is a relative path, resolve it against the chapter's directory
-            let chapter_dir = base_dir(chapter_href);
-            normalize_path(&format!("{}/{}", chapter_dir, href))
-        } else {
-            href.to_string()
-        };
-
-        // Resolve the image reference
-        if let Some((image_data, media_type)) = resolve_image(&resolved_path) {
-            // Convert to data URI
-            use base64::Engine;
-            let base64_data = base64::engine::general_purpose::STANDARD.encode(&image_data);
-            let data_uri = format!("data:{};base64,{}", media_type, base64_data);
-
-            format!(
-                r#"<image{} xlink:href="{}"{}>"#,
-                before_href, data_uri, after_href
-            )
-        } else {
-            // Keep original if resolution fails
-            format!(
-                r#"<image{} xlink:href="{}"{}>"#,
-                before_href, href, after_href
-            )
-        }
-    });
-
-    result.to_string()
-}
-
 /// Normalize path by resolving ".." and "." components
 fn normalize_path(path: &str) -> String {
     let parts: Vec<&str> = path.split('/').collect();
@@ -1585,7 +367,12 @@ fn normalize_path(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::util::normalize_html_whitespace;
+    use super::util::parse_css_color;
+    use super::util::parse_css_length_as_em;
+    use super::util::parse_inline_style;
     use super::*;
+    use crate::TextAlign;
 
     fn parse(html: &str) -> Vec<ContentBlock> {
         parse_xhtml(
