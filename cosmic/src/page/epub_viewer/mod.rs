@@ -613,9 +613,7 @@ impl EpubViewer {
     }
 
     fn view_chapter_sidebar(&self) -> Element<'_, EpubViewerMessage> {
-        let cosmic_theme::Spacing {
-            space_xxs, space_s, ..
-        } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
         let chapter_info = if !self.chapters.is_empty() {
             format!("{} / {}", self.active_chapter + 1, self.chapters.len())
@@ -634,15 +632,14 @@ impl EpubViewer {
         } else {
             self.nav_entries.len()
         };
-        let mut column = widget::column::with_capacity(capacity)
-            .padding(space_xxs)
-            .spacing(space_xxs);
+        let mut column = widget::column::with_capacity(capacity);
 
         if self.nav_entries.is_empty() {
             for (idx, chapter) in self.chapters.iter().enumerate() {
                 let label = widget::text::body(&chapter.label)
                     .wrapping(cosmic::iced::widget::text::Wrapping::None);
                 let button = widget::button::custom(label)
+                    .class(widget::button::ButtonClass::Link)
                     .on_press(EpubViewerMessage::SelectChapter(idx))
                     .selected(idx == self.active_chapter)
                     .width(Length::Fill);
@@ -659,6 +656,7 @@ impl EpubViewer {
                 let label = widget::text::body(&entry.label)
                     .wrapping(cosmic::iced::widget::text::Wrapping::None);
                 let button = widget::button::custom(label)
+                    .class(widget::button::ButtonClass::Link)
                     .on_press(EpubViewerMessage::SelectNavEntry(idx))
                     .selected(selected)
                     .width(Length::Fill);
