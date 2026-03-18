@@ -476,6 +476,8 @@ pub struct EpubViewer {
     font_family_names: widget::combo_box::State<FontFamily>,
     /// Ordered nav entries from the EPUB TOC (with depth and fragment-preserving hrefs).
     nav_entries: Vec<NavEntry>,
+    /// Index of the most recently activated nav entry, for precise sidebar highlighting.
+    active_nav_entry: Option<usize>,
     /// Base body font size in pixels (12–24, default 16).
     base_font_size: f32,
     /// Block index of the navigation target to highlight briefly after fragment navigation.
@@ -538,6 +540,7 @@ impl EpubViewer {
             font_family: saved_prefs.font_family,
             font_family_names: widget::combo_box::State::new(FontFamily::all()),
             nav_entries: Vec::new(),
+            active_nav_entry: None,
             base_font_size: saved_prefs.base_font_size,
             highlighted_block: None,
             search_visible: false,
@@ -636,12 +639,18 @@ impl EpubViewer {
 
         if self.nav_entries.is_empty() {
             for (idx, chapter) in self.chapters.iter().enumerate() {
-                let label = widget::text::body(&chapter.label)
+                let active = idx == self.active_chapter;
+                let mut label = widget::text::body(&chapter.label)
                     .wrapping(cosmic::iced::widget::text::Wrapping::None);
+                if active {
+                    label = label.font(font::Font {
+                        weight: font::Weight::Bold,
+                        ..Default::default()
+                    });
+                }
                 let button = widget::button::custom(label)
                     .class(widget::button::ButtonClass::Link)
                     .on_press(EpubViewerMessage::SelectChapter(idx))
-                    .selected(idx == self.active_chapter)
                     .width(Length::Fill);
                 column = column.push(button);
             }
@@ -652,13 +661,27 @@ impl EpubViewer {
                     .split_once('#')
                     .map(|(b, _)| b)
                     .unwrap_or(&entry.href);
-                let selected = base == current_href;
-                let label = widget::text::body(&entry.label)
+                let is_active_chapter = base == current_href;
+                // For non-active chapters, only show the first nav entry of that
+                // chapter (the "group leader") and collapse the rest.
+                let is_group_leader = !self.nav_entries[..idx]
+                    .iter()
+                    .any(|e| e.href.split_once('#').map(|(b, _)| b).unwrap_or(&e.href) == base);
+                if !is_active_chapter && !is_group_leader {
+                    continue;
+                }
+                let active = self.active_nav_entry == Some(idx);
+                let mut label = widget::text::body(&entry.label)
                     .wrapping(cosmic::iced::widget::text::Wrapping::None);
+                if active {
+                    label = label.font(font::Font {
+                        weight: font::Weight::Bold,
+                        ..Default::default()
+                    });
+                }
                 let button = widget::button::custom(label)
                     .class(widget::button::ButtonClass::Link)
                     .on_press(EpubViewerMessage::SelectNavEntry(idx))
-                    .selected(selected)
                     .width(Length::Fill);
                 let indent = (entry.depth as f32) * (space_s as f32);
                 let row = widget::row()
@@ -1470,6 +1493,7 @@ impl Page for EpubViewer {
             EpubViewerMessage::SelectChapter(idx) => {
                 if idx < self.chapters.len() {
                     self.active_chapter = idx;
+                    self.active_nav_entry = None;
                     self.scroll_y = 0.0;
                     self.current_page = 0;
                     self.saved_position = None;
@@ -1481,6 +1505,7 @@ impl Page for EpubViewer {
                 Task::none()
             }
             EpubViewerMessage::SelectNavEntry(nav_idx) => {
+                self.active_nav_entry = Some(nav_idx);
                 if let Some(entry) = self.nav_entries.get(nav_idx) {
                     let (base, fragment) = match entry.href.split_once('#') {
                         Some((b, f)) => (b.to_owned(), Some(f.to_owned())),
