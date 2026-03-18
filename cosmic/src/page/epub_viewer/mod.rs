@@ -458,6 +458,10 @@ pub struct EpubViewer {
     current_page: usize,
     /// Cached pagination layout per chapter index.
     pagination_cache: HashMap<usize, PaginationLayout>,
+    /// Cached per-block heights for each chapter, keyed by chapter index.
+    /// Value is `(content_width, font_size, heights_vec)`.  Invalidated when
+    /// `content_width_pct`, `base_font_size`, or the EPUB document changes.
+    block_heights_cache: HashMap<usize, (f32, f32, Vec<f32>)>,
     /// Most recently observed viewport dimensions, set from the `responsive`
     /// closure (via Cell, since `view()` takes `&self`).
     viewport_size: Cell<(f32, f32)>,
@@ -537,6 +541,7 @@ impl EpubViewer {
             view_mode: saved_prefs.view_mode,
             current_page: 0,
             pagination_cache: HashMap::new(),
+            block_heights_cache: HashMap::new(),
             viewport_size: Cell::new((0.0, 0.0)),
             dual_page: saved_prefs.dual_page,
             page_height_fraction: saved_prefs.page_height_fraction,
@@ -1402,6 +1407,7 @@ impl Page for EpubViewer {
             EpubViewerMessage::EpubLoaded(title, chapters, epub_doc) => {
                 self.title = title;
                 self.chapters = chapters;
+                self.block_heights_cache.clear();
                 self.nav_entries = epub_doc
                     .as_ref()
                     .map(|d| d.as_ref().nav().to_vec())
@@ -1421,16 +1427,11 @@ impl Page for EpubViewer {
                 let target_y = if self.view_mode == ViewMode::Scroll {
                     if let Some(bi) = self.pending_block_index.take() {
                         let content_w = 800.0 * (self.content_width_pct / 100.0);
-                        let mut fs = self.font_system.borrow_mut();
-                        self.chapters.get(self.active_chapter).map(|ch| {
-                            compute_y_for_block_index(
-                                &ch.blocks,
-                                bi,
-                                content_w,
-                                self.base_font_size,
-                                &mut fs,
-                            )
-                        })
+                        let chapter_idx = self.active_chapter;
+                        self.ensure_block_heights(chapter_idx, content_w);
+                        self.block_heights_cache
+                            .get(&chapter_idx)
+                            .map(|(_, _, heights)| y_for_block_index_from_heights(heights, bi))
                     } else if self.scroll_y > 0.0 {
                         Some(self.scroll_y)
                     } else {
@@ -1473,16 +1474,11 @@ impl Page for EpubViewer {
                     // Chapters loaded before progress — compute y now.
                     let target_y = if let Some(bi) = self.pending_block_index.take() {
                         let content_w = 800.0 * (self.content_width_pct / 100.0);
-                        let mut fs = self.font_system.borrow_mut();
-                        self.chapters.get(self.active_chapter).map(|ch| {
-                            compute_y_for_block_index(
-                                &ch.blocks,
-                                bi,
-                                content_w,
-                                self.base_font_size,
-                                &mut fs,
-                            )
-                        })
+                        let chapter_idx = self.active_chapter;
+                        self.ensure_block_heights(chapter_idx, content_w);
+                        self.block_heights_cache
+                            .get(&chapter_idx)
+                            .map(|(_, _, heights)| y_for_block_index_from_heights(heights, bi))
                     } else if self.scroll_y > 0.0 {
                         Some(self.scroll_y)
                     } else {
@@ -1531,28 +1527,32 @@ impl Page for EpubViewer {
 
                         // Navigate to the fragment position within the chapter.
                         if let Some(frag) = fragment.filter(|f| !f.is_empty()) {
-                            let chapter = &self.chapters[idx];
-
-                            // Find the Anchor block index — used for both highlighting
-                            // and paginated navigation.
-                            let block_idx = chapter.blocks.iter().position(
-                                |b| matches!(b, ContentBlock::Anchor { id } if id == &frag),
-                            );
+                            // Compute block_idx and chapter length before calling
+                            // ensure_block_heights (which needs &mut self).
+                            let (block_idx, chapter_block_count) = {
+                                let chapter = &self.chapters[idx];
+                                let bidx = chapter.blocks.iter().position(
+                                    |b| matches!(b, ContentBlock::Anchor { id } if id == &frag),
+                                );
+                                (bidx, chapter.blocks.len())
+                            };
 
                             let mut nav_task = Task::none();
 
                             match self.view_mode {
                                 ViewMode::Scroll => {
                                     let content_w = 800.0 * (self.content_width_pct / 100.0);
-                                    let target_y = {
-                                        let mut fs = self.font_system.borrow_mut();
-                                        compute_anchor_y(
-                                            &chapter.blocks,
+                                    self.ensure_block_heights(idx, content_w);
+                                    let target_y = if let Some((_, _, heights)) =
+                                        self.block_heights_cache.get(&idx)
+                                    {
+                                        anchor_y_from_heights(
+                                            &self.chapters[idx].blocks,
+                                            heights,
                                             &frag,
-                                            content_w,
-                                            self.base_font_size,
-                                            &mut fs,
                                         )
+                                    } else {
+                                        None
                                     };
                                     if let Some(target_y) = target_y {
                                         self.scroll_y = target_y;
@@ -1586,7 +1586,7 @@ impl Page for EpubViewer {
                             // Set highlight on the block immediately following the Anchor
                             // and schedule a deferred clear.
                             if let Some(bi) = block_idx
-                                && bi + 1 < chapter.blocks.len()
+                                && bi + 1 < chapter_block_count
                             {
                                 self.highlighted_block = Some(bi + 1);
                                 let clear_task = Task::perform(
@@ -1627,73 +1627,74 @@ impl Page for EpubViewer {
 
                 if path.is_empty() {
                     // Pure fragment link — same-page navigation.
-                    if let Some(frag) = fragment.filter(|f| !f.is_empty())
-                        && let Some(chapter) = self.chapters.get(self.active_chapter)
-                    {
-                        tracing::info!(
-                            "following fragment link #{frag} in chapter {}",
-                            chapter.href
-                        );
-                        // Compute scroll-mode target using accurate shaped measurement.
+                    if let Some(frag) = fragment.filter(|f| !f.is_empty()) {
+                        // Ensure cached heights before borrowing chapter (avoid split borrow).
+                        let chapter_idx = self.active_chapter;
                         let content_w = 800.0 * (self.content_width_pct / 100.0);
-                        let target_y = {
-                            let mut fs = self.font_system.borrow_mut();
-                            compute_anchor_y(
-                                &chapter.blocks,
-                                frag,
-                                content_w,
-                                self.base_font_size,
-                                &mut fs,
-                            )
-                        };
-                        if target_y.is_none() {
-                            tracing::info!("anchor #{frag} not found in chapter {}", chapter.href);
-                        }
-                        if let Some(target_y) = target_y {
-                            // Navigating to a footnote: save reading position (once).
-                            if self.saved_position.is_none() {
-                                self.saved_position = Some(match self.view_mode {
-                                    ViewMode::Scroll => SavedPosition::ScrollY(self.scroll_y),
-                                    ViewMode::Paginated => {
-                                        SavedPosition::PageIndex(self.current_page)
-                                    }
-                                });
-                            }
-                            if self.view_mode == ViewMode::Paginated {
-                                // Find page containing the footnote block.
-                                if let Some(block_idx) = chapter.blocks.iter().position(|b| {
-                                    matches!(b, ContentBlock::Footnote { id, .. } if id == frag)
-                                })
-                                    && let Some(layout) =
-                                        self.pagination_cache.get(&self.active_chapter)
-                                        && let Some(page_idx) = layout.pages.iter().position(
-                                            |p| p.start <= block_idx && block_idx < p.end,
-                                        ) {
-                                            self.current_page = page_idx;
-                                        }
-                                return Task::none();
-                            }
-                            return scrollable::scroll_to(
-                                self.content_scroll_id.clone(),
-                                scrollable::AbsoluteOffset {
-                                    x: 0.0,
-                                    y: target_y,
-                                }
-                                .into(),
+                        self.ensure_block_heights(chapter_idx, content_w);
+
+                        if let Some(chapter) = self.chapters.get(chapter_idx) {
+                            tracing::info!(
+                                "following fragment link #{frag} in chapter {}",
+                                chapter.href
                             );
-                        } else if let Some(saved) = self.saved_position.take() {
-                            // Unknown fragment (likely a back-reference ↩): restore
-                            // the position saved before the last footnote jump.
-                            match saved {
-                                SavedPosition::PageIndex(page) => {
-                                    self.current_page = page;
+                            let target_y = self.block_heights_cache.get(&chapter_idx).and_then(
+                                |(_, _, heights)| {
+                                    anchor_y_from_heights(&chapter.blocks, heights, frag)
+                                },
+                            );
+                            if target_y.is_none() {
+                                tracing::info!(
+                                    "anchor #{frag} not found in chapter {}",
+                                    chapter.href
+                                );
+                            }
+                            if let Some(target_y) = target_y {
+                                // Navigating to a footnote: save reading position (once).
+                                if self.saved_position.is_none() {
+                                    self.saved_position = Some(match self.view_mode {
+                                        ViewMode::Scroll => SavedPosition::ScrollY(self.scroll_y),
+                                        ViewMode::Paginated => {
+                                            SavedPosition::PageIndex(self.current_page)
+                                        }
+                                    });
+                                }
+                                if self.view_mode == ViewMode::Paginated {
+                                    // Find page containing the footnote block.
+                                    if let Some(block_idx) = chapter.blocks.iter().position(|b| {
+                                        matches!(b, ContentBlock::Footnote { id, .. } if id == frag)
+                                    })
+                                        && let Some(layout) =
+                                            self.pagination_cache.get(&chapter_idx)
+                                            && let Some(page_idx) = layout.pages.iter().position(
+                                                |p| p.start <= block_idx && block_idx < p.end,
+                                            ) {
+                                                self.current_page = page_idx;
+                                            }
                                     return Task::none();
                                 }
-                                SavedPosition::ScrollY(y) => {
-                                    return scrollable::scroll_to(
-                                        self.content_scroll_id.clone(),
-                                        scrollable::AbsoluteOffset { x: 0.0, y }.into(),
-                                    );
+                                return scrollable::scroll_to(
+                                    self.content_scroll_id.clone(),
+                                    scrollable::AbsoluteOffset {
+                                        x: 0.0,
+                                        y: target_y,
+                                    }
+                                    .into(),
+                                );
+                            } else if let Some(saved) = self.saved_position.take() {
+                                // Unknown fragment (likely a back-reference ↩): restore
+                                // the position saved before the last footnote jump.
+                                match saved {
+                                    SavedPosition::PageIndex(page) => {
+                                        self.current_page = page;
+                                        return Task::none();
+                                    }
+                                    SavedPosition::ScrollY(y) => {
+                                        return scrollable::scroll_to(
+                                            self.content_scroll_id.clone(),
+                                            scrollable::AbsoluteOffset { x: 0.0, y }.into(),
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -1885,6 +1886,7 @@ impl Page for EpubViewer {
             EpubViewerMessage::SetContentMaxWidth(pct) => {
                 self.content_width_pct = pct.clamp(50.0, 150.0);
                 self.pagination_cache.clear();
+                self.block_heights_cache.clear();
                 self.maybe_repaginate();
                 self.save_current_prefs();
                 Task::none()
@@ -1892,6 +1894,7 @@ impl Page for EpubViewer {
             EpubViewerMessage::SetFontFamily(family) => {
                 self.font_family = family;
                 self.pagination_cache.clear();
+                self.block_heights_cache.clear();
                 self.maybe_repaginate();
                 self.save_current_prefs();
                 Task::none()
@@ -1899,6 +1902,7 @@ impl Page for EpubViewer {
             EpubViewerMessage::SetBaseFontSize(size) => {
                 self.base_font_size = size.clamp(12.0, 24.0);
                 self.pagination_cache.clear();
+                self.block_heights_cache.clear();
                 self.maybe_repaginate();
                 self.save_current_prefs();
                 Task::none()
@@ -2330,45 +2334,24 @@ fn extract_attr_value<'a>(tag_content: &'a str, attr_name: &str) -> Option<&'a s
     }
 }
 
-/// Sum the shaped heights of the first `block_idx` blocks to obtain the pixel y-offset
-/// at which block `block_idx` would be rendered.  Used to convert a saved block index
-/// back to a scroll position when restoring reading progress.
-fn compute_y_for_block_index(
-    blocks: &[ContentBlock],
-    block_idx: usize,
-    content_width: f32,
-    font_size: f32,
-    font_system: &mut FontSystem,
-) -> f32 {
+/// Compute the y-offset for `block_idx` using pre-computed `heights`.
+fn y_for_block_index_from_heights(heights: &[f32], block_idx: usize) -> f32 {
     const SPACING: f32 = 8.0;
-    let mut y = 0.0f32;
-    for block in blocks.iter().take(block_idx) {
-        y += estimated_block_height_for_width(block, content_width, font_size, font_system)
-            + SPACING;
-    }
-    y
+    heights.iter().take(block_idx).map(|&h| h + SPACING).sum()
 }
 
-/// Walk `blocks` with shaped height measurement and return the accumulated y-offset of the
-/// first `Anchor` or `Footnote` block whose `id` matches `anchor_id`.  Returns `None` if
-/// no matching block is found.
-fn compute_anchor_y(
-    blocks: &[ContentBlock],
-    anchor_id: &str,
-    content_width: f32,
-    font_size: f32,
-    font_system: &mut FontSystem,
-) -> Option<f32> {
+/// Walk `blocks` with pre-computed `heights` and return the accumulated y-offset
+/// of the first `Anchor` or `Footnote` whose `id` matches `anchor_id`.
+fn anchor_y_from_heights(blocks: &[ContentBlock], heights: &[f32], anchor_id: &str) -> Option<f32> {
     const SPACING: f32 = 8.0;
     let mut y = 0.0f32;
-    for block in blocks {
+    for (block, &h) in blocks.iter().zip(heights.iter()) {
         match block {
             ContentBlock::Anchor { id } if id == anchor_id => return Some(y),
             ContentBlock::Footnote { id, .. } if id == anchor_id => return Some(y),
             _ => {}
         }
-        y += estimated_block_height_for_width(block, content_width, font_size, font_system)
-            + SPACING;
+        y += h + SPACING;
     }
     None
 }
@@ -2819,6 +2802,38 @@ fn paginate_blocks(
 }
 
 impl EpubViewer {
+    /// Ensure `block_heights_cache` has a valid entry for `chapter_idx` at the
+    /// given `content_width`.  If the cached entry exists and matches both the
+    /// width and the current `base_font_size` it is reused; otherwise the heights
+    /// are computed via shaped text measurement and stored.
+    fn ensure_block_heights(&mut self, chapter_idx: usize, content_width: f32) {
+        let font_size = self.base_font_size;
+        if let Some((cw, fs, _)) = self.block_heights_cache.get(&chapter_idx) {
+            if (*cw - content_width).abs() < 0.5 && (*fs - font_size).abs() < 0.001 {
+                return;
+            }
+        }
+        let heights = match self.chapters.get(chapter_idx) {
+            Some(ch) => {
+                let mut fs_guard = self.font_system.borrow_mut();
+                ch.blocks
+                    .iter()
+                    .map(|block| {
+                        estimated_block_height_for_width(
+                            block,
+                            content_width,
+                            font_size,
+                            &mut fs_guard,
+                        )
+                    })
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        self.block_heights_cache
+            .insert(chapter_idx, (content_width, font_size, heights));
+    }
+
     fn sync_raw_html_content(&mut self) {
         self.raw_html_content = self
             .chapters
