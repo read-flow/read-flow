@@ -72,7 +72,11 @@ pub(super) fn render_partial_paragraph<'a>(
             .map(|s| owned_styled_span(s, family))
             .collect();
         apply_text_align(
-            rich_text(iced_spans).size(size).width(Length::Fill).into(),
+            rich_text(iced_spans)
+                .on_link_click(|m| m)
+                .size(size)
+                .width(Length::Fill)
+                .into(),
             style,
         )
     };
@@ -386,11 +390,14 @@ impl<'a> RenderContext<'a> {
                 if !caption.is_empty() {
                     let iced_spans: Vec<_> =
                         caption.iter().map(|s| styled_span(s, family)).collect();
-                    let caption_el: Element<'_, EpubViewerMessage> =
-                        widget::container(rich_text(iced_spans).size(caption_size))
-                            .width(Length::Fill)
-                            .align_x(Horizontal::Center)
-                            .into();
+                    let caption_el: Element<'_, EpubViewerMessage> = widget::container(
+                        rich_text(iced_spans)
+                            .on_link_click(|m| m)
+                            .size(caption_size),
+                    )
+                    .width(Length::Fill)
+                    .align_x(Horizontal::Center)
+                    .into();
                     col = col.push(caption_el);
                 } else if !caption_text.is_empty() {
                     let caption_el: Element<'_, EpubViewerMessage> =
@@ -526,6 +533,7 @@ fn render_table(
 
             let cell_content: Element<'_, EpubViewerMessage> = if !cell_spans.is_empty() {
                 rich_text(cell_spans)
+                    .on_link_click(|m| m)
                     .size(font_size)
                     .width(Length::Fill)
                     .into()
@@ -640,7 +648,11 @@ fn render_spans(
     family: font::Family,
 ) -> Element<'_, EpubViewerMessage> {
     let iced_spans: Vec<_> = spans.iter().map(|s| styled_span(s, family)).collect();
-    rich_text(iced_spans).size(size).width(Length::Fill).into()
+    rich_text(iced_spans)
+        .on_link_click(|m| m)
+        .size(size)
+        .width(Length::Fill)
+        .into()
 }
 
 fn render_list_item_spans<'a>(
@@ -653,7 +665,11 @@ fn render_list_item_spans<'a>(
         Vec::with_capacity(spans.len() + 1);
     iced_spans.push(span(prefix));
     iced_spans.extend(spans.iter().map(|s| styled_span(s, family)));
-    rich_text(iced_spans).size(size).width(Length::Fill).into()
+    rich_text(iced_spans)
+        .on_link_click(|m| m)
+        .size(size)
+        .width(Length::Fill)
+        .into()
 }
 
 fn styled_span<'a>(
