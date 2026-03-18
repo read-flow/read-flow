@@ -7,6 +7,7 @@ use cosmic::app::context_drawer;
 use cosmic::cosmic_config;
 use cosmic::cosmic_config::CosmicConfigEntry;
 use cosmic::iced::Subscription;
+use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::event;
 use cosmic::iced::event::Event;
 use cosmic::iced::keyboard::Event as KeyEvent;
@@ -323,7 +324,11 @@ impl cosmic::Application for ReadFlow {
         if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
             self.pages.view(page).map(Into::into)
         } else {
-            widget::text::title1(fl!("welcome")).apply(full_page)
+            widget::column()
+                .push(widget::icon::from_svg_bytes(APP_ICON).icon().size(256))
+                .push(widget::text::title1(fl!("welcome")))
+                .align_x(Horizontal::Center)
+                .apply(full_page)
         }
     }
 
