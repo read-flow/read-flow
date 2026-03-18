@@ -386,7 +386,7 @@ impl Clone for EpubViewerOutput {
 
 #[derive(Debug, Clone)]
 pub enum EpubViewerMessage {
-    EpubLoaded(String, Vec<EpubChapter>, CloneableEpubDocument),
+    EpubLoaded(String, Vec<EpubChapter>, Option<CloneableEpubDocument>),
     /// Carries restored reading position from saved progress.
     ReadingProgressLoaded(ReadingPosition),
     SelectChapter(usize),
@@ -568,12 +568,22 @@ impl EpubViewer {
                         .await
                         .unwrap()
                 },
-                |(title, chapters, epub_doc)| {
-                    cosmic::action::app(EpubViewerMessage::EpubLoaded(
-                        title,
-                        chapters,
-                        CloneableEpubDocument::from(epub_doc),
-                    ))
+                |result| match result {
+                    Ok((title, chapters, epub_doc)) => {
+                        cosmic::action::app(EpubViewerMessage::EpubLoaded(
+                            title,
+                            chapters,
+                            Some(CloneableEpubDocument::from(epub_doc)),
+                        ))
+                    }
+                    Err(e) => {
+                        tracing::error!("failed to open EPUB: {e}");
+                        cosmic::action::app(EpubViewerMessage::EpubLoaded(
+                            String::new(),
+                            Vec::new(),
+                            None,
+                        ))
+                    }
                 },
             ));
         }
@@ -1407,8 +1417,11 @@ impl Page for EpubViewer {
             EpubViewerMessage::EpubLoaded(title, chapters, epub_doc) => {
                 self.title = title;
                 self.chapters = chapters;
-                self.nav_entries = epub_doc.as_ref().nav().to_vec();
-                self.epub_document = Some(epub_doc);
+                self.nav_entries = epub_doc
+                    .as_ref()
+                    .map(|d| d.as_ref().nav().to_vec())
+                    .unwrap_or_default();
+                self.epub_document = epub_doc;
                 if !self.chapters.is_empty() {
                     self.active_chapter = self
                         .initial_chapter
@@ -2156,19 +2169,10 @@ fn collect_image_handles(blocks: &[ContentBlock], map: &mut HashMap<usize, widge
 }
 
 /// Load EPUB chapters from a file path. Runs on a blocking thread.
-fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>, EpubDocument) {
-    let epub_doc = match EpubDocument::open(path) {
-        Ok(doc) => doc,
-        Err(e) => {
-            tracing::error!("failed to open EPUB: {e}");
-            // Return empty chapters and a dummy document
-            let dummy_doc = EpubDocument::open(path).unwrap_or_else(|_| {
-                // Create a minimal document by trying again or panic
-                EpubDocument::open(path).expect("Failed to create EPUB document")
-            });
-            return (String::new(), Vec::new(), dummy_doc);
-        }
-    };
+fn load_epub_chapters(
+    path: &Path,
+) -> Result<(String, Vec<EpubChapter>, EpubDocument), epub::EpubError> {
+    let epub_doc = EpubDocument::open(path)?;
 
     let title = epub_doc.metadata().title.clone().unwrap_or_default();
 
@@ -2222,7 +2226,7 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>, EpubDocument) {
         });
     }
 
-    (title, chapters, epub_doc)
+    Ok((title, chapters, epub_doc))
 }
 
 /// Extract `<link rel="stylesheet" href="...">` references and inline `<style>` blocks
