@@ -41,6 +41,8 @@ pub struct Cli {
     #[clap(long)]
     /// Private tags and tagged files are hidden from the UI by default
     private_tags: Vec<String>,
+    /// Files to open on startup (EPUB, PDF, MOBI, or any file handled by the external viewer)
+    files: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -64,6 +66,7 @@ impl Provider<Settings> for AppSettings {
             configuration_file,
             private_mode,
             private_tags,
+            ..
         } = &self.cli_parameters;
 
         // Extract settings from the application's configuration.
@@ -91,8 +94,10 @@ fn main() -> anyhow::Result<()> {
     i18n::init(&requested_languages);
 
     // Parse commandline parameters.
+    let cli = Cli::parse();
+    let initial_files = cli.files.clone();
     let settings = AppSettings {
-        cli_parameters: Cli::parse(),
+        cli_parameters: cli,
     };
 
     let config_path = settings.config_path();
@@ -106,7 +111,7 @@ fn main() -> anyhow::Result<()> {
     );
 
     // Starts the application's event loop with `()` as the application's flags.
-    cosmic::app::run::<app::ReadFlow>(settings, application_module)?;
+    cosmic::app::run::<app::ReadFlow>(settings, (application_module, initial_files))?;
 
     Ok(())
 }

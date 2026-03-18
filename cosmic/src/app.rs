@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use cosmic::app::context_drawer;
@@ -24,6 +25,7 @@ use provider::r#async::HasSetExpired;
 use read_flow_core::scan::DirectorySettings;
 
 use crate::ApplicationModule;
+use crate::aggregator::Document;
 use crate::config::Config;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
@@ -107,7 +109,7 @@ impl cosmic::Application for ReadFlow {
     type Executor = cosmic::executor::Default;
 
     /// Data that your application receives to its init method.
-    type Flags = Arc<ApplicationModule>;
+    type Flags = (Arc<ApplicationModule>, Vec<PathBuf>);
 
     /// Messages which the application and its widgets will emit.
     type Message = Message;
@@ -126,7 +128,7 @@ impl cosmic::Application for ReadFlow {
     /// Initializes the application with any given flags and startup commands.
     fn init(
         core: cosmic::Core,
-        application_module: Self::Flags,
+        (application_module, initial_files): Self::Flags,
     ) -> (Self, Task<cosmic::Action<Self::Message>>) {
         // Create a nav bar with three page items.
         let mut nav = nav_bar::Model::default();
@@ -198,9 +200,25 @@ impl cosmic::Application for ReadFlow {
         // Create a startup command that sets the window title.
         let command = app.update_title();
 
+        // Emit OpenDocument for each file passed on the command line.
+        let open_tasks: Vec<_> = initial_files
+            .iter()
+            .filter_map(|path| Document::from_local_path(path))
+            .map(|doc| {
+                cosmic::task::message(cosmic::action::app(Message::Page(
+                    PageMessage::OpenDocument(doc),
+                )))
+            })
+            .collect();
+
         (
             app,
-            cosmic::task::batch(vec![command, page_action.map(ActionExt::map_into)]),
+            cosmic::task::batch(
+                [command, page_action.map(ActionExt::map_into)]
+                    .into_iter()
+                    .chain(open_tasks)
+                    .collect::<Vec<_>>(),
+            ),
         )
     }
 

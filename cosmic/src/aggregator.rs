@@ -380,6 +380,8 @@ pub enum DocumentType {
     Pdf,
     Epub,
     Mobi,
+    /// Any file type not natively supported — opened via the external viewer.
+    Other,
 }
 
 impl DocumentType {
@@ -388,6 +390,7 @@ impl DocumentType {
             DocumentType::Pdf => "pdf",
             DocumentType::Epub => "epub",
             DocumentType::Mobi => "mobi",
+            DocumentType::Other => "other",
         }
     }
 
@@ -397,6 +400,7 @@ impl DocumentType {
             DocumentType::Pdf => "application-pdf",
             DocumentType::Epub => "application-epub+zip",
             DocumentType::Mobi => "application-x-mobipocket-ebook",
+            DocumentType::Other => "text-x-generic",
         }
     }
 }
@@ -447,6 +451,34 @@ impl fmt::Debug for Document {
 }
 
 impl Document {
+    /// Build a minimal `Document` from a local file path for CLI-initiated opening.
+    /// The fingerprint is the canonicalized absolute path (guaranteed unique on a local fs).
+    /// For unknown extensions the type is `DocumentType::Other`, which routes to the
+    /// external viewer.
+    pub fn from_local_path(path: &std::path::Path) -> Option<Self> {
+        let abs_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let fingerprint = abs_path.to_string_lossy().into_owned();
+        let doc_type = abs_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(|e| e.parse::<DocumentType>().ok())
+            .unwrap_or(DocumentType::Other);
+        Some(Document {
+            metadata: DocumentMetadata {
+                type_: doc_type,
+                size: 0,
+                fingerprint,
+                tags: Vec::new(),
+                status: ReadingStatus::Unread,
+            },
+            sources: HashSet::from([DocumentSource {
+                id: 0,
+                path: abs_path.to_string_lossy().into_owned(),
+                client: ClientSelector::Local,
+            }]),
+        })
+    }
+
     pub fn local_or_any_source(&self) -> &DocumentSource {
         self.sources
             .iter()
