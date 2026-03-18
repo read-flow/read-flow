@@ -1607,6 +1607,7 @@ impl Page for EpubViewer {
             }
             EpubViewerMessage::ShowRawHtml(show) => {
                 self.show_raw_html = show;
+                self.sync_raw_html_content();
                 Task::none()
             }
             EpubViewerMessage::RawHtmlAction(action) => {
@@ -2835,6 +2836,9 @@ impl EpubViewer {
     }
 
     fn sync_raw_html_content(&mut self) {
+        if !self.show_raw_html {
+            return;
+        }
         self.raw_html_content = self
             .chapters
             .get(self.active_chapter)
