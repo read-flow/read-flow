@@ -77,6 +77,14 @@ fn extract_nav_links(
                     b"ol" if in_toc_nav => {
                         ol_depth += 1;
                     }
+                    _ if in_anchor && local != b"a" => {
+                        // Child element opened inside <a>: ensure a space separator
+                        // so that e.g. <span>1.2</span><span>Title</span> → "1.2 Title".
+                        if !current_text.is_empty() && !current_text.ends_with(char::is_whitespace)
+                        {
+                            current_text.push(' ');
+                        }
+                    }
                     b"a" if in_toc_nav => {
                         let href = e.attributes().flatten().find_map(|a| {
                             if a.key.as_ref() == b"href" {
@@ -139,6 +147,14 @@ fn extract_nav_links(
                     }
                     b"ol" if in_toc_nav => {
                         ol_depth = ol_depth.saturating_sub(1);
+                    }
+                    _ if in_anchor && local != b"a" => {
+                        // Child element closed inside <a>: ensure a space separator
+                        // so that e.g. <span>1.2</span>Title → "1.2 Title".
+                        if !current_text.is_empty() && !current_text.ends_with(char::is_whitespace)
+                        {
+                            current_text.push(' ');
+                        }
                     }
                     b"a" if in_anchor => {
                         if let Some(href) = current_href.take() {
@@ -395,5 +411,18 @@ mod tests {
         assert_eq!(entries[1].label, "Chapter 1");
         assert_eq!(entries[1].depth, 1);
         assert_eq!(entries[1].href, "OEBPS/ch1.xhtml#intro");
+    }
+
+    #[test]
+    fn nav_label_with_child_spans_gets_space_separator() {
+        // Simulate a common EPUB pattern where the number and title are in
+        // separate inline elements: <span>1.2</span><span>Section Title</span>
+        let nav = br#"<html xmlns:epub="http://www.idpf.org/2007/ops">
+<body><nav epub:type="toc"><ol>
+  <li><a href="ch1.xhtml#sec2"><span>1.2</span><span>Section Title</span></a></li>
+</ol></nav></body></html>"#;
+        let entries = parse_epub3_nav(nav, "OEBPS/nav.xhtml");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label, "1.2 Section Title");
     }
 }
