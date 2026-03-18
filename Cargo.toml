@@ -3,6 +3,8 @@ members = [
     "core",
     "cosmic",
     "epub",
+    "golden",
+    "golden-macros",
     "provider",
 ]
 resolver = "3"
@@ -30,6 +32,7 @@ mime = "0.3.17"
 mupdf = "0.6"
 open = "5.3.3"
 pbkdf2 = "0.12.2"
+png = "0.18"
 quick-xml = "0.39.2"
 r2d2 = "0.8.10"
 rand = "0.10.0"

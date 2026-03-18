@@ -2645,6 +2645,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "golden"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "golden-macros",
+ "libcosmic",
+ "png 0.18.1",
+]
+
+[[package]]
+name = "golden-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "gpu-alloc"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
