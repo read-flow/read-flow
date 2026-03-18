@@ -330,6 +330,13 @@ pub(crate) struct EpubChapter {
     /// Resolved zip path for this spine item (e.g. `OEBPS/Text/ch1.xhtml`).
     href: String,
     blocks: Vec<ContentBlock>,
+    /// Stable image handles keyed by the raw pointer of each image's data `Vec`.
+    /// Created once so the handle ID is stable across frames; required because
+    /// the wgpu renderer decodes images asynchronously keyed by handle ID —
+    /// a fresh `Handle::from_bytes` call per frame would produce a new ID each
+    /// time, preventing the decoded texture from ever being found in the cache.
+    /// The pointer is valid for the lifetime of this chapter (data lives in `blocks`).
+    image_handles: HashMap<usize, widget::image::Handle>,
     /// Raw XHTML source for debug display.
     raw_html: String,
 }
@@ -821,6 +828,7 @@ impl EpubViewer {
                                 .as_ref()
                                 .map(CloneableEpubDocument::as_ref),
                             max_image_height: f32::MAX,
+                            image_handles: &chapter.image_handles,
                         }
                         .render_block(block, highlight),
                     );
@@ -991,6 +999,7 @@ impl EpubViewer {
                                         .as_ref()
                                         .map(CloneableEpubDocument::as_ref),
                                     max_image_height: layout.page_height * 0.9,
+                                    image_handles: &chapter.image_handles,
                                 }
                                 .render_block(block, highlight)
                             }
@@ -1004,6 +1013,7 @@ impl EpubViewer {
                                     .as_ref()
                                     .map(CloneableEpubDocument::as_ref),
                                 max_image_height: layout.page_height * 0.9,
+                                image_handles: &chapter.image_handles,
                             }
                             .render_block(block, highlight)
                         };
@@ -1730,10 +1740,13 @@ impl Page for EpubViewer {
                                     Err(_) => None,
                                 },
                             );
+                            let mut image_handles = HashMap::new();
+                            collect_image_handles(&blocks, &mut image_handles);
                             self.chapters.push(EpubChapter {
                                 label: resolved.clone(),
                                 href: resolved.clone(),
                                 blocks,
+                                image_handles,
                                 raw_html,
                             });
                             self.active_chapter = self.chapters.len() - 1;
@@ -2124,6 +2137,24 @@ fn parse_reading_progress(progress: &str) -> ReadingPosition {
     pos
 }
 
+/// Collect stable image handles keyed by data pointer, recursing into nested blocks.
+fn collect_image_handles(blocks: &[ContentBlock], map: &mut HashMap<usize, widget::image::Handle>) {
+    for block in blocks {
+        match block {
+            ContentBlock::Image { data, .. } if !data.is_empty() => {
+                map.insert(
+                    data.as_ptr() as usize,
+                    widget::image::Handle::from_bytes(data.clone()),
+                );
+            }
+            ContentBlock::Figure { blocks, .. } => collect_image_handles(blocks, map),
+            ContentBlock::BlockQuote { children } => collect_image_handles(children, map),
+            ContentBlock::Footnote { blocks, .. } => collect_image_handles(blocks, map),
+            _ => {}
+        }
+    }
+}
+
 /// Load EPUB chapters from a file path. Runs on a blocking thread.
 fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>, EpubDocument) {
     let epub_doc = match EpubDocument::open(path) {
@@ -2180,10 +2211,13 @@ fn load_epub_chapters(path: &Path) -> (String, Vec<EpubChapter>, EpubDocument) {
             }
         };
 
+        let mut image_handles = HashMap::new();
+        collect_image_handles(&blocks, &mut image_handles);
         chapters.push(EpubChapter {
             label,
             href: item.href.clone(),
             blocks,
+            image_handles,
             raw_html,
         });
     }

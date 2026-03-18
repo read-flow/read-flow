@@ -32,6 +32,9 @@ pub(super) struct RenderContext<'a> {
     pub chapter_href: &'a str,
     pub epub_document: Option<&'a EpubDocument>,
     pub max_image_height: f32,
+    /// Stable image handles keyed by data pointer, to avoid re-creating handles
+    /// each frame (which would produce a new ID and prevent async texture reuse).
+    pub image_handles: &'a std::collections::HashMap<usize, widget::image::Handle>,
 }
 
 /// Render a partial paragraph (split at page boundary) using owned text and span data.
@@ -308,7 +311,12 @@ impl<'a> RenderContext<'a> {
                 col.into()
             }
             ContentBlock::Image { data, .. } if !data.is_empty() => {
-                let handle = widget::image::Handle::from_bytes(data.clone());
+                let key = data.as_ptr() as usize;
+                let handle = self
+                    .image_handles
+                    .get(&key)
+                    .cloned()
+                    .unwrap_or_else(|| widget::image::Handle::from_bytes(data.clone()));
                 widget::image(handle)
                     .width(Length::Shrink)
                     .content_fit(cosmic::iced::ContentFit::ScaleDown)
