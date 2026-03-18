@@ -15,8 +15,6 @@ use cosmic::theme::Container;
 use cosmic::widget;
 use epub::BlockStyle;
 use epub::ContentBlock;
-use epub::Document as EpubDocumentTrait;
-use epub::EpubDocument;
 use epub::TableCell;
 use epub::TextAlign;
 use epub::TextSpan;
@@ -29,8 +27,6 @@ use crate::page::epub_viewer::EpubViewerMessage;
 pub(super) struct RenderContext<'a> {
     pub font_size: f32,
     pub family: font::Family,
-    pub chapter_href: &'a str,
-    pub epub_document: Option<&'a EpubDocument>,
     pub max_image_height: f32,
     /// Stable image handles keyed by data pointer, to avoid re-creating handles
     /// each frame (which would produce a new ID and prevent async texture reuse).
@@ -150,8 +146,6 @@ impl<'a> RenderContext<'a> {
     fn render_block_inner(&self, block: &'a ContentBlock) -> Element<'a, EpubViewerMessage> {
         let font_size = self.font_size;
         let family = self.family;
-        let chapter_href = self.chapter_href;
-        let epub_document = self.epub_document;
         let max_image_height = self.max_image_height;
 
         let cosmic_theme::Spacing {
@@ -341,28 +335,8 @@ impl<'a> RenderContext<'a> {
                 }
             }
             ContentBlock::Svg { content, .. } => {
-                // Process SVG content to resolve embedded image references
-                let processed_content = if let Some(epub_doc) = epub_document {
-                    epub::content::resolve_svg_images(content, chapter_href, &mut |img_path| {
-                        match epub_doc.resolve_resource(img_path) {
-                            Ok(img_data) => {
-                                let media_type = epub::content::guess_media_type(img_path);
-                                Some((img_data, media_type))
-                            }
-                            Err(e) => {
-                                tracing::info!(
-                                    "SVG image resource not found in chapter {chapter_href}: {img_path} ({e})"
-                                );
-                                None
-                            }
-                        }
-                    })
-                } else {
-                    // Fallback to original content if no epub document is available
-                    content.clone()
-                };
-
-                let handle = widget::svg::Handle::from_memory(processed_content.into_bytes());
+                // SVG image references are resolved at load time; render directly.
+                let handle = widget::svg::Handle::from_memory(content.as_bytes().to_vec());
                 widget::svg(handle)
                     .width(Length::Shrink)
                     .content_fit(cosmic::iced::ContentFit::ScaleDown)

@@ -832,11 +832,6 @@ impl EpubViewer {
                         RenderContext {
                             font_size: self.base_font_size,
                             family,
-                            chapter_href: &chapter.href,
-                            epub_document: self
-                                .epub_document
-                                .as_ref()
-                                .map(CloneableEpubDocument::as_ref),
                             max_image_height: f32::MAX,
                             image_handles: &chapter.image_handles,
                         }
@@ -1003,11 +998,6 @@ impl EpubViewer {
                                 RenderContext {
                                     font_size: base_font_size,
                                     family,
-                                    chapter_href: &chapter.href,
-                                    epub_document: self
-                                        .epub_document
-                                        .as_ref()
-                                        .map(CloneableEpubDocument::as_ref),
                                     max_image_height: layout.page_height * 0.9,
                                     image_handles: &chapter.image_handles,
                                 }
@@ -1017,11 +1007,6 @@ impl EpubViewer {
                             RenderContext {
                                 font_size: base_font_size,
                                 family,
-                                chapter_href: &chapter.href,
-                                epub_document: self
-                                    .epub_document
-                                    .as_ref()
-                                    .map(CloneableEpubDocument::as_ref),
                                 max_image_height: layout.page_height * 0.9,
                                 image_handles: &chapter.image_handles,
                             }
@@ -1741,7 +1726,7 @@ impl Page for EpubViewer {
                         if let Ok(data) = doc.resolve_resource(&resolved) {
                             let raw_html = String::from_utf8_lossy(&data).into_owned();
                             let stylesheet = load_chapter_stylesheets(&raw_html, &resolved, doc);
-                            let blocks = epub::content::parse_xhtml(
+                            let mut blocks = epub::content::parse_xhtml(
                                 &data,
                                 &resolved,
                                 &stylesheet,
@@ -1753,6 +1738,7 @@ impl Page for EpubViewer {
                                     Err(_) => None,
                                 },
                             );
+                            resolve_svg_blocks(&mut blocks, &resolved, doc);
                             let mut image_handles = HashMap::new();
                             collect_image_handles(&blocks, &mut image_handles);
                             self.chapters.push(EpubChapter {
@@ -2150,6 +2136,39 @@ fn parse_reading_progress(progress: &str) -> ReadingPosition {
     pos
 }
 
+/// Resolve embedded SVG image references in-place at chapter load time, so that
+/// rendering doesn't need to read from the zip archive on every frame.
+fn resolve_svg_blocks(blocks: &mut Vec<ContentBlock>, chapter_href: &str, doc: &EpubDocument) {
+    for block in blocks {
+        match block {
+            ContentBlock::Svg { content, .. } => {
+                *content =
+                    epub::content::resolve_svg_images(content, chapter_href, &mut |img_path| {
+                        match doc.resolve_resource(img_path) {
+                            Ok(img_data) => {
+                                let media_type = epub::content::guess_media_type(img_path);
+                                Some((img_data, media_type))
+                            }
+                            Err(e) => {
+                                tracing::info!(
+                                    "SVG image resource not found in chapter \
+                                 {chapter_href}: {img_path} ({e})"
+                                );
+                                None
+                            }
+                        }
+                    });
+            }
+            ContentBlock::Figure { blocks, .. } => resolve_svg_blocks(blocks, chapter_href, doc),
+            ContentBlock::BlockQuote { children } => {
+                resolve_svg_blocks(children, chapter_href, doc)
+            }
+            ContentBlock::Footnote { blocks, .. } => resolve_svg_blocks(blocks, chapter_href, doc),
+            _ => {}
+        }
+    }
+}
+
 /// Collect stable image handles keyed by data pointer, recursing into nested blocks.
 fn collect_image_handles(blocks: &[ContentBlock], map: &mut HashMap<usize, widget::image::Handle>) {
     for block in blocks {
@@ -2192,7 +2211,7 @@ fn load_epub_chapters(
                 let href = &item.href;
                 let raw = String::from_utf8_lossy(&data).into_owned();
                 let stylesheet = load_chapter_stylesheets(&raw, href, &epub_doc);
-                let blocks =
+                let mut blocks =
                     epub::content::parse_xhtml(&data, href, &stylesheet, &mut |img_path| {
                         match epub_doc.resolve_resource(img_path) {
                             Ok(img_data) => {
@@ -2207,6 +2226,7 @@ fn load_epub_chapters(
                             }
                         }
                     });
+                resolve_svg_blocks(&mut blocks, href, &epub_doc);
                 (blocks, raw)
             }
             Err(e) => {
