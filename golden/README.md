@@ -64,10 +64,11 @@ theme. It is equivalent to the above with `HeadlessRenderer::new()`.
 
 ## Generated files
 
-| File                          | When created                       | Purpose                                           |
-|-------------------------------|------------------------------------|---------------------------------------------------|
-| `snapshots/<name>.png`        | First run, or `UPDATE_SNAPSHOTS=1` | Committed baseline                                |
-| `snapshots/<name>.actual.png` | On mismatch                        | Rendered output for inspection; **not** committed |
+| File                         | When created                       | Purpose                                           |
+|------------------------------|------------------------------------|---------------------------------------------------|
+| `snapshots/<name>.png`       | First run, or `UPDATE_SNAPSHOTS=1` | Committed baseline                                |
+| `snapshots/<name>.actual.png`| On mismatch                        | Rendered output for inspection; **not** committed |
+| `snapshots/<name>.diff.png`  | On mismatch                        | Amplified per-channel delta; **not** committed    |
 
 On the **first run** (no baseline exists yet) the test passes and writes the baseline
 automatically. Commit the new PNG to make it part of the test suite.
@@ -78,16 +79,19 @@ If a test fails you will see:
 
 ```
 golden: snapshot 'my_widget_dark' differs by 312 pixels.
-Actual saved to "golden/snapshots/my_widget_dark.actual.png".
+Actual: "golden/snapshots/my_widget_dark.actual.png"
+Diff:   "golden/snapshots/my_widget_dark.diff.png"
 Run with UPDATE_SNAPSHOTS=1 to regenerate.
 ```
 
-Open both files side-by-side to inspect the difference:
+Three files are available for inspection:
 
 - `snapshots/my_widget_dark.png` — the committed baseline
 - `snapshots/my_widget_dark.actual.png` — what the renderer produced this run
+- `snapshots/my_widget_dark.diff.png` — per-channel absolute difference amplified 10×;
+  black means identical, bright colours indicate where and how much pixels differ
 
-The `.actual.png` file is not tracked by git.
+The `.actual.png` and `.diff.png` files are not tracked by git.
 
 ## Updating baselines
 

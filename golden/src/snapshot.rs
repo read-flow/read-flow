@@ -49,3 +49,23 @@ pub fn count_differing_pixels(a: &[u8], b: &[u8]) -> usize {
         .filter(|(pa, pb)| pa != pb)
         .count()
 }
+
+/// Produces an RGBA diff image from two same-size RGBA byte slices.
+///
+/// Each channel difference is amplified 10× so that even single-unit
+/// deviations produce a clearly visible result. The alpha channel is
+/// always set to 255 so the image is fully opaque. Identical pixels
+/// appear black; differing pixels appear as bright coloured regions.
+pub fn diff_image(a: &[u8], b: &[u8]) -> Vec<u8> {
+    a.chunks(4)
+        .zip(b.chunks(4))
+        .flat_map(|(pa, pb)| {
+            [
+                pa[0].abs_diff(pb[0]).saturating_mul(10),
+                pa[1].abs_diff(pb[1]).saturating_mul(10),
+                pa[2].abs_diff(pb[2]).saturating_mul(10),
+                255,
+            ]
+        })
+        .collect()
+}

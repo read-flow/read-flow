@@ -34,15 +34,18 @@ macro_rules! assert_snapshot_rgba {
             );
             let diff = $crate::snapshot::count_differing_pixels(&$rgba, &expected);
             if diff > 0 {
-                let actual_path = $crate::snapshot::snapshots_dir()
-                    .join($name)
-                    .with_extension("actual.png");
+                let base = $crate::snapshot::snapshots_dir().join($name);
+                let actual_path = base.with_extension("actual.png");
+                let diff_path = base.with_extension("diff.png");
                 $crate::snapshot::save_png(&actual_path, &$rgba, $width, $height);
+                let diff_image = $crate::snapshot::diff_image(&$rgba, &expected);
+                $crate::snapshot::save_png(&diff_path, &diff_image, $width, $height);
                 panic!(
                     "golden: snapshot '{}' differs by {} pixels.\n\
-                     Actual saved to {:?}.\n\
+                     Actual: {:?}\n\
+                     Diff:   {:?}\n\
                      Run with UPDATE_SNAPSHOTS=1 to regenerate.",
-                    $name, diff, actual_path,
+                    $name, diff, actual_path, diff_path,
                 );
             }
         } else {
