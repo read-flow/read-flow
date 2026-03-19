@@ -10,12 +10,18 @@ pub use renderer::HeadlessRenderer;
 ///
 /// This is the low-level primitive used by [`assert_snapshot!`] and by the
 /// `#[golden_test]` expansion. Prefer those over calling this directly.
+///
+/// The snapshot is stored under a subdirectory mirroring the caller's module
+/// path, e.g. `snapshots/my_crate/tests/foo/<name>.png`. This prevents name
+/// collisions between tests in different modules that happen to share a name.
 #[macro_export]
 macro_rules! assert_snapshot_rgba {
     ($name:expr, $rgba:expr, $width:expr, $height:expr $(,)?) => {{
-        let png_path = $crate::snapshot::snapshots_dir()
-            .join($name)
-            .with_extension("png");
+        let module_subdir = module_path!().replace("::", "/");
+        let base = $crate::snapshot::snapshots_dir()
+            .join(&module_subdir)
+            .join($name);
+        let png_path = base.with_extension("png");
 
         if std::env::var("UPDATE_SNAPSHOTS").is_ok() {
             $crate::snapshot::save_png(&png_path, &$rgba, $width, $height);
@@ -34,7 +40,6 @@ macro_rules! assert_snapshot_rgba {
             );
             let diff = $crate::snapshot::count_differing_pixels(&$rgba, &expected);
             if diff > 0 {
-                let base = $crate::snapshot::snapshots_dir().join($name);
                 let actual_path = base.with_extension("actual.png");
                 let diff_path = base.with_extension("diff.png");
                 $crate::snapshot::save_png(&actual_path, &$rgba, $width, $height);
