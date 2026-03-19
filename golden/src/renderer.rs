@@ -18,7 +18,7 @@ pub struct HeadlessRenderer {
 }
 
 impl HeadlessRenderer {
-    /// Creates a new headless renderer using the tiny-skia software backend.
+    /// Creates a new headless renderer using the tiny-skia software backend and the light theme.
     pub fn new() -> Self {
         let renderer = futures::executor::block_on(<Renderer as Headless>::new(
             Font::DEFAULT,
@@ -29,7 +29,7 @@ impl HeadlessRenderer {
 
         Self {
             renderer,
-            theme: Theme::dark(),
+            theme: Theme::light(),
         }
     }
 

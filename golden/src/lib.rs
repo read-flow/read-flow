@@ -6,30 +6,19 @@ pub mod snapshot;
 pub use golden_macros::golden_test;
 pub use renderer::HeadlessRenderer;
 
-/// Assert that rendering `element` at the given pixel size matches the stored PNG baseline.
+/// Compare pre-rendered RGBA bytes against the stored PNG baseline.
 ///
-/// The baseline is stored at `golden/snapshots/<name>.png`.
-///
-/// Set `UPDATE_SNAPSHOTS=1` to regenerate baselines instead of comparing.
-///
-/// # Usage
-///
-/// ```rust,no_run
-/// let element: cosmic::Element<'_, ()> = cosmic::widget::text("Hello").into();
-/// golden::assert_snapshot!("my_widget", element, 320, 60);
-/// ```
+/// This is the low-level primitive used by [`assert_snapshot!`] and by the
+/// `#[golden_test]` expansion. Prefer those over calling this directly.
 #[macro_export]
-macro_rules! assert_snapshot {
-    ($name:expr, $element:expr, $width:expr, $height:expr $(,)?) => {{
-        let mut r = $crate::HeadlessRenderer::new();
-        let rgba = r.render($element, $width, $height);
-
+macro_rules! assert_snapshot_rgba {
+    ($name:expr, $rgba:expr, $width:expr, $height:expr $(,)?) => {{
         let png_path = $crate::snapshot::snapshots_dir()
             .join($name)
             .with_extension("png");
 
         if std::env::var("UPDATE_SNAPSHOTS").is_ok() {
-            $crate::snapshot::save_png(&png_path, &rgba, $width, $height);
+            $crate::snapshot::save_png(&png_path, &$rgba, $width, $height);
             eprintln!("golden: updated snapshot {:?}", png_path);
         } else if png_path.exists() {
             let (expected, w, h) = $crate::snapshot::load_png(&png_path);
@@ -43,12 +32,12 @@ macro_rules! assert_snapshot {
                 $width,
                 $height,
             );
-            let diff = $crate::snapshot::count_differing_pixels(&rgba, &expected);
+            let diff = $crate::snapshot::count_differing_pixels(&$rgba, &expected);
             if diff > 0 {
                 let actual_path = $crate::snapshot::snapshots_dir()
                     .join($name)
                     .with_extension("actual.png");
-                $crate::snapshot::save_png(&actual_path, &rgba, $width, $height);
+                $crate::snapshot::save_png(&actual_path, &$rgba, $width, $height);
                 panic!(
                     "golden: snapshot '{}' differs by {} pixels.\n\
                      Actual saved to {:?}.\n\
@@ -58,8 +47,32 @@ macro_rules! assert_snapshot {
             }
         } else {
             // No baseline yet — save it and pass.
-            $crate::snapshot::save_png(&png_path, &rgba, $width, $height);
+            $crate::snapshot::save_png(&png_path, &$rgba, $width, $height);
             eprintln!("golden: created initial snapshot {:?}", png_path);
         }
+    }};
+}
+
+/// Assert that rendering `element` with the light theme matches the stored PNG baseline.
+///
+/// The baseline is stored at `golden/snapshots/<name>.png`.
+///
+/// Set `UPDATE_SNAPSHOTS=1` to regenerate baselines instead of comparing.
+///
+/// For dark-theme tests or other custom themes, use `#[golden_test(w, h, dark)]`
+/// or construct a [`HeadlessRenderer`] with [`HeadlessRenderer::with_theme`] directly.
+///
+/// # Usage
+///
+/// ```rust,no_run
+/// let element: cosmic::Element<'_, ()> = cosmic::widget::text("Hello").into();
+/// golden::assert_snapshot!("my_widget", element, 320, 60);
+/// ```
+#[macro_export]
+macro_rules! assert_snapshot {
+    ($name:expr, $element:expr, $width:expr, $height:expr $(,)?) => {{
+        let mut r = $crate::HeadlessRenderer::new();
+        let rgba = r.render($element, $width, $height);
+        $crate::assert_snapshot_rgba!($name, rgba, $width, $height);
     }};
 }

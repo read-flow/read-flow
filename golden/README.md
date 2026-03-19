@@ -15,38 +15,52 @@ zero-argument function that returns a `cosmic::Element`:
 use golden::golden_test;
 
 #[golden_test(400, 200)]
-fn my_widget_looks_correct() -> cosmic::Element<'static, ()> {
-    cosmic::widget::text("Hello, world!").into()
+fn my_widget_light() -> cosmic::Element<'static, ()> {
+    my_widget().into()
+}
+```
+
+An optional third argument selects the theme — `light` (default) or `dark`:
+
+```rust
+#[golden_test(400, 200, dark)]
+fn my_widget_dark() -> cosmic::Element<'static, ()> {
+    my_widget().into()
 }
 ```
 
 The macro:
-- derives the snapshot name from the **function name** (`my_widget_looks_correct`)
+- derives the snapshot name from the **function name**
 - wraps the function body in a `#[test]`
-- calls `assert_snapshot!` with the given pixel dimensions
+- renders with the chosen theme and compares against the stored baseline
+
+Name the function to reflect the theme variant when testing both, so each gets its own
+snapshot file (`my_widget_light.png` / `my_widget_dark.png`).
 
 ### Using `assert_snapshot!` directly
 
-For cases where you need more control (e.g. testing several variants in one test function):
+For cases where you need more control within a single test function, construct a
+[`HeadlessRenderer`] with the desired theme and use `assert_snapshot_rgba!`:
 
 ```rust
-use golden::assert_snapshot;
+use golden::{HeadlessRenderer, assert_snapshot_rgba};
 
 #[test]
-fn widget_variants() {
-    let light: cosmic::Element<'_, ()> = my_widget(Theme::light()).into();
-    assert_snapshot!("my_widget_light", light, 400, 200);
-
-    let dark: cosmic::Element<'_, ()> = my_widget(Theme::dark()).into();
-    assert_snapshot!("my_widget_dark", dark, 400, 200);
+fn both_themes() {
+    for (name, theme) in [
+        ("my_widget_dark",  cosmic::Theme::dark()),
+        ("my_widget_light", cosmic::Theme::light()),
+    ] {
+        let element: cosmic::Element<'_, ()> = my_widget().into();
+        let mut r = HeadlessRenderer::with_theme(theme);
+        let rgba = r.render(element, 400, 200);
+        assert_snapshot_rgba!(name, rgba, 400, 200);
+    }
 }
 ```
 
-`assert_snapshot!(name, element, width, height)` where:
-
-- **`name`** — logical snapshot name; the stored file will be `snapshots/<name>.png`.
-- **`element`** — any `cosmic::Element<'_, Message>`.
-- **`width` / `height`** — pixel dimensions of the rendered viewport.
+`assert_snapshot!(name, element, width, height)` is a shorthand that always uses the light
+theme. It is equivalent to the above with `HeadlessRenderer::new()`.
 
 ## Generated files
 
@@ -63,15 +77,15 @@ automatically. Commit the new PNG to make it part of the test suite.
 If a test fails you will see:
 
 ```
-golden: snapshot 'my_widget_looks_correct' differs by 312 pixels.
-Actual saved to "golden/snapshots/my_widget_looks_correct.actual.png".
+golden: snapshot 'my_widget_dark' differs by 312 pixels.
+Actual saved to "golden/snapshots/my_widget_dark.actual.png".
 Run with UPDATE_SNAPSHOTS=1 to regenerate.
 ```
 
 Open both files side-by-side to inspect the difference:
 
-- `snapshots/my_widget_looks_correct.png` — the committed baseline
-- `snapshots/my_widget_looks_correct.actual.png` — what the renderer produced this run
+- `snapshots/my_widget_dark.png` — the committed baseline
+- `snapshots/my_widget_dark.actual.png` — what the renderer produced this run
 
 The `.actual.png` file is not tracked by git.
 
@@ -94,5 +108,5 @@ git commit -m "chore: update golden image baselines"
 To regenerate only one snapshot, run its test by name:
 
 ```bash
-UPDATE_SNAPSHOTS=1 cargo nextest run -p golden -- my_widget_looks_correct
+UPDATE_SNAPSHOTS=1 cargo nextest run -p golden -- my_widget_dark
 ```
