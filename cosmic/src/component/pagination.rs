@@ -10,6 +10,7 @@ use cosmic::Task;
 use cosmic::cosmic_theme;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
+use cosmic::iced::alignment::Vertical;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::button;
@@ -118,6 +119,7 @@ impl Pagination {
                 .into(),
         ]
         .apply(widget::Row::with_children)
+        .align_y(Vertical::Center)
         // .padding([0, space_s])
         .spacing(space_s)
         .into()
@@ -172,5 +174,25 @@ impl Pagination {
         } else {
             Some(4)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use golden::golden_test;
+
+    use crate::component::pagination::Pagination;
+    use crate::component::pagination::PaginationMessage;
+
+    #[golden_test(400, 40)]
+    fn view_pagination() -> cosmic::Element<'_, PaginationMessage> {
+        let pagination = Pagination::new(100);
+        pagination.view()
+    }
+
+    #[golden_test(400, 40, dark)]
+    fn view_pagination_dark() -> cosmic::Element<'_, PaginationMessage> {
+        let pagination = Pagination::new(100);
+        pagination.view()
     }
 }

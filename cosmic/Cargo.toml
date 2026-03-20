@@ -69,3 +69,6 @@ features = [
 # libcosmic = { path = "../libcosmic" }
 # cosmic-config = { path = "../libcosmic/cosmic-config" }
 # cosmic-theme = { path = "../libcosmic/cosmic-theme" }
+
+[dev-dependencies]
+golden = { path = "../golden" }
