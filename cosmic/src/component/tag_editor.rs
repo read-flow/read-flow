@@ -340,3 +340,86 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use golden::golden_test;
+    use provider::r#async::Value;
+
+    use super::Orientation;
+    use super::TagEditor;
+    use super::TagEditorMessage;
+
+    fn all_tags() -> Vec<String> {
+        vec![
+            "fiction".to_string(),
+            "non-fiction".to_string(),
+            "programming".to_string(),
+            "rust".to_string(),
+        ]
+    }
+
+    fn make_editor(
+        selected: Vec<String>,
+        orientation: Orientation,
+    ) -> TagEditor<Value<Vec<String>>> {
+        let (editor, _) = TagEditor::new(
+            Value::new(all_tags()),
+            selected,
+            orientation,
+            "Select a tag".to_string(),
+            "Enter a new tag".to_string(),
+            "No tags".to_string(),
+            "Remove".to_string(),
+        );
+        editor
+    }
+
+    #[golden_test(400, 150)]
+    fn tag_editor_empty() -> cosmic::Element<'_, TagEditorMessage> {
+        let editor = make_editor(vec![], Orientation::Vertical);
+        editor.view()
+    }
+
+    #[golden_test(400, 150, dark)]
+    fn tag_editor_empty_dark() -> cosmic::Element<'_, TagEditorMessage> {
+        let editor = make_editor(vec![], Orientation::Vertical);
+        editor.view()
+    }
+
+    #[golden_test(400, 150)]
+    fn tag_editor_with_tags() -> cosmic::Element<'_, TagEditorMessage> {
+        let editor = make_editor(
+            vec!["fiction".to_string(), "rust".to_string()],
+            Orientation::Vertical,
+        );
+        editor.view()
+    }
+
+    #[golden_test(400, 150, dark)]
+    fn tag_editor_with_tags_dark() -> cosmic::Element<'_, TagEditorMessage> {
+        let editor = make_editor(
+            vec!["fiction".to_string(), "rust".to_string()],
+            Orientation::Vertical,
+        );
+        editor.view()
+    }
+
+    #[golden_test(600, 150)]
+    fn tag_editor_with_tags_horizontal() -> cosmic::Element<'_, TagEditorMessage> {
+        let editor = make_editor(
+            vec!["fiction".to_string(), "rust".to_string()],
+            Orientation::Horizontal,
+        );
+        editor.view()
+    }
+
+    #[golden_test(600, 150, dark)]
+    fn tag_editor_with_tags_horizontal_dark() -> cosmic::Element<'_, TagEditorMessage> {
+        let editor = make_editor(
+            vec!["fiction".to_string(), "rust".to_string()],
+            Orientation::Horizontal,
+        );
+        editor.view()
+    }
+}
