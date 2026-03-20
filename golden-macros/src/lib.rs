@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use proc_macro::TokenStream;
+use proc_macro2::Ident;
 use quote::quote;
 use syn::Error;
-use syn::Ident;
 use syn::ItemFn;
 use syn::LitInt;
 use syn::ReturnType;
+use syn::Stmt;
 use syn::Token;
 use syn::parse::ParseStream;
 
@@ -92,7 +93,6 @@ fn golden_test_impl(attr: TokenStream, item: TokenStream) -> Result<TokenStream,
     }
 
     let func_name = &func.sig.ident;
-    let func_body = &func.block;
     let name_str = func_name.to_string();
 
     let return_type = match &func.sig.output {
@@ -105,10 +105,27 @@ fn golden_test_impl(attr: TokenStream, item: TokenStream) -> Result<TokenStream,
         }
     };
 
+    // Flatten the function body into the test body: emit all setup statements
+    // as-is, then bind the tail expression to `element`.  This keeps any
+    // locals (e.g. `let component = MyComponent::new()`) alive for the entire
+    // test function, so elements that borrow them (via `component.view()`) do
+    // not dangle.
+    let stmts = &func.block.stmts;
+    let (setup_stmts, element_expr) = match stmts.split_last() {
+        Some((Stmt::Expr(expr, None), rest)) => (rest, expr),
+        _ => {
+            return Err(Error::new_spanned(
+                &func.block,
+                "golden_test function body must end with an expression (not a `;`-terminated statement)",
+            ));
+        }
+    };
+
     Ok(quote! {
         #[test]
         fn #func_name() {
-            let element: #return_type = { #func_body };
+            #(#setup_stmts)*
+            let element: #return_type = #element_expr;
             let mut renderer = golden::HeadlessRenderer::with_theme(#theme_expr);
             let rgba = renderer.render(element, #width, #height);
             golden::assert_snapshot_rgba!(#name_str, rgba, #width, #height);

@@ -11,14 +11,17 @@ pub use renderer::HeadlessRenderer;
 /// This is the low-level primitive used by [`assert_snapshot!`] and by the
 /// `#[golden_test]` expansion. Prefer those over calling this directly.
 ///
-/// The snapshot is stored under a subdirectory mirroring the caller's module
-/// path, e.g. `snapshots/my_crate/tests/foo/<name>.png`. This prevents name
-/// collisions between tests in different modules that happen to share a name.
+/// The snapshot is stored under `<crate-root>/snapshots/<module>/<name>.png`,
+/// where `<crate-root>` is the root of the crate that invokes the macro and
+/// `<module>` mirrors the caller's Rust module path. This keeps baselines
+/// co-located with the crate under test and prevents name collisions between
+/// tests in different modules.
 #[macro_export]
 macro_rules! assert_snapshot_rgba {
     ($name:expr, $rgba:expr, $width:expr, $height:expr $(,)?) => {{
         let module_subdir = module_path!().replace("::", "/");
-        let base = $crate::snapshot::snapshots_dir()
+        let base = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("snapshots")
             .join(&module_subdir)
             .join($name);
         let png_path = base.with_extension("png");
@@ -63,7 +66,8 @@ macro_rules! assert_snapshot_rgba {
 
 /// Assert that rendering `element` with the light theme matches the stored PNG baseline.
 ///
-/// The baseline is stored at `golden/snapshots/<name>.png`.
+/// The baseline is stored at `snapshots/<module>/<name>.png` relative to
+/// the crate that contains the golden tests.
 ///
 /// Set `UPDATE_SNAPSHOTS=1` to regenerate baselines instead of comparing.
 ///

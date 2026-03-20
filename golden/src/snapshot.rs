@@ -1,12 +1,6 @@
 use std::io::BufReader;
 use std::io::BufWriter;
 use std::path::Path;
-use std::path::PathBuf;
-
-/// Returns the absolute path to the `snapshots/` directory of the `golden` crate.
-pub fn snapshots_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("snapshots")
-}
 
 /// Encodes RGBA bytes as a PNG file at `path`.
 pub fn save_png(path: &Path, rgba: &[u8], width: u32, height: u32) {

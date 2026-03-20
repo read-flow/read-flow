@@ -34,23 +34,27 @@ The macro:
 - wraps the function body in a `#[test]`
 - renders with the chosen theme and compares against the stored baseline
 
-Name the function to reflect the theme variant when testing both, so each gets its own
-snapshot file (`my_widget_light.png` / `my_widget_dark.png`).
+Name the function to reflect the theme variant when testing both, so each gets
+its own snapshot file (`my_widget_light.png` / `my_widget_dark.png`).
 
 ### Snapshot paths and module namespacing
 
-Snapshots are stored under a subdirectory that mirrors the Rust module path of the test,
-so tests in different modules never collide even when they share a function name:
+Snapshots are stored inside the **snapshots directory in the crate**. The
+directory structure mirrors the Rust module path of the test, so tests in
+different modules never collide even when they share a function name:
 
 ```
-snapshots/
-  my_crate/tests/widgets/
-    my_widget_light.png
-    my_widget_dark.png
+<your-crate>/snapshots/<module>/<name>.png
 ```
 
-The path is derived automatically from `module_path!()` at the call site — no manual
-namespacing is needed.
+For example, a test `view_pagination` in `read_flow::component::pagination::tests` produces:
+
+```
+read-flow/snapshots/read_flow/component/pagination/tests/view_pagination.png
+```
+
+The path is derived automatically from `module_path!()` and `env!("CARGO_MANIFEST_DIR")`
+at the call site — no manual namespacing is needed.
 
 ### Using `assert_snapshot!` directly
 
@@ -79,8 +83,8 @@ theme. It is equivalent to the above with `HeadlessRenderer::new()`.
 
 ## Generated files
 
-`<module>` is the caller's Rust module path with `::` replaced by `/`
-(e.g. `golden/tests/smoke_test`).
+`<crate-root>` is the root of the crate containing the test.
+`<module>` is the caller's Rust module path with `::` replaced by `/`.
 
 | File                                    | When created                       | Purpose                                           |
 |-----------------------------------------|------------------------------------|---------------------------------------------------|
@@ -97,19 +101,19 @@ If a test fails you will see:
 
 ```
 golden: snapshot 'my_widget_dark' differs by 312 pixels.
-Actual: "golden/snapshots/golden/tests/smoke_test/my_widget_dark.actual.png"
-Diff:   "golden/snapshots/golden/tests/smoke_test/my_widget_dark.diff.png"
+Actual: "my-crate/snapshots/my_crate/tests/smoke_test/my_widget_dark.actual.png"
+Diff:   "my-crate/snapshots/my_crate/tests/smoke_test/my_widget_dark.diff.png"
 Run with UPDATE_SNAPSHOTS=1 to regenerate.
 ```
 
 Three files are available for inspection:
 
-- `snapshots/golden/tests/smoke_test/my_widget_dark.png` — the committed baseline
-- `snapshots/golden/tests/smoke_test/my_widget_dark.actual.png` — what the renderer produced this run
-- `snapshots/golden/tests/smoke_test/my_widget_dark.diff.png` — per-channel absolute difference amplified 10×;
+- `snapshots/my_crate/tests/smoke_test/my_widget_dark.png` — the committed baseline
+- `snapshots/my_crate/tests/smoke_test/my_widget_dark.actual.png` — what the renderer produced this run
+- `snapshots/my_crate/tests/smoke_test/my_widget_dark.diff.png` — per-channel absolute difference amplified 10×;
   black means identical, bright colours indicate where and how much pixels differ
 
-The `.actual.png` and `.diff.png` files are not tracked by git.
+The `.actual.png` and `.diff.png` files should not be committed to git.
 
 ## Updating baselines
 
