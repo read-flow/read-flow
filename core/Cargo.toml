@@ -35,6 +35,7 @@ itertools.workspace = true
 mime.workspace = true
 pbkdf2 = { workspace = true, features = ["simple"] }
 rand = { workspace = true }
+rand_core = { workspace = true, features = ["getrandom"] }
 r2d2.workspace = true
 rayon.workspace = true
 reqwest = { workspace = true, features = ["json", "stream", "multipart"] }

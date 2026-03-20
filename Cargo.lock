@@ -5695,6 +5695,7 @@ dependencies = [
  "provider",
  "r2d2",
  "rand 0.10.0",
+ "rand_core 0.6.4",
  "rayon",
  "reqwest",
  "rocket",
