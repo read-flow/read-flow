@@ -1,5 +1,77 @@
 // SPDX-License-Identifier: MIT
 
+//! Golden image (snapshot) testing for libcosmic widgets.
+//!
+//! Each test renders a `cosmic::Element` to a PNG using the tiny-skia software
+//! renderer (CPU-only, no display server required) and compares the result
+//! pixel-by-pixel against a committed baseline. Any difference fails the test.
+//!
+//! Baselines are stored under `snapshots/<module>/<name>.png` inside the crate
+//! that contains the test. The module path is derived automatically from
+//! [`module_path!()`] so tests in different modules never collide even when
+//! they share a function name.
+//!
+//! # Macros
+//!
+//! Three macros are provided at different levels of abstraction:
+//!
+//! ## `#[golden_test(width, height)]`
+//!
+//! The highest-level interface. Annotate a zero-argument function that returns
+//! a `cosmic::Element` and it is converted into a `#[test]` automatically.
+//! The snapshot name is derived from the function name. An optional third
+//! argument selects the theme: `light` (default) or `dark`.
+//!
+//! ```rust,ignore
+//! use golden::golden_test;
+//!
+//! #[golden_test(400, 200)]
+//! fn my_widget() -> cosmic::Element<'static, ()> {
+//!     cosmic::widget::text("Hello").into()
+//! }
+//!
+//! #[golden_test(400, 200, dark)]
+//! fn my_widget_dark() -> cosmic::Element<'static, ()> {
+//!     cosmic::widget::text("Hello").into()
+//! }
+//! ```
+//!
+//! ## `assert_snapshot!(name, element, width, height)`
+//!
+//! Mid-level macro for use inside an existing `#[test]` function. Renders
+//! `element` with the light theme and compares against the baseline. Useful
+//! when a single test needs to produce multiple snapshots, for example with
+//! `rstest` for parameterised cases.
+//!
+//! ```rust,no_run
+//! let element: cosmic::Element<'_, ()> = cosmic::widget::text("Hello").into();
+//! golden::assert_snapshot!("my_widget", element, 320, 60);
+//! ```
+//!
+//! ## `assert_snapshot_rgba!(name, rgba, width, height)`
+//!
+//! Low-level primitive that operates on pre-rendered RGBA bytes. Use this when
+//! you need a custom theme or want to render the element yourself via
+//! [`HeadlessRenderer`].
+//!
+//! ```rust,no_run
+//! use golden::{HeadlessRenderer, assert_snapshot_rgba};
+//!
+//! let mut r = HeadlessRenderer::with_theme(cosmic::Theme::dark());
+//! let element: cosmic::Element<'_, ()> = cosmic::widget::text("Hello").into();
+//! let rgba = r.render(element, 320, 60);
+//! golden::assert_snapshot_rgba!("my_widget_dark", rgba, 320, 60);
+//! ```
+//!
+//! # Updating baselines
+//!
+//! Set the `UPDATE_SNAPSHOTS` environment variable to regenerate baselines
+//! instead of comparing:
+//!
+//! ```bash
+//! UPDATE_SNAPSHOTS=1 cargo nextest run -p my-crate
+//! ```
+
 pub mod renderer;
 pub mod snapshot;
 
