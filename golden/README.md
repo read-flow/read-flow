@@ -58,17 +58,43 @@ at the call site — no manual namespacing is needed.
 
 ### Using `assert_snapshot!` directly
 
-For cases where you need more control within a single test function, construct a
-[`HeadlessRenderer`] with the desired theme and use `assert_snapshot_rgba!`:
+`assert_snapshot!(name, element, width, height)` renders with the light theme and compares
+against the stored baseline. Use it when you need to produce multiple snapshots from a single
+test function, for example with [`rstest`](https://github.com/la10736/rstest) for
+parameterised cases:
+
+```rust
+use golden::assert_snapshot;
+use rstest::rstest;
+
+#[rstest]
+#[case("hello world",       "text_hello_world",       320, 60)]
+#[case("a longer sentence", "text_a_longer_sentence",  480, 60)]
+fn text_renders(
+    #[case] content: &str,
+    #[case] name: &str,
+    #[case] width: u32,
+    #[case] height: u32,
+) {
+    let element: cosmic::Element<'_, ()> = cosmic::widget::text(content).into();
+    assert_snapshot!(name, element, width, height);
+}
+```
+
+Each case produces its own baseline (`text_hello_world.png`, `text_a_longer_sentence.png`)
+under the test's module path, just like `#[golden_test]` would.
+
+For custom themes or multiple renders in a single test, construct a [`HeadlessRenderer`]
+directly and use `assert_snapshot_rgba!`:
 
 ```rust
 use golden::{HeadlessRenderer, assert_snapshot_rgba};
 
 #[test]
-fn both_themes() {
+fn my_widget_both_themes() {
     for (name, theme) in [
-        ("my_widget_dark",  cosmic::Theme::dark()),
         ("my_widget_light", cosmic::Theme::light()),
+        ("my_widget_dark",  cosmic::Theme::dark()),
     ] {
         let element: cosmic::Element<'_, ()> = my_widget().into();
         let mut r = HeadlessRenderer::with_theme(theme);
@@ -77,9 +103,6 @@ fn both_themes() {
     }
 }
 ```
-
-`assert_snapshot!(name, element, width, height)` is a shorthand that always uses the light
-theme. It is equivalent to the above with `HeadlessRenderer::new()`.
 
 ## Generated files
 
