@@ -306,7 +306,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use golden::golden_test;
+    use cosmic_golden::golden_test;
     use provider::r#async::Value;
 
     use super::TagFilter;

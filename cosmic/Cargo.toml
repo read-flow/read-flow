@@ -71,4 +71,4 @@ features = [
 # cosmic-theme = { path = "../libcosmic/cosmic-theme" }
 
 [dev-dependencies]
-golden = { path = "../golden" }
+cosmic-golden = { git = "https://github.com/peterpaul/cosmic-golden-test.git", tag = "0.1.0" }

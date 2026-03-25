@@ -179,7 +179,7 @@ impl Pagination {
 
 #[cfg(test)]
 mod tests {
-    use golden::golden_test;
+    use cosmic_golden::golden_test;
 
     use crate::component::pagination::Pagination;
     use crate::component::pagination::PaginationMessage;

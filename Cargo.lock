@@ -1384,6 +1384,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "cosmic-golden"
+version = "0.1.0"
+source = "git+https://github.com/peterpaul/cosmic-golden-test.git?tag=0.1.0#e0a91deb6da7ad278beacd40ab83faa51d9b53e4"
+dependencies = [
+ "cosmic-golden-macros",
+ "futures",
+ "libcosmic",
+ "png 0.18.1",
+]
+
+[[package]]
+name = "cosmic-golden-macros"
+version = "0.1.0"
+source = "git+https://github.com/peterpaul/cosmic-golden-test.git?tag=0.1.0#e0a91deb6da7ad278beacd40ab83faa51d9b53e4"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "cosmic-protocols"
 version = "0.2.0"
 source = "git+https://github.com/pop-os/cosmic-protocols?rev=160b086#160b086abe03cd34a8a375d7fbe47b24308d1f38"
@@ -2642,25 +2663,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c4ee00b289aba7a9e5306d57c2d05499b2e5dc427f84ac708bd2c090212cf3e"
 dependencies = [
  "gl_generator",
-]
-
-[[package]]
-name = "golden"
-version = "0.1.0"
-dependencies = [
- "futures",
- "golden-macros",
- "libcosmic",
- "png 0.18.1",
-]
-
-[[package]]
-name = "golden-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -5650,12 +5652,12 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap",
+ "cosmic-golden",
  "cosmic-text",
  "derive_more",
  "epub",
  "futures",
  "futures-util",
- "golden",
  "i18n-embed",
  "i18n-embed-fl",
  "indexmap",
