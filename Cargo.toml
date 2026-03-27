@@ -13,6 +13,8 @@ assert4rs = "0.2.0"
 async-trait = "0.1.89"
 base64 = "0.22.1"
 clap = "4.6.0"
+cosmic-golden = { git = "https://github.com/peterpaul/cosmic-golden-test.git", tag = "0.2.0" }
+cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git" }
 derive_more = "2.1.1"
 diesel = { version = "2.3.7", features = ["chrono"] }
 diesel_migrations = "2.3.1"
@@ -26,6 +28,7 @@ i18n-embed = "0.16.0"
 i18n-embed-fl = "0.10.0"
 indexmap = "2.13.0"
 itertools = "0.14.0"
+libcosmic = { git = "https://github.com/pop-os/libcosmic.git" }
 mime = "0.3.17"
 mupdf = "0.6"
 open = "5.3.3"

@@ -16,6 +16,7 @@ maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 anyhow.workspace = true
 async-trait.workspace = true
 clap = { workspace = true, features = ["derive"] }
+cosmic-text.workspace = true
 derive_more = { workspace = true, features = ["as_ref", "deref", "from"] }
 futures.workspace = true
 futures-util.workspace = true
@@ -34,14 +35,12 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
 
-cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git" }
-
 epub = { path = "../epub" }
 provider = { path = "../provider" }
 read-flow-core = { path = "../core", default-features = false }
 
 [dependencies.libcosmic]
-git = "https://github.com/pop-os/libcosmic.git"
+workspace = true
 # See https://github.com/pop-os/libcosmic/blob/master/Cargo.toml for available features.
 features = [
     # Accessibility support
@@ -71,4 +70,4 @@ features = [
 # cosmic-theme = { path = "../libcosmic/cosmic-theme" }
 
 [dev-dependencies]
-cosmic-golden = { git = "https://github.com/peterpaul/cosmic-golden-test.git", tag = "0.1.0" }
+cosmic-golden.workspace = true
