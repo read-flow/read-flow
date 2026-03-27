@@ -4,14 +4,14 @@ This is a tool to help discover and organize files locally and on remote servers
 
 * Open
 
-** Tier 1 — Quick Wins (High value, Low effort) [0/4]
+** Tier 1 — Quick Wins (High value, Low effort) [4/6]
 
-- [ ] ~read-flow~: Allow copying full paths from file details page
-- [ ] ~read-flow~: Fuzzy search in document list
+- [X] ~read-flow~: Allow copying full paths from file details page
+- [X] ~read-flow~: Fuzzy search in document list
 - [ ] ~read-flow::EpubViewer~: Make nav pane resizeable
 - [ ] ~read-flow-core~: Make file download folder for HTTP ~client~ configurable
-- [ ] ~read-flow-core~: Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
-- [ ] ~read-flow-core~ & ~read-flow~: Check files in the database to see whether they still exist
+- [X] ~read-flow-core~: Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
+- [X] ~read-flow-core~ & ~read-flow~: Check files in the database to see whether they still exist
 
 ** Tier 2 — High Impact, Moderate Effort [1/5]
 
