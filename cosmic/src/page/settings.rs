@@ -93,6 +93,9 @@ pub enum SettingsMessage {
     DirectorySettingsForm(DirectorySettingsFormMessage),
     SelectDatabaseLocation,
     SelectedDatabaseLocation(Option<FileHandle>),
+    /// Client settings
+    SelectClientDownloadFolder,
+    SelectedClientDownloadFolder(Option<FileHandle>),
     /// Server settings
     SelectServerDownloadFolder,
     SelectedServerDownloadFolder(Option<FileHandle>),
@@ -291,6 +294,30 @@ impl Page for SettingsPage {
                     .align_x(Horizontal::Right)
                     .into(),
             ]));
+
+        let client_section = widget::settings::section()
+            .title(fl!("settings-client-section"))
+            .add(
+                widget::settings::item::builder(fl!("settings-client-download-folder"))
+                    .description(fl!("settings-client-download-folder-description"))
+                    .icon(widget::icon::from_name("folder-download-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::settings::item_row(vec![
+                            widget::text::monotext(format!(
+                                "{}",
+                                self.settings.client.download_folder.display()
+                            ))
+                            .into(),
+                            widget::button::text("Select")
+                                .on_press(SettingsMessage::SelectClientDownloadFolder)
+                                .into(),
+                        ])
+                        .align_y(Vertical::Center)
+                        .width(Length::Shrink),
+                    ),
+            );
+
+        content.push(client_section.into());
 
         let server_section = widget::settings::section()
             .title(fl!("settings-server-section"))
@@ -502,6 +529,27 @@ impl Page for SettingsPage {
                     self.settings
                         .database
                         .set_url(file.path().to_path_buf().try_into().unwrap());
+                    self.save_state = SaveState::Idle;
+                }
+                Task::none()
+            }
+            SettingsMessage::SelectClientDownloadFolder => {
+                let download_folder = self.settings.client.download_folder.clone();
+
+                task::future(async move {
+                    let directory = AsyncFileDialog::new()
+                        .set_directory(download_folder)
+                        .set_can_create_directories(true)
+                        .pick_folder()
+                        .await;
+
+                    SettingsMessage::SelectedClientDownloadFolder(directory)
+                })
+            }
+            SettingsMessage::SelectedClientDownloadFolder(file_handle) => {
+                if let Some(file) = file_handle {
+                    self.settings.client.download_folder =
+                        file.path().to_path_buf().try_into().unwrap();
                     self.save_state = SaveState::Idle;
                 }
                 Task::none()

@@ -286,10 +286,15 @@ impl Aggregator {
 
             match source_client {
                 Client::Remote(files_client) => {
-                    let tempdir = std::env::temp_dir().join("read-flow");
-                    let _ = tokio::fs::create_dir_all(&tempdir).await;
+                    let download_folder = self
+                        .application_module
+                        .settings()
+                        .client
+                        .download_folder
+                        .into_inner();
+                    let _ = tokio::fs::create_dir_all(&download_folder).await;
                     let file_path = PathBuf::from(&source.path);
-                    let filename = tempdir.join(file_path.file_name().unwrap());
+                    let filename = download_folder.join(file_path.file_name().unwrap());
                     files_client
                         .download_file(source.id, &filename)
                         .await

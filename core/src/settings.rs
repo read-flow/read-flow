@@ -27,6 +27,8 @@ pub struct Settings {
     #[serde(default)]
     pub database: DbSettings,
     #[serde(default)]
+    pub client: ClientSettings,
+    #[serde(default)]
     pub server: ServerSettings,
     #[serde(default)]
     pub scan: ScanSettings,
@@ -94,6 +96,23 @@ impl HashedPassword {
         // Verify password against PHC string
         let parsed_hash = PasswordHash::new(&self.0)?;
         Pbkdf2.verify_password(password.as_bytes(), &parsed_hash)
+    }
+}
+
+/// Settings for the HTTP client (remote file downloads).
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ClientSettings {
+    pub download_folder: ExpandedPath,
+}
+
+impl Default for ClientSettings {
+    fn default() -> Self {
+        Self {
+            download_folder: expanduser::expanduser("~/Downloads")
+                .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
+                .try_into()
+                .unwrap(),
+        }
     }
 }
 
