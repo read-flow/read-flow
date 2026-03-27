@@ -150,6 +150,10 @@ sources-invalid-url = Not a valid URL
 sources-loading-state-loading = Loading...
 sources-loading-state-new = Initializing
 sources-section-title = Remote Sources
+sources-status-unknown = Status unknown
+sources-status-checking = Checking reachability...
+sources-status-reachable = Reachable
+sources-status-unreachable = Unreachable
 
 # Settings page
 settings-add-directory = Add Directory

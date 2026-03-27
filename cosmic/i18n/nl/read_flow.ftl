@@ -172,6 +172,10 @@ sources-invalid-url = Geen valide URL
 sources-loading-state-loading = Laden...
 sources-loading-state-new = Initialiseren
 sources-section-title = Externe bronnen
+sources-status-unknown = Status onbekend
+sources-status-checking = Bereikbaarheid controleren...
+sources-status-reachable = Bereikbaar
+sources-status-unreachable = Niet bereikbaar
 
 # Settings page
 settings-add-directory = Map Toevoegen

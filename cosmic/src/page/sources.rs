@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -68,6 +69,8 @@ pub struct SourcesPage {
     pending_deletion: Option<Remote>,
     // Debouncing state
     last_input_time: Instant,
+    // Per-source reachability status (remote id → reachable)
+    source_statuses: HashMap<i32, LoadedState<bool>>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +115,9 @@ pub enum SourcesMessage {
     MoveSourceDown(Remote),
     SwapOrderOfRemotes(Remote, Remote),
 
+    CheckSourceStatus(Remote),
+    SetSourceStatus(i32, bool),
+
     Out(SourcesOutput),
 }
 
@@ -152,6 +158,7 @@ impl SourcesPage {
                 operation_error: None,
                 pending_deletion: None,
                 last_input_time: Instant::now(),
+                source_statuses: HashMap::new(),
             },
             task::batch([init_remotes_state.map(ActionExt::map_into)]),
         )
@@ -163,10 +170,32 @@ impl SourcesPage {
         is_first: bool,
         is_last: bool,
     ) -> Element<'a, SourcesMessage> {
+        let (status_icon_name, status_tooltip) = match self.source_statuses.get(&source.id) {
+            None | Some(LoadedState::New) => {
+                ("dialog-question-symbolic", fl!("sources-status-unknown"))
+            }
+            Some(LoadedState::Loading) => (
+                "emblem-synchronizing-symbolic",
+                fl!("sources-status-checking"),
+            ),
+            Some(LoadedState::Loaded(true)) => {
+                ("emblem-ok-symbolic", fl!("sources-status-reachable"))
+            }
+            Some(LoadedState::Loaded(false)) | Some(LoadedState::Failed(_)) => (
+                "network-offline-symbolic",
+                fl!("sources-status-unreachable"),
+            ),
+        };
+        let status_icon = widget::tooltip::tooltip(
+            icon::from_name(status_icon_name).size(ICON_SIZE),
+            widget::text(status_tooltip),
+            widget::tooltip::Position::Bottom,
+        );
         widget::settings::item::builder(&source.base_url)
             .icon(icon::from_name("network-server-symbolic").size(ICON_SIZE))
             .control(
                 widget::settings::item_row(vec![
+                    status_icon.into(),
                     widget::button::icon(icon::from_name("go-up-symbolic").size(ICON_SIZE))
                         .class(theme::Button::Icon)
                         .apply_if(!is_first, |button| {
@@ -405,7 +434,19 @@ impl Page for SourcesPage {
         tracing::debug!("received: {message:?}");
         match message {
             SourcesMessage::Remotes(message) => {
-                self.remotes_state.update(message).map(ActionExt::map_into)
+                let task = self.remotes_state.update(message).map(ActionExt::map_into);
+                if let LoadedState::Loaded(remotes) = &self.remotes_state.state {
+                    let mut check_tasks: Vec<_> = remotes
+                        .iter()
+                        .map(|remote| {
+                            task::message(SourcesMessage::CheckSourceStatus(remote.clone()))
+                        })
+                        .collect();
+                    check_tasks.push(task);
+                    Task::batch(check_tasks)
+                } else {
+                    task
+                }
             }
             SourcesMessage::UpdateEnteredUrl(url) => {
                 self.entered_url = url;
@@ -586,6 +627,25 @@ impl Page for SourcesPage {
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }
                 })
+            }
+            SourcesMessage::CheckSourceStatus(remote) => {
+                self.source_statuses.insert(remote.id, LoadedState::Loading);
+                task::future(async move {
+                    let reachable = match remote.base_url.parse::<Url>() {
+                        Ok(url) => {
+                            let client =
+                                FilesClient::new(url, remote.user_id, remote.passphrase).unwrap();
+                            client.status().await.is_ok()
+                        }
+                        Err(_) => false,
+                    };
+                    SourcesMessage::SetSourceStatus(remote.id, reachable)
+                })
+            }
+            SourcesMessage::SetSourceStatus(id, reachable) => {
+                self.source_statuses
+                    .insert(id, LoadedState::Loaded(reachable));
+                task::none()
             }
             SourcesMessage::ToggleShowPassphrase => {
                 self.show_passphrase = !self.show_passphrase;

@@ -171,6 +171,10 @@ sources-invalid-url = URL non valide
 sources-loading-state-loading = Chargement...
 sources-loading-state-new = Initialisation
 sources-section-title = Sources distantes
+sources-status-unknown = Statut inconnu
+sources-status-checking = Vérification de l'accessibilité...
+sources-status-reachable = Accessible
+sources-status-unreachable = Inaccessible
 
 # Settings page
 settings-add-directory = Ajouter un répertoire

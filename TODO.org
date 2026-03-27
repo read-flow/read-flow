@@ -13,13 +13,13 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] ~read-flow-core~: Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
 - [X] ~read-flow-core~ & ~read-flow~: Check files in the database to see whether they still exist
 
-** Tier 2 — High Impact, Moderate Effort [1/5]
+** Tier 2 — High Impact, Moderate Effort [2/6]
 
 - [ ] ~read-flow-core~: HTTP response code & error handling in ~client~ module
 - [ ] ~read-flow-core~: Proper HTTP error handling in ~server~ module, including tests
 - [ ] ~read-flow-core~ & ~read-flow~: Add allow/denylist for directories to scan
-- [ ] ~read-flow~: On the Sources page, add an indicator icon for each source whether they are available or not
-  - [ ] Allow adding sources that are not available at the time of adding(?)
+- [X] ~read-flow~: On the Sources page, add an indicator icon for each source whether they are available or not
+- [ ] ~read-flow~: Allow adding sources that are not available at the time of adding(?) on the Sources page
 - [X] ~read-flow~: Allow deleting duplicate files (including from file storage) from file edit dialog
 
 ** Tier 3 — Significant Features [0/5]
