@@ -91,6 +91,7 @@ document-details-sources = Bronnen
 document-details-upload-to = Uploaden naar { $host }
 document-details-edit-sources = Bronnen bewerken
 document-details-done-editing-sources = Klaar met bewerken
+document-details-copy-path = Pad kopiëren
 document-details-delete-source = Bron verwijderen
 document-details-delete-source-confirm-title = Bron verwijderen
 document-details-delete-source-confirm-body = Weet je zeker dat je deze bron wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.

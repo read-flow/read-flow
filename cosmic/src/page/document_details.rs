@@ -60,6 +60,7 @@ pub enum DocumentDetailsMessage {
     UpdateReadingStatus(ReadingStatus),
     ReadingStatusUpdated(Result<(), String>),
     OpenDocument,
+    CopyPath(String),
     ToggleEditSources,
     RequestDeleteSource(DocumentSource),
     ConfirmDeleteSource,
@@ -251,6 +252,13 @@ impl DocumentDetails {
                         )
                         .push(text(folder).size(12))
                         .width(Length::Fill),
+                )
+                .push(
+                    widget::button::icon(
+                        widget::icon::from_name("edit-copy-symbolic").size(ICON_SIZE),
+                    )
+                    .on_press(DocumentDetailsMessage::CopyPath(source.path.clone()))
+                    .tooltip(fl!("document-details-copy-path")),
                 );
 
             // Show delete button in edit mode for sources where the client has multiple entries
@@ -631,6 +639,7 @@ impl Page for DocumentDetails {
                     Task::none()
                 }
             },
+            DocumentDetailsMessage::CopyPath(path) => cosmic::iced::clipboard::write(path),
             DocumentDetailsMessage::ToggleEditSources => {
                 self.editing_sources = !self.editing_sources;
                 self.pending_source_deletion = None;

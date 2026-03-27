@@ -90,6 +90,7 @@ document-details-sources = Sources
 document-details-upload-to = Envoyer vers { $host }
 document-details-edit-sources = Modifier les sources
 document-details-done-editing-sources = Terminer la modification
+document-details-copy-path = Copier le chemin
 document-details-delete-source = Supprimer la source
 document-details-delete-source-confirm-title = Supprimer la source
 document-details-delete-source-confirm-body = Êtes-vous sûr de vouloir supprimer cette source ? Cette action ne peut pas être annulée.
