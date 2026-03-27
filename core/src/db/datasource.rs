@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use diesel::RunQueryDsl;
 use diesel::prelude::*;
-use indexmap::IndexMap;
 use tokio::process::Command;
 
 use super::ConnectionPool;
@@ -12,6 +11,7 @@ use super::dao::Error;
 use super::dao::FileDao;
 use super::dao::FileTagDao;
 use super::dao::ReadingProgressDao;
+use crate::FxIndexMap;
 use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
@@ -59,7 +59,7 @@ impl FileDataSource for DbClient {
             let files = self.connection_pool.select_all_files()?;
             let file_tags = self.connection_pool.select_all_file_tags()?;
 
-            let mut result: IndexMap<i32, (DbFile, Vec<DbFileTag>)> = files
+            let mut result: FxIndexMap<i32, (DbFile, Vec<DbFileTag>)> = files
                 .into_iter()
                 .map(|file| (file.id, (file, Vec::new())))
                 .collect();

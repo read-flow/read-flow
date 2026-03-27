@@ -7,7 +7,6 @@ use std::path::PathBuf;
 
 use authn::AuthorizedUser;
 use figment::Figment;
-use indexmap::IndexMap;
 use provider::sync::AndThen;
 use provider::sync::Provider;
 use rocket::Build;
@@ -31,6 +30,7 @@ use rocket_cors::Cors;
 use rocket_cors::CorsOptions;
 
 use crate::ApplicationModule;
+use crate::FxIndexMap;
 use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
@@ -204,7 +204,7 @@ fn get_files(
         .connection_pool()
         .select_all_file_tags()?;
 
-    let mut file_tags_map: IndexMap<_, Vec<_>> = IndexMap::new();
+    let mut file_tags_map: FxIndexMap<_, Vec<_>> = FxIndexMap::default();
 
     for file_tag in file_tags {
         match file_tags_map.get_mut(&file_tag.file_id) {

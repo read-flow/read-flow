@@ -5704,6 +5704,7 @@ dependencies = [
  "rocket",
  "rocket_cors",
  "rstest",
+ "rustc-hash 2.1.1",
  "serde",
  "strum",
  "thiserror 2.0.18",

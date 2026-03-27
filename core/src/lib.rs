@@ -28,6 +28,7 @@ use provider::sync::Invalidated;
 use provider::sync::Observable;
 use provider::sync::ObservableCache;
 use provider::sync::Provider;
+use rustc_hash::FxBuildHasher;
 use scan::DirectorySettings;
 use scan::FileSystemVisitor;
 use serde::Deserialize;
@@ -256,14 +257,16 @@ fn extension_of(filename: &str) -> Option<&str> {
     filename.split(".").last()
 }
 
-/// Collect all the items from `iterator` in a [`IndexMap`] indexed by the key indicated by `to_key`.
+pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
+
+/// Collect all the items from `iterator` in a [`FxIndexMap`] indexed by the key indicated by `to_key`.
 /// Values are collected in a [`Vec`], so that multiple values per key are supported.
-pub fn to_buckets<K, V, F>(iterator: impl Iterator<Item = V>, to_key: F) -> IndexMap<K, Vec<V>>
+pub fn to_buckets<K, V, F>(iterator: impl Iterator<Item = V>, to_key: F) -> FxIndexMap<K, Vec<V>>
 where
     K: Hash + Eq,
     F: Fn(&V) -> K,
 {
-    let mut buckets = IndexMap::default();
+    let mut buckets = FxIndexMap::default();
 
     for value in iterator {
         let key = to_key(&value);

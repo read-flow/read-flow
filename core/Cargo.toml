@@ -38,6 +38,7 @@ rand = { workspace = true }
 rand_core = { workspace = true, features = ["getrandom"] }
 r2d2.workspace = true
 rayon.workspace = true
+rustc-hash.workspace = true
 reqwest = { workspace = true, features = ["json", "stream", "multipart"] }
 serde = { workspace = true, features = ["derive"] }
 strum = { workspace = true, features = ["derive"] }
