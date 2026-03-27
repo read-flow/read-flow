@@ -323,6 +323,18 @@ fn status_order(status: &ReadingStatus) -> u8 {
     }
 }
 
+/// Returns true if every character of `query` appears in `text` as a subsequence
+/// (in order, but not necessarily consecutive).
+fn fuzzy_match(query: &str, text: &str) -> bool {
+    let mut text_chars = text.chars();
+    for q in query.chars() {
+        if !text_chars.any(|t| t == q) {
+            return false;
+        }
+    }
+    true
+}
+
 fn filter_document(
     search_query: &str,
     status_filter: Option<ReadingStatus>,
@@ -340,10 +352,10 @@ fn filter_document(
             .sources
             .iter()
             .map(|source| source.path.to_lowercase())
-            .filter(|path| path.contains(&query))
+            .filter(|path| fuzzy_match(&query, path))
             .count();
         let tags_lower = document.metadata.tags.join(" ").to_lowercase();
-        path_matches > 0 || tags_lower.contains(&query)
+        path_matches > 0 || fuzzy_match(&query, &tags_lower)
     };
 
     // Filter by reading status
@@ -667,5 +679,24 @@ impl Page for DocumentList {
                 panic!("{message:?} should be handled by the parent component")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::fuzzy_match;
+
+    #[rstest]
+    #[case("rust", "rust-programming", true)]
+    #[case("rsp", "rust-programming", true)]
+    #[case("rpg", "rust-programming", true)]
+    #[case("xyz", "rust-programming", false)]
+    #[case("", "rust-programming", true)]
+    #[case("rust", "", false)]
+    #[case("RUST", "rust-programming", false)] // case-sensitive: caller lowercases both
+    fn test_fuzzy_match(#[case] query: &str, #[case] text: &str, #[case] expected: bool) {
+        assert_eq!(fuzzy_match(query, text), expected);
     }
 }
