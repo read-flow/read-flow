@@ -36,6 +36,12 @@ enum Commands {
     #[cfg(feature = "server")]
     Serve,
     ExtractScanDirectories,
+    /// Check which files in the database no longer exist on disk.
+    /// With --purge, also removes stale records from the database.
+    CheckMissing {
+        #[clap(long, default_value = "false")]
+        purge: bool,
+    },
 }
 
 impl Cli {
@@ -61,6 +67,27 @@ fn main() -> Result<()> {
         }
         Commands::ExtractScanDirectories => {
             ApplicationModule::instantiate(config_path)?.extract_scan_directories();
+        }
+        Commands::CheckMissing { purge } => {
+            let missing = ApplicationModule::instantiate(config_path)?.check_missing(purge);
+            if missing.is_empty() {
+                println!("All files in the database exist on disk.");
+            } else {
+                for path in &missing {
+                    println!("{path}");
+                }
+                if purge {
+                    eprintln!(
+                        "Removed {} stale record(s) from the database.",
+                        missing.len()
+                    );
+                } else {
+                    eprintln!(
+                        "{} file(s) missing from disk. Run with --purge to remove them from the database.",
+                        missing.len()
+                    );
+                }
+            }
         }
         Commands::Scan { dry_run, path, .. } => {
             ApplicationModule::new(ScanSettingsProvider { dry_run }, config_path)?.scan(path)?;

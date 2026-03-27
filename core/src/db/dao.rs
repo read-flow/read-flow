@@ -39,6 +39,7 @@ pub trait FileDao {
     fn select_file_by_id(&self, id: i32) -> Result<Option<File>, Self::Error>;
     fn select_file_by_path(&self, path: &str) -> Result<Option<File>, Self::Error>;
     fn select_all_files_by_path_like(&self, path: &str) -> Result<Vec<File>, Self::Error>;
+    fn delete_file_record(&self, id: i32) -> Result<(), Self::Error>;
 }
 
 pub trait FileTagDao {
@@ -243,6 +244,14 @@ impl FileDao for ConnectionPool {
             .filter(files::path.like(path))
             .load(&mut connection)?;
         Ok(files)
+    }
+
+    fn delete_file_record(&self, id: i32) -> Result<(), Self::Error> {
+        let mut connection = self.get()?;
+        diesel::delete(file_tags::table.filter(file_tags::file_id.eq(id)))
+            .execute(&mut connection)?;
+        diesel::delete(files::table.filter(files::id.eq(id))).execute(&mut connection)?;
+        Ok(())
     }
 }
 

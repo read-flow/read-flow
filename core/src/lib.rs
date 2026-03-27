@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use api::FileDataSource;
 use db::ConnectionPool;
+use db::dao::FileDao;
 use db::datasource::DbClient;
 use expanduser::expanduser;
 use indexmap::IndexMap;
@@ -138,6 +139,31 @@ where
 
     fn visitor(&self) -> FileSystemVisitor {
         scan::create_visitor(self.connection_pool(), self.settings().scan)
+    }
+
+    /// Find all local files in the database whose path no longer exists on disk.
+    /// If `purge` is true, also removes those stale records from the database.
+    pub fn check_missing(&self, purge: bool) -> Vec<String> {
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let connection_pool = self.connection_pool();
+            let files = connection_pool
+                .select_all_files()
+                .expect("database available");
+
+            let mut missing = Vec::new();
+            for file in files {
+                if !Path::new(&file.path).exists() {
+                    if purge {
+                        if let Err(e) = connection_pool.delete_file_record(file.id) {
+                            tracing::warn!("Failed to delete record for {}: {e}", file.path);
+                        }
+                    }
+                    missing.push(file.path);
+                }
+            }
+            missing
+        })
     }
 
     pub fn extract_scan_directories(&self) {
