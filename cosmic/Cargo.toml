@@ -71,3 +71,4 @@ features = [
 
 [dev-dependencies]
 cosmic-golden.workspace = true
+rstest.workspace = true

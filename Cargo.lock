@@ -5668,6 +5668,7 @@ dependencies = [
  "rand 0.10.0",
  "read-flow-core",
  "rfd 0.17.2",
+ "rstest",
  "rust-embed",
  "serde",
  "thiserror 2.0.18",
