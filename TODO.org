@@ -22,7 +22,7 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] ~read-flow~: Allow adding sources that are not available at the time of adding(?) on the Sources page
 - [X] ~read-flow~: Allow deleting duplicate files (including from file storage) from file edit dialog
 
-** Tier 3 — Significant Features [0/5]
+** Tier 3 — Significant Features [1/5]
 
 - [-] ~read-flow~: Use context view of Document Details page for multiple actions: [3/4]
   - [ ] Remove duplicates (including files)
@@ -30,7 +30,7 @@ This is a tool to help discover and organize files locally and on remote servers
   - [X] For missing on remote: Push to remote
   - [X] For all (reachable) sources: Check whether the file still exists
 - [ ] ~read-flow-core~ & ~read-flow~: Make it possible to correlate `books` of different file types
-- [ ] ~read-flow-core~ & ~read-flow~: Recognize duplicates accross local/remote repositories
+- [X] ~read-flow-core~ & ~read-flow~: Recognize duplicates accross local/remote repositories
 - [ ] Separate file discovery in multiple main categories:
   - documents(.doc, .docx, .pdf, .epub, .mobi, etc.)
   - images(.jpg, .png, .webp, etc.)
