@@ -26,6 +26,10 @@ This is a tool to help discover and organize files locally and on remote servers
 
 - [-] ~read-flow~: Use context view of Document Details page for multiple actions: [3/4]
   - [ ] Remove duplicates (including files)
+    - The ~DeleteSource~ infrastructure is fully implemented (confirmation dialog, actual file deletion via ~delete_document_source~).
+    - The delete button currently only appears when the *same* client has ~client_source_count > 1~ copies.
+    - For cross-client duplicates (e.g. one local + one remote copy of the same file), no delete button is shown.
+    - To complete this: broaden the condition to also show the delete button when sources from *different* clients share the same fingerprint.
   - [X] For missing on local: Pull to local
   - [X] For missing on remote: Push to remote
   - [X] For all (reachable) sources: Check whether the file still exists
@@ -42,6 +46,11 @@ This is a tool to help discover and organize files locally and on remote servers
 
 - [ ] Recognize calibre directories, and support calibre database to import data
 - [ ] Allow duplicating files to/from remote, with configuration/input of location.
+  - Basic push/pull is already implemented (see Tier 3 checked items): the "Send to Missing" section in Document Details pushes to a remote that lacks the file, and pulls to local when only a remote copy exists.
+  - What is *not* implemented is the "with configuration/input of location" part:
+    - Downloads always go to the globally-configured ~download_folder~; no per-file destination picker.
+    - Uploads send to the remote server with no way to specify the target folder/path on the remote.
+    - There is no way to explicitly copy a file to a remote that *already* has it (forced duplicate).
 - [ ] Add role-based authorization for server REST API, read/write access
   - [ ] Update cosmic settings editor
 - [X] PDF Viewer, 'stream' the pages while loading, so that each page becomes visible/accessible the moment it is rendered.
