@@ -195,23 +195,12 @@ pub trait Observable<T> {
 #[cfg(test)]
 mod tests {
     use std::convert::Infallible;
+    use std::sync::atomic::AtomicBool;
     use std::sync::atomic::AtomicU8;
     use std::sync::atomic::Ordering;
-    use std::sync::RwLock;
+    use std::sync::Arc;
 
     use super::*;
-
-    static EXPIRED_COUNTER: RwLock<bool> = RwLock::new(true);
-
-    fn set_expired(value: bool) {
-        let mut expired = EXPIRED_COUNTER.write().unwrap();
-        *expired = value;
-    }
-
-    fn get_expired() -> bool {
-        let expired = EXPIRED_COUNTER.read().unwrap();
-        *expired
-    }
 
     #[derive(Default)]
     struct Counter {
@@ -223,15 +212,54 @@ mod tests {
 
         async fn provide(&self) -> Result<u8, Self::Error> {
             let result = self.value.load(Ordering::Relaxed) + 1;
-            set_expired(false);
             self.value.store(result, Ordering::Release);
             Ok(result)
         }
     }
 
-    impl Expiring for u8 {
+    /// A counter whose cached values carry their own expiry flag, avoiding
+    /// any shared global state between parallel tests.
+    struct ExpiringCounter {
+        value: AtomicU8,
+        expired: Arc<AtomicBool>,
+    }
+
+    impl ExpiringCounter {
+        fn new() -> (Self, Arc<AtomicBool>) {
+            let flag = Arc::new(AtomicBool::new(false));
+            (
+                Self {
+                    value: AtomicU8::new(0),
+                    expired: flag.clone(),
+                },
+                flag,
+            )
+        }
+    }
+
+    #[derive(Clone)]
+    struct CounterValue {
+        value: u8,
+        expired: Arc<AtomicBool>,
+    }
+
+    impl Expiring for CounterValue {
         async fn is_expired(&self) -> bool {
-            get_expired()
+            self.expired.load(Ordering::Acquire)
+        }
+    }
+
+    impl Provider<CounterValue> for ExpiringCounter {
+        type Error = Infallible;
+
+        async fn provide(&self) -> Result<CounterValue, Self::Error> {
+            let result = self.value.load(Ordering::Relaxed) + 1;
+            self.expired.store(false, Ordering::Release);
+            self.value.store(result, Ordering::Release);
+            Ok(CounterValue {
+                value: result,
+                expired: self.expired.clone(),
+            })
         }
     }
 
@@ -271,13 +299,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_expiring_cache_provider() {
-        let provider = Counter::default().expiring_item_cache();
-        assert_eq!(provider.provide().await.unwrap(), 1);
-        assert_eq!(provider.provide().await.unwrap(), 1);
+        let (counter, expired_flag) = ExpiringCounter::new();
+        let provider = counter.expiring_item_cache();
+        assert_eq!(provider.provide().await.unwrap().value, 1);
+        assert_eq!(provider.provide().await.unwrap().value, 1);
 
-        set_expired(true);
+        expired_flag.store(true, Ordering::Release);
 
-        assert_eq!(provider.provide().await.unwrap(), 2);
-        assert_eq!(provider.provide().await.unwrap(), 2);
+        assert_eq!(provider.provide().await.unwrap().value, 2);
+        assert_eq!(provider.provide().await.unwrap().value, 2);
     }
 }
