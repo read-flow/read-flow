@@ -3131,4 +3131,165 @@ mod tests {
         let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
         render_chapter_blocks(&chapters, 0, 16.0)
     }
+
+    #[golden_test(600, 250)]
+    fn epub_ordered_list() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("Ordered List")
+            .body(
+                "<ol>\
+                   <li>First step</li>\
+                   <li>Second step</li>\
+                   <li>Third with <em>italic</em> text</li>\
+                 </ol>",
+            )
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    #[golden_test(600, 150)]
+    fn epub_inline_styles() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("Inline Styles")
+            .body(
+                "<p>\
+                   Normal, <strong>bold</strong>, <em>italic</em>, \
+                   <u>underline</u>, <del>strikethrough</del>, \
+                   <code>monospaced</code> and \
+                   <a href=\"chapter.xhtml\">a link</a>.\
+                 </p>",
+            )
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    #[golden_test(600, 200)]
+    fn epub_preformatted() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("Preformatted")
+            .body("<pre>fn hello() {\n    println!(\"Hello, world!\");\n}</pre>")
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    #[golden_test(600, 200)]
+    fn epub_blockquote() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("Blockquote")
+            .body(
+                "<blockquote>\
+                   <p>To be, or not to be, that is the question.</p>\
+                   <p>— William Shakespeare</p>\
+                 </blockquote>",
+            )
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    #[golden_test(600, 200)]
+    fn epub_table() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("Table")
+            .body(
+                "<table>\
+                   <tr><th>Name</th><th>Age</th><th>City</th></tr>\
+                   <tr><td>Alice</td><td>30</td><td>Amsterdam</td></tr>\
+                   <tr><td>Bob</td><td>25</td><td>Berlin</td></tr>\
+                 </table>",
+            )
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    #[golden_test(600, 100)]
+    fn epub_horizontal_rule() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("HR")
+            .body("<p>Before the rule.</p><hr/><p>After the rule.</p>")
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    #[golden_test(600, 200)]
+    fn epub_footnote() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("Footnote")
+            .body(
+                "<p>Main text with a reference.<sup>1</sup></p>\
+                 <aside epub:type=\"footnote\" id=\"fn1\">\
+                   <p>1. This is the footnote content explaining the reference.</p>\
+                 </aside>",
+            )
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    #[golden_test(600, 300)]
+    fn epub_figure() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        // Use a small inline SVG as the figure content so no external resource
+        // is needed while still exercising the Figure + caption render path.
+        let _f = EpubBuilder::new("Figure")
+            .body(
+                "<figure>\
+                   <svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 60\">\
+                     <rect width=\"100\" height=\"60\" fill=\"#4080c0\"/>\
+                     <text x=\"50\" y=\"35\" text-anchor=\"middle\" fill=\"white\" font-size=\"14\">SVG</text>\
+                   </svg>\
+                   <figcaption>Figure 1: A simple coloured rectangle.</figcaption>\
+                 </figure>",
+            )
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    /// Minimal 8×8 orange PNG used by the image tests.
+    const TINY_PNG: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
+        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR length + type
+        0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x08, // 8×8 dimensions
+        0x08, 0x02, 0x00, 0x00, 0x00, 0x4b, 0x6d, 0x29, // 8-bit RGB, CRC…
+        0xdc, 0x00, 0x00, 0x00, 0x11, 0x49, 0x44, 0x41, // IDAT length + type
+        0x54, 0x78, 0x9c, 0x63, 0x38, 0x91, 0x62, 0x84, // compressed data
+        0x15, 0x31, 0x0c, 0x2d, 0x09, 0x00, 0x56, 0x46, //   (8×8 orange pixels)
+        0x57, 0x81, 0x3c, 0xbd, 0x9f, 0x89, 0x00, 0x00, //
+        0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, // IEND
+        0x60, 0x82,
+    ];
+
+    #[golden_test(600, 200)]
+    fn epub_image() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("Image")
+            .body("<p>An image follows:</p><img src=\"images/test.png\" alt=\"Test image\"/>")
+            .resource("OEBPS/images/test.png", TINY_PNG.to_vec(), "image/png")
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    #[golden_test(600, 150)]
+    fn epub_image_missing_alt() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        // Image whose src cannot be resolved — falls back to alt text.
+        let _f = EpubBuilder::new("Image Alt")
+            .body("<img src=\"images/missing.png\" alt=\"Missing image\"/>")
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    #[golden_test(600, 300)]
+    fn epub_svg() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("SVG")
+            .body(
+                "<p>An inline SVG:</p>\
+                 <svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 200 100\">\
+                   <rect width=\"200\" height=\"100\" rx=\"10\" fill=\"#6060c0\"/>\
+                   <circle cx=\"100\" cy=\"50\" r=\"30\" fill=\"#ffffff\" opacity=\"0.6\"/>\
+                   <text x=\"100\" y=\"55\" text-anchor=\"middle\" fill=\"#6060c0\" font-size=\"18\">SVG</text>\
+                 </svg>",
+            )
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
 }
