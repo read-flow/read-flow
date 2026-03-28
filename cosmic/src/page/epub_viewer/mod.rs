@@ -1,4 +1,6 @@
 mod render;
+#[cfg(test)]
+mod test_helper;
 
 use std::cell::Cell;
 use std::cell::RefCell;
@@ -3047,5 +3049,86 @@ impl EpubViewer {
                 Task::none()
             }
         }
+    }
+}
+
+#[cfg(test)]
+fn render_chapter_blocks(
+    chapters: &[EpubChapter],
+    chapter_index: usize,
+    font_size: f32,
+) -> cosmic::Element<'_, EpubViewerMessage> {
+    let chapter = &chapters[chapter_index];
+    let ctx = render::RenderContext {
+        font_size,
+        family: font::Family::Serif,
+        max_image_height: 400.0,
+        image_handles: &chapter.image_handles,
+    };
+    let mut col = cosmic::widget::column::with_capacity(chapter.blocks.len())
+        .spacing(8)
+        .width(Length::Fill);
+    for block in &chapter.blocks {
+        col = col.push(ctx.render_block(block, BlockHighlight::None));
+    }
+    cosmic::widget::container(col)
+        .padding(8)
+        .width(Length::Fill)
+        .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use cosmic_golden::golden_test;
+
+    use super::load_epub_chapters;
+    use super::render_chapter_blocks;
+    use super::test_helper::EpubBuilder;
+
+    #[golden_test(600, 150)]
+    fn epub_plain_paragraph() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("Test")
+            .body("<p>This is a plain paragraph of body text.</p>")
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    #[golden_test(600, 150, dark)]
+    fn epub_plain_paragraph_dark() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("Test")
+            .body("<p>This is a plain paragraph of body text.</p>")
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    #[golden_test(600, 300)]
+    fn epub_headings() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("Headings")
+            .body(
+                "<h1>Chapter One</h1>\
+                 <h2>Section 1.1</h2>\
+                 <h3>Subsection</h3>\
+                 <p>Opening paragraph.</p>",
+            )
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
+    #[golden_test(600, 250)]
+    fn epub_unordered_list() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _f = EpubBuilder::new("List")
+            .body(
+                "<ul>\
+                   <li>First item</li>\
+                   <li>Second item</li>\
+                   <li>Third with <strong>bold</strong> text</li>\
+                 </ul>",
+            )
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
     }
 }
