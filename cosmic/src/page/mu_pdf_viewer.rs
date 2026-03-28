@@ -165,6 +165,8 @@ pub enum MuPdfViewerMessage {
 
     // Navigation
     SelectPage(usize),
+    PreviousPage,
+    NextPage,
     ThumbnailScroll(scrollable::Viewport),
 
     // Zoom
@@ -425,7 +427,7 @@ impl MuPdfViewer {
         widget::responsive(move |size| {
             self.viewport_size.set((size.width, size.height));
             let dual = self.should_dual_pane(size.width);
-            if dual {
+            let content: Element<'_, MuPdfViewerMessage> = if dual {
                 let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
                 let first_page = (self.active_page / 2) * 2;
                 vec![
@@ -437,7 +439,46 @@ impl MuPdfViewer {
                 .into()
             } else {
                 self.view_pdf_page(self.active_page, Horizontal::Center)
-            }
+            };
+
+            let nav_zone_style = |theme: &cosmic::Theme| {
+                let c = theme.cosmic().bg_component_color();
+                widget::container::background(cosmic::iced::Color::from_rgba(
+                    c.color.red,
+                    c.color.green,
+                    c.color.blue,
+                    c.alpha,
+                ))
+            };
+
+            let left_zone = widget::mouse_area(
+                widget::container(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
+                    .style(nav_zone_style)
+                    .width(Length::FillPortion(1))
+                    .height(Length::Fill)
+                    .center(Length::Fill),
+            )
+            .on_press(MuPdfViewerMessage::PreviousPage);
+
+            let center = widget::container(content)
+                .width(Length::FillPortion(8))
+                .height(Length::Fill);
+
+            let right_zone = widget::mouse_area(
+                widget::container(widget::icon::from_name("go-next-symbolic").size(ICON_SIZE))
+                    .style(nav_zone_style)
+                    .width(Length::FillPortion(1))
+                    .height(Length::Fill)
+                    .center(Length::Fill),
+            )
+            .on_press(MuPdfViewerMessage::NextPage);
+
+            widget::row()
+                .push(left_zone)
+                .push(center)
+                .push(right_zone)
+                .height(Length::Fill)
+                .into()
         })
         .into()
     }
@@ -957,6 +998,20 @@ impl Page for MuPdfViewer {
                     return self.update_active_page();
                 }
                 Task::none()
+            }
+            MuPdfViewerMessage::PreviousPage => {
+                let (vw, _) = self.viewport_size.get();
+                let step = if self.should_dual_pane(vw) { 2 } else { 1 };
+                self.active_page = self.active_page.saturating_sub(step);
+                self.update_active_page()
+            }
+            MuPdfViewerMessage::NextPage => {
+                let (vw, _) = self.viewport_size.get();
+                let step = if self.should_dual_pane(vw) { 2 } else { 1 };
+                if self.active_page + step < self.pages.len() {
+                    self.active_page += step;
+                }
+                self.update_active_page()
             }
             MuPdfViewerMessage::ThumbnailScroll(viewport) => {
                 self.thumbnail_viewport = Some(viewport);
