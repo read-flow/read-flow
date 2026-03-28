@@ -461,7 +461,7 @@ impl MuPdfViewer {
             .on_press(MuPdfViewerMessage::PreviousPage);
 
             let center = widget::container(content)
-                .width(Length::FillPortion(8))
+                .width(Length::FillPortion(10))
                 .height(Length::Fill);
 
             let right_zone = widget::mouse_area(

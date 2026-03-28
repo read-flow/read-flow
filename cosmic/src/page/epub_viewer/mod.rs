@@ -1095,7 +1095,7 @@ impl EpubViewer {
             .on_press(EpubViewerMessage::PreviousPage);
 
             let center = widget::container(center_content)
-                .width(Length::FillPortion(8))
+                .width(Length::FillPortion(10))
                 .height(Length::Fill);
 
             let right_zone = widget::mouse_area(
