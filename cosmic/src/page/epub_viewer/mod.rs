@@ -2811,10 +2811,11 @@ impl EpubViewer {
     /// are computed via shaped text measurement and stored.
     fn ensure_block_heights(&mut self, chapter_idx: usize, content_width: f32) {
         let font_size = self.base_font_size;
-        if let Some((cw, fs, _)) = self.block_heights_cache.get(&chapter_idx) {
-            if (*cw - content_width).abs() < 0.5 && (*fs - font_size).abs() < 0.001 {
-                return;
-            }
+        if let Some((cw, fs, _)) = self.block_heights_cache.get(&chapter_idx)
+            && (*cw - content_width).abs() < 0.5
+            && (*fs - font_size).abs() < 0.001
+        {
+            return;
         }
         let heights = match self.chapters.get(chapter_idx) {
             Some(ch) => {

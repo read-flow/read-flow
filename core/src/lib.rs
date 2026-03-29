@@ -19,7 +19,8 @@ use std::sync::Arc;
 
 use api::FileDataSource;
 use db::ConnectionPool;
-use db::dao::FileDao;
+use db::ConnectionPoolExt;
+use db::dao;
 use db::datasource::DbClient;
 use expanduser::expanduser;
 use indexmap::IndexMap;
@@ -148,16 +149,17 @@ where
         rt.block_on(async {
             let connection_pool = self.connection_pool();
             let files = connection_pool
-                .select_all_files()
+                .with_connection(dao::select_all_files)
                 .expect("database available");
 
             let mut missing = Vec::new();
             for file in files {
                 if !Path::new(&file.path).exists() {
-                    if purge {
-                        if let Err(e) = connection_pool.delete_file_record(file.id) {
-                            tracing::warn!("Failed to delete record for {}: {e}", file.path);
-                        }
+                    if purge
+                        && let Err(e) = connection_pool
+                            .with_connection(|conn| dao::delete_file_record(conn, file.id))
+                    {
+                        tracing::warn!("Failed to delete record for {}: {e}", file.path);
                     }
                     missing.push(file.path);
                 }

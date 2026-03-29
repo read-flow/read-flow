@@ -24,7 +24,8 @@ use cosmic::task;
 use cosmic::widget;
 use indexmap::IndexMap;
 use read_flow_core::client::FilesClient;
-use read_flow_core::db::dao::RemoteDao;
+use read_flow_core::db::ConnectionPoolExt;
+use read_flow_core::db::dao;
 pub use traits::Page;
 use url::Url;
 
@@ -202,7 +203,7 @@ impl Pages {
         // Get remote clients from the application module
         let remote_clients = application_module
             .connection_pool()
-            .select_all_remotes()
+            .with_connection(dao::select_all_remotes)
             .unwrap_or_default()
             .into_iter()
             .map(|remote| {

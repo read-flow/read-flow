@@ -61,7 +61,7 @@ This is a tool to help discover and organize files locally and on remote servers
 
 ** Tier 5 — Refactoring / Technical Debt [0/4]
 
-- [ ] ~read-flow-core~: modify DAO traits to take the connection as a parameter, so we can add transactions
+- [X] ~read-flow-core~: modify DAO traits to take the connection as a parameter, so we can add transactions
 - [ ] =page/mod.rs= contains a lot of initialization code (and messages) that might need to be handled by =app.rs=
 - [ ] ~read-flow~: Use same approach for ~Out~ messages, ~settings.rs~ uses different approach then ~page/mod.rs~
 - [ ] Change directory modules API so that they can match and still recurse into the directory

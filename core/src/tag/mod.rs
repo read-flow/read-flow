@@ -3,9 +3,9 @@ use itertools::concat;
 use provider::sync::Provider;
 
 use crate::ApplicationModule;
+use crate::db::ConnectionPoolExt;
+use crate::db::dao;
 use crate::db::dao::Error;
-use crate::db::dao::FileDao;
-use crate::db::dao::FileTagDao;
 use crate::db::models::File;
 use crate::db::models::FileTag;
 use crate::scan::ScanSettings;
@@ -26,7 +26,7 @@ where
             .iter()
             .map(|(path, tags)| {
                 self.connection_pool()
-                    .select_all_files_by_path_like(path)
+                    .with_connection(|conn| dao::select_all_files_by_path_like(conn, path))
                     .map(|files| {
                         if scan_settings.dry_run {
                             for file in files.iter() {
@@ -42,7 +42,7 @@ where
             Ok(())
         } else {
             self.connection_pool()
-                .upsert_many_file_tags(concat(file_tags_to_add))
+                .with_connection(|conn| dao::upsert_many_file_tags(conn, concat(file_tags_to_add)))
         }
     }
 }

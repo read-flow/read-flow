@@ -1,13 +1,15 @@
 use std::io;
 use std::sync::Arc;
 
+use diesel::Connection;
+use diesel::connection::LoadConnection;
 use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::Integer;
 use diesel::sql_types::Text;
+use diesel::sqlite::Sqlite;
 
 use crate::api::get_update;
-use crate::db::ConnectionPool;
 use crate::db::models::Directory;
 use crate::db::models::File;
 use crate::db::models::FileTag;
@@ -22,63 +24,6 @@ use crate::db::schema::file_tags;
 use crate::db::schema::files;
 use crate::db::schema::reading_progress;
 use crate::db::schema::remotes;
-
-pub trait FileDao {
-    type Error;
-    fn insert_file(&self, file: NewFile) -> Result<File, Self::Error>;
-    fn upsert_file(&self, file: NewFile) -> Result<(), Self::Error>;
-    fn update_file(&self, file: File) -> Result<(), Self::Error>;
-    fn insert_many_files(&self, files: Vec<NewFile>) -> Result<(), Self::Error>;
-    fn upsert_many_files(&self, files: Vec<NewFile>) -> Result<(), Self::Error>;
-    fn select_all_files(&self) -> Result<Vec<File>, Self::Error>;
-    fn select_all_files_order_by_id(&self) -> Result<Vec<File>, Self::Error>;
-    fn select_all_files_order_by_type(&self) -> Result<Vec<File>, Self::Error>;
-    fn select_all_files_order_by_path(&self) -> Result<Vec<File>, Self::Error>;
-    fn select_all_files_order_by_size(&self) -> Result<Vec<File>, Self::Error>;
-    fn select_all_files_order_by_fingerprint(&self) -> Result<Vec<File>, Self::Error>;
-    fn select_file_by_id(&self, id: i32) -> Result<Option<File>, Self::Error>;
-    fn select_file_by_path(&self, path: &str) -> Result<Option<File>, Self::Error>;
-    fn select_all_files_by_path_like(&self, path: &str) -> Result<Vec<File>, Self::Error>;
-    fn delete_file_record(&self, id: i32) -> Result<(), Self::Error>;
-}
-
-pub trait FileTagDao {
-    type Error;
-    fn insert_file_tag(&self, file_tag: FileTag) -> Result<FileTag, Self::Error>;
-    fn upsert_file_tag(&self, file_tag: FileTag) -> Result<(), Self::Error>;
-    fn insert_many_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error>;
-    fn upsert_many_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error>;
-    fn select_all_tags(&self) -> Result<Vec<String>, Self::Error>;
-    fn select_all_file_tags(&self) -> Result<Vec<FileTag>, Self::Error>;
-    fn select_file_tags_by_file_id(&self, file_id: i32) -> Result<Vec<FileTag>, Self::Error>;
-    fn select_file_tags_by_tag(&self, tag: &str) -> Result<Vec<FileTag>, Self::Error>;
-    fn delete_file_tag(&self, file_tag: FileTag) -> Result<(), Self::Error>;
-}
-
-pub trait DirectoryDao {
-    type Error;
-    fn insert_directory(&self, directory: NewDirectory) -> Result<Directory, Self::Error>;
-    fn upsert_directory(&self, directory: NewDirectory) -> Result<(), Self::Error>;
-    fn insert_many_directories(&self, directories: Vec<NewDirectory>) -> Result<(), Self::Error>;
-    fn upsert_many_directories(&self, directories: Vec<NewDirectory>) -> Result<(), Self::Error>;
-}
-
-pub trait RemoteDao {
-    type Error;
-    fn insert_remote(&self, remote: NewRemote) -> Result<Remote, Self::Error>;
-    fn select_all_remotes(&self) -> Result<Vec<Remote>, Self::Error>;
-    fn delete_remote_by_id(&self, id: i32) -> Result<(), Self::Error>;
-    fn swap_order_of_remotes(&self, a: &Remote, b: &Remote) -> Result<(), Self::Error>;
-}
-
-pub trait ReadingProgressDao {
-    type Error;
-    fn get_reading_progress(
-        &self,
-        fingerprint: &str,
-    ) -> Result<Option<ReadingProgress>, Self::Error>;
-    fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error>;
-}
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum Error {
@@ -108,328 +53,375 @@ impl From<io::Error> for Error {
     }
 }
 
-impl FileDao for ConnectionPool {
-    type Error = Error;
+/// Supertrait for connections accepted by all DAO functions.
+/// Centralises the backend constraint so individual functions only bound on
+/// `DaoConnection` rather than repeating `Connection<Backend = Sqlite> +
+/// LoadConnection` everywhere.
+pub trait DaoConnection: Connection<Backend = Sqlite> + LoadConnection {}
 
-    fn insert_file(&self, file: NewFile) -> Result<File, Self::Error> {
-        let mut connection = self.get()?;
-        let file = diesel::insert_into(files::table)
-            .values(&file)
-            .returning(File::as_returning())
-            .get_result(&mut connection)?;
-        Ok(file)
-    }
+impl<C> DaoConnection for C where C: Connection<Backend = Sqlite> + LoadConnection {}
 
-    fn upsert_file(&self, file: NewFile) -> Result<(), Self::Error> {
-        let mut connection = self.get()?;
-        diesel::insert_into(files::table)
-            .values(&file)
-            .on_conflict_do_nothing()
-            .execute(&mut connection)?;
-        Ok(())
-    }
-
-    fn update_file(&self, file: File) -> Result<(), Self::Error> {
-        let mut connection = self.get()?;
-
-        let original_file = files::table
-            .find(file.id)
-            .select(File::as_select())
-            .first(&mut connection)?;
-
-        if original_file != file {
-            // Differences detected, update file
-            let update_file = UpdateFile {
-                id: file.id,
-                path: get_update(&original_file.path, &file.path),
-                type_: get_update(&original_file.type_, &file.type_),
-                size: get_update(&original_file.size, &file.size),
-                fingerprint: get_update(&original_file.fingerprint, &file.fingerprint),
-                status: get_update(&original_file.status, &file.status),
-            };
-
-            tracing::debug!("Updating file: {update_file:?}");
-
-            diesel::update(files::table)
-                .filter(files::id.eq(file.id))
-                .set(update_file)
-                .execute(&mut connection)?;
-        }
-        Ok(())
-    }
-
-    fn insert_many_files(&self, files: Vec<NewFile>) -> Result<(), Self::Error> {
-        for file in files {
-            self.insert_file(file)?;
-        }
-        Ok(())
-    }
-
-    fn upsert_many_files(&self, files: Vec<NewFile>) -> Result<(), Self::Error> {
-        for file in files {
-            self.upsert_file(file)?;
-        }
-        Ok(())
-    }
-
-    fn select_all_files(&self) -> Result<Vec<File>, Self::Error> {
-        let mut connection = self.get()?;
-        let files = files::table.load(&mut connection)?;
-        Ok(files)
-    }
-
-    fn select_all_files_order_by_id(&self) -> Result<Vec<File>, Self::Error> {
-        let mut connection = self.get()?;
-        let files = files::table
-            .order_by(files::columns::id)
-            .load(&mut connection)?;
-        Ok(files)
-    }
-
-    fn select_all_files_order_by_type(&self) -> Result<Vec<File>, Self::Error> {
-        let mut connection = self.get()?;
-        let files = files::table
-            .order_by(files::columns::type_)
-            .load(&mut connection)?;
-        Ok(files)
-    }
-
-    fn select_all_files_order_by_path(&self) -> Result<Vec<File>, Self::Error> {
-        let mut connection = self.get()?;
-        let files = files::table
-            .order_by(files::columns::path)
-            .load(&mut connection)?;
-        Ok(files)
-    }
-
-    fn select_all_files_order_by_size(&self) -> Result<Vec<File>, Self::Error> {
-        let mut connection = self.get()?;
-        let files = files::table
-            .order_by(files::columns::size)
-            .load(&mut connection)?;
-        Ok(files)
-    }
-
-    fn select_all_files_order_by_fingerprint(&self) -> Result<Vec<File>, Self::Error> {
-        let mut connection = self.get()?;
-        let files = files::table
-            .order_by(files::columns::fingerprint)
-            .load(&mut connection)?;
-        Ok(files)
-    }
-
-    fn select_file_by_id(&self, id: i32) -> Result<Option<File>, Self::Error> {
-        let mut connection = self.get()?;
-        let file = files::table
-            .find(id)
-            .select(File::as_select())
-            .first(&mut connection)
-            .optional()?;
-        Ok(file)
-    }
-
-    fn select_file_by_path(&self, path: &str) -> Result<Option<File>, Self::Error> {
-        let mut connection = self.get()?;
-        let file = files::table
-            .filter(files::path.eq(path))
-            .select(File::as_select())
-            .first(&mut connection)
-            .optional()?;
-        Ok(file)
-    }
-
-    fn select_all_files_by_path_like(&self, path: &str) -> Result<Vec<File>, Self::Error> {
-        let mut connection = self.get()?;
-        let files = files::table
-            .filter(files::path.like(path))
-            .load(&mut connection)?;
-        Ok(files)
-    }
-
-    fn delete_file_record(&self, id: i32) -> Result<(), Self::Error> {
-        let mut connection = self.get()?;
-        diesel::delete(file_tags::table.filter(file_tags::file_id.eq(id)))
-            .execute(&mut connection)?;
-        diesel::delete(files::table.filter(files::id.eq(id))).execute(&mut connection)?;
-        Ok(())
-    }
+pub fn insert_file<C>(conn: &mut C, file: NewFile) -> Result<File, Error>
+where
+    C: DaoConnection,
+{
+    let file = diesel::insert_into(files::table)
+        .values(&file)
+        .returning(File::as_returning())
+        .get_result(conn)?;
+    Ok(file)
 }
 
-impl FileTagDao for ConnectionPool {
-    type Error = Error;
-
-    fn insert_file_tag(&self, file_tag: FileTag) -> Result<FileTag, Self::Error> {
-        tracing::debug!("inserting tag: {file_tag:?}");
-        let mut connection = self.get()?;
-        let file_tag = diesel::insert_into(file_tags::table)
-            .values(&file_tag)
-            .returning(FileTag::as_returning())
-            .get_result(&mut connection)?;
-        Ok(file_tag)
-    }
-
-    fn upsert_file_tag(&self, file_tag: FileTag) -> Result<(), Self::Error> {
-        tracing::debug!("upserting tag: {file_tag:?}");
-        let mut connection = self.get()?;
-        diesel::insert_into(file_tags::table)
-            .values(&file_tag)
-            .on_conflict_do_nothing()
-            .execute(&mut connection)?;
-        Ok(())
-    }
-
-    fn insert_many_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error> {
-        for file_tag in file_tags {
-            self.insert_file_tag(file_tag)?;
-        }
-        Ok(())
-    }
-
-    fn upsert_many_file_tags(&self, file_tags: Vec<FileTag>) -> Result<(), Self::Error> {
-        for file_tag in file_tags {
-            self.upsert_file_tag(file_tag)?;
-        }
-        Ok(())
-    }
-
-    fn select_all_tags(&self) -> Result<Vec<String>, Self::Error> {
-        let mut connection = self.get()?;
-        let tags = file_tags::table
-            .select(file_tags::columns::tag)
-            .distinct()
-            .load(&mut connection)?;
-        Ok(tags)
-    }
-
-    fn select_all_file_tags(&self) -> Result<Vec<FileTag>, Self::Error> {
-        let mut connection = self.get()?;
-        let file_tags = file_tags::table.load(&mut connection)?;
-        Ok(file_tags)
-    }
-
-    fn select_file_tags_by_file_id(&self, file_id: i32) -> Result<Vec<FileTag>, Self::Error> {
-        let mut connection = self.get()?;
-        let file_tags = file_tags::table
-            .filter(file_tags::file_id.eq(file_id))
-            .select(FileTag::as_select())
-            .load(&mut connection)?;
-        Ok(file_tags)
-    }
-
-    fn select_file_tags_by_tag(&self, tag: &str) -> Result<Vec<FileTag>, Self::Error> {
-        let mut connection = self.get()?;
-        let file_tags = file_tags::table
-            .filter(file_tags::tag.eq(tag))
-            .select(FileTag::as_select())
-            .load(&mut connection)?;
-        Ok(file_tags)
-    }
-
-    fn delete_file_tag(&self, file_tag: FileTag) -> Result<(), Self::Error> {
-        tracing::debug!("deleting tag: {file_tag:?}");
-        let mut connection = self.get()?;
-        diesel::delete(
-            file_tags::table.filter(
-                file_tags::file_id
-                    .eq(file_tag.file_id)
-                    .and(file_tags::tag.eq(file_tag.tag)),
-            ),
-        )
-        .execute(&mut connection)?;
-        Ok(())
-    }
+pub fn upsert_file<C>(conn: &mut C, file: NewFile) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    diesel::insert_into(files::table)
+        .values(&file)
+        .on_conflict_do_nothing()
+        .execute(conn)?;
+    Ok(())
 }
 
-impl DirectoryDao for ConnectionPool {
-    type Error = Error;
+pub fn update_file<C>(conn: &mut C, file: File) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    let original_file = files::table
+        .find(file.id)
+        .select(File::as_select())
+        .first(conn)?;
 
-    fn insert_directory(&self, directory: NewDirectory) -> Result<Directory, Self::Error> {
-        let mut connection = self.get()?;
-        let result = diesel::insert_into(directories::table)
-            .values(&directory)
-            .returning(Directory::as_returning())
-            .get_result(&mut connection)?;
-        Ok(result)
-    }
+    if original_file != file {
+        let update_file = UpdateFile {
+            id: file.id,
+            path: get_update(&original_file.path, &file.path),
+            type_: get_update(&original_file.type_, &file.type_),
+            size: get_update(&original_file.size, &file.size),
+            fingerprint: get_update(&original_file.fingerprint, &file.fingerprint),
+            status: get_update(&original_file.status, &file.status),
+        };
 
-    fn upsert_directory(&self, directory: NewDirectory) -> Result<(), Self::Error> {
-        let mut connection = self.get()?;
-        diesel::insert_into(directories::table)
-            .values(&directory)
-            .on_conflict_do_nothing()
-            .execute(&mut connection)?;
-        Ok(())
-    }
+        tracing::debug!("Updating file: {update_file:?}");
 
-    fn insert_many_directories(&self, directories: Vec<NewDirectory>) -> Result<(), Self::Error> {
-        for directory in directories {
-            self.insert_directory(directory)?;
-        }
-        Ok(())
+        diesel::update(files::table)
+            .filter(files::id.eq(file.id))
+            .set(update_file)
+            .execute(conn)?;
     }
-
-    fn upsert_many_directories(&self, directories: Vec<NewDirectory>) -> Result<(), Self::Error> {
-        for directory in directories {
-            self.upsert_directory(directory)?;
-        }
-        Ok(())
-    }
+    Ok(())
 }
 
-impl RemoteDao for ConnectionPool {
-    type Error = Error;
-
-    fn insert_remote(&self, remote: NewRemote) -> Result<Remote, Self::Error> {
-        let mut connection = self.get()?;
-        let result = diesel::insert_into(remotes::table)
-            .values(&remote)
-            .returning(Remote::as_returning())
-            .get_result(&mut connection)?;
-        Ok(result)
+pub fn insert_many_files<C>(conn: &mut C, files: Vec<NewFile>) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    for file in files {
+        insert_file(conn, file)?;
     }
+    Ok(())
+}
 
-    fn select_all_remotes(&self) -> Result<Vec<Remote>, Self::Error> {
-        let mut connection = self.get()?;
-        let remotes = remotes::table
-            .order_by(remotes::columns::order)
-            .load(&mut connection)?;
-        Ok(remotes)
+pub fn upsert_many_files<C>(conn: &mut C, files: Vec<NewFile>) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    for file in files {
+        upsert_file(conn, file)?;
     }
+    Ok(())
+}
 
-    fn delete_remote_by_id(&self, id: i32) -> Result<(), Self::Error> {
-        let mut connection = self.get()?;
+pub fn select_all_files<C>(conn: &mut C) -> Result<Vec<File>, Error>
+where
+    C: DaoConnection,
+{
+    let files = files::table.load(conn)?;
+    Ok(files)
+}
 
-        sql_query("BEGIN TRANSACTION").execute(&mut connection)?;
+pub fn select_all_files_order_by_id<C>(conn: &mut C) -> Result<Vec<File>, Error>
+where
+    C: DaoConnection,
+{
+    let files = files::table.order_by(files::columns::id).load(conn)?;
+    Ok(files)
+}
 
-        diesel::delete(remotes::table.filter(remotes::id.eq(id))).execute(&mut connection)?;
+pub fn select_all_files_order_by_type<C>(conn: &mut C) -> Result<Vec<File>, Error>
+where
+    C: DaoConnection,
+{
+    let files = files::table.order_by(files::columns::type_).load(conn)?;
+    Ok(files)
+}
+
+pub fn select_all_files_order_by_path<C>(conn: &mut C) -> Result<Vec<File>, Error>
+where
+    C: DaoConnection,
+{
+    let files = files::table.order_by(files::columns::path).load(conn)?;
+    Ok(files)
+}
+
+pub fn select_all_files_order_by_size<C>(conn: &mut C) -> Result<Vec<File>, Error>
+where
+    C: DaoConnection,
+{
+    let files = files::table.order_by(files::columns::size).load(conn)?;
+    Ok(files)
+}
+
+pub fn select_all_files_order_by_fingerprint<C>(conn: &mut C) -> Result<Vec<File>, Error>
+where
+    C: DaoConnection,
+{
+    let files = files::table
+        .order_by(files::columns::fingerprint)
+        .load(conn)?;
+    Ok(files)
+}
+
+pub fn select_file_by_id<C>(conn: &mut C, id: i32) -> Result<Option<File>, Error>
+where
+    C: DaoConnection,
+{
+    let file = files::table
+        .find(id)
+        .select(File::as_select())
+        .first(conn)
+        .optional()?;
+    Ok(file)
+}
+
+pub fn select_file_by_path<C>(conn: &mut C, path: &str) -> Result<Option<File>, Error>
+where
+    C: DaoConnection,
+{
+    let file = files::table
+        .filter(files::path.eq(path))
+        .select(File::as_select())
+        .first(conn)
+        .optional()?;
+    Ok(file)
+}
+
+pub fn select_all_files_by_path_like<C>(conn: &mut C, path: &str) -> Result<Vec<File>, Error>
+where
+    C: DaoConnection,
+{
+    let files = files::table.filter(files::path.like(path)).load(conn)?;
+    Ok(files)
+}
+
+pub fn delete_file_record<C>(conn: &mut C, id: i32) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    diesel::delete(file_tags::table.filter(file_tags::file_id.eq(id))).execute(conn)?;
+    diesel::delete(files::table.filter(files::id.eq(id))).execute(conn)?;
+    Ok(())
+}
+
+pub fn insert_file_tag<C>(conn: &mut C, file_tag: FileTag) -> Result<FileTag, Error>
+where
+    C: DaoConnection,
+{
+    tracing::debug!("inserting tag: {file_tag:?}");
+    let file_tag = diesel::insert_into(file_tags::table)
+        .values(&file_tag)
+        .returning(FileTag::as_returning())
+        .get_result(conn)?;
+    Ok(file_tag)
+}
+
+pub fn upsert_file_tag<C>(conn: &mut C, file_tag: FileTag) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    tracing::debug!("upserting tag: {file_tag:?}");
+    diesel::insert_into(file_tags::table)
+        .values(&file_tag)
+        .on_conflict_do_nothing()
+        .execute(conn)?;
+    Ok(())
+}
+
+pub fn insert_many_file_tags<C>(conn: &mut C, file_tags: Vec<FileTag>) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    for file_tag in file_tags {
+        insert_file_tag(conn, file_tag)?;
+    }
+    Ok(())
+}
+
+pub fn upsert_many_file_tags<C>(conn: &mut C, file_tags: Vec<FileTag>) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    for file_tag in file_tags {
+        upsert_file_tag(conn, file_tag)?;
+    }
+    Ok(())
+}
+
+pub fn select_all_tags<C>(conn: &mut C) -> Result<Vec<String>, Error>
+where
+    C: DaoConnection,
+{
+    let tags = file_tags::table
+        .select(file_tags::columns::tag)
+        .distinct()
+        .load(conn)?;
+    Ok(tags)
+}
+
+pub fn select_all_file_tags<C>(conn: &mut C) -> Result<Vec<FileTag>, Error>
+where
+    C: DaoConnection,
+{
+    let file_tags = file_tags::table.load(conn)?;
+    Ok(file_tags)
+}
+
+pub fn select_file_tags_by_file_id<C>(conn: &mut C, file_id: i32) -> Result<Vec<FileTag>, Error>
+where
+    C: DaoConnection,
+{
+    let file_tags = file_tags::table
+        .filter(file_tags::file_id.eq(file_id))
+        .select(FileTag::as_select())
+        .load(conn)?;
+    Ok(file_tags)
+}
+
+pub fn select_file_tags_by_tag<C>(conn: &mut C, tag: &str) -> Result<Vec<FileTag>, Error>
+where
+    C: DaoConnection,
+{
+    let file_tags = file_tags::table
+        .filter(file_tags::tag.eq(tag))
+        .select(FileTag::as_select())
+        .load(conn)?;
+    Ok(file_tags)
+}
+
+pub fn delete_file_tag<C>(conn: &mut C, file_tag: FileTag) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    tracing::debug!("deleting tag: {file_tag:?}");
+    diesel::delete(
+        file_tags::table.filter(
+            file_tags::file_id
+                .eq(file_tag.file_id)
+                .and(file_tags::tag.eq(file_tag.tag)),
+        ),
+    )
+    .execute(conn)?;
+    Ok(())
+}
+
+pub fn insert_directory<C>(conn: &mut C, directory: NewDirectory) -> Result<Directory, Error>
+where
+    C: DaoConnection,
+{
+    let result = diesel::insert_into(directories::table)
+        .values(&directory)
+        .returning(Directory::as_returning())
+        .get_result(conn)?;
+    Ok(result)
+}
+
+pub fn upsert_directory<C>(conn: &mut C, directory: NewDirectory) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    diesel::insert_into(directories::table)
+        .values(&directory)
+        .on_conflict_do_nothing()
+        .execute(conn)?;
+    Ok(())
+}
+
+pub fn insert_many_directories<C>(conn: &mut C, directories: Vec<NewDirectory>) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    for directory in directories {
+        insert_directory(conn, directory)?;
+    }
+    Ok(())
+}
+
+pub fn upsert_many_directories<C>(conn: &mut C, directories: Vec<NewDirectory>) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    for directory in directories {
+        upsert_directory(conn, directory)?;
+    }
+    Ok(())
+}
+
+pub fn insert_remote<C>(conn: &mut C, remote: NewRemote) -> Result<Remote, Error>
+where
+    C: DaoConnection,
+{
+    let result = diesel::insert_into(remotes::table)
+        .values(&remote)
+        .returning(Remote::as_returning())
+        .get_result(conn)?;
+    Ok(result)
+}
+
+pub fn select_all_remotes<C>(conn: &mut C) -> Result<Vec<Remote>, Error>
+where
+    C: DaoConnection,
+{
+    let remotes = remotes::table
+        .order_by(remotes::columns::order)
+        .load(conn)?;
+    Ok(remotes)
+}
+
+pub fn delete_remote_by_id<C>(conn: &mut C, id: i32) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    conn.transaction(|conn| {
+        diesel::delete(remotes::table.filter(remotes::id.eq(id))).execute(conn)?;
 
         // ensure that there are no gaps in the `order`
         sql_query(
-	    r#"
-                UPDATE remotes
-                SET "order" = updated_values.new_order - 1
-                FROM (SELECT rowid, ROW_NUMBER() OVER (ORDER BY "order") AS new_order FROM remotes) AS updated_values
-                WHERE remotes.rowid = updated_values.rowid
-            "#).execute(&mut connection)?;
-
-        sql_query("COMMIT").execute(&mut connection)?;
+            r#"
+            UPDATE remotes
+            SET "order" = updated_values.new_order - 1
+            FROM (SELECT rowid, ROW_NUMBER() OVER (ORDER BY "order") AS new_order FROM remotes) AS updated_values
+            WHERE remotes.rowid = updated_values.rowid
+        "#,
+        )
+        .execute(conn)?;
 
         Ok(())
-    }
+    })
+}
 
-    fn swap_order_of_remotes(&self, a: &Remote, b: &Remote) -> Result<(), Self::Error> {
-        let mut connection = self.get()?;
-
-        sql_query("BEGIN TRANSACTION").execute(&mut connection)?;
-
+pub fn swap_order_of_remotes<C>(conn: &mut C, a: &Remote, b: &Remote) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    conn.transaction(|conn| {
         sql_query(
             r#"
-                UPDATE remotes SET "order" = CASE id
-                    WHEN ? THEN ?
-                    WHEN ? THEN ?
-                END
-                WHERE id IN (?, ?)
-            "#,
+            UPDATE remotes SET "order" = CASE id
+                WHEN ? THEN ?
+                WHEN ? THEN ?
+            END
+            WHERE id IN (?, ?)
+        "#,
         )
         .bind::<Integer, _>(a.id)
         .bind::<Integer, _>(-b.order - 1)
@@ -437,16 +429,16 @@ impl RemoteDao for ConnectionPool {
         .bind::<Integer, _>(-a.order - 1)
         .bind::<Integer, _>(a.id)
         .bind::<Integer, _>(b.id)
-        .execute(&mut connection)?;
+        .execute(conn)?;
 
         sql_query(
             r#"
-                UPDATE remotes SET "order" = CASE id
-                    WHEN ? THEN ?
-                    WHEN ? THEN ?
-                END
-                WHERE id IN (?, ?)
-            "#,
+            UPDATE remotes SET "order" = CASE id
+                WHEN ? THEN ?
+                WHEN ? THEN ?
+            END
+            WHERE id IN (?, ?)
+        "#,
         )
         .bind::<Integer, _>(a.id)
         .bind::<Integer, _>(b.order)
@@ -454,46 +446,44 @@ impl RemoteDao for ConnectionPool {
         .bind::<Integer, _>(a.order)
         .bind::<Integer, _>(a.id)
         .bind::<Integer, _>(b.id)
-        .execute(&mut connection)?;
-
-        sql_query("COMMIT").execute(&mut connection)?;
+        .execute(conn)?;
 
         Ok(())
-    }
+    })
 }
 
-impl ReadingProgressDao for ConnectionPool {
-    type Error = Error;
+pub fn get_reading_progress<C>(
+    conn: &mut C,
+    fingerprint: &str,
+) -> Result<Option<ReadingProgress>, Error>
+where
+    C: DaoConnection,
+{
+    let result = reading_progress::table
+        .find(fingerprint)
+        .select(ReadingProgress::as_select())
+        .first(conn)
+        .optional()?;
+    Ok(result)
+}
 
-    fn get_reading_progress(
-        &self,
-        fingerprint: &str,
-    ) -> Result<Option<ReadingProgress>, Self::Error> {
-        let mut connection = self.get()?;
-        let result = reading_progress::table
-            .find(fingerprint)
-            .select(ReadingProgress::as_select())
-            .first(&mut connection)
-            .optional()?;
-        Ok(result)
-    }
-
-    fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error> {
-        let mut connection = self.get()?;
-        sql_query(
-            r#"
-            INSERT INTO reading_progress (fingerprint, progress, last_updated)
-            VALUES (?, ?, ?)
-            ON CONFLICT(fingerprint) DO UPDATE
-            SET progress = excluded.progress,
-                last_updated = excluded.last_updated
-            WHERE excluded.last_updated > reading_progress.last_updated
-            "#,
-        )
-        .bind::<Text, _>(&progress.fingerprint)
-        .bind::<Text, _>(&progress.progress)
-        .bind::<Text, _>(&progress.last_updated)
-        .execute(&mut connection)?;
-        Ok(())
-    }
+pub fn upsert_reading_progress<C>(conn: &mut C, progress: ReadingProgress) -> Result<(), Error>
+where
+    C: DaoConnection,
+{
+    sql_query(
+        r#"
+        INSERT INTO reading_progress (fingerprint, progress, last_updated)
+        VALUES (?, ?, ?)
+        ON CONFLICT(fingerprint) DO UPDATE
+        SET progress = excluded.progress,
+            last_updated = excluded.last_updated
+        WHERE excluded.last_updated > reading_progress.last_updated
+        "#,
+    )
+    .bind::<Text, _>(&progress.fingerprint)
+    .bind::<Text, _>(&progress.progress)
+    .bind::<Text, _>(&progress.last_updated)
+    .execute(conn)?;
+    Ok(())
 }

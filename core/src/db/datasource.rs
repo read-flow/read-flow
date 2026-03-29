@@ -2,15 +2,13 @@ use std::path::Path;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
-use diesel::RunQueryDsl;
 use diesel::prelude::*;
 use tokio::process::Command;
 
 use super::ConnectionPool;
+use super::ConnectionPoolExt;
+use super::dao;
 use super::dao::Error;
-use super::dao::FileDao;
-use super::dao::FileTagDao;
-use super::dao::ReadingProgressDao;
 use crate::FxIndexMap;
 use crate::api::File;
 use crate::api::FileDataSource;
@@ -20,8 +18,6 @@ use crate::api::Status;
 use crate::db::models::File as DbFile;
 use crate::db::models::FileTag as DbFileTag;
 use crate::db::models::NewFile;
-use crate::db::schema::file_tags;
-use crate::db::schema::files;
 
 #[derive(Clone)]
 pub struct DbClient {
@@ -44,47 +40,52 @@ impl FileDataSource for DbClient {
 
     async fn status(&self) -> Result<Status, Self::Error> {
         tokio::task::block_in_place(|| {
-            let mut connection = self.connection_pool.get()?;
-            let _: usize = diesel::sql_query("SELECT 1").execute(&mut connection)?;
-            let status = Status {
-                identifier: "database".to_string(),
-                ..Default::default()
-            };
-            Ok(status)
+            self.connection_pool.with_connection(|conn| {
+                let _: usize = diesel::sql_query("SELECT 1").execute(conn)?;
+                let status = Status {
+                    identifier: "database".to_string(),
+                    ..Default::default()
+                };
+                Ok(status)
+            })
         })
     }
 
     async fn get_files(&self) -> Result<Vec<File>, Self::Error> {
         tokio::task::block_in_place(|| {
-            let files = self.connection_pool.select_all_files()?;
-            let file_tags = self.connection_pool.select_all_file_tags()?;
+            self.connection_pool.with_connection(|conn| {
+                let files = dao::select_all_files(conn)?;
+                let file_tags = dao::select_all_file_tags(conn)?;
 
-            let mut result: FxIndexMap<i32, (DbFile, Vec<DbFileTag>)> = files
-                .into_iter()
-                .map(|file| (file.id, (file, Vec::new())))
-                .collect();
+                let mut result: FxIndexMap<i32, (DbFile, Vec<DbFileTag>)> = files
+                    .into_iter()
+                    .map(|file| (file.id, (file, Vec::<DbFileTag>::new())))
+                    .collect();
 
-            for tag in file_tags {
-                if let Some((_file, tags)) = result.get_mut(&tag.file_id) {
-                    tags.push(tag);
+                for tag in file_tags {
+                    if let Some((_file, tags)) = result.get_mut(&tag.file_id) {
+                        tags.push(tag);
+                    }
                 }
-            }
 
-            let result = result.into_values().map(Into::into).collect();
-            Ok(result)
+                let result = result.into_values().map(Into::into).collect();
+                Ok(result)
+            })
         })
     }
 
     async fn get_files_tags(&self) -> Result<Vec<String>, Self::Error> {
-        tokio::task::block_in_place(|| self.connection_pool.select_all_tags())
+        tokio::task::block_in_place(|| self.connection_pool.with_connection(dao::select_all_tags))
     }
 
     async fn get_file(&self, id: i32) -> Result<Option<File>, Self::Error> {
         tokio::task::block_in_place(|| {
-            let file = self.connection_pool.select_file_by_id(id)?;
-            let file_tags = self.connection_pool.select_file_tags_by_file_id(id)?;
-            let result = file.map(|file| (file, file_tags).into());
-            Ok(result)
+            self.connection_pool.with_connection(|conn| {
+                let file = dao::select_file_by_id(conn, id)?;
+                let file_tags = dao::select_file_tags_by_file_id(conn, id)?;
+                let result = file.map(|file| (file, file_tags).into());
+                Ok(result)
+            })
         })
     }
 
@@ -92,59 +93,59 @@ impl FileDataSource for DbClient {
         tokio::task::block_in_place(|| {
             let (file, tags) = file.into();
             let file_id = file.id;
-            self.connection_pool.update_file(file)?;
+            self.connection_pool.with_connection(|conn| {
+                dao::update_file(conn, file)?;
 
-            // Delete removed tags
-            self.connection_pool
-                .select_file_tags_by_file_id(file_id)?
-                .into_iter()
-                .map(|tag| {
+                // Delete removed tags
+                let existing_tags = dao::select_file_tags_by_file_id(conn, file_id)?;
+                for tag in existing_tags {
                     if !tags.iter().any(|t| t.tag == tag.tag) {
-                        self.connection_pool.delete_file_tag(tag)
-                    } else {
-                        Ok(())
+                        dao::delete_file_tag(conn, tag)?;
                     }
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+                }
 
-            // Insert any new tags
-            self.connection_pool.upsert_many_file_tags(tags)?;
-            Ok(())
+                // Insert any new tags
+                dao::upsert_many_file_tags(conn, tags)?;
+                Ok(())
+            })
         })
     }
 
     async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Self::Error> {
         tokio::task::block_in_place(|| {
-            let file_tags = self.connection_pool.select_file_tags_by_file_id(id)?;
-            let file_tags = file_tags.into_iter().map(|t| t.tag).collect();
-            Ok(file_tags)
+            self.connection_pool.with_connection(|conn| {
+                let file_tags = dao::select_file_tags_by_file_id(conn, id)?;
+                let file_tags = file_tags.into_iter().map(|t| t.tag).collect();
+                Ok(file_tags)
+            })
         })
     }
 
     async fn add_file_tags(&self, id: i32, tags: Vec<String>) -> Result<Vec<String>, Self::Error> {
         tokio::task::block_in_place(|| {
-            let tags = tags
-                .into_iter()
-                .map(|tag| DbFileTag::new(id, tag))
-                .collect();
-            self.connection_pool.upsert_many_file_tags(tags)?;
-            let tags = self
-                .connection_pool
-                .select_file_tags_by_file_id(id)?
-                .into_iter()
-                .map(|tag| tag.tag)
-                .collect();
-            Ok(tags)
+            self.connection_pool.with_connection(|conn| {
+                let db_tags: Vec<DbFileTag> = tags
+                    .into_iter()
+                    .map(|tag| DbFileTag::new(id, tag))
+                    .collect();
+                dao::upsert_many_file_tags(conn, db_tags)?;
+                let result = dao::select_file_tags_by_file_id(conn, id)?
+                    .into_iter()
+                    .map(|tag| tag.tag)
+                    .collect();
+                Ok(result)
+            })
         })
     }
 
     async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Self::Error> {
         tokio::task::block_in_place(|| {
-            for tag in tags {
-                self.connection_pool
-                    .delete_file_tag(DbFileTag::new(id, tag))?;
-            }
-            Ok(())
+            self.connection_pool.with_connection(|conn| {
+                for tag in tags {
+                    dao::delete_file_tag(conn, DbFileTag::new(id, tag))?;
+                }
+                Ok(())
+            })
         })
     }
 
@@ -162,16 +163,8 @@ impl FileDataSource for DbClient {
 
         // Then delete the file from the database
         tokio::task::block_in_place(|| {
-            let mut connection = self.connection_pool.get()?;
-
-            // First delete all tags associated with the file
-            diesel::delete(file_tags::table.filter(file_tags::file_id.eq(file.id)))
-                .execute(&mut connection)?;
-
-            // Then delete the file itself
-            diesel::delete(files::table.filter(files::id.eq(file.id))).execute(&mut connection)?;
-
-            Ok(())
+            self.connection_pool
+                .with_connection(|conn| dao::delete_file_record(conn, file.id))
         })
     }
 
@@ -180,11 +173,17 @@ impl FileDataSource for DbClient {
         fingerprint: &str,
     ) -> Result<Option<ReadingProgress>, Self::Error> {
         let fingerprint = fingerprint.to_string();
-        tokio::task::block_in_place(|| self.connection_pool.get_reading_progress(&fingerprint))
+        tokio::task::block_in_place(|| {
+            self.connection_pool
+                .with_connection(|conn| dao::get_reading_progress(conn, &fingerprint))
+        })
     }
 
     async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error> {
-        tokio::task::block_in_place(|| self.connection_pool.upsert_reading_progress(progress))
+        tokio::task::block_in_place(|| {
+            self.connection_pool
+                .with_connection(|conn| dao::upsert_reading_progress(conn, progress))
+        })
     }
 
     async fn import_file(&self, path: &Path) -> Result<File, Self::Error> {
@@ -228,15 +227,13 @@ impl FileDataSource for DbClient {
 
         // Upsert into database and fetch back
         tokio::task::block_in_place(|| {
-            self.connection_pool.upsert_file(new_file)?;
-            let db_file = self
-                .connection_pool
-                .select_file_by_path(&path_str)?
-                .expect("file should exist after upsert");
-            let file_tags = self
-                .connection_pool
-                .select_file_tags_by_file_id(db_file.id)?;
-            Ok((db_file, file_tags).into())
+            self.connection_pool.with_connection(|conn| {
+                dao::upsert_file(conn, new_file)?;
+                let db_file = dao::select_file_by_path(conn, &path_str)?
+                    .expect("file should exist after upsert");
+                let file_tags = dao::select_file_tags_by_file_id(conn, db_file.id)?;
+                Ok((db_file, file_tags).into())
+            })
         })
     }
 }

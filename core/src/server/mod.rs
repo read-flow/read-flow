@@ -36,10 +36,8 @@ use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
 use crate::api::Status;
 use crate::db;
+use crate::db::ConnectionPoolExt;
 use crate::db::dao;
-use crate::db::dao::FileDao;
-use crate::db::dao::FileTagDao;
-use crate::db::dao::ReadingProgressDao;
 use crate::scan;
 use crate::settings;
 pub use crate::settings::ServerSettings;
@@ -199,10 +197,12 @@ fn get_files(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<File>>> {
-    let files = application_module.connection_pool().select_all_files()?;
-    let file_tags = application_module
-        .connection_pool()
-        .select_all_file_tags()?;
+    let pool = application_module.connection_pool();
+    let (files, file_tags) = pool.with_connection(|conn| {
+        let files = dao::select_all_files(conn)?;
+        let file_tags = dao::select_all_file_tags(conn)?;
+        Ok((files, file_tags))
+    })?;
 
     let mut file_tags_map: FxIndexMap<_, Vec<_>> = FxIndexMap::default();
 
@@ -235,7 +235,9 @@ fn update_file(
     _user: AuthorizedUser,
 ) -> Result<Json<File>> {
     let (db_file, _) = file.0.clone().into();
-    application_module.connection_pool().update_file(db_file)?;
+    application_module
+        .connection_pool()
+        .with_connection(|conn| dao::update_file(conn, db_file))?;
 
     Ok(file)
 }
@@ -245,7 +247,9 @@ fn get_files_tags(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
-    let tags = application_module.connection_pool().select_all_tags()?;
+    let tags = application_module
+        .connection_pool()
+        .with_connection(dao::select_all_tags)?;
     Ok(Json(tags))
 }
 
@@ -255,13 +259,13 @@ fn get_file(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Option<Json<File>>> {
-    let tags = application_module
-        .connection_pool()
-        .select_file_tags_by_file_id(id)?;
     let file = application_module
         .connection_pool()
-        .select_file_by_id(id)?
-        .map(|file| (file, tags).into());
+        .with_connection(|conn| {
+            let tags = dao::select_file_tags_by_file_id(conn, id)?;
+            let file = dao::select_file_by_id(conn, id)?.map(|file| (file, tags).into());
+            Ok(file)
+        })?;
 
     Ok(file.map(Json))
 }
@@ -274,10 +278,12 @@ fn get_file_tags(
 ) -> Result<Json<Vec<String>>> {
     let tags = application_module
         .connection_pool()
-        .select_file_tags_by_file_id(id)?
-        .into_iter()
-        .map(|tag| tag.tag)
-        .collect();
+        .with_connection(|conn| {
+            Ok(dao::select_file_tags_by_file_id(conn, id)?
+                .into_iter()
+                .map(|tag| tag.tag)
+                .collect())
+        })?;
     Ok(Json(tags))
 }
 
@@ -295,7 +301,7 @@ fn post_file_tags(
         .collect();
     application_module
         .connection_pool()
-        .upsert_many_file_tags(file_tags)?;
+        .with_connection(|conn| dao::upsert_many_file_tags(conn, file_tags))?;
 
     get_file_tags(id, application_module, user)
 }
@@ -307,11 +313,14 @@ fn delete_file_tags(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
-    for tag in tags.into_inner() {
-        application_module
-            .connection_pool()
-            .delete_file_tag(db::models::FileTag::new(id, tag))?;
-    }
+    application_module
+        .connection_pool()
+        .with_connection(|conn| {
+            for tag in tags.into_inner() {
+                dao::delete_file_tag(conn, db::models::FileTag::new(id, tag))?;
+            }
+            Ok(())
+        })?;
 
     get_file_tags(id, application_module, user)
 }
@@ -323,7 +332,9 @@ async fn download_file(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Option<(ContentType, NamedFile)>> {
-    let file = application_module.connection_pool().select_file_by_id(id)?;
+    let file = application_module
+        .connection_pool()
+        .with_connection(|conn| dao::select_file_by_id(conn, id))?;
 
     match file {
         None => Ok(None),
@@ -409,7 +420,7 @@ async fn upload_file(
 
     let result = application_module
         .connection_pool()
-        .select_file_by_path(&target_file.display().to_string())?
+        .with_connection(|conn| dao::select_file_by_path(conn, &target_file.display().to_string()))?
         .unwrap();
     Ok(Json((result, vec![]).into()))
 }
@@ -422,7 +433,7 @@ fn get_reading_progress(
 ) -> Result<Option<Json<ReadingProgress>>> {
     let progress = application_module
         .connection_pool()
-        .get_reading_progress(fingerprint)?;
+        .with_connection(|conn| dao::get_reading_progress(conn, fingerprint))?;
     Ok(progress.map(Json))
 }
 
@@ -434,7 +445,7 @@ fn put_reading_progress(
 ) -> Result<()> {
     application_module
         .connection_pool()
-        .upsert_reading_progress(progress.into_inner())?;
+        .with_connection(|conn| dao::upsert_reading_progress(conn, progress.into_inner()))?;
     Ok(())
 }
 

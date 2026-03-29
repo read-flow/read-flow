@@ -7,8 +7,8 @@ use super::FileError;
 use super::FileModule;
 use crate::api::ReadingStatus;
 use crate::db::ConnectionPool;
-use crate::db::dao::FileDao;
-use crate::db::dao::FileTagDao;
+use crate::db::ConnectionPoolExt;
+use crate::db::dao;
 use crate::db::models::FileTag;
 use crate::db::models::NewFile;
 use crate::scan::DirectorySettings;
@@ -56,22 +56,23 @@ impl FileModule for FileExtensionFinder {
                 } else {
                     tracing::debug!("inserting file: {}", file.display());
 
-                    self.connection_pool.upsert_file(new_file)?;
+                    self.connection_pool.with_connection(|conn| {
+                        dao::upsert_file(conn, new_file)?;
 
-                    // unwrap is safe, because the file is just added
-                    let db_file = self
-                        .connection_pool
-                        .select_file_by_path(&file.display().to_string())?
-                        .unwrap();
+                        // unwrap is safe, because the file is just added
+                        let db_file =
+                            dao::select_file_by_path(conn, &file.display().to_string())?.unwrap();
 
-                    tracing::debug!("inserting tags: {tags:?} for file: {}", db_file.path);
+                        tracing::debug!("inserting tags: {tags:?} for file: {}", db_file.path);
 
-                    let file_tags: Vec<_> = tags
-                        .into_iter()
-                        .map(|tag| FileTag::new(db_file.id, tag))
-                        .collect();
+                        let file_tags: Vec<_> = tags
+                            .into_iter()
+                            .map(|tag| FileTag::new(db_file.id, tag))
+                            .collect();
 
-                    self.connection_pool.upsert_many_file_tags(file_tags)?;
+                        dao::upsert_many_file_tags(conn, file_tags)?;
+                        Ok(())
+                    })?;
                 }
 
                 Ok(())

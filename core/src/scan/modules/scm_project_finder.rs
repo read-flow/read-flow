@@ -4,7 +4,8 @@ use std::sync::Arc;
 use super::DirectoryError;
 use super::DirectoryModule;
 use crate::db::ConnectionPool;
-use crate::db::dao::DirectoryDao;
+use crate::db::ConnectionPoolExt;
+use crate::db::dao;
 use crate::db::models::NewDirectory;
 use crate::scan::ScanSettings;
 
@@ -45,7 +46,8 @@ impl DirectoryModule for ScmProjectFinder {
             tracing::debug!("[dry_run] found directory: {}", directory.display());
         } else {
             tracing::debug!("inserting directory: {}", directory.display());
-            self.connection_pool.upsert_directory(new_directory)?;
+            self.connection_pool
+                .with_connection(|conn| dao::upsert_directory(conn, new_directory))?;
         }
 
         Ok(())

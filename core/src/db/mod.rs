@@ -3,6 +3,39 @@ pub mod datasource;
 pub mod models;
 pub mod schema;
 
+/// Convenience methods for acquiring a connection from the pool and running
+/// one or more DAO operations, optionally inside a transaction.
+pub trait ConnectionPoolExt {
+    /// Obtain a connection from the pool and run `f` with it.
+    fn with_connection<F, R>(&self, f: F) -> Result<R, Error>
+    where
+        F: FnOnce(&mut SqliteConnection) -> Result<R, Error>;
+
+    /// Obtain a connection from the pool and run `f` inside a database
+    /// transaction.  If `f` returns `Err`, the transaction is rolled back.
+    fn transaction<F, R>(&self, f: F) -> Result<R, Error>
+    where
+        F: FnOnce(&mut SqliteConnection) -> Result<R, Error>;
+}
+
+impl ConnectionPoolExt for ConnectionPool {
+    fn with_connection<F, R>(&self, f: F) -> Result<R, Error>
+    where
+        F: FnOnce(&mut SqliteConnection) -> Result<R, Error>,
+    {
+        let mut conn = self.get()?;
+        f(&mut conn)
+    }
+
+    fn transaction<F, R>(&self, f: F) -> Result<R, Error>
+    where
+        F: FnOnce(&mut SqliteConnection) -> Result<R, Error>,
+    {
+        let mut conn = self.get()?;
+        (*conn).transaction(f)
+    }
+}
+
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -18,6 +51,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::ExpandedPath;
+use crate::db::dao::Error;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DbSettings {

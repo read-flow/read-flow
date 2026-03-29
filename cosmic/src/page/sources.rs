@@ -22,7 +22,8 @@ use read_flow_core::api::FileDataSource;
 use read_flow_core::api::Status;
 use read_flow_core::client::FilesClient;
 use read_flow_core::db;
-use read_flow_core::db::dao::RemoteDao;
+use read_flow_core::db::ConnectionPoolExt;
+use read_flow_core::db::dao;
 use read_flow_core::db::models::NewRemote;
 use read_flow_core::db::models::Remote;
 use url::Url;
@@ -50,7 +51,8 @@ impl Provider<Vec<Remote>> for RemotesProvider {
     type Error = db::dao::Error;
 
     async fn provide(&self) -> Result<Vec<Remote>, Self::Error> {
-        self.0.connection_pool().select_all_remotes()
+        let pool = self.0.connection_pool();
+        tokio::task::block_in_place(|| pool.with_connection(dao::select_all_remotes))
     }
 }
 
@@ -525,11 +527,18 @@ impl Page for SourcesPage {
                 let connection_pool = self.application_module.connection_pool();
                 let order = self.remotes_state.state.unwrap().len() + 1;
                 task::future(async move {
-                    match connection_pool.insert_remote(NewRemote {
-                        base_url: url.to_string(),
-                        order: order as i32,
-                        user_id: user_id.clone(),
-                        passphrase: passphrase.clone(),
+                    match tokio::task::block_in_place(|| {
+                        connection_pool.with_connection(|conn| {
+                            dao::insert_remote(
+                                conn,
+                                NewRemote {
+                                    base_url: url.to_string(),
+                                    order: order as i32,
+                                    user_id: user_id.clone(),
+                                    passphrase: passphrase.clone(),
+                                },
+                            )
+                        })
                     }) {
                         Ok(_) => SourcesMessage::SubmittedSource(url, user_id, passphrase),
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
@@ -565,7 +574,9 @@ impl Page for SourcesPage {
             SourcesMessage::DeleteSource(id) => {
                 let connection_pool = self.application_module.connection_pool();
                 task::future(async move {
-                    match connection_pool.delete_remote_by_id(id) {
+                    match tokio::task::block_in_place(|| {
+                        connection_pool.with_connection(|conn| dao::delete_remote_by_id(conn, id))
+                    }) {
                         Ok(_) => SourcesMessage::DeletedSource(id),
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }
@@ -622,7 +633,11 @@ impl Page for SourcesPage {
             SourcesMessage::SwapOrderOfRemotes(first, second) => {
                 let connection_pool = self.application_module.connection_pool();
                 task::future(async move {
-                    match connection_pool.swap_order_of_remotes(&first, &second) {
+                    match tokio::task::block_in_place(|| {
+                        connection_pool.with_connection(|conn| {
+                            dao::swap_order_of_remotes(conn, &first, &second)
+                        })
+                    }) {
                         Ok(_) => SourcesMessage::Remotes(ProvidedStateMessage::Load),
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }
