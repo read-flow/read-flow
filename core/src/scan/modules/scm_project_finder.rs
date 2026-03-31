@@ -1,10 +1,11 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use async_trait::async_trait;
+
 use super::DirectoryError;
 use super::DirectoryModule;
 use crate::db::ConnectionPool;
-use crate::db::ConnectionPoolExt;
 use crate::db::dao;
 use crate::db::models::NewDirectory;
 use crate::scan::ScanSettings;
@@ -30,12 +31,13 @@ impl ScmProjectFinder {
     }
 }
 
+#[async_trait]
 impl DirectoryModule for ScmProjectFinder {
     fn matches(&self, directory: &Path) -> bool {
         directory.join(&self.directory).is_dir()
     }
 
-    fn handle(&self, directory: &Path) -> Result<(), DirectoryError> {
+    async fn handle(&self, directory: &Path) -> Result<(), DirectoryError> {
         let type_ = &self.directory.to_ascii_lowercase()[1..];
         let new_directory = NewDirectory {
             path: directory.display().to_string(),
@@ -46,8 +48,7 @@ impl DirectoryModule for ScmProjectFinder {
             tracing::debug!("[dry_run] found directory: {}", directory.display());
         } else {
             tracing::debug!("inserting directory: {}", directory.display());
-            self.connection_pool
-                .with_connection(|conn| dao::upsert_directory(conn, new_directory))?;
+            dao::upsert_directory(&self.connection_pool, new_directory).await?;
         }
 
         Ok(())

@@ -18,12 +18,8 @@ anyhow.workspace = true
 async-trait.workspace = true
 base64.workspace = true
 clap = { workspace = true, features = ["derive"] }
-diesel = { workspace = true, features = [
-    "sqlite",
-    "r2d2",
-    "returning_clauses_for_sqlite_3_35",
-] }
-diesel_migrations = { workspace = true, features = ["sqlite"] }
+sha2.workspace = true
+sqlx = { workspace = true, features = ["migrate"] }
 expanduser.workspace = true
 # build libsqlite3 as part of the build process
 # uncomment this line if you run into setup issues
@@ -36,15 +32,13 @@ mime.workspace = true
 pbkdf2 = { workspace = true, features = ["simple"] }
 rand = { workspace = true }
 rand_core = { workspace = true, features = ["getrandom"] }
-r2d2.workspace = true
-rayon.workspace = true
 rustc-hash.workspace = true
 reqwest = { workspace = true, features = ["json", "stream", "multipart"] }
 serde = { workspace = true, features = ["derive"] }
 strum = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 toml.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "process"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "process", "fs", "io-util"] }
 tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
 tracing.workspace = true
 url.workspace = true

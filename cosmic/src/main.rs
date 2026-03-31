@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
-use provider::sync::Provider;
+use provider::r#async::Provider;
 use read_flow_core::ApplicationModule as GenericApplicationModule;
 use read_flow_core::settings;
 use read_flow_core::settings::Settings;
@@ -61,7 +61,7 @@ impl AppSettings {
 
 impl Provider<Settings> for AppSettings {
     type Error = SettingsError;
-    fn provide(&self) -> Result<Settings, Self::Error> {
+    async fn provide(&self) -> Result<Settings, Self::Error> {
         let Cli {
             configuration_file,
             private_mode,
@@ -101,7 +101,14 @@ fn main() -> anyhow::Result<()> {
     };
 
     let config_path = settings.config_path();
-    let application_module = Arc::new(ApplicationModule::new(settings, config_path)?);
+
+    // Use a temporary runtime for async initialization, then drop it before COSMIC starts.
+    let application_module = {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        Arc::new(rt.block_on(ApplicationModule::new(settings, config_path))?)
+    };
 
     // Settings for configuring the application window and iced runtime.
     let settings = cosmic::app::Settings::default().size_limits(

@@ -52,7 +52,8 @@ impl Cli {
     }
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(fmt::layer().with_writer(std::io::stderr))
         .with(EnvFilter::from_default_env())
@@ -63,13 +64,22 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::ApplyTags { dry_run, .. } => {
-            ApplicationModule::new(ScanSettingsProvider { dry_run }, config_path)?.apply_tags()?;
+            ApplicationModule::new(ScanSettingsProvider { dry_run }, config_path)
+                .await?
+                .apply_tags()
+                .await?;
         }
         Commands::ExtractScanDirectories => {
-            ApplicationModule::instantiate(config_path)?.extract_scan_directories();
+            ApplicationModule::instantiate(config_path)
+                .await?
+                .extract_scan_directories()
+                .await;
         }
         Commands::CheckMissing { purge } => {
-            let missing = ApplicationModule::instantiate(config_path)?.check_missing(purge);
+            let missing = ApplicationModule::instantiate(config_path)
+                .await?
+                .check_missing(purge)
+                .await;
             if missing.is_empty() {
                 println!("All files in the database exist on disk.");
             } else {
@@ -90,7 +100,10 @@ fn main() -> Result<()> {
             }
         }
         Commands::Scan { dry_run, path, .. } => {
-            ApplicationModule::new(ScanSettingsProvider { dry_run }, config_path)?.scan(path)?;
+            ApplicationModule::new(ScanSettingsProvider { dry_run }, config_path)
+                .await?
+                .scan(path)
+                .await?;
         }
         #[cfg(feature = "server")]
         Commands::Serve => {

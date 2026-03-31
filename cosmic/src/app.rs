@@ -482,17 +482,18 @@ impl cosmic::Application for ReadFlow {
             Message::Scan => {
                 let application_module = self.application_module.clone();
                 task::future(async move {
-                    for dir in application_module
-                        .settings()
+                    let settings = application_module.settings().await;
+                    let scan_dirs: Vec<_> = settings
                         .scan
                         .directories
                         .iter()
                         .filter_map(|(path, settings)| match settings {
-                            DirectorySettings::Scan { .. } => Some(path),
+                            DirectorySettings::Scan { .. } => Some(path.clone()),
                             DirectorySettings::Ignore { .. } => None,
                         })
-                    {
-                        if let Err(e) = application_module.scan(dir) {
+                        .collect();
+                    for dir in scan_dirs {
+                        if let Err(e) = application_module.scan(&dir).await {
                             tracing::error!("error occurred while scanning dir `{dir}`: {e}");
                         }
                     }

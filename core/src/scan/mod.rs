@@ -11,7 +11,7 @@ pub use file_system_visitor::FileSystemVisitor;
 use itertools::Itertools;
 use modules::file_extension_finder::FileExtensionFinder;
 use modules::scm_project_finder::ScmProjectFinder;
-use provider::sync::Provider;
+use provider::r#async::Provider;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -142,11 +142,11 @@ pub fn create_visitor(
 
 impl<P> ApplicationModule<P>
 where
-    P: Provider<Settings, Error = SettingsError>,
+    P: Provider<Settings, Error = SettingsError> + Send + Sync,
 {
-    pub fn scan(&self, path: impl AsRef<Path>) -> Result<()> {
+    pub async fn scan(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref().canonicalize()?;
-        self.visitor().visit(&path)?;
+        Arc::new(self.visitor().await).visit(path).await?;
         Ok(())
     }
 }

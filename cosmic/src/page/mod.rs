@@ -24,8 +24,6 @@ use cosmic::task;
 use cosmic::widget;
 use indexmap::IndexMap;
 use read_flow_core::client::FilesClient;
-use read_flow_core::db::ConnectionPoolExt;
-use read_flow_core::db::dao;
 pub use traits::Page;
 use url::Url;
 
@@ -200,33 +198,8 @@ impl Pages {
         let (app_settings, init_app_settings) = AppSettingsPage::new(config);
         let (sources, init_sources) = SourcesPage::new(application_module.clone());
 
-        // Get remote clients from the application module
-        let remote_clients = application_module
-            .connection_pool()
-            .with_connection(dao::select_all_remotes)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|remote| {
-                let remote_connection: Url = remote.base_url.parse()?;
-                let client = FilesClient::new(
-                    remote_connection,
-                    remote.user_id.clone(),
-                    remote.passphrase.clone(),
-                )?;
-                Ok(client)
-            })
-            .collect::<anyhow::Result<_>>()
-            .unwrap_or_else(|_e| {
-                // tracing::error!("Failed to get remote clients: {}", e);
-                Vec::new()
-            });
-
-        let clients = remote_clients
-            .clone()
-            .into_iter()
-            .map(Into::into)
-            .chain(Some(application_module.clone().into()))
-            .collect::<Vec<_>>();
+        // Remote clients are loaded lazily via SourcesPage; start with only the local client.
+        let clients = vec![application_module.clone().into()];
 
         let document_provider = Arc::new(DocumentProvider::new(Aggregator::new(
             clients,

@@ -1,7 +1,9 @@
+use std::future::Future;
 use std::io;
 use std::path::Path;
-
-use rayon::prelude::*;
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::Arc;
 
 use super::modules::DirectoryError;
 use super::modules::DirectoryModule;
@@ -28,14 +30,14 @@ pub enum Error {
 type Result<T> = std::result::Result<T, Error>;
 
 pub struct FileSystemVisitor {
-    directory_modules: Vec<Box<dyn DirectoryModule + Send + Sync>>,
-    file_modules: Vec<Box<dyn FileModule + Send + Sync>>,
+    directory_modules: Vec<Box<dyn DirectoryModule>>,
+    file_modules: Vec<Box<dyn FileModule>>,
 }
 
 impl FileSystemVisitor {
     pub fn new(
-        directory_modules: Vec<Box<dyn DirectoryModule + Send + Sync>>,
-        file_modules: Vec<Box<dyn FileModule + Send + Sync>>,
+        directory_modules: Vec<Box<dyn DirectoryModule>>,
+        file_modules: Vec<Box<dyn FileModule>>,
     ) -> Self {
         Self {
             directory_modules,
@@ -43,53 +45,57 @@ impl FileSystemVisitor {
         }
     }
 
-    pub fn visit(&self, path: &Path) -> Result<()> {
-        if path.is_dir() {
-            self.visit_directory(path)
-        } else {
-            self.visit_file(path)
-        }
+    pub fn visit(
+        self: Arc<Self>,
+        path: PathBuf,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+        Box::pin(async move {
+            if tokio::fs::metadata(&path).await?.is_dir() {
+                self.visit_directory(path).await
+            } else {
+                self.visit_file(path).await
+            }
+        })
     }
 
-    fn visit_directory(&self, directory: &Path) -> Result<()> {
+    async fn visit_directory(self: Arc<Self>, directory: PathBuf) -> Result<()> {
         tracing::debug!("visiting directory: {directory:?}");
 
-        let directory_module = self.directory_modules.iter().find(|m| m.matches(directory));
+        let module_idx = self
+            .directory_modules
+            .iter()
+            .position(|m| m.matches(&directory));
 
-        match directory_module {
-            Some(directory_module) => {
-                directory_module.handle(directory)?;
+        if let Some(idx) = module_idx {
+            self.directory_modules[idx].handle(&directory).await?;
+            return Ok(());
+        }
+
+        let mut read_dir = tokio::fs::read_dir(&directory).await?;
+        let mut paths: Vec<PathBuf> = Vec::new();
+        while let Some(entry) = read_dir.next_entry().await? {
+            let path = entry.path();
+            if is_not_hidden(&path) {
+                paths.push(path);
             }
-            None => {
-                std::fs::read_dir(directory)?
-                    .par_bridge()
-                    .map(|f| f.unwrap().path())
-                    .filter(|path| is_not_hidden(path))
-                    .for_each(|path| {
-                        if let Err(error) = self.visit(&path) {
-                            tracing::error!("error while visiting {path:?}: {error:?}");
-                        }
-                    });
+        }
+
+        for path in paths {
+            if let Err(error) = Arc::clone(&self).visit(path).await {
+                tracing::error!("error while visiting: {error:?}");
             }
         }
 
         Ok(())
     }
 
-    fn find_module_for_file(&self, file: &Path) -> Option<&(dyn FileModule + Send + Sync)> {
-        self.file_modules
-            .iter()
-            .find(|m| m.matches(file))
-            .map(|m| &**m)
-    }
-
-    fn visit_file(&self, file: &Path) -> Result<()> {
+    async fn visit_file(self: Arc<Self>, file: PathBuf) -> Result<()> {
         tracing::debug!("visiting file: {file:?}");
 
-        let file_module = self.find_module_for_file(file);
+        let module_idx = self.file_modules.iter().position(|m| m.matches(&file));
 
-        if let Some(file_module) = file_module {
-            file_module.handle(file)?;
+        if let Some(idx) = module_idx {
+            self.file_modules[idx].handle(&file).await?;
         }
 
         Ok(())

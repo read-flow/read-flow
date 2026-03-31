@@ -1,30 +1,17 @@
-use diesel::prelude::*;
-use diesel::sqlite::Sqlite;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::db::schema::directories;
-use crate::db::schema::directory_tags;
-use crate::db::schema::file_tags;
-use crate::db::schema::files;
-use crate::db::schema::reading_progress;
-use crate::db::schema::remotes;
-
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Selectable)]
-#[diesel(table_name = files)]
-#[diesel(check_for_backend(Sqlite))]
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct File {
     pub id: i32,
     pub path: String,
+    #[sqlx(rename = "type")]
     pub type_: String,
     pub size: i32,
     pub fingerprint: String,
     pub status: i32,
 }
 
-#[derive(Insertable)]
-#[diesel(table_name = files)]
-#[diesel(check_for_backend(Sqlite))]
 pub struct NewFile {
     pub path: String,
     pub type_: String,
@@ -33,9 +20,6 @@ pub struct NewFile {
     pub status: i32,
 }
 
-#[derive(Debug, Default, Identifiable, AsChangeset)]
-#[diesel(table_name = files)]
-#[diesel(check_for_backend(Sqlite))]
 pub struct UpdateFile {
     pub id: i32,
     pub path: Option<String>,
@@ -45,10 +29,7 @@ pub struct UpdateFile {
     pub status: Option<i32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable, Associations)]
-#[diesel(belongs_to(File))]
-#[diesel(table_name = file_tags)]
-#[diesel(check_for_backend(Sqlite))]
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct FileTag {
     pub file_id: i32,
     pub tag: String,
@@ -60,35 +41,26 @@ impl FileTag {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Selectable)]
-#[diesel(table_name = directories)]
-#[diesel(check_for_backend(Sqlite))]
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct Directory {
     pub id: i32,
     pub path: String,
+    #[sqlx(rename = "type")]
     pub type_: String,
 }
 
-#[derive(Insertable)]
-#[diesel(table_name = directories)]
-#[diesel(check_for_backend(Sqlite))]
 pub struct NewDirectory {
     pub path: String,
     pub type_: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable, Associations)]
-#[diesel(belongs_to(Directory))]
-#[diesel(table_name = directory_tags)]
-#[diesel(check_for_backend(Sqlite))]
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct DirectoryTag {
     pub directory_id: i32,
     pub tag: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Identifiable, Selectable)]
-#[diesel(table_name = remotes)]
-#[diesel(check_for_backend(Sqlite))]
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct Remote {
     pub id: i32,
     pub base_url: String,
@@ -97,9 +69,6 @@ pub struct Remote {
     pub user_id: String,
 }
 
-#[derive(Insertable)]
-#[diesel(table_name = remotes)]
-#[diesel(check_for_backend(Sqlite))]
 pub struct NewRemote {
     pub base_url: String,
     pub order: i32,
@@ -107,22 +76,7 @@ pub struct NewRemote {
     pub user_id: String,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    Queryable,
-    Identifiable,
-    Selectable,
-    Insertable,
-    AsChangeset,
-)]
-#[diesel(table_name = reading_progress)]
-#[diesel(primary_key(fingerprint))]
-#[diesel(check_for_backend(Sqlite))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ReadingProgress {
     pub fingerprint: String,
     pub progress: String,
