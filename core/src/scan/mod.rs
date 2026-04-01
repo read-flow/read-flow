@@ -11,6 +11,7 @@ use provider::r#async::Provider;
 pub use scanner::Scanner;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::sync::mpsc;
 
 use crate::ApplicationModule;
 use crate::ExpandedPath;
@@ -119,12 +120,18 @@ impl<P> ApplicationModule<P>
 where
     P: Provider<Settings, Error = SettingsError> + Send + Sync,
 {
-    pub async fn scan(&self, path: impl AsRef<Path>) -> Result<()> {
+    /// Start a scan and return a receiver for progress events.
+    /// The caller is responsible for consuming all events from the receiver.
+    pub async fn start_scan(&self, path: impl AsRef<Path>) -> Result<mpsc::Receiver<ScanProgress>> {
         let path = path.as_ref().canonicalize()?;
         let settings = self.settings().await.scan;
         let pool = self.connection_pool().await;
         let scanner = Scanner::new(settings);
-        let mut progress_rx = scanner.scan(path, pool).await;
+        Ok(scanner.scan(path, pool).await)
+    }
+
+    pub async fn scan(&self, path: impl AsRef<Path>) -> Result<()> {
+        let mut progress_rx = self.start_scan(path).await?;
         while let Some(event) = progress_rx.recv().await {
             if let ScanProgress::Completed {
                 discovered,

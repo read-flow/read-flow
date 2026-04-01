@@ -20,12 +20,16 @@ use cosmic::widget::icon;
 use cosmic::widget::menu;
 use cosmic::widget::nav_bar;
 use cosmic::widget::segmented_button::Entity;
+use futures::StreamExt;
 use i18n_embed::unic_langid::LanguageIdentifier;
 use provider::r#async::HasSetExpired;
 use read_flow_core::scan::DirectorySettings;
 
 use crate::ApplicationModule;
 use crate::aggregator::Document;
+use crate::component::scan_progress::ScanComponent;
+use crate::component::scan_progress::ScanProgressMessage;
+use crate::component::scan_progress::ScanProgressOutput;
 use crate::config::Config;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
@@ -60,6 +64,8 @@ pub struct ReadFlow {
     application_module: Arc<ApplicationModule>,
     /// Pages
     pages: Pages,
+    /// Scan progress component, present while scanning or showing the last result.
+    scan_component: Option<ScanComponent>,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -76,6 +82,7 @@ pub enum Message {
     SwitchLanguage(LanguageIdentifier),
     ExpireDocumentProvider,
     Scan,
+    ScanComponent(ScanProgressMessage),
     KeyboardEvent(
         cosmic::iced::keyboard::Modifiers,
         cosmic::iced::keyboard::Key,
@@ -91,6 +98,12 @@ impl From<PageOutput> for Message {
             PageOutput::TogglePage(page_selector) => Message::ActivatePage(page_selector),
             PageOutput::PageRemoved(page) => Message::ActivePageRemoved(page),
         }
+    }
+}
+
+impl From<ScanProgressMessage> for Message {
+    fn from(msg: ScanProgressMessage) -> Self {
+        Message::ScanComponent(msg)
     }
 }
 
@@ -195,6 +208,7 @@ impl cosmic::Application for ReadFlow {
             config,
             application_module,
             pages,
+            scan_component: None,
         };
 
         // Create a startup command that sets the window title.
@@ -350,6 +364,15 @@ impl cosmic::Application for ReadFlow {
         }
     }
 
+    fn footer(&self) -> Option<Element<'_, Self::Message>> {
+        Some(
+            self.scan_component
+                .as_ref()?
+                .view()
+                .map(Message::ScanComponent),
+        )
+    }
+
     /// Register subscriptions for this application.
     ///
     /// Subscriptions are long-running async tasks running in the background which
@@ -480,8 +503,10 @@ impl cosmic::Application for ReadFlow {
                 })
             }
             Message::Scan => {
+                self.scan_component = Some(ScanComponent::new());
+
                 let application_module = self.application_module.clone();
-                task::future(async move {
+                let stream = futures::stream::once(async move {
                     let settings = application_module.settings().await;
                     let scan_dirs: Vec<_> = settings
                         .scan
@@ -492,13 +517,55 @@ impl cosmic::Application for ReadFlow {
                             DirectorySettings::Ignore { .. } => None,
                         })
                         .collect();
+                    let mut receivers = vec![];
                     for dir in scan_dirs {
-                        if let Err(e) = application_module.scan(&dir).await {
-                            tracing::error!("error occurred while scanning dir `{dir}`: {e}");
+                        match application_module.start_scan(&dir).await {
+                            Ok(rx) => receivers.push(rx),
+                            Err(e) => {
+                                tracing::error!("error starting scan of `{dir}`: {e}");
+                            }
                         }
                     }
-                    Message::ExpireDocumentProvider
+                    receivers
                 })
+                .flat_map(|receivers| {
+                    receivers
+                        .into_iter()
+                        .fold(futures::stream::empty().boxed(), |acc, rx| {
+                            acc.chain(futures::stream::unfold(rx, |mut rx| async move {
+                                rx.recv().await.map(|item| (item, rx))
+                            }))
+                            .boxed()
+                        })
+                });
+
+                task::stream(
+                    stream.map(|e| Message::ScanComponent(ScanProgressMessage::Progress(e))),
+                )
+                .chain(task::message(Message::ScanComponent(
+                    ScanProgressMessage::Completed,
+                )))
+            }
+            Message::ScanComponent(msg) => {
+                if let ScanProgressMessage::Out(output) = msg {
+                    match output {
+                        ScanProgressOutput::Dismissed => {
+                            self.scan_component = None;
+                            Task::none()
+                        }
+                        ScanProgressOutput::Completed => {
+                            let document_provider = self.pages.document_provider.clone();
+                            task::future(async move {
+                                document_provider.set_expired().await;
+                                Message::Page(PageMessage::Refresh)
+                            })
+                        }
+                    }
+                } else if let Some(ref mut component) = self.scan_component {
+                    component.update(msg).map(ActionExt::map_into)
+                } else {
+                    Task::none()
+                }
             }
             Message::KeyboardEvent(modifiers, key, text) => {
                 if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
