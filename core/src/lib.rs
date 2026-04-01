@@ -31,7 +31,6 @@ use provider::r#async::ObservableCache;
 use provider::r#async::Provider;
 use rustc_hash::FxBuildHasher;
 use scan::DirectorySettings;
-use scan::FileSystemVisitor;
 use serde::Deserialize;
 use serde::Serialize;
 use settings::Settings;
@@ -149,10 +148,6 @@ where
 
     pub fn subscribe(&self) -> broadcast::Receiver<Invalidated> {
         self.settings.subscribe()
-    }
-
-    pub(crate) async fn visitor(&self) -> FileSystemVisitor {
-        scan::create_visitor(self.connection_pool().await, self.settings().await.scan)
     }
 
     /// Find all local files in the database whose path no longer exists on disk.

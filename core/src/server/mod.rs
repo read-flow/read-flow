@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use authn::AuthorizedUser;
 use figment::Figment;
@@ -38,7 +37,6 @@ use crate::api::ReadingProgress;
 use crate::api::Status;
 use crate::db;
 use crate::db::dao;
-use crate::scan;
 use crate::settings;
 pub use crate::settings::ServerSettings;
 use crate::settings::Settings;
@@ -66,12 +64,7 @@ enum Error {
     UnsupportedContentType(String),
     #[error("could not import file: {0}")]
     #[response(status = 500)]
-    Scan(
-        String,
-        #[response(ignore)]
-        #[source]
-        scan::Error,
-    ),
+    Scan(String),
     #[error("file with id {0} not found")]
     #[response(status = 404)]
     FileNotFound(String),
@@ -84,10 +77,10 @@ impl From<dao::Error> for Error {
     }
 }
 
-impl From<scan::Error> for Error {
-    fn from(error: scan::Error) -> Self {
+impl From<anyhow::Error> for Error {
+    fn from(error: anyhow::Error) -> Self {
         tracing::error!("could not import file: {error}");
-        Error::Scan(error.to_string(), error)
+        Error::Scan(error.to_string())
     }
 }
 
@@ -406,8 +399,7 @@ async fn upload_file(
 
     file.persist_to(target_file.as_path()).await?;
 
-    let visitor = application_module.visitor().await;
-    Arc::new(visitor).visit(target_file.clone()).await?;
+    application_module.scan(target_file.clone()).await?;
 
     let conn = application_module.connection_pool().await;
     let result = dao::select_file_by_path(&conn, &target_file.display().to_string())

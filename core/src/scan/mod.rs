@@ -1,24 +1,19 @@
-pub mod file_system_visitor;
-pub mod modules;
 pub mod pipeline;
 pub mod scanner;
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::Arc;
 
 use anyhow::Result;
-pub use file_system_visitor::Error;
-pub use file_system_visitor::FileSystemVisitor;
 use itertools::Itertools;
-use modules::file_extension_finder::FileExtensionFinder;
+pub use pipeline::ScanProgress;
 use provider::r#async::Provider;
+pub use scanner::Scanner;
 use serde::Deserialize;
 use serde::Serialize;
 
 use crate::ApplicationModule;
 use crate::ExpandedPath;
-use crate::db::ConnectionPool;
 use crate::settings::Settings;
 use crate::settings::SettingsError;
 
@@ -70,13 +65,6 @@ pub enum DirectorySettings {
 }
 
 impl DirectorySettings {
-    fn empty_scan() -> Self {
-        Self::Scan {
-            tags: Default::default(),
-            inherit: Default::default(),
-        }
-    }
-
     fn merge(self, other: Self) -> Self {
         use DirectorySettings::*;
         if !other.inherit() {
@@ -127,37 +115,28 @@ impl ScanSettings {
     }
 }
 
-pub fn create_visitor(
-    connection_pool: ConnectionPool,
-    scan_settings: ScanSettings,
-) -> FileSystemVisitor {
-    let scan_settings = Arc::new(scan_settings);
-    FileSystemVisitor::new(vec![
-        Box::new(FileExtensionFinder::new(
-            "pdf".into(),
-            connection_pool.clone(),
-            scan_settings.clone(),
-        )),
-        Box::new(FileExtensionFinder::new(
-            "epub".into(),
-            connection_pool.clone(),
-            scan_settings.clone(),
-        )),
-        Box::new(FileExtensionFinder::new(
-            "mobi".into(),
-            connection_pool,
-            scan_settings,
-        )),
-    ])
-}
-
 impl<P> ApplicationModule<P>
 where
     P: Provider<Settings, Error = SettingsError> + Send + Sync,
 {
     pub async fn scan(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref().canonicalize()?;
-        Arc::new(self.visitor().await).visit(path).await?;
+        let settings = self.settings().await.scan;
+        let pool = self.connection_pool().await;
+        let scanner = Scanner::new(settings);
+        let mut progress_rx = scanner.scan(path, pool).await;
+        while let Some(event) = progress_rx.recv().await {
+            if let ScanProgress::Completed {
+                discovered,
+                processed,
+                errors,
+            } = event
+            {
+                tracing::info!(
+                    "scan complete: {discovered} discovered, {processed} processed, {errors} errors"
+                );
+            }
+        }
         Ok(())
     }
 }

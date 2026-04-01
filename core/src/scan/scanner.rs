@@ -69,7 +69,22 @@ async fn stage1_traversal(
     tx: mpsc::Sender<TraversalItem>,
     progress_tx: mpsc::Sender<ScanProgress>,
 ) {
-    visit_dir(&root, &root, settings, &tx, &progress_tx).await;
+    let is_dir = tokio::fs::metadata(&root)
+        .await
+        .map(|m| m.is_dir())
+        .unwrap_or(false);
+
+    if is_dir {
+        visit_dir(&root, &root, settings, &tx, &progress_tx).await;
+    } else if extension_matches(&root, &settings.extensions) {
+        let tags = tags_for_path(&root, settings).unwrap_or_default();
+        if settings.dry_run {
+            tracing::info!("[dry_run] would scan: {root:?}");
+            let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
+        } else if tx.send(TraversalItem { path: root, tags }).await.is_ok() {
+            let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
+        }
+    }
 }
 
 fn is_hidden(path: &Path) -> bool {
@@ -773,11 +788,10 @@ mod tests {
         assert!(!was_new);
         assert!(was_updated);
 
-        let size: (i64,) =
-            sqlx::query_as("SELECT size FROM files WHERE path = '/tmp/book.pdf'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
+        let size: (i64,) = sqlx::query_as("SELECT size FROM files WHERE path = '/tmp/book.pdf'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
         assert_eq!(size.0, 200);
     }
 
@@ -804,15 +818,20 @@ mod tests {
         let pool = test_pool().await;
         let mut tx = pool.begin().await.unwrap();
 
-        let file = scanned("/tmp/book.pdf", "pdf", 100, "abc123", vec!["fiction", "2024"]);
+        let file = scanned(
+            "/tmp/book.pdf",
+            "pdf",
+            100,
+            "abc123",
+            vec!["fiction", "2024"],
+        );
         write_file(&mut tx, &file).await.unwrap();
         tx.commit().await.unwrap();
 
-        let tags: Vec<String> =
-            sqlx::query_scalar("SELECT tag FROM file_tags ORDER BY tag")
-                .fetch_all(&pool)
-                .await
-                .unwrap();
+        let tags: Vec<String> = sqlx::query_scalar("SELECT tag FROM file_tags ORDER BY tag")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
         assert_eq!(tags, vec!["2024", "fiction"]);
     }
 
@@ -832,11 +851,10 @@ mod tests {
         write_file(&mut tx, &file2).await.unwrap();
         tx.commit().await.unwrap();
 
-        let mut tags: Vec<String> =
-            sqlx::query_scalar("SELECT tag FROM file_tags ORDER BY tag")
-                .fetch_all(&pool)
-                .await
-                .unwrap();
+        let mut tags: Vec<String> = sqlx::query_scalar("SELECT tag FROM file_tags ORDER BY tag")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
         tags.sort();
         assert_eq!(tags, vec!["a", "b", "c"]);
     }
