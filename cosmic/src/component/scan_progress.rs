@@ -6,6 +6,8 @@ use cosmic::widget;
 use cosmic::widget::icon;
 use read_flow_core::scan::ScanProgress;
 
+use crate::fl;
+
 #[derive(Debug, Clone)]
 pub enum ScanProgressOutput {
     /// Scan stream fully drained — parent should expire the document provider.
@@ -72,16 +74,19 @@ impl ScanComponent {
         let padding = theme.cosmic().space_xs();
 
         let (label, progress) = if self.active {
-            let label = format!(
-                "Scanning\u{2026} {} discovered, {} processed",
-                self.discovered, self.processed,
+            let label = fl!(
+                "scan-progress-scanning",
+                discovered = self.discovered,
+                processed = self.processed
             );
             let max = self.discovered.max(1) as f32;
             (label, self.processed as f32 / max)
         } else {
-            let label = format!(
-                "Last scan: {} discovered, {} processed, {} errors",
-                self.discovered, self.processed, self.errors,
+            let label = fl!(
+                "scan-progress-completed",
+                discovered = self.discovered,
+                processed = self.processed,
+                errors = self.errors
             );
             (label, 1.0_f32)
         };
