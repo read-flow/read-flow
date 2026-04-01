@@ -5,10 +5,10 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use super::modules::DirectoryError;
-use super::modules::DirectoryModule;
 use super::modules::FileError;
 use super::modules::FileModule;
+
+const SCM_ROOTS: &[&str] = &[".git", ".hg"];
 
 fn is_not_hidden(file: &Path) -> bool {
     file.file_name()
@@ -17,12 +17,16 @@ fn is_not_hidden(file: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn is_scm_root(directory: &Path) -> bool {
+    SCM_ROOTS
+        .iter()
+        .any(|marker| directory.join(marker).is_dir())
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("file module error: {0}")]
     FileModule(#[from] FileError),
-    #[error("directory module error: {0}")]
-    Directory(#[from] DirectoryError),
     #[error("file system error: {0}")]
     IO(#[from] io::Error),
 }
@@ -30,19 +34,12 @@ pub enum Error {
 type Result<T> = std::result::Result<T, Error>;
 
 pub struct FileSystemVisitor {
-    directory_modules: Vec<Box<dyn DirectoryModule>>,
     file_modules: Vec<Box<dyn FileModule>>,
 }
 
 impl FileSystemVisitor {
-    pub fn new(
-        directory_modules: Vec<Box<dyn DirectoryModule>>,
-        file_modules: Vec<Box<dyn FileModule>>,
-    ) -> Self {
-        Self {
-            directory_modules,
-            file_modules,
-        }
+    pub fn new(file_modules: Vec<Box<dyn FileModule>>) -> Self {
+        Self { file_modules }
     }
 
     pub fn visit(
@@ -61,13 +58,8 @@ impl FileSystemVisitor {
     async fn visit_directory(self: Arc<Self>, directory: PathBuf) -> Result<()> {
         tracing::debug!("visiting directory: {directory:?}");
 
-        let module_idx = self
-            .directory_modules
-            .iter()
-            .position(|m| m.matches(&directory));
-
-        if let Some(idx) = module_idx {
-            self.directory_modules[idx].handle(&directory).await?;
+        if is_scm_root(&directory) {
+            tracing::debug!("skipping SCM root: {directory:?}");
             return Ok(());
         }
 

@@ -3,10 +3,8 @@ use std::sync::Arc;
 
 use sqlx::SqlitePool;
 
-use crate::db::models::Directory;
 use crate::db::models::File;
 use crate::db::models::FileTag;
-use crate::db::models::NewDirectory;
 use crate::db::models::NewFile;
 use crate::db::models::NewRemote;
 use crate::db::models::ReadingProgress;
@@ -275,49 +273,6 @@ pub async fn delete_file_tag(pool: &SqlitePool, file_tag: FileTag) -> Result<(),
         .bind(&file_tag.tag)
         .execute(pool)
         .await?;
-    Ok(())
-}
-
-pub async fn insert_directory(
-    pool: &SqlitePool,
-    directory: NewDirectory,
-) -> Result<Directory, Error> {
-    let row = sqlx::query_as::<_, Directory>(
-        "INSERT INTO directories (path, type) VALUES (?, ?) RETURNING id, path, type",
-    )
-    .bind(&directory.path)
-    .bind(&directory.type_)
-    .fetch_one(pool)
-    .await?;
-    Ok(row)
-}
-
-pub async fn upsert_directory(pool: &SqlitePool, directory: NewDirectory) -> Result<(), Error> {
-    sqlx::query("INSERT OR IGNORE INTO directories (path, type) VALUES (?, ?)")
-        .bind(&directory.path)
-        .bind(&directory.type_)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-pub async fn insert_many_directories(
-    pool: &SqlitePool,
-    directories: Vec<NewDirectory>,
-) -> Result<(), Error> {
-    for directory in directories {
-        insert_directory(pool, directory).await?;
-    }
-    Ok(())
-}
-
-pub async fn upsert_many_directories(
-    pool: &SqlitePool,
-    directories: Vec<NewDirectory>,
-) -> Result<(), Error> {
-    for directory in directories {
-        upsert_directory(pool, directory).await?;
-    }
     Ok(())
 }
 

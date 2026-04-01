@@ -42,25 +42,6 @@ impl FileTag {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
-pub struct Directory {
-    pub id: i32,
-    pub path: String,
-    #[sqlx(rename = "type")]
-    pub type_: String,
-}
-
-pub struct NewDirectory {
-    pub path: String,
-    pub type_: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
-pub struct DirectoryTag {
-    pub directory_id: i32,
-    pub tag: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct Remote {
     pub id: i32,
     pub base_url: String,

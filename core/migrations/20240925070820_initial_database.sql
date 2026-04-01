@@ -3,7 +3,8 @@ CREATE TABLE files (
        path VARCHAR NOT NULL,
        type VARCHAR NOT NULL,
        size INTEGER NOT NULL,
-       fingerprint VARCHAR NOT NULL
+       fingerprint VARCHAR NOT NULL,
+       status INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE UNIQUE INDEX uq_file_path ON files (path);
@@ -20,22 +21,3 @@ CREATE TABLE file_tags (
 );
 
 CREATE INDEX idx_file_tags_tag ON file_tags (tag);
-
-CREATE TABLE directories (
-       id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-       path VARCHAR NOT NULL,
-       type VARCHAR NOT NULL
-);
-
-CREATE UNIQUE INDEX uq_directory_path ON directories (path);
-
-CREATE INDEX idx_directory_type ON directories (type);
-
-CREATE TABLE directory_tags (
-       directory_id INTEGER NOT NULL REFERENCES directories (id),
-       tag VARCHAR NOT NULL,
-
-       PRIMARY KEY(directory_id, tag)
-);
-
-CREATE INDEX idx_directory_tags_tag ON directory_tags (tag);

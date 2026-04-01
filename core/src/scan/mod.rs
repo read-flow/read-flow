@@ -10,7 +10,6 @@ pub use file_system_visitor::Error;
 pub use file_system_visitor::FileSystemVisitor;
 use itertools::Itertools;
 use modules::file_extension_finder::FileExtensionFinder;
-use modules::scm_project_finder::ScmProjectFinder;
 use provider::r#async::Provider;
 use serde::Deserialize;
 use serde::Serialize;
@@ -107,37 +106,23 @@ pub fn create_visitor(
     scan_settings: ScanSettings,
 ) -> FileSystemVisitor {
     let scan_settings = Arc::new(scan_settings);
-    FileSystemVisitor::new(
-        vec![
-            Box::new(ScmProjectFinder::new(
-                ".git".into(),
-                connection_pool.clone(),
-                scan_settings.clone(),
-            )),
-            Box::new(ScmProjectFinder::new(
-                ".hg".into(),
-                connection_pool.clone(),
-                scan_settings.clone(),
-            )),
-        ],
-        vec![
-            Box::new(FileExtensionFinder::new(
-                "pdf".into(),
-                connection_pool.clone(),
-                scan_settings.clone(),
-            )),
-            Box::new(FileExtensionFinder::new(
-                "epub".into(),
-                connection_pool.clone(),
-                scan_settings.clone(),
-            )),
-            Box::new(FileExtensionFinder::new(
-                "mobi".into(),
-                connection_pool,
-                scan_settings,
-            )),
-        ],
-    )
+    FileSystemVisitor::new(vec![
+        Box::new(FileExtensionFinder::new(
+            "pdf".into(),
+            connection_pool.clone(),
+            scan_settings.clone(),
+        )),
+        Box::new(FileExtensionFinder::new(
+            "epub".into(),
+            connection_pool.clone(),
+            scan_settings.clone(),
+        )),
+        Box::new(FileExtensionFinder::new(
+            "mobi".into(),
+            connection_pool,
+            scan_settings,
+        )),
+    ])
 }
 
 impl<P> ApplicationModule<P>
