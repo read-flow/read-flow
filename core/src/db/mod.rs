@@ -52,10 +52,11 @@ pub async fn get_connection_pool(settings: &DbSettings) -> ConnectionPool {
         .synchronous(SqliteSynchronous::Normal)
         .foreign_keys(true)
         .busy_timeout(Duration::from_secs(30))
-        .create_if_missing(true);
+        .create_if_missing(true)
+        .pragma("cache_size", "-20000");
 
     let pool = SqlitePoolOptions::new()
-        .max_connections(5)
+        .max_connections(3)
         .connect_with(options)
         .await
         .expect("Could not build connection pool");
