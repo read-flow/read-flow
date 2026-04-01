@@ -1,9 +1,16 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
+use std::time::Duration;
 
 use tokio::sync::mpsc;
 
 use super::ScanSettings;
-use super::pipeline::{ScanProgress, ScannedFile, TraversalItem};
+use super::pipeline::ScanProgress;
+use super::pipeline::ScannedFile;
+use super::pipeline::TraversalItem;
+
+const MAX_BATCH_SIZE: usize = 100;
+const BATCH_TIMEOUT: Duration = Duration::from_millis(500);
 
 const SCM_MARKERS: &[&str] = &[".git", ".hg"];
 
@@ -199,9 +206,7 @@ async fn stage2_fingerprint(
     while join_set.join_next().await.is_some() {}
 }
 
-async fn fingerprint_file(
-    item: TraversalItem,
-) -> Result<ScannedFile, (PathBuf, std::io::Error)> {
+async fn fingerprint_file(item: TraversalItem) -> Result<ScannedFile, (PathBuf, std::io::Error)> {
     use sha2::Digest as _;
     use tokio::io::AsyncReadExt as _;
 
@@ -216,10 +221,7 @@ async fn fingerprint_file(
         .await
         .map_err(|e| (item.path.clone(), e))?;
 
-    let meta = file
-        .metadata()
-        .await
-        .map_err(|e| (item.path.clone(), e))?;
+    let meta = file.metadata().await.map_err(|e| (item.path.clone(), e))?;
 
     let size = meta.len() as i64;
 
@@ -248,30 +250,47 @@ async fn fingerprint_file(
 }
 
 // ---------------------------------------------------------------------------
-// Stage 3 placeholder (implemented in Phase 3c)
+// Stage 3: DB writer
 // ---------------------------------------------------------------------------
 
 async fn stage3_writer(
     mut rx: mpsc::Receiver<ScannedFile>,
-    _pool: sqlx::SqlitePool,
+    pool: sqlx::SqlitePool,
     progress_tx: mpsc::Sender<ScanProgress>,
 ) {
     let mut discovered: u64 = 0;
     let mut processed: u64 = 0;
-    let errors: u64 = 0;
+    let mut errors: u64 = 0;
+    let mut batch: Vec<ScannedFile> = Vec::with_capacity(MAX_BATCH_SIZE);
 
-    while let Some(file) = rx.recv().await {
-        tracing::debug!("writer received: {:?}", file.path);
-        // TODO: batch DB writes (Phase 3c)
+    'outer: loop {
+        // Block until the first item of a new batch arrives.
+        let Some(first) = rx.recv().await else { break };
         discovered += 1;
-        processed += 1;
-        let _ = progress_tx
-            .send(ScanProgress::FileProcessed {
-                path: file.path,
-                was_new: true,
-                was_updated: false,
-            })
-            .await;
+        batch.push(first);
+
+        // Accumulate more items up to MAX_BATCH_SIZE, with a timeout to
+        // flush a partial batch at end-of-scan.
+        loop {
+            if batch.len() >= MAX_BATCH_SIZE {
+                break;
+            }
+            match tokio::time::timeout(BATCH_TIMEOUT, rx.recv()).await {
+                Ok(Some(item)) => {
+                    discovered += 1;
+                    batch.push(item);
+                }
+                Ok(None) => break 'outer, // channel closed; flush below
+                Err(_timeout) => break,   // flush partial batch
+            }
+        }
+
+        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+    }
+
+    // Flush any remaining items (channel closed mid-accumulation).
+    if !batch.is_empty() {
+        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
     }
 
     let _ = progress_tx
@@ -281,6 +300,127 @@ async fn stage3_writer(
             errors,
         })
         .await;
+}
+
+async fn flush_batch(
+    batch: &mut Vec<ScannedFile>,
+    pool: &sqlx::SqlitePool,
+    progress_tx: &mpsc::Sender<ScanProgress>,
+    processed: &mut u64,
+    errors: &mut u64,
+) {
+    let items = std::mem::take(batch);
+
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => {
+            tracing::error!("failed to begin transaction: {e}");
+            for item in items {
+                *errors += 1;
+                let _ = progress_tx
+                    .send(ScanProgress::FileError {
+                        path: item.path,
+                        error: e.to_string(),
+                    })
+                    .await;
+            }
+            return;
+        }
+    };
+
+    for file in items {
+        match write_file(&mut tx, &file).await {
+            Ok((was_new, was_updated)) => {
+                *processed += 1;
+                let _ = progress_tx
+                    .send(ScanProgress::FileProcessed {
+                        path: file.path,
+                        was_new,
+                        was_updated,
+                    })
+                    .await;
+            }
+            Err(e) => {
+                *errors += 1;
+                tracing::warn!("failed to write {:?}: {e}", file.path);
+                let _ = progress_tx
+                    .send(ScanProgress::FileError {
+                        path: file.path,
+                        error: e.to_string(),
+                    })
+                    .await;
+            }
+        }
+    }
+
+    if let Err(e) = tx.commit().await {
+        tracing::error!("failed to commit batch: {e}");
+    }
+}
+
+/// Write a single scanned file within an open transaction.
+/// Returns `(was_new, was_updated)`.
+async fn write_file(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    file: &ScannedFile,
+) -> Result<(bool, bool), sqlx::Error> {
+    let path_str = file.path.to_string_lossy();
+
+    // Check whether the file already exists.
+    let existing: Option<(i32, i64, String)> =
+        sqlx::query_as("SELECT id, size, fingerprint FROM files WHERE path = ?")
+            .bind(&*path_str)
+            .fetch_optional(&mut **tx)
+            .await?;
+
+    let (file_id, was_new, was_updated) = match existing {
+        None => {
+            // New file — insert.
+            let (id,): (i32,) = sqlx::query_as(
+                r#"INSERT INTO files (path, "type", size, fingerprint, status)
+                   VALUES (?, ?, ?, ?, 0)
+                   RETURNING id"#,
+            )
+            .bind(&*path_str)
+            .bind(&file.extension)
+            .bind(file.size)
+            .bind(&file.fingerprint)
+            .fetch_one(&mut **tx)
+            .await?;
+            (id, true, false)
+        }
+        Some((id, old_size, ref old_fp)) => {
+            let changed = old_size != file.size || old_fp != &file.fingerprint;
+            if changed {
+                sqlx::query("UPDATE files SET size = ?, fingerprint = ? WHERE id = ?")
+                    .bind(file.size)
+                    .bind(&file.fingerprint)
+                    .bind(id)
+                    .execute(&mut **tx)
+                    .await?;
+                tracing::info!(
+                    "updated file: {} (size: {} → {}, fingerprint: {} → {})",
+                    file.path.display(),
+                    old_size,
+                    file.size,
+                    old_fp,
+                    file.fingerprint
+                );
+            }
+            (id, false, changed)
+        }
+    };
+
+    // Insert tags (add-only — Q2 decision).
+    for tag in &file.tags {
+        sqlx::query("INSERT OR IGNORE INTO file_tags (file_id, tag) VALUES (?, ?)")
+            .bind(file_id)
+            .bind(tag)
+            .execute(&mut **tx)
+            .await?;
+    }
+
+    Ok((was_new, was_updated))
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +547,10 @@ mod tests {
             .iter()
             .map(|i| i.path.file_name().unwrap().to_str().unwrap())
             .collect();
-        assert!(!names.contains(&"paper.pdf"), "should not recurse into git repo");
+        assert!(
+            !names.contains(&"paper.pdf"),
+            "should not recurse into git repo"
+        );
         assert!(names.contains(&"outside.pdf"));
     }
 
@@ -440,11 +583,8 @@ mod tests {
         make_file(&ignored, "book.pdf");
         make_file(tmp.path(), "outside.pdf");
 
-        let items = collect_traversal(
-            tmp.path().to_path_buf(),
-            settings_with_ignore(&ignored),
-        )
-        .await;
+        let items =
+            collect_traversal(tmp.path().to_path_buf(), settings_with_ignore(&ignored)).await;
         let names: Vec<&str> = items
             .iter()
             .map(|i| i.path.file_name().unwrap().to_str().unwrap())
@@ -543,11 +683,217 @@ mod tests {
         let path = tmp.path().join("BOOK.PDF");
         fs::write(&path, b"data").unwrap();
 
-        let item = TraversalItem {
-            path,
-            tags: vec![],
-        };
+        let item = TraversalItem { path, tags: vec![] };
         let scanned = fingerprint_file(item).await.unwrap();
         assert_eq!(scanned.extension, "pdf");
+    }
+
+    // -----------------------------------------------------------------------
+    // DB writer tests — use an in-memory SQLite pool with migrations applied
+    // -----------------------------------------------------------------------
+
+    async fn test_pool() -> sqlx::SqlitePool {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("in-memory pool");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("migrations");
+        pool
+    }
+
+    fn scanned(path: &str, ext: &str, size: i64, fp: &str, tags: Vec<&str>) -> ScannedFile {
+        ScannedFile {
+            path: PathBuf::from(path),
+            extension: ext.into(),
+            size,
+            fingerprint: fp.into(),
+            tags: tags.into_iter().map(String::from).collect(),
+        }
+    }
+
+    #[tokio::test]
+    async fn write_file_inserts_new_file() {
+        let pool = test_pool().await;
+        let mut tx = pool.begin().await.unwrap();
+
+        let file = scanned("/tmp/book.pdf", "pdf", 100, "abc123", vec![]);
+        let (was_new, was_updated) = write_file(&mut tx, &file).await.unwrap();
+
+        assert!(was_new);
+        assert!(!was_updated);
+        tx.commit().await.unwrap();
+
+        let row: (String, String, i64, String) = sqlx::query_as(
+            r#"SELECT path, "type", size, fingerprint FROM files WHERE path = '/tmp/book.pdf'"#,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.0, "/tmp/book.pdf");
+        assert_eq!(row.1, "pdf");
+        assert_eq!(row.2, 100);
+        assert_eq!(row.3, "abc123");
+    }
+
+    #[tokio::test]
+    async fn write_file_unchanged_returns_not_new_not_updated() {
+        let pool = test_pool().await;
+
+        // First insert
+        let file = scanned("/tmp/book.pdf", "pdf", 100, "abc123", vec![]);
+        let mut tx = pool.begin().await.unwrap();
+        write_file(&mut tx, &file).await.unwrap();
+        tx.commit().await.unwrap();
+
+        // Second write with identical data
+        let mut tx = pool.begin().await.unwrap();
+        let (was_new, was_updated) = write_file(&mut tx, &file).await.unwrap();
+        tx.commit().await.unwrap();
+
+        assert!(!was_new);
+        assert!(!was_updated);
+    }
+
+    #[tokio::test]
+    async fn write_file_changed_size_sets_was_updated() {
+        let pool = test_pool().await;
+
+        let file1 = scanned("/tmp/book.pdf", "pdf", 100, "abc123", vec![]);
+        let mut tx = pool.begin().await.unwrap();
+        write_file(&mut tx, &file1).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let file2 = scanned("/tmp/book.pdf", "pdf", 200, "abc123", vec![]);
+        let mut tx = pool.begin().await.unwrap();
+        let (was_new, was_updated) = write_file(&mut tx, &file2).await.unwrap();
+        tx.commit().await.unwrap();
+
+        assert!(!was_new);
+        assert!(was_updated);
+
+        let size: (i64,) =
+            sqlx::query_as("SELECT size FROM files WHERE path = '/tmp/book.pdf'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(size.0, 200);
+    }
+
+    #[tokio::test]
+    async fn write_file_changed_fingerprint_sets_was_updated() {
+        let pool = test_pool().await;
+
+        let file1 = scanned("/tmp/book.pdf", "pdf", 100, "abc123", vec![]);
+        let mut tx = pool.begin().await.unwrap();
+        write_file(&mut tx, &file1).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let file2 = scanned("/tmp/book.pdf", "pdf", 100, "def456", vec![]);
+        let mut tx = pool.begin().await.unwrap();
+        let (was_new, was_updated) = write_file(&mut tx, &file2).await.unwrap();
+        tx.commit().await.unwrap();
+
+        assert!(!was_new);
+        assert!(was_updated);
+    }
+
+    #[tokio::test]
+    async fn write_file_inserts_tags() {
+        let pool = test_pool().await;
+        let mut tx = pool.begin().await.unwrap();
+
+        let file = scanned("/tmp/book.pdf", "pdf", 100, "abc123", vec!["fiction", "2024"]);
+        write_file(&mut tx, &file).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let tags: Vec<String> =
+            sqlx::query_scalar("SELECT tag FROM file_tags ORDER BY tag")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(tags, vec!["2024", "fiction"]);
+    }
+
+    #[tokio::test]
+    async fn write_file_tags_are_add_only_on_rescan() {
+        let pool = test_pool().await;
+
+        // First scan: tags a, b
+        let file1 = scanned("/tmp/book.pdf", "pdf", 100, "abc123", vec!["a", "b"]);
+        let mut tx = pool.begin().await.unwrap();
+        write_file(&mut tx, &file1).await.unwrap();
+        tx.commit().await.unwrap();
+
+        // Second scan: only tag c — existing tags must NOT be removed
+        let file2 = scanned("/tmp/book.pdf", "pdf", 100, "abc123", vec!["c"]);
+        let mut tx = pool.begin().await.unwrap();
+        write_file(&mut tx, &file2).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let mut tags: Vec<String> =
+            sqlx::query_scalar("SELECT tag FROM file_tags ORDER BY tag")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        tags.sort();
+        assert_eq!(tags, vec!["a", "b", "c"]);
+    }
+
+    #[tokio::test]
+    async fn flush_batch_emits_processed_and_completed() {
+        let pool = test_pool().await;
+        let (progress_tx, mut progress_rx) = mpsc::channel(64);
+        let mut batch = vec![
+            scanned("/tmp/a.pdf", "pdf", 10, "fp1", vec![]),
+            scanned("/tmp/b.epub", "epub", 20, "fp2", vec![]),
+        ];
+        let mut processed = 0u64;
+        let mut errors = 0u64;
+
+        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+
+        assert_eq!(processed, 2);
+        assert_eq!(errors, 0);
+        assert!(batch.is_empty());
+
+        let ev1 = progress_rx.try_recv().unwrap();
+        let ev2 = progress_rx.try_recv().unwrap();
+        let paths: Vec<_> = [ev1, ev2]
+            .into_iter()
+            .filter_map(|ev| {
+                if let ScanProgress::FileProcessed { path, was_new, .. } = ev {
+                    assert!(was_new);
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(paths.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn flush_batch_duplicate_path_is_idempotent() {
+        let pool = test_pool().await;
+        let (progress_tx, _progress_rx) = mpsc::channel(64);
+        let mut processed = 0u64;
+        let mut errors = 0u64;
+
+        // First flush
+        let mut batch = vec![scanned("/tmp/a.pdf", "pdf", 10, "fp1", vec![])];
+        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+
+        // Second flush — same path, same content
+        let mut batch = vec![scanned("/tmp/a.pdf", "pdf", 10, "fp1", vec![])];
+        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+
+        assert_eq!(errors, 0);
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM files")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count.0, 1);
     }
 }
