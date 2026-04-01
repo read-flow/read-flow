@@ -1,3 +1,0 @@
--- Your SQL goes here
-ALTER TABLE files
-ADD COLUMN status INTEGER NOT NULL DEFAULT 0;
