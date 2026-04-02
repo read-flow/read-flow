@@ -19,32 +19,29 @@ use std::sync::Arc;
 
 use api::FileDataSource;
 use db::ConnectionPool;
-use db::ConnectionPoolExt;
 use db::dao;
 use db::datasource::DbClient;
 use expanduser::expanduser;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use provider::sync::HasSetExpired;
-use provider::sync::Invalidated;
-use provider::sync::Observable;
-use provider::sync::ObservableCache;
-use provider::sync::Provider;
+use provider::r#async::HasSetExpired;
+use provider::r#async::Invalidated;
+use provider::r#async::Observable;
+use provider::r#async::ObservableCache;
+use provider::r#async::Provider;
 use rustc_hash::FxBuildHasher;
 use scan::DirectorySettings;
-use scan::FileSystemVisitor;
 use serde::Deserialize;
 use serde::Serialize;
 use settings::Settings;
 use settings::SettingsError;
-use tokio::runtime::Runtime;
 use tokio::sync::broadcast;
 
 type SettingsCache<P> = ObservableCache<P, fn(Settings) -> Settings, Settings, Settings>;
 type ConnectionPoolCache<P> = ObservableCache<
-    Arc<SettingsCache<P>>,
-    fn(Settings) -> ConnectionPool,
-    Settings,
+    ConnectionPoolProvider<P>,
+    fn(ConnectionPool) -> ConnectionPool,
+    ConnectionPool,
     ConnectionPool,
 >;
 type ClientCache<P> = ObservableCache<
@@ -53,6 +50,22 @@ type ClientCache<P> = ObservableCache<
     ConnectionPool,
     DbClient,
 >;
+
+/// Async bridge: fetches Settings from the cache and creates a fresh ConnectionPool.
+struct ConnectionPoolProvider<P> {
+    settings_cache: Arc<SettingsCache<P>>,
+}
+
+impl<P> Provider<ConnectionPool> for ConnectionPoolProvider<P>
+where
+    P: Provider<Settings, Error = SettingsError> + Send + Sync,
+{
+    type Error = SettingsError;
+    async fn provide(&self) -> Result<ConnectionPool, Self::Error> {
+        let settings = self.settings_cache.provide().await?;
+        Ok(db::get_connection_pool(&settings.database).await)
+    }
+}
 
 #[derive(Debug)]
 pub struct ApplicationModule<P> {
@@ -66,7 +79,7 @@ pub struct SettingsProvider;
 
 impl Provider<Settings> for SettingsProvider {
     type Error = SettingsError;
-    fn provide(&self) -> Result<Settings, Self::Error> {
+    async fn provide(&self) -> Result<Settings, Self::Error> {
         Settings::extract()
     }
 }
@@ -77,7 +90,7 @@ pub struct ScanSettingsProvider {
 
 impl Provider<Settings> for ScanSettingsProvider {
     type Error = SettingsError;
-    fn provide(&self) -> Result<Settings, Self::Error> {
+    async fn provide(&self) -> Result<Settings, Self::Error> {
         let mut settings = Settings::extract()?;
         settings.scan.merge_dry_run(self.dry_run);
         Ok(settings)
@@ -85,30 +98,29 @@ impl Provider<Settings> for ScanSettingsProvider {
 }
 
 impl ApplicationModule<SettingsProvider> {
-    pub fn instantiate(config_path: PathBuf) -> Result<Self, SettingsError> {
-        Self::new(SettingsProvider, config_path)
+    pub async fn instantiate(config_path: PathBuf) -> Result<Self, SettingsError> {
+        Self::new(SettingsProvider, config_path).await
     }
 }
 
 impl<P> ApplicationModule<P>
 where
-    P: Provider<Settings, Error = SettingsError>,
+    P: Provider<Settings, Error = SettingsError> + Send + Sync,
 {
-    pub fn new(settings_provider: P, config_path: PathBuf) -> Result<Self, SettingsError> {
+    pub async fn new(settings_provider: P, config_path: PathBuf) -> Result<Self, SettingsError> {
         let settings = settings_provider.observable_cache().arc();
-        let connection_pool = settings
-            .clone()
-            .observable_cache_with_fn(|settings: Settings| {
-                db::get_connection_pool(&settings.database)
-            })
-            .arc();
+        let connection_pool = ConnectionPoolProvider {
+            settings_cache: settings.clone(),
+        }
+        .observable_cache()
+        .arc();
         let db_client = connection_pool
             .clone()
             .observable_cache_with_fn(DbClient::new)
             .arc();
 
         // Force whole provider chain, to capture errors eagerly.
-        db_client.provide()?;
+        db_client.provide().await?;
 
         Ok(Self {
             config_path,
@@ -122,136 +134,124 @@ where
         &self.config_path
     }
 
-    pub fn settings(&self) -> Settings {
-        self.settings.provide().unwrap()
+    pub async fn settings(&self) -> Settings {
+        self.settings.provide().await.unwrap()
     }
 
-    pub fn connection_pool(&self) -> ConnectionPool {
-        self.connection_pool.provide().unwrap()
+    pub async fn connection_pool(&self) -> ConnectionPool {
+        self.connection_pool.provide().await.unwrap()
     }
 
-    pub fn db_client(&self) -> DbClient {
-        self.db_client.provide().unwrap()
+    pub async fn db_client(&self) -> DbClient {
+        self.db_client.provide().await.unwrap()
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<Invalidated> {
         self.settings.subscribe()
     }
 
-    fn visitor(&self) -> FileSystemVisitor {
-        scan::create_visitor(self.connection_pool(), self.settings().scan)
-    }
-
     /// Find all local files in the database whose path no longer exists on disk.
     /// If `purge` is true, also removes those stale records from the database.
-    pub fn check_missing(&self, purge: bool) -> Vec<String> {
-        let rt = Runtime::new().unwrap();
-        rt.block_on(async {
-            let connection_pool = self.connection_pool();
-            let files = connection_pool
-                .with_connection(dao::select_all_files)
-                .expect("database available");
+    pub async fn check_missing(&self, purge: bool) -> Vec<String> {
+        let connection_pool = self.connection_pool().await;
+        let files = dao::select_all_files(&connection_pool)
+            .await
+            .expect("database available");
 
-            let mut missing = Vec::new();
-            for file in files {
-                if !Path::new(&file.path).exists() {
-                    if purge
-                        && let Err(e) = connection_pool
-                            .with_connection(|conn| dao::delete_file_record(conn, file.id))
-                    {
-                        tracing::warn!("Failed to delete record for {}: {e}", file.path);
-                    }
-                    missing.push(file.path);
+        let mut missing = Vec::new();
+        for file in files {
+            if !Path::new(&file.path).exists() {
+                if purge && let Err(e) = dao::delete_file_record(&connection_pool, file.id).await {
+                    tracing::warn!("Failed to delete record for {}: {e}", file.path);
                 }
+                missing.push(file.path);
             }
-            missing
-        })
+        }
+        missing
     }
 
-    pub fn extract_scan_directories(&self) {
-        // Create the runtime
-        let rt = Runtime::new().unwrap();
-
-        let settings = self.settings();
-        let scan_directories = settings
+    pub async fn extract_scan_directories(&self) {
+        let settings = self.settings().await;
+        let scan_directory_paths: Vec<String> = settings
             .scan
             .directories
             .iter()
             .filter(|(_, settings)| matches!(settings, DirectorySettings::Scan { .. }))
-            .map(|(dir, _)| dir.as_ref())
-            .collect::<Vec<_>>();
+            .map(|(dir, _)| dir.display().to_string())
+            .collect();
 
-        // Execute the future, blocking the current thread until completion
-        rt.block_on(async {
-            let files: Vec<PathBuf> = self
-                .db_client()
-                .get_files()
-                .await
-                .expect("database available")
-                .into_iter()
-                .map(|f| PathBuf::from(f.path))
-                .collect();
+        let files: Vec<PathBuf> = self
+            .db_client()
+            .await
+            .get_files()
+            .await
+            .expect("database available")
+            .into_iter()
+            .map(|f| PathBuf::from(f.path))
+            .collect();
 
-            let directories: Vec<String> = files
-                .iter()
-                .flat_map(|f| f.parent())
-                .chain(scan_directories)
-                .map(|d| d.display().to_string())
-                .unique()
-                .sorted()
-                .collect();
+        let directories: Vec<String> = files
+            .iter()
+            .flat_map(|f| f.parent())
+            .map(|d| d.display().to_string())
+            .chain(scan_directory_paths)
+            .unique()
+            .sorted()
+            .collect();
 
-            for dir in directories.into_iter().fold(Vec::new(), |mut acc, dir| {
-                if !acc.iter().any(|d| dir.starts_with(d)) {
-                    acc.push(dir);
-                }
-                acc
-            }) {
-                println!("{dir}");
+        for dir in directories.into_iter().fold(Vec::new(), |mut acc, dir| {
+            if !acc.iter().any(|d| dir.starts_with(d)) {
+                acc.push(dir);
             }
-        });
+            acc
+        }) {
+            println!("{dir}");
+        }
     }
 }
 
 impl<P> Provider<Settings> for ApplicationModule<P>
 where
-    P: Provider<Settings, Error = SettingsError>,
+    P: Provider<Settings, Error = SettingsError> + Send + Sync,
 {
     type Error = SettingsError;
 
-    fn provide(&self) -> Result<Settings, Self::Error> {
-        self.settings.provide()
+    async fn provide(&self) -> Result<Settings, Self::Error> {
+        self.settings.provide().await
     }
 }
 
 impl<P> Provider<ConnectionPool> for ApplicationModule<P>
 where
-    P: Provider<Settings, Error = SettingsError>,
+    P: Provider<Settings, Error = SettingsError> + Send + Sync,
 {
     type Error = SettingsError;
 
-    fn provide(&self) -> Result<ConnectionPool, Self::Error> {
-        self.connection_pool.provide()
+    async fn provide(&self) -> Result<ConnectionPool, Self::Error> {
+        self.connection_pool.provide().await
     }
 }
 
 impl<P> Provider<DbClient> for ApplicationModule<P>
 where
-    P: Provider<Settings, Error = SettingsError>,
+    P: Provider<Settings, Error = SettingsError> + Send + Sync,
 {
     type Error = SettingsError;
 
-    fn provide(&self) -> Result<DbClient, Self::Error> {
-        self.db_client.provide()
+    async fn provide(&self) -> Result<DbClient, Self::Error> {
+        self.db_client.provide().await
     }
 }
 
-impl<P> HasSetExpired for ApplicationModule<P> {
-    fn set_expired(&self) {
+impl<P> HasSetExpired for ApplicationModule<P>
+where
+    P: Send + Sync,
+{
+    async fn set_expired(&self) {
         // The order is important here, we want to expire the deepest in the chain first
-        self.settings.set_expired();
-        self.connection_pool.set_expired();
-        self.db_client.set_expired();
+        self.settings.set_expired().await;
+        self.connection_pool.set_expired().await;
+        self.db_client.set_expired().await;
     }
 }
 

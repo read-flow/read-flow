@@ -70,8 +70,8 @@ impl Aggregator {
         self.clients.keys().cloned().collect()
     }
 
-    fn filter_out_hidden_files(&self, files: Vec<File>) -> Vec<File> {
-        let ui_settings = self.application_module.settings().ui;
+    async fn filter_out_hidden_files(&self, files: Vec<File>) -> Vec<File> {
+        let ui_settings = self.application_module.settings().await.ui;
         files
             .into_iter()
             .filter(|file| !ui_settings.contains_hidden_tag(&file.tags))
@@ -91,7 +91,7 @@ impl Aggregator {
             stream::iter(clients)
                 .map(|(selector, client)| async move {
                     let files = client.get_files().await?;
-                    let files = self.filter_out_hidden_files(files);
+                    let files = self.filter_out_hidden_files(files).await;
                     Ok((selector, files))
                 })
                 .buffer_unordered(self.clients.len())
@@ -289,6 +289,7 @@ impl Aggregator {
                     let download_folder = self
                         .application_module
                         .settings()
+                        .await
                         .client
                         .download_folder
                         .into_inner();

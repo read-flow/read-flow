@@ -7,8 +7,8 @@ use std::path::PathBuf;
 
 use authn::AuthorizedUser;
 use figment::Figment;
-use provider::sync::AndThen;
-use provider::sync::Provider;
+use provider::r#async::AndThen;
+use provider::r#async::Provider;
 use rocket::Build;
 use rocket::Ignite;
 use rocket::Responder;
@@ -36,9 +36,7 @@ use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
 use crate::api::Status;
 use crate::db;
-use crate::db::ConnectionPoolExt;
 use crate::db::dao;
-use crate::scan;
 use crate::settings;
 pub use crate::settings::ServerSettings;
 use crate::settings::Settings;
@@ -66,12 +64,7 @@ enum Error {
     UnsupportedContentType(String),
     #[error("could not import file: {0}")]
     #[response(status = 500)]
-    Scan(
-        String,
-        #[response(ignore)]
-        #[source]
-        scan::Error,
-    ),
+    Scan(String),
     #[error("file with id {0} not found")]
     #[response(status = 404)]
     FileNotFound(String),
@@ -84,10 +77,10 @@ impl From<dao::Error> for Error {
     }
 }
 
-impl From<scan::Error> for Error {
-    fn from(error: scan::Error) -> Self {
+impl From<anyhow::Error> for Error {
+    fn from(error: anyhow::Error) -> Self {
         tracing::error!("could not import file: {error}");
-        Error::Scan(error.to_string(), error)
+        Error::Scan(error.to_string())
     }
 }
 
@@ -120,7 +113,7 @@ struct FigmentProvider {
 
 impl Provider<Figment> for FigmentProvider {
     type Error = SettingsError;
-    fn provide(&self) -> Result<Figment, Self::Error> {
+    async fn provide(&self) -> Result<Figment, Self::Error> {
         Ok(settings::decorate_with(
             rocket::Config::figment(),
             self.config_path.clone(),
@@ -135,18 +128,20 @@ fn extract_settings(figment: Figment) -> Result<Settings, SettingsError> {
     Ok(figment.extract()?)
 }
 
-fn serve(config_path: PathBuf) -> Rocket<Build> {
+async fn serve(config_path: PathBuf) -> Rocket<Build> {
     let figment_provider = FigmentProvider {
         config_path: config_path.clone(),
     };
     // unwrap is safe because FigmentProvider technically doesn't err
-    let figment = figment_provider.provide().unwrap();
+    let figment = figment_provider.provide().await.unwrap();
 
     let settings_provider = figment_provider
         .and_then(extract_settings as fn(Figment) -> Result<Settings, SettingsError>);
 
     let application_module: ApplicationModule<SettingsProvider> =
-        ApplicationModule::new(settings_provider, config_path).expect("extract settings");
+        ApplicationModule::new(settings_provider, config_path)
+            .await
+            .expect("extract settings");
 
     let cors = create_cors();
 
@@ -174,7 +169,7 @@ fn serve(config_path: PathBuf) -> Rocket<Build> {
 
 pub fn main(config_path: PathBuf) -> Result<Rocket<Ignite>, Box<rocket::Error>> {
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
-    let result = rt.block_on(async { serve(config_path).launch().await })?;
+    let result = rt.block_on(async { serve(config_path).await.launch().await })?;
     Ok(result)
 }
 
@@ -183,7 +178,7 @@ async fn status(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
 ) -> Result<Json<Status>> {
-    let db_status = application_module.db_client().status().await?;
+    let db_status = application_module.db_client().await.status().await?;
     let status = Status {
         identifier: "server".to_string(),
         attributes: HashMap::from_iter([("user_id".to_string(), user.user_id)]),
@@ -193,16 +188,13 @@ async fn status(
 }
 
 #[get("/files")]
-fn get_files(
+async fn get_files(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<File>>> {
-    let pool = application_module.connection_pool();
-    let (files, file_tags) = pool.with_connection(|conn| {
-        let files = dao::select_all_files(conn)?;
-        let file_tags = dao::select_all_file_tags(conn)?;
-        Ok((files, file_tags))
-    })?;
+    let conn = application_module.connection_pool().await;
+    let files = dao::select_all_files(&conn).await?;
+    let file_tags = dao::select_all_file_tags(&conn).await?;
 
     let mut file_tags_map: FxIndexMap<_, Vec<_>> = FxIndexMap::default();
 
@@ -229,66 +221,61 @@ fn get_files(
 }
 
 #[put("/files", data = "<file>")]
-fn update_file(
+async fn update_file(
     file: Json<File>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<File>> {
     let (db_file, _) = file.0.clone().into();
-    application_module
-        .connection_pool()
-        .with_connection(|conn| dao::update_file(conn, db_file))?;
+    let conn = application_module.connection_pool().await;
+    dao::update_file(&conn, db_file).await?;
 
     Ok(file)
 }
 
 #[get("/files/tags")]
-fn get_files_tags(
+async fn get_files_tags(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
-    let tags = application_module
-        .connection_pool()
-        .with_connection(dao::select_all_tags)?;
+    let conn = application_module.connection_pool().await;
+    let tags = dao::select_all_tags(&conn).await?;
     Ok(Json(tags))
 }
 
 #[get("/files/<id>")]
-fn get_file(
+async fn get_file(
     id: i32,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Option<Json<File>>> {
-    let file = application_module
-        .connection_pool()
-        .with_connection(|conn| {
-            let tags = dao::select_file_tags_by_file_id(conn, id)?;
-            let file = dao::select_file_by_id(conn, id)?.map(|file| (file, tags).into());
-            Ok(file)
-        })?;
+    let conn = application_module.connection_pool().await;
+    let tags = dao::select_file_tags_by_file_id(&conn, id).await?;
+    let file = dao::select_file_by_id(&conn, id)
+        .await?
+        .map(|file| (file, tags).into());
 
     Ok(file.map(Json))
 }
 
 #[get("/files/<id>/tags")]
-fn get_file_tags(
+async fn get_file_tags(
     id: i32,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
-    let tags = application_module
-        .connection_pool()
-        .with_connection(|conn| {
-            Ok(dao::select_file_tags_by_file_id(conn, id)?
-                .into_iter()
-                .map(|tag| tag.tag)
-                .collect())
-        })?;
+    let conn = application_module.connection_pool().await;
+    let tags = dao::select_file_tags_by_file_id(&conn, id)
+        .await?
+        .into_iter()
+        .map(|tag| tag.tag)
+        .collect();
+
     Ok(Json(tags))
 }
 
 #[post("/files/<id>/tags", data = "<tags>")]
-fn post_file_tags(
+async fn post_file_tags(
     id: i32,
     tags: Json<Vec<String>>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
@@ -299,30 +286,26 @@ fn post_file_tags(
         .into_iter()
         .map(|tag| db::models::FileTag::new(id, tag))
         .collect();
-    application_module
-        .connection_pool()
-        .with_connection(|conn| dao::upsert_many_file_tags(conn, file_tags))?;
+    let conn = application_module.connection_pool().await;
+    dao::upsert_many_file_tags(&conn, file_tags).await?;
 
-    get_file_tags(id, application_module, user)
+    get_file_tags(id, application_module, user).await
 }
 
 #[delete("/files/<id>/tags", data = "<tags>")]
-fn delete_file_tags(
+async fn delete_file_tags(
     id: i32,
     tags: Json<Vec<String>>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
-    application_module
-        .connection_pool()
-        .with_connection(|conn| {
-            for tag in tags.into_inner() {
-                dao::delete_file_tag(conn, db::models::FileTag::new(id, tag))?;
-            }
-            Ok(())
-        })?;
+    let conn = application_module.connection_pool().await;
 
-    get_file_tags(id, application_module, user)
+    for tag in tags.into_inner() {
+        dao::delete_file_tag(&conn, db::models::FileTag::new(id, tag)).await?;
+    }
+
+    get_file_tags(id, application_module, user).await
 }
 
 #[get("/files/<id>/download-as/<file_name>")]
@@ -332,9 +315,8 @@ async fn download_file(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Option<(ContentType, NamedFile)>> {
-    let file = application_module
-        .connection_pool()
-        .with_connection(|conn| dao::select_file_by_id(conn, id))?;
+    let conn = application_module.connection_pool().await;
+    let file = dao::select_file_by_id(&conn, id).await?;
 
     match file {
         None => Ok(None),
@@ -369,7 +351,7 @@ async fn delete_file(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<()> {
-    let db_client = application_module.db_client();
+    let db_client = application_module.db_client().await;
     // Get the file to delete
     let file = db_client.get_file(id).await?;
 
@@ -402,6 +384,7 @@ async fn upload_file(
     let filename = file.name().unwrap(); // sanitized filename, safe to use
     let target_dir = application_module
         .settings()
+        .await
         .server
         .download_folder
         .join(filename);
@@ -416,36 +399,34 @@ async fn upload_file(
 
     file.persist_to(target_file.as_path()).await?;
 
-    application_module.visitor().visit(&target_file)?;
+    application_module.scan(target_file.clone()).await?;
 
-    let result = application_module
-        .connection_pool()
-        .with_connection(|conn| dao::select_file_by_path(conn, &target_file.display().to_string()))?
+    let conn = application_module.connection_pool().await;
+    let result = dao::select_file_by_path(&conn, &target_file.display().to_string())
+        .await?
         .unwrap();
     Ok(Json((result, vec![]).into()))
 }
 
 #[get("/reading-progress/<fingerprint>")]
-fn get_reading_progress(
+async fn get_reading_progress(
     fingerprint: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Option<Json<ReadingProgress>>> {
-    let progress = application_module
-        .connection_pool()
-        .with_connection(|conn| dao::get_reading_progress(conn, fingerprint))?;
+    let conn = application_module.connection_pool().await;
+    let progress = dao::get_reading_progress(&conn, fingerprint).await?;
     Ok(progress.map(Json))
 }
 
 #[put("/reading-progress", data = "<progress>")]
-fn put_reading_progress(
+async fn put_reading_progress(
     progress: Json<ReadingProgress>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<()> {
-    application_module
-        .connection_pool()
-        .with_connection(|conn| dao::upsert_reading_progress(conn, progress.into_inner()))?;
+    let conn = application_module.connection_pool().await;
+    dao::upsert_reading_progress(&conn, progress.into_inner()).await?;
     Ok(())
 }
 

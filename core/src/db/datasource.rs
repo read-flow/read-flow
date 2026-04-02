@@ -2,11 +2,12 @@ use std::path::Path;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
-use diesel::prelude::*;
+use sha2::Digest;
+use sha2::Sha256;
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 use super::ConnectionPool;
-use super::ConnectionPoolExt;
 use super::dao;
 use super::dao::Error;
 use crate::FxIndexMap;
@@ -39,114 +40,83 @@ impl FileDataSource for DbClient {
     }
 
     async fn status(&self) -> Result<Status, Self::Error> {
-        tokio::task::block_in_place(|| {
-            self.connection_pool.with_connection(|conn| {
-                let _: usize = diesel::sql_query("SELECT 1").execute(conn)?;
-                let status = Status {
-                    identifier: "database".to_string(),
-                    ..Default::default()
-                };
-                Ok(status)
-            })
+        sqlx::query("SELECT 1")
+            .execute(&self.connection_pool)
+            .await?;
+        Ok(Status {
+            identifier: "database".to_string(),
+            ..Default::default()
         })
     }
 
     async fn get_files(&self) -> Result<Vec<File>, Self::Error> {
-        tokio::task::block_in_place(|| {
-            self.connection_pool.with_connection(|conn| {
-                let files = dao::select_all_files(conn)?;
-                let file_tags = dao::select_all_file_tags(conn)?;
+        let files = dao::select_all_files(&self.connection_pool).await?;
+        let file_tags = dao::select_all_file_tags(&self.connection_pool).await?;
 
-                let mut result: FxIndexMap<i32, (DbFile, Vec<DbFileTag>)> = files
-                    .into_iter()
-                    .map(|file| (file.id, (file, Vec::<DbFileTag>::new())))
-                    .collect();
+        let mut result: FxIndexMap<i32, (DbFile, Vec<DbFileTag>)> = files
+            .into_iter()
+            .map(|file| (file.id, (file, Vec::<DbFileTag>::new())))
+            .collect();
 
-                for tag in file_tags {
-                    if let Some((_file, tags)) = result.get_mut(&tag.file_id) {
-                        tags.push(tag);
-                    }
-                }
+        for tag in file_tags {
+            if let Some((_file, tags)) = result.get_mut(&tag.file_id) {
+                tags.push(tag);
+            }
+        }
 
-                let result = result.into_values().map(Into::into).collect();
-                Ok(result)
-            })
-        })
+        Ok(result.into_values().map(Into::into).collect())
     }
 
     async fn get_files_tags(&self) -> Result<Vec<String>, Self::Error> {
-        tokio::task::block_in_place(|| self.connection_pool.with_connection(dao::select_all_tags))
+        dao::select_all_tags(&self.connection_pool).await
     }
 
     async fn get_file(&self, id: i32) -> Result<Option<File>, Self::Error> {
-        tokio::task::block_in_place(|| {
-            self.connection_pool.with_connection(|conn| {
-                let file = dao::select_file_by_id(conn, id)?;
-                let file_tags = dao::select_file_tags_by_file_id(conn, id)?;
-                let result = file.map(|file| (file, file_tags).into());
-                Ok(result)
-            })
-        })
+        let file = dao::select_file_by_id(&self.connection_pool, id).await?;
+        let file_tags = dao::select_file_tags_by_file_id(&self.connection_pool, id).await?;
+        Ok(file.map(|file| (file, file_tags).into()))
     }
 
     async fn update_file(&self, file: File) -> Result<(), Self::Error> {
-        tokio::task::block_in_place(|| {
-            let (file, tags) = file.into();
-            let file_id = file.id;
-            self.connection_pool.with_connection(|conn| {
-                dao::update_file(conn, file)?;
+        let (db_file, tags) = file.into();
+        let file_id = db_file.id;
+        dao::update_file(&self.connection_pool, db_file).await?;
 
-                // Delete removed tags
-                let existing_tags = dao::select_file_tags_by_file_id(conn, file_id)?;
-                for tag in existing_tags {
-                    if !tags.iter().any(|t| t.tag == tag.tag) {
-                        dao::delete_file_tag(conn, tag)?;
-                    }
-                }
+        let existing_tags =
+            dao::select_file_tags_by_file_id(&self.connection_pool, file_id).await?;
+        for tag in existing_tags {
+            if !tags.iter().any(|t| t.tag == tag.tag) {
+                dao::delete_file_tag(&self.connection_pool, tag).await?;
+            }
+        }
 
-                // Insert any new tags
-                dao::upsert_many_file_tags(conn, tags)?;
-                Ok(())
-            })
-        })
+        dao::upsert_many_file_tags(&self.connection_pool, tags).await
     }
 
     async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Self::Error> {
-        tokio::task::block_in_place(|| {
-            self.connection_pool.with_connection(|conn| {
-                let file_tags = dao::select_file_tags_by_file_id(conn, id)?;
-                let file_tags = file_tags.into_iter().map(|t| t.tag).collect();
-                Ok(file_tags)
-            })
-        })
+        let file_tags = dao::select_file_tags_by_file_id(&self.connection_pool, id).await?;
+        Ok(file_tags.into_iter().map(|t| t.tag).collect())
     }
 
     async fn add_file_tags(&self, id: i32, tags: Vec<String>) -> Result<Vec<String>, Self::Error> {
-        tokio::task::block_in_place(|| {
-            self.connection_pool.with_connection(|conn| {
-                let db_tags: Vec<DbFileTag> = tags
-                    .into_iter()
-                    .map(|tag| DbFileTag::new(id, tag))
-                    .collect();
-                dao::upsert_many_file_tags(conn, db_tags)?;
-                let result = dao::select_file_tags_by_file_id(conn, id)?
-                    .into_iter()
-                    .map(|tag| tag.tag)
-                    .collect();
-                Ok(result)
-            })
-        })
+        let db_tags: Vec<DbFileTag> = tags
+            .into_iter()
+            .map(|tag| DbFileTag::new(id, tag))
+            .collect();
+        dao::upsert_many_file_tags(&self.connection_pool, db_tags).await?;
+        let result = dao::select_file_tags_by_file_id(&self.connection_pool, id)
+            .await?
+            .into_iter()
+            .map(|tag| tag.tag)
+            .collect();
+        Ok(result)
     }
 
     async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Self::Error> {
-        tokio::task::block_in_place(|| {
-            self.connection_pool.with_connection(|conn| {
-                for tag in tags {
-                    dao::delete_file_tag(conn, DbFileTag::new(id, tag))?;
-                }
-                Ok(())
-            })
-        })
+        for tag in tags {
+            dao::delete_file_tag(&self.connection_pool, DbFileTag::new(id, tag)).await?;
+        }
+        Ok(())
     }
 
     async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error> {
@@ -155,52 +125,29 @@ impl FileDataSource for DbClient {
     }
 
     async fn delete_file(&self, file: File) -> Result<(), Self::Error> {
-        // First delete the file from the filesystem
         if let Err(e) = tokio::fs::remove_file(&file.path).await {
             tracing::warn!("Failed to delete file from filesystem: {}", e);
             return Err(Error::IO(Arc::new(e)));
         }
-
-        // Then delete the file from the database
-        tokio::task::block_in_place(|| {
-            self.connection_pool
-                .with_connection(|conn| dao::delete_file_record(conn, file.id))
-        })
+        dao::delete_file_record(&self.connection_pool, file.id).await
     }
 
     async fn get_reading_progress(
         &self,
         fingerprint: &str,
     ) -> Result<Option<ReadingProgress>, Self::Error> {
-        let fingerprint = fingerprint.to_string();
-        tokio::task::block_in_place(|| {
-            self.connection_pool
-                .with_connection(|conn| dao::get_reading_progress(conn, &fingerprint))
-        })
+        dao::get_reading_progress(&self.connection_pool, fingerprint).await
     }
 
     async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error> {
-        tokio::task::block_in_place(|| {
-            self.connection_pool
-                .with_connection(|conn| dao::upsert_reading_progress(conn, progress))
-        })
+        dao::upsert_reading_progress(&self.connection_pool, progress).await
     }
 
     async fn import_file(&self, path: &Path) -> Result<File, Self::Error> {
-        // Compute SHA256 fingerprint
-        let output = Command::new("sha256sum")
-            .arg(path)
-            .output()
+        let fingerprint = compute_sha256(path)
             .await
             .map_err(|e| Error::IO(Arc::new(e)))?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let fingerprint = stdout
-            .split(' ')
-            .next()
-            .expect("expected fingerprint")
-            .to_string();
 
-        // Get file metadata
         let metadata = tokio::fs::metadata(path)
             .await
             .map_err(|e| Error::IO(Arc::new(e)))?;
@@ -209,7 +156,6 @@ impl FileDataSource for DbClient {
             .try_into()
             .expect("file size too large for i32");
 
-        // Get extension
         let extension = path
             .extension()
             .and_then(|e| e.to_str())
@@ -225,15 +171,25 @@ impl FileDataSource for DbClient {
             status: ReadingStatus::Unread.into(),
         };
 
-        // Upsert into database and fetch back
-        tokio::task::block_in_place(|| {
-            self.connection_pool.with_connection(|conn| {
-                dao::upsert_file(conn, new_file)?;
-                let db_file = dao::select_file_by_path(conn, &path_str)?
-                    .expect("file should exist after upsert");
-                let file_tags = dao::select_file_tags_by_file_id(conn, db_file.id)?;
-                Ok((db_file, file_tags).into())
-            })
-        })
+        dao::upsert_file(&self.connection_pool, new_file).await?;
+        let db_file = dao::select_file_by_path(&self.connection_pool, &path_str)
+            .await?
+            .expect("file should exist after upsert");
+        let file_tags = dao::select_file_tags_by_file_id(&self.connection_pool, db_file.id).await?;
+        Ok((db_file, file_tags).into())
     }
+}
+
+async fn compute_sha256(path: &Path) -> Result<String, std::io::Error> {
+    let mut file = tokio::fs::File::open(path).await?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }

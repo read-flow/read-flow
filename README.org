@@ -19,7 +19,7 @@ The project is structured as a Rust workspace with three main crates and a separ
 
 *** =core= (Core Library & Server)
 The main library and server implementation providing:
-- Database management using Diesel ORM with SQLite
+- Database management using sqlx (async) with SQLite
 - REST API server using Rocket framework
 - File scanning and fingerprinting
 - Tag management and automatic tagging
@@ -102,7 +102,7 @@ read-flow/
 │   │   ├── server/                    # REST API server
 │   │   ├── tag/                       # Tag management
 │   │   └── lib.rs                     # Library root
-│   ├── migrations/                    # Diesel database migrations
+│   ├── migrations/                    # sqlx database migrations
 │   └── Cargo.toml                     # Rust package manifest
 │
 ├── cosmic/                            # COSMIC desktop application
@@ -139,7 +139,6 @@ read-flow/
 ├── read-flow.template.toml    # Configuration template
 ├── openapi.yaml                       # REST API specification
 ├── rest-api.http                      # HTTP test requests
-├── diesel.toml                        # Diesel CLI configuration
 ├── Rocket.toml                        # Rocket server configuration
 ├── database.db                        # SQLite database
 ├── setup.sh                           # Setup script
@@ -215,7 +214,7 @@ The REST API (documented in =openapi.yaml=) provides:
 
 * Database Schema
 
-The application uses SQLite with Diesel ORM. Migrations are located in =core/migrations/= and include:
+The application uses SQLite with sqlx (async). Migrations are located in =core/migrations/= as flat =.sql= files and run automatically at startup. They include:
 
 - Initial database schema (files, tags, file_tags)
 - Remote server support
@@ -229,7 +228,6 @@ The application uses SQLite with Diesel ORM. Migrations are located in =core/mig
 - Rust toolchain (edition 2024)
 - Node.js and npm (for SPA)
 - SQLite3
-- Diesel CLI (optional, for migrations)
 
 ** Build Commands
 
@@ -267,7 +265,7 @@ npm start
 
 ** Workspace Dependencies
 The workspace uses centralized dependency management. Common dependencies include:
-- =diesel= - Database ORM
+- =sqlx= - Async database (SQLite)
 - =rocket= - Web framework
 - =serde= - Serialization
 - =tokio= - Async runtime

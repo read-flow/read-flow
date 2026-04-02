@@ -16,7 +16,7 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::container;
 use cosmic::widget::icon;
-use provider::sync::HasSetExpired;
+use provider::r#async::HasSetExpired;
 use read_flow_core::Builder;
 use read_flow_core::ExpandedPath;
 use read_flow_core::scan::DirectorySettings;
@@ -110,6 +110,8 @@ pub enum SettingsMessage {
     SaveComplete,
     /// Settings save failed
     SaveError(String),
+    /// No-op message
+    Noop,
 
     /// Directory management messages
     /// Open the directory editor for adding a new directory
@@ -675,8 +677,11 @@ impl Page for SettingsPage {
                 // Update original settings to reflect saved state
                 self.original_settings = Arc::new(self.settings.clone());
                 // Invalidate application module to refresh the documentation in the rest of the app
-                self.application_module.set_expired();
-                Task::none()
+                let am = Arc::clone(&self.application_module);
+                task::future(async move {
+                    am.set_expired().await;
+                    SettingsMessage::Noop
+                })
             }
             SettingsMessage::SaveError(error) => {
                 self.save_state = SaveState::Error(error);
@@ -741,6 +746,7 @@ impl Page for SettingsPage {
                     None => task::none(),
                 },
             },
+            SettingsMessage::Noop => task::none(),
         }
     }
 }

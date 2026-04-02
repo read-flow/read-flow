@@ -68,7 +68,7 @@ impl<'r> FromRequest<'r> for AuthorizedUser {
             .state::<ApplicationModule<SettingsProvider>>()
             .expect("ApplicationModule should exist");
 
-        let settings = application_module.settings();
+        let settings = application_module.settings().await;
 
         let authorization_header = request
             .headers()

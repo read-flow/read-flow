@@ -16,8 +16,8 @@ clap = "4.6.0"
 cosmic-golden = { git = "https://github.com/peterpaul/cosmic-golden-test.git", tag = "0.2.0" }
 cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git" }
 derive_more = "2.1.1"
-diesel = { version = "2.3.7", features = ["chrono"] }
-diesel_migrations = "2.3.1"
+sha2 = "0.10"
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "macros"] }
 expanduser = "1.2.2"
 figment = { version = "0.10.19", default-features = false }
 futures = "0.3.32"
@@ -34,11 +34,9 @@ mupdf = "0.6"
 open = "5.3.3"
 pbkdf2 = "0.12.2"
 quick-xml = "0.39.2"
-r2d2 = "0.8.10"
 rand = "0.10.0"
 rustc-hash = "2"
 rand_core = "0.6"
-rayon = "1.11.0"
 regex = "1.12.3"
 reqwest = "0.13.2"
 rfd = "0.17.2"

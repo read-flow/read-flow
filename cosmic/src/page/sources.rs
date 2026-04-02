@@ -22,7 +22,6 @@ use read_flow_core::api::FileDataSource;
 use read_flow_core::api::Status;
 use read_flow_core::client::FilesClient;
 use read_flow_core::db;
-use read_flow_core::db::ConnectionPoolExt;
 use read_flow_core::db::dao;
 use read_flow_core::db::models::NewRemote;
 use read_flow_core::db::models::Remote;
@@ -51,8 +50,8 @@ impl Provider<Vec<Remote>> for RemotesProvider {
     type Error = db::dao::Error;
 
     async fn provide(&self) -> Result<Vec<Remote>, Self::Error> {
-        let pool = self.0.connection_pool();
-        tokio::task::block_in_place(|| pool.with_connection(dao::select_all_remotes))
+        let pool = self.0.connection_pool().await;
+        dao::select_all_remotes(&pool).await
     }
 }
 
@@ -524,22 +523,21 @@ impl Page for SourcesPage {
                 }
             }
             SourcesMessage::SubmitSource(url, user_id, passphrase) => {
-                let connection_pool = self.application_module.connection_pool();
+                let am = Arc::clone(&self.application_module);
                 let order = self.remotes_state.state.unwrap().len() + 1;
                 task::future(async move {
-                    match tokio::task::block_in_place(|| {
-                        connection_pool.with_connection(|conn| {
-                            dao::insert_remote(
-                                conn,
-                                NewRemote {
-                                    base_url: url.to_string(),
-                                    order: order as i32,
-                                    user_id: user_id.clone(),
-                                    passphrase: passphrase.clone(),
-                                },
-                            )
-                        })
-                    }) {
+                    let connection_pool = am.connection_pool().await;
+                    match dao::insert_remote(
+                        &connection_pool,
+                        NewRemote {
+                            base_url: url.to_string(),
+                            order: order as i32,
+                            user_id: user_id.clone(),
+                            passphrase: passphrase.clone(),
+                        },
+                    )
+                    .await
+                    {
                         Ok(_) => SourcesMessage::SubmittedSource(url, user_id, passphrase),
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }
@@ -572,11 +570,10 @@ impl Page for SourcesPage {
                 task::none()
             }
             SourcesMessage::DeleteSource(id) => {
-                let connection_pool = self.application_module.connection_pool();
+                let am = Arc::clone(&self.application_module);
                 task::future(async move {
-                    match tokio::task::block_in_place(|| {
-                        connection_pool.with_connection(|conn| dao::delete_remote_by_id(conn, id))
-                    }) {
+                    let connection_pool = am.connection_pool().await;
+                    match dao::delete_remote_by_id(&connection_pool, id).await {
                         Ok(_) => SourcesMessage::DeletedSource(id),
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }
@@ -631,13 +628,10 @@ impl Page for SourcesPage {
                 .unwrap_or_else(task::none)
             }
             SourcesMessage::SwapOrderOfRemotes(first, second) => {
-                let connection_pool = self.application_module.connection_pool();
+                let am = Arc::clone(&self.application_module);
                 task::future(async move {
-                    match tokio::task::block_in_place(|| {
-                        connection_pool.with_connection(|conn| {
-                            dao::swap_order_of_remotes(conn, &first, &second)
-                        })
-                    }) {
+                    let connection_pool = am.connection_pool().await;
+                    match dao::swap_order_of_remotes(&connection_pool, &first, &second).await {
                         Ok(_) => SourcesMessage::Remotes(ProvidedStateMessage::Load),
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }

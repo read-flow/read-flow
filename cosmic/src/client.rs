@@ -102,7 +102,7 @@ macro_rules! delegate {
     ( $e:expr, $f:ident ) => {
         {
 	    match $e {
-		Client::Local(client) => Ok(client.db_client().$f().await?),
+		Client::Local(client) => Ok(client.db_client().await.$f().await?),
 		Client::Remote(client) => Ok(client.$f().await?),
 	    }
         }
@@ -110,7 +110,7 @@ macro_rules! delegate {
     ( $e:expr, $f:ident, $( $x:expr ),* ) => {
         {
 	    match $e {
-		Client::Local(client) => Ok(client.db_client().$f($($x),*).await?),
+		Client::Local(client) => Ok(client.db_client().await.$f($($x),*).await?),
 		Client::Remote(client) => Ok(client.$f($($x),*).await?),
 	    }
         }
@@ -123,7 +123,7 @@ impl FileDataSource for Client {
 
     fn display_name(&self) -> String {
         match self {
-            Client::Local(client) => client.db_client().display_name(),
+            Client::Local(_) => "Local Files".to_string(),
             Client::Remote(client) => client.display_name(),
         }
     }

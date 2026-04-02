@@ -1,27 +1,24 @@
-pub mod file_system_visitor;
-pub mod modules;
+pub mod pipeline;
+pub mod scanner;
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::Arc;
 
 use anyhow::Result;
-pub use file_system_visitor::Error;
-pub use file_system_visitor::FileSystemVisitor;
 use itertools::Itertools;
-use modules::file_extension_finder::FileExtensionFinder;
-use modules::scm_project_finder::ScmProjectFinder;
-use provider::sync::Provider;
+pub use pipeline::ScanProgress;
+use provider::r#async::Provider;
+pub use scanner::Scanner;
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::sync::mpsc;
 
 use crate::ApplicationModule;
 use crate::ExpandedPath;
-use crate::db::ConnectionPool;
 use crate::settings::Settings;
 use crate::settings::SettingsError;
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ScanSettings {
     #[serde(default)]
     pub dry_run: bool,
@@ -29,6 +26,30 @@ pub struct ScanSettings {
     pub auto_tags: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub directories: BTreeMap<ExpandedPath, DirectorySettings>,
+    #[serde(default = "default_extensions")]
+    pub extensions: Vec<String>,
+    #[serde(default = "default_concurrency")]
+    pub concurrency: usize,
+}
+
+fn default_extensions() -> Vec<String> {
+    vec!["pdf".into(), "epub".into(), "mobi".into()]
+}
+
+fn default_concurrency() -> usize {
+    16
+}
+
+impl Default for ScanSettings {
+    fn default() -> Self {
+        Self {
+            dry_run: false,
+            auto_tags: Default::default(),
+            directories: Default::default(),
+            extensions: default_extensions(),
+            concurrency: default_concurrency(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -45,13 +66,6 @@ pub enum DirectorySettings {
 }
 
 impl DirectorySettings {
-    fn empty_scan() -> Self {
-        Self::Scan {
-            tags: Default::default(),
-            inherit: Default::default(),
-        }
-    }
-
     fn merge(self, other: Self) -> Self {
         use DirectorySettings::*;
         if !other.inherit() {
@@ -102,51 +116,34 @@ impl ScanSettings {
     }
 }
 
-pub fn create_visitor(
-    connection_pool: ConnectionPool,
-    scan_settings: ScanSettings,
-) -> FileSystemVisitor {
-    let scan_settings = Arc::new(scan_settings);
-    FileSystemVisitor::new(
-        vec![
-            Box::new(ScmProjectFinder::new(
-                ".git".into(),
-                connection_pool.clone(),
-                scan_settings.clone(),
-            )),
-            Box::new(ScmProjectFinder::new(
-                ".hg".into(),
-                connection_pool.clone(),
-                scan_settings.clone(),
-            )),
-        ],
-        vec![
-            Box::new(FileExtensionFinder::new(
-                "pdf".into(),
-                connection_pool.clone(),
-                scan_settings.clone(),
-            )),
-            Box::new(FileExtensionFinder::new(
-                "epub".into(),
-                connection_pool.clone(),
-                scan_settings.clone(),
-            )),
-            Box::new(FileExtensionFinder::new(
-                "mobi".into(),
-                connection_pool,
-                scan_settings,
-            )),
-        ],
-    )
-}
-
 impl<P> ApplicationModule<P>
 where
-    P: Provider<Settings, Error = SettingsError>,
+    P: Provider<Settings, Error = SettingsError> + Send + Sync,
 {
-    pub fn scan(&self, path: impl AsRef<Path>) -> Result<()> {
+    /// Start a scan and return a receiver for progress events.
+    /// The caller is responsible for consuming all events from the receiver.
+    pub async fn start_scan(&self, path: impl AsRef<Path>) -> Result<mpsc::Receiver<ScanProgress>> {
         let path = path.as_ref().canonicalize()?;
-        self.visitor().visit(&path)?;
+        let settings = self.settings().await.scan;
+        let pool = self.connection_pool().await;
+        let scanner = Scanner::new(settings);
+        Ok(scanner.scan(path, pool).await)
+    }
+
+    pub async fn scan(&self, path: impl AsRef<Path>) -> Result<()> {
+        let mut progress_rx = self.start_scan(path).await?;
+        while let Some(event) = progress_rx.recv().await {
+            if let ScanProgress::Completed {
+                discovered,
+                processed,
+                errors,
+            } = event
+            {
+                tracing::info!(
+                    "scan complete: {discovered} discovered, {processed} processed, {errors} errors"
+                );
+            }
+        }
         Ok(())
     }
 }
@@ -194,6 +191,7 @@ mod tests {
             dry_run: true,
             auto_tags,
             directories,
+            ..ScanSettings::default()
         }
     }
 
@@ -225,5 +223,59 @@ mod tests {
     ) {
         let actual = settings.directory_settings_of(path);
         Assert::that(actual).is(expected);
+    }
+
+    #[test]
+    fn default_extensions_are_pdf_epub_mobi() {
+        let settings = ScanSettings::default();
+        Assert::that(&settings.extensions).is(&vec![
+            "pdf".to_string(),
+            "epub".to_string(),
+            "mobi".to_string(),
+        ]);
+    }
+
+    #[test]
+    fn default_concurrency_is_16() {
+        let settings = ScanSettings::default();
+        Assert::that(settings.concurrency).is(16usize);
+    }
+
+    #[test]
+    fn extensions_deserialized_from_toml() {
+        let toml = r#"
+            dry_run = false
+            extensions = ["pdf", "cbz"]
+        "#;
+        let settings: ScanSettings = toml::from_str(toml).unwrap();
+        Assert::that(&settings.extensions).is(&vec!["pdf".to_string(), "cbz".to_string()]);
+    }
+
+    #[test]
+    fn concurrency_deserialized_from_toml() {
+        let toml = r#"
+            dry_run = false
+            concurrency = 8
+        "#;
+        let settings: ScanSettings = toml::from_str(toml).unwrap();
+        Assert::that(settings.concurrency).is(8usize);
+    }
+
+    #[test]
+    fn missing_extensions_in_toml_uses_default() {
+        let toml = r#"dry_run = false"#;
+        let settings: ScanSettings = toml::from_str(toml).unwrap();
+        Assert::that(&settings.extensions).is(&vec![
+            "pdf".to_string(),
+            "epub".to_string(),
+            "mobi".to_string(),
+        ]);
+    }
+
+    #[test]
+    fn missing_concurrency_in_toml_uses_default() {
+        let toml = r#"dry_run = false"#;
+        let settings: ScanSettings = toml::from_str(toml).unwrap();
+        Assert::that(settings.concurrency).is(16usize);
     }
 }
