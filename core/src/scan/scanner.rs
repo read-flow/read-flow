@@ -75,7 +75,7 @@ async fn stage1_traversal(
         .unwrap_or(false);
 
     if is_dir {
-        visit_dir(&root, &root, settings, &tx, &progress_tx).await;
+        visit_dir(&root, settings, &tx, &progress_tx).await;
     } else if extension_matches(&root, &settings.extensions) {
         let tags = tags_for_path(&root, settings).unwrap_or_default();
         if settings.dry_run {
@@ -117,7 +117,6 @@ fn tags_for_path(path: &Path, settings: &ScanSettings) -> Option<Vec<String>> {
 
 fn visit_dir<'a>(
     dir: &'a Path,
-    root: &'a Path,
     settings: &'a ScanSettings,
     tx: &'a mpsc::Sender<TraversalItem>,
     progress_tx: &'a mpsc::Sender<ScanProgress>,
@@ -160,7 +159,7 @@ fn visit_dir<'a>(
             };
 
             if meta.is_dir() {
-                visit_dir(&path, root, settings, tx, progress_tx).await;
+                visit_dir(&path, settings, tx, progress_tx).await;
             } else if extension_matches(&path, &settings.extensions) {
                 let Some(tags) = tags_for_path(&path, settings) else {
                     tracing::debug!("skipping ignored path: {path:?}");
@@ -182,7 +181,7 @@ fn visit_dir<'a>(
 }
 
 // ---------------------------------------------------------------------------
-// Stage 2 placeholder (implemented in Phase 3b)
+// Stage 2: fingerprinting
 // ---------------------------------------------------------------------------
 
 async fn stage2_fingerprint(
