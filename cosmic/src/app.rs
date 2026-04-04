@@ -356,7 +356,7 @@ impl cosmic::Application for ReadFlow {
         if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
             self.pages.view(page).map(Into::into)
         } else {
-            widget::column()
+            widget::Column::new()
                 .push(widget::icon::from_svg_bytes(APP_ICON).icon().size(256))
                 .push(widget::text::title1(fl!("welcome")))
                 .align_x(Horizontal::Center)

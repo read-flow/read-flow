@@ -473,7 +473,7 @@ impl MuPdfViewer {
             )
             .on_press(MuPdfViewerMessage::NextPage);
 
-            widget::row()
+            widget::Row::new()
                 .push(left_zone)
                 .push(center)
                 .push(right_zone)
@@ -710,7 +710,7 @@ impl Page for MuPdfViewer {
     fn view(&self) -> Element<'_, MuPdfViewerMessage> {
         if self.file_path.is_none() {
             // No local source available
-            let no_source = widget::column()
+            let no_source = widget::Column::new()
                 .align_x(cosmic::iced::Alignment::Center)
                 .spacing(16)
                 .push(
@@ -730,7 +730,7 @@ impl Page for MuPdfViewer {
 
         if self.pages.is_empty() {
             // Loading state with icon and text
-            let loading = widget::column()
+            let loading = widget::Column::new()
                 .align_x(cosmic::iced::Alignment::Center)
                 .spacing(16)
                 .push(
@@ -753,7 +753,7 @@ impl Page for MuPdfViewer {
                 .then(|| self.view_thumbnails());
             let content = self.view_content();
 
-            widget::row()
+            widget::Row::new()
                 .push_maybe(thumbnails)
                 .push(content)
                 .height(Length::Fill)

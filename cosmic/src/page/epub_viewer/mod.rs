@@ -708,7 +708,7 @@ impl EpubViewer {
                     .on_press(EpubViewerMessage::SelectNavEntry(idx))
                     .width(Length::Fill);
                 let indent = (entry.depth as f32) * (space_s as f32);
-                let row = widget::row()
+                let row = widget::Row::new()
                     .push(widget::Space::new().width(Length::Fixed(indent)))
                     .push(button);
                 column = column.push(row);
@@ -765,7 +765,7 @@ impl EpubViewer {
         };
 
         widget::container(
-            widget::row()
+            widget::Row::new()
                 .push(input)
                 .push(match_label)
                 .push(
@@ -964,7 +964,7 @@ impl EpubViewer {
             let make_paper = |page_idx: usize| -> Element<'_, EpubViewerMessage> {
                 let page_range = layout.pages.get(page_idx);
 
-                let mut column = widget::column().spacing(space_xxs).width(Length::Fill);
+                let mut column = widget::Column::new().spacing(space_xxs).width(Length::Fill);
                 if let Some(range) = page_range {
                     let block_count = range.end - range.start;
                     for (i, block) in chapter.blocks[range.start..range.end].iter().enumerate() {
@@ -1033,7 +1033,7 @@ impl EpubViewer {
                 // The inner container uses max_width to constrain the text
                 // column, and a centering wrapper keeps it horizontally centered
                 // within the paper.
-                let paper_content = widget::column()
+                let paper_content = widget::Column::new()
                     .push(
                         widget::scrollable(
                             widget::container(
@@ -1075,7 +1075,7 @@ impl EpubViewer {
                     .height(Length::Fill)
                     .into()
                 };
-                widget::row()
+                widget::Row::new()
                     .push(left_paper)
                     .spacing(space_xxs)
                     .push(right_paper)
@@ -1118,7 +1118,7 @@ impl EpubViewer {
             let max_row_width = center_pages_width / 0.8;
 
             let inner = widget::container(
-                widget::row()
+                widget::Row::new()
                     .push(left_zone)
                     .push(center)
                     .push(right_zone)
@@ -1144,7 +1144,7 @@ impl Page for EpubViewer {
 
     fn view(&self) -> Element<'_, EpubViewerMessage> {
         if self.file_path.is_none() {
-            let no_source = widget::column()
+            let no_source = widget::Column::new()
                 .align_x(cosmic::iced::Alignment::Center)
                 .spacing(16)
                 .push(
@@ -1158,7 +1158,7 @@ impl Page for EpubViewer {
         }
 
         if self.chapters.is_empty() {
-            let loading = widget::column()
+            let loading = widget::Column::new()
                 .align_x(cosmic::iced::Alignment::Center)
                 .spacing(16)
                 .push(
@@ -1191,12 +1191,12 @@ impl Page for EpubViewer {
         };
         self.sidebar_pane_visible.set(show_sidebar_now);
 
-        let main_col = widget::column()
+        let main_col = widget::Column::new()
             .height(Length::Fill)
             .push_maybe(self.search_visible.then(|| self.view_search_bar()))
             .push(self.view_content());
 
-        widget::row()
+        widget::Row::new()
             .height(Length::Fill)
             .push_maybe(show_sidebar_now.then(|| self.view_chapter_sidebar()))
             .push(main_col)
@@ -2374,8 +2374,8 @@ fn measure_text_height(
     let line_height = font_size * 1.375;
     let metrics = Metrics::new(font_size, line_height);
     let mut buffer = Buffer::new(font_system, metrics);
-    buffer.set_size(font_system, Some(content_width), None);
-    buffer.set_text(font_system, text, &Attrs::new(), Shaping::Advanced, None);
+    buffer.set_size(Some(content_width), None);
+    buffer.set_text(text, &Attrs::new(), Shaping::Advanced, None);
     buffer.shape_until_scroll(font_system, false);
     buffer
         .layout_runs()
@@ -2443,8 +2443,8 @@ fn find_split_char_offset(
     let line_height = font_size * 1.375;
     let metrics = Metrics::new(font_size, line_height);
     let mut buffer = Buffer::new(font_system, metrics);
-    buffer.set_size(font_system, Some(content_width), None);
-    buffer.set_text(font_system, text, &Attrs::new(), Shaping::Advanced, None);
+    buffer.set_size(Some(content_width), None);
+    buffer.set_text(text, &Attrs::new(), Shaping::Advanced, None);
     buffer.shape_until_scroll(font_system, false);
     let mut last_byte_end: Option<usize> = None;
     for run in buffer.layout_runs() {

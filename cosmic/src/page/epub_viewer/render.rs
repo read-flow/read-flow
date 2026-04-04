@@ -466,7 +466,7 @@ fn render_table(
             seen_header = true;
         }
 
-        let mut row_widget = widget::row().width(Length::Fill);
+        let mut row_widget = widget::Row::new().width(Length::Fill);
 
         for cell in row {
             let cell_spans: Vec<cosmic::iced::widget::text::Span<'_, EpubViewerMessage>> =

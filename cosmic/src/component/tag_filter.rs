@@ -208,8 +208,10 @@ where
                                     .class(widget::button::ButtonClass::Suggested)
                             });
 
-                        let input_row =
-                            widget::row().push(combo).push(add_button).spacing(space_xs);
+                        let input_row = widget::Row::new()
+                            .push(combo)
+                            .push(add_button)
+                            .spacing(space_xs);
                         section.add(input_row)
                     }
                 }

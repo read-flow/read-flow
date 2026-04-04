@@ -7,6 +7,7 @@ use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
+use cosmic::Theme;
 use cosmic::cosmic_theme;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
@@ -408,7 +409,7 @@ impl Page for SettingsPage {
             }
         };
 
-        let save_section = widget::row()
+        let save_section = widget::Row::new()
             .push(save_button)
             .push(widget::space::horizontal())
             .push(save_status)
@@ -450,7 +451,10 @@ impl Page for SettingsPage {
                     .flex_control(self.tag_editor.view().map(SettingsMessage::TagEditor)),
             );
 
-        let content = widget::column().push(ui_section).spacing(space_s).into();
+        let content = widget::Column::new()
+            .push(ui_section)
+            .spacing(space_s)
+            .into();
 
         ContextView {
             title: fl!("settings-context-title"),
@@ -754,7 +758,7 @@ impl Page for SettingsPage {
 fn view_directory<'a>(
     path: &'a ExpandedPath,
     dir_settings: &'a DirectorySettings,
-) -> widget::Row<'a, SettingsMessage> {
+) -> widget::Row<'a, SettingsMessage, Theme> {
     let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
     let action = match dir_settings {
@@ -776,7 +780,7 @@ fn view_directory<'a>(
             .on_press(SettingsMessage::RemoveDirectory(path.clone().into()))
             .tooltip(fl!("settings-remove-directory"));
 
-    let controls = widget::row()
+    let controls = widget::Row::new()
         .push(edit_button)
         .push(remove_button)
         .spacing(space_s)

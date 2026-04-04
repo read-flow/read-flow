@@ -190,7 +190,7 @@ impl DocumentsComponent {
             fl!("document-list-select-all")
         };
         let select_all_row =
-            widget::row()
+            widget::Row::new()
                 .spacing(space_s)
                 .align_y(Vertical::Center)
                 .width(Length::Fill)

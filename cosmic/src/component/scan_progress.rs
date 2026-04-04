@@ -94,7 +94,7 @@ impl ScanComponent {
         let close_btn = widget::button::icon(icon::from_name("window-close-symbolic"))
             .on_press(ScanProgressMessage::Dismiss);
 
-        widget::row()
+        widget::Row::new()
             .push(widget::text(label))
             .push(widget::progress_bar(0.0..=1.0, progress))
             .push(close_btn)

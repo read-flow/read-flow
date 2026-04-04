@@ -9,14 +9,14 @@ resolver = "3"
 
 [workspace.dependencies]
 anyhow = "1.0.102"
-assert4rs = "0.2.0"
+assert4rs = "0.2.1"
 async-trait = "0.1.89"
 base64 = "0.22.1"
 clap = "4.6.0"
 cosmic-golden = { git = "https://github.com/peterpaul/cosmic-golden-test.git", tag = "0.2.0" }
 cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git" }
 derive_more = "2.1.1"
-sha2 = "0.10"
+sha2 = "0.11"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "macros"] }
 expanduser = "1.2.2"
 figment = { version = "0.10.19", default-features = false }
@@ -26,7 +26,7 @@ html5ever = "0.39.0"
 image = "0.25"
 i18n-embed = "0.16.0"
 i18n-embed-fl = "0.10.0"
-indexmap = "2.13.0"
+indexmap = "2.13.1"
 itertools = "0.14.0"
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git" }
 mime = "0.3.17"
@@ -48,14 +48,14 @@ serde = "1.0.228"
 serde_with = "3.18.0"
 strum = "0.28"
 thiserror = "2.0.18"
-tokio = "1.50.0"
-toml = "0.9.12"
+tokio = "1.51.0"
+toml = "1.1.2"
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 trait-variant = "0.1.2"
 url = "2.5.8"
 tempfile = "3"
-zip = "8.2.0"
+zip = "8.5.0"
 
 [profile.release]
 lto = true

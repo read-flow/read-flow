@@ -252,7 +252,11 @@ async fn fingerprint_file(item: TraversalItem) -> Result<ScannedFile, (PathBuf, 
         }
         hasher.update(&buf[..n]);
     }
-    let fingerprint = format!("{:x}", hasher.finalize());
+    let fingerprint = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
 
     Ok(ScannedFile {
         path: item.path,
