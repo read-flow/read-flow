@@ -1,6 +1,7 @@
 use std::io;
 use std::sync::Arc;
 
+use sqlx::SqliteConnection;
 use sqlx::SqlitePool;
 
 use crate::db::models::File;
@@ -30,7 +31,10 @@ impl From<io::Error> for Error {
     }
 }
 
-pub async fn insert_file(pool: &SqlitePool, file: NewFile) -> Result<File, Error> {
+pub async fn insert_file(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+    file: NewFile,
+) -> Result<File, Error> {
     let row = sqlx::query_as::<_, File>(
         r#"INSERT INTO files (path, "type", size, fingerprint, status)
          VALUES (?, ?, ?, ?, ?)
@@ -41,12 +45,15 @@ pub async fn insert_file(pool: &SqlitePool, file: NewFile) -> Result<File, Error
     .bind(file.size)
     .bind(&file.fingerprint)
     .bind(file.status)
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await?;
     Ok(row)
 }
 
-pub async fn upsert_file(pool: &SqlitePool, file: NewFile) -> Result<(), Error> {
+pub async fn upsert_file(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+    file: NewFile,
+) -> Result<(), Error> {
     sqlx::query(
         r#"INSERT OR IGNORE INTO files (path, "type", size, fingerprint, status) VALUES (?, ?, ?, ?, ?)"#,
     )
@@ -55,12 +62,15 @@ pub async fn upsert_file(pool: &SqlitePool, file: NewFile) -> Result<(), Error> 
     .bind(file.size)
     .bind(&file.fingerprint)
     .bind(file.status)
-    .execute(pool)
+    .execute(executor)
     .await?;
     Ok(())
 }
 
-pub async fn update_file(pool: &SqlitePool, file: File) -> Result<(), Error> {
+pub async fn update_file(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+    file: File,
+) -> Result<(), Error> {
     sqlx::query(
         r#"UPDATE files SET path = ?, "type" = ?, size = ?, fingerprint = ?, status = ? WHERE id = ?"#,
     )
@@ -70,93 +80,111 @@ pub async fn update_file(pool: &SqlitePool, file: File) -> Result<(), Error> {
     .bind(&file.fingerprint)
     .bind(file.status)
     .bind(file.id)
-    .execute(pool)
+    .execute(executor)
     .await?;
     Ok(())
 }
 
-pub async fn select_all_files(pool: &SqlitePool) -> Result<Vec<File>, Error> {
+pub async fn select_all_files(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+) -> Result<Vec<File>, Error> {
     let files =
         sqlx::query_as::<_, File>("SELECT id, path, type, size, fingerprint, status FROM files")
-            .fetch_all(pool)
+            .fetch_all(executor)
             .await?;
     Ok(files)
 }
 
-pub async fn select_all_files_order_by_id(pool: &SqlitePool) -> Result<Vec<File>, Error> {
+pub async fn select_all_files_order_by_id(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+) -> Result<Vec<File>, Error> {
     let files = sqlx::query_as::<_, File>(
         "SELECT id, path, type, size, fingerprint, status FROM files ORDER BY id",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
     Ok(files)
 }
 
-pub async fn select_all_files_order_by_type(pool: &SqlitePool) -> Result<Vec<File>, Error> {
+pub async fn select_all_files_order_by_type(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+) -> Result<Vec<File>, Error> {
     let files = sqlx::query_as::<_, File>(
         "SELECT id, path, type, size, fingerprint, status FROM files ORDER BY type",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
     Ok(files)
 }
 
-pub async fn select_all_files_order_by_path(pool: &SqlitePool) -> Result<Vec<File>, Error> {
+pub async fn select_all_files_order_by_path(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+) -> Result<Vec<File>, Error> {
     let files = sqlx::query_as::<_, File>(
         "SELECT id, path, type, size, fingerprint, status FROM files ORDER BY path",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
     Ok(files)
 }
 
-pub async fn select_all_files_order_by_size(pool: &SqlitePool) -> Result<Vec<File>, Error> {
+pub async fn select_all_files_order_by_size(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+) -> Result<Vec<File>, Error> {
     let files = sqlx::query_as::<_, File>(
         "SELECT id, path, type, size, fingerprint, status FROM files ORDER BY size",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
     Ok(files)
 }
 
-pub async fn select_all_files_order_by_fingerprint(pool: &SqlitePool) -> Result<Vec<File>, Error> {
+pub async fn select_all_files_order_by_fingerprint(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+) -> Result<Vec<File>, Error> {
     let files = sqlx::query_as::<_, File>(
         "SELECT id, path, type, size, fingerprint, status FROM files ORDER BY fingerprint",
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
     Ok(files)
 }
 
-pub async fn select_file_by_id(pool: &SqlitePool, id: i32) -> Result<Option<File>, Error> {
+pub async fn select_file_by_id(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+    id: i32,
+) -> Result<Option<File>, Error> {
     let file = sqlx::query_as::<_, File>(
         "SELECT id, path, type, size, fingerprint, status FROM files WHERE id = ?",
     )
     .bind(id)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?;
     Ok(file)
 }
 
-pub async fn select_file_by_path(pool: &SqlitePool, path: &str) -> Result<Option<File>, Error> {
+pub async fn select_file_by_path(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+    path: &str,
+) -> Result<Option<File>, Error> {
     let file = sqlx::query_as::<_, File>(
         "SELECT id, path, type, size, fingerprint, status FROM files WHERE path = ?",
     )
     .bind(path)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?;
     Ok(file)
 }
 
 pub async fn select_all_files_by_path_like(
-    pool: &SqlitePool,
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
     path: &str,
 ) -> Result<Vec<File>, Error> {
     let files = sqlx::query_as::<_, File>(
         "SELECT id, path, type, size, fingerprint, status FROM files WHERE path LIKE ?",
     )
     .bind(path)
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
     Ok(files)
 }
@@ -175,107 +203,122 @@ pub async fn delete_file_record(pool: &SqlitePool, id: i32) -> Result<(), Error>
     Ok(())
 }
 
-pub async fn insert_file_tag(pool: &SqlitePool, file_tag: FileTag) -> Result<FileTag, Error> {
+pub async fn insert_file_tag(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+    file_tag: FileTag,
+) -> Result<FileTag, Error> {
     tracing::debug!("inserting tag: {file_tag:?}");
     let row = sqlx::query_as::<_, FileTag>(
         "INSERT INTO file_tags (file_id, tag) VALUES (?, ?) RETURNING file_id, tag",
     )
     .bind(file_tag.file_id)
     .bind(&file_tag.tag)
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await?;
     Ok(row)
 }
 
-pub async fn upsert_file_tag(pool: &SqlitePool, file_tag: FileTag) -> Result<(), Error> {
+pub async fn upsert_file_tag(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+    file_tag: FileTag,
+) -> Result<(), Error> {
     tracing::debug!("upserting tag: {file_tag:?}");
     sqlx::query("INSERT OR IGNORE INTO file_tags (file_id, tag) VALUES (?, ?)")
         .bind(file_tag.file_id)
         .bind(&file_tag.tag)
-        .execute(pool)
+        .execute(executor)
         .await?;
     Ok(())
 }
 
 pub async fn upsert_many_file_tags(
-    pool: &SqlitePool,
+    conn: &mut SqliteConnection,
     file_tags: Vec<FileTag>,
 ) -> Result<(), Error> {
-    let mut tx = pool.begin().await?;
     for file_tag in file_tags {
         sqlx::query("INSERT OR IGNORE INTO file_tags (file_id, tag) VALUES (?, ?)")
             .bind(file_tag.file_id)
             .bind(&file_tag.tag)
-            .execute(&mut *tx)
+            .execute(&mut *conn)
             .await?;
     }
-    tx.commit().await?;
     Ok(())
 }
 
 pub async fn delete_file_tags(
-    pool: &SqlitePool,
+    conn: &mut SqliteConnection,
     file_id: i32,
     tags: Vec<String>,
 ) -> Result<(), Error> {
-    let mut tx = pool.begin().await?;
     for tag in tags {
         sqlx::query("DELETE FROM file_tags WHERE file_id = ? AND tag = ?")
             .bind(file_id)
             .bind(&tag)
-            .execute(&mut *tx)
+            .execute(&mut *conn)
             .await?;
     }
-    tx.commit().await?;
     Ok(())
 }
 
-pub async fn select_all_tags(pool: &SqlitePool) -> Result<Vec<String>, Error> {
+pub async fn select_all_tags(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+) -> Result<Vec<String>, Error> {
     let tags = sqlx::query_scalar::<_, String>("SELECT DISTINCT tag FROM file_tags ORDER BY tag")
-        .fetch_all(pool)
+        .fetch_all(executor)
         .await?;
     Ok(tags)
 }
 
-pub async fn select_all_file_tags(pool: &SqlitePool) -> Result<Vec<FileTag>, Error> {
+pub async fn select_all_file_tags(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+) -> Result<Vec<FileTag>, Error> {
     let file_tags = sqlx::query_as::<_, FileTag>("SELECT file_id, tag FROM file_tags")
-        .fetch_all(pool)
+        .fetch_all(executor)
         .await?;
     Ok(file_tags)
 }
 
 pub async fn select_file_tags_by_file_id(
-    pool: &SqlitePool,
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
     file_id: i32,
 ) -> Result<Vec<FileTag>, Error> {
     let file_tags =
         sqlx::query_as::<_, FileTag>("SELECT file_id, tag FROM file_tags WHERE file_id = ?")
             .bind(file_id)
-            .fetch_all(pool)
+            .fetch_all(executor)
             .await?;
     Ok(file_tags)
 }
 
-pub async fn select_file_tags_by_tag(pool: &SqlitePool, tag: &str) -> Result<Vec<FileTag>, Error> {
+pub async fn select_file_tags_by_tag(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+    tag: &str,
+) -> Result<Vec<FileTag>, Error> {
     let file_tags =
         sqlx::query_as::<_, FileTag>("SELECT file_id, tag FROM file_tags WHERE tag = ?")
             .bind(tag)
-            .fetch_all(pool)
+            .fetch_all(executor)
             .await?;
     Ok(file_tags)
 }
 
-pub async fn delete_file_tag(pool: &SqlitePool, file_tag: FileTag) -> Result<(), Error> {
+pub async fn delete_file_tag(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+    file_tag: FileTag,
+) -> Result<(), Error> {
     tracing::debug!("deleting tag: {file_tag:?}");
     sqlx::query("DELETE FROM file_tags WHERE file_id = ? AND tag = ?")
         .bind(file_tag.file_id)
         .bind(&file_tag.tag)
-        .execute(pool)
+        .execute(executor)
         .await?;
     Ok(())
 }
 
-pub async fn insert_remote(pool: &SqlitePool, remote: NewRemote) -> Result<Remote, Error> {
+pub async fn insert_remote(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+    remote: NewRemote,
+) -> Result<Remote, Error> {
     let row = sqlx::query_as::<_, Remote>(
         r#"INSERT INTO remotes (base_url, "order", passphrase, user_id)
            VALUES (?, ?, ?, ?)
@@ -285,16 +328,18 @@ pub async fn insert_remote(pool: &SqlitePool, remote: NewRemote) -> Result<Remot
     .bind(remote.order)
     .bind(&remote.passphrase)
     .bind(&remote.user_id)
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await?;
     Ok(row)
 }
 
-pub async fn select_all_remotes(pool: &SqlitePool) -> Result<Vec<Remote>, Error> {
+pub async fn select_all_remotes(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+) -> Result<Vec<Remote>, Error> {
     let remotes = sqlx::query_as::<_, Remote>(
         r#"SELECT id, base_url, "order", passphrase, user_id FROM remotes ORDER BY "order""#,
     )
-    .fetch_all(pool)
+    .fetch_all(executor)
     .await?;
     Ok(remotes)
 }
@@ -363,20 +408,20 @@ pub async fn swap_order_of_remotes(pool: &SqlitePool, a: &Remote, b: &Remote) ->
 }
 
 pub async fn get_reading_progress(
-    pool: &SqlitePool,
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
     fingerprint: &str,
 ) -> Result<Option<ReadingProgress>, Error> {
     let result = sqlx::query_as::<_, ReadingProgress>(
         "SELECT fingerprint, progress, last_updated FROM reading_progress WHERE fingerprint = ?",
     )
     .bind(fingerprint)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?;
     Ok(result)
 }
 
 pub async fn upsert_reading_progress(
-    pool: &SqlitePool,
+    executor: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
     progress: ReadingProgress,
 ) -> Result<(), Error> {
     sqlx::query(
@@ -390,7 +435,70 @@ pub async fn upsert_reading_progress(
     .bind(&progress.fingerprint)
     .bind(&progress.progress)
     .bind(&progress.last_updated)
-    .execute(pool)
+    .execute(executor)
     .await?;
     Ok(())
+}
+
+/// Write a single scanned file (upsert file + add tags). Returns `(was_new, was_updated)`.
+pub async fn write_scanned_file(
+    conn: &mut SqliteConnection,
+    path: &str,
+    extension: &str,
+    size: i64,
+    fingerprint: &str,
+    tags: &[String],
+) -> Result<(bool, bool), Error> {
+    let existing: Option<(i32, i64, String)> =
+        sqlx::query_as("SELECT id, size, fingerprint FROM files WHERE path = ?")
+            .bind(path)
+            .fetch_optional(&mut *conn)
+            .await?;
+
+    let (file_id, was_new, was_updated) = match existing {
+        None => {
+            let (id,): (i32,) = sqlx::query_as(
+                r#"INSERT INTO files (path, "type", size, fingerprint, status)
+                   VALUES (?, ?, ?, ?, 0)
+                   RETURNING id"#,
+            )
+            .bind(path)
+            .bind(extension)
+            .bind(size)
+            .bind(fingerprint)
+            .fetch_one(&mut *conn)
+            .await?;
+            (id, true, false)
+        }
+        Some((id, old_size, ref old_fp)) => {
+            let changed = old_size != size || old_fp != fingerprint;
+            if changed {
+                sqlx::query("UPDATE files SET size = ?, fingerprint = ? WHERE id = ?")
+                    .bind(size)
+                    .bind(fingerprint)
+                    .bind(id)
+                    .execute(&mut *conn)
+                    .await?;
+                tracing::info!(
+                    "updated file: {} (size: {} → {}, fingerprint: {} → {})",
+                    path,
+                    old_size,
+                    size,
+                    old_fp,
+                    fingerprint
+                );
+            }
+            (id, false, changed)
+        }
+    };
+
+    for tag in tags {
+        sqlx::query("INSERT OR IGNORE INTO file_tags (file_id, tag) VALUES (?, ?)")
+            .bind(file_id)
+            .bind(tag)
+            .execute(&mut *conn)
+            .await?;
+    }
+
+    Ok((was_new, was_updated))
 }

@@ -8,6 +8,7 @@ use super::ScanSettings;
 use super::pipeline::ScanProgress;
 use super::pipeline::ScannedFile;
 use super::pipeline::TraversalItem;
+use crate::db::dao;
 
 const MAX_BATCH_SIZE: usize = 100;
 const BATCH_TIMEOUT: Duration = Duration::from_millis(500);
@@ -347,7 +348,17 @@ async fn flush_batch(
     };
 
     for file in items {
-        match write_file(&mut tx, &file).await {
+        let path_str = file.path.to_string_lossy();
+        match dao::write_scanned_file(
+            &mut tx,
+            &path_str,
+            &file.extension,
+            file.size,
+            &file.fingerprint,
+            &file.tags,
+        )
+        .await
+        {
             Ok((was_new, was_updated)) => {
                 *processed += 1;
                 let _ = progress_tx
@@ -374,71 +385,6 @@ async fn flush_batch(
     if let Err(e) = tx.commit().await {
         tracing::error!("failed to commit batch: {e}");
     }
-}
-
-/// Write a single scanned file within an open transaction.
-/// Returns `(was_new, was_updated)`.
-async fn write_file(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    file: &ScannedFile,
-) -> Result<(bool, bool), sqlx::Error> {
-    let path_str = file.path.to_string_lossy();
-
-    // Check whether the file already exists.
-    let existing: Option<(i32, i64, String)> =
-        sqlx::query_as("SELECT id, size, fingerprint FROM files WHERE path = ?")
-            .bind(&*path_str)
-            .fetch_optional(&mut **tx)
-            .await?;
-
-    let (file_id, was_new, was_updated) = match existing {
-        None => {
-            // New file — insert.
-            let (id,): (i32,) = sqlx::query_as(
-                r#"INSERT INTO files (path, "type", size, fingerprint, status)
-                   VALUES (?, ?, ?, ?, 0)
-                   RETURNING id"#,
-            )
-            .bind(&*path_str)
-            .bind(&file.extension)
-            .bind(file.size)
-            .bind(&file.fingerprint)
-            .fetch_one(&mut **tx)
-            .await?;
-            (id, true, false)
-        }
-        Some((id, old_size, ref old_fp)) => {
-            let changed = old_size != file.size || old_fp != &file.fingerprint;
-            if changed {
-                sqlx::query("UPDATE files SET size = ?, fingerprint = ? WHERE id = ?")
-                    .bind(file.size)
-                    .bind(&file.fingerprint)
-                    .bind(id)
-                    .execute(&mut **tx)
-                    .await?;
-                tracing::info!(
-                    "updated file: {} (size: {} → {}, fingerprint: {} → {})",
-                    file.path.display(),
-                    old_size,
-                    file.size,
-                    old_fp,
-                    file.fingerprint
-                );
-            }
-            (id, false, changed)
-        }
-    };
-
-    // Insert tags (add-only — Q2 decision).
-    for tag in &file.tags {
-        sqlx::query("INSERT OR IGNORE INTO file_tags (file_id, tag) VALUES (?, ?)")
-            .bind(file_id)
-            .bind(tag)
-            .execute(&mut **tx)
-            .await?;
-    }
-
-    Ok((was_new, was_updated))
 }
 
 // ---------------------------------------------------------------------------
@@ -719,6 +665,22 @@ mod tests {
             .await
             .expect("migrations");
         pool
+    }
+
+    async fn write_file(
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        file: &ScannedFile,
+    ) -> Result<(bool, bool), dao::Error> {
+        let path_str = file.path.to_string_lossy();
+        dao::write_scanned_file(
+            tx,
+            &path_str,
+            &file.extension,
+            file.size,
+            &file.fingerprint,
+            &file.tags,
+        )
+        .await
     }
 
     fn scanned(path: &str, ext: &str, size: i64, fp: &str, tags: Vec<&str>) -> ScannedFile {

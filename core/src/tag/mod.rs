@@ -21,11 +21,11 @@ where
     }
 
     async fn apply_tags_from_settings(&self, scan_settings: &ScanSettings) -> Result<(), Error> {
-        let conn = self.connection_pool().await;
+        let pool = self.connection_pool().await;
         let mut file_tags_to_add: Vec<Vec<FileTag>> = Vec::new();
 
         for (path, tags) in &scan_settings.auto_tags {
-            let files = dao::select_all_files_by_path_like(&conn, path).await?;
+            let files = dao::select_all_files_by_path_like(&pool, path).await?;
             if scan_settings.dry_run {
                 for file in files.iter() {
                     println!("{}: {:?}", file.path, tags);
@@ -35,7 +35,8 @@ where
         }
 
         if !scan_settings.dry_run {
-            dao::upsert_many_file_tags(&conn, concat(file_tags_to_add)).await?;
+            let mut conn = pool.acquire().await?;
+            dao::upsert_many_file_tags(&mut conn, concat(file_tags_to_add)).await?;
         }
         Ok(())
     }

@@ -286,8 +286,9 @@ async fn post_file_tags(
         .into_iter()
         .map(|tag| db::models::FileTag::new(id, tag))
         .collect();
-    let conn = application_module.connection_pool().await;
-    dao::upsert_many_file_tags(&conn, file_tags).await?;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    dao::upsert_many_file_tags(&mut conn, file_tags).await?;
 
     get_file_tags(id, application_module, user).await
 }
@@ -299,8 +300,9 @@ async fn delete_file_tags(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
-    let conn = application_module.connection_pool().await;
-    dao::delete_file_tags(&conn, id, tags.into_inner()).await?;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    dao::delete_file_tags(&mut conn, id, tags.into_inner()).await?;
     get_file_tags(id, application_module, user).await
 }
 
