@@ -13,14 +13,14 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] ~read-flow-core~: Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
 - [X] ~read-flow-core~ & ~read-flow~: Check files in the database to see whether they still exist
 
-** Tier 2 — High Impact, Moderate Effort [2/6]
+** Tier 2 — High Impact, Moderate Effort [3/7]
 
 - [ ] ~read-flow-core~: HTTP response code & error handling in ~client~ module
 - [ ] ~read-flow-core~: Proper HTTP error handling in ~server~ module, including tests
 - [ ] ~read-flow-core~ & ~read-flow~: Add allow/denylist for directories to scan
 - [X] ~read-flow~: On the Sources page, add an indicator icon for each source whether they are available or not
 - [ ] ~read-flow~: Allow adding sources that are not available at the time of adding(?) on the Sources page
-- [ ] ~read-flow~: Show scan progress widget in bottom bar while a scan is running
+- [X] ~read-flow~: Show scan progress widget in bottom bar while a scan is running
   - The new async scanner (three-stage pipeline: traversal → fingerprinting → DB writer) exposes a
     =tokio::sync::mpsc::Receiver<ScanProgress>= to the caller. The COSMIC app should subscribe to
     this channel and display a live count of discovered/processed files and errors in a bottom bar
