@@ -113,10 +113,7 @@ impl FileDataSource for DbClient {
     }
 
     async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Self::Error> {
-        for tag in tags {
-            dao::delete_file_tag(&self.connection_pool, DbFileTag::new(id, tag)).await?;
-        }
-        Ok(())
+        dao::delete_file_tags(&self.connection_pool, id, tags).await
     }
 
     async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error> {

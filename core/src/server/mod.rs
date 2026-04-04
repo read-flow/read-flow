@@ -300,11 +300,7 @@ async fn delete_file_tags(
     user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
     let conn = application_module.connection_pool().await;
-
-    for tag in tags.into_inner() {
-        dao::delete_file_tag(&conn, db::models::FileTag::new(id, tag)).await?;
-    }
-
+    dao::delete_file_tags(&conn, id, tags.into_inner()).await?;
     get_file_tags(id, application_module, user).await
 }
 

@@ -75,20 +75,6 @@ pub async fn update_file(pool: &SqlitePool, file: File) -> Result<(), Error> {
     Ok(())
 }
 
-pub async fn insert_many_files(pool: &SqlitePool, files: Vec<NewFile>) -> Result<(), Error> {
-    for file in files {
-        insert_file(pool, file).await?;
-    }
-    Ok(())
-}
-
-pub async fn upsert_many_files(pool: &SqlitePool, files: Vec<NewFile>) -> Result<(), Error> {
-    for file in files {
-        upsert_file(pool, file).await?;
-    }
-    Ok(())
-}
-
 pub async fn select_all_files(pool: &SqlitePool) -> Result<Vec<File>, Error> {
     let files =
         sqlx::query_as::<_, File>("SELECT id, path, type, size, fingerprint, status FROM files")
@@ -211,23 +197,36 @@ pub async fn upsert_file_tag(pool: &SqlitePool, file_tag: FileTag) -> Result<(),
     Ok(())
 }
 
-pub async fn insert_many_file_tags(
-    pool: &SqlitePool,
-    file_tags: Vec<FileTag>,
-) -> Result<(), Error> {
-    for file_tag in file_tags {
-        insert_file_tag(pool, file_tag).await?;
-    }
-    Ok(())
-}
-
 pub async fn upsert_many_file_tags(
     pool: &SqlitePool,
     file_tags: Vec<FileTag>,
 ) -> Result<(), Error> {
+    let mut tx = pool.begin().await?;
     for file_tag in file_tags {
-        upsert_file_tag(pool, file_tag).await?;
+        sqlx::query("INSERT OR IGNORE INTO file_tags (file_id, tag) VALUES (?, ?)")
+            .bind(file_tag.file_id)
+            .bind(&file_tag.tag)
+            .execute(&mut *tx)
+            .await?;
     }
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn delete_file_tags(
+    pool: &SqlitePool,
+    file_id: i32,
+    tags: Vec<String>,
+) -> Result<(), Error> {
+    let mut tx = pool.begin().await?;
+    for tag in tags {
+        sqlx::query("DELETE FROM file_tags WHERE file_id = ? AND tag = ?")
+            .bind(file_id)
+            .bind(&tag)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
     Ok(())
 }
 

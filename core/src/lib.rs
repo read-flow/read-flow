@@ -160,7 +160,7 @@ where
 
         let mut missing = Vec::new();
         for file in files {
-            if !Path::new(&file.path).exists() {
+            if !tokio::fs::try_exists(&file.path).await.unwrap_or(false) {
                 if purge && let Err(e) = dao::delete_file_record(&connection_pool, file.id).await {
                     tracing::warn!("Failed to delete record for {}: {e}", file.path);
                 }
