@@ -372,6 +372,22 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
         }
     };
 
+    // Flush any anchor IDs collected from inline <a id="..."> elements that
+    // appeared inside this block.  Emit them before the block itself so that
+    // anchor_y_from_heights maps the id to this block's y position, enabling
+    // footnote back-reference links (e.g. href="#fnref1") to navigate directly
+    // to the call-site paragraph.
+    if block.is_some() {
+        for id in state.pending_inline_anchors.drain(..) {
+            let anchor = ContentBlock::Anchor { id };
+            if let Some(parent) = state.stack.last_mut() {
+                parent.children.push(anchor);
+            } else {
+                state.output.push(anchor);
+            }
+        }
+    }
+
     // For non-transparent blocks (headings, paragraphs, etc.),
     // emit an Anchor before the block itself when the element had an id.
     // Footnote blocks already carry their own id for anchor lookup, so

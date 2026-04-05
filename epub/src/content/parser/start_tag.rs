@@ -288,6 +288,15 @@ fn handle_anchor(state: &mut SinkState, attrs: &[html5ever::Attribute]) {
     let href = find_attr(attrs, "href");
     // Own href takes priority; fall back to inherited link context
     let link = href.or(parent_link);
+    // If this <a> has an id attribute (e.g. <a id="fnref1" href="#fn1">),
+    // register it as a pending inline anchor so it can be emitted as an
+    // Anchor block just before the next block-level element.  This enables
+    // footnote back-references to navigate directly to the call-site paragraph.
+    if let Some(id) = find_attr(attrs, "id")
+        && !id.is_empty()
+    {
+        state.pending_inline_anchors.push(id);
+    }
     let mut span_color = None;
     let mut span_font_size_em = None;
     if let Some(style_attr) = find_attr(attrs, "style") {

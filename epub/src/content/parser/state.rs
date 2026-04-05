@@ -130,6 +130,11 @@ pub(super) struct SinkState {
     pub(super) image_counter: usize,
     /// CSS stylesheet for class-based styling.
     pub(super) stylesheet: StyleSheet,
+    /// `id` values collected from inline `<a id="...">` elements while parsing
+    /// a block.  Flushed as `Anchor` blocks immediately before the next
+    /// block-level element so that back-reference links can navigate to the
+    /// exact call-site paragraph.
+    pub(super) pending_inline_anchors: Vec<String>,
 }
 
 /// Token sink that builds `Vec<ContentBlock>` from XHTML tokens.
@@ -148,6 +153,7 @@ impl ContentSink {
                 pending_images: Vec::new(),
                 image_counter: 0,
                 stylesheet,
+                pending_inline_anchors: Vec::new(),
             }),
         }
     }

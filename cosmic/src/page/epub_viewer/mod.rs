@@ -1653,27 +1653,48 @@ impl Page for EpubViewer {
                                 );
                             }
                             if let Some(target_y) = target_y {
-                                // Navigating to a footnote: save reading position (once).
-                                if self.saved_position.is_none() {
-                                    self.saved_position = Some(match self.view_mode {
-                                        ViewMode::Scroll => SavedPosition::ScrollY(self.scroll_y),
-                                        ViewMode::Paginated => {
-                                            SavedPosition::PageIndex(self.current_page)
-                                        }
-                                    });
+                                let target_is_footnote = chapter.blocks.iter().any(|b| {
+                                    matches!(b, ContentBlock::Footnote { id, .. } if id == frag)
+                                });
+                                if target_is_footnote {
+                                    // Jumping forward into a footnote: save the reading
+                                    // position once so the fallback ↩ path can restore it.
+                                    if self.saved_position.is_none() {
+                                        self.saved_position = Some(match self.view_mode {
+                                            ViewMode::Scroll => {
+                                                SavedPosition::ScrollY(self.scroll_y)
+                                            }
+                                            ViewMode::Paginated => {
+                                                SavedPosition::PageIndex(self.current_page)
+                                            }
+                                        });
+                                    }
+                                } else {
+                                    // Navigating to a back-ref anchor (e.g. #fnref1):
+                                    // clear saved_position so the next footnote jump
+                                    // can record the correct call-site position.
+                                    self.saved_position = None;
                                 }
                                 if self.view_mode == ViewMode::Paginated {
-                                    // Find page containing the footnote block.
-                                    if let Some(block_idx) = chapter.blocks.iter().position(|b| {
-                                        matches!(b, ContentBlock::Footnote { id, .. } if id == frag)
-                                    })
+                                    // Find the page containing the target block.
+                                    // Works for both Footnote and Anchor targets.
+                                    if let Some(block_idx) =
+                                        chapter.blocks.iter().position(|b| match b {
+                                            ContentBlock::Anchor { id } => id.as_str() == frag,
+                                            ContentBlock::Footnote { id, .. } => {
+                                                id.as_str() == frag
+                                            }
+                                            _ => false,
+                                        })
                                         && let Some(layout) =
                                             self.pagination_cache.get(&chapter_idx)
-                                            && let Some(page_idx) = layout.pages.iter().position(
-                                                |p| p.start <= block_idx && block_idx < p.end,
-                                            ) {
-                                                self.current_page = page_idx;
-                                            }
+                                        && let Some(page_idx) = layout
+                                            .pages
+                                            .iter()
+                                            .position(|p| p.start <= block_idx && block_idx < p.end)
+                                    {
+                                        self.current_page = page_idx;
+                                    }
                                     return Task::none();
                                 }
                                 return scrollable::scroll_to(
@@ -1685,8 +1706,9 @@ impl Page for EpubViewer {
                                     .into(),
                                 );
                             } else if let Some(saved) = self.saved_position.take() {
-                                // Unknown fragment (likely a back-reference ↩): restore
-                                // the position saved before the last footnote jump.
+                                // Unknown fragment (no matching anchor found, likely an
+                                // old-style ↩ without an explicit id): restore the
+                                // position saved before the last footnote jump.
                                 match saved {
                                     SavedPosition::PageIndex(page) => {
                                         self.current_page = page;

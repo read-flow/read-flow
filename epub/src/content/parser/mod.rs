@@ -904,6 +904,46 @@ mod tests {
         }
     }
 
+    #[test]
+    fn inline_anchor_id_emits_anchor_before_paragraph() {
+        // Pandoc-style: <a id="fnref1" href="#fn1"> — the id should become an
+        // Anchor block before the containing paragraph so that the footnote's
+        // back-reference link (href="#fnref1") can navigate to the call site.
+        let blocks = parse(r##"<p>Text <a id="fnref1" href="#fn1">1</a> continues.</p>"##);
+        // Expect: Anchor { id: "fnref1" }, Paragraph { ... }
+        assert_eq!(
+            blocks.len(),
+            2,
+            "expected Anchor + Paragraph, got {blocks:?}"
+        );
+        match &blocks[0] {
+            ContentBlock::Anchor { id } => assert_eq!(id, "fnref1"),
+            other => panic!("expected Anchor, got {other:?}"),
+        }
+        match &blocks[1] {
+            ContentBlock::Paragraph { spans, .. } => {
+                let linked = spans.iter().find(|s| s.link.is_some()).unwrap();
+                assert_eq!(linked.link.as_deref(), Some("#fn1"));
+            }
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn multiple_inline_anchor_ids_each_get_anchor_before_paragraph() {
+        // Two references to the same footnote, each with a distinct id.
+        let blocks = parse(
+            r##"<p>First <a id="fnref1" href="#fn1">1</a>.</p>
+                <p>Second <a id="fnref1-1" href="#fn1">1</a>.</p>"##,
+        );
+        // Expect: Anchor fnref1, Paragraph, Anchor fnref1-1, Paragraph
+        assert_eq!(blocks.len(), 4, "got {blocks:?}");
+        assert!(matches!(&blocks[0], ContentBlock::Anchor { id } if id == "fnref1"));
+        assert!(matches!(&blocks[1], ContentBlock::Paragraph { .. }));
+        assert!(matches!(&blocks[2], ContentBlock::Anchor { id } if id == "fnref1-1"));
+        assert!(matches!(&blocks[3], ContentBlock::Paragraph { .. }));
+    }
+
     // --- normalize_html_whitespace unit tests ---
 
     #[test]
