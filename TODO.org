@@ -13,8 +13,22 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] ~read-flow-core~: Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
 - [X] ~read-flow-core~ & ~read-flow~: Check files in the database to see whether they still exist
 
-** Tier 2 — High Impact, Moderate Effort [3/7]
+** Tier 2 — High Impact, Moderate Effort [3/9]
 
+- [ ] ~read-flow~: Fix font rendering when "use theme colors" is enabled in MuPdfViewer on dark themes
+  - When theme colors are applied to a PDF that contains real text (not scanned images), the color
+    substitution works correctly but fonts appear less sharp than the original — only with dark themes,
+    not with light themes. The likely cause is that MuPDF's anti-aliasing blends glyph edges against
+    the background color it renders into; when the background is inverted to dark the blended edge
+    pixels were computed for a light background and end up the wrong shade. Investigate whether MuPDF
+    can re-render with the dark background color as input (so AA is computed correctly from the start)
+    rather than inverting a light-background render after the fact.
+- [ ] ~read-flow~: Bidirectional footnote navigation in EpubViewer
+  - Each inline footnote reference in the text should render a named anchor (e.g. =fnref-1-2= for the
+    second occurrence of footnote 1). Footnote definitions at the end of the chapter should then link
+    back to the specific call-site anchor rather than a single shared target. This ensures that when
+    the reader navigates from a footnote back into the text, they return to the exact location of the
+    reference they followed — not just the most recently visited one.
 - [ ] ~read-flow-core~: HTTP response code & error handling in ~client~ module
 - [ ] ~read-flow-core~: Proper HTTP error handling in ~server~ module, including tests
 - [ ] ~read-flow-core~ & ~read-flow~: Add allow/denylist for directories to scan
