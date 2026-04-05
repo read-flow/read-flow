@@ -154,7 +154,8 @@ where
     /// If `purge` is true, also removes those stale records from the database.
     pub async fn check_missing(&self, purge: bool) -> Vec<String> {
         let connection_pool = self.connection_pool().await;
-        let files = dao::select_all_files(&connection_pool)
+        let mut conn = connection_pool.acquire().await.expect("database available");
+        let files = dao::select_all_files(&mut *conn)
             .await
             .expect("database available");
 

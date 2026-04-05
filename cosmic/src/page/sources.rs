@@ -51,7 +51,8 @@ impl Provider<Vec<Remote>> for RemotesProvider {
 
     async fn provide(&self) -> Result<Vec<Remote>, Self::Error> {
         let pool = self.0.connection_pool().await;
-        dao::select_all_remotes(&pool).await
+        let mut conn = pool.acquire().await?;
+        dao::select_all_remotes(&mut *conn).await
     }
 }
 
@@ -527,8 +528,12 @@ impl Page for SourcesPage {
                 let order = self.remotes_state.state.unwrap().len() + 1;
                 task::future(async move {
                     let connection_pool = am.connection_pool().await;
+                    let mut conn = match connection_pool.acquire().await {
+                        Ok(conn) => conn,
+                        Err(e) => return SourcesMessage::SetOperationError(format!("{e}")),
+                    };
                     match dao::insert_remote(
-                        &connection_pool,
+                        &mut *conn,
                         NewRemote {
                             base_url: url.to_string(),
                             order: order as i32,

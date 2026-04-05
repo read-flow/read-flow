@@ -192,9 +192,10 @@ async fn get_files(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<File>>> {
-    let conn = application_module.connection_pool().await;
-    let files = dao::select_all_files(&conn).await?;
-    let file_tags = dao::select_all_file_tags(&conn).await?;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let files = dao::select_all_files(&mut *conn).await?;
+    let file_tags = dao::select_all_file_tags(&mut *conn).await?;
 
     let mut file_tags_map: FxIndexMap<_, Vec<_>> = FxIndexMap::default();
 
@@ -227,8 +228,9 @@ async fn update_file(
     _user: AuthorizedUser,
 ) -> Result<Json<File>> {
     let (db_file, _) = file.0.clone().into();
-    let conn = application_module.connection_pool().await;
-    dao::update_file(&conn, db_file).await?;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    dao::update_file(&mut *conn, db_file).await?;
 
     Ok(file)
 }
@@ -238,8 +240,9 @@ async fn get_files_tags(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
-    let conn = application_module.connection_pool().await;
-    let tags = dao::select_all_tags(&conn).await?;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let tags = dao::select_all_tags(&mut *conn).await?;
     Ok(Json(tags))
 }
 
@@ -249,9 +252,10 @@ async fn get_file(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Option<Json<File>>> {
-    let conn = application_module.connection_pool().await;
-    let tags = dao::select_file_tags_by_file_id(&conn, id).await?;
-    let file = dao::select_file_by_id(&conn, id)
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let tags = dao::select_file_tags_by_file_id(&mut *conn, id).await?;
+    let file = dao::select_file_by_id(&mut *conn, id)
         .await?
         .map(|file| (file, tags).into());
 
@@ -264,8 +268,9 @@ async fn get_file_tags(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
-    let conn = application_module.connection_pool().await;
-    let tags = dao::select_file_tags_by_file_id(&conn, id)
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let tags = dao::select_file_tags_by_file_id(&mut *conn, id)
         .await?
         .into_iter()
         .map(|tag| tag.tag)
@@ -313,8 +318,9 @@ async fn download_file(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Option<(ContentType, NamedFile)>> {
-    let conn = application_module.connection_pool().await;
-    let file = dao::select_file_by_id(&conn, id).await?;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let file = dao::select_file_by_id(&mut *conn, id).await?;
 
     match file {
         None => Ok(None),
@@ -399,8 +405,9 @@ async fn upload_file(
 
     application_module.scan(target_file.clone()).await?;
 
-    let conn = application_module.connection_pool().await;
-    let result = dao::select_file_by_path(&conn, &target_file.display().to_string())
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let result = dao::select_file_by_path(&mut *conn, &target_file.display().to_string())
         .await?
         .unwrap();
     Ok(Json((result, vec![]).into()))
@@ -412,8 +419,9 @@ async fn get_reading_progress(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Option<Json<ReadingProgress>>> {
-    let conn = application_module.connection_pool().await;
-    let progress = dao::get_reading_progress(&conn, fingerprint).await?;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let progress = dao::get_reading_progress(&mut *conn, fingerprint).await?;
     Ok(progress.map(Json))
 }
 
@@ -423,8 +431,9 @@ async fn put_reading_progress(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<()> {
-    let conn = application_module.connection_pool().await;
-    dao::upsert_reading_progress(&conn, progress.into_inner()).await?;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    dao::upsert_reading_progress(&mut *conn, progress.into_inner()).await?;
     Ok(())
 }
 
