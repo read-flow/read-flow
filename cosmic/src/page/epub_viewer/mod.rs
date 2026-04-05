@@ -317,13 +317,6 @@ impl FontFamily {
     }
 }
 
-/// Position saved before following a footnote link, for back-navigation.
-#[derive(Clone, Debug)]
-enum SavedPosition {
-    ScrollY(f32),
-    PageIndex(usize),
-}
-
 // --- Core types ---
 
 #[derive(Clone, Debug)]
@@ -447,9 +440,6 @@ pub struct EpubViewer {
     initial_chapter: Option<usize>,
     /// Scroll position (absolute y offset in pixels) within the current chapter.
     scroll_y: f32,
-    /// Position saved before following a footnote fragment link.
-    /// Used to navigate back when a back-reference link (e.g. `↩`) is clicked.
-    saved_position: Option<SavedPosition>,
     modifiers: Modifiers,
     show_raw_html: bool,
     raw_html_content: text_editor::Content,
@@ -535,7 +525,6 @@ impl EpubViewer {
             active_chapter: 0,
             initial_chapter: None,
             scroll_y: 0.0,
-            saved_position: None,
             modifiers: Modifiers::default(),
             show_raw_html: false,
             raw_html_content: text_editor::Content::new(),
@@ -1502,7 +1491,6 @@ impl Page for EpubViewer {
                     self.active_nav_entry = None;
                     self.scroll_y = 0.0;
                     self.current_page = 0;
-                    self.saved_position = None;
                     self.highlighted_block = None;
                     self.search_matches.clear();
                     self.search_current = 0;
@@ -1521,7 +1509,6 @@ impl Page for EpubViewer {
                         self.active_chapter = idx;
                         self.scroll_y = 0.0;
                         self.current_page = 0;
-                        self.saved_position = None;
                         self.highlighted_block = None;
                         self.search_matches.clear();
                         self.search_current = 0;
@@ -1653,28 +1640,6 @@ impl Page for EpubViewer {
                                 );
                             }
                             if let Some(target_y) = target_y {
-                                let target_is_footnote = chapter.blocks.iter().any(|b| {
-                                    matches!(b, ContentBlock::Footnote { id, .. } if id == frag)
-                                });
-                                if target_is_footnote {
-                                    // Jumping forward into a footnote: save the reading
-                                    // position once so the fallback ↩ path can restore it.
-                                    if self.saved_position.is_none() {
-                                        self.saved_position = Some(match self.view_mode {
-                                            ViewMode::Scroll => {
-                                                SavedPosition::ScrollY(self.scroll_y)
-                                            }
-                                            ViewMode::Paginated => {
-                                                SavedPosition::PageIndex(self.current_page)
-                                            }
-                                        });
-                                    }
-                                } else {
-                                    // Navigating to a back-ref anchor (e.g. #fnref1):
-                                    // clear saved_position so the next footnote jump
-                                    // can record the correct call-site position.
-                                    self.saved_position = None;
-                                }
                                 if self.view_mode == ViewMode::Paginated {
                                     // Find the page containing the target block.
                                     // Works for both Footnote and Anchor targets.
@@ -1705,22 +1670,6 @@ impl Page for EpubViewer {
                                     }
                                     .into(),
                                 );
-                            } else if let Some(saved) = self.saved_position.take() {
-                                // Unknown fragment (no matching anchor found, likely an
-                                // old-style ↩ without an explicit id): restore the
-                                // position saved before the last footnote jump.
-                                match saved {
-                                    SavedPosition::PageIndex(page) => {
-                                        self.current_page = page;
-                                        return Task::none();
-                                    }
-                                    SavedPosition::ScrollY(y) => {
-                                        return scrollable::scroll_to(
-                                            self.content_scroll_id.clone(),
-                                            scrollable::AbsoluteOffset { x: 0.0, y }.into(),
-                                        );
-                                    }
-                                }
                             }
                         }
                     }
@@ -1743,7 +1692,6 @@ impl Page for EpubViewer {
                         self.active_chapter = idx;
                         self.scroll_y = 0.0;
                         self.current_page = 0;
-                        self.saved_position = None;
                         self.sync_raw_html_content();
                     } else if let Some(epub_doc) = &self.epub_document {
                         // Target is not in the spine (e.g. linear="no" item).
@@ -1777,7 +1725,6 @@ impl Page for EpubViewer {
                             self.active_chapter = self.chapters.len() - 1;
                             self.scroll_y = 0.0;
                             self.current_page = 0;
-                            self.saved_position = None;
                             self.sync_raw_html_content();
                         } else {
                             tracing::info!(
