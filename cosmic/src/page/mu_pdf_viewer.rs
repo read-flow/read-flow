@@ -85,6 +85,7 @@ pub(crate) struct PdfPage {
     icon_bounds: Cell<Option<Rectangle>>,
     icon_handle: Option<widget::image::Handle>,
     svg_handle: Option<widget::svg::Handle>,
+    raster_handle: Option<widget::image::Handle>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -146,6 +147,26 @@ fn display_list_to_image(display_list: &mupdf::DisplayList, scale: f32) -> widge
     widget::image::Handle::from_bytes(data)
 }
 
+fn display_list_to_image_tinted(
+    display_list: &mupdf::DisplayList,
+    scale: f32,
+    text_color: (u8, u8, u8),
+    bg_color: (u8, u8, u8),
+) -> widget::image::Handle {
+    let matrix = mupdf::Matrix::new_scale(scale, scale);
+    let mut pixmap = display_list
+        .to_pixmap(&matrix, &mupdf::Colorspace::device_rgb(), false)
+        .unwrap();
+    let black =
+        ((text_color.0 as i32) << 16) | ((text_color.1 as i32) << 8) | (text_color.2 as i32);
+    let white = ((bg_color.0 as i32) << 16) | ((bg_color.1 as i32) << 8) | (bg_color.2 as i32);
+    pixmap.tint(black, white).unwrap();
+    let rgb = pixmap.samples();
+    let mut rgba: Vec<u8> = Vec::with_capacity(rgb.len() / 3 * 4);
+    rgba.extend(rgb.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255u8]));
+    widget::image::Handle::from_rgba(pixmap.width(), pixmap.height(), rgba)
+}
+
 // --- Messages ---
 
 #[derive(Debug, Clone)]
@@ -162,6 +183,7 @@ pub enum MuPdfViewerMessage {
     DisplayListReady(u64, i32, Arc<mupdf::DisplayList>),
     ThumbnailReady(u64, i32, widget::image::Handle),
     SvgReady(u64, i32, widget::svg::Handle),
+    RasterReady(u64, i32, widget::image::Handle),
 
     // Navigation
     SelectPage(usize),
@@ -306,6 +328,7 @@ impl MuPdfViewer {
                     icon_bounds: Cell::new(None),
                     icon_handle: None,
                     svg_handle: None,
+                    raster_handle: None,
                 }));
             }
             let _ = tx.unbounded_send(DiscoveryItem::Done(is_reflowable));
@@ -513,7 +536,14 @@ impl MuPdfViewer {
                 let height = page.bounds.height() * ratio;
 
                 // Inner container: white "paper" background for the PDF page
-                let paper = widget::container(if let Some(handle) = &page.svg_handle {
+                let paper = widget::container(if let Some(handle) = &page.raster_handle {
+                    Element::from(
+                        widget::image(handle.clone())
+                            .content_fit(ContentFit::Fill)
+                            .width(width)
+                            .height(height),
+                    )
+                } else if let Some(handle) = &page.svg_handle {
                     Element::from(
                         widget::svg(handle.clone())
                             .content_fit(ContentFit::Fill)
@@ -615,68 +645,83 @@ impl MuPdfViewer {
             }
         }
 
-        // Generate SVG for all currently visible pages (both pages of the
-        // spread in dual-pane mode) if not already available.
+        // Render visible pages. For the raster path also pre-render the next
+        // two pages so they are ready before the user navigates to them,
+        // avoiding a blank frame while waiting for slow raster generation.
+        let mut pages_to_render = self.visible_page_indices();
+        if self.theme_colors {
+            for offset in 1..=2usize {
+                if let Some(i) = self
+                    .active_page
+                    .checked_add(offset)
+                    .filter(|&i| i < self.pages.len())
+                {
+                    if !pages_to_render.contains(&i) {
+                        pages_to_render.push(i);
+                    }
+                }
+            }
+        }
+
         let layout_gen = self.layout_gen;
-        for &page_idx in &self.visible_page_indices() {
+        for &page_idx in &pages_to_render {
             if let Some(page) = self.pages.get(page_idx)
                 && page.svg_handle.is_none()
+                && page.raster_handle.is_none()
                 && let Some(display_list) = page.display_list.clone()
             {
                 let index = page.index;
-                let theme_css = if self.theme_colors {
+                if self.theme_colors {
                     let active = theme::active();
                     let cosmic = active.cosmic();
                     let text = cosmic.on_bg_color();
                     let bg = cosmic.bg_color();
-                    let text_hex = format!(
-                        "#{:02x}{:02x}{:02x}",
+                    let text_color = (
                         (text.color.red * 255.0) as u8,
                         (text.color.green * 255.0) as u8,
                         (text.color.blue * 255.0) as u8,
                     );
-                    let bg_hex = format!(
-                        "#{:02x}{:02x}{:02x}",
+                    let bg_color = (
                         (bg.color.red * 255.0) as u8,
                         (bg.color.green * 255.0) as u8,
                         (bg.color.blue * 255.0) as u8,
                     );
-                    Some((text_hex, bg_hex))
+                    tasks.push(Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                MuPdfViewerMessage::RasterReady(
+                                    layout_gen,
+                                    index,
+                                    display_list_to_image_tinted(
+                                        &display_list,
+                                        2.0,
+                                        text_color,
+                                        bg_color,
+                                    ),
+                                )
+                            })
+                            .await
+                            .unwrap()
+                        },
+                        cosmic::action::app,
+                    ));
                 } else {
-                    None
-                };
-                tasks.push(Task::perform(
-                    async move {
-                        tokio::task::spawn_blocking(move || {
-                            let mut svg =
-                                display_list.to_svg(&mupdf::Matrix::IDENTITY).unwrap();
-                            if let Some((text_hex, bg_hex)) = theme_css {
-                                let style = format!(
-                                    "<style>\
-                                    [fill=\"#000000\"],[fill=\"#000\"]{{fill:{text_hex} !important}}\
-                                    [stroke=\"#000000\"],[stroke=\"#000\"]{{stroke:{text_hex} !important}}\
-                                    [fill=\"#ffffff\"],[fill=\"#fff\"],[fill=\"white\"]{{fill:{bg_hex} !important}}\
-                                    [stroke=\"#ffffff\"],[stroke=\"#fff\"],[stroke=\"white\"]{{stroke:{bg_hex} !important}}\
-                                    text{{fill:{text_hex} !important}}\
-                                    </style>"
-                                );
-                                if let Some(pos) = svg.find('>') {
-                                    svg.insert_str(pos, &format!(" fill=\"{text_hex}\""));
-                                    let pos = pos + format!(" fill=\"{text_hex}\"").len();
-                                    svg.insert_str(pos + 1, &style);
-                                }
-                            }
-                            MuPdfViewerMessage::SvgReady(
-                                layout_gen,
-                                index,
-                                widget::svg::Handle::from_memory(svg.into_bytes()),
-                            )
-                        })
-                        .await
-                        .unwrap()
-                    },
-                    cosmic::action::app,
-                ));
+                    tasks.push(Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                let svg = display_list.to_svg(&mupdf::Matrix::IDENTITY).unwrap();
+                                MuPdfViewerMessage::SvgReady(
+                                    layout_gen,
+                                    index,
+                                    widget::svg::Handle::from_memory(svg.into_bytes()),
+                                )
+                            })
+                            .await
+                            .unwrap()
+                        },
+                        cosmic::action::app,
+                    ));
+                }
             }
         }
 
@@ -965,8 +1010,10 @@ impl Page for MuPdfViewer {
                         cosmic::action::app,
                     ));
 
-                    // If this page is currently visible, trigger SVG generation
-                    if self.visible_page_indices().contains(&idx) {
+                    // Trigger rendering if this page is visible or within the
+                    // raster prefetch window (next 2 pages).
+                    let in_prefetch = self.theme_colors && idx.abs_diff(self.active_page) <= 2;
+                    if self.visible_page_indices().contains(&idx) || in_prefetch {
                         tasks.push(self.update_active_page());
                     }
 
@@ -989,6 +1036,15 @@ impl Page for MuPdfViewer {
                 }
                 if let Some(idx) = self.page_index_by_pdf_index(pdf_index) {
                     self.pages[idx].svg_handle = Some(handle);
+                }
+                Task::none()
+            }
+            MuPdfViewerMessage::RasterReady(layout_gen, pdf_index, handle) => {
+                if layout_gen != self.layout_gen {
+                    return Task::none();
+                }
+                if let Some(idx) = self.page_index_by_pdf_index(pdf_index) {
+                    self.pages[idx].raster_handle = Some(handle);
                 }
                 Task::none()
             }
@@ -1103,6 +1159,7 @@ impl Page for MuPdfViewer {
                 self.theme_colors = use_theme_colors;
                 for page in &mut self.pages {
                     page.svg_handle = None;
+                    page.raster_handle = None;
                 }
                 self.update_active_page()
             }
