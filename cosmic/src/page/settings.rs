@@ -21,6 +21,7 @@ use provider::r#async::HasSetExpired;
 use read_flow_core::Builder;
 use read_flow_core::ExpandedPath;
 use read_flow_core::scan::DirectorySettings;
+use read_flow_core::scan::DocumentType;
 use read_flow_core::settings::HashedPassword;
 use read_flow_core::settings::Settings;
 use rfd::AsyncFileDialog;
@@ -111,6 +112,8 @@ pub enum SettingsMessage {
     SaveComplete,
     /// Settings save failed
     SaveError(String),
+    /// Toggle a document file type in the scan extensions list
+    ToggleDocumentType(DocumentType, bool),
     /// No-op message
     Noop,
 
@@ -361,6 +364,23 @@ impl Page for SettingsPage {
                     .toggler(self.settings.scan.dry_run, SettingsMessage::ToggleDryRun),
             );
         content.push(scan_section.into());
+
+        // File types section
+        let file_types_section = DocumentType::all().iter().fold(
+            widget::settings::section().title(fl!("settings-scan-file-types-section")),
+            |section, doc_type| {
+                let enabled = self.settings.scan.extensions.contains(doc_type);
+                let doc_type_clone = doc_type.clone();
+                section.add(
+                    widget::settings::item::builder(format!(".{}", doc_type.as_str()))
+                        .description(doc_type.label())
+                        .toggler(enabled, move |v| {
+                            SettingsMessage::ToggleDocumentType(doc_type_clone.clone(), v)
+                        }),
+                )
+            },
+        );
+        content.push(file_types_section.into());
 
         // Scan directories section with add/edit functionality
         let directories_section = self
@@ -750,6 +770,18 @@ impl Page for SettingsPage {
                     None => task::none(),
                 },
             },
+            SettingsMessage::ToggleDocumentType(doc_type, enabled) => {
+                if enabled {
+                    if !self.settings.scan.extensions.contains(&doc_type) {
+                        self.settings.scan.extensions.push(doc_type);
+                        self.settings.scan.extensions.sort();
+                    }
+                } else {
+                    self.settings.scan.extensions.retain(|x| x != &doc_type);
+                }
+                self.save_state = SaveState::Idle;
+                Task::none()
+            }
             SettingsMessage::Noop => task::none(),
         }
     }

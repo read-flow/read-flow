@@ -6,7 +6,6 @@ use std::fmt;
 use std::iter::repeat_n;
 use std::path::PathBuf;
 use std::process::ExitStatus;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use futures_util::stream;
@@ -16,6 +15,7 @@ use read_flow_core::api::File;
 use read_flow_core::api::FileDataSource;
 use read_flow_core::api::ReadingProgress;
 use read_flow_core::api::ReadingStatus;
+pub use read_flow_core::scan::DocumentType;
 
 use crate::ApplicationModule;
 use crate::client::Client;
@@ -381,53 +381,6 @@ impl Provider<Documents> for Aggregator {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DocumentType {
-    Pdf,
-    Epub,
-    Mobi,
-    /// Any file type not natively supported — opened via the external viewer.
-    Other,
-}
-
-impl DocumentType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            DocumentType::Pdf => "pdf",
-            DocumentType::Epub => "epub",
-            DocumentType::Mobi => "mobi",
-            DocumentType::Other => "other",
-        }
-    }
-
-    // Get appropriate file type icon based on extension
-    pub fn get_file_type_icon(&self) -> &'static str {
-        match self {
-            DocumentType::Pdf => "application-pdf",
-            DocumentType::Epub => "application-epub+zip",
-            DocumentType::Mobi => "application-x-mobipocket-ebook",
-            DocumentType::Other => "text-x-generic",
-        }
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error("unsupported document type: {0}")]
-pub struct UnsupportedDocumentType(String);
-
-impl FromStr for DocumentType {
-    type Err = UnsupportedDocumentType;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let lowercase = s.to_ascii_lowercase();
-        match lowercase.as_str() {
-            "pdf" => Ok(Self::Pdf),
-            "epub" => Ok(Self::Epub),
-            "mobi" => Ok(Self::Mobi),
-            _ => Err(UnsupportedDocumentType(lowercase)),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct DocumentMetadata {
     pub type_: DocumentType,
@@ -467,7 +420,7 @@ impl Document {
         let doc_type = abs_path
             .extension()
             .and_then(|e| e.to_str())
-            .and_then(|e| e.parse::<DocumentType>().ok())
+            .map(|e| e.parse::<DocumentType>().unwrap())
             .unwrap_or(DocumentType::Other);
         Some(Document {
             metadata: DocumentMetadata {

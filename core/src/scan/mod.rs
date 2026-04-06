@@ -18,6 +18,121 @@ use crate::ExpandedPath;
 use crate::settings::Settings;
 use crate::settings::SettingsError;
 
+/// A document file type supported by the MuPDF renderer, plus a catch-all `Other`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DocumentType {
+    Pdf,
+    Epub,
+    Mobi,
+    Fb2,
+    Cbz,
+    Cbt,
+    Xps,
+    Oxps,
+    Docx,
+    Xlsx,
+    Pptx,
+    Hwpx,
+    /// Any file type not natively supported — opened via the external viewer.
+    Other,
+}
+
+impl DocumentType {
+    /// The file extension string for this document type (e.g. `"pdf"`).
+    pub fn as_str(&self) -> &'static str {
+        use DocumentType::*;
+        match self {
+            Pdf => "pdf",
+            Epub => "epub",
+            Mobi => "mobi",
+            Fb2 => "fb2",
+            Cbz => "cbz",
+            Cbt => "cbt",
+            Xps => "xps",
+            Oxps => "oxps",
+            Docx => "docx",
+            Xlsx => "xlsx",
+            Pptx => "pptx",
+            Hwpx => "hwpx",
+            Other => "other",
+        }
+    }
+
+    /// A short human-readable label for use in UI settings.
+    pub fn label(&self) -> &'static str {
+        use DocumentType::*;
+        match self {
+            Pdf => "PDF",
+            Epub => "EPUB",
+            Mobi => "MOBI / Kindle",
+            Fb2 => "FictionBook",
+            Cbz => "Comic Book Archive (ZIP)",
+            Cbt => "Comic Book Archive (TAR)",
+            Xps => "XPS",
+            Oxps => "OpenXPS",
+            Docx => "Word Document",
+            Xlsx => "Excel Spreadsheet",
+            Pptx => "PowerPoint Presentation",
+            Hwpx => "Hangul Word Processor",
+            Other => "Other",
+        }
+    }
+
+    /// Icon name for this document type (freedesktop icon naming).
+    pub fn get_file_type_icon(&self) -> &'static str {
+        use DocumentType::*;
+        match self {
+            Pdf => "application-pdf",
+            Epub => "application-epub+zip",
+            Mobi => "application-x-mobipocket-ebook",
+            Fb2 => "text-x-generic",
+            Cbz | Cbt => "application-zip",
+            Xps | Oxps => "text-x-generic",
+            Docx | Hwpx => "x-office-document",
+            Xlsx => "x-office-spreadsheet",
+            Pptx => "x-office-presentation",
+            Other => "text-x-generic",
+        }
+    }
+
+    /// All named document types in their canonical order. Does not include `Other`.
+    pub fn all() -> &'static [DocumentType] {
+        use DocumentType::*;
+        &[Pdf, Epub, Mobi, Fb2, Cbz, Cbt, Xps, Oxps, Docx, Xlsx, Pptx, Hwpx]
+    }
+}
+
+impl std::fmt::Display for DocumentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for DocumentType {
+    /// Parsing is infallible: unknown strings map to `Other`.
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use DocumentType::*;
+        Ok(match s.to_ascii_lowercase().as_str() {
+            "pdf" => Pdf,
+            "epub" => Epub,
+            "mobi" => Mobi,
+            "fb2" => Fb2,
+            "cbz" => Cbz,
+            "cbt" => Cbt,
+            "xps" => Xps,
+            "oxps" => Oxps,
+            "docx" => Docx,
+            "xlsx" => Xlsx,
+            "pptx" => Pptx,
+            "hwpx" => Hwpx,
+            _ => Other,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ScanSettings {
     #[serde(default)]
@@ -27,13 +142,14 @@ pub struct ScanSettings {
     #[serde(default)]
     pub directories: BTreeMap<ExpandedPath, DirectorySettings>,
     #[serde(default = "default_extensions")]
-    pub extensions: Vec<String>,
+    pub extensions: Vec<DocumentType>,
     #[serde(default = "default_concurrency")]
     pub concurrency: usize,
 }
 
-fn default_extensions() -> Vec<String> {
-    vec!["pdf".into(), "epub".into(), "mobi".into()]
+fn default_extensions() -> Vec<DocumentType> {
+    use DocumentType::*;
+    vec![Pdf, Epub, Mobi]
 }
 
 fn default_concurrency() -> usize {
@@ -226,13 +342,9 @@ mod tests {
     }
 
     #[test]
-    fn default_extensions_are_pdf_epub_mobi() {
+    fn default_extensions_are_all_mupdf_document_formats() {
         let settings = ScanSettings::default();
-        Assert::that(&settings.extensions).is(&vec![
-            "pdf".to_string(),
-            "epub".to_string(),
-            "mobi".to_string(),
-        ]);
+        Assert::that(&settings.extensions).is(DocumentType::all());
     }
 
     #[test]
@@ -248,7 +360,8 @@ mod tests {
             extensions = ["pdf", "cbz"]
         "#;
         let settings: ScanSettings = toml::from_str(toml).unwrap();
-        Assert::that(&settings.extensions).is(&vec!["pdf".to_string(), "cbz".to_string()]);
+        Assert::that(&settings.extensions)
+            .is(&vec![DocumentType::Pdf, DocumentType::Cbz]);
     }
 
     #[test]
@@ -265,11 +378,7 @@ mod tests {
     fn missing_extensions_in_toml_uses_default() {
         let toml = r#"dry_run = false"#;
         let settings: ScanSettings = toml::from_str(toml).unwrap();
-        Assert::that(&settings.extensions).is(&vec![
-            "pdf".to_string(),
-            "epub".to_string(),
-            "mobi".to_string(),
-        ]);
+        Assert::that(&settings.extensions).is(DocumentType::all());
     }
 
     #[test]

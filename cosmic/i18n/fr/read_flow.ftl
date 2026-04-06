@@ -211,6 +211,7 @@ settings-save-error = Erreur lors de l'enregistrement des paramètres
 settings-saved = Paramètres enregistrés avec succès
 settings-saving = Enregistrement...
 settings-scan-directories-section = Répertoires de scan
+settings-scan-file-types-section = Types de fichiers
 settings-scan-dry-run = Mode d'exécution à sec
 settings-scan-section = Analyse
 settings-select-private-tag = Sélectionner un tag...

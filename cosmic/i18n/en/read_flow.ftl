@@ -190,6 +190,7 @@ settings-save-error = Error saving settings
 settings-saved = Settings saved successfully
 settings-saving = Saving...
 settings-scan-directories-section = Scan Directories
+settings-scan-file-types-section = File Types
 settings-scan-dry-run = Dry Run Mode
 settings-scan-section = Scan
 settings-select-private-tag = Select a tag...

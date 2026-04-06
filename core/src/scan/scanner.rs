@@ -99,10 +99,14 @@ fn is_scm_root(dir: &Path) -> bool {
     SCM_MARKERS.iter().any(|m| dir.join(m).is_dir())
 }
 
-fn extension_matches(path: &Path, extensions: &[String]) -> bool {
+fn extension_matches(path: &Path, extensions: &[super::DocumentType]) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .map(|e| extensions.iter().any(|x| x.eq_ignore_ascii_case(e)))
+        .map(|e| {
+            extensions
+                .iter()
+                .any(|x| x.as_str().eq_ignore_ascii_case(e))
+        })
         .unwrap_or(false)
 }
 
@@ -589,7 +593,7 @@ mod tests {
         make_file(tmp.path(), "book.pdf");
 
         let settings = ScanSettings {
-            extensions: vec!["cbz".into()],
+            extensions: vec![crate::scan::DocumentType::Cbz],
             ..ScanSettings::default()
         };
 

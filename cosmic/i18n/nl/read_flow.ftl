@@ -212,6 +212,7 @@ settings-save-error = Fout bij opslaan van instellingen
 settings-saved = Instellingen succesvol opgeslagen
 settings-saving = Opslaan...
 settings-scan-directories-section = Scan Mappen
+settings-scan-file-types-section = Bestandstypen
 settings-scan-dry-run = Droog Uitvoeren Modus
 settings-scan-section = Scannen
 settings-select-private-tag = Selecteer een tag...

@@ -473,15 +473,14 @@ impl Pages {
                 }),
             PageMessage::OpenDocument(document) =>
             {
-                #[allow(unreachable_patterns)]
                 match &document.metadata.type_ {
-                    DocumentType::Mobi | DocumentType::Pdf => self.open_mupdf_viewer(document),
                     DocumentType::Epub => match self.epub_viewer_config {
                         EpubViewerConfig::NativeEpub => self.open_epub_viewer(document),
                         EpubViewerConfig::MuPdf => self.open_mupdf_viewer(document),
                         EpubViewerConfig::ExternalViewer => self.open_in_external_viewer(document),
                     },
-                    _ => self.open_in_external_viewer(document),
+                    DocumentType::Other => self.open_in_external_viewer(document),
+                    _ => self.open_mupdf_viewer(document),
                 }
             }
             PageMessage::CloseEpubViewer(fingerprint, progress_json) => {
