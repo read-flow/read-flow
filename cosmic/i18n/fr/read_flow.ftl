@@ -177,6 +177,7 @@ sources-status-unknown = Statut inconnu
 sources-status-checking = Vérification de l'accessibilité...
 sources-status-reachable = Accessible
 sources-status-unreachable = Inaccessible
+sources-add-unavailable-warning = Cette source semble inaccessible. Vous pouvez quand même l'ajouter — elle apparaîtra comme inaccessible jusqu'à ce qu'elle soit disponible.
 
 # Settings page
 settings-add-directory = Ajouter un répertoire

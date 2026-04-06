@@ -67,6 +67,7 @@ pub struct SourcesPage {
     entered_passphrase_id: widget::Id, // Unique ID for focus management
     show_passphrase: bool,
     url_verification_state: UrlVerificationState,
+    unavailable_acknowledged: bool,
     operation_error: Option<String>,
     pending_deletion: Option<Remote>,
     // Debouncing state
@@ -90,6 +91,7 @@ pub enum SourcesMessage {
     UpdateEnteredPassphrase(String),
     DebounceVerify(widget::Id),
     ToggleShowPassphrase,
+    ToggleUnavailableAcknowledged,
     VerifyEnteredUrl {
         url: Url,
         user_id: String,
@@ -157,6 +159,7 @@ impl SourcesPage {
                 entered_passphrase_id: widget::Id::unique(),
                 show_passphrase: false,
                 url_verification_state: Default::default(),
+                unavailable_acknowledged: false,
                 operation_error: None,
                 pending_deletion: None,
                 last_input_time: Instant::now(),
@@ -350,23 +353,39 @@ impl Page for SourcesPage {
                     let LoadedState::Failed(ref error) = self.url_verification_state else {
                         unreachable!()
                     };
-                    widget::text::caption(error)
+                    widget::settings::item::builder(error.as_str())
+                        .icon(icon::from_name("dialog-error-symbolic").size(ICON_SIZE))
+                        .control(widget::Space::new())
                 }),
             )
-            .add(widget::settings::item_row(vec![
-                widget::space::horizontal().width(Length::Fill).into(),
-                widget::button::suggested(fl!("sources-add-button"))
-                    .apply_if(
-                        !(self.entered_url.is_empty()
-                            || self.entered_user_id.is_empty()
-                            || self.entered_passphrase.is_empty()
-                            || !matches!(self.url_verification_state, LoadedState::Loaded(_))),
-                        |button| {
-                            button.on_press(SourcesMessage::AddSource(self.entered_url.clone()))
-                        },
-                    )
-                    .into(),
-            ]));
+            .add_maybe({
+                let fields_filled = !self.entered_url.is_empty()
+                    && !self.entered_user_id.is_empty()
+                    && !self.entered_passphrase.is_empty();
+                let unverified = matches!(
+                    self.url_verification_state,
+                    LoadedState::Failed(_) | LoadedState::New | LoadedState::Loading
+                );
+                (fields_filled && unverified).then(|| {
+                    widget::settings::item::builder(fl!("sources-add-unavailable-warning"))
+                        .icon(icon::from_name("dialog-warning-symbolic").size(ICON_SIZE))
+                        .control(
+                            widget::checkbox(self.unavailable_acknowledged)
+                                .on_toggle(|_| SourcesMessage::ToggleUnavailableAcknowledged),
+                        )
+                })
+            })
+            .add(widget::settings::item::builder("").control(
+                widget::button::suggested(fl!("sources-add-button")).apply_if(
+                    !(self.entered_url.is_empty()
+                        || self.entered_user_id.is_empty()
+                        || self.entered_passphrase.is_empty()
+                        || self.entered_url.parse::<Url>().is_err())
+                        && (matches!(self.url_verification_state, LoadedState::Loaded(_))
+                            || self.unavailable_acknowledged),
+                    |button| button.on_press(SourcesMessage::AddSource(self.entered_url.clone())),
+                ),
+            ));
 
         content.push(add_section.into());
 
@@ -452,14 +471,17 @@ impl Page for SourcesPage {
             }
             SourcesMessage::UpdateEnteredUrl(url) => {
                 self.entered_url = url;
+                self.unavailable_acknowledged = false;
                 self.start_debounce_verification(self.entered_url_id.clone())
             }
             SourcesMessage::UpdateEnteredUserId(user_id) => {
                 self.entered_user_id = user_id;
+                self.unavailable_acknowledged = false;
                 self.start_debounce_verification(self.entered_user_id_id.clone())
             }
             SourcesMessage::UpdateEnteredPassphrase(passphrase) => {
                 self.entered_passphrase = passphrase;
+                self.unavailable_acknowledged = false;
                 self.start_debounce_verification(self.entered_passphrase_id.clone())
             }
             SourcesMessage::DebounceVerify(widget_id) => {
@@ -510,16 +532,14 @@ impl Page for SourcesPage {
             SourcesMessage::AddSource(url) => {
                 self.entered_url = url;
                 match self.entered_url.parse::<Url>() {
-                    Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
+                    Ok(url) => task::message(SourcesMessage::SubmitSource(
                         url,
-                        user_id: self.entered_user_id.clone(),
-                        passphrase: self.entered_passphrase.clone(),
-                        do_submit: true,
-                        widget: self.entered_url_id.clone(),
-                    }),
+                        self.entered_user_id.clone(),
+                        self.entered_passphrase.clone(),
+                    )),
                     Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
                         self.entered_url_id.clone(),
-                        String::from("invalid-url"),
+                        fl!("sources-invalid-url"),
                     )),
                 }
             }
@@ -557,6 +577,7 @@ impl Page for SourcesPage {
                 self.entered_user_id.clear();
                 self.entered_passphrase.clear();
                 self.url_verification_state = Default::default();
+                self.unavailable_acknowledged = false;
                 task::message(SourcesMessage::Remotes(ProvidedStateMessage::Load))
             }
             SourcesMessage::RequestDeleteSource(remote) => {
@@ -663,6 +684,10 @@ impl Page for SourcesPage {
             }
             SourcesMessage::ToggleShowPassphrase => {
                 self.show_passphrase = !self.show_passphrase;
+                task::none()
+            }
+            SourcesMessage::ToggleUnavailableAcknowledged => {
+                self.unavailable_acknowledged = !self.unavailable_acknowledged;
                 task::none()
             }
             SourcesMessage::Out(_) => {

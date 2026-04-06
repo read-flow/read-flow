@@ -13,7 +13,7 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] ~read-flow-core~: Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
 - [X] ~read-flow-core~ & ~read-flow~: Check files in the database to see whether they still exist
 
-** Tier 2 — High Impact, Moderate Effort [5/8]
+** Tier 2 — High Impact, Moderate Effort [6/8]
 
 - [X] ~read-flow~: Fix font rendering when "use theme colors" is enabled in MuPdfViewer on dark themes
   - When theme colors are applied to a PDF that contains real text (not scanned images), the color
@@ -32,7 +32,8 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] ~read-flow-core~: HTTP response code & error handling in ~client~ module
 - [ ] ~read-flow-core~: Proper HTTP error handling in ~server~ module, including tests
 - [X] ~read-flow~: On the Sources page, add an indicator icon for each source whether they are available or not
-- [ ] ~read-flow~: Allow adding sources that are not available at the time of adding(?) on the Sources page
+- [X] ~read-flow~: Allow adding sources that are not available at the time of adding(?) on the Sources page
+  - This should be gated with a confirmation dialog if the status of the source cannot be determined
 - [X] ~read-flow~: Show scan progress widget in bottom bar while a scan is running
   - The new async scanner (three-stage pipeline: traversal → fingerprinting → DB writer) exposes a
     =tokio::sync::mpsc::Receiver<ScanProgress>= to the caller. The COSMIC app should subscribe to

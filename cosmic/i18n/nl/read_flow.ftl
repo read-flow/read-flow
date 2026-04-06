@@ -178,6 +178,7 @@ sources-status-unknown = Status onbekend
 sources-status-checking = Bereikbaarheid controleren...
 sources-status-reachable = Bereikbaar
 sources-status-unreachable = Niet bereikbaar
+sources-add-unavailable-warning = Deze bron lijkt niet bereikbaar. U kunt deze toch toevoegen — de bron wordt als niet bereikbaar weergegeven totdat deze beschikbaar is.
 
 # Settings page
 settings-add-directory = Map Toevoegen

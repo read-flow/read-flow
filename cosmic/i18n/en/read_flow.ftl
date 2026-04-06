@@ -156,6 +156,7 @@ sources-status-unknown = Status unknown
 sources-status-checking = Checking reachability...
 sources-status-reachable = Reachable
 sources-status-unreachable = Unreachable
+sources-add-unavailable-warning = This source appears unavailable. You can still add it — it will appear as unreachable until it becomes accessible.
 
 # Settings page
 settings-add-directory = Add Directory
