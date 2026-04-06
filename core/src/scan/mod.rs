@@ -99,7 +99,9 @@ impl DocumentType {
     /// All named document types in their canonical order. Does not include `Other`.
     pub fn all() -> &'static [DocumentType] {
         use DocumentType::*;
-        &[Pdf, Epub, Mobi, Fb2, Cbz, Cbt, Xps, Oxps, Docx, Xlsx, Pptx, Hwpx]
+        &[
+            Pdf, Epub, Mobi, Fb2, Cbz, Cbt, Xps, Oxps, Docx, Xlsx, Pptx, Hwpx,
+        ]
     }
 }
 
@@ -342,9 +344,10 @@ mod tests {
     }
 
     #[test]
-    fn default_extensions_are_all_mupdf_document_formats() {
+    fn default_extensions_are_pdf_epub_mobi() {
+        use DocumentType::*;
         let settings = ScanSettings::default();
-        Assert::that(&settings.extensions).is(DocumentType::all());
+        Assert::that(&settings.extensions).is(&vec![Pdf, Epub, Mobi]);
     }
 
     #[test]
@@ -360,8 +363,7 @@ mod tests {
             extensions = ["pdf", "cbz"]
         "#;
         let settings: ScanSettings = toml::from_str(toml).unwrap();
-        Assert::that(&settings.extensions)
-            .is(&vec![DocumentType::Pdf, DocumentType::Cbz]);
+        Assert::that(&settings.extensions).is(&vec![DocumentType::Pdf, DocumentType::Cbz]);
     }
 
     #[test]
@@ -376,9 +378,10 @@ mod tests {
 
     #[test]
     fn missing_extensions_in_toml_uses_default() {
+        use DocumentType::*;
         let toml = r#"dry_run = false"#;
         let settings: ScanSettings = toml::from_str(toml).unwrap();
-        Assert::that(&settings.extensions).is(DocumentType::all());
+        Assert::that(&settings.extensions).is(&vec![Pdf, Epub, Mobi]);
     }
 
     #[test]

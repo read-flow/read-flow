@@ -471,18 +471,15 @@ impl Pages {
                 .map(move |action| {
                     action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
                 }),
-            PageMessage::OpenDocument(document) =>
-            {
-                match &document.metadata.type_ {
-                    DocumentType::Epub => match self.epub_viewer_config {
-                        EpubViewerConfig::NativeEpub => self.open_epub_viewer(document),
-                        EpubViewerConfig::MuPdf => self.open_mupdf_viewer(document),
-                        EpubViewerConfig::ExternalViewer => self.open_in_external_viewer(document),
-                    },
-                    DocumentType::Other => self.open_in_external_viewer(document),
-                    _ => self.open_mupdf_viewer(document),
-                }
-            }
+            PageMessage::OpenDocument(document) => match &document.metadata.type_ {
+                DocumentType::Epub => match self.epub_viewer_config {
+                    EpubViewerConfig::NativeEpub => self.open_epub_viewer(document),
+                    EpubViewerConfig::MuPdf => self.open_mupdf_viewer(document),
+                    EpubViewerConfig::ExternalViewer => self.open_in_external_viewer(document),
+                },
+                DocumentType::Other => self.open_in_external_viewer(document),
+                _ => self.open_mupdf_viewer(document),
+            },
             PageMessage::CloseEpubViewer(fingerprint, progress_json) => {
                 let _ = self.epub_viewers.swap_remove(&fingerprint);
 
