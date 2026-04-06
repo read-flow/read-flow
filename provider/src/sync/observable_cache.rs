@@ -2,10 +2,10 @@ use std::any::type_name;
 use std::convert::identity;
 use std::fmt;
 use std::marker::PhantomData;
+use std::sync::mpsc;
 use std::sync::RwLock;
 
-use tokio::sync::broadcast;
-
+use crate::sync::broadcaster::Broadcaster;
 use crate::sync::Expiring;
 use crate::sync::HasSetExpired;
 use crate::sync::Invalidated;
@@ -17,7 +17,7 @@ pub struct ObservableCache<P, F, T, R> {
     provider: P,
     transformation: F,
     value: RwLock<Option<R>>,
-    sender: broadcast::Sender<Invalidated>,
+    broadcaster: Broadcaster<Invalidated>,
     _marker: PhantomData<T>,
 }
 
@@ -35,24 +35,19 @@ impl<P, T> ObservableCache<P, fn(T) -> T, T, T> {
 
 impl<P, F, T, R> ObservableCache<P, F, T, R> {
     pub fn with_transform(provider: P, transformation: F) -> Self {
-        Self::with_capacity(provider, transformation, 16)
-    }
-
-    pub fn with_capacity(provider: P, transformation: F, capacity: usize) -> Self {
-        let (sender, _) = broadcast::channel(capacity);
         Self {
             provider,
             transformation,
             value: Default::default(),
-            sender,
+            broadcaster: Broadcaster::new(),
             _marker: PhantomData,
         }
     }
 }
 
 impl<P, F, T, R> Observable<Invalidated> for ObservableCache<P, F, T, R> {
-    fn subscribe(&self) -> broadcast::Receiver<Invalidated> {
-        self.sender.subscribe()
+    fn subscribe(&self) -> mpsc::Receiver<Invalidated> {
+        self.broadcaster.subscribe()
     }
 }
 
@@ -61,8 +56,7 @@ impl<P, F, T, R> HasSetExpired for ObservableCache<P, F, T, R> {
     fn set_expired(&self) {
         let mut value = self.value.write().unwrap();
         *value = None;
-        // Ignore send errors - they just mean no receivers are listening
-        let _ = self.sender.send(Invalidated);
+        self.broadcaster.send(Invalidated);
     }
 }
 

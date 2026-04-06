@@ -1,4 +1,5 @@
 mod and_then;
+mod broadcaster;
 mod cache;
 mod expiring_item_cache;
 mod expiring_value;
@@ -8,6 +9,7 @@ mod observable_cache;
 mod observable_provider;
 mod value;
 
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::sync::RwLock;
 
@@ -20,7 +22,6 @@ pub use fallback_provider::FallbackProvider;
 pub use map::Map;
 pub use observable_cache::ObservableCache;
 pub use observable_provider::ObservableProvider;
-use tokio::sync::broadcast;
 pub use value::Value;
 
 pub trait Provider<T> {
@@ -196,7 +197,7 @@ where
 pub struct Invalidated;
 
 pub trait Observable<T> {
-    fn subscribe(&self) -> broadcast::Receiver<T>;
+    fn subscribe(&self) -> mpsc::Receiver<T>;
 }
 
 #[cfg(test)]

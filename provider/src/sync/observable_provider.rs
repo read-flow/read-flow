@@ -4,8 +4,9 @@
 //! emits notifications when `set_expired()` is called. This is useful for reactive
 //! UI patterns where the UI needs to refresh when underlying data changes.
 
-use tokio::sync::broadcast;
+use std::sync::mpsc;
 
+use crate::sync::broadcaster::Broadcaster;
 use crate::sync::Expiring;
 use crate::sync::HasSetExpired;
 use crate::sync::Invalidated;
@@ -27,10 +28,10 @@ use crate::sync::Provider;
 /// let observable = ObservableProvider::new(cache);
 ///
 /// // Subscribe to invalidation notifications
-/// let mut rx = observable.subscribe();
+/// let rx = observable.subscribe();
 ///
-/// // In another task, listen for notifications
-/// tokio::spawn(async move {
+/// // In another thread, listen for notifications
+/// std::thread::spawn(move || {
 ///     while rx.recv().is_ok() {
 ///         println!("Cache was invalidated!");
 ///     }
@@ -41,22 +42,16 @@ use crate::sync::Provider;
 /// ```
 pub struct ObservableProvider<P> {
     provider: P,
-    sender: broadcast::Sender<Invalidated>,
+    broadcaster: Broadcaster<Invalidated>,
 }
 
 impl<P> ObservableProvider<P> {
     /// Create a new observable provider wrapping the given provider.
-    ///
-    /// The channel capacity determines how many invalidation notifications
-    /// can be buffered before slow receivers start missing messages.
     pub fn new(provider: P) -> Self {
-        Self::with_capacity(provider, 16)
-    }
-
-    /// Create a new observable provider with a specific channel capacity.
-    pub fn with_capacity(provider: P, capacity: usize) -> Self {
-        let (sender, _) = broadcast::channel(capacity);
-        Self { provider, sender }
+        Self {
+            provider,
+            broadcaster: Broadcaster::new(),
+        }
     }
 
     /// Get a reference to the underlying provider.
@@ -75,8 +70,8 @@ impl<P> Observable<Invalidated> for ObservableProvider<P> {
     ///
     /// Returns a receiver that will receive `Invalidated` messages whenever
     /// `set_expired()` is called on this provider.
-    fn subscribe(&self) -> broadcast::Receiver<Invalidated> {
-        self.sender.subscribe()
+    fn subscribe(&self) -> mpsc::Receiver<Invalidated> {
+        self.broadcaster.subscribe()
     }
 }
 
@@ -87,8 +82,7 @@ where
     /// Invalidate the cache and notify all subscribers.
     pub fn set_expired(&self) {
         self.provider.set_expired();
-        // Ignore send errors - they just mean no receivers are listening
-        let _ = self.sender.send(Invalidated);
+        self.broadcaster.send(Invalidated);
     }
 }
 
