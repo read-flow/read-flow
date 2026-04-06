@@ -90,14 +90,11 @@ const KEY_VIEW_MODE: &str = "epub_view_mode";
 /// Config key for sidebar visibility (bool).
 const KEY_SHOW_SIDEBAR: &str = "epub_show_sidebar";
 
-/// Config key for content column width percentage (stored as u32, 50–150).
-const KEY_CONTENT_WIDTH_PCT: &str = "epub_content_width_pct";
-
 /// Config key for dual-page mode ("auto", "off", "on").
 const KEY_DUAL_PAGE: &str = "epub_dual_page";
 
-/// Config key for page-height fraction (stored as u32 percentage, 50–100).
-const KEY_PAGE_HEIGHT_FRACTION: &str = "epub_page_height_fraction";
+/// Config key for the page margin in pixels (stored as u32, 0–64).
+const KEY_PAGE_MARGIN: &str = "epub_page_margin";
 
 /// All EPUB reader preferences stored in cosmic-config.
 struct EpubPrefs {
@@ -105,9 +102,8 @@ struct EpubPrefs {
     base_font_size: f32,
     view_mode: ViewMode,
     show_sidebar: bool,
-    content_width_pct: f32,
     dual_page: DualPageMode,
-    page_height_fraction: f32,
+    page_margin: f32,
 }
 
 impl Default for EpubPrefs {
@@ -117,9 +113,8 @@ impl Default for EpubPrefs {
             base_font_size: 16.0,
             view_mode: ViewMode::default(),
             show_sidebar: true,
-            content_width_pct: 100.0,
             dual_page: DualPageMode::default(),
-            page_height_fraction: 1.0,
+            page_margin: 16.0,
         }
     }
 }
@@ -175,10 +170,6 @@ fn load_epub_prefs() -> EpubPrefs {
         prefs.show_sidebar = show;
     }
 
-    if let Ok(pct) = ctx.get::<u32>(KEY_CONTENT_WIDTH_PCT) {
-        prefs.content_width_pct = (pct as f32).clamp(50.0, 150.0);
-    }
-
     if let Ok(dp_str) = ctx.get::<String>(KEY_DUAL_PAGE) {
         prefs.dual_page = match dp_str.as_str() {
             "off" => DualPageMode::Off,
@@ -187,8 +178,8 @@ fn load_epub_prefs() -> EpubPrefs {
         };
     }
 
-    if let Ok(frac) = ctx.get::<u32>(KEY_PAGE_HEIGHT_FRACTION) {
-        prefs.page_height_fraction = (frac as f32 / 100.0).clamp(0.5, 1.0);
+    if let Ok(margin) = ctx.get::<u32>(KEY_PAGE_MARGIN) {
+        prefs.page_margin = (margin as f32).clamp(0.0, 64.0);
     }
 
     prefs
@@ -207,20 +198,13 @@ fn save_epub_prefs(prefs: &EpubPrefs) {
     };
     let _ = ctx.set(KEY_VIEW_MODE, mode_str);
     let _ = ctx.set(KEY_SHOW_SIDEBAR, prefs.show_sidebar);
-    let _ = ctx.set(
-        KEY_CONTENT_WIDTH_PCT,
-        prefs.content_width_pct.round() as u32,
-    );
     let dp_str = match prefs.dual_page {
         DualPageMode::Auto => "auto",
         DualPageMode::Off => "off",
         DualPageMode::On => "on",
     };
     let _ = ctx.set(KEY_DUAL_PAGE, dp_str);
-    let _ = ctx.set(
-        KEY_PAGE_HEIGHT_FRACTION,
-        (prefs.page_height_fraction * 100.0).round() as u32,
-    );
+    let _ = ctx.set(KEY_PAGE_MARGIN, prefs.page_margin.round() as u32);
 }
 
 // --- View mode and pagination types ---
@@ -400,12 +384,10 @@ pub enum EpubViewerMessage {
     PreviousPage,
     /// Toggle dual-page display mode.
     SetDualPage(DualPageMode),
-    /// Set the page height fraction (0.5..=1.0) for pagination.
-    SetPageHeightFraction(f32),
+    /// Set the page margin in pixels (0–64) for paginated mode.
+    SetPageMargin(f32),
     /// Toggle chapter navigation sidebar visibility.
     ShowSidebar(bool),
-    /// Set content column max-width as a percentage of the default (50..=150).
-    SetContentMaxWidth(f32),
     /// Set the font family for rendering (index into FontFamily::ALL).
     SetFontFamily(FontFamily),
     /// Set the base body font size in pixels (12–24).
@@ -452,16 +434,13 @@ pub struct EpubViewer {
     pagination_cache: HashMap<usize, PaginationLayout>,
     /// Cached per-block heights for each chapter, keyed by chapter index.
     /// Value is `(content_width, font_size, heights_vec)`.  Invalidated when
-    /// `content_width_pct`, `base_font_size`, or the EPUB document changes.
+    /// `base_font_size` or the EPUB document changes.
     block_heights_cache: HashMap<usize, (f32, f32, Vec<f32>)>,
     /// Most recently observed viewport dimensions, set from the `responsive`
     /// closure (via Cell, since `view()` takes `&self`).
     viewport_size: Cell<(f32, f32)>,
     /// Whether to render two pages side by side in paginated mode.
     dual_page: DualPageMode,
-    /// Fraction of viewport height used for page content (0.5..=1.0).
-    /// A value below 1.0 compensates for inaccurate height estimation.
-    page_height_fraction: f32,
     /// Deferred block index for page restoration.  Set when reading progress
     /// is loaded but pagination hasn't run yet (viewport_size still 0×0).
     /// Consumed by `maybe_repaginate()` once a valid layout is available.
@@ -471,8 +450,6 @@ pub struct EpubViewer {
     /// Whether the sidebar pane was visible in the last rendered frame.
     /// Used for hysteresis when auto-hiding on narrow windows.
     sidebar_pane_visible: Cell<bool>,
-    /// Content column max width as a percentage of the default 800px (50..=150).
-    content_width_pct: f32,
     /// Font family used for rendering EPUB content.
     font_family: FontFamily,
     /// Pre-computed display names for the font family dropdown.
@@ -500,6 +477,8 @@ pub struct EpubViewer {
     /// Wrapped in `RefCell` for interior mutability: shaping mutates the font system
     /// cache but is logically read-only from the viewer's perspective.
     font_system: RefCell<FontSystem>,
+    /// Page margin in pixels applied to all four sides of the page content area (0–64).
+    page_margin: f32,
 }
 
 impl EpubViewer {
@@ -535,11 +514,9 @@ impl EpubViewer {
             block_heights_cache: HashMap::new(),
             viewport_size: Cell::new((0.0, 0.0)),
             dual_page: saved_prefs.dual_page,
-            page_height_fraction: saved_prefs.page_height_fraction,
             pending_block_index: None,
             show_sidebar: saved_prefs.show_sidebar,
             sidebar_pane_visible: Cell::new(true),
-            content_width_pct: saved_prefs.content_width_pct,
             font_family: saved_prefs.font_family,
             font_family_names: widget::combo_box::State::new(FontFamily::all()),
             nav_entries: Vec::new(),
@@ -552,6 +529,7 @@ impl EpubViewer {
             search_current: 0,
             search_input_id: widget::Id::unique(),
             font_system: RefCell::new(FontSystem::new()),
+            page_margin: saved_prefs.page_margin,
         };
 
         let mut tasks = Vec::new();
@@ -611,9 +589,8 @@ impl EpubViewer {
             base_font_size: self.base_font_size,
             view_mode: self.view_mode,
             show_sidebar: self.show_sidebar,
-            content_width_pct: self.content_width_pct,
             dual_page: self.dual_page,
-            page_height_fraction: self.page_height_fraction,
+            page_margin: self.page_margin,
         });
     }
 
@@ -836,10 +813,9 @@ impl EpubViewer {
                 }
             }
 
-            let max_w = 800.0 * (self.content_width_pct / 100.0);
             let paper = widget::container(column)
                 .padding(space_s)
-                .max_width(max_w)
+                .max_width(800.0)
                 .width(Length::Fill)
                 .style(move |theme: &cosmic::Theme| paper_background(theme));
 
@@ -864,9 +840,7 @@ impl EpubViewer {
     }
 
     fn view_content_paginated(&self) -> Element<'_, EpubViewerMessage> {
-        let cosmic_theme::Spacing {
-            space_s, space_xxs, ..
-        } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
         let chapter = match self.chapters.get(self.active_chapter) {
             Some(ch) => ch,
@@ -882,9 +856,9 @@ impl EpubViewer {
         let active_chapter = self.active_chapter;
         let show_raw_html = self.show_raw_html;
 
-        let page_height_fraction = self.page_height_fraction;
-        let max_content_width = 800.0 * (self.content_width_pct / 100.0);
+        let max_content_width = 800.0_f32;
         let base_font_size = self.base_font_size;
+        let page_margin = self.page_margin;
 
         widget::responsive(move |size| {
             // Store viewport size so update() can trigger re-pagination.
@@ -920,8 +894,8 @@ impl EpubViewer {
                     } else {
                         max_content_width.min(size.width - sp_s * 2.0)
                     };
-                    let cw = (pw - sp_s * 2.0).max(1.0);
-                    let ch = (size.height - sp_s * 4.0 - 24.0).max(1.0) * page_height_fraction;
+                    let cw = (pw - page_margin * 2.0).max(1.0);
+                    let ch = (size.height - page_margin * 2.0 - sp_s * 2.0 - 24.0).max(1.0);
                     computed_layout = paginate_blocks(
                         &chapter.blocks,
                         ch,
@@ -1029,7 +1003,7 @@ impl EpubViewer {
                         widget::scrollable(
                             widget::container(
                                 widget::container(column)
-                                    .padding(space_s)
+                                    .padding(page_margin)
                                     .max_width(max_content_width)
                                     .width(Length::Fill),
                             )
@@ -1238,8 +1212,6 @@ impl Page for EpubViewer {
                             first_block,
                             self.view_mode,
                             self.base_font_size,
-                            self.content_width_pct,
-                            self.page_height_fraction,
                         ))
                     },
                 )))
@@ -1300,36 +1272,21 @@ impl Page for EpubViewer {
                 ),
             );
 
-            let pct = (self.page_height_fraction * 100.0).round() as u32;
+            let margin_px = self.page_margin.round() as u32;
             display_section = display_section.add(
                 widget::settings::item::builder(format!(
-                    "{} ({}%)",
-                    fl!("epub-viewer-page-fill"),
-                    pct
+                    "{} ({}px)",
+                    fl!("epub-viewer-page-margin"),
+                    margin_px
                 ))
                 .control(
-                    widget::slider(50.0..=100.0, self.page_height_fraction * 100.0, |v| {
-                        EpubViewerMessage::SetPageHeightFraction(v / 100.0)
+                    widget::slider(0.0..=64.0, self.page_margin, |v| {
+                        EpubViewerMessage::SetPageMargin(v)
                     })
-                    .step(5.0),
+                    .step(4.0),
                 ),
             );
         }
-
-        let width_pct = self.content_width_pct.round() as u32;
-        display_section = display_section.add(
-            widget::settings::item::builder(format!(
-                "{} ({}%)",
-                fl!("epub-viewer-content-width"),
-                width_pct
-            ))
-            .control(
-                widget::slider(50.0..=150.0, self.content_width_pct, |v| {
-                    EpubViewerMessage::SetContentMaxWidth(v)
-                })
-                .step(5.0),
-            ),
-        );
 
         display_section = display_section.add(
             widget::settings::item::builder(fl!("epub-viewer-font")).control(widget::combo_box(
@@ -1419,7 +1376,7 @@ impl Page for EpubViewer {
                 // with different display dimensions or font size settings).
                 let target_y = if self.view_mode == ViewMode::Scroll {
                     if let Some(bi) = self.pending_block_index.take() {
-                        let content_w = 800.0 * (self.content_width_pct / 100.0);
+                        let content_w = 800.0;
                         let chapter_idx = self.active_chapter;
                         self.ensure_block_heights(chapter_idx, content_w);
                         self.block_heights_cache
@@ -1466,7 +1423,7 @@ impl Page for EpubViewer {
                 if self.view_mode == ViewMode::Scroll && !self.chapters.is_empty() {
                     // Chapters loaded before progress — compute y now.
                     let target_y = if let Some(bi) = self.pending_block_index.take() {
-                        let content_w = 800.0 * (self.content_width_pct / 100.0);
+                        let content_w = 800.0;
                         let chapter_idx = self.active_chapter;
                         self.ensure_block_heights(chapter_idx, content_w);
                         self.block_heights_cache
@@ -1532,7 +1489,7 @@ impl Page for EpubViewer {
 
                             match self.view_mode {
                                 ViewMode::Scroll => {
-                                    let content_w = 800.0 * (self.content_width_pct / 100.0);
+                                    let content_w = 800.0;
                                     self.ensure_block_heights(idx, content_w);
                                     let target_y = if let Some((_, _, heights)) =
                                         self.block_heights_cache.get(&idx)
@@ -1622,7 +1579,7 @@ impl Page for EpubViewer {
                     if let Some(frag) = fragment.filter(|f| !f.is_empty()) {
                         // Ensure cached heights before borrowing chapter (avoid split borrow).
                         let chapter_idx = self.active_chapter;
-                        let content_w = 800.0 * (self.content_width_pct / 100.0);
+                        let content_w = 800.0;
                         self.ensure_block_heights(chapter_idx, content_w);
 
                         if let Some(chapter) = self.chapters.get(chapter_idx) {
@@ -1845,8 +1802,8 @@ impl Page for EpubViewer {
                 self.save_current_prefs();
                 Task::none()
             }
-            EpubViewerMessage::SetPageHeightFraction(frac) => {
-                self.page_height_fraction = frac.clamp(0.5, 1.0);
+            EpubViewerMessage::SetPageMargin(margin) => {
+                self.page_margin = margin.clamp(0.0, 64.0);
                 self.pagination_cache.clear();
                 self.maybe_repaginate();
                 self.save_current_prefs();
@@ -1854,14 +1811,6 @@ impl Page for EpubViewer {
             }
             EpubViewerMessage::ShowSidebar(show) => {
                 self.show_sidebar = show;
-                self.save_current_prefs();
-                Task::none()
-            }
-            EpubViewerMessage::SetContentMaxWidth(pct) => {
-                self.content_width_pct = pct.clamp(50.0, 150.0);
-                self.pagination_cache.clear();
-                self.block_heights_cache.clear();
-                self.maybe_repaginate();
                 self.save_current_prefs();
                 Task::none()
             }
@@ -2041,19 +1990,15 @@ fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, EpubViewe
 }
 
 /// Serialize reading progress to a JSON string.
-/// Includes scroll offset, block index, view mode, and the layout-affecting
-/// settings (font_size, content_width_pct, page_height_fraction) so that
-/// the position can be accurately restored even on a device with different
-/// display dimensions.  The format is backward-compatible: older readers
-/// silently ignore unknown fields.
+/// Includes scroll offset, block index, view mode, and font size so that
+/// the position can be accurately restored.  The format is backward-compatible:
+/// older readers silently ignore unknown fields.
 fn serialize_progress(
     chapter: usize,
     scroll_y: f32,
     first_block: usize,
     view_mode: ViewMode,
     font_size: f32,
-    content_width_pct: f32,
-    page_height_fraction: f32,
 ) -> String {
     let mode = match view_mode {
         ViewMode::Scroll => "scroll",
@@ -2061,9 +2006,7 @@ fn serialize_progress(
     };
     format!(
         "{{\"chapter\":{chapter},\"scroll\":{scroll_y},\"block\":{first_block},\
-\"mode\":\"{mode}\",\"font_size\":{font_size},\
-\"content_width_pct\":{content_width_pct},\
-\"page_height_fraction\":{page_height_fraction}}}"
+\"mode\":\"{mode}\",\"font_size\":{font_size}}}"
     )
 }
 
@@ -2078,10 +2021,6 @@ pub(crate) struct ReadingPosition {
     view_mode: Option<ViewMode>,
     /// Base font size that was active when progress was saved (px).
     font_size: Option<f32>,
-    /// Content column width percentage when progress was saved.
-    content_width_pct: Option<f32>,
-    /// Page height fraction when progress was saved.
-    page_height_fraction: Option<f32>,
 }
 
 /// Parse reading progress from a JSON string like
@@ -2104,8 +2043,6 @@ fn parse_reading_progress(progress: &str) -> ReadingPosition {
                         }
                     }
                     "font_size" => pos.font_size = value.trim().parse().ok(),
-                    "content_width_pct" => pos.content_width_pct = value.trim().parse().ok(),
-                    "page_height_fraction" => pos.page_height_fraction = value.trim().parse().ok(),
                     _ => {}
                 }
             }
@@ -2909,7 +2846,8 @@ impl EpubViewer {
 
         let space_s = theme::active().cosmic().spacing.space_s as f32;
         let space_xxs = theme::active().cosmic().spacing.space_xxs as f32;
-        let max_content_width = 800.0 * (self.content_width_pct / 100.0);
+        let page_margin = self.page_margin;
+        let max_content_width = 800.0;
         // In dual-page mode, each page gets half the width minus the gap.
         let per_page_width = if self.should_dual_page(vw) {
             let available = vw - space_xxs; // gap between pages
@@ -2917,13 +2855,11 @@ impl EpubViewer {
         } else {
             max_content_width.min(vw - space_s * 2.0)
         };
-        // Subtract the inner content container's padding (space_s on each side) so
-        // text measurement uses the same width/height that iced actually renders at.
-        let content_width = (per_page_width - space_s * 2.0).max(1.0);
-        // Reserve space for the page indicator line at the bottom, and account for
-        // the inner container's vertical padding (space_s top + space_s bottom).
+        // Subtract the page margin (applied to all 4 sides of the inner content container).
+        let content_width = (per_page_width - page_margin * 2.0).max(1.0);
+        // Reserve space for the page indicator line and outer layout spacing.
         // Apply the user-configurable height fraction to leave extra headroom.
-        let content_height = (vh - space_s * 4.0 - 24.0).max(1.0) * self.page_height_fraction;
+        let content_height = (vh - page_margin * 2.0 - space_s * 2.0 - 24.0).max(1.0);
 
         let needs_recompute = match self.pagination_cache.get(&self.active_chapter) {
             Some(cached) => {
@@ -3032,7 +2968,7 @@ impl EpubViewer {
     /// default 80-char estimation (no width info available).
     fn approximate_block_at_scroll_y(&self, target_y: f32) -> Option<usize> {
         let chapter = self.chapters.get(self.active_chapter)?;
-        let content_w = 800.0 * (self.content_width_pct / 100.0);
+        let content_w = 800.0;
         let mut fs = self.font_system.borrow_mut();
         let mut y = 0.0f32;
         for (i, block) in chapter.blocks.iter().enumerate() {
@@ -3063,7 +2999,7 @@ impl EpubViewer {
         match self.view_mode {
             ViewMode::Scroll => {
                 // Estimate the y-position of the target block.
-                let content_w = 800.0 * (self.content_width_pct / 100.0);
+                let content_w = 800.0;
                 let mut fs = self.font_system.borrow_mut();
                 let y = self
                     .chapters

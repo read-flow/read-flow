@@ -267,6 +267,7 @@ epub-viewer-shortcut-next-chapter = Next chapter
 epub-viewer-shortcut-previous-page = Previous page
 epub-viewer-shortcut-next-page = Next page
 epub-viewer-page-fill = Page fill
+epub-viewer-page-margin = Page margin
 epub-viewer-show-sidebar = Navigation pane
 epub-viewer-content-width = Content width
 epub-viewer-font = Font

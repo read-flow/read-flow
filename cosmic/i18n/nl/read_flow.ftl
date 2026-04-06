@@ -283,6 +283,7 @@ epub-viewer-shortcut-next-chapter = Volgend hoofdstuk
 epub-viewer-shortcut-previous-page = Vorige pagina
 epub-viewer-shortcut-next-page = Volgende pagina
 epub-viewer-page-fill = Paginavulling
+epub-viewer-page-margin = Paginamarge
 epub-viewer-show-sidebar = Navigatiepaneel
 epub-viewer-content-width = Inhoudsbreedte
 epub-viewer-font = Lettertype
