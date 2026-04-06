@@ -93,7 +93,7 @@ const KEY_SHOW_SIDEBAR: &str = "epub_show_sidebar";
 /// Config key for dual-page mode ("auto", "off", "on").
 const KEY_DUAL_PAGE: &str = "epub_dual_page";
 
-/// Config key for the page margin in pixels (stored as u32, 0–64).
+/// Config key for the page margin in pixels (stored as u32, 0–128).
 const KEY_PAGE_MARGIN: &str = "epub_page_margin";
 
 /// All EPUB reader preferences stored in cosmic-config.
@@ -179,7 +179,7 @@ fn load_epub_prefs() -> EpubPrefs {
     }
 
     if let Ok(margin) = ctx.get::<u32>(KEY_PAGE_MARGIN) {
-        prefs.page_margin = (margin as f32).clamp(0.0, 64.0);
+        prefs.page_margin = (margin as f32).clamp(0.0, 128.0);
     }
 
     prefs
@@ -384,7 +384,7 @@ pub enum EpubViewerMessage {
     PreviousPage,
     /// Toggle dual-page display mode.
     SetDualPage(DualPageMode),
-    /// Set the page margin in pixels (0–64) for paginated mode.
+    /// Set the page margin in pixels (0–128) for paginated mode.
     SetPageMargin(f32),
     /// Toggle chapter navigation sidebar visibility.
     ShowSidebar(bool),
@@ -477,7 +477,7 @@ pub struct EpubViewer {
     /// Wrapped in `RefCell` for interior mutability: shaping mutates the font system
     /// cache but is logically read-only from the viewer's perspective.
     font_system: RefCell<FontSystem>,
-    /// Page margin in pixels applied to all four sides of the page content area (0–64).
+    /// Page margin in pixels applied to all four sides of the page content area (0–128).
     page_margin: f32,
 }
 
@@ -1280,7 +1280,7 @@ impl Page for EpubViewer {
                     margin_px
                 ))
                 .control(
-                    widget::slider(0.0..=64.0, self.page_margin, |v| {
+                    widget::slider(0.0..=128.0, self.page_margin, |v| {
                         EpubViewerMessage::SetPageMargin(v)
                     })
                     .step(4.0),
@@ -1803,7 +1803,7 @@ impl Page for EpubViewer {
                 Task::none()
             }
             EpubViewerMessage::SetPageMargin(margin) => {
-                self.page_margin = margin.clamp(0.0, 64.0);
+                self.page_margin = margin.clamp(0.0, 128.0);
                 self.pagination_cache.clear();
                 self.maybe_repaginate();
                 self.save_current_prefs();
