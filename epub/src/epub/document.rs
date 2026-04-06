@@ -4,6 +4,7 @@ use std::io::BufReader;
 use std::path::Path;
 use std::sync::RwLock;
 
+use base64::Engine as _;
 use zip::ZipArchive;
 
 use crate::domain::document::Document;
@@ -111,6 +112,20 @@ impl Document for EpubDocument {
     }
 
     fn resolve_resource(&self, href: &str) -> Result<Vec<u8>> {
+        // Data URLs carry their own payload — decode the base64 content directly.
+        if let Some(rest) = href.strip_prefix("data:") {
+            if let Some(encoded) = rest
+                .split(';')
+                .nth(1)
+                .and_then(|s| s.strip_prefix("base64,"))
+            {
+                return base64::engine::general_purpose::STANDARD
+                    .decode(encoded)
+                    .map_err(|_| EpubError::ResourceNotFound(href.to_string()));
+            }
+            return Err(EpubError::ResourceNotFound(href.to_string()));
+        }
+
         let mut archive = self.archive.write().unwrap();
         let mut file = archive.by_name(href).map_err(|_| {
             tracing::info!("resource not found in EPUB archive: {href}");

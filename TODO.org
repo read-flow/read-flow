@@ -12,6 +12,8 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] ~read-flow-core~: Make file download folder for HTTP ~client~ configurable
 - [X] ~read-flow-core~: Use faster/fastest hash function available for IndexMap, we don't need the security aspects of the default hashing implementation
 - [X] ~read-flow-core~ & ~read-flow~: Check files in the database to see whether they still exist
+- [X] ~read-flow::EpubViewer~: Support images in data urls
+  - log line: 2026-04-06T17:04:24.169257Z  INFO epub::epub::document: resource not found in EPUB archive: OEBPS/html/data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYgAAAABCAIAAABL6a7VAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAkElEQVQ4jY2UQQ7AIAgE5f9/lh5MidmFaT0Yq0SGXWzsvSNivSMzIyIz11pn0c4VfMJqXePerAvryD8r3rPLPYAnAILXxk+cXtQnJ6Rw0SRLSwVHwAmCgxRTFtB84nQ97wZzN12W1hdhcF+4loIE+yY9pz75FId9Z4sFeCpWBGH9+eH4G/9TphcFPwroMQl4AD7pbgsbW4jeAAAAAElFTkSuQmCC
 
 ** Tier 2 — High Impact, Moderate Effort [6/8]
 
