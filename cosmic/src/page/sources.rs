@@ -52,7 +52,7 @@ impl Provider<Vec<Remote>> for RemotesProvider {
     async fn provide(&self) -> Result<Vec<Remote>, Self::Error> {
         let pool = self.0.connection_pool().await;
         let mut conn = pool.acquire().await?;
-        dao::select_all_remotes(&mut *conn).await
+        dao::select_all_remotes(&mut conn).await
     }
 }
 
@@ -553,7 +553,7 @@ impl Page for SourcesPage {
                         Err(e) => return SourcesMessage::SetOperationError(format!("{e}")),
                     };
                     match dao::insert_remote(
-                        &mut *conn,
+                        &mut conn,
                         NewRemote {
                             base_url: url.to_string(),
                             order: order as i32,

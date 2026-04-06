@@ -26,7 +26,7 @@ where
         let mut file_tags_to_add: Vec<Vec<FileTag>> = Vec::new();
 
         for (path, tags) in &scan_settings.auto_tags {
-            let files = dao::select_all_files_by_path_like(&mut *conn, path).await?;
+            let files = dao::select_all_files_by_path_like(&mut conn, path).await?;
             if scan_settings.dry_run {
                 for file in files.iter() {
                     println!("{}: {:?}", file.path, tags);
@@ -36,7 +36,7 @@ where
         }
 
         if !scan_settings.dry_run {
-            dao::upsert_many_file_tags(&mut *conn, concat(file_tags_to_add)).await?;
+            dao::upsert_many_file_tags(&mut conn, concat(file_tags_to_add)).await?;
         }
         Ok(())
     }

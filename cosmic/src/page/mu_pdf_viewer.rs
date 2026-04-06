@@ -655,10 +655,9 @@ impl MuPdfViewer {
                     .active_page
                     .checked_add(offset)
                     .filter(|&i| i < self.pages.len())
+                    && !pages_to_render.contains(&i)
                 {
-                    if !pages_to_render.contains(&i) {
-                        pages_to_render.push(i);
-                    }
+                    pages_to_render.push(i);
                 }
             }
         }

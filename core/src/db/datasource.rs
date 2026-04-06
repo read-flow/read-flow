@@ -50,8 +50,8 @@ impl FileDataSource for DbClient {
 
     async fn get_files(&self) -> Result<Vec<File>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        let files = dao::select_all_files(&mut *conn).await?;
-        let file_tags = dao::select_all_file_tags(&mut *conn).await?;
+        let files = dao::select_all_files(&mut conn).await?;
+        let file_tags = dao::select_all_file_tags(&mut conn).await?;
 
         let mut result: FxIndexMap<i32, (DbFile, Vec<DbFileTag>)> = files
             .into_iter()
@@ -69,13 +69,13 @@ impl FileDataSource for DbClient {
 
     async fn get_files_tags(&self) -> Result<Vec<String>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::select_all_tags(&mut *conn).await
+        dao::select_all_tags(&mut conn).await
     }
 
     async fn get_file(&self, id: i32) -> Result<Option<File>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        let file = dao::select_file_by_id(&mut *conn, id).await?;
-        let file_tags = dao::select_file_tags_by_file_id(&mut *conn, id).await?;
+        let file = dao::select_file_by_id(&mut conn, id).await?;
+        let file_tags = dao::select_file_tags_by_file_id(&mut conn, id).await?;
         Ok(file.map(|file| (file, file_tags).into()))
     }
 
@@ -83,22 +83,22 @@ impl FileDataSource for DbClient {
         let (db_file, tags) = file.into();
         let file_id = db_file.id;
         let mut tx = self.connection_pool.begin().await?;
-        dao::update_file(&mut *tx, db_file).await?;
-        let existing_tags = dao::select_file_tags_by_file_id(&mut *tx, file_id).await?;
+        dao::update_file(&mut tx, db_file).await?;
+        let existing_tags = dao::select_file_tags_by_file_id(&mut tx, file_id).await?;
         let tags_to_delete: Vec<String> = existing_tags
             .into_iter()
             .filter(|tag| !tags.iter().any(|t| t.tag == tag.tag))
             .map(|tag| tag.tag)
             .collect();
-        dao::delete_file_tags(&mut *tx, file_id, tags_to_delete).await?;
-        dao::upsert_many_file_tags(&mut *tx, tags).await?;
+        dao::delete_file_tags(&mut tx, file_id, tags_to_delete).await?;
+        dao::upsert_many_file_tags(&mut tx, tags).await?;
         tx.commit().await?;
         Ok(())
     }
 
     async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        let file_tags = dao::select_file_tags_by_file_id(&mut *conn, id).await?;
+        let file_tags = dao::select_file_tags_by_file_id(&mut conn, id).await?;
         Ok(file_tags.into_iter().map(|t| t.tag).collect())
     }
 
@@ -108,8 +108,8 @@ impl FileDataSource for DbClient {
             .map(|tag| DbFileTag::new(id, tag))
             .collect();
         let mut conn = self.connection_pool.acquire().await?;
-        dao::upsert_many_file_tags(&mut *conn, db_tags).await?;
-        let result = dao::select_file_tags_by_file_id(&mut *conn, id)
+        dao::upsert_many_file_tags(&mut conn, db_tags).await?;
+        let result = dao::select_file_tags_by_file_id(&mut conn, id)
             .await?
             .into_iter()
             .map(|tag| tag.tag)
@@ -119,7 +119,7 @@ impl FileDataSource for DbClient {
 
     async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::delete_file_tags(&mut *conn, id, tags).await
+        dao::delete_file_tags(&mut conn, id, tags).await
     }
 
     async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error> {
@@ -140,12 +140,12 @@ impl FileDataSource for DbClient {
         fingerprint: &str,
     ) -> Result<Option<ReadingProgress>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::get_reading_progress(&mut *conn, fingerprint).await
+        dao::get_reading_progress(&mut conn, fingerprint).await
     }
 
     async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::upsert_reading_progress(&mut *conn, progress).await
+        dao::upsert_reading_progress(&mut conn, progress).await
     }
 
     async fn import_file(&self, path: &Path) -> Result<File, Self::Error> {
@@ -177,11 +177,11 @@ impl FileDataSource for DbClient {
         };
 
         let mut conn = self.connection_pool.acquire().await?;
-        dao::upsert_file(&mut *conn, new_file).await?;
-        let db_file = dao::select_file_by_path(&mut *conn, &path_str)
+        dao::upsert_file(&mut conn, new_file).await?;
+        let db_file = dao::select_file_by_path(&mut conn, &path_str)
             .await?
             .expect("file should exist after upsert");
-        let file_tags = dao::select_file_tags_by_file_id(&mut *conn, db_file.id).await?;
+        let file_tags = dao::select_file_tags_by_file_id(&mut conn, db_file.id).await?;
         Ok((db_file, file_tags).into())
     }
 }

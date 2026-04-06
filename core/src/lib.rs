@@ -155,7 +155,7 @@ where
     pub async fn check_missing(&self, purge: bool) -> Vec<String> {
         let connection_pool = self.connection_pool().await;
         let mut conn = connection_pool.acquire().await.expect("database available");
-        let files = dao::select_all_files(&mut *conn)
+        let files = dao::select_all_files(&mut conn)
             .await
             .expect("database available");
 
