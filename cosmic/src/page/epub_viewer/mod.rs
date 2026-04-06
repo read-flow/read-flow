@@ -3255,6 +3255,22 @@ mod tests {
         render_chapter_blocks(&chapters, 0, 16.0)
     }
 
+    #[golden_test(600, 200)]
+    fn epub_image_data_url() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        // Image embedded as a data URL — no EPUB resource entry needed.
+        // Uses the same 8×8 orange PNG as epub_image, base64-encoded inline.
+        const TINY_PNG_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4kWKEFTEMLQkAVkZXgTy9n4kAAAAASUVORK5CYII=";
+        let src = format!("data:image/png;base64,{TINY_PNG_B64}");
+        let _f = EpubBuilder::new("Image Data URL")
+            .body(format!(
+                "<p>An image from a data URL follows:</p>\
+                 <img src=\"{src}\" alt=\"Data URL image\"/>"
+            ))
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
     #[golden_test(600, 150)]
     fn epub_image_missing_alt() -> cosmic::Element<'_, super::EpubViewerMessage> {
         // Image whose src cannot be resolved — falls back to alt text.
