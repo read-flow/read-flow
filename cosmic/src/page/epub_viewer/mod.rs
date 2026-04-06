@@ -920,12 +920,14 @@ impl EpubViewer {
                     } else {
                         max_content_width.min(size.width - sp_s * 2.0)
                     };
-                    let ph = (size.height - sp_s * 2.0 - 24.0) * page_height_fraction;
+                    let cw = (pw - sp_s * 2.0).max(1.0);
+                    let ch = (size.height - sp_s * 4.0 - 24.0).max(1.0) * page_height_fraction;
                     computed_layout = paginate_blocks(
                         &chapter.blocks,
-                        ph,
-                        pw,
+                        ch,
+                        cw,
                         base_font_size,
+                        sp_xxs,
                         &mut self.font_system.borrow_mut(),
                     );
                     &computed_layout
@@ -2647,9 +2649,10 @@ fn paginate_blocks(
     page_height: f32,
     page_width: f32,
     font_size: f32,
+    block_spacing: f32,
     font_system: &mut FontSystem,
 ) -> PaginationLayout {
-    const SPACING: f32 = 8.0;
+    let block_spacing = block_spacing.max(0.0);
 
     let mut pages: Vec<PageRange> = Vec::new();
     let mut page_start = 0usize;
@@ -2669,7 +2672,7 @@ fn paginate_blocks(
         let needed = if is_first_on_page {
             block_h
         } else {
-            SPACING + block_h
+            block_spacing + block_h
         };
 
         if accumulated + needed <= page_height {
@@ -2716,7 +2719,7 @@ fn paginate_blocks(
             }
         } else {
             // Block doesn't fit — try to place its top portion on the current page.
-            let available = (page_height - accumulated - SPACING).max(0.0);
+            let available = (page_height - accumulated - block_spacing).max(0.0);
             match try_split_block(block, page_width, font_size, available, 0, font_system) {
                 Some(abs_off) if abs_off > 0 => {
                     pages.push(PageRange {
@@ -2838,16 +2841,18 @@ impl EpubViewer {
         } else {
             max_content_width.min(vw - space_s * 2.0)
         };
-        let page_width = per_page_width;
-        // Reserve space for the page indicator line at the bottom.
-        // Apply the user-configurable height fraction to compensate for
-        // inaccurate height estimates — a value < 1.0 leaves extra headroom.
-        let page_height = (vh - space_s * 2.0 - 24.0) * self.page_height_fraction;
+        // Subtract the inner content container's padding (space_s on each side) so
+        // text measurement uses the same width/height that iced actually renders at.
+        let content_width = (per_page_width - space_s * 2.0).max(1.0);
+        // Reserve space for the page indicator line at the bottom, and account for
+        // the inner container's vertical padding (space_s top + space_s bottom).
+        // Apply the user-configurable height fraction to leave extra headroom.
+        let content_height = (vh - space_s * 4.0 - 24.0).max(1.0) * self.page_height_fraction;
 
         let needs_recompute = match self.pagination_cache.get(&self.active_chapter) {
             Some(cached) => {
-                (cached.page_height - page_height).abs() > 1.0
-                    || (cached.page_width - page_width).abs() > 1.0
+                (cached.page_height - content_height).abs() > 1.0
+                    || (cached.page_width - content_width).abs() > 1.0
             }
             None => true,
         };
@@ -2855,9 +2860,10 @@ impl EpubViewer {
         if needs_recompute && let Some(chapter) = self.chapters.get(self.active_chapter) {
             let layout = paginate_blocks(
                 &chapter.blocks,
-                page_height,
-                page_width,
+                content_height,
+                content_width,
                 self.base_font_size,
+                space_xxs,
                 &mut self.font_system.borrow_mut(),
             );
             if self.current_page >= layout.pages.len() {
