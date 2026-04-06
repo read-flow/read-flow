@@ -23,10 +23,10 @@ use crate::client::ClientSelector;
 use crate::client::FilesClientError;
 use crate::subscription::SubscriberState;
 
-type DoocumentsCache =
+type DocumentsCache =
     ObservableCache<Arc<RwLock<Aggregator>>, fn(Documents) -> Documents, Documents, Documents>;
 type TagsCache =
-    ObservableCache<Arc<DoocumentsCache>, fn(Documents) -> Vec<String>, Documents, Vec<String>>;
+    ObservableCache<Arc<DocumentsCache>, fn(Documents) -> Vec<String>, Documents, Vec<String>>;
 
 /// Extract unique sorted tags from documents.
 fn extract_tags(documents: Documents) -> Vec<String> {
@@ -42,7 +42,7 @@ fn extract_tags(documents: Documents) -> Vec<String> {
 
 pub struct DocumentProvider {
     pub(crate) aggregator: Arc<RwLock<Aggregator>>,
-    documents_cache: Arc<DoocumentsCache>,
+    documents_cache: Arc<DocumentsCache>,
     tags_cache: TagsCache,
 }
 
