@@ -2330,19 +2330,40 @@ fn anchor_y_from_heights(blocks: &[ContentBlock], heights: &[f32], anchor_id: &s
     None
 }
 
-/// Measure the pixel height that `text` occupies when shaped at `font_size` and wrapped to
-/// `content_width`, using `cosmic-text` for accurate glyph metrics (Phase 4b).
-fn measure_text_height(
+// ── COSMIC typography constants ──────────────────────────────────────────────
+// These match the exact values used by widget::text::title1/2/3/4/heading/body
+// in libcosmic's widget/text.rs.  They are independent of the user's
+// `base_font_size` setting: plain (unstyled) headings always render at these
+// sizes, so the height estimator must use them too.
+const COSMIC_TITLE1_SIZE: f32 = 35.0;
+const COSMIC_TITLE1_LINE_HEIGHT: f32 = 52.0;
+const COSMIC_TITLE2_SIZE: f32 = 29.0;
+const COSMIC_TITLE2_LINE_HEIGHT: f32 = 43.0;
+const COSMIC_TITLE3_SIZE: f32 = 24.0;
+const COSMIC_TITLE3_LINE_HEIGHT: f32 = 36.0;
+const COSMIC_TITLE4_SIZE: f32 = 20.0;
+const COSMIC_TITLE4_LINE_HEIGHT: f32 = 30.0;
+const COSMIC_HEADING_SIZE: f32 = 14.0;
+const COSMIC_HEADING_LINE_HEIGHT: f32 = 21.0;
+// Body text: widget::text::body() sets line_height=21 and font_size=14.
+// The render calls .size(user_font_size) to override font size, but the
+// line_height stays at 21.0, so we use that for unstyled paragraphs too.
+const COSMIC_BODY_LINE_HEIGHT: f32 = 21.0;
+
+/// Measure the pixel height that `text` occupies when shaped with explicit
+/// `font_size` and `line_height` and wrapped to `content_width`.
+/// This is the core measurement primitive used by the height estimator.
+fn measure_text_height_with_line_height(
     text: &str,
     content_width: f32,
     font_size: f32,
+    line_height: f32,
     font_system: &mut FontSystem,
 ) -> f32 {
     use cosmic_text::Attrs;
     use cosmic_text::Buffer;
     use cosmic_text::Metrics;
     use cosmic_text::Shaping;
-    let line_height = font_size * 1.375;
     let metrics = Metrics::new(font_size, line_height);
     let mut buffer = Buffer::new(font_system, metrics);
     buffer.set_size(Some(content_width), None);
@@ -2353,6 +2374,25 @@ fn measure_text_height(
         .last()
         .map(|r| r.line_y + r.line_height)
         .unwrap_or(line_height)
+}
+
+/// Measure the pixel height that `text` occupies when shaped at `font_size` and wrapped to
+/// `content_width`, using `cosmic-text` for accurate glyph metrics (Phase 4b).
+/// Line height is derived as `font_size * 1.375` — use
+/// [`measure_text_height_with_line_height`] when the line height differs.
+fn measure_text_height(
+    text: &str,
+    content_width: f32,
+    font_size: f32,
+    font_system: &mut FontSystem,
+) -> f32 {
+    measure_text_height_with_line_height(
+        text,
+        content_width,
+        font_size,
+        font_size * 1.375,
+        font_system,
+    )
 }
 
 /// Return the byte offset in `text` corresponding to `char_offset` Unicode code points.
@@ -2524,19 +2564,55 @@ fn estimated_block_height_for_width(
     let scale = font_size / 16.0;
     let line_h = font_size * 1.375;
     match block {
-        ContentBlock::Heading { level, text, .. } => {
-            let heading_size = match level {
-                1 => font_size * 2.0,
-                2 => font_size * 1.75,
-                3 => font_size * 1.5,
-                4 => font_size * 1.25,
-                _ => font_size * 1.125,
-            };
-            measure_text_height(text, content_width, heading_size, font_system)
-                .max(heading_size * 1.375)
+        ContentBlock::Heading {
+            level, text, spans, ..
+        } => {
+            if spans.is_empty() {
+                // Plain headings render via widget::text::title1/2/3/4/heading which
+                // use fixed COSMIC typography sizes independent of base_font_size.
+                let (h_size, h_line_h) = match level {
+                    1 => (COSMIC_TITLE1_SIZE, COSMIC_TITLE1_LINE_HEIGHT),
+                    2 => (COSMIC_TITLE2_SIZE, COSMIC_TITLE2_LINE_HEIGHT),
+                    3 => (COSMIC_TITLE3_SIZE, COSMIC_TITLE3_LINE_HEIGHT),
+                    4 => (COSMIC_TITLE4_SIZE, COSMIC_TITLE4_LINE_HEIGHT),
+                    _ => (COSMIC_HEADING_SIZE, COSMIC_HEADING_LINE_HEIGHT),
+                };
+                measure_text_height_with_line_height(
+                    text,
+                    content_width,
+                    h_size,
+                    h_line_h,
+                    font_system,
+                )
+                .max(h_line_h)
+            } else {
+                // Styled headings use render_spans() which applies font_size * multiplier.
+                let heading_size = match level {
+                    1 => font_size * 2.0,
+                    2 => font_size * 1.75,
+                    3 => font_size * 1.5,
+                    4 => font_size * 1.25,
+                    _ => font_size * 1.125,
+                };
+                measure_text_height(text, content_width, heading_size, font_system)
+                    .max(heading_size * 1.375)
+            }
         }
-        ContentBlock::Paragraph { text, .. } => {
-            measure_text_height(text, content_width, font_size, font_system).max(line_h)
+        ContentBlock::Paragraph { text, spans, .. } => {
+            if spans.is_empty() {
+                // widget::text::body().size(font_size) keeps line_height=21 regardless
+                // of font_size, so we measure with the fixed COSMIC body line height.
+                measure_text_height_with_line_height(
+                    text,
+                    content_width,
+                    font_size,
+                    COSMIC_BODY_LINE_HEIGHT.max(font_size * 1.375),
+                    font_system,
+                )
+                .max(COSMIC_BODY_LINE_HEIGHT.max(line_h))
+            } else {
+                measure_text_height(text, content_width, font_size, font_system).max(line_h)
+            }
         }
         ContentBlock::Preformatted { text, .. } => {
             (text.lines().count() as f32 * line_h).max(line_h)
@@ -3267,5 +3343,175 @@ mod tests {
             .build();
         let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
         render_chapter_blocks(&chapters, 0, 16.0)
+    }
+}
+
+/// Height estimation accuracy tests.
+///
+/// Each test measures a block with [`estimated_block_height_for_width`] and
+/// compares it against the height computed with the **same** font metrics that
+/// the renderer actually uses (COSMIC typography constants or `font_size`).
+/// The invariant is:
+///   `estimated >= actual_rendered`  — never underestimate (causes overflow)
+///   `estimated <= actual_rendered * 1.20`  — not more than 20 % over-estimate
+///
+/// The "actual_rendered" value is derived by calling
+/// [`measure_text_height_with_line_height`] with the exact sizes and line
+/// heights that the COSMIC text widgets use (title1..heading/body).
+#[cfg(test)]
+mod height_tests {
+    use cosmic_text::FontSystem;
+    use epub::BlockStyle;
+    use epub::ContentBlock;
+    use rstest::rstest;
+
+    use super::COSMIC_BODY_LINE_HEIGHT;
+    use super::COSMIC_HEADING_LINE_HEIGHT;
+    use super::COSMIC_HEADING_SIZE;
+    use super::COSMIC_TITLE1_LINE_HEIGHT;
+    use super::COSMIC_TITLE1_SIZE;
+    use super::COSMIC_TITLE2_LINE_HEIGHT;
+    use super::COSMIC_TITLE2_SIZE;
+    use super::COSMIC_TITLE3_LINE_HEIGHT;
+    use super::COSMIC_TITLE3_SIZE;
+    use super::COSMIC_TITLE4_LINE_HEIGHT;
+    use super::COSMIC_TITLE4_SIZE;
+    use super::estimated_block_height_for_width;
+    use super::measure_text_height_with_line_height;
+
+    fn make_font_system() -> FontSystem {
+        FontSystem::new()
+    }
+
+    fn plain_heading(level: u8, text: &str) -> ContentBlock {
+        ContentBlock::Heading {
+            level,
+            text: text.to_string(),
+            spans: vec![],
+            style: BlockStyle::default(),
+        }
+    }
+
+    fn plain_paragraph(text: &str) -> ContentBlock {
+        ContentBlock::Paragraph {
+            text: text.to_string(),
+            spans: vec![],
+            style: BlockStyle::default(),
+        }
+    }
+
+    /// Helper: assert estimated is within [actual, actual * 1.20].
+    fn assert_height(label: &str, estimated: f32, actual: f32) {
+        assert!(
+            estimated >= actual,
+            "{label}: estimated {estimated:.1} < actual {actual:.1} — underestimate causes page overflow"
+        );
+        assert!(
+            estimated <= actual * 1.20,
+            "{label}: estimated {estimated:.1} > actual {actual:.1} * 1.20 = {:.1} — over-estimate wastes space",
+            actual * 1.20
+        );
+    }
+
+    const WIDTH: f32 = 600.0;
+    const BASE_FONT_SIZE: f32 = 14.0;
+
+    // ── Plain heading height matches COSMIC typography ────────────────────────
+
+    #[rstest]
+    #[case(1, COSMIC_TITLE1_SIZE, COSMIC_TITLE1_LINE_HEIGHT)]
+    #[case(2, COSMIC_TITLE2_SIZE, COSMIC_TITLE2_LINE_HEIGHT)]
+    #[case(3, COSMIC_TITLE3_SIZE, COSMIC_TITLE3_LINE_HEIGHT)]
+    #[case(4, COSMIC_TITLE4_SIZE, COSMIC_TITLE4_LINE_HEIGHT)]
+    #[case(5, COSMIC_HEADING_SIZE, COSMIC_HEADING_LINE_HEIGHT)]
+    #[case(6, COSMIC_HEADING_SIZE, COSMIC_HEADING_LINE_HEIGHT)]
+    fn plain_heading_single_line(
+        #[case] level: u8,
+        #[case] cosmic_size: f32,
+        #[case] cosmic_line_h: f32,
+    ) {
+        let mut fs = make_font_system();
+        let text = "Chapter Title";
+        let block = plain_heading(level, text);
+        let estimated = estimated_block_height_for_width(&block, WIDTH, BASE_FONT_SIZE, &mut fs);
+        let actual =
+            measure_text_height_with_line_height(text, WIDTH, cosmic_size, cosmic_line_h, &mut fs);
+        assert_height(&format!("h{level} single-line"), estimated, actual);
+    }
+
+    #[rstest]
+    #[case(1, COSMIC_TITLE1_SIZE, COSMIC_TITLE1_LINE_HEIGHT)]
+    #[case(2, COSMIC_TITLE2_SIZE, COSMIC_TITLE2_LINE_HEIGHT)]
+    #[case(3, COSMIC_TITLE3_SIZE, COSMIC_TITLE3_LINE_HEIGHT)]
+    fn plain_heading_multiline(
+        #[case] level: u8,
+        #[case] cosmic_size: f32,
+        #[case] cosmic_line_h: f32,
+    ) {
+        let mut fs = make_font_system();
+        // Text long enough to wrap at 600px for the largest heading sizes.
+        let text = "A Very Long Chapter Title That Should Wrap Across Multiple Lines On The Page";
+        let block = plain_heading(level, text);
+        let estimated = estimated_block_height_for_width(&block, WIDTH, BASE_FONT_SIZE, &mut fs);
+        let actual =
+            measure_text_height_with_line_height(text, WIDTH, cosmic_size, cosmic_line_h, &mut fs);
+        assert_height(&format!("h{level} multi-line"), estimated, actual);
+    }
+
+    // ── Plain paragraph height matches COSMIC body typography ─────────────────
+
+    #[test]
+    fn plain_paragraph_single_line() {
+        let mut fs = make_font_system();
+        let text = "A short paragraph.";
+        let block = plain_paragraph(text);
+        let estimated = estimated_block_height_for_width(&block, WIDTH, BASE_FONT_SIZE, &mut fs);
+        let actual = measure_text_height_with_line_height(
+            text,
+            WIDTH,
+            BASE_FONT_SIZE,
+            COSMIC_BODY_LINE_HEIGHT,
+            &mut fs,
+        );
+        assert_height("paragraph single-line", estimated, actual);
+    }
+
+    #[test]
+    fn plain_paragraph_multiline() {
+        let mut fs = make_font_system();
+        let text = "This is a longer paragraph that contains enough text to wrap across \
+                    multiple lines when rendered at the default content width. It exercises \
+                    the multi-line height estimation path.";
+        let block = plain_paragraph(text);
+        let estimated = estimated_block_height_for_width(&block, WIDTH, BASE_FONT_SIZE, &mut fs);
+        let actual = measure_text_height_with_line_height(
+            text,
+            WIDTH,
+            BASE_FONT_SIZE,
+            COSMIC_BODY_LINE_HEIGHT,
+            &mut fs,
+        );
+        assert_height("paragraph multi-line", estimated, actual);
+    }
+
+    // ── Heading height scales correctly with content width ────────────────────
+
+    #[rstest]
+    #[case(300.0)]
+    #[case(600.0)]
+    #[case(800.0)]
+    fn h1_height_at_various_widths(#[case] width: f32) {
+        let mut fs = make_font_system();
+        let text = "A Chapter Title Long Enough To Potentially Wrap At Narrow Widths";
+        let block = plain_heading(1, text);
+        let estimated = estimated_block_height_for_width(&block, width, BASE_FONT_SIZE, &mut fs);
+        let actual = measure_text_height_with_line_height(
+            text,
+            width,
+            COSMIC_TITLE1_SIZE,
+            COSMIC_TITLE1_LINE_HEIGHT,
+            &mut fs,
+        );
+        assert_height(&format!("h1 width={width}"), estimated, actual);
     }
 }
