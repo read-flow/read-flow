@@ -348,7 +348,7 @@ impl<'a> RenderContext<'a> {
             }
             ContentBlock::Table { rows } => render_table(rows, font_size, family),
             ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
-            ContentBlock::Footnote { blocks, .. } => self.render_footnote(blocks),
+            ContentBlock::Footnote { id, blocks } => self.render_footnote(id, blocks),
             ContentBlock::Figure {
                 blocks,
                 caption,
@@ -396,31 +396,57 @@ impl<'a> RenderContext<'a> {
         }
     }
 
-    fn render_footnote(&self, blocks: &'a [ContentBlock]) -> Element<'a, EpubViewerMessage> {
+    fn render_footnote(
+        &self,
+        id: &str,
+        blocks: &'a [ContentBlock],
+    ) -> Element<'a, EpubViewerMessage> {
         let cosmic_theme::Spacing {
             space_xxs, space_s, ..
         } = theme::active().cosmic().spacing;
 
         let caption_size = (self.font_size * 0.8).max(10.0);
         let inner_ctx = RenderContext {
+            font_size: caption_size,
             max_image_height: f32::MAX,
             ..*self
         };
+
+        // Derive a short display label from the footnote id.
+        // Strips any non-digit prefix so "fn1" → "1", "fn-2" → "2", etc.
+        let label: &str = {
+            let start = id
+                .rfind(|c: char| !c.is_ascii_digit())
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            let trailing = &id[start..];
+            if trailing.is_empty() { id } else { trailing }
+        };
+        // "  1. " — the prefix used on the first paragraph (mirrors OrderedList rendering).
+        let list_prefix = format!("  {label}.\u{a0}");
+        // Continuation indent: same number of characters as the prefix so wrapped
+        // lines and extra paragraphs align with the text of the first line.
+        let indent = "\u{a0}".repeat(list_prefix.chars().count());
 
         let mut col = widget::column::with_capacity(blocks.len())
             .spacing(space_xxs)
             .width(Length::Fill);
 
-        for block in blocks {
+        for (i, block) in blocks.iter().enumerate() {
+            let prefix = if i == 0 {
+                list_prefix.clone()
+            } else {
+                indent.clone()
+            };
             let el: Element<_> = match block {
                 ContentBlock::Paragraph { spans, text, .. } => {
                     if spans.is_empty() {
-                        widget::text::caption(text)
+                        widget::text::caption(format!("{prefix}{text}"))
                             .size(caption_size)
                             .width(Length::Fill)
                             .into()
                     } else {
-                        render_spans(spans, caption_size, self.family)
+                        render_list_item_spans(prefix, spans, caption_size, self.family)
                     }
                 }
                 _ => inner_ctx.render_block_inner(block),

@@ -31,6 +31,16 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
     {
         let mut entry = entry;
         entry.flush_text();
+        // Fragment-only links (e.g. href="#fn1") are footnote call-site references.
+        // Wrap their visible text in square brackets so they read as "[1]" instead
+        // of plain "1", making them visually distinct from surrounding prose.
+        if tag_name == "a"
+            && entry.link.as_deref().is_some_and(|l| l.starts_with('#'))
+            && !entry.spans.is_empty()
+        {
+            entry.spans.first_mut().unwrap().text.insert(0, '[');
+            entry.spans.last_mut().unwrap().text.push(']');
+        }
         if let Some(parent) = state.stack.last_mut() {
             // Flush parent's pending text so span ordering is preserved.
             // For inline-style/styled-span tags the parent was already

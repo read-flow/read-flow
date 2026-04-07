@@ -3202,9 +3202,9 @@ mod tests {
     fn epub_footnote() -> cosmic::Element<'_, super::EpubViewerMessage> {
         let _f = EpubBuilder::new("Footnote")
             .body(
-                "<p>Main text with a reference.<sup>1</sup></p>\
+                "<p>Main text with a reference<sup><a href=\"#fn1\">1</a></sup>.</p>\
                  <aside epub:type=\"footnote\" id=\"fn1\">\
-                   <p>1. This is the footnote content explaining the reference.</p>\
+                   <p>This is the footnote content explaining the reference.</p>\
                  </aside>",
             )
             .build();
