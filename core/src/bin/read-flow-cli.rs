@@ -107,7 +107,7 @@ async fn main() -> Result<()> {
         }
         #[cfg(feature = "server")]
         Commands::Serve => {
-            server::main(config_path)?;
+            server::main(config_path).await?;
         }
     };
 

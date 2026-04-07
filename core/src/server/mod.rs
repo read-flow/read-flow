@@ -167,10 +167,8 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         .attach(cors)
 }
 
-pub fn main(config_path: PathBuf) -> Result<Rocket<Ignite>, Box<rocket::Error>> {
-    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
-    let result = rt.block_on(async { serve(config_path).await.launch().await })?;
-    Ok(result)
+pub async fn main(config_path: PathBuf) -> Result<Rocket<Ignite>, Box<rocket::Error>> {
+    Ok(serve(config_path).await.launch().await?)
 }
 
 #[get("/status")]
