@@ -971,12 +971,14 @@ impl EpubViewer {
                                 let char_count = text.chars().count();
                                 let s = start_off.min(char_count);
                                 let e = end_off.min(char_count);
+                                let full_text_to_copy = (start_off == 0).then(|| text.clone());
                                 render_partial_preformatted(
                                     text[char_offset_to_byte(text, s)
                                         ..char_offset_to_byte(text, e)]
                                         .to_string(),
                                     slice_spans(spans, s, e),
                                     base_font_size,
+                                    full_text_to_copy,
                                 )
                             } else {
                                 RenderContext {

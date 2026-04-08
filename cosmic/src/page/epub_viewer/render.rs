@@ -108,10 +108,12 @@ pub(super) fn render_partial_paragraph<'a>(
 
 /// Render a partial preformatted block (split at a page boundary) using owned data.
 /// `text` and `spans` must already be sliced to the visible char range by the caller.
+/// `full_text_to_copy`, when `Some`, adds a copy button that copies the entire block content.
 pub(super) fn render_partial_preformatted(
     text: String,
     spans: Vec<TextSpan>,
     font_size: f32,
+    full_text_to_copy: Option<String>,
 ) -> Element<'static, EpubViewerMessage> {
     let cosmic_theme::Spacing {
         space_xxs, space_s, ..
@@ -129,11 +131,22 @@ pub(super) fn render_partial_preformatted(
             .width(Length::Fill)
             .into()
     };
-    widget::container(inner)
+    let code_block = widget::container(inner)
         .padding([space_xxs, space_s])
         .class(Container::Secondary)
-        .width(Length::Fill)
-        .into()
+        .width(Length::Fill);
+    if let Some(full_text) = full_text_to_copy {
+        let copy_button = widget::row::with_children(vec![
+            widget::space::horizontal().width(Length::Fill).into(),
+            widget::button::icon(widget::icon::from_name("edit-copy-symbolic").size(16))
+                .on_press(EpubViewerMessage::CopyCodeBlock(full_text))
+                .tooltip(fl!("epub-viewer-copy-code"))
+                .into(),
+        ]);
+        cosmic::iced::widget::stack(vec![code_block.into(), copy_button.into()]).into()
+    } else {
+        code_block.into()
+    }
 }
 
 impl<'a> RenderContext<'a> {
