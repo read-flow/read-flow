@@ -3212,6 +3212,25 @@ mod tests {
         render_chapter_blocks(&chapters, 0, 16.0)
     }
 
+    #[golden_test(600, 250)]
+    fn epub_footnote_styled_spans() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        // Footnotes render with a reduced context font size (0.8×). Spans with
+        // explicit em font sizes must scale against that reduced size, not the
+        // hardcoded 16px base. This test exercises a footnote whose content
+        // contains a span with font-size: 1.5em — it should appear proportionally
+        // smaller than 1.5 × 16px would be in normal body text.
+        let _f = EpubBuilder::new("Footnote Styled Spans")
+            .body(
+                "<p>Main text with <span style=\"font-size: 1.5em\">large styled text</span> and normal text<sup><a href=\"#fn1\">1</a></sup>.</p>\
+                 <aside epub:type=\"footnote\" id=\"fn1\">\
+                   <p>Footnote with <span style=\"font-size: 1.5em\">large styled text</span> and normal text.</p>\
+                 </aside>",
+            )
+            .build();
+        let (_, chapters, _) = load_epub_chapters(_f.path()).unwrap();
+        render_chapter_blocks(&chapters, 0, 16.0)
+    }
+
     #[golden_test(600, 300)]
     fn epub_figure() -> cosmic::Element<'_, super::EpubViewerMessage> {
         // Use a small inline SVG as the figure content so no external resource

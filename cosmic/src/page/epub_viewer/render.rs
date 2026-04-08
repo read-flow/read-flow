@@ -65,7 +65,7 @@ pub(super) fn render_partial_paragraph<'a>(
     } else {
         let iced_spans: Vec<_> = spans
             .into_iter()
-            .map(|s| owned_styled_span(s, family))
+            .map(|s| owned_styled_span(s, family, font_size))
             .collect();
         apply_text_align(
             rich_text(iced_spans)
@@ -362,8 +362,10 @@ impl<'a> RenderContext<'a> {
                     col = col.push(self.render_block_inner(block));
                 }
                 if !caption.is_empty() {
-                    let iced_spans: Vec<_> =
-                        caption.iter().map(|s| styled_span(s, family)).collect();
+                    let iced_spans: Vec<_> = caption
+                        .iter()
+                        .map(|s| styled_span(s, family, caption_size))
+                        .collect();
                     let caption_el: Element<'_, EpubViewerMessage> = widget::container(
                         rich_text(iced_spans)
                             .on_link_click(|m| m)
@@ -500,7 +502,7 @@ fn render_table(
                     cell.spans
                         .iter()
                         .map(|s| {
-                            let mut sp = styled_span(s, family);
+                            let mut sp = styled_span(s, family, font_size);
                             // Force bold for header cells whose spans aren't already bold.
                             if cell.is_header && !s.style.bold {
                                 let font = sp.font.unwrap_or_default();
@@ -593,6 +595,7 @@ fn apply_text_align<'a>(
 fn owned_styled_span(
     text_span: TextSpan,
     family: font::Family,
+    font_size: f32,
 ) -> cosmic::iced::widget::text::Span<'static, EpubViewerMessage> {
     let style = text_span.style;
     let link = text_span.link;
@@ -631,7 +634,7 @@ fn owned_styled_span(
         s = s.color(cosmic::iced::Color::from_rgb8(r, g, b));
     }
     if let Some(em) = font_size_em {
-        s = s.size(em * 16.0);
+        s = s.size(em * font_size);
     }
     if let Some(href) = link {
         s = s.link(EpubViewerMessage::FollowLink(href));
@@ -647,7 +650,7 @@ fn render_spans(
     size: f32,
     family: font::Family,
 ) -> Element<'_, EpubViewerMessage> {
-    let iced_spans: Vec<_> = spans.iter().map(|s| styled_span(s, family)).collect();
+    let iced_spans: Vec<_> = spans.iter().map(|s| styled_span(s, family, size)).collect();
     rich_text(iced_spans)
         .on_link_click(|m| m)
         .size(size)
@@ -664,7 +667,7 @@ fn render_list_item_spans<'a>(
     let mut iced_spans: Vec<cosmic::iced::widget::text::Span<'a, EpubViewerMessage>> =
         Vec::with_capacity(spans.len() + 1);
     iced_spans.push(span(prefix));
-    iced_spans.extend(spans.iter().map(|s| styled_span(s, family)));
+    iced_spans.extend(spans.iter().map(|s| styled_span(s, family, size)));
     rich_text(iced_spans)
         .on_link_click(|m| m)
         .size(size)
@@ -675,6 +678,7 @@ fn render_list_item_spans<'a>(
 fn styled_span<'a>(
     text_span: &'a TextSpan,
     family: font::Family,
+    font_size: f32,
 ) -> cosmic::iced::widget::text::Span<'a, EpubViewerMessage> {
     let style = &text_span.style;
     let mut s = span(text_span.text.as_str());
@@ -712,7 +716,7 @@ fn styled_span<'a>(
         s = s.color(cosmic::iced::Color::from_rgb8(r, g, b));
     }
     if let Some(em) = text_span.font_size_em {
-        s = s.size(em * 16.0);
+        s = s.size(em * font_size);
     }
     if let Some(href) = &text_span.link {
         s = s.link(EpubViewerMessage::FollowLink(href.clone()));
