@@ -121,6 +121,7 @@ pub enum SourcesMessage {
 
     CheckSourceStatus(Remote),
     SetSourceStatus(i32, bool),
+    RefreshStatuses,
 
     Out(SourcesOutput),
 }
@@ -662,6 +663,19 @@ impl Page for SourcesPage {
                         Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
                     }
                 })
+            }
+            SourcesMessage::RefreshStatuses => {
+                if let LoadedState::Loaded(remotes) = &self.remotes_state.state {
+                    let tasks: Vec<_> = remotes
+                        .iter()
+                        .map(|remote| {
+                            task::message(SourcesMessage::CheckSourceStatus(remote.clone()))
+                        })
+                        .collect();
+                    Task::batch(tasks)
+                } else {
+                    task::none()
+                }
             }
             SourcesMessage::CheckSourceStatus(remote) => {
                 self.source_statuses.insert(remote.id, LoadedState::Loading);

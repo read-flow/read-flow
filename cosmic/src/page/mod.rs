@@ -24,6 +24,7 @@ use cosmic::task;
 use cosmic::widget;
 use indexmap::IndexMap;
 use read_flow_core::client::FilesClient;
+pub use sources::SourcesMessage;
 pub use traits::Page;
 use url::Url;
 
@@ -55,7 +56,6 @@ use crate::page::mu_pdf_viewer::MuPdfViewerMessage;
 use crate::page::mu_pdf_viewer::MuPdfViewerOutput;
 use crate::page::settings::SettingsMessage;
 use crate::page::settings::SettingsPage;
-use crate::page::sources::SourcesMessage;
 use crate::page::sources::SourcesOutput;
 use crate::page::sources::SourcesPage;
 use crate::subscription::SubscriberState;

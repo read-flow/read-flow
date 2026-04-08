@@ -38,6 +38,7 @@ use crate::page::PageMessage;
 use crate::page::PageOutput;
 use crate::page::PageSelector;
 use crate::page::Pages;
+use crate::page::SourcesMessage;
 use crate::page::settings_invalidation_subscription;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -593,7 +594,15 @@ impl cosmic::Application for ReadFlow {
         // Activate the page in the model.
         self.nav.activate(id);
 
-        self.update_title()
+        let mut tasks = vec![self.update_title()];
+
+        if self.nav.data::<PageSelector>(id) == Some(&PageSelector::Sources) {
+            tasks.push(task::message(cosmic::Action::App(Message::Page(
+                PageMessage::Sources(SourcesMessage::RefreshStatuses),
+            ))));
+        }
+
+        Task::batch(tasks)
     }
 }
 
