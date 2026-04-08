@@ -106,6 +106,36 @@ pub(super) fn render_partial_paragraph<'a>(
     }
 }
 
+/// Render a partial preformatted block (split at a page boundary) using owned data.
+/// `text` and `spans` must already be sliced to the visible char range by the caller.
+pub(super) fn render_partial_preformatted(
+    text: String,
+    spans: Vec<TextSpan>,
+    font_size: f32,
+) -> Element<'static, EpubViewerMessage> {
+    let cosmic_theme::Spacing {
+        space_xxs, space_s, ..
+    } = theme::active().cosmic().spacing;
+    let inner: Element<'static, EpubViewerMessage> = if spans.is_empty() {
+        widget::text::monotext(text).width(Length::Fill).into()
+    } else {
+        let iced_spans: Vec<_> = spans
+            .into_iter()
+            .map(|s| owned_styled_span(s, font::Family::Monospace, font_size))
+            .collect();
+        rich_text(iced_spans)
+            .on_link_click(|m| m)
+            .size(font_size)
+            .width(Length::Fill)
+            .into()
+    };
+    widget::container(inner)
+        .padding([space_xxs, space_s])
+        .class(Container::Secondary)
+        .width(Length::Fill)
+        .into()
+}
+
 impl<'a> RenderContext<'a> {
     pub(super) fn render_block(
         &self,

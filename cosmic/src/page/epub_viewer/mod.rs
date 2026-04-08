@@ -53,6 +53,7 @@ use crate::layout::full_page;
 use crate::page::Page;
 use crate::page::epub_viewer::render::RenderContext;
 use crate::page::epub_viewer::render::render_partial_paragraph;
+use crate::page::epub_viewer::render::render_partial_preformatted;
 
 // --- Block highlight ---
 
@@ -965,6 +966,17 @@ impl EpubViewer {
                                     highlight,
                                     base_font_size,
                                     family,
+                                )
+                            } else if let ContentBlock::Preformatted { text, spans, .. } = block {
+                                let char_count = text.chars().count();
+                                let s = start_off.min(char_count);
+                                let e = end_off.min(char_count);
+                                render_partial_preformatted(
+                                    text[char_offset_to_byte(text, s)
+                                        ..char_offset_to_byte(text, e)]
+                                        .to_string(),
+                                    slice_spans(spans, s, e),
+                                    base_font_size,
                                 )
                             } else {
                                 RenderContext {
@@ -2457,6 +2469,12 @@ fn effective_block_height(
             measure_text_height(suffix, content_width, heading_size, font_system)
                 .max(heading_size * 1.375)
         }
+        ContentBlock::Preformatted { text, .. } => {
+            let line_h = font_size * 1.375;
+            let byte_start = char_offset_to_byte(text, start_char_offset);
+            let line_count = text[byte_start..].lines().count();
+            (line_count as f32 * line_h).max(line_h)
+        }
         _ => estimated_block_height_for_width(block, content_width, font_size, font_system),
     }
 }
@@ -2484,6 +2502,32 @@ fn try_split_block(
                 font_system,
             )
             .map(|rel| start_char_offset + rel)
+        }
+        ContentBlock::Preformatted { text, .. } => {
+            let line_h = font_size * 1.375;
+            let lines_that_fit = (available_height / line_h).floor() as usize;
+            if lines_that_fit == 0 {
+                return None;
+            }
+            let byte_start = char_offset_to_byte(text, start_char_offset);
+            let suffix = &text[byte_start..];
+            // Walk through lines until we have consumed `lines_that_fit` of them.
+            // The split point is the char offset just after the final fitting newline.
+            let mut lines_seen = 0usize;
+            let mut split_byte: Option<usize> = None;
+            for (byte_idx, ch) in suffix.char_indices() {
+                if ch == '\n' {
+                    lines_seen += 1;
+                    if lines_seen == lines_that_fit {
+                        split_byte = Some(byte_idx + 1); // start of next line
+                        break;
+                    }
+                }
+            }
+            let byte_offset = split_byte?;
+            // Convert to char offset relative to the full text.
+            let rel_char_offset = suffix[..byte_offset].chars().count();
+            Some(start_char_offset + rel_char_offset)
         }
         _ => None,
     }
