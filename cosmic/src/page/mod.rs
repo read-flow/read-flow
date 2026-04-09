@@ -4,6 +4,7 @@ mod app_settings;
 mod document_details;
 mod document_list;
 mod epub_viewer;
+pub mod image_viewer;
 mod mu_pdf_viewer;
 mod settings;
 mod sources;
@@ -51,6 +52,10 @@ use crate::page::document_list::DocumentListOutput;
 use crate::page::epub_viewer::EpubViewer;
 use crate::page::epub_viewer::EpubViewerMessage;
 use crate::page::epub_viewer::EpubViewerOutput;
+use crate::page::image_viewer::ImageViewer;
+use crate::page::image_viewer::ImageViewerMessage;
+use crate::page::image_viewer::ImageViewerOutput;
+pub use crate::page::image_viewer::ViewerImage;
 use crate::page::mu_pdf_viewer::MuPdfViewer;
 use crate::page::mu_pdf_viewer::MuPdfViewerMessage;
 use crate::page::mu_pdf_viewer::MuPdfViewerOutput;
@@ -72,6 +77,8 @@ pub struct Pages {
     document_details: IndexMap<Fingerprint, DocumentDetails>,
     epub_viewers: IndexMap<Fingerprint, EpubViewer>,
     mu_pdf_viewers: IndexMap<Fingerprint, MuPdfViewer>,
+    image_viewers: IndexMap<u64, ImageViewer>,
+    next_image_viewer_id: u64,
     settings: SettingsPage,
 }
 
@@ -82,6 +89,7 @@ pub enum PageSelector {
     DocumentDetails(Fingerprint),
     EpubViewer(Fingerprint),
     MuPdfViewer(Fingerprint),
+    ImageViewer(u64),
     AppSettings,
     Settings,
 }
@@ -107,6 +115,9 @@ pub enum PageMessage {
     CloseEpubViewer(Fingerprint, Option<String>),
     MuPdfViewer(Fingerprint, MuPdfViewerMessage),
     CloseMuPdfViewer(Fingerprint, Option<usize>),
+    ImageViewer(u64, ImageViewerMessage),
+    OpenImageViewer(ViewerImage),
+    CloseImageViewer(u64),
     AppSettings(AppSettingsMessage),
     Settings(SettingsMessage),
     KeyEvent(PageSelector, Modifiers, Key, Option<SmolStr>),
@@ -171,6 +182,12 @@ macro_rules! with_active_page {
                 let $mapper = move |msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg);
                 $body
             }
+            PageSelector::ImageViewer(id) => {
+                let $page = $self.image_viewers.get(id);
+                let id = *id;
+                let $mapper = move |msg| map_image_viewer_message(id, msg);
+                $body
+            }
             PageSelector::AppSettings => {
                 let $page = Some(&$self.app_settings);
                 let $mapper = map_app_settings_message;
@@ -228,6 +245,8 @@ impl Pages {
                 document_details: Default::default(),
                 epub_viewers: Default::default(),
                 mu_pdf_viewers: Default::default(),
+                image_viewers: Default::default(),
+                next_image_viewer_id: 0,
                 settings,
             },
             task::batch(tasks),
@@ -250,6 +269,7 @@ impl Pages {
             PageSelector::MuPdfViewer(fingerprint) => {
                 self.mu_pdf_viewers[fingerprint].display_name()
             }
+            PageSelector::ImageViewer(id) => self.image_viewers[id].display_name(),
             PageSelector::AppSettings => fl!("app-settings-page-title"),
             PageSelector::Settings => fl!("settings-page-title"),
         }
@@ -471,6 +491,25 @@ impl Pages {
                 .map(move |action| {
                     action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
                 }),
+            PageMessage::ImageViewer(id, message) => self.image_viewers[&id]
+                .update(message)
+                .map(move |action| action.map(|msg| map_image_viewer_message(id, msg))),
+            PageMessage::OpenImageViewer(image) => {
+                let id = self.next_image_viewer_id;
+                self.next_image_viewer_id += 1;
+                let viewer = ImageViewer::new(id, image);
+                self.image_viewers.insert(id, viewer);
+                task::message(PageMessage::Out(PageOutput::PageAdded(
+                    PageSelector::ImageViewer(id),
+                    "image-x-generic-symbolic",
+                )))
+            }
+            PageMessage::CloseImageViewer(id) => {
+                let _ = self.image_viewers.swap_remove(&id);
+                task::message(PageMessage::Out(PageOutput::PageRemoved(
+                    PageSelector::ImageViewer(id),
+                )))
+            }
             PageMessage::OpenDocument(document) => match &document.metadata.type_ {
                 DocumentType::Epub => match self.epub_viewer_config {
                     EpubViewerConfig::NativeEpub => self.open_epub_viewer(document),
@@ -634,8 +673,18 @@ fn map_epub_viewer_message(fingerprint: Fingerprint, msg: EpubViewerMessage) -> 
             EpubViewerOutput::Close(fingerprint, page) => {
                 PageMessage::CloseEpubViewer(fingerprint, page)
             }
+            EpubViewerOutput::OpenImageViewer(image) => PageMessage::OpenImageViewer(image),
         },
         msg => PageMessage::EpubViewer(fingerprint, msg),
+    }
+}
+
+fn map_image_viewer_message(id: u64, msg: ImageViewerMessage) -> PageMessage {
+    match msg {
+        ImageViewerMessage::Out(message) => match message {
+            ImageViewerOutput::Close(id) => PageMessage::CloseImageViewer(id),
+        },
+        msg => PageMessage::ImageViewer(id, msg),
     }
 }
 

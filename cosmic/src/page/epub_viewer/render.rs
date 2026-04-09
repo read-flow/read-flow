@@ -22,6 +22,7 @@ use epub::TextSpan;
 use crate::fl;
 use crate::page::epub_viewer::BlockHighlight;
 use crate::page::epub_viewer::EpubViewerMessage;
+use crate::page::image_viewer::ViewerImage;
 
 #[derive(Clone, Copy)]
 pub(super) struct RenderContext<'a> {
@@ -358,13 +359,17 @@ impl<'a> RenderContext<'a> {
                     .get(&key)
                     .cloned()
                     .unwrap_or_else(|| widget::image::Handle::from_bytes(data.clone()));
-                widget::image(handle)
+                let container = widget::image(handle.clone())
                     .width(Length::Shrink)
                     .content_fit(cosmic::iced::ContentFit::ScaleDown)
                     .apply(widget::container)
                     .width(Length::Fill)
                     .max_height(max_image_height)
-                    .align_x(Horizontal::Center)
+                    .align_x(Horizontal::Center);
+                widget::mouse_area(container)
+                    .on_press(EpubViewerMessage::OpenImageViewer(ViewerImage::Raster(
+                        handle,
+                    )))
                     .into()
             }
             ContentBlock::Image { alt, .. } => {
@@ -380,13 +385,15 @@ impl<'a> RenderContext<'a> {
             ContentBlock::Svg { content, .. } => {
                 // SVG image references are resolved at load time; render directly.
                 let handle = widget::svg::Handle::from_memory(content.as_bytes().to_vec());
-                widget::svg(handle)
+                let container = widget::svg(handle.clone())
                     .width(Length::Shrink)
                     .content_fit(cosmic::iced::ContentFit::ScaleDown)
                     .apply(widget::container)
                     .width(Length::Fill)
                     .max_height(max_image_height)
-                    .align_x(Horizontal::Center)
+                    .align_x(Horizontal::Center);
+                widget::mouse_area(container)
+                    .on_press(EpubViewerMessage::OpenImageViewer(ViewerImage::Svg(handle)))
                     .into()
             }
             ContentBlock::Table { rows } => render_table(rows, font_size, family),

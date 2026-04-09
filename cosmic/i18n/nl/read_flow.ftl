@@ -302,3 +302,4 @@ settings-epub-viewer-description = Kies welke weergave EPUB-bestanden opent
 settings-epub-viewer-native = Ingebouwde EPUB-weergave (experimenteel)
 settings-epub-viewer-mupdf = MuPDF weergave
 settings-epub-viewer-external = Externe weergave (systeemstandaard)
+epub-viewer-image-viewer-title = Afbeelding

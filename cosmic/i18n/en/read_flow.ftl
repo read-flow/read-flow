@@ -279,3 +279,4 @@ epub-viewer-search-prev = Previous match
 epub-viewer-search-next = Next match
 epub-viewer-search-close = Close search
 epub-viewer-copy-code = Copy code
+epub-viewer-image-viewer-title = Image

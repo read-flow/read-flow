@@ -29,6 +29,7 @@ use cosmic::iced::keyboard::Modifiers;
 use cosmic::iced::keyboard::key::Named;
 use cosmic::iced::widget::scrollable;
 use cosmic::iced::widget::text_editor;
+use cosmic::task;
 use cosmic::theme;
 use cosmic::theme::Container;
 use cosmic::widget;
@@ -54,6 +55,7 @@ use crate::page::Page;
 use crate::page::epub_viewer::render::RenderContext;
 use crate::page::epub_viewer::render::render_partial_paragraph;
 use crate::page::epub_viewer::render::render_partial_preformatted;
+use crate::page::image_viewer::ViewerImage;
 
 // --- Block highlight ---
 
@@ -352,6 +354,8 @@ impl From<EpubDocument> for CloneableEpubDocument {
 pub enum EpubViewerOutput {
     /// Carries the fingerprint and the opaque progress JSON to persist, if any.
     Close(Fingerprint, Option<String>),
+    /// Open the image viewer page for the given image.
+    OpenImageViewer(ViewerImage),
 }
 
 impl Clone for EpubViewerOutput {
@@ -359,6 +363,9 @@ impl Clone for EpubViewerOutput {
         match self {
             EpubViewerOutput::Close(fp, progress) => {
                 EpubViewerOutput::Close(fp.clone(), progress.clone())
+            }
+            EpubViewerOutput::OpenImageViewer(img) => {
+                EpubViewerOutput::OpenImageViewer(img.clone())
             }
         }
     }
@@ -408,6 +415,8 @@ pub enum EpubViewerMessage {
     CloseSearch,
     /// Copy a code block's plain text to the clipboard.
     CopyCodeBlock(String),
+    /// Open the image viewer page for the given image.
+    OpenImageViewer(ViewerImage),
 }
 
 // --- EpubViewer page ---
@@ -1912,6 +1921,9 @@ impl Page for EpubViewer {
                 Task::none()
             }
             EpubViewerMessage::CopyCodeBlock(text) => cosmic::iced::clipboard::write(text),
+            EpubViewerMessage::OpenImageViewer(image) => task::message(EpubViewerMessage::Out(
+                EpubViewerOutput::OpenImageViewer(image),
+            )),
             EpubViewerMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }

@@ -23,7 +23,7 @@ figment = { version = "0.10.19", default-features = false }
 futures = "0.3.32"
 futures-util = "0.3.32"
 html5ever = "0.39.0"
-image = "0.25"
+image = { version = "0.25", default-features = false }
 i18n-embed = "0.16.0"
 i18n-embed-fl = "0.10.0"
 indexmap = "2.13.1"
