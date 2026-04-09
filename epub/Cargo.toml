@@ -7,7 +7,7 @@ edition = "2024"
 base64 = { workspace = true }
 html5ever = { workspace = true }
 image = { workspace = true }
-regex = { workspace = true, features = ["std", "perf"] }
+regex = { workspace = true, features = ["std", "perf", "unicode-perl"] }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
