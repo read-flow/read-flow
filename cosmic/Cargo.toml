@@ -25,14 +25,14 @@ i18n-embed-fl.workspace = true
 indexmap.workspace = true
 mupdf = { workspace = true, features = ["sys-lib"] }
 open.workspace = true
-rand.workspace = true
+rand = { workspace = true, features = ["std", "sys_rng"] }
 rfd.workspace = true
 rust-embed.workspace = true
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["std", "fmt"] }
 url.workspace = true
 
 epub = { path = "../epub" }

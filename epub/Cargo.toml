@@ -7,12 +7,12 @@ edition = "2024"
 base64 = { workspace = true }
 html5ever = { workspace = true }
 image = { workspace = true }
-regex = { workspace = true }
+regex = { workspace = true, features = ["std", "perf"] }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 quick-xml = { workspace = true }
-zip = { workspace = true }
+zip = { workspace = true, features = ["deflate"] }
 
 [dev-dependencies]
 rstest = { workspace = true }
