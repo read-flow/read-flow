@@ -240,9 +240,15 @@ settings-select-directory-tag = Sélectionner une étiquette...
 settings-enter-directory-tag = Entrer une nouvelle étiquette...
 settings-no-directory-tags = Aucune étiquette configurée
 settings-remove-directory-tag = Supprimer l'étiquette
-settings-database-location-description = L'emplacement de la base de données
-settings-server-download-folder-description = Spécifie le dossier où les fichiers téléchargés seront placés
-settings-scan-dry-run-description = Si vrai, n'apportera pas de modifications à la base de données
+settings-database-location-description = Le fichier SQLite qui stocke votre catalogue de documents et les métadonnées. Redémarrez l'application après avoir modifié ce chemin.
+settings-server-download-folder-description = Où les fichiers envoyés à cet appareil depuis des clients distants sont enregistrés.
+settings-scan-dry-run-description = Lorsqu'il est activé, les analyses découvrent les fichiers mais ne les ajoutent pas à votre bibliothèque. Utile pour prévisualiser ce qui serait indexé.
+settings-scan-description = Read Flow indexe les documents trouvés dans les répertoires ci-dessous. Ajoutez un répertoire, définissez son action sur Scanner, puis lancez une analyse pour remplir votre bibliothèque.
+settings-scan-file-types-description = Seuls les fichiers dont l'extension est activée seront pris en compte lors d'une analyse.
+settings-server-description = Read Flow peut diffuser votre bibliothèque sur le réseau afin que d'autres appareils puissent se connecter et accéder à vos documents.
+settings-server-authorized-users-description = Les clients autorisés à se connecter au serveur de cet appareil. Chaque entrée nécessite un identifiant utilisateur et une phrase de passe.
+settings-ui-private-mode-description = Lorsqu'il est activé, les documents portant un tag privé sont masqués dans la liste des documents.
+settings-ui-private-tags-description = Les documents portant l'un de ces tags sont masqués lorsque le mode privé est activé.
 
 # PDF viewer
 pdf-viewer = PDF viewer

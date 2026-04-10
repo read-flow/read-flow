@@ -241,9 +241,15 @@ settings-select-directory-tag = Selecteer een tag...
 settings-enter-directory-tag = Voer een nieuwe tag in...
 settings-no-directory-tags = Geen tags geconfigureerd
 settings-remove-directory-tag = Tag verwijderen
-settings-database-location-description = De locatie van de database
-settings-server-download-folder-description = Specificeert de map waar gedownloade bestanden terechtkomen
-settings-scan-dry-run-description = Indien ingeschakeld, worden er geen wijzigingen aangebracht in de database
+settings-database-location-description = Het SQLite-bestand dat uw documentcatalogus en metadata opslaat. Herstart de app na het wijzigen van dit pad.
+settings-server-download-folder-description = Waar bestanden die naar dit apparaat worden gestuurd door externe clients worden opgeslagen.
+settings-scan-dry-run-description = Wanneer ingeschakeld, ontdekken scans bestanden maar voegen ze niet toe aan uw bibliotheek. Handig om te bekijken wat geïndexeerd zou worden.
+settings-scan-description = Read Flow indexeert documenten die worden gevonden in de onderstaande mappen. Voeg een map toe, stel de actie in op Scannen en voer een scan uit om uw bibliotheek te vullen.
+settings-scan-file-types-description = Alleen bestanden met een ingeschakelde extensie worden opgepikt tijdens een scan.
+settings-server-description = Read Flow kan uw bibliotheek via het netwerk beschikbaar stellen zodat andere apparaten verbinding kunnen maken en uw documenten kunnen bekijken.
+settings-server-authorized-users-description = Clients die verbinding mogen maken met de server van dit apparaat. Elke vermelding vereist een gebruikers-ID en een wachtwoordzin.
+settings-ui-private-mode-description = Wanneer ingeschakeld, worden documenten met een privé-tag verborgen in de documentenlijst.
+settings-ui-private-tags-description = Documenten met een van deze tags worden verborgen wanneer de Privé Modus is ingeschakeld.
 
 # PDF viewer
 pdf-viewer = PDF weergave

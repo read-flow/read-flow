@@ -282,7 +282,12 @@ impl Page for SettingsPage {
             .iter()
             .enumerate()
             .fold(
-                widget::settings::section().title(fl!("settings-server-authorized-users")),
+                widget::settings::section()
+                    .title(fl!("settings-server-authorized-users"))
+                    .add(
+                        widget::text::body(fl!("settings-server-authorized-users-description"))
+                            .width(Length::Fill),
+                    ),
                 |acc, (_index, (user_id, hashed_password))| {
                     acc.add(self.view_authorized_user_input(user_id, hashed_password))
                 },
@@ -327,6 +332,7 @@ impl Page for SettingsPage {
 
         let server_section = widget::settings::section()
             .title(fl!("settings-server-section"))
+            .add(widget::text::body(fl!("settings-server-description")).width(Length::Fill))
             .add(
                 widget::settings::item::builder(fl!("settings-server-download-folder"))
                     .description(fl!("settings-server-download-folder-description"))
@@ -357,6 +363,7 @@ impl Page for SettingsPage {
         // Scan section
         let scan_section = widget::settings::section()
             .title(fl!("settings-scan-section"))
+            .add(widget::text::body(fl!("settings-scan-description")).width(Length::Fill))
             .add(
                 widget::settings::item::builder(fl!("settings-scan-dry-run"))
                     .description(fl!("settings-scan-dry-run-description"))
@@ -367,7 +374,12 @@ impl Page for SettingsPage {
 
         // File types section
         let file_types_section = DocumentType::all().iter().fold(
-            widget::settings::section().title(fl!("settings-scan-file-types-section")),
+            widget::settings::section()
+                .title(fl!("settings-scan-file-types-section"))
+                .add(
+                    widget::text::body(fl!("settings-scan-file-types-description"))
+                        .width(Length::Fill),
+                ),
             |section, doc_type| {
                 let enabled = self.settings.scan.extensions.contains(doc_type);
                 let doc_type_clone = doc_type.clone();
@@ -456,6 +468,7 @@ impl Page for SettingsPage {
             .title(fl!("settings-ui-section"))
             .add(
                 widget::settings::item::builder(fl!("settings-ui-private-mode"))
+                    .description(fl!("settings-ui-private-mode-description"))
                     .icon(
                         widget::icon::from_name("preferences-system-privacy-symbolic")
                             .size(ICON_SIZE),
@@ -467,6 +480,7 @@ impl Page for SettingsPage {
             )
             .add(
                 widget::settings::item::builder(fl!("settings-ui-private-tags"))
+                    .description(fl!("settings-ui-private-tags-description"))
                     .icon(widget::icon::from_name("starred-symbolic").size(ICON_SIZE))
                     .flex_control(self.tag_editor.view().map(SettingsMessage::TagEditor)),
             );
