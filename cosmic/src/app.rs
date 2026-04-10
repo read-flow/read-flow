@@ -42,7 +42,8 @@ use crate::page::SourcesMessage;
 use crate::page::settings_invalidation_subscription;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
-const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
+pub(crate) const APP_ICON: &[u8] =
+    include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
 
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
@@ -98,6 +99,7 @@ impl From<PageOutput> for Message {
             PageOutput::PageAdded(page, icon_name) => Message::PageAdded(page, icon_name),
             PageOutput::TogglePage(page_selector) => Message::ActivatePage(page_selector),
             PageOutput::PageRemoved(page) => Message::ActivePageRemoved(page),
+            PageOutput::Scan => Message::Scan,
         }
     }
 }

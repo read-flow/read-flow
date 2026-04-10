@@ -97,6 +97,8 @@ pub struct DocumentList {
 pub enum DocumentListOutput {
     OpenDetails(Document),
     OpenDocument(Document),
+    NavigateToSettings,
+    Scan,
 }
 
 #[derive(Debug, Clone)]
@@ -658,6 +660,12 @@ impl Page for DocumentList {
                     DocumentsOutput::OpenDocument(document) => task::message(
                         DocumentListMessage::Out(DocumentListOutput::OpenDocument(document)),
                     ),
+                    DocumentsOutput::NavigateToSettings => task::message(DocumentListMessage::Out(
+                        DocumentListOutput::NavigateToSettings,
+                    )),
+                    DocumentsOutput::Scan => {
+                        task::message(DocumentListMessage::Out(DocumentListOutput::Scan))
+                    }
                 },
                 msg => self.archive.update(msg).map(ActionExt::map_into),
             },

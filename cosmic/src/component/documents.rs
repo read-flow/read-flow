@@ -60,6 +60,8 @@ pub enum DocumentsOutput {
     BatchTagEditor(TagEditorOutput),
     OpenDocument(Document),
     SelectionChanged,
+    NavigateToSettings,
+    Scan,
 }
 
 #[derive(Debug, Clone)]
@@ -153,7 +155,11 @@ impl DocumentsComponent {
             .filter_visible(filtered_files.as_slice())
             .collect();
 
-        // Handle empty state
+        // Handle empty state: no documents at all (onboarding) vs. filters hiding everything
+        if files.unfiltered().is_empty() {
+            return self.view_empty_intro();
+        }
+
         if visible_files.is_empty() {
             return Column::new()
                 .push(
@@ -228,6 +234,51 @@ impl DocumentsComponent {
             widget::settings::view_column(layout(files_section).apply(|row| vec![row]));
 
         Column::new().push(file_content).into()
+    }
+
+    fn view_empty_intro(&self) -> Element<'_, DocumentsMessage> {
+        let cosmic_theme::Spacing {
+            space_m,
+            space_l,
+            space_xl,
+            ..
+        } = theme::active().cosmic().spacing;
+
+        widget::container(
+            Column::new()
+                .spacing(space_l)
+                .align_x(cosmic::iced::alignment::Horizontal::Center)
+                .push(
+                    widget::icon::from_svg_bytes(crate::app::APP_ICON)
+                        .icon()
+                        .size(128),
+                )
+                .push(widget::text::title2(fl!("document-list-empty-title")))
+                .push(
+                    widget::text(fl!("document-list-empty-description"))
+                        .width(Length::Fixed(480.0)),
+                )
+                .push(
+                    Row::new()
+                        .spacing(space_m)
+                        .push(
+                            widget::button::suggested(fl!("document-list-go-to-settings"))
+                                .on_press(DocumentsMessage::Out(
+                                    DocumentsOutput::NavigateToSettings,
+                                )),
+                        )
+                        .push(
+                            widget::button::standard(fl!("document-list-run-scan"))
+                                .on_press(DocumentsMessage::Out(DocumentsOutput::Scan)),
+                        ),
+                ),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .padding(space_xl)
+        .into()
     }
 
     pub fn update(&mut self, message: DocumentsMessage) -> Task<Action<DocumentsMessage>> {

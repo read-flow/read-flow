@@ -99,6 +99,7 @@ pub enum PageOutput {
     PageAdded(PageSelector, &'static str),
     TogglePage(PageSelector),
     PageRemoved(PageSelector),
+    Scan,
 }
 
 #[derive(Debug, Clone)]
@@ -633,6 +634,10 @@ fn map_document_list_message(msg: DocumentListMessage) -> PageMessage {
         DocumentListMessage::Out(message) => match message {
             DocumentListOutput::OpenDetails(document) => PageMessage::OpenDocumentDetails(document),
             DocumentListOutput::OpenDocument(document) => PageMessage::OpenDocument(document),
+            DocumentListOutput::NavigateToSettings => {
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::Settings))
+            }
+            DocumentListOutput::Scan => PageMessage::Out(PageOutput::Scan),
         },
         msg => PageMessage::Documents(msg),
     }
