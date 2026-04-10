@@ -22,6 +22,7 @@ futures.workspace = true
 futures-util.workspace = true
 i18n-embed = { workspace = true, features = ["fluent-system", "desktop-requester"] }
 i18n-embed-fl.workspace = true
+image = { workspace = true, features = ["png", "jpeg", "gif", "webp"] }
 indexmap.workspace = true
 mupdf = { workspace = true, features = ["sys-lib"] }
 open.workspace = true

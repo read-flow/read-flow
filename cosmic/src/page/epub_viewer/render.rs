@@ -366,10 +366,18 @@ impl<'a> RenderContext<'a> {
                     .width(Length::Fill)
                     .max_height(max_image_height)
                     .align_x(Horizontal::Center);
+                let (natural_width, natural_height) =
+                    image::ImageReader::new(std::io::Cursor::new(data.as_slice()))
+                        .with_guessed_format()
+                        .ok()
+                        .and_then(|r| r.into_dimensions().ok())
+                        .unwrap_or((0u32, 0u32));
                 widget::mouse_area(container)
-                    .on_press(EpubViewerMessage::OpenImageViewer(ViewerImage::Raster(
+                    .on_press(EpubViewerMessage::OpenImageViewer(ViewerImage::Raster {
                         handle,
-                    )))
+                        natural_width,
+                        natural_height,
+                    }))
                     .into()
             }
             ContentBlock::Image { alt, .. } => {
