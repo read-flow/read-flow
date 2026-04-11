@@ -59,6 +59,7 @@ impl Provider<Vec<Remote>> for RemotesProvider {
 pub struct SourcesPage {
     application_module: Arc<ApplicationModule>,
     remotes_state: ProvidedState<RemotesProvider, Vec<Remote>>,
+    show_add_form: bool,
     entered_url: String,
     entered_url_id: widget::Id, // Unique ID for focus management
     entered_user_id: String,
@@ -85,6 +86,9 @@ pub enum SourcesOutput {
 #[derive(Debug, Clone)]
 pub enum SourcesMessage {
     Remotes(ProvidedStateMessage<Vec<Remote>>),
+
+    ShowAddForm,
+    CancelAddForm,
 
     UpdateEnteredUrl(String),
     UpdateEnteredUserId(String),
@@ -152,6 +156,7 @@ impl SourcesPage {
             Self {
                 application_module,
                 remotes_state,
+                show_add_form: false,
                 entered_url: Default::default(),
                 entered_url_id: widget::Id::unique(),
                 entered_user_id: Default::default(),
@@ -224,6 +229,111 @@ impl SourcesPage {
             .into()
     }
 
+    fn view_add_form(&self) -> Element<'_, SourcesMessage> {
+        let can_submit = !(self.entered_url.is_empty()
+            || self.entered_user_id.is_empty()
+            || self.entered_passphrase.is_empty()
+            || self.entered_url.parse::<Url>().is_err())
+            && (matches!(self.url_verification_state, LoadedState::Loaded(_))
+                || self.unavailable_acknowledged);
+
+        let fields_filled = !self.entered_url.is_empty()
+            && !self.entered_user_id.is_empty()
+            && !self.entered_passphrase.is_empty();
+        let unverified = matches!(
+            self.url_verification_state,
+            LoadedState::Failed(_) | LoadedState::New | LoadedState::Loading
+        );
+
+        settings::section()
+            .title(fl!("sources-add-section-title"))
+            .add(
+                widget::settings::item::builder(fl!("sources-url"))
+                    .icon(icon::from_name("network-server-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::settings::item_row(vec![
+                            widget::text_input(fl!("sources-url-placeholder"), &self.entered_url)
+                                .id(self.entered_url_id.clone())
+                                .on_input(SourcesMessage::UpdateEnteredUrl)
+                                .width(Length::Fill)
+                                .into(),
+                            match self.url_verification_state {
+                                LoadedState::New => icon::from_name("dialog-information-symbolic"),
+                                LoadedState::Loading => {
+                                    icon::from_name("emblem-synchronizing-symbolic")
+                                }
+                                LoadedState::Failed(_) => icon::from_name("dialog-error-symbolic"),
+                                LoadedState::Loaded(_) => icon::from_name("emblem-ok-symbolic"),
+                            }
+                            .size(ICON_SIZE)
+                            .into(),
+                        ])
+                        .width(Length::Fill),
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("sources-user-id"))
+                    .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::text_input(
+                            fl!("sources-user-id-placeholder"),
+                            &self.entered_user_id,
+                        )
+                        .id(self.entered_user_id_id.clone())
+                        .on_input(SourcesMessage::UpdateEnteredUserId)
+                        .width(Length::Fill),
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("sources-authorization-token"))
+                    .icon(widget::icon::from_name("dialog-password-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::secure_input(
+                            fl!("sources-authorization-token-placeholder"),
+                            &self.entered_passphrase,
+                            Some(SourcesMessage::ToggleShowPassphrase),
+                            !self.show_passphrase,
+                        )
+                        .id(self.entered_passphrase_id.clone())
+                        .on_input(SourcesMessage::UpdateEnteredPassphrase)
+                        .width(Length::Fill),
+                    ),
+            )
+            .add_maybe(
+                matches!(self.url_verification_state, LoadedState::Failed(_)).then(|| {
+                    let LoadedState::Failed(ref error) = self.url_verification_state else {
+                        unreachable!()
+                    };
+                    widget::settings::item::builder(error.as_str())
+                        .icon(icon::from_name("dialog-error-symbolic").size(ICON_SIZE))
+                        .control(widget::Space::new())
+                }),
+            )
+            .add_maybe((fields_filled && unverified).then(|| {
+                widget::settings::item::builder(fl!("sources-add-unavailable-warning"))
+                    .icon(icon::from_name("dialog-warning-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::checkbox(self.unavailable_acknowledged)
+                            .on_toggle(|_| SourcesMessage::ToggleUnavailableAcknowledged),
+                    )
+            }))
+            .add(widget::settings::item_row(vec![
+                widget::space::horizontal().width(Length::Fill).into(),
+                // Cancel button
+                widget::button::icon(icon::from_name("edit-clear-all-symbolic").size(ICON_SIZE))
+                    .on_press(SourcesMessage::CancelAddForm)
+                    .into(),
+                // Submit button
+                widget::button::icon(icon::from_name("list-add-symbolic").size(ICON_SIZE))
+                    .class(widget::button::ButtonClass::Suggested)
+                    .apply_if(can_submit, |b| {
+                        b.on_press(SourcesMessage::AddSource(self.entered_url.clone()))
+                    })
+                    .into(),
+            ]))
+            .into()
+    }
+
     fn verify_entered_url(&mut self, widget: widget::Id) -> Task<Action<SourcesMessage>> {
         self.url_verification_state = UrlVerificationState::New;
         if self.entered_url.is_empty()
@@ -255,7 +365,7 @@ impl Page for SourcesPage {
     fn view(&self) -> Element<'_, SourcesMessage> {
         let mut content = Vec::new();
 
-        // Sources list section
+        // Sources list section with add button at the bottom
         let sources_section = match &self.remotes_state.state {
             LoadedState::New => settings::section()
                 .title(fl!("sources-section-title"))
@@ -270,125 +380,47 @@ impl Page for SourcesPage {
                 .add(widget::text(fl!("generic-error", error = error)))
                 .into(),
             LoadedState::Loaded(sources) => {
-                if sources.is_empty() {
+                let section = if sources.is_empty() {
                     settings::section()
                         .title(fl!("sources-section-title"))
                         .add(widget::text(fl!("sources-empty-state")))
-                        .into()
                 } else {
-                    sources
-                        .iter()
-                        .enumerate()
-                        .fold(
-                            settings::section().title(fl!("sources-section-title")),
-                            |section, (index, source)| {
-                                section.add(self.view_source(
-                                    source,
-                                    index == 0,
-                                    index == sources.len() - 1,
-                                ))
-                            },
-                        )
-                        .into()
-                }
+                    sources.iter().enumerate().fold(
+                        settings::section().title(fl!("sources-section-title")),
+                        |section, (index, source)| {
+                            section.add(self.view_source(
+                                source,
+                                index == 0,
+                                index == sources.len() - 1,
+                            ))
+                        },
+                    )
+                };
+                section
+                    .add(widget::settings::item_row(vec![
+                        widget::space::horizontal()
+                            .width(Length::FillPortion(5))
+                            .into(),
+                        widget::button::icon(icon::from_name("list-add-symbolic").size(ICON_SIZE))
+                            .class(widget::button::ButtonClass::Suggested)
+                            .apply_if(!self.show_add_form, |b| {
+                                b.on_press(SourcesMessage::ShowAddForm)
+                            })
+                            .tooltip(fl!("sources-add-button"))
+                            .apply(widget::container)
+                            .width(Length::FillPortion(1))
+                            .align_x(Horizontal::Right)
+                            .into(),
+                    ]))
+                    .into()
             }
         };
 
         content.push(sources_section);
 
-        // Add source input section
-        let add_section = settings::section()
-            .title(fl!("sources-add-section-title"))
-            .add(
-                widget::settings::item::builder(fl!("sources-url"))
-                    .icon(icon::from_name("network-server-symbolic").size(ICON_SIZE))
-                    .control(
-                        widget::settings::item_row(vec![
-                            widget::text_input(fl!("sources-url-placeholder"), &self.entered_url)
-                                .id(self.entered_url_id.clone())
-                                .on_input(SourcesMessage::UpdateEnteredUrl)
-                                .width(Length::Fill)
-                                .into(),
-                            match self.url_verification_state {
-                                LoadedState::New => icon::from_name("dialog-information-symbolic"),
-                                LoadedState::Loading => icon::from_name("dialog-question-symbolic"),
-                                LoadedState::Failed(_) => icon::from_name("dialog-error-symbolic"),
-                                LoadedState::Loaded(_) => icon::from_name("emblem-ok-symbolic"),
-                            }
-                            .size(ICON_SIZE)
-                            .into(),
-                        ])
-                        .width(Length::Fixed(600.0)),
-                    ),
-            )
-            .add(
-                widget::settings::item::builder(fl!("sources-user-id"))
-                    .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))
-                    .control(
-                        widget::text_input(
-                            fl!("sources-user-id-placeholder"),
-                            &self.entered_user_id,
-                        )
-                        .id(self.entered_user_id_id.clone())
-                        .on_input(SourcesMessage::UpdateEnteredUserId)
-                        .width(Length::Fixed(600.0)),
-                    ),
-            )
-            .add(
-                widget::settings::item::builder(fl!("sources-authorization-token"))
-                    .icon(widget::icon::from_name("dialog-password-symbolic").size(ICON_SIZE))
-                    .control(
-                        widget::secure_input(
-                            fl!("sources-authorization-token-placeholder"),
-                            &self.entered_passphrase,
-                            Some(SourcesMessage::ToggleShowPassphrase),
-                            !self.show_passphrase,
-                        )
-                        .id(self.entered_passphrase_id.clone())
-                        .on_input(SourcesMessage::UpdateEnteredPassphrase)
-                        .width(Length::Fixed(600.0)),
-                    ),
-            )
-            .add_maybe(
-                matches!(self.url_verification_state, LoadedState::Failed(_)).then(|| {
-                    let LoadedState::Failed(ref error) = self.url_verification_state else {
-                        unreachable!()
-                    };
-                    widget::settings::item::builder(error.as_str())
-                        .icon(icon::from_name("dialog-error-symbolic").size(ICON_SIZE))
-                        .control(widget::Space::new())
-                }),
-            )
-            .add_maybe({
-                let fields_filled = !self.entered_url.is_empty()
-                    && !self.entered_user_id.is_empty()
-                    && !self.entered_passphrase.is_empty();
-                let unverified = matches!(
-                    self.url_verification_state,
-                    LoadedState::Failed(_) | LoadedState::New | LoadedState::Loading
-                );
-                (fields_filled && unverified).then(|| {
-                    widget::settings::item::builder(fl!("sources-add-unavailable-warning"))
-                        .icon(icon::from_name("dialog-warning-symbolic").size(ICON_SIZE))
-                        .control(
-                            widget::checkbox(self.unavailable_acknowledged)
-                                .on_toggle(|_| SourcesMessage::ToggleUnavailableAcknowledged),
-                        )
-                })
-            })
-            .add(widget::settings::item::builder("").control(
-                widget::button::suggested(fl!("sources-add-button")).apply_if(
-                    !(self.entered_url.is_empty()
-                        || self.entered_user_id.is_empty()
-                        || self.entered_passphrase.is_empty()
-                        || self.entered_url.parse::<Url>().is_err())
-                        && (matches!(self.url_verification_state, LoadedState::Loaded(_))
-                            || self.unavailable_acknowledged),
-                    |button| button.on_press(SourcesMessage::AddSource(self.entered_url.clone())),
-                ),
-            ));
-
-        content.push(add_section.into());
+        if self.show_add_form {
+            content.push(self.view_add_form());
+        }
 
         layout(settings::view_column(content))
             .apply(widget::scrollable::vertical)
@@ -455,6 +487,19 @@ impl Page for SourcesPage {
     fn update(&mut self, message: SourcesMessage) -> Task<Action<SourcesMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
+            SourcesMessage::ShowAddForm => {
+                self.show_add_form = true;
+                widget::text_input::focus(self.entered_url_id.clone())
+            }
+            SourcesMessage::CancelAddForm => {
+                self.show_add_form = false;
+                self.entered_url.clear();
+                self.entered_user_id.clear();
+                self.entered_passphrase.clear();
+                self.url_verification_state = Default::default();
+                self.unavailable_acknowledged = false;
+                task::none()
+            }
             SourcesMessage::Remotes(message) => {
                 let task = self.remotes_state.update(message).map(ActionExt::map_into);
                 if let LoadedState::Loaded(remotes) = &self.remotes_state.state {
@@ -574,6 +619,7 @@ impl Page for SourcesPage {
             )
             .chain(task::message(SourcesMessage::ClearUrlEntries)),
             SourcesMessage::ClearUrlEntries => {
+                self.show_add_form = false;
                 self.entered_url.clear();
                 self.entered_user_id.clear();
                 self.entered_passphrase.clear();
