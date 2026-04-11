@@ -26,7 +26,7 @@ html5ever = "0.39.0"
 image = { version = "0.25", default-features = false }
 i18n-embed = "0.16.0"
 i18n-embed-fl = "0.10.0"
-indexmap = "2.13.1"
+indexmap = "2.14.0"
 itertools = "0.14.0"
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git" }
 mime = "0.3.17"
@@ -34,7 +34,7 @@ mupdf = "0.6"
 open = "5.3.3"
 pbkdf2 = "0.12.2"
 quick-xml = "0.39.2"
-rand = { version = "0.10.0", default-features = false }
+rand = { version = "0.10.1", default-features = false }
 rustc-hash = "2"
 rand_core = "0.6"
 regex = { version = "1.12.3", default-features = false }
@@ -48,14 +48,14 @@ serde = "1.0.228"
 serde_with = "3.18.0"
 strum = "0.28"
 thiserror = "2.0.18"
-tokio = "1.51.0"
+tokio = "1.51.1"
 toml = "1.1.2"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false }
 trait-variant = "0.1.2"
 url = "2.5.8"
 tempfile = "3"
-zip = { version = "8.5.0", default-features = false }
+zip = { version = "8.5.1", default-features = false }
 
 [profile.release]
 lto = true

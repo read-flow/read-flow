@@ -96,7 +96,7 @@ impl ScanComponent {
 
         widget::Row::new()
             .push(widget::text(label))
-            .push(widget::progress_bar(0.0..=1.0, progress))
+            .push(widget::determinate_linear(progress))
             .push(close_btn)
             .spacing(spacing)
             .padding(padding)

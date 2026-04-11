@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use cosmic::iced_futures::futures::SinkExt;
-use cosmic::iced_futures::futures::channel::mpsc;
+use futures::SinkExt;
+use futures::channel::mpsc;
 use futures::stream::BoxStream;
 use rand::TryRng;
 use rand::rngs::SysRng;
@@ -40,7 +40,7 @@ where
         let f = self.f.clone();
         Box::pin(cosmic::iced::stream::channel(
             4,
-            move |mut sender: mpsc::Sender<M>| async move {
+            async move |mut sender: mpsc::Sender<M>| {
                 loop {
                     match receiver.lock().await.recv().await {
                         Ok(_) => {

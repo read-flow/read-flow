@@ -10,7 +10,7 @@ use cosmic::cosmic_theme;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Vertical;
 use cosmic::iced::widget::combo_box;
-use cosmic::iced_widget::rule;
+use cosmic::iced::widget::rule;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;

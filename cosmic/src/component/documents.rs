@@ -461,7 +461,7 @@ fn display_path<'a>(path: &'a str) -> Element<'a, DocumentsMessage> {
     let path: &Path = path.as_ref();
     let directory = path.parent().unwrap().display().to_string();
     let filename = path.file_name().unwrap();
-    cosmic::iced_widget::column![
+    cosmic::iced::widget::column![
         widget::text(filename.display().to_string()),
         widget::text(directory).size(11),
     ]

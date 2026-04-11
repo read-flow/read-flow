@@ -528,8 +528,6 @@ impl Page for SettingsPage {
     type Message = SettingsMessage;
 
     fn view(&self) -> Element<'_, SettingsMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
         let mut items: Vec<Element<'_, SettingsMessage>> = match self.selected_section {
             SettingsSection::Overview => {
                 let mut col = self.view_overview();
