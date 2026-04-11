@@ -263,29 +263,34 @@ impl SettingsPage {
             (
                 SettingsSection::Database,
                 fl!("settings-database-section"),
+                fl!("settings-database-section-description"),
                 "package-x-generic-symbolic",
             ),
             (
                 SettingsSection::Client,
                 fl!("settings-client-section"),
+                fl!("settings-client-section-description"),
                 "folder-download-symbolic",
             ),
             (
                 SettingsSection::Scan,
                 fl!("settings-scan-section"),
+                fl!("settings-scan-section-description"),
                 "system-search-symbolic",
             ),
             (
                 SettingsSection::Server,
                 fl!("settings-server-section"),
+                fl!("settings-server-section-description"),
                 "network-server-symbolic",
             ),
         ]
         .into_iter()
-        .map(|(s, label, icon_name)| {
+        .map(|(s, label, description, icon_name)| {
             widget::settings::section()
                 .add(
                     widget::settings::item::builder(label)
+                        .description(description)
                         .icon(widget::icon::from_name(icon_name).size(ICON_SIZE))
                         .control(
                             widget::button::icon(
@@ -347,7 +352,10 @@ impl SettingsPage {
                     ),
             );
 
-        vec![database_section.into()]
+        vec![
+            widget::text::title2(fl!("settings-database-section")).into(),
+            database_section.into(),
+        ]
     }
 
     fn view_section_client(&self) -> Vec<Element<'_, SettingsMessage>> {
@@ -373,7 +381,10 @@ impl SettingsPage {
                     ),
             );
 
-        vec![client_section.into()]
+        vec![
+            widget::text::title2(fl!("settings-client-section")).into(),
+            client_section.into(),
+        ]
     }
 
     fn view_section_scan(&self) -> Vec<Element<'_, SettingsMessage>> {
@@ -431,6 +442,7 @@ impl SettingsPage {
             ]));
 
         let mut items: Vec<Element<'_, SettingsMessage>> = vec![
+            widget::text::title2(fl!("settings-scan-section")).into(),
             scan_section.into(),
             file_types_section.into(),
             directories_section.into(),
@@ -498,8 +510,11 @@ impl SettingsPage {
                     .into(),
             ]));
 
-        let mut items: Vec<Element<'_, SettingsMessage>> =
-            vec![server_section.into(), authorized_users_section.into()];
+        let mut items: Vec<Element<'_, SettingsMessage>> = vec![
+            widget::text::title2(fl!("settings-server-section")).into(),
+            server_section.into(),
+            authorized_users_section.into(),
+        ];
 
         if let Some(form) = self.authorized_user_form.as_ref() {
             items.push(form.view().map(Into::into));
@@ -516,16 +531,17 @@ impl Page for SettingsPage {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
         let mut items: Vec<Element<'_, SettingsMessage>> = match self.selected_section {
-            SettingsSection::Overview => self.view_overview(),
+            SettingsSection::Overview => {
+                let mut col = self.view_overview();
+                col.insert(0, widget::text::title2(fl!("settings-page-title")).into());
+                col
+            }
             ref section => {
                 let back_button = widget::Row::new()
                     .push(
-                        widget::button::icon(
-                            widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE),
-                        )
-                        .on_press(SettingsMessage::SectionChanged(SettingsSection::Overview)),
+                        widget::button::link(fl!("settings-back"))
+                            .on_press(SettingsMessage::SectionChanged(SettingsSection::Overview)),
                     )
-                    .padding(space_s)
                     .into();
 
                 let mut items = vec![back_button];
