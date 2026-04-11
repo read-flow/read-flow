@@ -62,6 +62,16 @@ pub enum SaveState {
     Error(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum SettingsSection {
+    #[default]
+    Overview,
+    Database,
+    Client,
+    Scan,
+    Server,
+}
+
 pub struct SettingsPage {
     /// Application module, to refresh settings on save
     application_module: Arc<ApplicationModule>,
@@ -81,6 +91,8 @@ pub struct SettingsPage {
     directory_settings_form: Option<DirectorySettingsForm>,
     /// Authorized User Form
     authorized_user_form: Option<AuthorizedUserForm>,
+    /// Currently selected settings section
+    selected_section: SettingsSection,
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +126,8 @@ pub enum SettingsMessage {
     SaveError(String),
     /// Toggle a document file type in the scan extensions list
     ToggleDocumentType(DocumentType, bool),
+    /// Switch to a different settings section
+    SectionChanged(SettingsSection),
     /// No-op message
     Noop,
 
@@ -184,6 +198,7 @@ impl SettingsPage {
                 editing_directory: EditState::Idle,
                 directory_settings_form: None,
                 authorized_user_form: None,
+                selected_section: SettingsSection::default(),
             },
             tag_editor_task.map(ActionExt::map_into),
         )
@@ -242,19 +257,78 @@ impl SettingsPage {
             .unwrap_or(None)
             == Some(user_id)
     }
-}
 
-impl Page for SettingsPage {
-    type Message = SettingsMessage;
+    fn view_overview(&self) -> Vec<Element<'_, SettingsMessage>> {
+        [
+            (
+                SettingsSection::Database,
+                fl!("settings-database-section"),
+                "package-x-generic-symbolic",
+            ),
+            (
+                SettingsSection::Client,
+                fl!("settings-client-section"),
+                "folder-download-symbolic",
+            ),
+            (
+                SettingsSection::Scan,
+                fl!("settings-scan-section"),
+                "system-search-symbolic",
+            ),
+            (
+                SettingsSection::Server,
+                fl!("settings-server-section"),
+                "network-server-symbolic",
+            ),
+        ]
+        .into_iter()
+        .map(|(s, label, icon_name)| {
+            widget::settings::section()
+                .add(
+                    widget::settings::item::builder(label)
+                        .icon(widget::icon::from_name(icon_name).size(ICON_SIZE))
+                        .control(
+                            widget::button::icon(
+                                widget::icon::from_name("go-next-symbolic").size(ICON_SIZE),
+                            )
+                            .on_press(SettingsMessage::SectionChanged(s)),
+                        ),
+                )
+                .into()
+        })
+        .collect()
+    }
 
-    fn view(&self) -> Element<'_, SettingsMessage> {
+    fn view_save_row(&self) -> Element<'_, SettingsMessage> {
         let cosmic_theme::Spacing {
             space_s, space_m, ..
         } = theme::active().cosmic().spacing;
 
-        let mut content = Vec::new();
+        let save_button = if self.is_modified() && self.can_be_saved() {
+            widget::button::suggested(fl!("settings-save")).on_press(SettingsMessage::Save)
+        } else {
+            widget::button::standard(fl!("settings-save"))
+        };
 
-        // Database section (read-only)
+        let save_status = match &self.save_state {
+            SaveState::Idle => widget::text(""),
+            SaveState::Saving => widget::text(fl!("settings-saving")),
+            SaveState::Saved => widget::text(fl!("settings-saved")),
+            SaveState::Error(err) => {
+                widget::text(format!("{}: {}", fl!("settings-save-error"), err))
+            }
+        };
+
+        widget::Row::new()
+            .push(save_button)
+            .push(widget::space::horizontal())
+            .push(save_status)
+            .spacing(space_m)
+            .padding(space_s)
+            .into()
+    }
+
+    fn view_section_database(&self) -> Vec<Element<'_, SettingsMessage>> {
         let database_section = widget::settings::section()
             .title(fl!("settings-database-section"))
             .add(
@@ -272,9 +346,127 @@ impl Page for SettingsPage {
                         .width(Length::Shrink),
                     ),
             );
-        content.push(database_section.into());
 
-        // Server section
+        vec![database_section.into()]
+    }
+
+    fn view_section_client(&self) -> Vec<Element<'_, SettingsMessage>> {
+        let client_section = widget::settings::section()
+            .title(fl!("settings-client-section"))
+            .add(
+                widget::settings::item::builder(fl!("settings-client-download-folder"))
+                    .description(fl!("settings-client-download-folder-description"))
+                    .icon(widget::icon::from_name("folder-download-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::settings::item_row(vec![
+                            widget::text::monotext(format!(
+                                "{}",
+                                self.settings.client.download_folder.display()
+                            ))
+                            .into(),
+                            widget::button::text("Select")
+                                .on_press(SettingsMessage::SelectClientDownloadFolder)
+                                .into(),
+                        ])
+                        .align_y(Vertical::Center)
+                        .width(Length::Shrink),
+                    ),
+            );
+
+        vec![client_section.into()]
+    }
+
+    fn view_section_scan(&self) -> Vec<Element<'_, SettingsMessage>> {
+        let scan_section = widget::settings::section()
+            .title(fl!("settings-scan-section"))
+            .add(widget::text::body(fl!("settings-scan-description")).width(Length::Fill))
+            .add(
+                widget::settings::item::builder(fl!("settings-scan-dry-run"))
+                    .description(fl!("settings-scan-dry-run-description"))
+                    .icon(widget::icon::from_name("system-run-symbolic").size(ICON_SIZE))
+                    .toggler(self.settings.scan.dry_run, SettingsMessage::ToggleDryRun),
+            );
+
+        let file_types_section = DocumentType::all().iter().fold(
+            widget::settings::section()
+                .title(fl!("settings-scan-file-types-section"))
+                .add(
+                    widget::text::body(fl!("settings-scan-file-types-description"))
+                        .width(Length::Fill),
+                ),
+            |section, doc_type| {
+                let enabled = self.settings.scan.extensions.contains(doc_type);
+                let doc_type_clone = doc_type.clone();
+                section.add(
+                    widget::settings::item::builder(format!(".{}", doc_type.as_str()))
+                        .description(doc_type.label())
+                        .toggler(enabled, move |v| {
+                            SettingsMessage::ToggleDocumentType(doc_type_clone.clone(), v)
+                        }),
+                )
+            },
+        );
+
+        let directories_section = self
+            .settings
+            .scan
+            .directories
+            .iter()
+            .fold(
+                widget::settings::section().title(fl!("settings-scan-directories-section")),
+                |section, (path, dir_settings)| section.add(view_directory(path, dir_settings)),
+            )
+            .add(widget::settings::item_row(vec![
+                widget::space::horizontal()
+                    .width(Length::FillPortion(5))
+                    .into(),
+                widget::button::icon(icon::from_name("list-add-symbolic").size(ICON_SIZE))
+                    .class(widget::button::ButtonClass::Suggested)
+                    .on_press(SettingsMessage::AddDirectory)
+                    .tooltip(fl!("settings-add-directory"))
+                    .apply(widget::container)
+                    .width(Length::FillPortion(1))
+                    .align_x(Horizontal::Right)
+                    .into(),
+            ]));
+
+        let mut items: Vec<Element<'_, SettingsMessage>> = vec![
+            scan_section.into(),
+            file_types_section.into(),
+            directories_section.into(),
+        ];
+
+        if let Some(form) = self.directory_settings_form.as_ref() {
+            items.push(form.view().map(Into::into));
+        }
+
+        items
+    }
+
+    fn view_section_server(&self) -> Vec<Element<'_, SettingsMessage>> {
+        let server_section = widget::settings::section()
+            .title(fl!("settings-server-section"))
+            .add(widget::text::body(fl!("settings-server-description")).width(Length::Fill))
+            .add(
+                widget::settings::item::builder(fl!("settings-server-download-folder"))
+                    .description(fl!("settings-server-download-folder-description"))
+                    .icon(widget::icon::from_name("folder-download-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::settings::item_row(vec![
+                            widget::text::monotext(format!(
+                                "{}",
+                                self.settings.server.download_folder.display()
+                            ))
+                            .into(),
+                            widget::button::text("Select")
+                                .on_press(SettingsMessage::SelectServerDownloadFolder)
+                                .into(),
+                        ])
+                        .align_y(Vertical::Center)
+                        .width(Length::Shrink),
+                    ),
+            );
+
         let authorized_users_section = self
             .settings
             .server
@@ -306,154 +498,57 @@ impl Page for SettingsPage {
                     .into(),
             ]));
 
-        let client_section = widget::settings::section()
-            .title(fl!("settings-client-section"))
-            .add(
-                widget::settings::item::builder(fl!("settings-client-download-folder"))
-                    .description(fl!("settings-client-download-folder-description"))
-                    .icon(widget::icon::from_name("folder-download-symbolic").size(ICON_SIZE))
-                    .control(
-                        widget::settings::item_row(vec![
-                            widget::text::monotext(format!(
-                                "{}",
-                                self.settings.client.download_folder.display()
-                            ))
-                            .into(),
-                            widget::button::text("Select")
-                                .on_press(SettingsMessage::SelectClientDownloadFolder)
-                                .into(),
-                        ])
-                        .align_y(Vertical::Center)
-                        .width(Length::Shrink),
-                    ),
-            );
-
-        content.push(client_section.into());
-
-        let server_section = widget::settings::section()
-            .title(fl!("settings-server-section"))
-            .add(widget::text::body(fl!("settings-server-description")).width(Length::Fill))
-            .add(
-                widget::settings::item::builder(fl!("settings-server-download-folder"))
-                    .description(fl!("settings-server-download-folder-description"))
-                    .icon(widget::icon::from_name("folder-download-symbolic").size(ICON_SIZE))
-                    .control(
-                        widget::settings::item_row(vec![
-                            widget::text::monotext(format!(
-                                "{}",
-                                self.settings.server.download_folder.display()
-                            ))
-                            .into(),
-                            widget::button::text("Select")
-                                .on_press(SettingsMessage::SelectServerDownloadFolder)
-                                .into(),
-                        ])
-                        .align_y(Vertical::Center)
-                        .width(Length::Shrink),
-                    ),
-            );
-
-        content.push(server_section.into());
-        content.push(authorized_users_section.into());
+        let mut items: Vec<Element<'_, SettingsMessage>> =
+            vec![server_section.into(), authorized_users_section.into()];
 
         if let Some(form) = self.authorized_user_form.as_ref() {
-            content.push(form.view().map(Into::into));
+            items.push(form.view().map(Into::into));
         }
 
-        // Scan section
-        let scan_section = widget::settings::section()
-            .title(fl!("settings-scan-section"))
-            .add(widget::text::body(fl!("settings-scan-description")).width(Length::Fill))
-            .add(
-                widget::settings::item::builder(fl!("settings-scan-dry-run"))
-                    .description(fl!("settings-scan-dry-run-description"))
-                    .icon(widget::icon::from_name("system-run-symbolic").size(ICON_SIZE))
-                    .toggler(self.settings.scan.dry_run, SettingsMessage::ToggleDryRun),
-            );
-        content.push(scan_section.into());
+        items
+    }
+}
 
-        // File types section
-        let file_types_section = DocumentType::all().iter().fold(
-            widget::settings::section()
-                .title(fl!("settings-scan-file-types-section"))
-                .add(
-                    widget::text::body(fl!("settings-scan-file-types-description"))
-                        .width(Length::Fill),
-                ),
-            |section, doc_type| {
-                let enabled = self.settings.scan.extensions.contains(doc_type);
-                let doc_type_clone = doc_type.clone();
-                section.add(
-                    widget::settings::item::builder(format!(".{}", doc_type.as_str()))
-                        .description(doc_type.label())
-                        .toggler(enabled, move |v| {
-                            SettingsMessage::ToggleDocumentType(doc_type_clone.clone(), v)
-                        }),
-                )
-            },
-        );
-        content.push(file_types_section.into());
+impl Page for SettingsPage {
+    type Message = SettingsMessage;
 
-        // Scan directories section with add/edit functionality
-        let directories_section = self
-            .settings
-            .scan
-            .directories
-            .iter()
-            .fold(
-                widget::settings::section().title(fl!("settings-scan-directories-section")),
-                |section, (path, dir_settings)| section.add(view_directory(path, dir_settings)),
-            )
-            .add(widget::settings::item_row(vec![
-                widget::space::horizontal()
-                    .width(Length::FillPortion(5))
-                    .into(),
-                widget::button::icon(icon::from_name("list-add-symbolic").size(ICON_SIZE))
-                    .class(widget::button::ButtonClass::Suggested)
-                    .on_press(SettingsMessage::AddDirectory)
-                    .tooltip(fl!("settings-add-directory"))
-                    .apply(widget::container)
-                    .width(Length::FillPortion(1))
-                    .align_x(Horizontal::Right)
-                    .into(),
-            ]));
+    fn view(&self) -> Element<'_, SettingsMessage> {
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
-        content.push(directories_section.into());
+        let mut items: Vec<Element<'_, SettingsMessage>> = match self.selected_section {
+            SettingsSection::Overview => self.view_overview(),
+            ref section => {
+                let back_button = widget::Row::new()
+                    .push(
+                        widget::button::icon(
+                            widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE),
+                        )
+                        .on_press(SettingsMessage::SectionChanged(SettingsSection::Overview)),
+                    )
+                    .padding(space_s)
+                    .into();
 
-        // Show directory editor if editing
-        if let Some(directory_settings_form) = self.directory_settings_form.as_ref() {
-            content.push(directory_settings_form.view().map(Into::into));
-        }
-
-        // Save button section
-        let save_button = if self.is_modified() && self.can_be_saved() {
-            widget::button::suggested(fl!("settings-save")).on_press(SettingsMessage::Save)
-        } else {
-            widget::button::standard(fl!("settings-save"))
-        };
-
-        let save_status = match &self.save_state {
-            SaveState::Idle => widget::text(""),
-            SaveState::Saving => widget::text(fl!("settings-saving")),
-            SaveState::Saved => widget::text(fl!("settings-saved")),
-            SaveState::Error(err) => {
-                widget::text(format!("{}: {}", fl!("settings-save-error"), err))
+                let mut items = vec![back_button];
+                items.extend(match section {
+                    SettingsSection::Database => self.view_section_database(),
+                    SettingsSection::Client => self.view_section_client(),
+                    SettingsSection::Scan => self.view_section_scan(),
+                    SettingsSection::Server => self.view_section_server(),
+                    SettingsSection::Overview => unreachable!(),
+                });
+                items
             }
         };
 
-        let save_section = widget::Row::new()
-            .push(save_button)
-            .push(widget::space::horizontal())
-            .push(save_status)
-            .spacing(space_m)
-            .padding(space_s);
-        content.push(save_section.into());
+        if self.selected_section != SettingsSection::Overview {
+            items.push(self.view_save_row());
+        }
 
-        layout(widget::settings::view_column(content))
-            .apply(widget::scrollable::vertical)
+        widget::scrollable::vertical(layout(widget::settings::view_column(items)))
             .width(Length::Fill)
             .height(Length::Fill)
             .apply(widget::container)
+            .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Horizontal::Center)
             .align_y(Vertical::Top)
@@ -461,9 +556,6 @@ impl Page for SettingsPage {
     }
 
     fn view_context(&self) -> ContextView<'_, SettingsMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
-        // UI Privacy section
         let ui_section = widget::settings::section()
             .title(fl!("settings-ui-section"))
             .add(
@@ -485,14 +577,10 @@ impl Page for SettingsPage {
                     .flex_control(self.tag_editor.view().map(SettingsMessage::TagEditor)),
             );
 
-        let content = widget::Column::new()
-            .push(ui_section)
-            .spacing(space_s)
-            .into();
-
         ContextView {
             title: fl!("settings-context-title"),
-            content,
+            content: widget::settings::view_column(vec![ui_section.into(), self.view_save_row()])
+                .into(),
         }
     }
 
@@ -794,6 +882,13 @@ impl Page for SettingsPage {
                     self.settings.scan.extensions.retain(|x| x != &doc_type);
                 }
                 self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            SettingsMessage::SectionChanged(section) => {
+                self.selected_section = section;
+                self.directory_settings_form = None;
+                self.editing_directory = EditState::Idle;
+                self.authorized_user_form = None;
                 Task::none()
             }
             SettingsMessage::Noop => task::none(),
