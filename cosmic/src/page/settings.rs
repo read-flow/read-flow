@@ -292,12 +292,9 @@ impl SettingsPage {
                     widget::settings::item::builder(label)
                         .description(description)
                         .icon(widget::icon::from_name(icon_name).size(ICON_SIZE))
-                        .control(
-                            widget::button::icon(
-                                widget::icon::from_name("go-next-symbolic").size(ICON_SIZE),
-                            )
-                            .on_press(SettingsMessage::SectionChanged(s)),
-                        ),
+                        .control(widget::icon::from_name("go-next-symbolic").size(ICON_SIZE))
+                        .apply(widget::mouse_area)
+                        .on_press(SettingsMessage::SectionChanged(s)),
                 )
                 .into()
         })
