@@ -27,6 +27,7 @@ indexmap.workspace = true
 mupdf = { workspace = true, features = ["sys-lib"] }
 open.workspace = true
 rand = { workspace = true, features = ["std", "sys_rng"] }
+regex = { workspace = true, features = ["std", "unicode"] }
 rfd.workspace = true
 rust-embed.workspace = true
 serde = { workspace = true, features = ["derive"] }

@@ -14,7 +14,9 @@ use cosmic::iced;
 use cosmic::iced::Length;
 use cosmic::task;
 use cosmic::widget;
+use read_flow_core::Builder;
 use read_flow_core::api::ReadingStatus;
+use regex::Regex;
 
 use crate::aggregator::Document;
 use crate::aggregator::Documents;
@@ -35,6 +37,28 @@ use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::page::Page;
 use crate::state::filtered::Filtered;
+
+/// Search mode for the search box
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SearchMode {
+    #[default]
+    Fuzzy,
+    Regex,
+}
+
+impl SearchMode {
+    pub const ALL: &'static [Self] = &[Self::Fuzzy, Self::Regex];
+}
+
+impl fmt::Display for SearchMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let label = match self {
+            Self::Fuzzy => fl!("document-list-search-mode-fuzzy"),
+            Self::Regex => fl!("document-list-search-mode-regex"),
+        };
+        write!(f, "{}", label)
+    }
+}
 
 /// Sort options for the document list
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -84,6 +108,8 @@ pub struct DocumentList {
     archive: DocumentsComponent,
     is_filtering: bool,                   // Track if filtering is in progress
     search_query: String,                 // The search query string
+    search_mode: SearchMode,              // Fuzzy or Regex search mode
+    search_regex_error: Option<String>,   // Set when regex mode has an invalid pattern
     search_input_id: widget::Id,          // Unique ID for focus management
     debounce_counter: u32,                // Counter to track debounce state
     sort_option: DocumentSortOption,      // Current sort option
@@ -108,6 +134,7 @@ pub enum DocumentListMessage {
     LoadingFailed(String),
     RefreshDocument(Document),
     SearchChanged(String),
+    SearchModeChanged(SearchMode),
     ClearSearch,
     FilteringComplete(Vec<usize>),
     FocusSearchInput,
@@ -153,6 +180,7 @@ impl DocumentList {
     fn start_background_filtering(
         &self,
         query: String,
+        search_mode: SearchMode,
         status_filter: Option<ReadingStatus>,
         source_filter: Option<ClientSelector>,
         allow_tags: HashSet<String>,
@@ -160,6 +188,13 @@ impl DocumentList {
         all_files: Vec<Document>,
     ) -> Task<Action<DocumentListMessage>> {
         task::future(async move {
+            // Compile regex once if in regex mode (not per-document)
+            let compiled_regex = if search_mode == SearchMode::Regex && !query.is_empty() {
+                Regex::new(&query).ok()
+            } else {
+                None
+            };
+
             // Perform filtering in background after debounce timeout
             // This runs only when user has paused typing for 250ms
             let filtered_files = all_files
@@ -168,6 +203,8 @@ impl DocumentList {
                 .filter_map(|(index, file)| {
                     filter_document(
                         &query,
+                        search_mode,
+                        compiled_regex.as_ref(),
                         status_filter,
                         source_filter.as_ref(),
                         &allow_tags,
@@ -194,6 +231,8 @@ impl DocumentList {
                 document_provider: document_provider.clone(),
                 archive,
                 search_query: String::new(),
+                search_mode: SearchMode::default(),
+                search_regex_error: None,
                 is_filtering: false,
                 search_input_id: widget::Id::unique(),
                 debounce_counter: 0,
@@ -259,6 +298,7 @@ impl DocumentList {
             self.is_filtering = true;
             self.start_background_filtering(
                 self.search_query.clone(),
+                self.search_mode,
                 self.status_filter,
                 self.source_filter.clone(),
                 self.tag_filter.allow_tags.clone(),
@@ -325,6 +365,15 @@ fn status_order(status: &ReadingStatus) -> u8 {
     }
 }
 
+/// Returns the regex compile error message if mode is Regex and the query is invalid.
+fn compute_regex_error(mode: SearchMode, query: &str) -> Option<String> {
+    if mode == SearchMode::Regex && !query.is_empty() {
+        Regex::new(query).err().map(|e| e.to_string())
+    } else {
+        None
+    }
+}
+
 /// Returns true if every character of `query` appears in `text` as a subsequence
 /// (in order, but not necessarily consecutive).
 fn fuzzy_match(query: &str, text: &str) -> bool {
@@ -339,6 +388,8 @@ fn fuzzy_match(query: &str, text: &str) -> bool {
 
 fn filter_document(
     search_query: &str,
+    search_mode: SearchMode,
+    compiled_regex: Option<&Regex>,
     status_filter: Option<ReadingStatus>,
     source_filter: Option<&ClientSelector>,
     allow_tags: &HashSet<String>,
@@ -349,15 +400,32 @@ fn filter_document(
     let matches_search = if search_query.is_empty() {
         true
     } else {
-        let query = search_query.to_lowercase();
-        let path_matches = document
-            .sources
-            .iter()
-            .map(|source| source.path.to_lowercase())
-            .filter(|path| fuzzy_match(&query, path))
-            .count();
-        let tags_lower = document.metadata.tags.join(" ").to_lowercase();
-        path_matches > 0 || fuzzy_match(&query, &tags_lower)
+        match search_mode {
+            SearchMode::Fuzzy => {
+                let query = search_query.to_lowercase();
+                let path_matches = document
+                    .sources
+                    .iter()
+                    .map(|source| source.path.to_lowercase())
+                    .filter(|path| fuzzy_match(&query, path))
+                    .count();
+                let tags_lower = document.metadata.tags.join(" ").to_lowercase();
+                path_matches > 0 || fuzzy_match(&query, &tags_lower)
+            }
+            SearchMode::Regex => {
+                if let Some(re) = compiled_regex {
+                    let path_matches = document
+                        .sources
+                        .iter()
+                        .any(|source| re.is_match(&source.path));
+                    let tags = document.metadata.tags.join(" ");
+                    path_matches || re.is_match(&tags)
+                } else {
+                    // Invalid or empty regex: show all results
+                    true
+                }
+            }
+        }
     };
 
     // Filter by reading status
@@ -402,14 +470,26 @@ impl Page for DocumentList {
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, DocumentListMessage>> {
-        let mut elements: Vec<Element<'_, DocumentListMessage>> = vec![
+        let search_input = {
             widget::search_input(fl!("document-list-search-placeholder"), &self.search_query)
                 .id(self.search_input_id.clone())
                 .always_active()
                 .on_input(DocumentListMessage::SearchChanged)
                 .on_clear(DocumentListMessage::ClearSearch)
                 .width(Length::Fixed(300.0))
-                .into(),
+                .apply_maybe(self.search_regex_error.as_ref(), |input, err| {
+                    input.error(err.as_str())
+                })
+        };
+
+        let mut elements: Vec<Element<'_, DocumentListMessage>> = vec![
+            search_input.into(),
+            iced::widget::pick_list(
+                SearchMode::ALL,
+                Some(self.search_mode),
+                DocumentListMessage::SearchModeChanged,
+            )
+            .into(),
         ];
 
         if self.is_filtering {
@@ -518,10 +598,19 @@ impl Page for DocumentList {
                 let mut documents: Vec<Document> = files.into_iter().collect();
                 // Sort documents
                 sort_documents(&mut documents, self.sort_option);
+                let search_mode = self.search_mode;
+                let compiled_regex =
+                    if search_mode == SearchMode::Regex && !self.search_query.is_empty() {
+                        Regex::new(&self.search_query).ok()
+                    } else {
+                        None
+                    };
                 let mut files = Filtered::new(documents);
                 files.filter(|file| {
                     filter_document(
                         &self.search_query,
+                        search_mode,
+                        compiled_regex.as_ref(),
                         self.status_filter,
                         self.source_filter.as_ref(),
                         &self.tag_filter.allow_tags,
@@ -563,6 +652,8 @@ impl Page for DocumentList {
                 // Increment debounce counter to invalidate previous timers
                 self.debounce_counter += 1;
 
+                self.search_regex_error = compute_regex_error(self.search_mode, &query);
+
                 // Only start debounce timer if files have been loaded
                 if self.archive.is_loaded() {
                     self.start_debounce_timer(self.debounce_counter, query)
@@ -570,8 +661,14 @@ impl Page for DocumentList {
                     Task::none()
                 }
             }
+            DocumentListMessage::SearchModeChanged(mode) => {
+                self.search_mode = mode;
+                self.search_regex_error = compute_regex_error(mode, &self.search_query);
+                self.filter_now()
+            }
             DocumentListMessage::ClearSearch => {
                 self.search_query.clear();
+                self.search_regex_error = None;
                 // Immediately filter to show all files (no debounce needed for clearing)
                 self.filter_now()
             }
@@ -595,6 +692,7 @@ impl Page for DocumentList {
                     Task::batch(vec![
                         self.start_background_filtering(
                             query,
+                            self.search_mode,
                             self.status_filter,
                             self.source_filter.clone(),
                             self.tag_filter.allow_tags.clone(),

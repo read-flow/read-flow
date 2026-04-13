@@ -4,7 +4,7 @@ This is a tool to help discover and organize files locally and on remote servers
 
 * Open
 
-** Tier 1 — Quick Wins (High value, Low effort) [6/8]
+** Tier 1 — Quick Wins (High value, Low effort) [7/9]
 
 - [X] ~read-flow~: Allow copying full paths from file details page
 - [X] ~read-flow~: Fuzzy search in document list
@@ -14,9 +14,10 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] ~read-flow-core~ & ~read-flow~: Check files in the database to see whether they still exist
 - [X] ~read-flow::EpubViewer~: Support images in data urls
   - log line: 2026-04-06T17:04:24.169257Z  INFO epub::epub::document: resource not found in EPUB archive: OEBPS/html/data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYgAAAABCAIAAABL6a7VAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAkElEQVQ4jY2UQQ7AIAgE5f9/lh5MidmFaT0Yq0SGXWzsvSNivSMzIyIz11pn0c4VfMJqXePerAvryD8r3rPLPYAnAILXxk+cXtQnJ6Rw0SRLSwVHwAmCgxRTFtB84nQ97wZzN12W1hdhcF+4loIE+yY9pz75FId9Z4sFeCpWBGH9+eH4G/9TphcFPwroMQl4AD7pbgsbW4jeAAAAAElFTkSuQmCC
-- [ ] ~read-flow::Documents~: Switch search box between fuzzy and regex modes.
+- [X] ~read-flow::Documents~: Switch search box between fuzzy and regex modes.
+- [ ] ~read-flow::EpubViewer~: Use `widget::search_input` for search box.
 
-** Tier 2 — High Impact, Moderate Effort [6/10]
+** Tier 2 — High Impact, Moderate Effort [7/11]
 
 - [X] ~read-flow~: Fix font rendering when "use theme colors" is enabled in MuPdfViewer on dark themes
   - When theme colors are applied to a PDF that contains real text (not scanned images), the color
@@ -44,8 +45,9 @@ This is a tool to help discover and organize files locally and on remote servers
     widget. =ScanProgress= events: =FileDiscovered=, =FileProcessed { path, was_new, was_updated }=,
     =FileError { path, error }=, =Completed { discovered, processed, errors }=.
 - [X] ~read-flow~: Allow deleting duplicate files (including from file storage) from file edit dialog
-- [ ] ~read-flow::ImageViewer~: Implement Zoom.
+- [X] ~read-flow::ImageViewer~: Implement Zoom.
 - [ ] ~read-flow::EpubViewer~: Add progressbar for initial loading.
+- [ ] ~read-flow::ImageViewer~: Add image details to context pane, parse from specific image type if possible.
 
 ** Tier 3 — Significant Features [1/5]
 
