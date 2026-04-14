@@ -715,10 +715,11 @@ impl EpubViewer {
             space_xxs, space_s, ..
         } = theme::active().cosmic().spacing;
 
-        let input = widget::text_input(fl!("epub-viewer-search-placeholder"), &self.search_query)
+        let input = widget::search_input(fl!("epub-viewer-search-placeholder"), &self.search_query)
             .id(self.search_input_id.clone())
             .on_input(EpubViewerMessage::SetSearchQuery)
             .on_submit(|_| EpubViewerMessage::SearchNext)
+            .on_clear(EpubViewerMessage::CloseSearch)
             .width(Length::Fill);
 
         let match_label: Element<'_, EpubViewerMessage> = if !self.search_query.is_empty() {
@@ -756,14 +757,6 @@ impl EpubViewer {
                     )
                     .on_press(EpubViewerMessage::SearchNext)
                     .tooltip(fl!("epub-viewer-search-next"))
-                    .padding(space_xxs),
-                )
-                .push(
-                    widget::button::icon(
-                        widget::icon::from_name("window-close-symbolic").size(ICON_SIZE),
-                    )
-                    .on_press(EpubViewerMessage::CloseSearch)
-                    .tooltip(fl!("epub-viewer-search-close"))
                     .padding(space_xxs),
                 )
                 .spacing(space_xxs)

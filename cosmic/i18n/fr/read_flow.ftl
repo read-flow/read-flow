@@ -309,7 +309,6 @@ epub-viewer-search-no-matches = Aucun résultat
 epub-viewer-search-match-count = { $current } sur { $total }
 epub-viewer-search-prev = Résultat précédent
 epub-viewer-search-next = Résultat suivant
-epub-viewer-search-close = Fermer la recherche
 epub-viewer-copy-code = Copier le code
 
 settings-viewer-section = Visionneuse EPUB

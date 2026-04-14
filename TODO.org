@@ -4,10 +4,10 @@ This is a tool to help discover and organize files locally and on remote servers
 
 * Open
 
-** Tier 1 — Quick Wins (High value, Low effort) [0/2]
+** Tier 1 — Quick Wins (High value, Low effort) [1/2]
 
 - [ ] ~read-flow::EpubViewer~: Make nav pane resizeable
-- [ ] ~read-flow::EpubViewer~: Use `widget::search_input` for search box.
+- [X] ~read-flow::EpubViewer~: Use `widget::search_input` for search box.
 
 ** Tier 2 — High Impact, Moderate Effort [0/4]
 

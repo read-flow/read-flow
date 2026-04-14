@@ -310,7 +310,6 @@ epub-viewer-search-no-matches = Geen resultaten
 epub-viewer-search-match-count = { $current } van { $total }
 epub-viewer-search-prev = Vorig resultaat
 epub-viewer-search-next = Volgend resultaat
-epub-viewer-search-close = Zoeken sluiten
 epub-viewer-copy-code = Code kopiëren
 
 settings-viewer-section = EPUB Weergave
