@@ -396,6 +396,8 @@ pub enum EpubViewerMessage {
     SetPageMargin(f32),
     /// Toggle chapter navigation sidebar visibility.
     ShowSidebar(bool),
+    /// Toggle the nav dropdown (narrow-window alternative to the sidebar).
+    ToggleNavDropdown,
     /// Set the font family for rendering (index into FontFamily::ALL).
     SetFontFamily(FontFamily),
     /// Set the base body font size in pixels (12–24).
@@ -460,6 +462,8 @@ pub struct EpubViewer {
     /// Whether the sidebar pane was visible in the last rendered frame.
     /// Used for hysteresis when auto-hiding on narrow windows.
     sidebar_pane_visible: Cell<bool>,
+    /// Whether the nav dropdown (shown on narrow windows instead of the sidebar) is open.
+    nav_dropdown_open: bool,
     /// Font family used for rendering EPUB content.
     font_family: FontFamily,
     /// Pre-computed display names for the font family dropdown.
@@ -527,6 +531,7 @@ impl EpubViewer {
             pending_block_index: None,
             show_sidebar: saved_prefs.show_sidebar,
             sidebar_pane_visible: Cell::new(true),
+            nav_dropdown_open: false,
             font_family: saved_prefs.font_family,
             font_family_names: widget::combo_box::State::new(FontFamily::all()),
             nav_entries: Vec::new(),
@@ -708,6 +713,138 @@ impl EpubViewer {
         .width(Length::Fixed(CHAPTER_SIDEBAR_WIDTH))
         .height(Length::Fill)
         .into()
+    }
+
+    /// A full-width collapsible nav menu shown above the document content on
+    /// narrow windows where the sidebar pane does not fit.
+    fn view_nav_dropdown(&self) -> Element<'_, EpubViewerMessage> {
+        let cosmic_theme::Spacing {
+            space_xxs, space_s, ..
+        } = theme::active().cosmic().spacing;
+
+        let current_label: &str = if let Some(idx) = self.active_nav_entry {
+            self.nav_entries
+                .get(idx)
+                .map(|e| e.label.as_str())
+                .unwrap_or("")
+        } else {
+            self.chapters
+                .get(self.active_chapter)
+                .map(|c| c.label.as_str())
+                .unwrap_or("")
+        };
+
+        let chapter_info = if !self.chapters.is_empty() {
+            format!("{} / {}", self.active_chapter + 1, self.chapters.len())
+        } else {
+            String::new()
+        };
+
+        let chevron = if self.nav_dropdown_open {
+            "go-up-symbolic"
+        } else {
+            "go-down-symbolic"
+        };
+
+        let header_content = widget::Row::new()
+            .push(
+                widget::text::body(current_label)
+                    .wrapping(cosmic::iced::widget::text::Wrapping::None)
+                    .width(Length::Fill),
+            )
+            .push(widget::text::body(chapter_info))
+            .push(widget::icon::from_name(chevron).size(ICON_SIZE).icon())
+            .align_y(Vertical::Center)
+            .spacing(space_s)
+            .padding([space_xxs, space_s]);
+
+        let header_btn = widget::button::custom(header_content)
+            .class(widget::button::ButtonClass::ListItem)
+            .on_press(EpubViewerMessage::ToggleNavDropdown)
+            .width(Length::Fill);
+
+        let mut col = widget::Column::new().push(header_btn);
+
+        if self.nav_dropdown_open {
+            let current_href = self
+                .chapters
+                .get(self.active_chapter)
+                .map(|c| c.href.as_str())
+                .unwrap_or("");
+            let capacity = if self.nav_entries.is_empty() {
+                self.chapters.len()
+            } else {
+                self.nav_entries.len()
+            };
+            let mut entries_col = widget::column::with_capacity(capacity);
+
+            if self.nav_entries.is_empty() {
+                for (idx, chapter) in self.chapters.iter().enumerate() {
+                    let active = idx == self.active_chapter;
+                    let mut label = widget::text::body(&chapter.label)
+                        .wrapping(cosmic::iced::widget::text::Wrapping::None);
+                    if active {
+                        label = label.font(font::Font {
+                            weight: font::Weight::Bold,
+                            ..Default::default()
+                        });
+                    }
+                    let button = widget::button::custom(label)
+                        .class(widget::button::ButtonClass::Link)
+                        .on_press(EpubViewerMessage::SelectChapter(idx))
+                        .width(Length::Fill);
+                    entries_col = entries_col.push(button);
+                }
+            } else {
+                for (idx, entry) in self.nav_entries.iter().enumerate() {
+                    let base = entry
+                        .href
+                        .split_once('#')
+                        .map(|(b, _)| b)
+                        .unwrap_or(&entry.href);
+                    let is_active_chapter = base == current_href;
+                    let is_group_leader = !self.nav_entries[..idx]
+                        .iter()
+                        .any(|e| e.href.split_once('#').map(|(b, _)| b).unwrap_or(&e.href) == base);
+                    if !is_active_chapter && !is_group_leader {
+                        continue;
+                    }
+                    let active = self.active_nav_entry == Some(idx);
+                    let mut label = widget::text::body(&entry.label)
+                        .wrapping(cosmic::iced::widget::text::Wrapping::None);
+                    if active {
+                        label = label.font(font::Font {
+                            weight: font::Weight::Bold,
+                            ..Default::default()
+                        });
+                    }
+                    let button = widget::button::custom(label)
+                        .class(widget::button::ButtonClass::Link)
+                        .on_press(EpubViewerMessage::SelectNavEntry(idx))
+                        .width(Length::Fill);
+                    let indent = (entry.depth as f32) * (space_s as f32);
+                    let row = widget::Row::new()
+                        .push(widget::Space::new().width(Length::Fixed(indent)))
+                        .push(button);
+                    entries_col = entries_col.push(row);
+                }
+            }
+
+            col = col.push(
+                widget::container(
+                    widget::scrollable(entries_col)
+                        .height(Length::Fixed(280.0))
+                        .width(Length::Fill),
+                )
+                .class(Container::Secondary)
+                .width(Length::Fill),
+            );
+        }
+
+        widget::container(col)
+            .class(Container::Secondary)
+            .width(Length::Fill)
+            .into()
     }
 
     fn view_search_bar(&self) -> Element<'_, EpubViewerMessage> {
@@ -1172,8 +1309,12 @@ impl Page for EpubViewer {
         };
         self.sidebar_pane_visible.set(show_sidebar_now);
 
+        // Show dropdown nav above the content when the sidebar doesn't fit.
+        let show_nav_dropdown = self.show_sidebar && !show_sidebar_now;
+
         let main_col = widget::Column::new()
             .height(Length::Fill)
+            .push_maybe(show_nav_dropdown.then(|| self.view_nav_dropdown()))
             .push_maybe(self.search_visible.then(|| self.view_search_bar()))
             .push(self.view_content());
 
@@ -1461,6 +1602,7 @@ impl Page for EpubViewer {
                 Task::none()
             }
             EpubViewerMessage::SelectChapter(idx) => {
+                self.nav_dropdown_open = false;
                 if idx < self.chapters.len() {
                     self.active_chapter = idx;
                     self.active_nav_entry = None;
@@ -1474,6 +1616,7 @@ impl Page for EpubViewer {
                 Task::none()
             }
             EpubViewerMessage::SelectNavEntry(nav_idx) => {
+                self.nav_dropdown_open = false;
                 self.active_nav_entry = Some(nav_idx);
                 if let Some(entry) = self.nav_entries.get(nav_idx) {
                     let (base, fragment) = match entry.href.split_once('#') {
@@ -1828,6 +1971,10 @@ impl Page for EpubViewer {
             EpubViewerMessage::ShowSidebar(show) => {
                 self.show_sidebar = show;
                 self.save_current_prefs();
+                Task::none()
+            }
+            EpubViewerMessage::ToggleNavDropdown => {
+                self.nav_dropdown_open = !self.nav_dropdown_open;
                 Task::none()
             }
             EpubViewerMessage::SetFontFamily(family) => {
@@ -2423,7 +2570,16 @@ fn find_split_char_offset(
         }
     }
 
-    let b = last_byte_end?;
+    // cosmic-text glyph endpoints can land mid-codepoint for multi-byte
+    // characters (e.g. curly quotes).  Walk back to the nearest valid
+    // UTF-8 boundary before slicing.
+    let mut b = last_byte_end?;
+    while b > 0 && !text.is_char_boundary(b) {
+        b -= 1;
+    }
+    if b == 0 {
+        return None;
+    }
     let prefix = &text[..b];
 
     // Cosmic-text wraps at word boundaries, but force-breaks long words at
@@ -3535,5 +3691,177 @@ mod height_tests {
             &mut fs,
         );
         assert_height(&format!("h1 width={width}"), estimated, actual);
+    }
+}
+
+#[cfg(test)]
+mod split_tests {
+    use cosmic_text::FontSystem;
+    use rstest::rstest;
+
+    use super::find_split_char_offset;
+
+    fn make_font_system() -> FontSystem {
+        FontSystem::new()
+    }
+
+    const WIDTH: f32 = 600.0;
+    const FONT_SIZE: f32 = 14.0;
+    /// One line of body text at FONT_SIZE.
+    const ONE_LINE_HEIGHT: f32 = FONT_SIZE * 1.375;
+
+    // ── Early-exit conditions ────────────────────────────────────────────────
+
+    #[test]
+    fn empty_text_returns_none() {
+        let mut fs = make_font_system();
+        assert_eq!(
+            find_split_char_offset("", WIDTH, FONT_SIZE, 100.0, &mut fs),
+            None
+        );
+    }
+
+    #[test]
+    fn zero_height_returns_none() {
+        let mut fs = make_font_system();
+        assert_eq!(
+            find_split_char_offset("some text", WIDTH, FONT_SIZE, 0.0, &mut fs),
+            None
+        );
+    }
+
+    #[test]
+    fn negative_height_returns_none() {
+        let mut fs = make_font_system();
+        assert_eq!(
+            find_split_char_offset("some text", WIDTH, FONT_SIZE, -1.0, &mut fs),
+            None
+        );
+    }
+
+    /// The function returns `None` only when *zero* lines fit (height is too
+    /// small for even the first line).  When all lines fit it returns
+    /// `Some(end_of_text)`.  Either way the result must be in bounds and must
+    /// not panic.
+    #[test]
+    fn no_lines_fit_returns_none() {
+        let mut fs = make_font_system();
+        // 1 px is less than any realistic line height, so the very first layout
+        // run exceeds it and we break immediately with last_byte_end = None.
+        assert_eq!(
+            find_split_char_offset("Short text.", WIDTH, FONT_SIZE, 1.0, &mut fs),
+            None
+        );
+    }
+
+    #[test]
+    fn large_height_does_not_panic_and_result_is_in_bounds() {
+        let text = "Short text.";
+        let mut fs = make_font_system();
+        // A huge height: either None (zero lines fit, unusual) or Some(n ≤ len).
+        if let Some(offset) = find_split_char_offset(text, WIDTH, FONT_SIZE, 10_000.0, &mut fs) {
+            assert!(offset <= text.chars().count());
+        }
+    }
+
+    // ── Basic split contract ─────────────────────────────────────────────────
+
+    #[rstest]
+    #[case(ONE_LINE_HEIGHT)]
+    #[case(ONE_LINE_HEIGHT * 2.0)]
+    #[case(ONE_LINE_HEIGHT * 3.0)]
+    fn split_offset_is_in_bounds(#[case] height: f32) {
+        let text = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo \
+                    lima mike november oscar papa quebec romeo sierra tango uniform victor";
+        let mut fs = make_font_system();
+        if let Some(offset) = find_split_char_offset(text, WIDTH, FONT_SIZE, height, &mut fs) {
+            let char_count = text.chars().count();
+            assert!(offset > 0, "split offset must be > 0, got {offset}");
+            assert!(
+                offset < char_count,
+                "split offset {offset} must be < char count {char_count}"
+            );
+        }
+    }
+
+    // ── Multibyte / char-boundary safety (regression for the crash) ──────────
+
+    /// The exact text from the crash report.  Curly-quote characters (\u{201C}/\u{201D})
+    /// are 3-byte UTF-8 sequences; cosmic-text glyph.end can land mid-codepoint.
+    /// Before the fix this panicked with "byte index N is not a char boundary".
+    #[test]
+    fn multibyte_curly_quotes_dont_panic() {
+        let text = "guards.\n Guards specify conditions that a request must satisfy in \
+                    order to \u{201C}match\u{201D} and be passed over to the handler. \
+                    From an implementation standpoint guards are implementors of the \
+                    Guard trait: Guard::check is where the magic happens.";
+        let mut fs = make_font_system();
+        // Tiny height so the split triggers near the curly quote.
+        let _ = find_split_char_offset(text, WIDTH, FONT_SIZE, ONE_LINE_HEIGHT * 1.5, &mut fs);
+    }
+
+    /// Any `Some(offset)` returned must correspond to a valid UTF-8 char boundary
+    /// when converted back to a byte index.
+    #[test]
+    fn split_result_lands_on_char_boundary() {
+        let text = "guards. Guards specify conditions that a request must satisfy in \
+                    order to \u{201C}match\u{201D} and be passed over to the handler. \
+                    From an implementation standpoint guards are implementors of the \
+                    Guard trait: Guard::check is where the magic happens.";
+        let mut fs = make_font_system();
+        for available_height in [
+            ONE_LINE_HEIGHT,
+            ONE_LINE_HEIGHT * 2.0,
+            ONE_LINE_HEIGHT * 3.0,
+        ] {
+            if let Some(offset) =
+                find_split_char_offset(text, WIDTH, FONT_SIZE, available_height, &mut fs)
+            {
+                let byte_pos = text
+                    .char_indices()
+                    .nth(offset)
+                    .map(|(i, _)| i)
+                    .unwrap_or(text.len());
+                assert!(
+                    text.is_char_boundary(byte_pos),
+                    "height={available_height}: byte offset {byte_pos} is not a char boundary"
+                );
+            }
+        }
+    }
+
+    // ── Word-boundary snap ───────────────────────────────────────────────────
+
+    /// When the raw split falls mid-word, the returned prefix (first `offset` chars)
+    /// must end with whitespace — i.e. the split is at a word boundary.
+    #[test]
+    fn split_does_not_break_inside_word() {
+        let text = "alpha bravo charlie delta echo foxtrot golf hotel india juliet";
+        let mut fs = make_font_system();
+        // Narrow width forces wrapping and a mid-word raw split.
+        if let Some(offset) =
+            find_split_char_offset(text, 200.0, FONT_SIZE, ONE_LINE_HEIGHT, &mut fs)
+        {
+            let prefix: String = text.chars().take(offset).collect();
+            assert!(
+                prefix.ends_with(char::is_whitespace),
+                "split prefix should end with whitespace, got: {prefix:?}"
+            );
+        }
+    }
+
+    /// A single very long word with no preceding whitespace must not loop
+    /// forever; the function falls back to a raw char offset.
+    #[test]
+    fn single_long_word_returns_raw_offset() {
+        // 200 'a' chars — no whitespace at all.
+        let text: String = "a".repeat(200);
+        let mut fs = make_font_system();
+        // If any lines overflow, the offset must still be in bounds.
+        if let Some(offset) =
+            find_split_char_offset(&text, WIDTH, FONT_SIZE, ONE_LINE_HEIGHT, &mut fs)
+        {
+            assert!(offset > 0 && offset < text.chars().count());
+        }
     }
 }
