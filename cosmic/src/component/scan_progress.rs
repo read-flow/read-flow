@@ -95,8 +95,8 @@ impl ScanComponent {
             .on_press(ScanProgressMessage::Dismiss);
 
         widget::Row::new()
-            .push(widget::text(label))
-            .push(widget::determinate_linear(progress))
+            .push(widget::text(label).width(cosmic::iced::Length::Fixed(400.0)))
+            .push(widget::determinate_linear(progress).width(cosmic::iced::Length::Fill))
             .push(close_btn)
             .spacing(spacing)
             .padding(padding)
