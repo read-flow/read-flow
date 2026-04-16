@@ -26,6 +26,7 @@ use cosmic::iced::mouse::ScrollDelta;
 use cosmic::iced::widget::scrollable;
 use cosmic::theme;
 use cosmic::widget;
+use read_flow_core::Builder;
 
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
@@ -464,19 +465,8 @@ impl MuPdfViewer {
                 self.view_pdf_page(self.active_page, Horizontal::Center)
             };
 
-            let nav_zone_style = |theme: &cosmic::Theme| {
-                let c = theme.cosmic().bg_component_color();
-                widget::container::background(cosmic::iced::Color::from_rgba(
-                    c.color.red,
-                    c.color.green,
-                    c.color.blue,
-                    c.alpha,
-                ))
-            };
-
             let left_zone = widget::mouse_area(
                 widget::container(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
-                    .style(nav_zone_style)
                     .width(Length::FillPortion(1))
                     .height(Length::Fill)
                     .center(Length::Fill),
@@ -489,7 +479,6 @@ impl MuPdfViewer {
 
             let right_zone = widget::mouse_area(
                 widget::container(widget::icon::from_name("go-next-symbolic").size(ICON_SIZE))
-                    .style(nav_zone_style)
                     .width(Length::FillPortion(1))
                     .height(Length::Fill)
                     .center(Length::Fill),
@@ -570,27 +559,16 @@ impl MuPdfViewer {
                 });
 
                 // Outer container: theme background surrounding the paper
-                let mut outer = widget::container(paper).style(|theme| {
-                    let c = theme.cosmic().bg_component_color();
-                    widget::container::background(cosmic::iced::Color::from_rgba(
-                        c.color.red,
-                        c.color.green,
-                        c.color.blue,
-                        c.alpha,
-                    ))
-                });
+                let outer = widget::container(paper)
+                    .apply_if(size.width > width, |outer| {
+                        outer.align_x(align_x).width(size.width)
+                    })
+                    .apply_if(size.height > height, |outer| outer.center_y(size.height));
 
-                if size.width > width {
-                    outer = outer.align_x(align_x).width(size.width);
-                }
-                if size.height > height {
-                    outer = outer.center_y(size.height);
-                }
-
-                let mut mouse_area = widget::mouse_area(outer);
-                if self.modifiers.contains(Modifiers::CTRL) {
-                    mouse_area = mouse_area.on_scroll(MuPdfViewerMessage::ZoomScroll);
-                }
+                let mouse_area = widget::mouse_area(outer)
+                    .apply_if(self.modifiers.contains(Modifiers::CTRL), |mouse_area| {
+                        mouse_area.on_scroll(MuPdfViewerMessage::ZoomScroll)
+                    });
 
                 widget::scrollable(mouse_area)
                     .direction(scrollable::Direction::Both {
