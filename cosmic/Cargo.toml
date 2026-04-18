@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-2"
 description = "Manage Documents Accross Multiple Machines"
-repository = "raspberrypi:~/git/archive-organizer.git"
+repository = "http://raspberrypi:3000/peterpaul/read-flow.git"
 # repository = "https://github.com/peterpaul/read-flow"
 
 authors = ["Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"]

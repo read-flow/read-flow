@@ -288,7 +288,7 @@ impl Page for OnlineLibraryPage {
 
                     let to_search: Vec<OnlineCatalog> = match catalog_index {
                         None => all_catalogs.clone(),
-                        Some(i) => all_catalogs.iter().nth(i).cloned().into_iter().collect(),
+                        Some(i) => all_catalogs.get(i).cloned().into_iter().collect(),
                     };
 
                     let searches = to_search.into_iter().map(|catalog| {
@@ -345,6 +345,7 @@ impl Page for OnlineLibraryPage {
             OnlineLibraryMessage::PickFormat(book, format) => {
                 self.format_dialog = None;
                 let book_id = book.id.clone();
+                let book_title = book.title.clone();
                 self.download_state
                     .insert(book_id.clone(), DownloadBookState::Downloading);
 
@@ -352,7 +353,7 @@ impl Page for OnlineLibraryPage {
                 task::future(async move {
                     let settings = am.settings().await;
                     let download_folder = settings.client.download_folder.get_full_path();
-                    match download_book(&format, &download_folder).await {
+                    match download_book(&format, &book_title, &download_folder).await {
                         Ok(path) => OnlineLibraryMessage::DownloadCompleted(book_id, path),
                         Err(e) => OnlineLibraryMessage::DownloadFailed(book_id, e.to_string()),
                     }

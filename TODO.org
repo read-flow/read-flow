@@ -32,7 +32,6 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] ~read-flow-core~ & ~read-flow~: Make it possible to correlate `books` of different file types
 - [ ] ~read-flow::OnlineLibrary~: Add a settings panel to manage OPDS catalogs — add, remove, enable/disable, and edit name/URL — persisted to ~read-flow.toml~ via the existing ~OnlineLibrarySettings~.
 - [ ] ~read-flow::OnlineLibrary~: Add more OPDS catalogs (e.g. Internet Archive, Open Library, Manybooks).
-  - Project Gutenberg is already configured but disabled because their OPDS endpoint returns HTTP 403 for automated clients; re-enable if/when they fix that.
 - [ ] ~read-flow::OnlineLibrary~: Auto-migrate user config when catalog defaults change (e.g. updated search URL for Standard Ebooks) instead of silently falling back to the stale value in ~read-flow.toml~.
 - [ ] ~read-flow-core~ & ~read-flow~: Per-extension viewer configuration
   - MuPdfViewer supports formats beyond PDF/EPUB/MOBI. Add a config section (or settings page) that
