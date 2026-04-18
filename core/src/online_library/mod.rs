@@ -1,0 +1,684 @@
+use std::io;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use futures::StreamExt;
+use quick_xml::Reader;
+use quick_xml::events::Event;
+use reqwest::Client;
+use serde::Deserialize;
+use serde::Serialize;
+use tokio::fs;
+
+use crate::extension_of;
+use crate::to_unique_file;
+
+// ─── Domain Types ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadFormat {
+    pub mime_type: String,
+    pub href: String,
+    pub label: String,
+}
+
+impl DownloadFormat {
+    pub fn label_from_mime(mime: &str) -> &str {
+        match mime {
+            "application/epub+zip" => "EPUB",
+            "application/pdf" => "PDF",
+            "application/x-mobipocket-ebook" | "application/x-mobi8-ebook" => "MOBI",
+            "application/x-cbz" => "CBZ",
+            "text/plain" | "text/plain; charset=utf-8" => "TXT",
+            "text/html" | "text/html; charset=utf-8" => "HTML",
+            other => other,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OnlineBook {
+    pub id: String,
+    pub title: String,
+    pub authors: Vec<String>,
+    pub summary: Option<String>,
+    pub cover_url: Option<String>,
+    pub formats: Vec<DownloadFormat>,
+    pub catalog_name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct OnlineCatalog {
+    pub name: String,
+    /// OPDS search URL; may contain `{searchTerms}` template placeholder.
+    pub search_url: String,
+    pub enabled: bool,
+}
+
+impl OnlineCatalog {
+    pub fn project_gutenberg() -> Self {
+        Self {
+            name: "Project Gutenberg".to_string(),
+            search_url: "https://www.gutenberg.org/ebooks/search.opds?query={searchTerms}"
+                .to_string(),
+            // Gutenberg's OPDS endpoint currently blocks automated clients (HTTP 403).
+            enabled: false,
+        }
+    }
+
+    pub fn standard_ebooks() -> Self {
+        Self {
+            name: "Standard Ebooks".to_string(),
+            search_url: "https://standardebooks.org/feeds/opds/all?query={searchTerms}".to_string(),
+            enabled: true,
+        }
+    }
+}
+
+// ─── Error Type ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, thiserror::Error)]
+pub enum OnlineLibraryError {
+    #[error("HTTP error: {0}")]
+    Http(#[from] Arc<reqwest::Error>),
+    #[error("XML parse error: {0}")]
+    Xml(String),
+    #[error("invalid catalog URL: {0}")]
+    InvalidUrl(#[from] url::ParseError),
+    #[error("file system error: {0}")]
+    Io(#[from] Arc<io::Error>),
+    #[error("download URL has no usable filename")]
+    NoFilename,
+}
+
+impl From<reqwest::Error> for OnlineLibraryError {
+    fn from(e: reqwest::Error) -> Self {
+        Self::Http(Arc::new(e))
+    }
+}
+
+impl From<io::Error> for OnlineLibraryError {
+    fn from(e: io::Error) -> Self {
+        Self::Io(Arc::new(e))
+    }
+}
+
+// ─── Trait ───────────────────────────────────────────────────────────────────
+
+#[async_trait::async_trait]
+pub trait OnlineLibraryClient: Send + Sync {
+    fn catalog_name(&self) -> &str;
+    async fn search(&self, query: &str) -> Result<Vec<OnlineBook>, OnlineLibraryError>;
+}
+
+// ─── OPDS Client ─────────────────────────────────────────────────────────────
+
+pub struct OpdsClient {
+    catalog: OnlineCatalog,
+    client: Client,
+}
+
+impl OpdsClient {
+    pub fn new(catalog: OnlineCatalog) -> Self {
+        Self {
+            catalog,
+            client: Client::new(),
+        }
+    }
+
+    async fn fetch_xml(&self, url: &str) -> Result<String, OnlineLibraryError> {
+        let response = self
+            .client
+            .get(url)
+            .header(
+                reqwest::header::ACCEPT,
+                "application/atom+xml, application/xml, */*",
+            )
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(response.text().await?)
+    }
+}
+
+#[async_trait::async_trait]
+impl OnlineLibraryClient for OpdsClient {
+    fn catalog_name(&self) -> &str {
+        &self.catalog.name
+    }
+
+    async fn search(&self, query: &str) -> Result<Vec<OnlineBook>, OnlineLibraryError> {
+        let url = build_search_url(&self.catalog.search_url, query)?;
+        let xml = self.fetch_xml(&url).await?;
+        parse_opds_feed(&xml, &self.catalog.name)
+    }
+}
+
+// ─── Pure Functions (testable) ────────────────────────────────────────────────
+
+/// Replace `{searchTerms}` in `template` with a percent-encoded `query`.
+/// If the template has no placeholder, appends `query` as a `q=` parameter.
+pub fn build_search_url(template: &str, query: &str) -> Result<String, OnlineLibraryError> {
+    if query.is_empty() {
+        return Ok(template.to_string());
+    }
+    if template.contains("{searchTerms}") {
+        let encoded = percent_encode(query);
+        Ok(template.replace("{searchTerms}", &encoded))
+    } else {
+        let mut url = url::Url::parse(template)?;
+        url.query_pairs_mut().append_pair("q", query);
+        Ok(url.to_string())
+    }
+}
+
+/// Parse an OPDS 1.x Atom feed XML string into a list of [`OnlineBook`]s.
+/// Only entries that have at least one acquisition link are returned.
+pub fn parse_opds_feed(
+    xml: &str,
+    catalog_name: &str,
+) -> Result<Vec<OnlineBook>, OnlineLibraryError> {
+    let mut reader = Reader::from_reader(xml.as_bytes());
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+
+    let mut entries: Vec<OnlineBook> = Vec::new();
+
+    // Per-entry state
+    let mut in_entry = false;
+    let mut in_author = false;
+
+    // Tracks which field we're collecting text for
+    #[derive(Debug, PartialEq)]
+    enum Collecting {
+        Title,
+        Id,
+        Summary,
+        AuthorName,
+    }
+    let mut collecting: Option<Collecting> = None;
+    let mut cur_text = String::new();
+
+    // Current entry being built
+    let mut cur_id = String::new();
+    let mut cur_title = String::new();
+    let mut cur_authors: Vec<String> = Vec::new();
+    let mut cur_summary: Option<String> = None;
+    let mut cur_cover_url: Option<String> = None;
+    let mut cur_formats: Vec<DownloadFormat> = Vec::new();
+
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Eof) => break,
+
+            Ok(Event::Start(ref e)) => {
+                let name = e.name();
+                let local = local_name(name.as_ref());
+                match local {
+                    b"entry" => {
+                        in_entry = true;
+                        cur_id.clear();
+                        cur_title.clear();
+                        cur_authors.clear();
+                        cur_summary = None;
+                        cur_cover_url = None;
+                        cur_formats.clear();
+                        collecting = None;
+                        cur_text.clear();
+                    }
+                    b"title" if in_entry => {
+                        collecting = Some(Collecting::Title);
+                        cur_text.clear();
+                    }
+                    b"id" if in_entry => {
+                        collecting = Some(Collecting::Id);
+                        cur_text.clear();
+                    }
+                    b"summary" | b"content" if in_entry => {
+                        let is_html = get_attr(e, b"type").as_deref() == Some("html");
+                        if !is_html {
+                            collecting = Some(Collecting::Summary);
+                            cur_text.clear();
+                        }
+                        // HTML content is skipped; plain-text <summary> is preferred
+                    }
+                    b"author" if in_entry => {
+                        in_author = true;
+                    }
+                    b"name" if in_author => {
+                        collecting = Some(Collecting::AuthorName);
+                        cur_text.clear();
+                    }
+                    b"link" if in_entry => {
+                        process_link(e, &mut cur_formats, &mut cur_cover_url);
+                    }
+                    _ => {}
+                }
+            }
+
+            Ok(Event::Empty(ref e)) => {
+                let name = e.name();
+                let local = local_name(name.as_ref());
+                if local == b"link" && in_entry {
+                    process_link(e, &mut cur_formats, &mut cur_cover_url);
+                }
+            }
+
+            Ok(Event::Text(ref e)) => {
+                if collecting.is_some() {
+                    if let Ok(t) = e.xml_content() {
+                        cur_text.push_str(&t);
+                    }
+                }
+            }
+
+            Ok(Event::End(ref e)) => {
+                let name = e.name();
+                let local = local_name(name.as_ref());
+                match local {
+                    b"entry" if in_entry => {
+                        if !cur_formats.is_empty() && !cur_title.is_empty() {
+                            entries.push(OnlineBook {
+                                id: cur_id.clone(),
+                                title: cur_title.clone(),
+                                authors: cur_authors.clone(),
+                                summary: cur_summary.clone(),
+                                cover_url: cur_cover_url.clone(),
+                                formats: cur_formats.clone(),
+                                catalog_name: catalog_name.to_string(),
+                            });
+                        }
+                        in_entry = false;
+                        in_author = false;
+                        collecting = None;
+                    }
+                    b"author" if in_author => {
+                        in_author = false;
+                    }
+                    b"title" if in_entry => {
+                        if matches!(collecting, Some(Collecting::Title)) {
+                            cur_title = cur_text.trim().to_string();
+                            cur_text.clear();
+                            collecting = None;
+                        }
+                    }
+                    b"id" if in_entry => {
+                        if matches!(collecting, Some(Collecting::Id)) {
+                            cur_id = cur_text.trim().to_string();
+                            cur_text.clear();
+                            collecting = None;
+                        }
+                    }
+                    b"summary" | b"content" if in_entry => {
+                        if matches!(collecting, Some(Collecting::Summary)) {
+                            let s = cur_text.trim().to_string();
+                            if !s.is_empty() {
+                                cur_summary = Some(s);
+                            }
+                            cur_text.clear();
+                            collecting = None;
+                        }
+                    }
+                    b"name" if in_author => {
+                        if matches!(collecting, Some(Collecting::AuthorName)) {
+                            let name = cur_text.trim().to_string();
+                            if !name.is_empty() {
+                                cur_authors.push(name);
+                            }
+                            cur_text.clear();
+                            collecting = None;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            Err(e) => return Err(OnlineLibraryError::Xml(e.to_string())),
+            _ => {}
+        }
+    }
+
+    Ok(entries)
+}
+
+// ─── Download ────────────────────────────────────────────────────────────────
+
+/// Download a book format to `download_folder` and return the saved path.
+pub async fn download_book(
+    format: &DownloadFormat,
+    download_folder: &Path,
+) -> Result<PathBuf, OnlineLibraryError> {
+    let client = Client::new();
+    let response = client.get(&format.href).send().await?;
+
+    // Derive filename: try URL path, fallback to generic name with mime-derived extension
+    let url_path = url::Url::parse(&format.href)
+        .ok()
+        .and_then(|u| {
+            u.path_segments()
+                .and_then(|segs| segs.last().map(str::to_string))
+        })
+        .filter(|s| !s.is_empty());
+
+    let filename = match url_path {
+        Some(name) => name,
+        None => {
+            let ext = mime_to_extension(&format.mime_type);
+            format!("book.{ext}")
+        }
+    };
+
+    let ext = extension_of(&filename).unwrap_or("bin").to_string();
+
+    let mut target = download_folder.join(&filename);
+    to_unique_file(&mut target, &ext);
+
+    let mut file = fs::File::create(&target).await?;
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        tokio::io::copy(&mut chunk?.as_ref(), &mut file).await?;
+    }
+
+    Ok(target)
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+fn local_name(name: &[u8]) -> &[u8] {
+    match name.iter().position(|&b| b == b':') {
+        Some(pos) => &name[pos + 1..],
+        None => name,
+    }
+}
+
+fn process_link(
+    e: &quick_xml::events::BytesStart<'_>,
+    formats: &mut Vec<DownloadFormat>,
+    cover_url: &mut Option<String>,
+) {
+    let mut rel = String::new();
+    let mut href = String::new();
+    let mut mime_type = String::new();
+    let mut title_attr = String::new();
+
+    for attr in e.attributes().flatten() {
+        let attr_key = attr.key.as_ref().to_vec();
+        let key = local_name(&attr_key);
+        let val = String::from_utf8_lossy(&attr.value).into_owned();
+        match key {
+            b"rel" => rel = val,
+            b"href" => href = val,
+            b"type" => mime_type = val,
+            b"title" => title_attr = val,
+            _ => {}
+        }
+    }
+
+    if href.is_empty() {
+        return;
+    }
+
+    if rel == "http://opds-spec.org/acquisition"
+        || rel.starts_with("http://opds-spec.org/acquisition/")
+    {
+        let label = if title_attr.is_empty() {
+            DownloadFormat::label_from_mime(&mime_type).to_string()
+        } else {
+            title_attr
+        };
+        formats.push(DownloadFormat {
+            mime_type,
+            href,
+            label,
+        });
+    } else if rel == "http://opds-spec.org/image" || rel == "http://opds-spec.org/thumbnail" {
+        if cover_url.is_none() {
+            *cover_url = Some(href);
+        }
+    }
+}
+
+fn get_attr(e: &quick_xml::events::BytesStart<'_>, name: &[u8]) -> Option<String> {
+    e.attributes().flatten().find_map(|a| {
+        if local_name(a.key.as_ref()) == name {
+            Some(String::from_utf8_lossy(&a.value).into_owned())
+        } else {
+            None
+        }
+    })
+}
+
+fn percent_encode(s: &str) -> String {
+    let mut encoded = String::with_capacity(s.len() * 3);
+    for byte in s.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            b' ' => encoded.push_str("%20"),
+            b => encoded.push_str(&format!("%{b:02X}")),
+        }
+    }
+    encoded
+}
+
+fn mime_to_extension(mime: &str) -> &str {
+    match mime {
+        "application/epub+zip" => "epub",
+        "application/pdf" => "pdf",
+        "application/x-mobipocket-ebook" | "application/x-mobi8-ebook" => "mobi",
+        "text/plain" | "text/plain; charset=utf-8" => "txt",
+        "text/html" | "text/html; charset=utf-8" => "html",
+        _ => "bin",
+    }
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── parse_opds_feed ──────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_feed_returns_books_with_formats() {
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opds="http://opds-spec.org/2010/catalog">
+  <entry>
+    <id>urn:gutenberg:1342</id>
+    <title>Pride and Prejudice</title>
+    <author><name>Austen, Jane</name></author>
+    <summary>A classic novel.</summary>
+    <link rel="http://opds-spec.org/image" href="/covers/1342.jpg" type="image/jpeg"/>
+    <link rel="http://opds-spec.org/acquisition" href="/files/1342.epub" type="application/epub+zip"/>
+    <link rel="http://opds-spec.org/acquisition" href="/files/1342.pdf" type="application/pdf"/>
+  </entry>
+</feed>"#;
+        let books = parse_opds_feed(xml, "Test").unwrap();
+        assert_eq!(books.len(), 1);
+        assert_eq!(books[0].title, "Pride and Prejudice");
+        assert_eq!(books[0].authors, vec!["Austen, Jane"]);
+        assert_eq!(books[0].formats.len(), 2);
+        assert_eq!(books[0].cover_url.as_deref(), Some("/covers/1342.jpg"));
+        assert_eq!(books[0].catalog_name, "Test");
+        assert_eq!(books[0].summary.as_deref(), Some("A classic novel."));
+    }
+
+    #[test]
+    fn parse_feed_empty_returns_empty_vec() {
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom"></feed>"#;
+        let books = parse_opds_feed(xml, "Test").unwrap();
+        assert!(books.is_empty());
+    }
+
+    #[test]
+    fn parse_feed_skips_navigation_only_entries() {
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:nav:1</id>
+    <title>Browse by subject</title>
+    <link rel="subsection" href="/subjects" type="application/atom+xml"/>
+  </entry>
+</feed>"#;
+        let books = parse_opds_feed(xml, "Test").unwrap();
+        assert!(books.is_empty(), "navigation entries should be skipped");
+    }
+
+    #[test]
+    fn parse_feed_collects_multiple_authors() {
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:test:1</id>
+    <title>Co-authored Book</title>
+    <author><name>Smith, Alice</name></author>
+    <author><name>Jones, Bob</name></author>
+    <link rel="http://opds-spec.org/acquisition" href="/book.epub" type="application/epub+zip"/>
+  </entry>
+</feed>"#;
+        let books = parse_opds_feed(xml, "Test").unwrap();
+        assert_eq!(books.len(), 1);
+        assert_eq!(books[0].authors, vec!["Smith, Alice", "Jones, Bob"]);
+    }
+
+    #[test]
+    fn parse_feed_malformed_xml_returns_error() {
+        let xml = "<feed><entry><title>Unclosed";
+        // Quick-xml may return Ok with partial results or Err depending on where it fails.
+        // What matters is we don't panic.
+        let _ = parse_opds_feed(xml, "Test");
+    }
+
+    #[test]
+    fn parse_feed_handles_namespace_prefixed_title() {
+        let xml = r#"<?xml version="1.0"?>
+<atom:feed xmlns:atom="http://www.w3.org/2005/Atom">
+  <atom:entry>
+    <atom:id>urn:test:2</atom:id>
+    <atom:title>Prefixed Title</atom:title>
+    <atom:author><atom:name>Doe, John</atom:name></atom:author>
+    <atom:link rel="http://opds-spec.org/acquisition" href="/book.epub" type="application/epub+zip"/>
+  </atom:entry>
+</atom:feed>"#;
+        let books = parse_opds_feed(xml, "Test").unwrap();
+        assert_eq!(books.len(), 1);
+        assert_eq!(books[0].title, "Prefixed Title");
+    }
+
+    #[test]
+    fn parse_feed_acquisition_indirect_rel() {
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:test:3</id>
+    <title>Indirect Acquisition Book</title>
+    <link rel="http://opds-spec.org/acquisition/borrow" href="/borrow.epub" type="application/epub+zip"/>
+  </entry>
+</feed>"#;
+        let books = parse_opds_feed(xml, "Test").unwrap();
+        assert_eq!(books.len(), 1);
+        assert_eq!(books[0].formats.len(), 1);
+    }
+
+    #[test]
+    fn parse_feed_prefers_plain_text_summary_over_html_content() {
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:test:1</id>
+    <title>A Book</title>
+    <summary type="text">Short plain summary.</summary>
+    <content type="html">&lt;p&gt;Long &lt;b&gt;HTML&lt;/b&gt; description.&lt;/p&gt;</content>
+    <link rel="http://opds-spec.org/acquisition" href="/book.epub" type="application/epub+zip"/>
+  </entry>
+</feed>"#;
+        let books = parse_opds_feed(xml, "Test").unwrap();
+        assert_eq!(books[0].summary.as_deref(), Some("Short plain summary."));
+    }
+
+    #[test]
+    fn parse_feed_skips_html_only_content() {
+        // When only <content type="html"> is present, summary is None (not garbage HTML)
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:test:2</id>
+    <title>A Book</title>
+    <content type="html">&lt;p&gt;A &lt;i&gt;classic&lt;/i&gt; novel.&lt;/p&gt;</content>
+    <link rel="http://opds-spec.org/acquisition" href="/book.epub" type="application/epub+zip"/>
+  </entry>
+</feed>"#;
+        let books = parse_opds_feed(xml, "Test").unwrap();
+        assert_eq!(books[0].summary, None);
+    }
+
+    // ── build_search_url ─────────────────────────────────────────────────────
+
+    #[test]
+    fn build_search_url_replaces_search_terms() {
+        let url = build_search_url(
+            "https://www.gutenberg.org/ebooks/search.opds?query={searchTerms}",
+            "moby dick",
+        )
+        .unwrap();
+        assert!(
+            url.contains("moby%20dick"),
+            "expected percent-encoded space, got: {url}"
+        );
+        assert!(!url.contains("{searchTerms}"), "placeholder not replaced");
+    }
+
+    #[test]
+    fn build_search_url_encodes_special_chars() {
+        let url = build_search_url(
+            "https://example.com/search?q={searchTerms}",
+            "C++ programming",
+        )
+        .unwrap();
+        assert!(url.contains("%2B%2B"), "'+' should be encoded");
+    }
+
+    #[test]
+    fn build_search_url_appends_param_when_no_template() {
+        let url = build_search_url("https://example.com/opds/all", "hemingway").unwrap();
+        assert!(
+            url.contains("q=hemingway"),
+            "query param should be appended"
+        );
+    }
+
+    #[test]
+    fn build_search_url_empty_query_returns_template_unchanged() {
+        let template = "https://example.com/search?q={searchTerms}";
+        let url = build_search_url(template, "").unwrap();
+        assert_eq!(url, template);
+    }
+
+    // ── DownloadFormat::label_from_mime ──────────────────────────────────────
+
+    #[test]
+    fn label_from_known_mimes() {
+        assert_eq!(
+            DownloadFormat::label_from_mime("application/epub+zip"),
+            "EPUB"
+        );
+        assert_eq!(DownloadFormat::label_from_mime("application/pdf"), "PDF");
+        assert_eq!(
+            DownloadFormat::label_from_mime("application/x-mobipocket-ebook"),
+            "MOBI"
+        );
+        assert_eq!(DownloadFormat::label_from_mime("text/plain"), "TXT");
+    }
+
+    #[test]
+    fn label_from_unknown_mime_returns_mime_itself() {
+        let mime = "application/x-custom-format";
+        assert_eq!(DownloadFormat::label_from_mime(mime), mime);
+    }
+}

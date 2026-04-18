@@ -324,3 +324,17 @@ epub-viewer-image-zoom-fit-height = Ajuster la hauteur
 epub-viewer-image-zoom-fit-width = Ajuster la largeur
 epub-viewer-image-zoom-in = Zoomer
 epub-viewer-image-zoom-out = Dézoomer
+
+# Bibliothèques en ligne
+online-library-page-title = Bibliothèques en ligne
+online-library-search-placeholder = Rechercher des livres…
+online-library-searching = Recherche en cours…
+online-library-empty-state = Entrez un terme de recherche pour trouver des livres
+online-library-no-results = Aucun résultat trouvé
+online-library-download = Télécharger
+online-library-downloading = Téléchargement…
+online-library-downloaded = Ajouté à la bibliothèque
+online-library-pick-format = Choisir le format
+online-library-cancel = Annuler
+online-library-catalog-all = Tous les catalogues
+online-library-catalog-section-title = Catalogue

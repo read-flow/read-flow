@@ -177,6 +177,14 @@ impl cosmic::Application for ReadFlow {
             });
 
         nav.insert()
+            .text(pages.display_name(&PageSelector::OnlineLibrary))
+            .data::<PageSelector>(PageSelector::OnlineLibrary)
+            .icon(icon::from_name("system-search-symbolic"))
+            .with_id(|nav_id| {
+                nav_mappings.insert(PageSelector::OnlineLibrary, nav_id);
+            });
+
+        nav.insert()
             .text(pages.display_name(&PageSelector::AppSettings))
             .data::<PageSelector>(PageSelector::AppSettings)
             .icon(icon::from_name("preferences-desktop-symbolic"))

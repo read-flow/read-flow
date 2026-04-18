@@ -302,3 +302,17 @@ epub-viewer-image-zoom-fit-height = Fit height
 epub-viewer-image-zoom-fit-width = Fit width
 epub-viewer-image-zoom-in = Zoom in
 epub-viewer-image-zoom-out = Zoom out
+
+# Online Libraries
+online-library-page-title = Online Libraries
+online-library-search-placeholder = Search books…
+online-library-searching = Searching…
+online-library-empty-state = Enter a search term to find books in online catalogs
+online-library-no-results = No results found
+online-library-download = Download
+online-library-downloading = Downloading…
+online-library-downloaded = Added to library
+online-library-pick-format = Choose format
+online-library-cancel = Cancel
+online-library-catalog-all = All catalogs
+online-library-catalog-section-title = Catalog

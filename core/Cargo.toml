@@ -42,6 +42,8 @@ tracing-subscriber = { workspace = true, features = ["std", "env-filter", "fmt",
 tracing.workspace = true
 url.workspace = true
 
+quick-xml = { workspace = true }
+
 provider.path = "../provider"
 
 rocket = { workspace = true, optional = true, features = ["http2", "json"] }

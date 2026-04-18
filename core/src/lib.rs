@@ -1,6 +1,7 @@
 pub mod api;
 pub mod client;
 pub mod db;
+pub mod online_library;
 pub mod scan;
 #[cfg(feature = "server")]
 pub mod server;

@@ -6,6 +6,7 @@ mod document_list;
 mod epub_viewer;
 pub mod image_viewer;
 mod mu_pdf_viewer;
+mod online_library;
 mod settings;
 mod sources;
 mod traits;
@@ -24,6 +25,9 @@ use cosmic::iced::keyboard::Modifiers;
 use cosmic::task;
 use cosmic::widget;
 use indexmap::IndexMap;
+pub use online_library::OnlineLibraryMessage;
+use online_library::OnlineLibraryOutput;
+pub use online_library::OnlineLibraryPage;
 use read_flow_core::client::FilesClient;
 pub use sources::SourcesMessage;
 pub use traits::Page;
@@ -73,6 +77,7 @@ pub struct Pages {
     epub_viewer_config: EpubViewerConfig,
     app_settings: AppSettingsPage,
     sources: SourcesPage,
+    online_library: OnlineLibraryPage,
     documents: DocumentList,
     document_details: IndexMap<Fingerprint, DocumentDetails>,
     epub_viewers: IndexMap<Fingerprint, EpubViewer>,
@@ -85,6 +90,7 @@ pub struct Pages {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PageSelector {
     Sources,
+    OnlineLibrary,
     Documents,
     DocumentDetails(Fingerprint),
     EpubViewer(Fingerprint),
@@ -105,6 +111,7 @@ pub enum PageOutput {
 #[derive(Debug, Clone)]
 pub enum PageMessage {
     Sources(SourcesMessage),
+    OnlineLibrary(OnlineLibraryMessage),
     AddRemote(Url, String, String), // url, user_id, passphrase
     DeleteRemote(Url),
     Documents(DocumentListMessage),
@@ -134,6 +141,12 @@ impl From<SourcesMessage> for PageMessage {
     }
 }
 
+impl From<OnlineLibraryMessage> for PageMessage {
+    fn from(msg: OnlineLibraryMessage) -> Self {
+        Self::OnlineLibrary(msg)
+    }
+}
+
 impl From<DocumentListMessage> for PageMessage {
     fn from(source: DocumentListMessage) -> Self {
         Self::Documents(source)
@@ -158,6 +171,11 @@ macro_rules! with_active_page {
             PageSelector::Sources => {
                 let $page = Some(&$self.sources);
                 let $mapper = map_sources_message;
+                $body
+            }
+            PageSelector::OnlineLibrary => {
+                let $page = Some(&$self.online_library);
+                let $mapper = map_online_library_message;
                 $body
             }
             PageSelector::Documents => {
@@ -236,12 +254,15 @@ impl Pages {
             init_settings.map(ActionExt::map_into),
         ];
 
+        let online_library = OnlineLibraryPage::new(application_module.clone());
+
         (
             Self {
                 document_provider,
                 epub_viewer_config,
                 app_settings,
                 sources,
+                online_library,
                 documents,
                 document_details: Default::default(),
                 epub_viewers: Default::default(),
@@ -262,6 +283,7 @@ impl Pages {
     pub fn display_name<'a>(&'a self, page_selector: &'a PageSelector) -> String {
         match &page_selector {
             PageSelector::Sources => fl!("app-file-sources"),
+            PageSelector::OnlineLibrary => fl!("online-library-page-title"),
             PageSelector::Documents => "Documents".to_string(),
             PageSelector::DocumentDetails(fingerprint) => {
                 self.document_details[fingerprint].display_name()
@@ -383,6 +405,10 @@ impl Pages {
                 .sources
                 .update(sources_message)
                 .map(move |action| action.map(map_sources_message)),
+            PageMessage::OnlineLibrary(msg) => self
+                .online_library
+                .update(msg)
+                .map(move |action| action.map(map_online_library_message)),
             PageMessage::Documents(document_list_message) => self
                 .documents
                 .update(document_list_message)
@@ -614,6 +640,15 @@ impl Pages {
                 ))),
             ])
         }
+    }
+}
+
+fn map_online_library_message(msg: OnlineLibraryMessage) -> PageMessage {
+    match msg {
+        OnlineLibraryMessage::Out(output) => match output {
+            OnlineLibraryOutput::BookImported => PageMessage::Out(PageOutput::Scan),
+        },
+        msg => PageMessage::OnlineLibrary(msg),
     }
 }
 

@@ -20,6 +20,7 @@ use serde::Serialize;
 
 use crate::ExpandedPath;
 use crate::db::DbSettings;
+use crate::online_library::OnlineCatalog;
 use crate::scan::ScanSettings;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
@@ -34,6 +35,24 @@ pub struct Settings {
     pub scan: ScanSettings,
     #[serde(default)]
     pub ui: UiSettings,
+    #[serde(default)]
+    pub online_library: OnlineLibrarySettings,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct OnlineLibrarySettings {
+    pub catalogs: Vec<OnlineCatalog>,
+}
+
+impl Default for OnlineLibrarySettings {
+    fn default() -> Self {
+        Self {
+            catalogs: vec![
+                OnlineCatalog::project_gutenberg(),
+                OnlineCatalog::standard_ebooks(),
+            ],
+        }
+    }
 }
 
 impl Settings {
@@ -234,5 +253,39 @@ impl UiSettings {
     pub fn merge_in(&mut self, other: Self) {
         self.private_mode |= other.private_mode;
         self.private_tags.extend(other.private_tags);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn online_library_settings_default_round_trips_through_toml() {
+        let original = OnlineLibrarySettings::default();
+        let serialized = toml::to_string(&original).unwrap();
+        let deserialized: OnlineLibrarySettings = toml::from_str(&serialized).unwrap();
+        assert_eq!(original, deserialized);
+    }
+
+    #[test]
+    fn settings_missing_online_library_section_uses_default() {
+        let settings: Settings = toml::from_str("").unwrap();
+        assert!(
+            !settings.online_library.catalogs.is_empty(),
+            "default catalogs should be populated"
+        );
+    }
+
+    #[test]
+    fn online_library_default_includes_project_gutenberg() {
+        let settings = OnlineLibrarySettings::default();
+        assert!(
+            settings
+                .catalogs
+                .iter()
+                .any(|c| c.name.contains("Gutenberg")),
+            "default catalogs should include Project Gutenberg"
+        );
     }
 }

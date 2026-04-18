@@ -325,3 +325,17 @@ epub-viewer-image-zoom-fit-height = Hoogte passend maken
 epub-viewer-image-zoom-fit-width = Breedte passend maken
 epub-viewer-image-zoom-in = Inzoomen
 epub-viewer-image-zoom-out = Uitzoomen
+
+# Online bibliotheken
+online-library-page-title = Online bibliotheken
+online-library-search-placeholder = Zoek boeken…
+online-library-searching = Zoeken…
+online-library-empty-state = Voer een zoekterm in om boeken te vinden
+online-library-no-results = Geen resultaten gevonden
+online-library-download = Downloaden
+online-library-downloading = Downloaden…
+online-library-downloaded = Toegevoegd aan bibliotheek
+online-library-pick-format = Kies formaat
+online-library-cancel = Annuleren
+online-library-catalog-all = Alle catalogi
+online-library-catalog-section-title = Catalogus
