@@ -208,27 +208,22 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
             }
             None
         }
-        "aside" => {
-            if entry.is_footnote {
-                let id = entry.element_id.unwrap_or_default();
-                let mut blocks = entry.children;
-                if !text.is_empty() || !spans.is_empty() {
-                    blocks.insert(
-                        0,
-                        ContentBlock::Paragraph {
-                            text,
-                            spans,
-                            style: BlockStyle::default(),
-                        },
-                    );
-                }
-                if !blocks.is_empty() {
-                    Some(ContentBlock::Footnote { id, blocks })
-                } else {
-                    None
-                }
+        "aside" if entry.is_footnote => {
+            let id = entry.element_id.unwrap_or_default();
+            let mut blocks = entry.children;
+            if !text.is_empty() || !spans.is_empty() {
+                blocks.insert(
+                    0,
+                    ContentBlock::Paragraph {
+                        text,
+                        spans,
+                        style: BlockStyle::default(),
+                    },
+                );
+            }
+            if !blocks.is_empty() {
+                Some(ContentBlock::Footnote { id, blocks })
             } else {
-                promote_to_parent(state, text, spans, entry.children, entry.list_items);
                 None
             }
         }

@@ -77,13 +77,12 @@ fn extract_nav_links(
                     b"ol" if in_toc_nav => {
                         ol_depth += 1;
                     }
-                    _ if in_anchor && local != b"a" => {
+                    _ if in_anchor && local != b"a"
                         // Child element opened inside <a>: ensure a space separator
                         // so that e.g. <span>1.2</span><span>Title</span> → "1.2 Title".
-                        if !current_text.is_empty() && !current_text.ends_with(char::is_whitespace)
-                        {
-                            current_text.push(' ');
-                        }
+                        && !current_text.is_empty() && !current_text.ends_with(char::is_whitespace) =>
+                    {
+                        current_text.push(' ');
                     }
                     b"a" if in_toc_nav => {
                         let href = e.attributes().flatten().find_map(|a| {
@@ -148,13 +147,12 @@ fn extract_nav_links(
                     b"ol" if in_toc_nav => {
                         ol_depth = ol_depth.saturating_sub(1);
                     }
-                    _ if in_anchor && local != b"a" => {
+                    _ if in_anchor && local != b"a"
                         // Child element closed inside <a>: ensure a space separator
                         // so that e.g. <span>1.2</span>Title → "1.2 Title".
-                        if !current_text.is_empty() && !current_text.ends_with(char::is_whitespace)
-                        {
-                            current_text.push(' ');
-                        }
+                        && !current_text.is_empty() && !current_text.ends_with(char::is_whitespace) =>
+                    {
+                        current_text.push(' ');
                     }
                     b"a" if in_anchor => {
                         if let Some(href) = current_href.take() {
