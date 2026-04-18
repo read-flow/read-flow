@@ -75,7 +75,7 @@ This is a tool to help discover and organize files locally and on remote servers
 
 - [ ] =page/mod.rs= contains a lot of initialization code (and messages) that might need to be handled by =app.rs=
 - [ ] ~read-flow~: Use same approach for ~Out~ messages, ~settings.rs~ uses different approach then ~page/mod.rs~
-- [ ] ~read-flow::OnlineLibrary~: Remove dead ~SearchFailed~ variant from ~OnlineLibraryMessage~ — it is never constructed (search errors are currently swallowed per-catalog and only surface as empty results).
+- [X] ~read-flow::OnlineLibrary~: Remove dead ~SearchFailed~ variant from ~OnlineLibraryMessage~ — it is never constructed (search errors are currently swallowed per-catalog and only surface as empty results).
 
 ** Tier 6 — Low Priority / Niche [0/1]
 

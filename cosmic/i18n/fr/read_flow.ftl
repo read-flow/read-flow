@@ -338,3 +338,6 @@ online-library-pick-format = Choisir le format
 online-library-cancel = Annuler
 online-library-catalog-all = Tous les catalogues
 online-library-catalog-section-title = Catalogue
+online-library-layout-section-title = Disposition
+online-library-layout-cards = Cartes
+online-library-layout-compact = Compact

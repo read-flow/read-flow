@@ -339,3 +339,6 @@ online-library-pick-format = Kies formaat
 online-library-cancel = Annuleren
 online-library-catalog-all = Alle catalogi
 online-library-catalog-section-title = Catalogus
+online-library-layout-section-title = Weergave
+online-library-layout-cards = Kaarten
+online-library-layout-compact = Compact

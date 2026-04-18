@@ -25,6 +25,8 @@ use read_flow_core::online_library::download_book;
 
 use crate::ApplicationModule;
 use crate::app::ContextView;
+use crate::component::pagination::Pagination;
+use crate::component::pagination::PaginationMessage;
 use crate::fl;
 use crate::layout::layout;
 use crate::page::Page;
@@ -33,6 +35,13 @@ use crate::state::LoadedState;
 const DEBOUNCE_MS: u64 = 400;
 
 // ─── State ───────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum ResultsLayout {
+    #[default]
+    Cards,
+    Compact,
+}
 
 pub struct OnlineLibraryPage {
     application_module: Arc<ApplicationModule>,
@@ -46,6 +55,8 @@ pub struct OnlineLibraryPage {
     selected_catalog_index: Option<usize>,
     download_state: HashMap<String, DownloadBookState>,
     format_dialog: Option<OnlineBook>,
+    results_layout: ResultsLayout,
+    pagination: Pagination,
 }
 
 #[derive(Debug, Clone)]
@@ -64,9 +75,10 @@ pub enum OnlineLibraryMessage {
     DebounceTimeout(u32, String),
     SearchStarted,
     SearchCompleted(Vec<OnlineBook>, Vec<OnlineCatalog>),
-    SearchFailed(String),
     /// Selects the catalog at index `i`; `None` means "all catalogs".
     CatalogFilterChanged(Option<usize>),
+    LayoutChanged(ResultsLayout),
+    Paginate(PaginationMessage),
     RequestDownload(OnlineBook),
     PickFormat(OnlineBook, DownloadFormat),
     DownloadCompleted(String, PathBuf),
@@ -96,6 +108,8 @@ impl OnlineLibraryPage {
             selected_catalog_index: None,
             download_state: HashMap::new(),
             format_dialog: None,
+            results_layout: ResultsLayout::default(),
+            pagination: Pagination::default(),
         }
     }
 }
@@ -140,13 +154,41 @@ impl Page for OnlineLibraryPage {
             }
 
             LoadedState::Loaded(books) => {
-                let items: Vec<Element<'_, OnlineLibraryMessage>> = books
-                    .iter()
-                    .map(|book| book_card(book, &self.download_state))
-                    .collect();
+                let visible: Vec<&OnlineBook> = self.pagination.filter_visible(books).collect();
 
-                layout(widget::column::with_children(items).spacing(8))
+                let items: Vec<Element<'_, OnlineLibraryMessage>> = match self.results_layout {
+                    ResultsLayout::Cards => visible
+                        .iter()
+                        .map(|b| book_card(b, &self.download_state))
+                        .collect(),
+                    ResultsLayout::Compact => visible
+                        .iter()
+                        .map(|b| book_row(b, &self.download_state))
+                        .collect(),
+                };
+
+                let content: Vec<Element<'_, OnlineLibraryMessage>> =
+                    vec![self.pagination.view().map(OnlineLibraryMessage::Paginate)];
+
+                let mut content = items.into_iter().fold(content, |mut acc, item| {
+                    acc.push(item);
+                    acc
+                });
+
+                // content.extend(&mut items);
+                content.push(self.pagination.view().map(OnlineLibraryMessage::Paginate));
+
+                let spacing = match self.results_layout {
+                    ResultsLayout::Cards => 8,
+                    ResultsLayout::Compact => 2,
+                };
+
+                let list = layout(widget::column::with_children(content).spacing(spacing))
                     .apply(widget::scrollable::vertical)
+                    .width(Length::Fill)
+                    .height(Length::Fill);
+
+                widget::column::with_children(vec![list.into()])
                     .width(Length::Fill)
                     .height(Length::Fill)
                     .into()
@@ -171,17 +213,15 @@ impl Page for OnlineLibraryPage {
     }
 
     fn view_context(&self) -> ContextView<'_, OnlineLibraryMessage> {
-        let current_idx: Option<usize> = self.selected_catalog_index;
-
+        // ── Catalog filter ───────────────────────────────────────────────────
+        let current_idx = self.selected_catalog_index;
         let all_radio = widget::radio(
             widget::text::body(fl!("online-library-catalog-all")),
             None::<usize>,
             Some(current_idx),
             OnlineLibraryMessage::CatalogFilterChanged,
         );
-
         let mut radios: Vec<Element<'_, OnlineLibraryMessage>> = vec![all_radio.into()];
-
         for (i, catalog) in self.catalogs.iter().enumerate() {
             radios.push(
                 widget::radio(
@@ -193,14 +233,40 @@ impl Page for OnlineLibraryPage {
                 .into(),
             );
         }
-
-        let section = widget::settings::section()
+        let catalog_section = widget::settings::section()
             .title(fl!("online-library-catalog-section-title"))
             .add(widget::column::with_children(radios).spacing(8));
 
+        // ── Layout picker ────────────────────────────────────────────────────
+        let layout_section = widget::settings::section()
+            .title(fl!("online-library-layout-section-title"))
+            .add(
+                widget::column::with_children(vec![
+                    widget::radio(
+                        widget::text::body(fl!("online-library-layout-cards")),
+                        ResultsLayout::Cards,
+                        Some(self.results_layout),
+                        OnlineLibraryMessage::LayoutChanged,
+                    )
+                    .into(),
+                    widget::radio(
+                        widget::text::body(fl!("online-library-layout-compact")),
+                        ResultsLayout::Compact,
+                        Some(self.results_layout),
+                        OnlineLibraryMessage::LayoutChanged,
+                    )
+                    .into(),
+                ])
+                .spacing(8),
+            );
+
         ContextView {
             title: fl!("online-library-page-title"),
-            content: widget::settings::view_column(vec![section.into()]).into(),
+            content: widget::settings::view_column(vec![
+                catalog_section.into(),
+                layout_section.into(),
+            ])
+            .into(),
         }
     }
 
@@ -255,6 +321,8 @@ impl Page for OnlineLibraryPage {
                 self.search_query.clear();
                 self.search_state = LoadedState::New;
                 self.debounce_counter += 1;
+                self.pagination.collection_size = 0;
+                self.pagination.index = 0;
                 Task::none()
             }
 
@@ -314,12 +382,9 @@ impl Page for OnlineLibraryPage {
 
             OnlineLibraryMessage::SearchCompleted(books, catalogs) => {
                 self.catalogs = catalogs;
+                self.pagination.collection_size = books.len();
+                self.pagination.index = 0;
                 self.search_state = LoadedState::Loaded(books);
-                Task::none()
-            }
-
-            OnlineLibraryMessage::SearchFailed(err) => {
-                self.search_state = LoadedState::Failed(err);
                 Task::none()
             }
 
@@ -330,6 +395,16 @@ impl Page for OnlineLibraryPage {
                 } else {
                     Task::none()
                 }
+            }
+
+            OnlineLibraryMessage::LayoutChanged(layout) => {
+                self.results_layout = layout;
+                Task::none()
+            }
+
+            OnlineLibraryMessage::Paginate(msg) => {
+                let _ = self.pagination.update(msg);
+                Task::none()
             }
 
             OnlineLibraryMessage::RequestDownload(book) => {
@@ -397,7 +472,34 @@ impl Page for OnlineLibraryPage {
     }
 }
 
-// ─── Book Card Widget ─────────────────────────────────────────────────────────
+// ─── Shared action area ───────────────────────────────────────────────────────
+
+fn book_action_area<'a>(
+    book: &'a OnlineBook,
+    download_state: &'a HashMap<String, DownloadBookState>,
+) -> Element<'a, OnlineLibraryMessage> {
+    match download_state.get(&book.id) {
+        Some(DownloadBookState::Downloading) => {
+            widget::text(fl!("online-library-downloading")).into()
+        }
+        Some(DownloadBookState::Done) => widget::text(fl!("online-library-downloaded")).into(),
+        Some(DownloadBookState::Failed(err)) => widget::text(err.as_str()).into(),
+        None => {
+            if book.formats.len() == 1 {
+                let fmt = &book.formats[0];
+                widget::button::standard(fmt.label.as_str())
+                    .on_press(OnlineLibraryMessage::PickFormat(book.clone(), fmt.clone()))
+                    .into()
+            } else {
+                widget::button::suggested(fl!("online-library-download"))
+                    .on_press(OnlineLibraryMessage::RequestDownload(book.clone()))
+                    .into()
+            }
+        }
+    }
+}
+
+// ─── Card layout ─────────────────────────────────────────────────────────────
 
 fn book_card<'a>(
     book: &'a OnlineBook,
@@ -434,26 +536,6 @@ fn book_card<'a>(
         widget::Space::new().width(0).height(0).into()
     };
 
-    let action_area: Element<'_, OnlineLibraryMessage> = match download_state.get(&book.id) {
-        Some(DownloadBookState::Downloading) => {
-            widget::text(fl!("online-library-downloading")).into()
-        }
-        Some(DownloadBookState::Done) => widget::text(fl!("online-library-downloaded")).into(),
-        Some(DownloadBookState::Failed(err)) => widget::text(err.as_str()).into(),
-        None => {
-            if book.formats.len() == 1 {
-                let fmt = &book.formats[0];
-                widget::button::standard(fmt.label.as_str())
-                    .on_press(OnlineLibraryMessage::PickFormat(book.clone(), fmt.clone()))
-                    .into()
-            } else {
-                widget::button::suggested(fl!("online-library-download"))
-                    .on_press(OnlineLibraryMessage::RequestDownload(book.clone()))
-                    .into()
-            }
-        }
-    };
-
     widget::column::with_children(vec![
         widget::row::with_children(vec![
             title.into(),
@@ -464,10 +546,54 @@ fn book_card<'a>(
         .into(),
         authors,
         summary,
-        action_area,
+        book_action_area(book, download_state),
     ])
     .spacing(space_xs)
     .padding(space_m)
+    .apply(widget::container)
+    .class(cosmic::theme::Container::Card)
+    .width(Length::Fill)
+    .into()
+}
+
+// ─── Compact row layout ───────────────────────────────────────────────────────
+
+fn book_row<'a>(
+    book: &'a OnlineBook,
+    download_state: &'a HashMap<String, DownloadBookState>,
+) -> Element<'a, OnlineLibraryMessage> {
+    let cosmic_theme::Spacing {
+        space_xxs,
+        space_xs,
+        space_s,
+        ..
+    } = theme::active().cosmic().spacing;
+
+    let catalog_badge = widget::text::caption(book.catalog_name.as_str())
+        .apply(widget::container)
+        .class(cosmic::theme::Container::Card)
+        .padding([2, space_xs]);
+
+    let mut title_col: Vec<Element<'_, OnlineLibraryMessage>> =
+        vec![widget::text::body(book.title.as_str()).into()];
+
+    if !book.authors.is_empty() {
+        title_col.push(widget::text(book.authors.join(", ")).size(11).into());
+    }
+
+    let title_column = widget::column::with_children(title_col)
+        .spacing(space_xxs)
+        .apply(widget::container)
+        .width(Length::Fill);
+
+    widget::row::with_children(vec![
+        title_column.into(),
+        catalog_badge.into(),
+        book_action_area(book, download_state),
+    ])
+    .spacing(space_s)
+    .align_y(Vertical::Center)
+    .padding([space_xs, space_s])
     .apply(widget::container)
     .class(cosmic::theme::Container::Card)
     .width(Length::Fill)
