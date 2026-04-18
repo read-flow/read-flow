@@ -12,6 +12,7 @@ maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 [features]
 default = ["server"]
 server = ["dep:rocket", "dep:rocket_cors"]
+online_tests = []
 
 [dependencies]
 anyhow.workspace = true
@@ -53,3 +54,4 @@ rocket_cors = { workspace = true, optional = true }
 assert4rs.workspace = true
 rstest.workspace = true
 tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
