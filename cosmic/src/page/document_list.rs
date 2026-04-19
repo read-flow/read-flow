@@ -403,6 +403,12 @@ impl DocumentList {
 }
 
 /// Sort documents based on the selected sort option
+fn shortcut_item(key: &str, description: String) -> Element<'_, DocumentListMessage> {
+    widget::settings::item::builder(description)
+        .control(widget::text::monotext(key))
+        .into()
+}
+
 fn sort_documents(
     documents: &mut [Document],
     sort_subject: SortSubject,
@@ -651,6 +657,13 @@ impl Page for DocumentList {
                     .on_press(DocumentListMessage::ClearStatusFilter)
             }));
 
+        let shortcuts_section = widget::settings::section()
+            .title(fl!("document-list-keyboard-shortcuts"))
+            .add(shortcut_item(
+                "Ctrl+M",
+                fl!("document-list-shortcut-toggle-search-mode"),
+            ));
+
         ContextView {
             title: fl!("document-list-options-title"),
             content: widget::settings::view_column(vec![
@@ -659,6 +672,7 @@ impl Page for DocumentList {
                 source_section.into(),
                 status_section.into(),
                 self.tag_filter.view().map(Into::into),
+                shortcuts_section.into(),
             ])
             .into(),
         }

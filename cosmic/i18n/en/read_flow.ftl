@@ -126,6 +126,8 @@ document-list-deselect-all = Deselect all
 document-list-select-all = Select all
 document-list-selected-count = Selected { $count } documents
 document-list-selection-count = Selected { $selected } of { $total }
+document-list-keyboard-shortcuts = Keyboard shortcuts
+document-list-shortcut-toggle-search-mode = Toggle search mode (Fuzzy / Regex)
 
 # Page messages
 page-not-found = ⚠ Not found

@@ -147,6 +147,8 @@ document-list-deselect-all = Tout désélectionner
 document-list-select-all = Tout sélectionner
 document-list-selected-count = { $count } documents sélectionnés
 document-list-selection-count = { $selected } de { $total } sélectionnés
+document-list-keyboard-shortcuts = Raccourcis clavier
+document-list-shortcut-toggle-search-mode = Basculer le mode de recherche (Flou / Regex)
 
 # Page messages
 page-not-found = ⚠ Non trouvé
