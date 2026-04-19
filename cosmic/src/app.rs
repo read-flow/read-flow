@@ -707,6 +707,11 @@ fn filter_keyboard_events(
             ..
         }) => match status {
             event::Status::Ignored => Some(Message::KeyboardEvent(modifiers, key, text)),
+            // Forward modifier+key shortcuts even when a widget (e.g. search input) captured
+            // the event, so global shortcuts like Ctrl+M work regardless of focus.
+            event::Status::Captured if !modifiers.is_empty() => {
+                Some(Message::KeyboardEvent(modifiers, key, text))
+            }
             event::Status::Captured => None,
         },
         Event::Keyboard(KeyEvent::ModifiersChanged(modifiers)) => {

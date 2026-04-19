@@ -24,11 +24,10 @@ use read_flow_core::Builder;
 use read_flow_core::api::ReadingStatus;
 use regex::Regex;
 
-use crate::app::ReadFlow;
-
 use crate::aggregator::Document;
 use crate::aggregator::Documents;
 use crate::app::ContextView;
+use crate::app::ReadFlow;
 use crate::client::ClientSelector;
 use crate::component::documents::DocumentState;
 use crate::component::documents::DocumentsComponent;
