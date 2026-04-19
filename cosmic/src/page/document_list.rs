@@ -7,16 +7,24 @@ use std::slice;
 use std::sync::Arc;
 
 use cosmic::Action;
+use cosmic::Application;
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
+use cosmic::cosmic_config;
+use cosmic::cosmic_config::ConfigGet;
+use cosmic::cosmic_config::ConfigSet;
 use cosmic::iced;
 use cosmic::iced::Length;
+use cosmic::iced::keyboard::Key;
+use cosmic::iced::keyboard::Modifiers;
 use cosmic::task;
 use cosmic::widget;
 use read_flow_core::Builder;
 use read_flow_core::api::ReadingStatus;
 use regex::Regex;
+
+use crate::app::ReadFlow;
 
 use crate::aggregator::Document;
 use crate::aggregator::Documents;
@@ -58,6 +66,71 @@ impl fmt::Display for SearchMode {
         };
         write!(f, "{}", label)
     }
+}
+
+const DOC_LIST_PREFS_VERSION: u64 = 1;
+const KEY_SORT_SUBJECT: &str = "sort_subject";
+const KEY_SORT_DIRECTION: &str = "sort_direction";
+const KEY_SEARCH_MODE: &str = "search_mode";
+
+fn load_document_list_prefs() -> (SortSubject, SortDirection, SearchMode) {
+    let Ok(ctx) = cosmic_config::Config::new(ReadFlow::APP_ID, DOC_LIST_PREFS_VERSION) else {
+        return Default::default();
+    };
+    let sort_subject = if let Ok(s) = ctx.get::<String>(KEY_SORT_SUBJECT) {
+        match s.as_str() {
+            "size" => SortSubject::Size,
+            "type" => SortSubject::Type,
+            "status" => SortSubject::Status,
+            _ => SortSubject::default(),
+        }
+    } else {
+        SortSubject::default()
+    };
+    let sort_direction = if let Ok(s) = ctx.get::<String>(KEY_SORT_DIRECTION) {
+        match s.as_str() {
+            "descending" => SortDirection::Descending,
+            _ => SortDirection::default(),
+        }
+    } else {
+        SortDirection::default()
+    };
+    let search_mode = if let Ok(s) = ctx.get::<String>(KEY_SEARCH_MODE) {
+        match s.as_str() {
+            "regex" => SearchMode::Regex,
+            _ => SearchMode::default(),
+        }
+    } else {
+        SearchMode::default()
+    };
+    (sort_subject, sort_direction, search_mode)
+}
+
+fn save_document_list_prefs(
+    sort_subject: SortSubject,
+    sort_direction: SortDirection,
+    search_mode: SearchMode,
+) {
+    let Ok(ctx) = cosmic_config::Config::new(ReadFlow::APP_ID, DOC_LIST_PREFS_VERSION) else {
+        return;
+    };
+    let subject_str = match sort_subject {
+        SortSubject::Filename => "filename",
+        SortSubject::Size => "size",
+        SortSubject::Type => "type",
+        SortSubject::Status => "status",
+    };
+    let _ = ctx.set(KEY_SORT_SUBJECT, subject_str);
+    let direction_str = match sort_direction {
+        SortDirection::Ascending => "ascending",
+        SortDirection::Descending => "descending",
+    };
+    let _ = ctx.set(KEY_SORT_DIRECTION, direction_str);
+    let mode_str = match search_mode {
+        SearchMode::Fuzzy => "fuzzy",
+        SearchMode::Regex => "regex",
+    };
+    let _ = ctx.set(KEY_SEARCH_MODE, mode_str);
 }
 
 /// Sort subject for the document list
@@ -142,6 +215,7 @@ pub enum DocumentListMessage {
     DebounceTimeout(u32, String), // (counter, query) - triggers filtering after delay
     SortSubjectChanged(SortSubject),
     ToggleSortDirection,
+    Key(Modifiers, Key),
     StatusFilterChanged(Option<ReadingStatus>),
     ClearStatusFilter,
     SourceFilterChanged(Option<ClientSelector>),
@@ -228,18 +302,20 @@ impl DocumentList {
 
         let (archive, archive_init) = DocumentsComponent::new();
 
+        let (sort_subject, sort_direction, search_mode) = load_document_list_prefs();
+
         (
             Self {
                 document_provider: document_provider.clone(),
                 archive,
                 search_query: String::new(),
-                search_mode: SearchMode::default(),
+                search_mode,
                 search_regex_error: None,
                 is_filtering: false,
                 search_input_id: widget::Id::unique(),
                 debounce_counter: 0,
-                sort_subject: SortSubject::default(),
-                sort_direction: SortDirection::default(),
+                sort_subject,
+                sort_direction,
                 status_filter: None,
                 tag_filter,
                 source_filter: None,
@@ -693,6 +769,7 @@ impl Page for DocumentList {
             DocumentListMessage::SearchModeChanged(mode) => {
                 self.search_mode = mode;
                 self.search_regex_error = compute_regex_error(mode, &self.search_query);
+                save_document_list_prefs(self.sort_subject, self.sort_direction, self.search_mode);
                 self.filter_now()
             }
             DocumentListMessage::ClearSearch => {
@@ -740,13 +817,24 @@ impl Page for DocumentList {
             }
             DocumentListMessage::SortSubjectChanged(sort_subject) => {
                 self.sort_subject = sort_subject;
-                // Re-sort the documents immediately
+                save_document_list_prefs(self.sort_subject, self.sort_direction, self.search_mode);
                 self.sort_now()
             }
             DocumentListMessage::ToggleSortDirection => {
                 self.sort_direction = self.sort_direction.toggle();
-                // Re-sort the documents immediately
+                save_document_list_prefs(self.sort_subject, self.sort_direction, self.search_mode);
                 self.sort_now()
+            }
+            DocumentListMessage::Key(modifiers, key) => {
+                if modifiers.control() && matches!(&key, Key::Character(c) if c.as_str() == "m") {
+                    let next_mode = match self.search_mode {
+                        SearchMode::Fuzzy => SearchMode::Regex,
+                        SearchMode::Regex => SearchMode::Fuzzy,
+                    };
+                    task::message(DocumentListMessage::SearchModeChanged(next_mode))
+                } else {
+                    Task::none()
+                }
             }
             DocumentListMessage::StatusFilterChanged(status) => {
                 self.status_filter = status;

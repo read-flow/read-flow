@@ -482,6 +482,10 @@ impl Pages {
                     .map(move |action| {
                         action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
                     }),
+                PageSelector::Documents => self
+                    .documents
+                    .update(DocumentListMessage::Key(modifiers, key))
+                    .map(|action| action.map(map_document_list_message)),
                 _ => Task::none(),
             },
             PageMessage::ModifiersChanged(page, modifiers) => match page {
