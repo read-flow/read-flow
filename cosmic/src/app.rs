@@ -34,6 +34,7 @@ use crate::config::Config;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::layout::full_page;
+use crate::page::DocumentListMessage;
 use crate::page::PageMessage;
 use crate::page::PageOutput;
 use crate::page::PageSelector;
@@ -618,10 +619,18 @@ impl cosmic::Application for ReadFlow {
 
         let mut tasks = vec![self.update_title()];
 
-        if self.nav.data::<PageSelector>(id) == Some(&PageSelector::Sources) {
-            tasks.push(task::message(cosmic::Action::App(Message::Page(
-                PageMessage::Sources(SourcesMessage::RefreshStatuses),
-            ))));
+        match self.nav.data::<PageSelector>(id) {
+            Some(PageSelector::Sources) => {
+                tasks.push(task::message(cosmic::Action::App(Message::Page(
+                    PageMessage::Sources(SourcesMessage::RefreshStatuses),
+                ))));
+            }
+            Some(PageSelector::Documents) => {
+                tasks.push(task::message(cosmic::Action::App(Message::Page(
+                    PageMessage::Documents(DocumentListMessage::FocusSearchInput),
+                ))));
+            }
+            _ => {}
         }
 
         Task::batch(tasks)

@@ -51,7 +51,7 @@ use crate::page::document_details::DocumentDetails;
 use crate::page::document_details::DocumentDetailsMessage;
 use crate::page::document_details::DocumentDetailsOutput;
 use crate::page::document_list::DocumentList;
-use crate::page::document_list::DocumentListMessage;
+pub use crate::page::document_list::DocumentListMessage;
 use crate::page::document_list::DocumentListOutput;
 use crate::page::epub_viewer::EpubViewer;
 use crate::page::epub_viewer::EpubViewerMessage;

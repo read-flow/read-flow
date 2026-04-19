@@ -324,7 +324,6 @@ impl DocumentList {
                 tag_filter_init.map(ActionExt::map_into),
                 archive_init.map(ActionExt::map_into),
                 task::message(DocumentListMessage::LoadArchive),
-                task::message(DocumentListMessage::FocusSearchInput),
                 task::future(async move {
                     DocumentListMessage::SetAvailableSources(
                         document_provider.get_client_selectors().await,
@@ -559,7 +558,6 @@ impl Page for DocumentList {
         let search_input = {
             widget::search_input(fl!("document-list-search-placeholder"), &self.search_query)
                 .id(self.search_input_id.clone())
-                .always_active()
                 .on_input(DocumentListMessage::SearchChanged)
                 .on_clear(DocumentListMessage::ClearSearch)
                 .width(Length::Fixed(300.0))
@@ -794,18 +792,15 @@ impl Page for DocumentList {
                     && !self.is_filtering
                 {
                     self.is_filtering = true;
-                    Task::batch(vec![
-                        self.start_background_filtering(
-                            query,
-                            self.search_mode,
-                            self.status_filter,
-                            self.source_filter.clone(),
-                            self.tag_filter.allow_tags.clone(),
-                            self.tag_filter.deny_tags.clone(),
-                            self.archive.unfiltered().to_vec(),
-                        ),
-                        task::message(DocumentListMessage::FocusSearchInput),
-                    ])
+                    Task::batch(vec![self.start_background_filtering(
+                        query,
+                        self.search_mode,
+                        self.status_filter,
+                        self.source_filter.clone(),
+                        self.tag_filter.allow_tags.clone(),
+                        self.tag_filter.deny_tags.clone(),
+                        self.archive.unfiltered().to_vec(),
+                    )])
                 } else {
                     // This timeout was superseded by newer typing, ignore it
                     Task::none()
