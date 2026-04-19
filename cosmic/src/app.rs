@@ -249,6 +249,17 @@ impl cosmic::Application for ReadFlow {
 
     /// Elements to pack at the start of the header bar.
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
+        let mut elements = vec![];
+
+        if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
+            elements.extend(
+                self.pages
+                    .view_header_start(page)
+                    .into_iter()
+                    .map(|e| e.map(Into::into)),
+            );
+        }
+
         let menu_bar = menu::bar(vec![
             menu::Tree::with_children(
                 menu::root(fl!("view")).apply(Element::from),
@@ -288,7 +299,8 @@ impl cosmic::Application for ReadFlow {
             ),
         ]);
 
-        vec![menu_bar.into()]
+        elements.push(menu_bar.into());
+        elements
     }
 
     /// Elements to pack at the center of the header bar.
@@ -319,7 +331,7 @@ impl cosmic::Application for ReadFlow {
         elements.push(
             widget::button::icon(widget::icon::from_name("open-menu-symbolic").size(16))
                 .on_press(Message::ToggleActivePageContext)
-                .tooltip(fl!("context"))
+                .tooltip(fl!("view-options"))
                 .into(),
         );
 

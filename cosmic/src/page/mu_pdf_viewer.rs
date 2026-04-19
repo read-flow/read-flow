@@ -798,14 +798,10 @@ impl Page for MuPdfViewer {
         ]
     }
 
-    fn view_header_end(&self) -> Vec<Element<'_, MuPdfViewerMessage>> {
+    fn view_header_start(&self) -> Vec<Element<'_, MuPdfViewerMessage>> {
         let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
-
-        let mut elements = Vec::new();
-
-        // Close button (rightmost, matching standard dismiss placement)
-        elements.push(
-            widget::button::icon(widget::icon::from_name("window-close-symbolic").size(ICON_SIZE))
+        vec![
+            widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
                 .on_press(MuPdfViewerMessage::Out(MuPdfViewerOutput::Close(
                     self.fingerprint.clone(),
                     if self.pages.is_empty() {
@@ -817,9 +813,11 @@ impl Page for MuPdfViewer {
                 .tooltip(fl!("pdf-viewer-back"))
                 .padding(space_xxs)
                 .into(),
-        );
+        ]
+    }
 
-        elements
+    fn view_header_end(&self) -> Vec<Element<'_, MuPdfViewerMessage>> {
+        Vec::new()
     }
 
     fn view_context(&self) -> ContextView<'_, MuPdfViewerMessage> {

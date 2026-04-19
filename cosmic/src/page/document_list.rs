@@ -60,46 +60,46 @@ impl fmt::Display for SearchMode {
     }
 }
 
-/// Sort options for the document list
+/// Sort subject for the document list
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DocumentSortOption {
+pub enum SortSubject {
     #[default]
-    FilenameAsc,
-    FilenameDesc,
-    SizeAsc,
-    SizeDesc,
-    TypeAsc,
-    TypeDesc,
-    StatusAsc,
-    StatusDesc,
+    Filename,
+    Size,
+    Type,
+    Status,
 }
 
-impl DocumentSortOption {
-    pub const ALL: &'static [Self] = &[
-        Self::FilenameAsc,
-        Self::FilenameDesc,
-        Self::SizeAsc,
-        Self::SizeDesc,
-        Self::TypeAsc,
-        Self::TypeDesc,
-        Self::StatusAsc,
-        Self::StatusDesc,
-    ];
+impl SortSubject {
+    pub const ALL: &'static [Self] = &[Self::Filename, Self::Size, Self::Type, Self::Status];
 }
 
-impl fmt::Display for DocumentSortOption {
+impl fmt::Display for SortSubject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let label = match self {
-            Self::FilenameAsc => fl!("document-list-sort-filename-asc"),
-            Self::FilenameDesc => fl!("document-list-sort-filename-desc"),
-            Self::SizeAsc => fl!("document-list-sort-size-asc"),
-            Self::SizeDesc => fl!("document-list-sort-size-desc"),
-            Self::TypeAsc => fl!("document-list-sort-type-asc"),
-            Self::TypeDesc => fl!("document-list-sort-type-desc"),
-            Self::StatusAsc => fl!("document-list-sort-status-asc"),
-            Self::StatusDesc => fl!("document-list-sort-status-desc"),
+            Self::Filename => fl!("document-list-sort-filename"),
+            Self::Size => fl!("document-list-sort-size"),
+            Self::Type => fl!("document-list-sort-type"),
+            Self::Status => fl!("document-list-sort-status"),
         };
         write!(f, "{}", label)
+    }
+}
+
+/// Sort direction for the document list
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SortDirection {
+    #[default]
+    Ascending,
+    Descending,
+}
+
+impl SortDirection {
+    pub fn toggle(self) -> Self {
+        match self {
+            Self::Ascending => Self::Descending,
+            Self::Descending => Self::Ascending,
+        }
     }
 }
 
@@ -112,7 +112,8 @@ pub struct DocumentList {
     search_regex_error: Option<String>,   // Set when regex mode has an invalid pattern
     search_input_id: widget::Id,          // Unique ID for focus management
     debounce_counter: u32,                // Counter to track debounce state
-    sort_option: DocumentSortOption,      // Current sort option
+    sort_subject: SortSubject,            // Current sort subject
+    sort_direction: SortDirection,        // Current sort direction
     status_filter: Option<ReadingStatus>, // Optional reading status filter
     tag_filter: TagFilter<Arc<DocumentProvider>>, // Tag Filter component
     source_filter: Option<ClientSelector>, // Optional source filter
@@ -139,7 +140,8 @@ pub enum DocumentListMessage {
     FilteringComplete(Vec<usize>),
     FocusSearchInput,
     DebounceTimeout(u32, String), // (counter, query) - triggers filtering after delay
-    SortChanged(DocumentSortOption),
+    SortSubjectChanged(SortSubject),
+    ToggleSortDirection,
     StatusFilterChanged(Option<ReadingStatus>),
     ClearStatusFilter,
     SourceFilterChanged(Option<ClientSelector>),
@@ -236,7 +238,8 @@ impl DocumentList {
                 is_filtering: false,
                 search_input_id: widget::Id::unique(),
                 debounce_counter: 0,
-                sort_option: DocumentSortOption::default(),
+                sort_subject: SortSubject::default(),
+                sort_direction: SortDirection::default(),
                 status_filter: None,
                 tag_filter,
                 source_filter: None,
@@ -313,8 +316,10 @@ impl DocumentList {
     fn sort_now(&mut self) -> Task<Action<DocumentListMessage>> {
         if self.archive.is_loaded() {
             // Sort the unfiltered documents in place
+            let sort_subject = self.sort_subject;
+            let sort_direction = self.sort_direction;
             self.archive
-                .sort_unfiltered(|docs| sort_documents(docs, self.sort_option));
+                .sort_unfiltered(|docs| sort_documents(docs, sort_subject, sort_direction));
             // Re-apply the current filter to update the filtered view
             self.filter_now()
         } else {
@@ -324,29 +329,35 @@ impl DocumentList {
 }
 
 /// Sort documents based on the selected sort option
-fn sort_documents(documents: &mut [Document], sort_option: DocumentSortOption) {
-    documents.sort_by(|a, b| compare_documents(a, b, sort_option));
+fn sort_documents(
+    documents: &mut [Document],
+    sort_subject: SortSubject,
+    sort_direction: SortDirection,
+) {
+    documents.sort_by(|a, b| compare_documents(a, b, sort_subject, sort_direction));
 }
 
 /// Compare two documents based on the sort option
-fn compare_documents(a: &Document, b: &Document, sort_option: DocumentSortOption) -> Ordering {
-    match sort_option {
-        DocumentSortOption::FilenameAsc => get_filename(a)
+fn compare_documents(
+    a: &Document,
+    b: &Document,
+    sort_subject: SortSubject,
+    sort_direction: SortDirection,
+) -> Ordering {
+    let ordering = match sort_subject {
+        SortSubject::Filename => get_filename(a)
             .to_lowercase()
             .cmp(&get_filename(b).to_lowercase()),
-        DocumentSortOption::FilenameDesc => get_filename(b)
-            .to_lowercase()
-            .cmp(&get_filename(a).to_lowercase()),
-        DocumentSortOption::SizeAsc => a.metadata.size.cmp(&b.metadata.size),
-        DocumentSortOption::SizeDesc => b.metadata.size.cmp(&a.metadata.size),
-        DocumentSortOption::TypeAsc => a.metadata.type_.as_str().cmp(b.metadata.type_.as_str()),
-        DocumentSortOption::TypeDesc => b.metadata.type_.as_str().cmp(a.metadata.type_.as_str()),
-        DocumentSortOption::StatusAsc => {
+        SortSubject::Size => a.metadata.size.cmp(&b.metadata.size),
+        SortSubject::Type => a.metadata.type_.as_str().cmp(b.metadata.type_.as_str()),
+        SortSubject::Status => {
             status_order(&a.metadata.status).cmp(&status_order(&b.metadata.status))
         }
-        DocumentSortOption::StatusDesc => {
-            status_order(&b.metadata.status).cmp(&status_order(&a.metadata.status))
-        }
+    };
+
+    match sort_direction {
+        SortDirection::Ascending => ordering,
+        SortDirection::Descending => ordering.reverse(),
     }
 }
 
@@ -482,15 +493,7 @@ impl Page for DocumentList {
                 })
         };
 
-        let mut elements: Vec<Element<'_, DocumentListMessage>> = vec![
-            search_input.into(),
-            iced::widget::pick_list(
-                SearchMode::ALL,
-                Some(self.search_mode),
-                DocumentListMessage::SearchModeChanged,
-            )
-            .into(),
-        ];
+        let mut elements: Vec<Element<'_, DocumentListMessage>> = vec![search_input.into()];
 
         if self.is_filtering {
             elements.push(widget::text(fl!("document-list-filtering")).size(12).into());
@@ -500,16 +503,41 @@ impl Page for DocumentList {
     }
 
     fn view_context(&self) -> ContextView<'_, DocumentListMessage> {
+        // Search Mode Section
+        let search_mode_section = widget::settings::section()
+            .title(fl!("document-list-search-mode"))
+            .add(
+                iced::widget::pick_list(
+                    SearchMode::ALL,
+                    Some(self.search_mode),
+                    DocumentListMessage::SearchModeChanged,
+                )
+                .width(Length::Fill),
+            );
+
         // Sort Section
+        let sort_icon = match self.sort_direction {
+            SortDirection::Ascending => "view-sort-ascending-symbolic",
+            SortDirection::Descending => "view-sort-descending-symbolic",
+        };
+
         let sort_section = widget::settings::section()
             .title(fl!("document-list-sort-by"))
             .add(
-                iced::widget::pick_list(
-                    DocumentSortOption::ALL,
-                    Some(self.sort_option),
-                    DocumentListMessage::SortChanged,
-                )
-                .width(Length::Fill),
+                widget::Row::new()
+                    .spacing(8)
+                    .push(
+                        iced::widget::pick_list(
+                            SortSubject::ALL,
+                            Some(self.sort_subject),
+                            DocumentListMessage::SortSubjectChanged,
+                        )
+                        .width(Length::Fill),
+                    )
+                    .push(
+                        widget::button::icon(widget::icon::from_name(sort_icon))
+                            .on_press(DocumentListMessage::ToggleSortDirection),
+                    ),
             );
 
         // Source Filter Section
@@ -553,6 +581,7 @@ impl Page for DocumentList {
         ContextView {
             title: fl!("document-list-options-title"),
             content: widget::settings::view_column(vec![
+                search_mode_section.into(),
                 sort_section.into(),
                 source_section.into(),
                 status_section.into(),
@@ -597,7 +626,7 @@ impl Page for DocumentList {
                 // For initial load, use synchronous filtering and sorting since it's typically fast
                 let mut documents: Vec<Document> = files.into_iter().collect();
                 // Sort documents
-                sort_documents(&mut documents, self.sort_option);
+                sort_documents(&mut documents, self.sort_subject, self.sort_direction);
                 let search_mode = self.search_mode;
                 let compiled_regex =
                     if search_mode == SearchMode::Regex && !self.search_query.is_empty() {
@@ -709,8 +738,13 @@ impl Page for DocumentList {
             DocumentListMessage::FocusSearchInput => {
                 widget::text_input::focus(self.search_input_id.clone())
             }
-            DocumentListMessage::SortChanged(sort_option) => {
-                self.sort_option = sort_option;
+            DocumentListMessage::SortSubjectChanged(sort_subject) => {
+                self.sort_subject = sort_subject;
+                // Re-sort the documents immediately
+                self.sort_now()
+            }
+            DocumentListMessage::ToggleSortDirection => {
+                self.sort_direction = self.sort_direction.toggle();
                 // Re-sort the documents immediately
                 self.sort_now()
             }

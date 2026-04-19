@@ -185,7 +185,7 @@ impl DocumentDetails {
 
         // Edit toggle button, right-aligned
         let edit_button = if self.editing_sources {
-            widget::button::icon(widget::icon::from_name("edit-undo-symbolic").size(ICON_SIZE))
+            widget::button::icon(widget::icon::from_name("object-select-symbolic").size(ICON_SIZE))
                 .on_press(DocumentDetailsMessage::ToggleEditSources)
                 .tooltip(fl!("document-details-done-editing-sources"))
         } else {
@@ -489,6 +489,17 @@ impl Page for DocumentDetails {
         ]
     }
 
+    fn view_header_start(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
+        vec![
+            widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
+                .on_press(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
+                    self.document.metadata.fingerprint.clone(),
+                )))
+                .tooltip(fl!("document-details-close"))
+                .into(),
+        ]
+    }
+
     fn view_header_end(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
         vec![
             widget::button::icon(
@@ -497,12 +508,6 @@ impl Page for DocumentDetails {
             .on_press(DocumentDetailsMessage::OpenDocument)
             .tooltip(fl!("document-details-open-file"))
             .into(),
-            widget::button::icon(widget::icon::from_name("window-close-symbolic").size(ICON_SIZE))
-                .on_press(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
-                    self.document.metadata.fingerprint.clone(),
-                )))
-                .tooltip(fl!("document-details-close"))
-                .into(),
         ]
     }
 

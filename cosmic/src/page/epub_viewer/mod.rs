@@ -1333,16 +1333,11 @@ impl Page for EpubViewer {
         ]
     }
 
-    fn view_header_end(&self) -> Vec<Element<'_, EpubViewerMessage>> {
+    fn view_header_start(&self) -> Vec<Element<'_, EpubViewerMessage>> {
         let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
         vec![
-            widget::button::icon(widget::icon::from_name("system-search-symbolic").size(ICON_SIZE))
-                .on_press(EpubViewerMessage::ToggleSearch)
-                .tooltip(fl!("epub-viewer-search"))
-                .padding(space_xxs)
-                .into(),
-            widget::button::icon(widget::icon::from_name("window-close-symbolic").size(ICON_SIZE))
+            widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
                 .on_press(EpubViewerMessage::Out(EpubViewerOutput::Close(
                     self.fingerprint.clone(),
                     if self.chapters.is_empty() {
@@ -1373,6 +1368,18 @@ impl Page for EpubViewer {
                     },
                 )))
                 .tooltip(fl!("epub-viewer-back"))
+                .padding(space_xxs)
+                .into(),
+        ]
+    }
+
+    fn view_header_end(&self) -> Vec<Element<'_, EpubViewerMessage>> {
+        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+
+        vec![
+            widget::button::icon(widget::icon::from_name("system-search-symbolic").size(ICON_SIZE))
+                .on_press(EpubViewerMessage::ToggleSearch)
+                .tooltip(fl!("epub-viewer-search"))
                 .padding(space_xxs)
                 .into(),
         ]
