@@ -65,6 +65,7 @@ enum DiscoveryItem {
     Page(PdfPage),
     Done(bool),
     DisplayList(i32, Arc<mupdf::DisplayList>),
+    Error(String),
 }
 
 /// Whether to display two pages side by side.
@@ -225,6 +226,9 @@ pub enum MuPdfViewerMessage {
     Key(Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(Modifiers),
 
+    // Error
+    LoadFailed(String),
+
     // Outgoing
     Out(MuPdfViewerOutput),
 }
@@ -235,6 +239,7 @@ pub struct MuPdfViewer {
     fingerprint: Fingerprint,
     document: Document,
     file_path: Option<PathBuf>,
+    load_error: Option<String>,
 
     // PDF state
     pages: Vec<PdfPage>,
@@ -278,6 +283,7 @@ impl MuPdfViewer {
             fingerprint: fingerprint.clone(),
             document,
             file_path: file_path.clone(),
+            load_error: None,
             pages: Vec::new(),
             active_page: 0,
             initial_page: None,
@@ -331,7 +337,13 @@ impl MuPdfViewer {
         let layout_gen = self.layout_gen;
         let em = self.epub_font_size;
         tokio::task::spawn_blocking(move || {
-            let mut doc = mupdf::Document::open(path.as_os_str()).unwrap();
+            let mut doc = match mupdf::Document::open(path.as_os_str()) {
+                Ok(d) => d,
+                Err(e) => {
+                    let _ = tx.unbounded_send(DiscoveryItem::Error(e.to_string()));
+                    return;
+                }
+            };
             let is_reflowable = doc.is_reflowable().unwrap_or(false);
             if is_reflowable {
                 let _ = doc.layout(595.0, 842.0, em);
@@ -368,6 +380,7 @@ impl MuPdfViewer {
                 DiscoveryItem::DisplayList(index, dl) => {
                     MuPdfViewerMessage::DisplayListReady(layout_gen, index, dl)
                 }
+                DiscoveryItem::Error(e) => MuPdfViewerMessage::LoadFailed(e),
             }),
             cosmic::action::app,
         )
@@ -769,8 +782,30 @@ impl Page for MuPdfViewer {
                 .into();
         }
 
+        if let Some(error) = &self.load_error {
+            let error_view = widget::Column::new()
+                .align_x(cosmic::iced::Alignment::Center)
+                .spacing(16)
+                .push(
+                    widget::icon::from_name("dialog-error-symbolic")
+                        .size(48)
+                        .icon(),
+                )
+                .push(widget::text::body(fl!(
+                    "pdf-viewer-load-error",
+                    error = error.as_str()
+                )));
+
+            return widget::container(error_view)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(cosmic::iced::alignment::Horizontal::Center)
+                .align_y(Vertical::Center)
+                .into();
+        }
+
         if self.pages.is_empty() {
-            // Loading state with icon and text
+            // Loading state
             let loading = widget::Column::new()
                 .align_x(cosmic::iced::Alignment::Center)
                 .spacing(16)
@@ -1222,6 +1257,11 @@ impl Page for MuPdfViewer {
                 self.epub_font_size = size;
                 save_mupdf_epub_font_size(size);
                 self.repaginate()
+            }
+            MuPdfViewerMessage::LoadFailed(error) => {
+                tracing::warn!("PDF load failed: {error}");
+                self.load_error = Some(error);
+                Task::none()
             }
             MuPdfViewerMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")

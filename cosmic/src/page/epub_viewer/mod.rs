@@ -408,6 +408,8 @@ pub enum EpubViewerMessage {
     SetFontFamily(FontFamily),
     /// Set the base body font size in pixels (12–24).
     SetBaseFontSize(f32),
+    /// The EPUB file could not be opened; carries the error message.
+    LoadFailed(String),
     Out(EpubViewerOutput),
     /// Clear the navigation-target block highlight after the flash timer expires.
     ClearHighlight,
@@ -434,6 +436,7 @@ pub struct EpubViewer {
     document: Document,
     epub_document: Option<CloneableEpubDocument>,
     file_path: Option<PathBuf>,
+    load_error: Option<String>,
     title: String,
     chapters: Vec<EpubChapter>,
     active_chapter: usize,
@@ -519,6 +522,7 @@ impl EpubViewer {
             document,
             epub_document: None, // Will be loaded when chapters are loaded
             file_path: file_path.clone(),
+            load_error: None,
             title: String::new(),
             chapters: Vec::new(),
             active_chapter: 0,
@@ -573,11 +577,7 @@ impl EpubViewer {
                     }
                     Err(e) => {
                         tracing::error!("failed to open EPUB: {e}");
-                        cosmic::action::app(EpubViewerMessage::EpubLoaded(
-                            String::new(),
-                            Vec::new(),
-                            None,
-                        ))
+                        cosmic::action::app(EpubViewerMessage::LoadFailed(e.to_string()))
                     }
                 },
             ));
@@ -1279,6 +1279,23 @@ impl Page for EpubViewer {
                 .push(widget::text::body(fl!("epub-viewer-no-local-source")));
 
             return no_source.apply(full_page);
+        }
+
+        if let Some(error) = &self.load_error {
+            let error_view = widget::Column::new()
+                .align_x(cosmic::iced::Alignment::Center)
+                .spacing(16)
+                .push(
+                    widget::icon::from_name("dialog-error-symbolic")
+                        .size(48)
+                        .icon(),
+                )
+                .push(widget::text::body(fl!(
+                    "epub-viewer-load-error",
+                    error = error.as_str()
+                )));
+
+            return error_view.apply(full_page);
         }
 
         if self.chapters.is_empty() {
@@ -2106,6 +2123,11 @@ impl Page for EpubViewer {
             EpubViewerMessage::OpenImageViewer(image) => task::message(EpubViewerMessage::Out(
                 EpubViewerOutput::OpenImageViewer(image),
             )),
+            EpubViewerMessage::LoadFailed(error) => {
+                tracing::warn!("EPUB load failed: {error}");
+                self.load_error = Some(error);
+                Task::none()
+            }
             EpubViewerMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }
