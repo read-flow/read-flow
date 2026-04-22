@@ -356,6 +356,8 @@ pub enum EpubViewerOutput {
     Close(Fingerprint, Option<String>),
     /// Open the image viewer page for the given image.
     OpenImageViewer(ViewerImage),
+    NavSubEntriesChanged,
+    NavSubEntryActivated(usize),
 }
 
 impl Clone for EpubViewerOutput {
@@ -366,6 +368,10 @@ impl Clone for EpubViewerOutput {
             }
             EpubViewerOutput::OpenImageViewer(img) => {
                 EpubViewerOutput::OpenImageViewer(img.clone())
+            }
+            EpubViewerOutput::NavSubEntriesChanged => EpubViewerOutput::NavSubEntriesChanged,
+            EpubViewerOutput::NavSubEntryActivated(idx) => {
+                EpubViewerOutput::NavSubEntryActivated(*idx)
             }
         }
     }
@@ -1515,6 +1521,25 @@ impl Page for EpubViewer {
         }
     }
 
+    fn nav_sub_entries(&self) -> Vec<crate::page::NavSubEntry> {
+        self.nav_entries
+            .iter()
+            .map(|entry| crate::page::NavSubEntry {
+                label: entry.label.clone(),
+                icon: None,
+                indent: entry.depth as u16,
+            })
+            .collect()
+    }
+
+    fn active_nav_sub_entry(&self) -> Option<usize> {
+        self.active_nav_entry
+    }
+
+    fn on_nav_sub_entry_selected(&mut self, index: usize) -> Task<Action<EpubViewerMessage>> {
+        self.update(EpubViewerMessage::SelectNavEntry(index))
+    }
+
     fn update(&mut self, message: EpubViewerMessage) -> Task<Action<EpubViewerMessage>> {
         self.maybe_repaginate();
         match message {
@@ -1554,7 +1579,7 @@ impl Page for EpubViewer {
                 } else {
                     None
                 };
-                if let Some(y) = target_y {
+                let scroll_task = if let Some(y) = target_y {
                     self.scroll_y = y;
                     scrollable::scroll_to(
                         self.content_scroll_id.clone(),
@@ -1562,7 +1587,13 @@ impl Page for EpubViewer {
                     )
                 } else {
                     Task::none()
-                }
+                };
+                Task::batch([
+                    scroll_task,
+                    Task::done(cosmic::action::app(EpubViewerMessage::Out(
+                        EpubViewerOutput::NavSubEntriesChanged,
+                    ))),
+                ])
             }
             EpubViewerMessage::ReadingProgressLoaded(pos) => {
                 self.initial_chapter = pos.chapter;
@@ -1625,6 +1656,10 @@ impl Page for EpubViewer {
             EpubViewerMessage::SelectNavEntry(nav_idx) => {
                 self.nav_dropdown_open = false;
                 self.active_nav_entry = Some(nav_idx);
+                let nav_activated: Task<Action<EpubViewerMessage>> =
+                    Task::done(cosmic::action::app(EpubViewerMessage::Out(
+                        EpubViewerOutput::NavSubEntryActivated(nav_idx),
+                    )));
                 if let Some(entry) = self.nav_entries.get(nav_idx) {
                     let (base, fragment) = match entry.href.split_once('#') {
                         Some((b, f)) => (b.to_owned(), Some(f.to_owned())),
@@ -1710,14 +1745,14 @@ impl Page for EpubViewer {
                                     },
                                     |_| cosmic::action::app(EpubViewerMessage::ClearHighlight),
                                 );
-                                return Task::batch([nav_task, clear_task]);
+                                return Task::batch([nav_task, clear_task, nav_activated]);
                             }
 
-                            return nav_task;
+                            return Task::batch([nav_task, nav_activated]);
                         }
                     }
                 }
-                Task::none()
+                nav_activated
             }
             EpubViewerMessage::ShowRawHtml(show) => {
                 self.show_raw_html = show;

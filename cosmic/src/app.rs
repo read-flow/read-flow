@@ -35,6 +35,7 @@ use crate::cosmic_ext::ActionExt;
 use crate::fl;
 use crate::layout::full_page;
 use crate::page::DocumentListMessage;
+use crate::page::NavSubEntry;
 use crate::page::PageMessage;
 use crate::page::PageOutput;
 use crate::page::PageSelector;
@@ -59,6 +60,8 @@ pub struct ReadFlow {
     nav: nav_bar::Model,
     /// Mappings for nav_bar items.
     nav_mappings: HashMap<PageSelector, Entity>,
+    /// Nav-bar entities for each page's sub-entries, indexed by sub-entry index.
+    nav_sub_entry_mappings: HashMap<PageSelector, Vec<Entity>>,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     // Configuration data that persists between application runs.
@@ -82,6 +85,10 @@ pub enum Message {
     PageAdded(PageSelector, &'static str),
     ActivatePage(PageSelector),
     ActivePageRemoved(PageSelector),
+    NavSubEntriesChanged(PageSelector),
+    NavSubEntryActivated(PageSelector, usize),
+    NavSubEntryIconUpdated(PageSelector, usize),
+    NavSubEntrySelected(PageSelector, usize),
     SwitchLanguage(LanguageIdentifier),
     ExpireDocumentProvider,
     Scan,
@@ -101,6 +108,13 @@ impl From<PageOutput> for Message {
             PageOutput::TogglePage(page_selector) => Message::ActivatePage(page_selector),
             PageOutput::PageRemoved(page) => Message::ActivePageRemoved(page),
             PageOutput::Scan => Message::Scan,
+            PageOutput::NavSubEntriesChanged(selector) => Message::NavSubEntriesChanged(selector),
+            PageOutput::NavSubEntryActivated(selector, idx) => {
+                Message::NavSubEntryActivated(selector, idx)
+            }
+            PageOutput::NavSubEntryIconUpdated(selector, idx) => {
+                Message::NavSubEntryIconUpdated(selector, idx)
+            }
         }
     }
 }
@@ -216,6 +230,7 @@ impl cosmic::Application for ReadFlow {
             about,
             nav,
             nav_mappings,
+            nav_sub_entry_mappings: HashMap::new(),
             key_binds: HashMap::new(),
             config,
             application_module,
@@ -487,7 +502,78 @@ impl cosmic::Application for ReadFlow {
                     });
                 Task::none()
             }
+            Message::NavSubEntriesChanged(selector) => {
+                // Remove old sub-entries
+                if let Some(old_entities) = self.nav_sub_entry_mappings.remove(&selector) {
+                    for entity in old_entities {
+                        self.nav.remove(entity);
+                    }
+                }
+                if let Some(&parent) = self.nav_mappings.get(&selector) {
+                    let entries = self.pages.nav_sub_entries(&selector);
+                    let active_idx = self.pages.active_nav_sub_entry(&selector);
+                    let mut new_entities = Vec::with_capacity(entries.len());
+                    for (
+                        idx,
+                        NavSubEntry {
+                            label,
+                            icon,
+                            indent,
+                        },
+                    ) in entries.into_iter().enumerate()
+                    {
+                        let mut entity_id = Entity::default();
+                        self.nav
+                            .insert()
+                            .text(label)
+                            .data::<PageSelector>(selector.clone())
+                            .data::<(PageSelector, usize)>((selector.clone(), idx))
+                            .data::<Entity>(parent)
+                            .indent(indent + 1)
+                            .with_id(|id| entity_id = id);
+                        if let Some(icon) = icon {
+                            self.nav.icon_set(entity_id, icon);
+                        }
+                        new_entities.push(entity_id);
+                    }
+                    if let Some(idx) = active_idx
+                        && let Some(&entity) = new_entities.get(idx)
+                    {
+                        self.nav.activate(entity);
+                    }
+                    self.nav_sub_entry_mappings.insert(selector, new_entities);
+                }
+                Task::none()
+            }
+            Message::NavSubEntryActivated(selector, idx) => {
+                if let Some(entities) = self.nav_sub_entry_mappings.get(&selector)
+                    && let Some(&entity) = entities.get(idx)
+                {
+                    self.nav.activate(entity);
+                }
+                Task::none()
+            }
+            Message::NavSubEntryIconUpdated(selector, idx) => {
+                if let Some(icon) = self.pages.nav_sub_entry_icon(&selector, idx)
+                    && let Some(entities) = self.nav_sub_entry_mappings.get(&selector)
+                    && let Some(&entity) = entities.get(idx)
+                {
+                    self.nav.icon_set(entity, icon);
+                }
+                Task::none()
+            }
+            Message::NavSubEntrySelected(selector, idx) => self
+                .pages
+                .on_nav_sub_entry_selected(&selector, idx)
+                .map(ActionExt::map_into),
             Message::ActivePageRemoved(removed_page) => {
+                // Remove nav sub-entries for this page
+                if let Some(old_entities) = self.nav_sub_entry_mappings.remove(&removed_page) {
+                    for entity in old_entities {
+                        self.nav.remove(entity);
+                    }
+                }
+
                 let id = self
                     .nav_mappings
                     .get(&removed_page)
@@ -496,7 +582,7 @@ impl cosmic::Application for ReadFlow {
 
                 // Get parent of the active page
                 let parent = self.nav.data::<Entity>(id);
-                // If the active page has a parent, set that as the new active pagen
+                // If the active page has a parent, set that as the new active page
                 if let Some(parent) = parent {
                     self.nav.activate(*parent);
                 }
@@ -616,6 +702,16 @@ impl cosmic::Application for ReadFlow {
     fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Self::Message>> {
         // Activate the page in the model.
         self.nav.activate(id);
+
+        // If this is a sub-entry, dispatch to the page and skip page-switch logic.
+        if let Some((selector, idx)) = self.nav.data::<(PageSelector, usize)>(id).cloned() {
+            return Task::batch([
+                self.update_title(),
+                task::message(cosmic::Action::App(Message::NavSubEntrySelected(
+                    selector, idx,
+                ))),
+            ]);
+        }
 
         let mut tasks = vec![self.update_title()];
 
