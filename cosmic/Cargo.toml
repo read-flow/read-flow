@@ -40,6 +40,7 @@ url.workspace = true
 epub = { path = "../epub" }
 provider = { path = "../provider" }
 read-flow-core = { path = "../core", default-features = false }
+read-flow-widgets = { path = "../widgets" }
 
 [dependencies.libcosmic]
 workspace = true

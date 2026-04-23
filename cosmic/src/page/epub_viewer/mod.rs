@@ -72,10 +72,6 @@ enum BlockHighlight {
 
 type Fingerprint = String;
 
-const CHAPTER_SIDEBAR_WIDTH: f32 = 220.0;
-/// Minimum total viewer width below which the chapter sidebar pane is hidden.
-const MIN_WIDTH_WITH_SIDEBAR: f32 = 600.0;
-
 // --- Persistent reader preferences ---
 
 /// Config version for EPUB reader preferences (individual key access).
@@ -90,9 +86,6 @@ const KEY_BASE_FONT_SIZE: &str = "epub_base_font_size";
 /// Config key for the saved view mode ("scroll" or "paginated").
 const KEY_VIEW_MODE: &str = "epub_view_mode";
 
-/// Config key for sidebar visibility (bool).
-const KEY_SHOW_SIDEBAR: &str = "epub_show_sidebar";
-
 /// Config key for dual-page mode ("auto", "off", "on").
 const KEY_DUAL_PAGE: &str = "epub_dual_page";
 
@@ -104,7 +97,6 @@ struct EpubPrefs {
     font_family: FontFamily,
     base_font_size: f32,
     view_mode: ViewMode,
-    show_sidebar: bool,
     dual_page: DualPageMode,
     page_margin: f32,
 }
@@ -115,7 +107,6 @@ impl Default for EpubPrefs {
             font_family: FontFamily::default(),
             base_font_size: 16.0,
             view_mode: ViewMode::default(),
-            show_sidebar: true,
             dual_page: DualPageMode::default(),
             page_margin: 16.0,
         }
@@ -169,10 +160,6 @@ fn load_epub_prefs() -> EpubPrefs {
         };
     }
 
-    if let Ok(show) = ctx.get::<bool>(KEY_SHOW_SIDEBAR) {
-        prefs.show_sidebar = show;
-    }
-
     if let Ok(dp_str) = ctx.get::<String>(KEY_DUAL_PAGE) {
         prefs.dual_page = match dp_str.as_str() {
             "off" => DualPageMode::Off,
@@ -200,7 +187,6 @@ fn save_epub_prefs(prefs: &EpubPrefs) {
         ViewMode::Paginated => "paginated",
     };
     let _ = ctx.set(KEY_VIEW_MODE, mode_str);
-    let _ = ctx.set(KEY_SHOW_SIDEBAR, prefs.show_sidebar);
     let dp_str = match prefs.dual_page {
         DualPageMode::Auto => "auto",
         DualPageMode::Off => "off",
@@ -350,31 +336,14 @@ impl From<EpubDocument> for CloneableEpubDocument {
 
 // --- Messages ---
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EpubViewerOutput {
     /// Carries the fingerprint and the opaque progress JSON to persist, if any.
     Close(Fingerprint, Option<String>),
     /// Open the image viewer page for the given image.
     OpenImageViewer(ViewerImage),
-    NavSubEntriesChanged,
-    NavSubEntryActivated(usize),
-}
-
-impl Clone for EpubViewerOutput {
-    fn clone(&self) -> Self {
-        match self {
-            EpubViewerOutput::Close(fp, progress) => {
-                EpubViewerOutput::Close(fp.clone(), progress.clone())
-            }
-            EpubViewerOutput::OpenImageViewer(img) => {
-                EpubViewerOutput::OpenImageViewer(img.clone())
-            }
-            EpubViewerOutput::NavSubEntriesChanged => EpubViewerOutput::NavSubEntriesChanged,
-            EpubViewerOutput::NavSubEntryActivated(idx) => {
-                EpubViewerOutput::NavSubEntryActivated(*idx)
-            }
-        }
-    }
+    /// Request the App to navigate to (activate) this viewer's page.
+    Activate,
 }
 
 #[derive(Debug, Clone)]
@@ -400,17 +369,16 @@ pub enum EpubViewerMessage {
     SetDualPage(DualPageMode),
     /// Set the page margin in pixels (0–128) for paginated mode.
     SetPageMargin(f32),
-    /// Toggle chapter navigation sidebar visibility.
-    ShowSidebar(bool),
-    /// Toggle the nav dropdown (narrow-window alternative to the sidebar).
-    ToggleNavDropdown,
     /// Set the font family for rendering (index into FontFamily::ALL).
     SetFontFamily(FontFamily),
     /// Set the base body font size in pixels (12–24).
     SetBaseFontSize(f32),
+    /// Toggle the top-level EPUB node's collapsed state in the nav sidebar.
+    ToggleTopLevelNav,
+    /// Toggle a specific nav-entry's collapsed state (by its index in `nav_entries`).
+    ToggleNavEntry(usize),
     /// The EPUB file could not be opened; carries the error message.
     LoadFailed(String),
-    Out(EpubViewerOutput),
     /// Clear the navigation-target block highlight after the flash timer expires.
     ClearHighlight,
     /// Toggle the search bar open/closed.
@@ -427,6 +395,7 @@ pub enum EpubViewerMessage {
     CopyCodeBlock(String),
     /// Open the image viewer page for the given image.
     OpenImageViewer(ViewerImage),
+    Out(EpubViewerOutput),
 }
 
 // --- EpubViewer page ---
@@ -466,13 +435,6 @@ pub struct EpubViewer {
     /// is loaded but pagination hasn't run yet (viewport_size still 0×0).
     /// Consumed by `maybe_repaginate()` once a valid layout is available.
     pending_block_index: Option<usize>,
-    /// Whether the chapter navigation sidebar is visible.
-    show_sidebar: bool,
-    /// Whether the sidebar pane was visible in the last rendered frame.
-    /// Used for hysteresis when auto-hiding on narrow windows.
-    sidebar_pane_visible: Cell<bool>,
-    /// Whether the nav dropdown (shown on narrow windows instead of the sidebar) is open.
-    nav_dropdown_open: bool,
     /// Font family used for rendering EPUB content.
     font_family: FontFamily,
     /// Pre-computed display names for the font family dropdown.
@@ -481,6 +443,10 @@ pub struct EpubViewer {
     nav_entries: Vec<NavEntry>,
     /// Index of the most recently activated nav entry, for precise sidebar highlighting.
     active_nav_entry: Option<usize>,
+    /// Whether the top-level EPUB node in the nav sidebar is collapsed.
+    top_level_nav_collapsed: bool,
+    /// Indices of nav entries whose sub-entries are collapsed in the nav sidebar.
+    collapsed_nav_entries: std::collections::HashSet<usize>,
     /// Base body font size in pixels (12–24, default 16).
     base_font_size: f32,
     /// Block index of the navigation target to highlight briefly after fragment navigation.
@@ -539,13 +505,12 @@ impl EpubViewer {
             viewport_size: Cell::new((0.0, 0.0)),
             dual_page: saved_prefs.dual_page,
             pending_block_index: None,
-            show_sidebar: saved_prefs.show_sidebar,
-            sidebar_pane_visible: Cell::new(true),
-            nav_dropdown_open: false,
             font_family: saved_prefs.font_family,
             font_family_names: widget::combo_box::State::new(FontFamily::all()),
             nav_entries: Vec::new(),
             active_nav_entry: None,
+            top_level_nav_collapsed: false,
+            collapsed_nav_entries: std::collections::HashSet::new(),
             base_font_size: saved_prefs.base_font_size,
             highlighted_block: None,
             search_visible: false,
@@ -609,7 +574,6 @@ impl EpubViewer {
             font_family: self.font_family,
             base_font_size: self.base_font_size,
             view_mode: self.view_mode,
-            show_sidebar: self.show_sidebar,
             dual_page: self.dual_page,
             page_margin: self.page_margin,
         });
@@ -624,233 +588,6 @@ impl EpubViewer {
             .and_then(|name| name.to_str())
             .unwrap_or("EPUB")
             .to_string()
-    }
-
-    fn view_chapter_sidebar(&self) -> Element<'_, EpubViewerMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
-        let chapter_info = if !self.chapters.is_empty() {
-            format!("{} / {}", self.active_chapter + 1, self.chapters.len())
-        } else {
-            String::new()
-        };
-
-        let current_href = self
-            .chapters
-            .get(self.active_chapter)
-            .map(|c| c.href.as_str())
-            .unwrap_or("");
-
-        let capacity = if self.nav_entries.is_empty() {
-            self.chapters.len()
-        } else {
-            self.nav_entries.len()
-        };
-        let mut column = widget::column::with_capacity(capacity);
-
-        if self.nav_entries.is_empty() {
-            for (idx, chapter) in self.chapters.iter().enumerate() {
-                let active = idx == self.active_chapter;
-                let mut label = widget::text::body(&chapter.label)
-                    .wrapping(cosmic::iced::widget::text::Wrapping::None);
-                if active {
-                    label = label.font(font::Font {
-                        weight: font::Weight::Bold,
-                        ..Default::default()
-                    });
-                }
-                let button = widget::button::custom(label)
-                    .class(widget::button::ButtonClass::Link)
-                    .on_press(EpubViewerMessage::SelectChapter(idx))
-                    .width(Length::Fill);
-                column = column.push(button);
-            }
-        } else {
-            for (idx, entry) in self.nav_entries.iter().enumerate() {
-                let base = entry
-                    .href
-                    .split_once('#')
-                    .map(|(b, _)| b)
-                    .unwrap_or(&entry.href);
-                let is_active_chapter = base == current_href;
-                // For non-active chapters, only show the first nav entry of that
-                // chapter (the "group leader") and collapse the rest.
-                let is_group_leader = !self.nav_entries[..idx]
-                    .iter()
-                    .any(|e| e.href.split_once('#').map(|(b, _)| b).unwrap_or(&e.href) == base);
-                if !is_active_chapter && !is_group_leader {
-                    continue;
-                }
-                let active = self.active_nav_entry == Some(idx);
-                let mut label = widget::text::body(&entry.label)
-                    .wrapping(cosmic::iced::widget::text::Wrapping::None);
-                if active {
-                    label = label.font(font::Font {
-                        weight: font::Weight::Bold,
-                        ..Default::default()
-                    });
-                }
-                let button = widget::button::custom(label)
-                    .class(widget::button::ButtonClass::Link)
-                    .on_press(EpubViewerMessage::SelectNavEntry(idx))
-                    .width(Length::Fill);
-                let indent = (entry.depth as f32) * (space_s as f32);
-                let row = widget::Row::new()
-                    .push(widget::Space::new().width(Length::Fixed(indent)))
-                    .push(button);
-                column = column.push(row);
-            }
-        }
-
-        widget::Column::with_children(vec![
-            widget::Column::with_children(vec![
-                widget::text::body(chapter_info)
-                    .wrapping(cosmic::iced::widget::text::Wrapping::None)
-                    .into(),
-            ])
-            .width(Length::Fill)
-            .align_x(Horizontal::Center)
-            .into(),
-            widget::scrollable(column)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-        ])
-        .width(Length::Fixed(CHAPTER_SIDEBAR_WIDTH))
-        .height(Length::Fill)
-        .into()
-    }
-
-    /// A full-width collapsible nav menu shown above the document content on
-    /// narrow windows where the sidebar pane does not fit.
-    fn view_nav_dropdown(&self) -> Element<'_, EpubViewerMessage> {
-        let cosmic_theme::Spacing {
-            space_xxs, space_s, ..
-        } = theme::active().cosmic().spacing;
-
-        let current_label: &str = if let Some(idx) = self.active_nav_entry {
-            self.nav_entries
-                .get(idx)
-                .map(|e| e.label.as_str())
-                .unwrap_or("")
-        } else {
-            self.chapters
-                .get(self.active_chapter)
-                .map(|c| c.label.as_str())
-                .unwrap_or("")
-        };
-
-        let chapter_info = if !self.chapters.is_empty() {
-            format!("{} / {}", self.active_chapter + 1, self.chapters.len())
-        } else {
-            String::new()
-        };
-
-        let chevron = if self.nav_dropdown_open {
-            "go-up-symbolic"
-        } else {
-            "go-down-symbolic"
-        };
-
-        let header_content = widget::Row::new()
-            .push(
-                widget::text::body(current_label)
-                    .wrapping(cosmic::iced::widget::text::Wrapping::None)
-                    .width(Length::Fill),
-            )
-            .push(widget::text::body(chapter_info))
-            .push(widget::icon::from_name(chevron).size(ICON_SIZE).icon())
-            .align_y(Vertical::Center)
-            .spacing(space_s)
-            .padding([space_xxs, space_s]);
-
-        let header_btn = widget::button::custom(header_content)
-            .class(widget::button::ButtonClass::ListItem)
-            .on_press(EpubViewerMessage::ToggleNavDropdown)
-            .width(Length::Fill);
-
-        let mut col = widget::Column::new().push(header_btn);
-
-        if self.nav_dropdown_open {
-            let current_href = self
-                .chapters
-                .get(self.active_chapter)
-                .map(|c| c.href.as_str())
-                .unwrap_or("");
-            let capacity = if self.nav_entries.is_empty() {
-                self.chapters.len()
-            } else {
-                self.nav_entries.len()
-            };
-            let mut entries_col = widget::column::with_capacity(capacity);
-
-            if self.nav_entries.is_empty() {
-                for (idx, chapter) in self.chapters.iter().enumerate() {
-                    let active = idx == self.active_chapter;
-                    let mut label = widget::text::body(&chapter.label)
-                        .wrapping(cosmic::iced::widget::text::Wrapping::None);
-                    if active {
-                        label = label.font(font::Font {
-                            weight: font::Weight::Bold,
-                            ..Default::default()
-                        });
-                    }
-                    let button = widget::button::custom(label)
-                        .class(widget::button::ButtonClass::Link)
-                        .on_press(EpubViewerMessage::SelectChapter(idx))
-                        .width(Length::Fill);
-                    entries_col = entries_col.push(button);
-                }
-            } else {
-                for (idx, entry) in self.nav_entries.iter().enumerate() {
-                    let base = entry
-                        .href
-                        .split_once('#')
-                        .map(|(b, _)| b)
-                        .unwrap_or(&entry.href);
-                    let is_active_chapter = base == current_href;
-                    let is_group_leader = !self.nav_entries[..idx]
-                        .iter()
-                        .any(|e| e.href.split_once('#').map(|(b, _)| b).unwrap_or(&e.href) == base);
-                    if !is_active_chapter && !is_group_leader {
-                        continue;
-                    }
-                    let active = self.active_nav_entry == Some(idx);
-                    let mut label = widget::text::body(&entry.label)
-                        .wrapping(cosmic::iced::widget::text::Wrapping::None);
-                    if active {
-                        label = label.font(font::Font {
-                            weight: font::Weight::Bold,
-                            ..Default::default()
-                        });
-                    }
-                    let button = widget::button::custom(label)
-                        .class(widget::button::ButtonClass::Link)
-                        .on_press(EpubViewerMessage::SelectNavEntry(idx))
-                        .width(Length::Fill);
-                    let indent = (entry.depth as f32) * (space_s as f32);
-                    let row = widget::Row::new()
-                        .push(widget::Space::new().width(Length::Fixed(indent)))
-                        .push(button);
-                    entries_col = entries_col.push(row);
-                }
-            }
-
-            col = col.push(
-                widget::container(
-                    widget::scrollable(entries_col)
-                        .height(Length::Fixed(280.0))
-                        .width(Length::Fill),
-                )
-                .class(Container::Secondary)
-                .width(Length::Fill),
-            );
-        }
-
-        widget::container(col)
-            .class(Container::Secondary)
-            .width(Length::Fill)
-            .into()
     }
 
     fn view_search_bar(&self) -> Element<'_, EpubViewerMessage> {
@@ -1312,39 +1049,10 @@ impl Page for EpubViewer {
             return loading.apply(full_page);
         }
 
-        // Use the content width recorded in the last layout pass (set inside
-        // view_content's responsive closure) to decide whether to show the
-        // sidebar pane. Hysteresis prevents oscillation when the window
-        // width straddles the threshold.
-        let (content_width, _) = self.viewport_size.get();
-        let was_visible = self.sidebar_pane_visible.get();
-        let show_sidebar_now = if !self.show_sidebar {
-            false
-        } else if content_width == 0.0 {
-            // First frame: default to showing sidebar
-            true
-        } else if was_visible {
-            // Pane is shown: total ≈ content + sidebar; hide only if total < threshold
-            content_width + CHAPTER_SIDEBAR_WIDTH >= MIN_WIDTH_WITH_SIDEBAR
-        } else {
-            // Pane is hidden: total ≈ content; show only if content >= threshold
-            content_width >= MIN_WIDTH_WITH_SIDEBAR
-        };
-        self.sidebar_pane_visible.set(show_sidebar_now);
-
-        // Show dropdown nav above the content when the sidebar doesn't fit.
-        let show_nav_dropdown = self.show_sidebar && !show_sidebar_now;
-
-        let main_col = widget::Column::new()
+        widget::Column::new()
             .height(Length::Fill)
-            .push_maybe(show_nav_dropdown.then(|| self.view_nav_dropdown()))
             .push_maybe(self.search_visible.then(|| self.view_search_bar()))
-            .push(self.view_content());
-
-        widget::Row::new()
-            .height(Length::Fill)
-            .push_maybe(show_sidebar_now.then(|| self.view_chapter_sidebar()))
-            .push(main_col)
+            .push(self.view_content())
             .into()
     }
 
@@ -1410,11 +1118,6 @@ impl Page for EpubViewer {
 
     fn view_context(&self) -> ContextView<'_, EpubViewerMessage> {
         let mut display_section = widget::settings::section().title(fl!("epub-viewer-display"));
-
-        display_section = display_section.add(
-            widget::settings::item::builder(fl!("epub-viewer-show-sidebar"))
-                .toggler(self.show_sidebar, EpubViewerMessage::ShowSidebar),
-        );
 
         display_section = display_section.add(
             widget::settings::item::builder(fl!("epub-viewer-view-paginated")).toggler(
@@ -1538,23 +1241,29 @@ impl Page for EpubViewer {
         }
     }
 
-    fn nav_sub_entries(&self) -> Vec<crate::page::NavSubEntry> {
-        self.nav_entries
-            .iter()
-            .map(|entry| crate::page::NavSubEntry {
-                label: entry.label.clone(),
-                icon: None,
-                indent: entry.depth as u16,
-            })
-            .collect()
-    }
+    fn nav_tree(&self, active: bool) -> Option<read_flow_widgets::NavItem<EpubViewerMessage>> {
+        use read_flow_widgets::NavItem;
+        use read_flow_widgets::NavNode;
 
-    fn active_nav_sub_entry(&self) -> Option<usize> {
-        self.active_nav_entry
-    }
+        if self.chapters.is_empty() && self.nav_entries.is_empty() {
+            return None;
+        }
 
-    fn on_nav_sub_entry_selected(&mut self, index: usize) -> Task<Action<EpubViewerMessage>> {
-        self.update(EpubViewerMessage::SelectNavEntry(index))
+        let children = self.build_nav_items();
+
+        Some(NavItem::Node(NavNode {
+            icon: Some(
+                cosmic::widget::icon::from_name("application-epub+zip")
+                    .size(16)
+                    .icon(),
+            ),
+            label: self.display_name(),
+            active,
+            collapsed: self.top_level_nav_collapsed,
+            on_activate: EpubViewerMessage::Out(EpubViewerOutput::Activate),
+            on_toggle: EpubViewerMessage::ToggleTopLevelNav,
+            children,
+        }))
     }
 
     fn update(&mut self, message: EpubViewerMessage) -> Task<Action<EpubViewerMessage>> {
@@ -1605,12 +1314,7 @@ impl Page for EpubViewer {
                 } else {
                     Task::none()
                 };
-                Task::batch([
-                    scroll_task,
-                    Task::done(cosmic::action::app(EpubViewerMessage::Out(
-                        EpubViewerOutput::NavSubEntriesChanged,
-                    ))),
-                ])
+                scroll_task
             }
             EpubViewerMessage::ReadingProgressLoaded(pos) => {
                 self.initial_chapter = pos.chapter;
@@ -1657,7 +1361,6 @@ impl Page for EpubViewer {
                 Task::none()
             }
             EpubViewerMessage::SelectChapter(idx) => {
-                self.nav_dropdown_open = false;
                 if idx < self.chapters.len() {
                     self.active_chapter = idx;
                     self.active_nav_entry = None;
@@ -1671,12 +1374,8 @@ impl Page for EpubViewer {
                 Task::none()
             }
             EpubViewerMessage::SelectNavEntry(nav_idx) => {
-                self.nav_dropdown_open = false;
                 self.active_nav_entry = Some(nav_idx);
-                let nav_activated: Task<Action<EpubViewerMessage>> =
-                    Task::done(cosmic::action::app(EpubViewerMessage::Out(
-                        EpubViewerOutput::NavSubEntryActivated(nav_idx),
-                    )));
+                let nav_activated: Task<Action<EpubViewerMessage>> = Task::none();
                 if let Some(entry) = self.nav_entries.get(nav_idx) {
                     let (base, fragment) = match entry.href.split_once('#') {
                         Some((b, f)) => (b.to_owned(), Some(f.to_owned())),
@@ -2027,15 +1726,6 @@ impl Page for EpubViewer {
                 self.save_current_prefs();
                 Task::none()
             }
-            EpubViewerMessage::ShowSidebar(show) => {
-                self.show_sidebar = show;
-                self.save_current_prefs();
-                Task::none()
-            }
-            EpubViewerMessage::ToggleNavDropdown => {
-                self.nav_dropdown_open = !self.nav_dropdown_open;
-                Task::none()
-            }
             EpubViewerMessage::SetFontFamily(family) => {
                 self.font_family = family;
                 self.pagination_cache.clear();
@@ -2123,6 +1813,16 @@ impl Page for EpubViewer {
             EpubViewerMessage::OpenImageViewer(image) => task::message(EpubViewerMessage::Out(
                 EpubViewerOutput::OpenImageViewer(image),
             )),
+            EpubViewerMessage::ToggleTopLevelNav => {
+                self.top_level_nav_collapsed = !self.top_level_nav_collapsed;
+                Task::none()
+            }
+            EpubViewerMessage::ToggleNavEntry(idx) => {
+                if !self.collapsed_nav_entries.remove(&idx) {
+                    self.collapsed_nav_entries.insert(idx);
+                }
+                Task::none()
+            }
             EpubViewerMessage::LoadFailed(error) => {
                 tracing::warn!("EPUB load failed: {error}");
                 self.load_error = Some(error);
@@ -3060,7 +2760,110 @@ fn paginate_blocks(
     }
 }
 
+/// Recursively convert a depth-annotated flat slice of nav entries into a
+/// properly nested `NavItem` tree.
+///
+/// `entries` is a slice of `(original_index, &NavEntry)` pairs, all at depth
+/// >= `depth`.  Entries at `depth` become top-level items; deeper entries
+/// become their children.
+fn build_nav_items_at_depth(
+    entries: &[(usize, &NavEntry)],
+    depth: usize,
+    collapsed: &std::collections::HashSet<usize>,
+    active: Option<usize>,
+) -> Vec<read_flow_widgets::NavItem<EpubViewerMessage>> {
+    use read_flow_widgets::NavItem;
+    use read_flow_widgets::NavLeaf;
+    use read_flow_widgets::NavNode;
+
+    let mut result = Vec::new();
+    let mut i = 0;
+
+    while i < entries.len() {
+        let (orig_idx, entry) = entries[i];
+
+        if entry.depth < depth {
+            break;
+        }
+        if entry.depth > depth {
+            i += 1;
+            continue;
+        }
+
+        // Count how many subsequent entries belong to this item as children
+        // (all entries with depth > current depth, before the next entry at
+        // the same depth or shallower).
+        let children_start = i + 1;
+        let children_count = entries[children_start..]
+            .iter()
+            .take_while(|(_, e)| e.depth > depth)
+            .count();
+        let children_end = children_start + children_count;
+
+        let children_slice = &entries[children_start..children_end];
+        let children = if children_slice.is_empty() {
+            vec![]
+        } else {
+            build_nav_items_at_depth(children_slice, depth + 1, collapsed, active)
+        };
+
+        let is_active = active == Some(orig_idx);
+
+        if children.is_empty() {
+            result.push(NavItem::Leaf(NavLeaf {
+                icon: None,
+                label: entry.label.clone(),
+                active: is_active,
+                indent: 0,
+                on_activate: EpubViewerMessage::SelectNavEntry(orig_idx),
+            }));
+        } else {
+            result.push(NavItem::Node(NavNode {
+                icon: None,
+                label: entry.label.clone(),
+                active: is_active,
+                collapsed: collapsed.contains(&orig_idx),
+                on_activate: EpubViewerMessage::SelectNavEntry(orig_idx),
+                on_toggle: EpubViewerMessage::ToggleNavEntry(orig_idx),
+                children,
+            }));
+        }
+
+        i = children_end;
+    }
+
+    result
+}
+
 impl EpubViewer {
+    /// Build a nested `NavItem` tree from the flat `nav_entries` list (or fall
+    /// back to the chapter spine when there are no nav entries).
+    fn build_nav_items(&self) -> Vec<read_flow_widgets::NavItem<EpubViewerMessage>> {
+        if !self.nav_entries.is_empty() {
+            let indexed: Vec<(usize, &NavEntry)> = self.nav_entries.iter().enumerate().collect();
+            build_nav_items_at_depth(
+                &indexed,
+                0,
+                &self.collapsed_nav_entries,
+                self.active_nav_entry,
+            )
+        } else {
+            self.chapters
+                .iter()
+                .enumerate()
+                .map(|(idx, chapter)| {
+                    read_flow_widgets::NavItem::Leaf(read_flow_widgets::NavLeaf {
+                        icon: None,
+                        label: chapter.label.clone(),
+                        active: idx == self.active_chapter,
+                        indent: 0,
+                        on_activate: EpubViewerMessage::SelectChapter(idx),
+                    })
+                })
+                .collect()
+        }
+    }
+
     /// Ensure `block_heights_cache` has a valid entry for `chapter_idx` at the
     /// given `content_width`.  If the cached entry exists and matches both the
     /// width and the current `base_font_size` it is reused; otherwise the heights

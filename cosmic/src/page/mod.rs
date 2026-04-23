@@ -30,7 +30,6 @@ use online_library::OnlineLibraryOutput;
 pub use online_library::OnlineLibraryPage;
 use read_flow_core::client::FilesClient;
 pub use sources::SourcesMessage;
-pub use traits::NavSubEntry;
 pub use traits::Page;
 use url::Url;
 
@@ -107,9 +106,6 @@ pub enum PageOutput {
     TogglePage(PageSelector),
     PageRemoved(PageSelector),
     Scan,
-    NavSubEntriesChanged(PageSelector),
-    NavSubEntryActivated(PageSelector, usize),
-    NavSubEntryIconUpdated(PageSelector, usize),
 }
 
 #[derive(Debug, Clone)]
@@ -284,53 +280,15 @@ impl Pages {
         self.app_settings.update_config(config.clone());
     }
 
-    pub fn nav_sub_entries(&self, selector: &PageSelector) -> Vec<NavSubEntry> {
-        with_active_page!(self, selector, |page, _mapper| {
-            page.map(|p| p.nav_sub_entries()).unwrap_or_default()
-        })
-    }
-
-    pub fn active_nav_sub_entry(&self, selector: &PageSelector) -> Option<usize> {
-        with_active_page!(self, selector, |page, _mapper| {
-            page.and_then(|p| p.active_nav_sub_entry())
-        })
-    }
-
-    pub fn on_nav_sub_entry_selected(
-        &mut self,
-        selector: &PageSelector,
-        index: usize,
-    ) -> Task<Action<PageMessage>> {
-        match selector {
-            PageSelector::EpubViewer(fingerprint) => {
-                let fingerprint = fingerprint.clone();
-                self.epub_viewers[&fingerprint]
-                    .on_nav_sub_entry_selected(index)
-                    .map(move |action| {
-                        action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
-                    })
-            }
-            PageSelector::MuPdfViewer(fingerprint) => {
-                let fingerprint = fingerprint.clone();
-                self.mu_pdf_viewers[&fingerprint]
-                    .on_nav_sub_entry_selected(index)
-                    .map(move |action| {
-                        action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
-                    })
-            }
-            _ => Task::none(),
-        }
-    }
-
-    pub fn nav_sub_entry_icon(
+    /// Returns the nav sidebar item for the given page, if the page contributes one.
+    pub fn nav_tree(
         &self,
         selector: &PageSelector,
-        index: usize,
-    ) -> Option<cosmic::widget::icon::Icon> {
-        self.nav_sub_entries(selector)
-            .into_iter()
-            .nth(index)
-            .and_then(|e| e.icon)
+        is_active: bool,
+    ) -> Option<read_flow_widgets::NavItem<PageMessage>> {
+        with_active_page!(self, selector, |page, mapper| {
+            page.and_then(|p| p.nav_tree(is_active).map(|item| item.map(&mapper)))
+        })
     }
 
     pub fn display_name<'a>(&'a self, page_selector: &'a PageSelector) -> String {
@@ -775,15 +733,6 @@ fn map_mu_pdf_viewer_message(fingerprint: Fingerprint, msg: MuPdfViewerMessage) 
             MuPdfViewerOutput::Close(fingerprint, page) => {
                 PageMessage::CloseMuPdfViewer(fingerprint, page)
             }
-            MuPdfViewerOutput::NavSubEntriesChanged => PageMessage::Out(
-                PageOutput::NavSubEntriesChanged(PageSelector::MuPdfViewer(fingerprint)),
-            ),
-            MuPdfViewerOutput::NavSubEntryActivated(idx) => PageMessage::Out(
-                PageOutput::NavSubEntryActivated(PageSelector::MuPdfViewer(fingerprint), idx),
-            ),
-            MuPdfViewerOutput::NavSubEntryIconUpdated(idx) => PageMessage::Out(
-                PageOutput::NavSubEntryIconUpdated(PageSelector::MuPdfViewer(fingerprint), idx),
-            ),
         },
         msg => PageMessage::MuPdfViewer(fingerprint, msg),
     }
@@ -796,12 +745,9 @@ fn map_epub_viewer_message(fingerprint: Fingerprint, msg: EpubViewerMessage) -> 
                 PageMessage::CloseEpubViewer(fingerprint, page)
             }
             EpubViewerOutput::OpenImageViewer(image) => PageMessage::OpenImageViewer(image),
-            EpubViewerOutput::NavSubEntriesChanged => PageMessage::Out(
-                PageOutput::NavSubEntriesChanged(PageSelector::EpubViewer(fingerprint)),
-            ),
-            EpubViewerOutput::NavSubEntryActivated(idx) => PageMessage::Out(
-                PageOutput::NavSubEntryActivated(PageSelector::EpubViewer(fingerprint), idx),
-            ),
+            EpubViewerOutput::Activate => PageMessage::Out(PageOutput::TogglePage(
+                PageSelector::EpubViewer(fingerprint),
+            )),
         },
         msg => PageMessage::EpubViewer(fingerprint, msg),
     }

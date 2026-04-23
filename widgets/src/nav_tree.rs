@@ -1,0 +1,227 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+use cosmic::Apply;
+use cosmic::Element;
+use cosmic::iced::Alignment;
+use cosmic::iced::Background;
+use cosmic::iced::Length;
+use cosmic::widget::button;
+use cosmic::widget::{
+    self,
+};
+
+const INDENT_WIDTH: f32 = 16.0;
+
+pub struct NavLeaf<Message> {
+    pub icon: Option<cosmic::widget::icon::Icon>,
+    pub label: String,
+    pub active: bool,
+    pub indent: u16,
+    pub on_activate: Message,
+}
+
+pub struct NavNode<Message> {
+    pub icon: Option<cosmic::widget::icon::Icon>,
+    pub label: String,
+    pub active: bool,
+    pub collapsed: bool,
+    pub on_activate: Message,
+    pub on_toggle: Message,
+    pub children: Vec<NavItem<Message>>,
+}
+
+pub enum NavItem<Message> {
+    Leaf(NavLeaf<Message>),
+    Node(NavNode<Message>),
+}
+
+impl<Message: Clone> NavItem<Message> {
+    pub fn map<N: Clone, F: Fn(Message) -> N>(self, f: &F) -> NavItem<N> {
+        match self {
+            NavItem::Leaf(leaf) => NavItem::Leaf(NavLeaf {
+                icon: leaf.icon,
+                label: leaf.label,
+                active: leaf.active,
+                indent: leaf.indent,
+                on_activate: f(leaf.on_activate),
+            }),
+            NavItem::Node(node) => NavItem::Node(NavNode {
+                icon: node.icon,
+                label: node.label,
+                active: node.active,
+                collapsed: node.collapsed,
+                on_activate: f(node.on_activate),
+                on_toggle: f(node.on_toggle),
+                children: node.children.into_iter().map(|c| c.map(f)).collect(),
+            }),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct NavTree<Message> {
+    items: Vec<NavItem<Message>>,
+}
+
+impl<Message: Clone + 'static> NavTree<Message> {
+    pub fn new() -> Self {
+        Self { items: Vec::new() }
+    }
+
+    pub fn push(mut self, item: NavItem<Message>) -> Self {
+        self.items.push(item);
+        self
+    }
+
+    pub fn map<N: Clone + 'static, F: Fn(Message) -> N>(self, f: F) -> NavTree<N> {
+        NavTree {
+            items: self.items.into_iter().map(|item| item.map(&f)).collect(),
+        }
+    }
+
+    /// Consume the tree and produce a nav-bar sidebar element.
+    ///
+    /// Returns `Element<'static, Message>` because all content is cloned/owned
+    /// internally, so the element carries no borrows from the tree.  The
+    /// `'static` bound is coercible to any shorter lifetime at the call site.
+    pub fn view(self) -> Element<'static, Message> {
+        let theme = cosmic::theme::active();
+        let cosmic = theme.cosmic();
+        let space_xxs = cosmic.space_xxs();
+        let space_s = cosmic.space_s();
+
+        let items: Vec<Element<'static, Message>> = self
+            .items
+            .into_iter()
+            .flat_map(|item| render_item(item, space_s, space_xxs))
+            .collect();
+
+        widget::Column::with_children(items)
+            .spacing(space_xxs)
+            .apply(widget::container)
+            .padding(space_xxs)
+            .apply(widget::scrollable)
+            .class(cosmic::style::iced::Scrollable::Minimal)
+            .height(Length::Fill)
+            .apply(widget::container)
+            .height(Length::Fill)
+            .class(cosmic::theme::Container::custom(
+                cosmic::widget::nav_bar::nav_bar_style,
+            ))
+            .into()
+    }
+}
+
+fn render_item<Message: Clone + 'static>(
+    item: NavItem<Message>,
+    space_s: u16,
+    space_xxs: u16,
+) -> Vec<Element<'static, Message>> {
+    match item {
+        NavItem::Leaf(leaf) => vec![render_leaf(leaf, space_s)],
+        NavItem::Node(node) => render_node(node, space_s, space_xxs),
+    }
+}
+
+fn render_leaf<Message: Clone + 'static>(
+    leaf: NavLeaf<Message>,
+    space_s: u16,
+) -> Element<'static, Message> {
+    let mut row = widget::Row::new()
+        .spacing(space_s)
+        .align_y(Alignment::Center);
+
+    if leaf.indent > 0 {
+        row = row
+            .push(widget::Space::new().width(Length::Fixed(f32::from(leaf.indent) * INDENT_WIDTH)));
+    }
+    if let Some(icon) = leaf.icon {
+        row = row.push(icon);
+    }
+    row = row.push(widget::text(leaf.label));
+
+    button::custom(row)
+        .class(nav_button_class(leaf.active))
+        .width(Length::Fill)
+        .on_press(leaf.on_activate)
+        .into()
+}
+
+fn render_node<Message: Clone + 'static>(
+    node: NavNode<Message>,
+    space_s: u16,
+    space_xxs: u16,
+) -> Vec<Element<'static, Message>> {
+    let chevron_name = if node.collapsed {
+        "go-next-symbolic"
+    } else {
+        "go-down-symbolic"
+    };
+
+    let mut body_row = widget::Row::new()
+        .spacing(space_s)
+        .align_y(Alignment::Center);
+    if let Some(icon) = node.icon {
+        body_row = body_row.push(icon);
+    }
+    body_row = body_row.push(widget::text(node.label));
+
+    let body_btn = button::custom(body_row)
+        .class(nav_button_class(node.active))
+        .width(Length::Fill)
+        .on_press(node.on_activate);
+
+    let chevron_btn =
+        button::icon(widget::icon::from_name(chevron_name).size(10)).on_press(node.on_toggle);
+
+    let header: Element<'static, Message> = widget::Row::new()
+        .push(body_btn)
+        .push(chevron_btn)
+        .align_y(Alignment::Center)
+        .into();
+
+    let mut result = vec![header];
+
+    if !node.collapsed {
+        for child in node.children {
+            result.extend(render_item(child, space_s, space_xxs));
+        }
+    }
+
+    result
+}
+
+fn nav_button_class(selected: bool) -> cosmic::theme::Button {
+    cosmic::theme::Button::Custom {
+        active: Box::new(move |_focused, theme| nav_item_style(selected, false, theme)),
+        hovered: Box::new(move |_focused, theme| nav_item_style(selected, true, theme)),
+        pressed: Box::new(move |_focused, theme| nav_item_style(selected, true, theme)),
+        disabled: Box::new(move |theme| nav_item_style(false, false, theme)),
+    }
+}
+
+fn nav_item_style(
+    selected: bool,
+    hovered: bool,
+    theme: &cosmic::Theme,
+) -> cosmic::widget::button::Style {
+    let cosmic = theme.cosmic();
+    let component = &theme.current_container().component;
+
+    let mut style = cosmic::widget::button::Style::new();
+    style.border_radius = cosmic.corner_radii.radius_s.into();
+
+    if selected || hovered {
+        style.background = Some(Background::Color(component.hover.into()));
+    }
+
+    if selected {
+        style.text_color = Some(cosmic.accent_text_color().into());
+        style.icon_color = Some(cosmic.accent_text_color().into());
+    } else {
+        style.text_color = Some(component.on.into());
+        style.icon_color = Some(component.on.into());
+    }
+
+    style
+}

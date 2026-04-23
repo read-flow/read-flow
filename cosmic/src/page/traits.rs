@@ -2,15 +2,9 @@ use cosmic::Action;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::widget;
-use cosmic::widget::icon::Icon;
+use read_flow_widgets::NavItem;
 
 use crate::app::ContextView;
-
-pub struct NavSubEntry {
-    pub label: String,
-    pub icon: Option<Icon>,
-    pub indent: u16,
-}
 
 pub trait Page {
     type Message;
@@ -35,13 +29,13 @@ pub trait Page {
     fn dialog(&self) -> Option<Element<'_, Self::Message>> {
         None
     }
-    fn nav_sub_entries(&self) -> Vec<NavSubEntry> {
-        vec![]
-    }
-    fn active_nav_sub_entry(&self) -> Option<usize> {
+
+    /// Returns a nav sidebar item for this page.
+    ///
+    /// `active` is `true` when this page is the currently displayed page.
+    /// Return `None` for pages that contribute only a plain leaf (handled by
+    /// the App using the existing nav-bar model entry).
+    fn nav_tree(&self, _active: bool) -> Option<NavItem<Self::Message>> {
         None
-    }
-    fn on_nav_sub_entry_selected(&mut self, _index: usize) -> Task<Action<Self::Message>> {
-        Task::none()
     }
 }

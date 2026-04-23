@@ -1,0 +1,447 @@
+#+TITLE: Read-Flow Requirements
+#+AUTHOR: Peterpaul Klein Haneveld
+#+STARTUP: overview
+#+TODO: TODO IN-PROGRESS | DONE
+
+* Overview
+
+Read-Flow is a local-first document archive organiser focused on e-books and
+PDF files. It consists of four Rust libraries plus a JavaScript web frontend:
+
+- =read-flow-core= — async SQLite backend, REST API, file scanning, tag management
+- =provider= — generic async dependency-injection and observable-cache primitives
+- =epub= — EPUB3 parsing, content modelling, and rendering protocol
+- =read-flow= (=cosmic/=) — COSMIC desktop GUI
+- =spa/= — Express.js / vanilla-JS web frontend
+
+* Provider Library
+
+** DONE Core trait
+The =Provider<T>= trait exposes a single async =provide() -> Result<T, Error>=
+method. Implementations are composable via combinator methods.
+
+** DONE Combinators
+- =map(f)= — synchronous value transformation
+- =and_then(f)= — chained async computation that may fail
+- =or_fallback(p)= — try self, fall back to =p= on error
+- =cache()= — wrap in an in-memory =Cache<T>=
+- =expiring_item_cache()= — cache that evicts stale entries
+
+** DONE Observable cache
+=ObservableCache= wraps a =Provider<T>= and a transformation =Fn(T) → R=.
+It stores the result in a =RwLock<Option<R>>= and broadcasts an
+=Invalidated= event when =set_expired()= is called. Concurrent calls use
+double-check locking so the underlying provider is invoked at most once per
+generation.
+
+** DONE Sync mirror
+All async traits and combinators have a parallel synchronous variant for use
+in non-async contexts.
+
+** DONE Fallback provider
+=FallbackProvider= tries its primary provider; on error it tries its
+secondary. The last error is returned if both fail.
+
+* EPUB Library
+
+** DONE EPUB3 container parsing
+Parse =META-INF/container.xml= to locate the OPF package document.
+
+** DONE Package document parsing
+Parse the =.opf= file: metadata (title, author, language), manifest
+(resources), and spine (reading order).
+
+** DONE Navigation
+Parse both EPUB3 =nav.xhtml= and EPUB2 =toc.ncx= into a hierarchical
+=NavEntry= tree (label, href, children).
+
+** DONE Resource resolution
+Resolve href strings relative to the OPF base path and extract raw bytes
+from the EPUB ZIP archive.
+
+** DONE HTML-to-content-block parser
+Convert HTML5 chapter documents into a structured =ContentBlock= tree:
+- Block elements: paragraphs, headings (h1–h6), blockquotes, lists
+  (ordered/unordered/definition), tables, figures, preformatted code,
+  horizontal rules
+- Inline elements: styled spans (bold, italic, underline, strikethrough,
+  colour, font-size, font-family), links, images, SVG
+- Transparent containers (=div=, =section=, =article=, =aside=) promote
+  their children unless given a meaningful CSS role
+
+** DONE CSS parsing
+Parse inline =style== attributes, =<style>= blocks, and linked stylesheets.
+Resolve class and tag selectors; later rules win. Supports: =color=,
+=background-color=, =font-size= (px/em/%),
+=font-weight= (bold/numeric), =font-style=, =text-decoration=,
+=text-align= (left/right/center; justify falls back to left),
+=font-family= (monospace recognised), margin, padding.
+
+** DONE Image handling
+Resolve relative image hrefs; fall back to alt-text when the resource is
+missing. Recognise raster images and inline SVG; pass SVG =viewBox= aspect
+ratio to the renderer.
+
+** DONE Table rendering
+Parse =<table>= with optional =<thead>=, =<tbody>=, =<tr>=, =<th>=, =<td>=
+into a =ContentBlock::Table=. Cell children are themselves content blocks.
+
+** DONE Renderer abstraction
+=RenderCommand= / =RenderEvent= protocol decouples content from rendering
+backend. Implementations can target COSMIC (=cosmic_text=), MuPDF, or other
+surfaces.
+
+* Core Library (read-flow-core)
+
+** Database
+
+*** DONE Schema
+SQLite with WAL mode, foreign keys enabled, pool size up to 5. Migrations
+live in =core/migrations/= and run automatically at startup via
+=sqlx::migrate!=.
+
+Tables: =files= (id, path, type, size, fingerprint, status), =file_tags=
+(file_id, tag), =remotes= (base_url, order, passphrase, user_id),
+=reading_progress= (fingerprint, progress JSON, last_updated).
+
+*** DONE Reading status
+Each file tracks one of three statuses: =Unread=, =Reading=, =Read=.
+
+*** DONE Reading progress
+Arbitrary JSON blob keyed by file fingerprint. Stores page/chapter
+position, bookmarks, etc. Upserted on viewer close; loaded on open.
+
+*** DONE Tag management
+Files have zero or more string tags stored as rows in =file_tags=. Tags are
+add-only on rescan (existing tags are not removed when a file is re-scanned).
+
+** File Scanning
+
+*** DONE Three-stage async pipeline
+1. *Traversal* — recursively walk configured directories; filter by
+   extension; skip hidden files, hidden directories, and SCM roots
+   (=.git=, =.hg=). Emit (path, auto-tags).
+2. *Fingerprinting* — SHA256-hash each file concurrently (up to configured
+   worker count). Emit =ScannedFile=.
+3. *DB writer* — upsert file rows (=INSERT OR IGNORE=); batch-apply tags;
+   emit =ScanProgress= events (=FileDiscovered=, =FileProcessed=,
+   =FileError=, =Completed=).
+
+*** DONE Dry-run mode
+Traversal and fingerprinting run, but no DB writes are made.
+
+*** DONE Auto-tagging
+Directory-level glob patterns map to tag sets. Any file whose path matches
+a pattern receives the associated tags on scan.
+
+*** DONE Supported types
+PDF, EPUB, MOBI, FictionBook (FB2), CBZ, CBT, XPS/OpenXPS, DOCX, XLSX,
+PPTX, HWPX, and a catch-all =Other= variant.
+
+** REST API
+
+*** DONE Authentication
+HTTP Basic Auth with per-user PBKDF2-hashed passwords stored in config.
+
+*** DONE File endpoints
+- =GET /files= — list all files with tags
+- =GET /files/<id>= — single file with tags
+- =GET /files/tags= — all tags in use
+- =PUT /files= — update file (status, metadata)
+- =POST /files= — upload multipart file; auto-scan and import
+- =DELETE /files/<id>= — remove from DB and filesystem
+
+*** DONE Tag endpoints
+- =POST /files/<id>/tags= — add tags
+- =DELETE /files/<id>/tags= — remove tags
+
+*** DONE Download endpoint
+=GET /files/<id>/download-as/<filename>= — stream file bytes.
+
+*** DONE Reading-progress endpoints
+- =GET /reading-progress/<fingerprint>=
+- =PUT /reading-progress=
+
+** Configuration
+
+*** DONE Sections
+=read-flow.toml= (see =archive-organizer.template.toml=):
+- =[database]= — SQLite path
+- =[client]= — download folder for remote files
+- =[server]= — upload folder, authorised users
+- =[scan]= — directories, extensions, concurrency, auto-tag rules, dry-run
+- =[ui]= — private mode, private-tag list
+- =[online_library]= — enabled OPDS catalogs
+
+*** DONE Path expansion
+=~= and =$HOME= are expanded in path values.
+
+** Remote Client
+
+*** DONE FilesClient
+HTTP client that mirrors =FileDataSource= over the REST API. Supports
+Basic Auth with user_id:passphrase, file upload/download, and reading
+progress sync.
+
+** ApplicationModule
+
+*** DONE Dependency injection container
+=ApplicationModule<P>= wraps Settings, ConnectionPool, and DbClient in
+observable caches. Eager initialisation fails fast on startup.
+
+*** DONE Invalidation subscriptions
+Broadcast channel; subscribers (e.g. the COSMIC GUI) are notified when the
+settings or DB pool change.
+
+* read-flow-widgets Library
+
+A dedicated crate of reusable COSMIC-compatible widgets not provided by
+libcosmic. Its first and primary widget is a collapsible tree widget used as
+the application nav sidebar.
+
+** Tree Widget
+
+*** DONE Node / leaf model
+The tree is composed of two kinds of items:
+- *Node* — has one or more child items. Nodes render a collapsible section.
+- *Leaf* — has no children. Leaves render as a single interactive element.
+
+The distinction is structural: a node and a leaf are different types at the
+widget level, not a runtime boolean flag.
+
+*** DONE Collapsible nodes
+Each node has a right-aligned icon-button that toggles its children between
+collapsed (hidden) and expanded (visible). The icon indicates the current
+state (e.g. =go-next-symbolic= when collapsed, =go-down-symbolic= when
+expanded). Clicking the icon-button does not trigger the node's primary
+action.
+
+*** DONE Visual differentiation of nested elements
+Child items are visually distinct from their parent via indentation or a
+similar visual cue. The exact treatment follows the COSMIC design language.
+
+*** DONE Composable leaf buttons
+Leaf nodes accept any button-like element as content — they are not
+restricted to a fixed text+icon template. This makes the widget suitable for
+different content types (document entries, chapter headings, page
+thumbnails, etc.).
+
+*** DONE Message-type mapping
+The widget is generic over its message type and supports a =.map()=
+combinator (mirroring =iced::Element::map=) so that inner message types can
+be lifted to an outer type at the call site. This allows pages to define
+their own sub-tree message types independently of the top-level
+=App::Message=.
+
+*** DONE Programmatic collapse/expand
+The collapsed/expanded state of any node can be set programmatically, not
+only via user interaction. This allows the application or an individual page
+to control tree state in response to events (e.g. collapse all nodes when
+switching pages).
+
+*** DONE Page sub-tree ownership
+Each =Page= implementation owns and manages its own sub-tree of nav items.
+The tree widget is assembled at the =App= level by composing each page's
+sub-tree, so pages remain independent of each other's items.
+
+* COSMIC Desktop GUI (read-flow)
+
+** Document List
+
+*** DONE Display
+Paginated table with columns: filename, type icon, size, reading status,
+tags. Reads from the aggregated local + remote document set.
+
+*** DONE Search
+Toggle between fuzzy and regex search modes. Search targets filename and
+path. Ctrl+F focuses the search input.
+
+*** DONE Sorting
+Sort by: filename, type, path, size, fingerprint. Toggle ascending /
+descending. Ctrl+M persists the sort preference.
+
+*** DONE Tag filtering
+Include-filter (file must have all listed tags) and exclude-filter (file
+must have none). Status filter (Unread / Reading / Read). Filters compose
+with AND semantics.
+
+*** DONE Batch operations
+Multi-select files → bulk add/remove tags or bulk delete.
+
+*** DONE Preferences persistence
+Sort column, sort direction, and search mode are persisted across sessions.
+
+** Document Details (context pane)
+
+*** DONE Metadata display
+Type icon, filename, path, size, reading status, tags.
+
+*** DONE Status editor
+Radio-button status selector (Unread / Reading / Read) updates the DB
+immediately.
+
+*** DONE Tag editor
+Inline tag editor: add tags by typing, remove individual tags. Changes
+persist immediately.
+
+*** DONE Open / delete actions
+Open with the native viewer (PDF / EPUB) or the system default application.
+Delete removes from DB and filesystem.
+
+*** DONE Keyboard shortcuts display
+Relevant keyboard shortcuts for the active viewer are shown in the context
+pane.
+
+** PDF Viewer (MuPDF)
+
+*** DONE Rendering
+MuPDF-backed rasterisation of PDF and reflowable documents. Renders one or
+two pages side by side (off / auto / on).
+
+*** DONE Navigation
+Previous/next page buttons; jump-to-page input; keyboard arrow keys.
+Nav-bar sub-entries show the page list; selecting an entry jumps to that
+page.
+
+*** DONE Zoom
+Zoom in/out buttons and keyboard shortcuts; zoom level persisted per
+session.
+
+*** DONE Progress persistence
+Current page saved to =reading_progress= on close; restored on reopen.
+
+*** DONE Error display
+When the file cannot be opened, a centred error icon and localised message
+are shown instead of a loading spinner.
+
+** EPUB Viewer (native)
+
+*** DONE Rendering
+Custom =cosmic_text=-based renderer for the EPUB content-block model.
+
+*** DONE Chapter navigation
+Nav-bar sub-entries list the table of contents; selecting an entry scrolls
+to that chapter/section. Back button returns to the document list.
+
+*** DONE Image viewer
+Tapping an image opens a fullscreen image-viewer page.
+
+*** DONE Progress persistence
+Chapter index and character offset saved on close; restored on reopen.
+
+*** DONE Font and layout settings
+Reflowable font size, font family, and line-height adjustable from the
+context pane.
+
+*** DONE Error display
+When the EPUB cannot be opened, a centred error icon and localised message
+are shown.
+
+** Online Library (OPDS)
+
+*** DONE Catalog search
+Search configured OPDS catalogs (Project Gutenberg and Standard Ebooks by
+default). Parses Atom feed XML into a list of books with formats and authors.
+
+*** DONE Download and import
+Select a format (EPUB preferred, PDF fallback); download to the configured
+client folder; auto-import into the local database.
+
+** Remote Sources
+
+*** DONE Source management
+Add a remote source (URL, user_id, passphrase). List and delete configured
+remotes. Changes persist to =read-flow.toml=.
+
+*** DONE Remote document aggregation
+Documents from all configured remotes are merged with the local document
+list.
+
+** Settings
+
+*** DONE Scan settings UI
+Add/remove scan directories; configure file extensions; set concurrency;
+define auto-tag glob rules; toggle dry-run.
+
+*** DONE Server settings UI
+Add/remove authorised users with PBKDF2-hashed passwords.
+
+*** DONE App settings UI
+Private-mode toggle; private-tag list editor; theme and language selection.
+
+*** DONE Live persistence
+Settings changes write to =read-flow.toml= immediately and broadcast
+invalidation to all subscribers.
+
+** Internationalisation
+
+*** DONE Languages
+English, French, and Dutch via Fluent (=.ftl= files). Language selectable
+at runtime.
+
+** Keyboard Shortcuts
+
+*** DONE Global
+- Ctrl+F — focus search
+- Ctrl+M — toggle sort / persist prefs
+- Arrow keys — navigate document list / viewer pages
+- Escape — dismiss / go back
+
+** Custom Nav Bar Widget
+:PROPERTIES:
+:SECTION-NOTE: Not yet implemented. Uses the read-flow-widgets tree widget.
+:END:
+
+The libcosmic =nav_bar= widget (backed by =SegmentedButton=) does not support
+per-item trailing buttons or a collapsible-section API. The sidebar is
+replaced by an instance of the =read-flow-widgets= tree widget (see above).
+
+*** DONE Replace libcosmic nav bar with the tree widget
+Override =Application::nav_bar()= to return the tree widget from
+=read-flow-widgets= instead of =crate::widget::nav_bar(...)=.
+
+*** DONE Styled to match COSMIC nav bar
+The tree widget must visually match the existing libcosmic nav bar: colours,
+corner radius, item height, spacing, and padding pulled from =theme.cosmic()=.
+Active, hovered, and inactive button states match =SegmentedButton::NavBar=
+style.
+
+*** DONE Scrollable
+The full item list is wrapped in a scrollable container (=Length::Fill=
+height), identical to current nav bar behaviour.
+
+*** DONE Body and chevron are independent click targets
+Each node row has two distinct interactive zones:
+1. *Body* (icon + label) — navigates to the page.
+2. *Chevron* (right-aligned icon-button) — toggles collapsed/expanded state
+   without navigating.
+
+Leaf items have no chevron.
+
+*** DONE Pages manage their own sub-trees
+Each =Page= implementation is responsible for building and updating its own
+sub-tree of nav items. The current =nav_sub_entry_mappings= / =NavSubEntriesChanged=
+mechanism in =App= is replaced: =App= assembles the final tree by composing
+each active page's sub-tree, and pages handle their own collapse/expand state
+and item updates internally.
+
+*** DONE No layout shift on toggle
+Collapsing or expanding a node must not cause the parent item to jump or the
+scroll position to change unexpectedly.
+
+* Web Frontend (SPA)
+
+** DONE File list
+Paginated table of all documents with fuzzy search. Reads from the REST API.
+
+** DONE PDF viewer
+PDF.js embedded viewer with zoom and page navigation.
+
+** DONE Tag management
+Add/remove tags via modal UI.
+
+** DONE Authentication
+Basic auth (username + password) with session persisted in =localStorage=.
+
+** TODO Full-text search
+Fuse.js is integrated but not yet wired to the document list search UI.

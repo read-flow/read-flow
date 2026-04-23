@@ -310,7 +310,6 @@ epub-viewer-shortcut-next-chapter = Chapitre suivant
 epub-viewer-shortcut-previous-page = Page précédente
 epub-viewer-shortcut-next-page = Page suivante
 epub-viewer-page-margin = Marge de page
-epub-viewer-show-sidebar = Volet de navigation
 epub-viewer-font = Police
 epub-viewer-font-size = Taille de police
 epub-viewer-search = Rechercher
