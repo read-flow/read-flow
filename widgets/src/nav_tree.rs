@@ -7,6 +7,8 @@ use cosmic::iced::Background;
 use cosmic::iced::Length;
 use cosmic::widget;
 use cosmic::widget::button;
+use cosmic::widget::menu;
+use cosmic::widget::space;
 
 const INDENT_WIDTH: f32 = 16.0;
 const ICON_SIZE: f32 = 16.0;
@@ -27,6 +29,10 @@ pub struct NavNode<Message> {
     pub on_activate: Message,
     pub on_toggle: Message,
     pub children: Vec<NavItem<Message>>,
+    /// If `Some`, a "Expand All" entry appears in the right-click context menu.
+    pub on_expand_all: Option<Message>,
+    /// If `Some`, a "Collapse All" entry appears in the right-click context menu.
+    pub on_collapse_all: Option<Message>,
 }
 
 pub enum NavItem<Message> {
@@ -51,6 +57,8 @@ impl<Message: Clone> NavItem<Message> {
                 on_activate: f(node.on_activate),
                 on_toggle: f(node.on_toggle),
                 children: node.children.into_iter().map(|c| c.map(f)).collect(),
+                on_expand_all: node.on_expand_all.map(|m| f(m)),
+                on_collapse_all: node.on_collapse_all.map(|m| f(m)),
             }),
         }
     }
@@ -189,11 +197,18 @@ fn render_node<Message: Clone + 'static>(
     let chevron_btn = button::icon(widget::icon::from_name(chevron_name).size(CHEVRON_ICON_SIZE))
         .on_press(node.on_toggle);
 
-    let header: Element<'static, Message> = widget::Row::new()
+    let row = widget::Row::new()
         .push(body_btn)
         .push(chevron_btn)
-        .align_y(Alignment::Center)
-        .into();
+        .align_y(Alignment::Center);
+
+    // Build a right-click context menu when expand/collapse-all messages are provided.
+    let context_items = build_context_items(&node.on_expand_all, &node.on_collapse_all);
+    let header: Element<'static, Message> = if context_items.is_some() {
+        cosmic::widget::context_menu(row, context_items).into()
+    } else {
+        row.into()
+    };
 
     let mut result = vec![header];
 
@@ -204,6 +219,39 @@ fn render_node<Message: Clone + 'static>(
     }
 
     result
+}
+
+fn build_context_items<Message: Clone + 'static>(
+    on_expand_all: &Option<Message>,
+    on_collapse_all: &Option<Message>,
+) -> Option<Vec<menu::Tree<Message>>> {
+    if on_expand_all.is_none() && on_collapse_all.is_none() {
+        return None;
+    }
+
+    let mut items: Vec<menu::Tree<Message>> = Vec::new();
+
+    if let Some(msg) = on_expand_all {
+        let btn: Element<'static, Message> = menu::menu_button(vec![
+            widget::text("Expand All").into(),
+            space::horizontal().into(),
+        ])
+        .on_press(msg.clone())
+        .into();
+        items.push(menu::Tree::from(btn));
+    }
+
+    if let Some(msg) = on_collapse_all {
+        let btn: Element<'static, Message> = menu::menu_button(vec![
+            widget::text("Collapse All").into(),
+            space::horizontal().into(),
+        ])
+        .on_press(msg.clone())
+        .into();
+        items.push(menu::Tree::from(btn));
+    }
+
+    Some(items)
 }
 
 fn nav_button_class(selected: bool) -> cosmic::theme::Button {

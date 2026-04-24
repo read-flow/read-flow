@@ -377,6 +377,10 @@ pub enum EpubViewerMessage {
     ToggleTopLevelNav,
     /// Toggle a specific nav-entry's collapsed state (by its index in `nav_entries`).
     ToggleNavEntry(usize),
+    /// Expand all nav-sidebar entries (clear all collapsed state).
+    ExpandAllNavEntries,
+    /// Collapse all nav-sidebar entries that have children.
+    CollapseAllNavEntries,
     /// The EPUB file could not be opened; carries the error message.
     LoadFailed(String),
     /// Clear the navigation-target block highlight after the flash timer expires.
@@ -1263,6 +1267,8 @@ impl Page for EpubViewer {
             on_activate: EpubViewerMessage::Out(EpubViewerOutput::Activate),
             on_toggle: EpubViewerMessage::ToggleTopLevelNav,
             children,
+            on_expand_all: Some(EpubViewerMessage::ExpandAllNavEntries),
+            on_collapse_all: Some(EpubViewerMessage::CollapseAllNavEntries),
         }))
     }
 
@@ -1821,6 +1827,14 @@ impl Page for EpubViewer {
                 if !self.collapsed_nav_entries.remove(&idx) {
                     self.collapsed_nav_entries.insert(idx);
                 }
+                Task::none()
+            }
+            EpubViewerMessage::ExpandAllNavEntries => {
+                self.collapsed_nav_entries.clear();
+                Task::none()
+            }
+            EpubViewerMessage::CollapseAllNavEntries => {
+                self.collapsed_nav_entries = self.all_parent_nav_indices();
                 Task::none()
             }
             EpubViewerMessage::LoadFailed(error) => {
@@ -2825,6 +2839,8 @@ fn build_nav_items_at_depth(
                 on_activate: EpubViewerMessage::SelectNavEntry(orig_idx),
                 on_toggle: EpubViewerMessage::ToggleNavEntry(orig_idx),
                 children,
+                on_expand_all: None,
+                on_collapse_all: None,
             }));
         }
 
@@ -2835,6 +2851,21 @@ fn build_nav_items_at_depth(
 }
 
 impl EpubViewer {
+    /// Returns the indices of all nav entries that have at least one child entry,
+    /// i.e. entries that can be collapsed.
+    fn all_parent_nav_indices(&self) -> std::collections::HashSet<usize> {
+        self.nav_entries
+            .iter()
+            .enumerate()
+            .filter(|(i, entry)| {
+                self.nav_entries
+                    .get(i + 1)
+                    .is_some_and(|next| next.depth > entry.depth)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
     /// Build a nested `NavItem` tree from the flat `nav_entries` list (or fall
     /// back to the chapter spine when there are no nav entries).
     fn build_nav_items(&self) -> Vec<read_flow_widgets::NavItem<EpubViewerMessage>> {
