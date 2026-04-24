@@ -1284,6 +1284,8 @@ impl Page for EpubViewer {
                     .map(|d| d.as_ref().nav().to_vec())
                     .unwrap_or_default();
                 self.epub_document = epub_doc;
+                // Start with all sub-entries collapsed so only top-level chapters are visible.
+                self.collapsed_nav_entries = self.all_parent_nav_indices();
                 if !self.chapters.is_empty() {
                     self.active_chapter = self
                         .initial_chapter
