@@ -437,15 +437,25 @@ impl MuPdfViewer {
             String::new()
         };
 
+        let toggle_btn =
+            widget::button::icon(widget::icon::from_name("sidebar-show-symbolic").size(ICON_SIZE))
+                .on_press(MuPdfViewerMessage::ShowThumbnails(false));
+
         widget::Column::with_children(vec![
-            widget::Column::with_children(vec![
-                widget::text::body(page_info)
-                    .wrapping(cosmic::iced::widget::text::Wrapping::None)
-                    .into(),
-            ])
-            .width(Length::Fill)
-            .align_x(Horizontal::Center)
-            .into(),
+            widget::Row::new()
+                .push(toggle_btn)
+                .push(
+                    widget::Column::with_children(vec![
+                        widget::text::body(page_info)
+                            .wrapping(cosmic::iced::widget::text::Wrapping::None)
+                            .into(),
+                    ])
+                    .width(Length::Fill)
+                    .align_x(Horizontal::Center),
+                )
+                .align_y(cosmic::iced::Alignment::Center)
+                .width(Length::Fill)
+                .into(),
             widget::scrollable(column)
                 .id(self.thumbnail_scroll_id.clone())
                 .on_scroll(MuPdfViewerMessage::ThumbnailScroll)
@@ -806,15 +816,34 @@ impl Page for MuPdfViewer {
         }
 
         widget::responsive(move |size| {
-            let thumbnails = (self.show_thumbnails && size.width >= MIN_WIDTH_WITH_THUMBNAILS)
-                .then(|| self.view_thumbnails());
+            let show_pane = self.show_thumbnails && size.width >= MIN_WIDTH_WITH_THUMBNAILS;
             let content = self.view_content();
 
-            widget::Row::new()
-                .push_maybe(thumbnails)
-                .push(content)
-                .height(Length::Fill)
-                .into()
+            if show_pane {
+                widget::Row::new()
+                    .push(self.view_thumbnails())
+                    .push(content)
+                    .height(Length::Fill)
+                    .into()
+            } else {
+                let toggle_strip: Element<'_, MuPdfViewerMessage> = widget::Column::new()
+                    .push(
+                        widget::button::icon(
+                            widget::icon::from_name("sidebar-show-symbolic").size(ICON_SIZE),
+                        )
+                        .on_press(MuPdfViewerMessage::ShowThumbnails(true)),
+                    )
+                    .push(widget::Space::new().height(Length::Fill))
+                    .width(Length::Shrink)
+                    .height(Length::Fill)
+                    .into();
+
+                widget::Row::new()
+                    .push(toggle_strip)
+                    .push(content)
+                    .height(Length::Fill)
+                    .into()
+            }
         })
         .into()
     }
