@@ -71,6 +71,12 @@ use crate::subscription::SubscriberState;
 
 type Fingerprint = String;
 
+pub struct PageInfo {
+    pub icon_name: &'static str,
+    pub label: String,
+    pub parent: Option<PageSelector>,
+}
+
 pub struct Pages {
     pub(crate) document_provider: Arc<DocumentProvider>,
 
@@ -85,6 +91,8 @@ pub struct Pages {
     image_viewers: IndexMap<u64, ImageViewer>,
     next_image_viewer_id: u64,
     settings: SettingsPage,
+    active: PageSelector,
+    page_order: IndexMap<PageSelector, PageInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -102,7 +110,7 @@ pub enum PageSelector {
 
 #[derive(Debug, Clone)]
 pub enum PageOutput {
-    PageAdded(PageSelector, &'static str),
+    PageAdded(PageSelector),
     TogglePage(PageSelector),
     PageRemoved(PageSelector),
     Scan,
@@ -270,6 +278,8 @@ impl Pages {
                 image_viewers: Default::default(),
                 next_image_viewer_id: 0,
                 settings,
+                active: PageSelector::Documents,
+                page_order: Default::default(),
             },
             task::batch(tasks),
         )
@@ -278,6 +288,49 @@ impl Pages {
     pub fn update_app_config(&mut self, config: &Config) {
         self.epub_viewer_config = config.epub_viewer;
         self.app_settings.update_config(config.clone());
+    }
+
+    pub fn active_page(&self) -> &PageSelector {
+        &self.active
+    }
+
+    pub fn activate(&mut self, selector: PageSelector) {
+        self.active = selector;
+    }
+
+    pub fn page_list(&self) -> &IndexMap<PageSelector, PageInfo> {
+        &self.page_order
+    }
+
+    pub fn register_page(
+        &mut self,
+        selector: PageSelector,
+        icon_name: &'static str,
+        label: String,
+        parent: Option<PageSelector>,
+    ) {
+        self.page_order.insert(
+            selector,
+            PageInfo {
+                icon_name,
+                label,
+                parent,
+            },
+        );
+    }
+
+    fn deactivate_page(&mut self, selector: &PageSelector) {
+        if let Some(info) = self.page_order.swap_remove(selector) {
+            if self.active == *selector {
+                // Only use the recorded parent if it is still in page_order; a
+                // chain of closures can remove a parent before its child is
+                // deactivated, so fall back to Documents in that case.
+                self.active = info
+                    .parent
+                    .filter(|p| self.page_order.contains_key(p))
+                    .unwrap_or(PageSelector::Documents);
+            }
+        }
     }
 
     /// Returns the nav sidebar item for the given page, if the page contributes one.
@@ -296,14 +349,26 @@ impl Pages {
             PageSelector::Sources => fl!("app-file-sources"),
             PageSelector::OnlineLibrary => fl!("online-library-page-title"),
             PageSelector::Documents => "Documents".to_string(),
-            PageSelector::DocumentDetails(fingerprint) => {
-                self.document_details[fingerprint].display_name()
-            }
-            PageSelector::EpubViewer(fingerprint) => self.epub_viewers[fingerprint].display_name(),
-            PageSelector::MuPdfViewer(fingerprint) => {
-                self.mu_pdf_viewers[fingerprint].display_name()
-            }
-            PageSelector::ImageViewer(id) => self.image_viewers[id].display_name(),
+            PageSelector::DocumentDetails(fingerprint) => self
+                .document_details
+                .get(fingerprint)
+                .map(|p| p.display_name())
+                .unwrap_or_default(),
+            PageSelector::EpubViewer(fingerprint) => self
+                .epub_viewers
+                .get(fingerprint)
+                .map(|p| p.display_name())
+                .unwrap_or_default(),
+            PageSelector::MuPdfViewer(fingerprint) => self
+                .mu_pdf_viewers
+                .get(fingerprint)
+                .map(|p| p.display_name())
+                .unwrap_or_default(),
+            PageSelector::ImageViewer(id) => self
+                .image_viewers
+                .get(id)
+                .map(|p| p.display_name())
+                .unwrap_or_default(),
             PageSelector::AppSettings => fl!("app-settings-page-title"),
             PageSelector::Settings => fl!("settings-page-title"),
         }
@@ -449,10 +514,10 @@ impl Pages {
                 .update(settings_message)
                 .map(move |action| action.map(map_settings_message)),
             PageMessage::CloseDocumentDetails(fingerprint) => {
+                let selector = PageSelector::DocumentDetails(fingerprint.clone());
                 let _ = self.document_details.swap_remove(&fingerprint);
-                task::message(PageMessage::Out(PageOutput::PageRemoved(
-                    PageSelector::DocumentDetails(fingerprint),
-                )))
+                self.deactivate_page(&selector);
+                task::message(PageMessage::Out(PageOutput::PageRemoved(selector)))
             }
             PageMessage::OpenDocumentDetails(document) => {
                 let fingerprint = document.metadata.fingerprint.clone();
@@ -465,20 +530,23 @@ impl Pages {
                         PageSelector::DocumentDetails(fingerprint),
                     )))
                 } else {
+                    let parent = self.active.clone();
                     let fingerprint_1 = fingerprint.clone();
-                    let fingerprint_2 = fingerprint.clone();
                     let (document_details, initialization) =
                         DocumentDetails::new(document, self.documents.document_provider.clone());
                     self.document_details
                         .insert(fingerprint.clone(), document_details);
+                    let selector = PageSelector::DocumentDetails(fingerprint);
+                    let label = self.display_name(&selector);
+                    self.register_page(selector.clone(), document_icon, label, Some(parent));
+                    self.active = selector.clone();
                     initialization
                         .map(move |action| {
                             let fingerprint = fingerprint_1.clone();
                             action.map(move |msg| map_document_details_message(fingerprint, msg))
                         })
                         .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
-                            PageSelector::DocumentDetails(fingerprint_2),
-                            document_icon,
+                            selector,
                         ))))
                 }
             }
@@ -518,10 +586,12 @@ impl Pages {
                     action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
                 }),
             PageMessage::CloseMuPdfViewer(fingerprint, page) => {
+                let selector = PageSelector::MuPdfViewer(fingerprint.clone());
                 let _ = self.mu_pdf_viewers.swap_remove(&fingerprint);
+                self.deactivate_page(&selector);
 
                 let mut tasks = vec![task::message(PageMessage::Out(PageOutput::PageRemoved(
-                    PageSelector::MuPdfViewer(fingerprint.clone()),
+                    selector,
                 )))];
 
                 if let Some(page) = page {
@@ -557,16 +627,23 @@ impl Pages {
                 self.next_image_viewer_id += 1;
                 let viewer = ImageViewer::new(id, image);
                 self.image_viewers.insert(id, viewer);
-                task::message(PageMessage::Out(PageOutput::PageAdded(
-                    PageSelector::ImageViewer(id),
+                let parent = self.active.clone();
+                let selector = PageSelector::ImageViewer(id);
+                let label = self.display_name(&selector);
+                self.register_page(
+                    selector.clone(),
                     "image-x-generic-symbolic",
-                )))
+                    label,
+                    Some(parent),
+                );
+                self.active = selector.clone();
+                task::message(PageMessage::Out(PageOutput::PageAdded(selector)))
             }
             PageMessage::CloseImageViewer(id) => {
+                let selector = PageSelector::ImageViewer(id);
                 let _ = self.image_viewers.swap_remove(&id);
-                task::message(PageMessage::Out(PageOutput::PageRemoved(
-                    PageSelector::ImageViewer(id),
-                )))
+                self.deactivate_page(&selector);
+                task::message(PageMessage::Out(PageOutput::PageRemoved(selector)))
             }
             PageMessage::OpenDocument(document) => match &document.metadata.type_ {
                 DocumentType::Epub => match self.epub_viewer_config {
@@ -578,10 +655,12 @@ impl Pages {
                 _ => self.open_mupdf_viewer(document),
             },
             PageMessage::CloseEpubViewer(fingerprint, progress_json) => {
+                let selector = PageSelector::EpubViewer(fingerprint.clone());
                 let _ = self.epub_viewers.swap_remove(&fingerprint);
+                self.deactivate_page(&selector);
 
                 let mut tasks = vec![task::message(PageMessage::Out(PageOutput::PageRemoved(
-                    PageSelector::EpubViewer(fingerprint.clone()),
+                    selector,
                 )))];
 
                 if let Some(progress_json) = progress_json {
@@ -628,10 +707,20 @@ impl Pages {
                 PageSelector::MuPdfViewer(fingerprint),
             )))
         } else {
+            let parent = self.active.clone();
             let fingerprint_1 = fingerprint.clone();
             let (pdf_viewer, initialization) =
                 MuPdfViewer::new(document, self.document_provider.clone());
             self.mu_pdf_viewers.insert(fingerprint.clone(), pdf_viewer);
+            let selector = PageSelector::MuPdfViewer(fingerprint);
+            let label = self.display_name(&selector);
+            self.register_page(
+                selector.clone(),
+                "application-pdf-symbolic",
+                label,
+                Some(parent),
+            );
+            self.active = selector.clone();
             // PageAdded in a batch (not chained) so the viewer page opens
             // immediately while the initialization stream runs in the background.
             Task::batch([
@@ -639,10 +728,7 @@ impl Pages {
                     let fingerprint = fingerprint_1.clone();
                     action.map(move |msg| map_mu_pdf_viewer_message(fingerprint, msg))
                 }),
-                task::message(PageMessage::Out(PageOutput::PageAdded(
-                    PageSelector::MuPdfViewer(fingerprint),
-                    "application-pdf-symbolic",
-                ))),
+                task::message(PageMessage::Out(PageOutput::PageAdded(selector))),
             ])
         }
     }
@@ -655,20 +741,26 @@ impl Pages {
                 PageSelector::EpubViewer(fingerprint),
             )))
         } else {
+            let parent = self.active.clone();
             let fingerprint_1 = fingerprint.clone();
-            let fingerprint_2 = fingerprint.clone();
             let (epub_viewer, initialization) =
                 EpubViewer::new(document, self.document_provider.clone());
             self.epub_viewers.insert(fingerprint.clone(), epub_viewer);
+            let selector = PageSelector::EpubViewer(fingerprint);
+            let label = self.display_name(&selector);
+            self.register_page(
+                selector.clone(),
+                "application-epub+zip",
+                label,
+                Some(parent),
+            );
+            self.active = selector.clone();
             Task::batch([
                 initialization.map(move |action| {
                     let fingerprint = fingerprint_1.clone();
                     action.map(move |msg| map_epub_viewer_message(fingerprint, msg))
                 }),
-                task::message(PageMessage::Out(PageOutput::PageAdded(
-                    PageSelector::EpubViewer(fingerprint_2),
-                    "application-epub+zip",
-                ))),
+                task::message(PageMessage::Out(PageOutput::PageAdded(selector))),
             ])
         }
     }

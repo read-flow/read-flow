@@ -8,7 +8,6 @@ use cosmic::app::context_drawer;
 use cosmic::cosmic_config;
 use cosmic::cosmic_config::CosmicConfigEntry;
 use cosmic::iced::Subscription;
-use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::event;
 use cosmic::iced::event::Event;
 use cosmic::iced::keyboard::Event as KeyEvent;
@@ -18,8 +17,6 @@ use cosmic::widget;
 use cosmic::widget::about::About;
 use cosmic::widget::icon;
 use cosmic::widget::menu;
-use cosmic::widget::nav_bar;
-use cosmic::widget::segmented_button::Entity;
 use futures::StreamExt;
 use i18n_embed::unic_langid::LanguageIdentifier;
 use provider::r#async::HasSetExpired;
@@ -36,7 +33,6 @@ use crate::component::scan_progress::ScanProgressOutput;
 use crate::config::Config;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
-use crate::layout::full_page;
 use crate::page::DocumentListMessage;
 use crate::page::PageMessage;
 use crate::page::PageOutput;
@@ -58,10 +54,6 @@ pub struct ReadFlow {
     context_page: ContextPage,
     /// The about page for this app.
     about: About,
-    /// Contains items assigned to the nav bar panel.
-    nav: nav_bar::Model,
-    /// Mappings for nav_bar items.
-    nav_mappings: HashMap<PageSelector, Entity>,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     // Configuration data that persists between application runs.
@@ -82,7 +74,7 @@ pub enum Message {
     UpdateConfig(Config),
     LaunchUrl(String),
     Page(PageMessage),
-    PageAdded(PageSelector, &'static str),
+    PageAdded(PageSelector),
     ActivatePage(PageSelector),
     ActivePageRemoved(PageSelector),
     SwitchLanguage(LanguageIdentifier),
@@ -100,7 +92,7 @@ pub enum Message {
 impl From<PageOutput> for Message {
     fn from(source: PageOutput) -> Self {
         match source {
-            PageOutput::PageAdded(page, icon_name) => Message::PageAdded(page, icon_name),
+            PageOutput::PageAdded(page) => Message::PageAdded(page),
             PageOutput::TogglePage(page_selector) => Message::ActivatePage(page_selector),
             PageOutput::PageRemoved(page) => Message::ActivePageRemoved(page),
             PageOutput::Scan => Message::Scan,
@@ -150,10 +142,6 @@ impl cosmic::Application for ReadFlow {
         core: cosmic::Core,
         (application_module, initial_files): Self::Flags,
     ) -> (Self, Task<cosmic::Action<Self::Message>>) {
-        // Create a nav bar with three page items.
-        let mut nav = nav_bar::Model::default();
-        let mut nav_mappings = HashMap::new();
-
         let config = cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
             .map(|context| match Config::get_entry(&context) {
                 Ok(config) => config,
@@ -161,48 +149,43 @@ impl cosmic::Application for ReadFlow {
             })
             .unwrap_or_default();
 
-        let (pages, page_action) = Pages::new(application_module.clone(), config.clone());
+        let (mut pages, page_action) = Pages::new(application_module.clone(), config.clone());
 
-        nav.insert()
-            .text(pages.display_name(&PageSelector::Documents))
-            .data::<PageSelector>(PageSelector::Documents)
-            .icon(icon::from_name("emblem-documents-symbolic"))
-            .with_id(|nav_id| {
-                nav_mappings.insert(PageSelector::Documents, nav_id);
-            })
-            .activate();
-
-        nav.insert()
-            .text(pages.display_name(&PageSelector::Sources))
-            .data::<PageSelector>(PageSelector::Sources)
-            .icon(icon::from_name("network-server-symbolic"))
-            .with_id(|nav_id| {
-                nav_mappings.insert(PageSelector::Sources, nav_id);
-            });
-
-        nav.insert()
-            .text(pages.display_name(&PageSelector::OnlineLibrary))
-            .data::<PageSelector>(PageSelector::OnlineLibrary)
-            .icon(icon::from_name("system-search-symbolic"))
-            .with_id(|nav_id| {
-                nav_mappings.insert(PageSelector::OnlineLibrary, nav_id);
-            });
-
-        nav.insert()
-            .text(pages.display_name(&PageSelector::AppSettings))
-            .data::<PageSelector>(PageSelector::AppSettings)
-            .icon(icon::from_name("preferences-desktop-symbolic"))
-            .with_id(|nav_id| {
-                nav_mappings.insert(PageSelector::AppSettings, nav_id);
-            });
-
-        nav.insert()
-            .text(pages.display_name(&PageSelector::Settings))
-            .data::<PageSelector>(PageSelector::Settings)
-            .icon(icon::from_name("preferences-system-symbolic"))
-            .with_id(|nav_id| {
-                nav_mappings.insert(PageSelector::Settings, nav_id);
-            });
+        let label = pages.display_name(&PageSelector::Documents);
+        pages.register_page(
+            PageSelector::Documents,
+            "emblem-documents-symbolic",
+            label,
+            None,
+        );
+        let label = pages.display_name(&PageSelector::Sources);
+        pages.register_page(
+            PageSelector::Sources,
+            "network-server-symbolic",
+            label,
+            None,
+        );
+        let label = pages.display_name(&PageSelector::OnlineLibrary);
+        pages.register_page(
+            PageSelector::OnlineLibrary,
+            "system-search-symbolic",
+            label,
+            None,
+        );
+        let label = pages.display_name(&PageSelector::AppSettings);
+        pages.register_page(
+            PageSelector::AppSettings,
+            "preferences-desktop-symbolic",
+            label,
+            None,
+        );
+        let label = pages.display_name(&PageSelector::Settings);
+        pages.register_page(
+            PageSelector::Settings,
+            "preferences-system-symbolic",
+            label,
+            None,
+        );
 
         // Create the about widget
         let about = About::default()
@@ -217,8 +200,6 @@ impl cosmic::Application for ReadFlow {
             core,
             context_page: ContextPage::default(),
             about,
-            nav,
-            nav_mappings,
             key_binds: HashMap::new(),
             config,
             application_module,
@@ -255,14 +236,12 @@ impl cosmic::Application for ReadFlow {
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
         let mut elements = vec![];
 
-        if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
-            elements.extend(
-                self.pages
-                    .view_header_start(page)
-                    .into_iter()
-                    .map(|e| e.map(Into::into)),
-            );
-        }
+        elements.extend(
+            self.pages
+                .view_header_start(self.pages.active_page())
+                .into_iter()
+                .map(|e| e.map(Into::into)),
+        );
 
         let menu_bar = menu::bar(vec![
             menu::Tree::with_children(
@@ -309,28 +288,21 @@ impl cosmic::Application for ReadFlow {
 
     /// Elements to pack at the center of the header bar.
     fn header_center(&self) -> Vec<Element<'_, Self::Message>> {
-        if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
-            self.pages
-                .view_header_center(page)
-                .into_iter()
-                .map(|e| e.map(Into::into))
-                .collect()
-        } else {
-            Vec::new()
-        }
+        self.pages
+            .view_header_center(self.pages.active_page())
+            .into_iter()
+            .map(|e| e.map(Into::into))
+            .collect()
     }
 
     /// Elements to pack at the end of the header bar.
     fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
-        let mut elements = if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
-            self.pages
-                .view_header_end(page)
-                .into_iter()
-                .map(|e| e.map(Into::into))
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let mut elements: Vec<Element<'_, Self::Message>> = self
+            .pages
+            .view_header_end(self.pages.active_page())
+            .into_iter()
+            .map(|e| e.map(Into::into))
+            .collect();
 
         elements.push(
             widget::button::icon(widget::icon::from_name("open-menu-symbolic").size(16))
@@ -342,16 +314,7 @@ impl cosmic::Application for ReadFlow {
         elements
     }
 
-    /// Enables the COSMIC application to create a nav bar with this model.
-    fn nav_model(&self) -> Option<&nav_bar::Model> {
-        Some(&self.nav)
-    }
-
     fn nav_bar(&self) -> Option<cosmic::Element<'_, cosmic::Action<Self::Message>>> {
-        if !self.core().nav_bar_active() {
-            return None;
-        }
-
         let mut nav = self
             .build_nav_tree()
             .view()
@@ -390,8 +353,9 @@ impl cosmic::Application for ReadFlow {
     }
 
     fn dialog(&self) -> Option<Element<'_, Self::Message>> {
-        let page = self.nav.data::<PageSelector>(self.nav.active())?;
-        self.pages.dialog(page).map(|e| e.map(Into::into))
+        self.pages
+            .dialog(self.pages.active_page())
+            .map(|e| e.map(Into::into))
     }
 
     /// Describes the interface based on the current state of the application model.
@@ -399,15 +363,13 @@ impl cosmic::Application for ReadFlow {
     /// Application events will be processed through the view. Any messages emitted by
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<'_, Self::Message> {
-        if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
-            self.pages.view(page).map(Into::into)
+        let active = self.pages.active_page();
+        let page = if self.pages.page_list().contains_key(active) {
+            active
         } else {
-            widget::Column::new()
-                .push(widget::icon::from_svg_bytes(APP_ICON).icon().size(256))
-                .push(widget::text::title1(fl!("welcome")))
-                .align_x(Horizontal::Center)
-                .apply(full_page)
-        }
+            &PageSelector::Documents
+        };
+        self.pages.view(page).map(Into::into)
     }
 
     fn footer(&self) -> Option<Element<'_, Self::Message>> {
@@ -467,15 +429,12 @@ impl cosmic::Application for ReadFlow {
 
                 Task::none()
             }
-            Message::ToggleActivePageContext => self
-                .nav
-                .data::<PageSelector>(self.nav.active())
-                .map(|selector| {
-                    task::message(Message::ToggleContextPage(ContextPage::PageContext(
-                        selector.clone(),
-                    )))
-                })
-                .unwrap_or_else(Task::none),
+            Message::ToggleActivePageContext => {
+                let selector = self.pages.active_page().clone();
+                task::message(Message::ToggleContextPage(ContextPage::PageContext(
+                    selector,
+                )))
+            }
             Message::UpdateConfig(config) => {
                 self.pages.update_app_config(&config);
                 self.config = config;
@@ -488,51 +447,33 @@ impl cosmic::Application for ReadFlow {
                     Task::none()
                 }
             },
+            // PageOutput messages may arrive directly from UI elements (e.g. nav tree
+            // on_activate closures) wrapped in Message::Page rather than through a task.
+            // Route them through the same App::update path as task-produced outputs.
+            Message::Page(PageMessage::Out(output)) => self.update(output.into()),
             Message::Page(page_message) => self.pages.update(page_message).map(ActionExt::map_into),
             Message::ActivatePage(selector) => {
-                if let Some(id) = self.nav_mappings.get(&selector).cloned() {
-                    self.nav.activate(id);
+                self.pages.activate(selector.clone());
+                let mut tasks = vec![self.update_title()];
+                match &selector {
+                    PageSelector::Sources => {
+                        tasks.push(task::message(cosmic::Action::App(Message::Page(
+                            PageMessage::Sources(SourcesMessage::RefreshStatuses),
+                        ))));
+                    }
+                    PageSelector::Documents => {
+                        tasks.push(task::message(cosmic::Action::App(Message::Page(
+                            PageMessage::Documents(DocumentListMessage::FocusSearchInput),
+                        ))));
+                    }
+                    _ => {}
                 }
-                Task::none()
+                Task::batch(tasks)
             }
-            Message::PageAdded(selector, icon_name) => {
-                let parent = self.nav.active();
-                self.nav
-                    .insert()
-                    .text(self.pages.display_name(&selector))
-                    .data::<PageSelector>(selector.clone())
-                    .data::<Entity>(parent)
-                    .icon(icon::from_name(icon_name))
-                    .activate()
-                    .with_id(|nav_id| {
-                        self.nav_mappings.insert(selector.clone(), nav_id);
-                    });
-                Task::none()
-            }
-            Message::ActivePageRemoved(removed_page) => {
-                let id = self
-                    .nav_mappings
-                    .get(&removed_page)
-                    .cloned()
-                    .unwrap_or_else(|| self.nav.active());
-
-                // Get parent of the active page
-                let parent = self.nav.data::<Entity>(id);
-                // If the active page has a parent, set that as the new active page
-                if let Some(parent) = parent {
-                    self.nav.activate(*parent);
-                }
-
-                // Get selector for active page
-                let active_page = self.nav.data::<PageSelector>(id);
-                // Verify that the active page is to be removed
-                if active_page == Some(&removed_page) {
-                    self.nav.remove(id);
-                } else {
-                    tracing::warn!("cannot (yet) remove page which isn't active");
-                    // TODO: when inserting pages, capture the id using `with_id(|entity| store(entity))`
-                }
-                Task::none()
+            Message::PageAdded(_selector) => self.update_title(),
+            Message::ActivePageRemoved(_removed_page) => {
+                self.core.window.show_context = false;
+                self.update_title()
             }
             Message::SwitchLanguage(language) => {
                 // Switch the language
@@ -614,75 +555,40 @@ impl cosmic::Application for ReadFlow {
                 }
             }
             Message::KeyboardEvent(modifiers, key, text) => {
-                if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
-                    self.pages
-                        .update(PageMessage::KeyEvent(page.clone(), modifiers, key, text))
-                        .map(ActionExt::map_into)
-                } else {
-                    Task::none()
-                }
+                let page = self.pages.active_page().clone();
+                self.pages
+                    .update(PageMessage::KeyEvent(page, modifiers, key, text))
+                    .map(ActionExt::map_into)
             }
             Message::ModifiersChanged(modifiers) => {
-                if let Some(page) = self.nav.data::<PageSelector>(self.nav.active()) {
-                    self.pages
-                        .update(PageMessage::ModifiersChanged(page.clone(), modifiers))
-                        .map(ActionExt::map_into)
-                } else {
-                    Task::none()
-                }
+                let page = self.pages.active_page().clone();
+                self.pages
+                    .update(PageMessage::ModifiersChanged(page, modifiers))
+                    .map(ActionExt::map_into)
             }
         }
-    }
-
-    /// Called when a nav item is selected.
-    fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Self::Message>> {
-        // Activate the page in the model.
-        self.nav.activate(id);
-
-        // If this is a sub-entry, dispatch to the page and skip page-switch logic.
-        let mut tasks = vec![self.update_title()];
-
-        match self.nav.data::<PageSelector>(id) {
-            Some(PageSelector::Sources) => {
-                tasks.push(task::message(cosmic::Action::App(Message::Page(
-                    PageMessage::Sources(SourcesMessage::RefreshStatuses),
-                ))));
-            }
-            Some(PageSelector::Documents) => {
-                tasks.push(task::message(cosmic::Action::App(Message::Page(
-                    PageMessage::Documents(DocumentListMessage::FocusSearchInput),
-                ))));
-            }
-            _ => {}
-        }
-
-        Task::batch(tasks)
     }
 }
 
 impl ReadFlow {
     fn build_nav_tree(&self) -> NavTree<cosmic::Action<Message>> {
-        let active = self.nav.data::<PageSelector>(self.nav.active()).cloned();
+        let active = self.pages.active_page();
         let mut tree = NavTree::new();
 
-        for entity in self.nav.iter() {
-            let Some(selector) = self.nav.data::<PageSelector>(entity).cloned() else {
-                continue;
-            };
+        for (selector, info) in self.pages.page_list() {
+            let is_active = selector == active;
 
-            let is_active = active.as_ref() == Some(&selector);
-
-            if let Some(item) = self.pages.nav_tree(&selector, is_active) {
+            if let Some(item) = self.pages.nav_tree(selector, is_active) {
                 // Page provides its own nav item (e.g. EPUB viewer with TOC).
                 let to_action = |msg: PageMessage| cosmic::action::app(Message::Page(msg));
                 tree = tree.push(item.map(&to_action));
             } else {
-                // Default: simple leaf that activates via the nav-bar model entity.
+                // Default: simple leaf that navigates via ActivatePage.
                 tree = tree.push(NavItem::Leaf(NavLeaf {
-                    icon: self.nav.icon(entity).cloned(),
-                    label: self.nav.text(entity).unwrap_or("").to_string(),
+                    icon: Some(icon::from_name(info.icon_name).icon()),
+                    label: info.label.clone(),
                     active: is_active,
-                    on_activate: cosmic::action::cosmic(cosmic::app::Action::NavBar(entity)),
+                    on_activate: cosmic::action::app(Message::ActivatePage(selector.clone())),
                 }));
             }
         }
@@ -693,11 +599,8 @@ impl ReadFlow {
     /// Updates the header and window titles.
     pub fn update_title(&mut self) -> Task<cosmic::Action<Message>> {
         let mut window_title = fl!("app-title");
-
-        if let Some(page) = self.nav.text(self.nav.active()) {
-            window_title.push_str(" — ");
-            window_title.push_str(page);
-        }
+        window_title.push_str(" — ");
+        window_title.push_str(&self.pages.display_name(self.pages.active_page()));
 
         if let Some(id) = self.core.main_window_id() {
             self.set_window_title(window_title, id)
