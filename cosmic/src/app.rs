@@ -26,6 +26,7 @@ use read_flow_widgets::NavLeaf;
 use read_flow_widgets::NavTree;
 
 use crate::ApplicationModule;
+use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::component::scan_progress::ScanComponent;
 use crate::component::scan_progress::ScanProgressMessage;
@@ -54,6 +55,8 @@ pub struct ReadFlow {
     context_page: ContextPage,
     /// The about page for this app.
     about: About,
+    /// Whether the nav sidebar is currently visible.
+    nav_bar_visible: bool,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     // Configuration data that persists between application runs.
@@ -71,6 +74,7 @@ pub struct ReadFlow {
 pub enum Message {
     ToggleContextPage(ContextPage),
     ToggleActivePageContext,
+    ToggleNavBar,
     UpdateConfig(Config),
     LaunchUrl(String),
     Page(PageMessage),
@@ -200,6 +204,7 @@ impl cosmic::Application for ReadFlow {
             core,
             context_page: ContextPage::default(),
             about,
+            nav_bar_visible: true,
             key_binds: HashMap::new(),
             config,
             application_module,
@@ -234,7 +239,11 @@ impl cosmic::Application for ReadFlow {
 
     /// Elements to pack at the start of the header bar.
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
-        let mut elements = vec![];
+        let mut elements = vec![
+            widget::button::icon(widget::icon::from_name("sidebar-show-symbolic").size(ICON_SIZE))
+                .on_press(Message::ToggleNavBar)
+                .into(),
+        ];
 
         elements.extend(
             self.pages
@@ -305,7 +314,7 @@ impl cosmic::Application for ReadFlow {
             .collect();
 
         elements.push(
-            widget::button::icon(widget::icon::from_name("open-menu-symbolic").size(16))
+            widget::button::icon(widget::icon::from_name("open-menu-symbolic").size(ICON_SIZE))
                 .on_press(Message::ToggleActivePageContext)
                 .tooltip(fl!("view-options"))
                 .into(),
@@ -315,6 +324,10 @@ impl cosmic::Application for ReadFlow {
     }
 
     fn nav_bar(&self) -> Option<cosmic::Element<'_, cosmic::Action<Self::Message>>> {
+        if !self.nav_bar_visible {
+            return None;
+        }
+
         let mut nav = self
             .build_nav_tree()
             .view()
@@ -417,6 +430,10 @@ impl cosmic::Application for ReadFlow {
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         tracing::debug!("received: {message:?}");
         match message {
+            Message::ToggleNavBar => {
+                self.nav_bar_visible = !self.nav_bar_visible;
+                Task::none()
+            }
             Message::ToggleContextPage(context_page) => {
                 if self.context_page == context_page {
                     // Toggle context drawer if the toggled context page is the same.
