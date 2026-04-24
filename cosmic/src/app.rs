@@ -11,6 +11,7 @@ use cosmic::iced::Subscription;
 use cosmic::iced::event;
 use cosmic::iced::event::Event;
 use cosmic::iced::keyboard::Event as KeyEvent;
+use cosmic::iced::mouse;
 use cosmic::prelude::*;
 use cosmic::task;
 use cosmic::widget;
@@ -57,6 +58,10 @@ pub struct ReadFlow {
     about: About,
     /// Whether the nav sidebar is currently visible.
     nav_bar_visible: bool,
+    /// Current width of the nav sidebar in pixels.
+    nav_bar_width: f32,
+    /// True while the user is dragging the sidebar resize handle.
+    nav_bar_resizing: bool,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     // Configuration data that persists between application runs.
@@ -75,6 +80,9 @@ pub enum Message {
     ToggleContextPage(ContextPage),
     ToggleActivePageContext,
     ToggleNavBar,
+    NavBarResizeStart,
+    NavBarDrag(f32),
+    NavBarResizeEnd,
     UpdateConfig(Config),
     LaunchUrl(String),
     Page(PageMessage),
@@ -205,6 +213,8 @@ impl cosmic::Application for ReadFlow {
             context_page: ContextPage::default(),
             about,
             nav_bar_visible: true,
+            nav_bar_width: 280.0,
+            nav_bar_resizing: false,
             key_binds: HashMap::new(),
             config,
             application_module,
@@ -328,18 +338,38 @@ impl cosmic::Application for ReadFlow {
             return None;
         }
 
-        let mut nav = self
-            .build_nav_tree()
-            .view()
-            .apply(widget::container)
-            .width(cosmic::iced::Length::Shrink)
-            .height(cosmic::iced::Length::Fill);
+        let tree = self.build_nav_tree().view();
 
-        if !self.core().is_condensed() {
-            nav = nav.max_width(280);
+        if self.core().is_condensed() {
+            return Some(
+                tree.apply(widget::container)
+                    .width(cosmic::iced::Length::Shrink)
+                    .height(cosmic::iced::Length::Fill)
+                    .into(),
+            );
         }
 
-        Some(nav.into())
+        let sidebar = tree
+            .apply(widget::container)
+            .width(cosmic::iced::Length::Fixed(self.nav_bar_width))
+            .height(cosmic::iced::Length::Fill);
+
+        let handle = widget::mouse_area(
+            widget::Space::new()
+                .width(cosmic::iced::Length::Fixed(4.0))
+                .height(cosmic::iced::Length::Fill),
+        )
+        .on_press(cosmic::action::app(Message::NavBarResizeStart))
+        .on_release(cosmic::action::app(Message::NavBarResizeEnd))
+        .interaction(mouse::Interaction::ResizingHorizontally);
+
+        Some(
+            widget::Row::new()
+                .push(sidebar)
+                .push(handle)
+                .height(cosmic::iced::Length::Fill)
+                .into(),
+        )
     }
 
     /// Display a context drawer if the context page is requested.
@@ -400,7 +430,7 @@ impl cosmic::Application for ReadFlow {
     /// emit messages to the application through a channel. They are started at the
     /// beginning of the application, and persist through its lifetime.
     fn subscription(&self) -> Subscription<Self::Message> {
-        Subscription::batch(vec![
+        let mut subs = vec![
             // Subscribe to document provider cache invalidation events
             self.pages
                 .document_provider
@@ -420,7 +450,22 @@ impl cosmic::Application for ReadFlow {
                 }),
             // Forward keyboard events to the active page
             event::listen_with(filter_keyboard_events),
-        ])
+        ];
+
+        // Track cursor and mouse-up globally while the sidebar resize is active.
+        if self.nav_bar_resizing {
+            subs.push(event::listen_with(|event, _, _| match event {
+                Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                    Some(Message::NavBarDrag(position.x))
+                }
+                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                    Some(Message::NavBarResizeEnd)
+                }
+                _ => None,
+            }));
+        }
+
+        Subscription::batch(subs)
     }
 
     /// Handles messages emitted by the application and its widgets.
@@ -432,6 +477,20 @@ impl cosmic::Application for ReadFlow {
         match message {
             Message::ToggleNavBar => {
                 self.nav_bar_visible = !self.nav_bar_visible;
+                Task::none()
+            }
+            Message::NavBarResizeStart => {
+                self.nav_bar_resizing = true;
+                Task::none()
+            }
+            Message::NavBarDrag(x) => {
+                if self.nav_bar_resizing {
+                    self.nav_bar_width = x.clamp(140.0, 480.0);
+                }
+                Task::none()
+            }
+            Message::NavBarResizeEnd => {
+                self.nav_bar_resizing = false;
                 Task::none()
             }
             Message::ToggleContextPage(context_page) => {
