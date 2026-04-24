@@ -1254,7 +1254,7 @@ impl Page for EpubViewer {
         Some(NavItem::Node(NavNode {
             icon: Some(
                 cosmic::widget::icon::from_name("application-epub+zip")
-                    .size(16)
+                    .size(ICON_SIZE)
                     .icon(),
             ),
             label: self.display_name(),

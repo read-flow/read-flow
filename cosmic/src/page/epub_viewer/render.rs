@@ -19,6 +19,7 @@ use epub::TableCell;
 use epub::TextAlign;
 use epub::TextSpan;
 
+use crate::ICON_SIZE;
 use crate::fl;
 use crate::page::epub_viewer::BlockHighlight;
 use crate::page::epub_viewer::EpubViewerMessage;
@@ -139,7 +140,7 @@ pub(super) fn render_partial_preformatted(
     if let Some(full_text) = full_text_to_copy {
         let copy_button = widget::row::with_children(vec![
             widget::space::horizontal().width(Length::Fill).into(),
-            widget::button::icon(widget::icon::from_name("edit-copy-symbolic").size(16))
+            widget::button::icon(widget::icon::from_name("edit-copy-symbolic").size(ICON_SIZE))
                 .on_press(EpubViewerMessage::CopyCodeBlock(full_text))
                 .tooltip(fl!("epub-viewer-copy-code"))
                 .into(),
@@ -285,10 +286,12 @@ impl<'a> RenderContext<'a> {
                     .width(Length::Fill);
                 let copy_button = widget::row::with_children(vec![
                     widget::space::horizontal().width(Length::Fill).into(),
-                    widget::button::icon(widget::icon::from_name("edit-copy-symbolic").size(16))
-                        .on_press(EpubViewerMessage::CopyCodeBlock(text.clone()))
-                        .tooltip(fl!("epub-viewer-copy-code"))
-                        .into(),
+                    widget::button::icon(
+                        widget::icon::from_name("edit-copy-symbolic").size(ICON_SIZE),
+                    )
+                    .on_press(EpubViewerMessage::CopyCodeBlock(text.clone()))
+                    .tooltip(fl!("epub-viewer-copy-code"))
+                    .into(),
                 ]);
                 cosmic::iced::widget::stack(vec![code_block.into(), copy_button.into()]).into()
             }
