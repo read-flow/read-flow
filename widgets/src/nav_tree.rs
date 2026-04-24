@@ -5,18 +5,17 @@ use cosmic::Element;
 use cosmic::iced::Alignment;
 use cosmic::iced::Background;
 use cosmic::iced::Length;
+use cosmic::widget;
 use cosmic::widget::button;
-use cosmic::widget::{
-    self,
-};
 
 const INDENT_WIDTH: f32 = 16.0;
+const ICON_SIZE: f32 = 16.0;
+const CHEVRON_ICON_SIZE: u16 = 10;
 
 pub struct NavLeaf<Message> {
     pub icon: Option<cosmic::widget::icon::Icon>,
     pub label: String,
     pub active: bool,
-    pub indent: u16,
     pub on_activate: Message,
 }
 
@@ -42,7 +41,6 @@ impl<Message: Clone> NavItem<Message> {
                 icon: leaf.icon,
                 label: leaf.label,
                 active: leaf.active,
-                indent: leaf.indent,
                 on_activate: f(leaf.on_activate),
             }),
             NavItem::Node(node) => NavItem::Node(NavNode {
@@ -93,7 +91,7 @@ impl<Message: Clone + 'static> NavTree<Message> {
         let items: Vec<Element<'static, Message>> = self
             .items
             .into_iter()
-            .flat_map(|item| render_item(item, space_s, space_xxs))
+            .flat_map(|item| render_item(item, 0, space_s, space_xxs))
             .collect();
 
         widget::Column::with_children(items)
@@ -114,30 +112,36 @@ impl<Message: Clone + 'static> NavTree<Message> {
 
 fn render_item<Message: Clone + 'static>(
     item: NavItem<Message>,
+    depth: u16,
     space_s: u16,
     space_xxs: u16,
 ) -> Vec<Element<'static, Message>> {
     match item {
-        NavItem::Leaf(leaf) => vec![render_leaf(leaf, space_s)],
-        NavItem::Node(node) => render_node(node, space_s, space_xxs),
+        NavItem::Leaf(leaf) => vec![render_leaf(leaf, depth, space_s)],
+        NavItem::Node(node) => render_node(node, depth, space_s, space_xxs),
     }
 }
 
 fn render_leaf<Message: Clone + 'static>(
     leaf: NavLeaf<Message>,
+    depth: u16,
     space_s: u16,
 ) -> Element<'static, Message> {
     let mut row = widget::Row::new()
         .spacing(space_s)
         .align_y(Alignment::Center);
 
-    if leaf.indent > 0 {
-        row = row
-            .push(widget::Space::new().width(Length::Fixed(f32::from(leaf.indent) * INDENT_WIDTH)));
+    if depth > 0 {
+        row = row.push(widget::Space::new().width(Length::Fixed(f32::from(depth) * INDENT_WIDTH)));
     }
-    if let Some(icon) = leaf.icon {
-        row = row.push(icon);
+
+    match leaf.icon {
+        Some(icon) => row = row.push(icon),
+        None => {
+            row = row.push(widget::Space::new().width(Length::Fixed(ICON_SIZE)));
+        }
     }
+
     row = row.push(widget::text(leaf.label));
 
     button::custom(row)
@@ -149,6 +153,7 @@ fn render_leaf<Message: Clone + 'static>(
 
 fn render_node<Message: Clone + 'static>(
     node: NavNode<Message>,
+    depth: u16,
     space_s: u16,
     space_xxs: u16,
 ) -> Vec<Element<'static, Message>> {
@@ -161,9 +166,19 @@ fn render_node<Message: Clone + 'static>(
     let mut body_row = widget::Row::new()
         .spacing(space_s)
         .align_y(Alignment::Center);
-    if let Some(icon) = node.icon {
-        body_row = body_row.push(icon);
+
+    if depth > 0 {
+        body_row = body_row
+            .push(widget::Space::new().width(Length::Fixed(f32::from(depth) * INDENT_WIDTH)));
     }
+
+    match node.icon {
+        Some(icon) => body_row = body_row.push(icon),
+        None => {
+            body_row = body_row.push(widget::Space::new().width(Length::Fixed(ICON_SIZE)));
+        }
+    }
+
     body_row = body_row.push(widget::text(node.label));
 
     let body_btn = button::custom(body_row)
@@ -171,8 +186,8 @@ fn render_node<Message: Clone + 'static>(
         .width(Length::Fill)
         .on_press(node.on_activate);
 
-    let chevron_btn =
-        button::icon(widget::icon::from_name(chevron_name).size(10)).on_press(node.on_toggle);
+    let chevron_btn = button::icon(widget::icon::from_name(chevron_name).size(CHEVRON_ICON_SIZE))
+        .on_press(node.on_toggle);
 
     let header: Element<'static, Message> = widget::Row::new()
         .push(body_btn)
@@ -184,7 +199,7 @@ fn render_node<Message: Clone + 'static>(
 
     if !node.collapsed {
         for child in node.children {
-            result.extend(render_item(child, space_s, space_xxs));
+            result.extend(render_item(child, depth + 1, space_s, space_xxs));
         }
     }
 

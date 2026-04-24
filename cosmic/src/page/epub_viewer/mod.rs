@@ -1305,7 +1305,8 @@ impl Page for EpubViewer {
                 } else {
                     None
                 };
-                let scroll_task = if let Some(y) = target_y {
+
+                if let Some(y) = target_y {
                     self.scroll_y = y;
                     scrollable::scroll_to(
                         self.content_scroll_id.clone(),
@@ -1313,8 +1314,7 @@ impl Page for EpubViewer {
                     )
                 } else {
                     Task::none()
-                };
-                scroll_task
+                }
             }
             EpubViewerMessage::ReadingProgressLoaded(pos) => {
                 self.initial_chapter = pos.chapter;
@@ -2765,7 +2765,7 @@ fn paginate_blocks(
 ///
 /// `entries` is a slice of `(original_index, &NavEntry)` pairs, all at depth
 /// >= `depth`.  Entries at `depth` become top-level items; deeper entries
-/// become their children.
+/// > become their children.
 fn build_nav_items_at_depth(
     entries: &[(usize, &NavEntry)],
     depth: usize,
@@ -2814,7 +2814,6 @@ fn build_nav_items_at_depth(
                 icon: None,
                 label: entry.label.clone(),
                 active: is_active,
-                indent: 0,
                 on_activate: EpubViewerMessage::SelectNavEntry(orig_idx),
             }));
         } else {
@@ -2856,7 +2855,6 @@ impl EpubViewer {
                         icon: None,
                         label: chapter.label.clone(),
                         active: idx == self.active_chapter,
-                        indent: 0,
                         on_activate: EpubViewerMessage::SelectChapter(idx),
                     })
                 })

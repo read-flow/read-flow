@@ -682,7 +682,6 @@ impl ReadFlow {
                     icon: self.nav.icon(entity).cloned(),
                     label: self.nav.text(entity).unwrap_or("").to_string(),
                     active: is_active,
-                    indent: 0,
                     on_activate: cosmic::action::cosmic(cosmic::app::Action::NavBar(entity)),
                 }));
             }
