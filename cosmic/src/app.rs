@@ -29,6 +29,9 @@ use read_flow_widgets::NavTree;
 use crate::ApplicationModule;
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
+use crate::component::check_missing::CheckMissingComponent;
+use crate::component::check_missing::CheckMissingMessage;
+use crate::component::check_missing::CheckMissingOutput;
 use crate::component::scan_progress::ScanComponent;
 use crate::component::scan_progress::ScanProgressMessage;
 use crate::component::scan_progress::ScanProgressOutput;
@@ -72,6 +75,8 @@ pub struct ReadFlow {
     pages: Pages,
     /// Scan progress component, present while scanning or showing the last result.
     scan_component: Option<ScanComponent>,
+    /// Check-missing component, present while the dialog is open.
+    check_missing_component: Option<CheckMissingComponent>,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -92,6 +97,8 @@ pub enum Message {
     SwitchLanguage(LanguageIdentifier),
     ExpireDocumentProvider,
     Scan,
+    CheckMissing,
+    CheckMissingComponent(CheckMissingMessage),
     ScanComponent(ScanProgressMessage),
     KeyboardEvent(
         cosmic::iced::keyboard::Modifiers,
@@ -115,6 +122,12 @@ impl From<PageOutput> for Message {
 impl From<ScanProgressMessage> for Message {
     fn from(msg: ScanProgressMessage) -> Self {
         Message::ScanComponent(msg)
+    }
+}
+
+impl From<CheckMissingMessage> for Message {
+    fn from(msg: CheckMissingMessage) -> Self {
+        Message::CheckMissingComponent(msg)
     }
 }
 
@@ -220,6 +233,7 @@ impl cosmic::Application for ReadFlow {
             application_module,
             pages,
             scan_component: None,
+            check_missing_component: None,
         };
 
         // Create a startup command that sets the window title.
@@ -277,7 +291,10 @@ impl cosmic::Application for ReadFlow {
                 menu::root(fl!("actions")).apply(Element::from),
                 menu::items(
                     &self.key_binds,
-                    vec![menu::Item::Button(fl!("scan"), None, MenuAction::Scan)],
+                    vec![
+                        menu::Item::Button(fl!("scan"), None, MenuAction::Scan),
+                        menu::Item::Button(fl!("check-missing"), None, MenuAction::CheckMissing),
+                    ],
                 ),
             ),
             menu::Tree::with_children(
@@ -396,6 +413,11 @@ impl cosmic::Application for ReadFlow {
     }
 
     fn dialog(&self) -> Option<Element<'_, Self::Message>> {
+        if let Some(ref component) = self.check_missing_component {
+            return component
+                .dialog()
+                .map(|e| e.map(Message::CheckMissingComponent));
+        }
         self.pages
             .dialog(self.pages.active_page())
             .map(|e| e.map(Into::into))
@@ -565,6 +587,34 @@ impl cosmic::Application for ReadFlow {
                     Message::Page(PageMessage::Refresh)
                 })
             }
+            Message::CheckMissing => {
+                let (component, init_task) =
+                    CheckMissingComponent::new(self.application_module.clone());
+                self.check_missing_component = Some(component);
+                init_task.map(ActionExt::map_into)
+            }
+            Message::CheckMissingComponent(msg) => {
+                if let CheckMissingMessage::Out(output) = msg {
+                    match output {
+                        CheckMissingOutput::Dismissed => {
+                            self.check_missing_component = None;
+                            Task::none()
+                        }
+                        CheckMissingOutput::Purged => {
+                            self.check_missing_component = None;
+                            let document_provider = self.pages.document_provider.clone();
+                            task::future(async move {
+                                document_provider.set_expired().await;
+                                Message::Page(PageMessage::Refresh)
+                            })
+                        }
+                    }
+                } else if let Some(ref mut component) = self.check_missing_component {
+                    component.update(msg).map(ActionExt::map_into)
+                } else {
+                    Task::none()
+                }
+            }
             Message::Scan => {
                 self.scan_component = Some(ScanComponent::new());
 
@@ -718,6 +768,7 @@ pub enum MenuAction {
     About,
     Context,
     Scan,
+    CheckMissing,
     SwitchTo(&'static str),
 }
 
@@ -729,6 +780,7 @@ impl menu::action::MenuAction for MenuAction {
             MenuAction::About => Message::ToggleContextPage(ContextPage::About),
             MenuAction::Context => Message::ToggleActivePageContext,
             MenuAction::Scan => Message::Scan,
+            MenuAction::CheckMissing => Message::CheckMissing,
             MenuAction::SwitchTo(language) => Message::SwitchLanguage(language.parse().unwrap()),
         }
     }
