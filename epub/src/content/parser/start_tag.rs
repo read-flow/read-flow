@@ -19,10 +19,23 @@ use crate::content::resolve::resolve_href;
 
 /// Process an HTML start tag, updating `state` accordingly.
 ///
-/// Returns `true` if the token was fully handled and the caller should move on
-/// to the next token.  Returns `false` only for the generic "push a block-level
-/// entry" path where processing falls through to the normal stack push.
+/// Self-closing elements (`<a id="x"/>`, `<span/>`, etc.) are handled
+/// generically: if the stack grew during processing, the new entry is
+/// immediately popped so siblings are never accidentally swallowed.
 pub(super) fn handle_start_tag(
+    state: &mut SinkState,
+    tag_name: &str,
+    attrs: &[html5ever::Attribute],
+    self_closing: bool,
+) {
+    let depth_before = state.stack.len();
+    handle_start_tag_inner(state, tag_name, attrs, self_closing);
+    if self_closing && state.stack.len() > depth_before {
+        state.stack.pop();
+    }
+}
+
+fn handle_start_tag_inner(
     state: &mut SinkState,
     tag_name: &str,
     attrs: &[html5ever::Attribute],
@@ -86,20 +99,12 @@ pub(super) fn handle_start_tag(
     // Handle <a href="..."> — flush parent, push entry with inherited style + link
     if tag_name == "a" {
         handle_anchor(state, attrs);
-        // Self-closing <a/> is common in XHTML as a named anchor target.
-        // Without this pop the entry stays open and swallows all subsequent siblings.
-        if self_closing {
-            state.stack.pop();
-        }
         return;
     }
 
     // Handle inline style tags: flush parent text, push styled entry
     if matches!(classify(tag_name), TagClass::InlineStyle) {
         handle_inline_tag(state, tag_name, attrs);
-        if self_closing {
-            state.stack.pop();
-        }
         return;
     }
 
@@ -149,9 +154,6 @@ pub(super) fn handle_start_tag(
             entry.span_color = span_color;
             entry.span_font_size_em = span_font_size_em;
             state.stack.push(entry);
-            if self_closing {
-                state.stack.pop();
-            }
             return;
         }
     }
@@ -183,10 +185,6 @@ pub(super) fn handle_start_tag(
     }
 
     state.stack.push(entry);
-
-    if self_closing {
-        let _ = state.stack.pop();
-    }
 }
 
 fn handle_img(state: &mut SinkState, attrs: &[html5ever::Attribute]) {
