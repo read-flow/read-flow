@@ -15,11 +15,13 @@ use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Row;
 use cosmic::widget::text;
+use epub::Document as EpubDocumentTrait;
 use read_flow_core::api::ReadingStatus;
 
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::aggregator::DocumentSource;
+use crate::aggregator::DocumentType;
 use crate::client::ClientSelector;
 use crate::component::provided_state::ProvidedState;
 use crate::component::provided_state::ProvidedStateMessage;
@@ -34,6 +36,17 @@ use crate::layout::layout;
 use crate::page::Page;
 use crate::state::LoadedState;
 
+/// Format-specific metadata loaded on demand from the document file.
+#[derive(Debug, Clone, Default)]
+pub struct FormatMetadata {
+    pub title: Option<String>,
+    pub authors: Vec<String>,
+    pub publisher: Option<String>,
+    pub language: Option<String>,
+    pub date: Option<String>,
+    pub subject: Option<String>,
+}
+
 pub struct DocumentDetails {
     document: Document,
     document_provider: Arc<DocumentProvider>,
@@ -41,6 +54,8 @@ pub struct DocumentDetails {
     tag_editor: TagEditor<Arc<DocumentProvider>>,
     editing_sources: bool,
     pending_source_deletion: Option<DocumentSource>,
+    format_metadata: Option<FormatMetadata>,
+    format_metadata_loading: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +85,8 @@ pub enum DocumentDetailsMessage {
     AllClients(ProvidedStateMessage<Vec<ClientSelector>>),
     SendToClient(ClientSelector),
     SentToClient(Result<(), String>),
+    LoadFormatMetadata,
+    FormatMetadataLoaded(Result<FormatMetadata, String>),
 
     // Message intended for the parent module
     Out(DocumentDetailsOutput),
@@ -106,6 +123,8 @@ impl DocumentDetails {
             tag_editor,
             editing_sources: false,
             pending_source_deletion: None,
+            format_metadata: None,
+            format_metadata_loading: false,
         };
 
         (
@@ -113,6 +132,7 @@ impl DocumentDetails {
             task::batch([
                 tag_editor_task.map(|action| action.map(DocumentDetailsMessage::TagEditor)),
                 init_all_clients.map(ActionExt::map_into),
+                task::message(DocumentDetailsMessage::LoadFormatMetadata),
             ]),
         )
     }
@@ -169,6 +189,71 @@ impl DocumentDetails {
             format!("{} {}", size as i64, UNITS[unit_index])
         } else {
             format!("{:.1} {}", size, UNITS[unit_index])
+        }
+    }
+
+    fn format_metadata_section_view(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
+        let meta = self.format_metadata.as_ref()?;
+        let mut section =
+            widget::settings::section().title(fl!("document-details-metadata-section"));
+        let mut has_items = false;
+
+        if let Some(val) = &meta.title {
+            section = section.add(
+                widget::settings::item::builder(fl!("document-details-metadata-title"))
+                    .icon(widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE))
+                    .control(text(val)),
+            );
+            has_items = true;
+        }
+        if !meta.authors.is_empty() {
+            section = section.add(
+                widget::settings::item::builder(fl!("document-details-metadata-authors"))
+                    .icon(widget::icon::from_name("system-users-symbolic").size(ICON_SIZE))
+                    .control(text(meta.authors.join(", "))),
+            );
+            has_items = true;
+        }
+        if let Some(val) = &meta.publisher {
+            section = section.add(
+                widget::settings::item::builder(fl!("document-details-metadata-publisher"))
+                    .icon(widget::icon::from_name("x-office-address-book-symbolic").size(ICON_SIZE))
+                    .control(text(val)),
+            );
+            has_items = true;
+        }
+        if let Some(val) = &meta.language {
+            section = section.add(
+                widget::settings::item::builder(fl!("document-details-metadata-language"))
+                    .icon(
+                        widget::icon::from_name("preferences-desktop-locale-symbolic")
+                            .size(ICON_SIZE),
+                    )
+                    .control(text(val)),
+            );
+            has_items = true;
+        }
+        if let Some(val) = &meta.date {
+            section = section.add(
+                widget::settings::item::builder(fl!("document-details-metadata-date"))
+                    .icon(widget::icon::from_name("x-office-calendar-symbolic").size(ICON_SIZE))
+                    .control(text(val)),
+            );
+            has_items = true;
+        }
+        if let Some(val) = &meta.subject {
+            section = section.add(
+                widget::settings::item::builder(fl!("document-details-metadata-subject"))
+                    .icon(widget::icon::from_name("edit-find-symbolic").size(ICON_SIZE))
+                    .control(text(val)),
+            );
+            has_items = true;
+        }
+
+        if has_items {
+            Some(section.into())
+        } else {
+            None
         }
     }
 
@@ -423,12 +508,13 @@ impl Page for DocumentDetails {
             ]));
 
         // Main layout using settings view_column
-        let mut sections: Vec<Element<'_, DocumentDetailsMessage>> = vec![
-            basic_info_section.into(),
-            technical_section.into(),
-            tags_section.into(),
-        ];
-
+        let mut sections: Vec<Element<'_, DocumentDetailsMessage>> =
+            vec![basic_info_section.into()];
+        if let Some(meta_section) = self.format_metadata_section_view() {
+            sections.push(meta_section);
+        }
+        sections.push(technical_section.into());
+        sections.push(tags_section.into());
         sections.extend(self.sources_view());
 
         let content = widget::settings::view_column(sections);
@@ -683,6 +769,78 @@ impl Page for DocumentDetails {
                     Task::none()
                 }
             },
+            DocumentDetailsMessage::LoadFormatMetadata => {
+                if self.format_metadata_loading {
+                    return Task::none();
+                }
+                self.format_metadata_loading = true;
+                let type_ = self.document.metadata.type_.clone();
+                let path = self.document.sources.iter().next().unwrap().path.clone();
+                Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || load_format_metadata(&type_, &path))
+                            .await
+                            .unwrap()
+                    },
+                    |r| cosmic::action::app(DocumentDetailsMessage::FormatMetadataLoaded(r)),
+                )
+            }
+            DocumentDetailsMessage::FormatMetadataLoaded(result) => {
+                self.format_metadata_loading = false;
+                match result {
+                    Ok(meta) => self.format_metadata = Some(meta),
+                    Err(err) => tracing::warn!("Failed to load format metadata: {err}"),
+                }
+                Task::none()
+            }
         }
+    }
+}
+
+fn load_format_metadata(type_: &DocumentType, path: &str) -> Result<FormatMetadata, String> {
+    match type_ {
+        DocumentType::Epub => load_epub_format_metadata(path),
+        DocumentType::Pdf => load_pdf_format_metadata(path),
+        _ => Ok(FormatMetadata::default()),
+    }
+}
+
+fn load_epub_format_metadata(path: &str) -> Result<FormatMetadata, String> {
+    let doc = epub::EpubDocument::open(path).map_err(|e| e.to_string())?;
+    let m = doc.metadata();
+    Ok(FormatMetadata {
+        title: m.title.clone(),
+        authors: m.authors.clone(),
+        publisher: m.publisher.clone(),
+        language: m.language.clone(),
+        date: m.date.clone(),
+        subject: None,
+    })
+}
+
+fn load_pdf_format_metadata(path: &str) -> Result<FormatMetadata, String> {
+    let doc =
+        mupdf::Document::open(std::path::Path::new(path).as_os_str()).map_err(|e| e.to_string())?;
+    let get = |name| doc.metadata(name).ok().filter(|s: &String| !s.is_empty());
+    Ok(FormatMetadata {
+        title: get(mupdf::MetadataName::Title),
+        authors: get(mupdf::MetadataName::Author)
+            .map(|a| vec![a])
+            .unwrap_or_default(),
+        publisher: None,
+        language: None,
+        date: get(mupdf::MetadataName::CreationDate).map(format_pdf_date),
+        subject: get(mupdf::MetadataName::Subject),
+    })
+}
+
+/// PDF dates use the format `D:YYYYMMDDHHmmSS±HH'mm'` (PDF ref §3.8.3).
+/// We display just the date portion as YYYY-MM-DD, falling back to the raw string.
+fn format_pdf_date(raw: String) -> String {
+    let digits = raw.strip_prefix("D:").unwrap_or(&raw);
+    if digits.len() >= 8 {
+        format!("{}-{}-{}", &digits[0..4], &digits[4..6], &digits[6..8])
+    } else {
+        raw
     }
 }

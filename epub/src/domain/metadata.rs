@@ -8,4 +8,5 @@ pub struct DocumentMetadata {
     pub language: Option<String>,
     pub publisher: Option<String>,
     pub identifier: Option<String>,
+    pub date: Option<String>,
 }

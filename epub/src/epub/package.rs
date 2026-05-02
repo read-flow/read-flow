@@ -51,6 +51,7 @@ impl Package {
                     match local {
                         b"metadata" => in_metadata = true,
                         b"title" | b"creator" | b"language" | b"publisher" | b"identifier"
+                        | b"date"
                             if in_metadata =>
                         {
                             current_tag = Some(String::from_utf8_lossy(local).into_owned());
@@ -103,6 +104,7 @@ impl Package {
                             Some("language") => metadata.language = Some(text),
                             Some("publisher") => metadata.publisher = Some(text),
                             Some("identifier") => metadata.identifier = Some(text),
+                            Some("date") => metadata.date = Some(text),
                             _ => {}
                         }
                     }
@@ -249,6 +251,7 @@ mod tests {
     <dc:language>en</dc:language>
     <dc:publisher>Test Publisher</dc:publisher>
     <dc:identifier>urn:isbn:1234567890</dc:identifier>
+    <dc:date>2024-01-15</dc:date>
   </metadata>
   <manifest>
     <item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
@@ -274,6 +277,7 @@ mod tests {
             pkg.metadata.identifier.as_deref(),
             Some("urn:isbn:1234567890")
         );
+        assert_eq!(pkg.metadata.date.as_deref(), Some("2024-01-15"));
     }
 
     #[test]

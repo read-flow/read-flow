@@ -52,6 +52,13 @@ document-details-technical = Technical Details
 document-details-type = Type
 document-details-unknown = Unknown
 document-details-document-no-longer-accessible = Document no longer accessible
+document-details-metadata-section = Document Metadata
+document-details-metadata-title = Title
+document-details-metadata-authors = Author(s)
+document-details-metadata-publisher = Publisher
+document-details-metadata-language = Language
+document-details-metadata-date = Date
+document-details-metadata-subject = Subject
 
 # Tag editor
 tag-editor-add = Add
