@@ -69,6 +69,10 @@ install:
 uninstall:
     rm {{bin-dst}} {{desktop-dst}} {{icon-svg-dst}}
 
+# Builds a .deb package for the COSMIC desktop app
+deb: build-release
+    cargo deb -p read-flow --no-build
+
 # Vendor dependencies locally
 vendor:
     #!/usr/bin/env bash
