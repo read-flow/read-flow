@@ -438,7 +438,7 @@ impl MuPdfViewer {
         };
 
         let toggle_btn =
-            widget::button::icon(widget::icon::from_name("sidebar-show-symbolic").size(ICON_SIZE))
+            widget::button::icon(widget::icon::from_name("navbar-open-symbolic").size(ICON_SIZE))
                 .on_press(MuPdfViewerMessage::ShowThumbnails(false));
 
         widget::Column::with_children(vec![
@@ -829,7 +829,7 @@ impl Page for MuPdfViewer {
                 let toggle_strip: Element<'_, MuPdfViewerMessage> = widget::Column::new()
                     .push(
                         widget::button::icon(
-                            widget::icon::from_name("sidebar-show-symbolic").size(ICON_SIZE),
+                            widget::icon::from_name("navbar-closed-symbolic").size(ICON_SIZE),
                         )
                         .on_press(MuPdfViewerMessage::ShowThumbnails(true)),
                     )

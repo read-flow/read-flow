@@ -263,8 +263,14 @@ impl cosmic::Application for ReadFlow {
 
     /// Elements to pack at the start of the header bar.
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
+        let navbar_icon = if self.nav_bar_visible {
+            "navbar-open-symbolic"
+        } else {
+            "navbar-closed-symbolic"
+        };
+
         let mut elements = vec![
-            widget::button::icon(widget::icon::from_name("sidebar-show-symbolic").size(ICON_SIZE))
+            widget::button::icon(widget::icon::from_name(navbar_icon).size(ICON_SIZE))
                 .on_press(Message::ToggleNavBar)
                 .into(),
         ];
