@@ -973,7 +973,8 @@ impl EpubViewer {
                 widget::container(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
                     .width(zone_length)
                     .height(Length::Fill)
-                    .center(zone_length),
+                    .align_x(Horizontal::Center)
+                    .align_y(Vertical::Center),
             )
             .on_press(EpubViewerMessage::PreviousPage);
 
@@ -985,7 +986,8 @@ impl EpubViewer {
                 widget::container(widget::icon::from_name("go-next-symbolic").size(ICON_SIZE))
                     .width(zone_length)
                     .height(Length::Fill)
-                    .center(zone_length),
+                    .align_x(Horizontal::Center)
+                    .align_y(Vertical::Center),
             )
             .on_press(EpubViewerMessage::NextPage);
 
