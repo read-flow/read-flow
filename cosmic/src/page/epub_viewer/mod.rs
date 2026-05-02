@@ -950,37 +950,44 @@ impl EpubViewer {
                 make_paper(current_page)
             };
 
-            // Outer "desk" with click-to-turn zones.
-            let left_zone = widget::mouse_area(
-                widget::container(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
-                    .width(Length::FillPortion(1))
-                    .height(Length::Fill)
-                    .center(Length::Fill),
-            )
-            .on_press(EpubViewerMessage::PreviousPage);
-
-            let center = widget::container(center_content)
-                .width(Length::FillPortion(10))
-                .height(Length::Fill);
-
-            let right_zone = widget::mouse_area(
-                widget::container(widget::icon::from_name("go-next-symbolic").size(ICON_SIZE))
-                    .width(Length::FillPortion(1))
-                    .height(Length::Fill)
-                    .center(Length::Fill),
-            )
-            .on_press(EpubViewerMessage::NextPage);
-
             // Cap the reading area so wide screens don't produce huge empty desk
             // margins. The click zones are FillPortion(1) each and the center is
-            // FillPortion(8), so the center takes 80% of the row. We size the cap
-            // to just fit the page(s) plus proportional click zones.
+            // FillPortion(10) when the viewport is wide enough. When the viewport
+            // is narrower than max_row_width the page width is already constrained,
+            // so the click zones shrink to their icon size to give the center the
+            // maximum available space.
             let center_pages_width = if dual {
                 max_content_width * 2.0 + space_xxs as f32
             } else {
                 max_content_width
             };
             let max_row_width = center_pages_width / 0.8;
+            let (zone_length, center_length) = if size.width < max_row_width {
+                (Length::Shrink, Length::Fill)
+            } else {
+                (Length::FillPortion(1), Length::FillPortion(10))
+            };
+
+            // Outer "desk" with click-to-turn zones.
+            let left_zone = widget::mouse_area(
+                widget::container(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
+                    .width(zone_length)
+                    .height(Length::Fill)
+                    .center(zone_length),
+            )
+            .on_press(EpubViewerMessage::PreviousPage);
+
+            let center = widget::container(center_content)
+                .width(center_length)
+                .height(Length::Fill);
+
+            let right_zone = widget::mouse_area(
+                widget::container(widget::icon::from_name("go-next-symbolic").size(ICON_SIZE))
+                    .width(zone_length)
+                    .height(Length::Fill)
+                    .center(zone_length),
+            )
+            .on_press(EpubViewerMessage::NextPage);
 
             let inner = widget::container(
                 widget::Row::new()
