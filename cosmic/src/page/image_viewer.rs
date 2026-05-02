@@ -5,9 +5,11 @@ use std::cell::Cell;
 use cosmic::Action;
 use cosmic::Element;
 use cosmic::Task;
+use cosmic::cosmic_theme;
 use cosmic::iced::ContentFit;
 use cosmic::iced::Length;
 use cosmic::iced::widget::scrollable;
+use cosmic::theme;
 use cosmic::widget;
 
 use super::traits::Page;
@@ -182,7 +184,19 @@ impl Page for ImageViewer {
         .into()
     }
 
+    fn view_header_start(&self) -> Vec<Element<'_, ImageViewerMessage>> {
+        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+        vec![
+            widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
+                .on_press(ImageViewerMessage::Out(ImageViewerOutput::Close(self.id)))
+                .tooltip(fl!("epub-viewer-back"))
+                .padding(space_xxs)
+                .into(),
+        ]
+    }
+
     fn view_header_end(&self) -> Vec<Element<'_, ImageViewerMessage>> {
+        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
         let ratio = self.view_ratio.get();
         let can_zoom_out = Zoom::percents().any(|p| p as f32 / 100.0 < ratio);
         let can_zoom_in = Zoom::percents().any(|p| p as f32 / 100.0 > ratio);
@@ -191,14 +205,12 @@ impl Page for ImageViewer {
             widget::button::icon(widget::icon::from_name("zoom-out-symbolic").size(ICON_SIZE))
                 .on_press_maybe(can_zoom_out.then_some(ImageViewerMessage::ZoomOut))
                 .tooltip(fl!("epub-viewer-image-zoom-out"))
+                .padding(space_xxs)
                 .into(),
             widget::button::icon(widget::icon::from_name("zoom-in-symbolic").size(ICON_SIZE))
                 .on_press_maybe(can_zoom_in.then_some(ImageViewerMessage::ZoomIn))
                 .tooltip(fl!("epub-viewer-image-zoom-in"))
-                .into(),
-            widget::button::icon(widget::icon::from_name("window-close-symbolic").size(ICON_SIZE))
-                .on_press(ImageViewerMessage::Out(ImageViewerOutput::Close(self.id)))
-                .tooltip(fl!("epub-viewer-back"))
+                .padding(space_xxs)
                 .into(),
         ]
     }
