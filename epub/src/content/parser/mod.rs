@@ -23,6 +23,7 @@ use super::block::ContentBlock;
 use super::block::InlineStyle;
 use super::block::TextSpan;
 use super::resolve::base_dir;
+use super::resolve::resolve_href;
 use super::stylesheet::StyleSheet;
 
 impl TokenSink for ContentSink {
@@ -160,14 +161,9 @@ where
         let href = &caps[2];
         let after_href = &caps[3];
 
-        // Resolve relative paths against the chapter href
-        let resolved_path = if href.starts_with("../") || href.starts_with("./") {
-            // This is a relative path, resolve it against the chapter's directory
-            let chapter_dir = base_dir(chapter_href);
-            normalize_path(&format!("{}/{}", chapter_dir, href))
-        } else {
-            href.to_string()
-        };
+        // Resolve the href against the chapter's directory (handles all relative
+        // forms: "file.jpg", "./file.jpg", "../dir/file.jpg", data: URIs, etc.)
+        let resolved_path = resolve_href(base_dir(chapter_href), href);
 
         // Resolve the image reference
         if let Some((image_data, media_type)) = resolve_image(&resolved_path) {
@@ -328,41 +324,6 @@ fn resolve_images<F>(
             _ => {}
         }
     }
-}
-
-/// Normalize path by resolving ".." and "." components
-fn normalize_path(path: &str) -> String {
-    let parts: Vec<&str> = path.split('/').collect();
-    let mut result: Vec<&str> = Vec::new();
-
-    for part in parts {
-        match part {
-            "." => continue, // Skip current directory
-            ".." => {
-                // Only go up if we have a previous directory that's not ".." and not root
-                if let Some(last) = result.last() {
-                    if !last.is_empty() && *last != ".." {
-                        result.pop();
-                    } else {
-                        // Preserve ".." when we can't go up
-                        result.push("..");
-                    }
-                } else {
-                    // Preserve ".." when result is empty
-                    result.push("..");
-                }
-            }
-            "" => {
-                // Handle empty parts (from leading/trailing slashes)
-                if result.is_empty() {
-                    result.push("");
-                }
-            }
-            _ => result.push(part),
-        }
-    }
-
-    result.join("/")
 }
 
 #[cfg(test)]
@@ -1750,23 +1711,23 @@ mod tests {
     }
 
     #[test]
-    fn svg_image_resolution_preserves_absolute_paths() {
+    fn svg_image_resolution_plain_relative_path() {
+        // A plain relative href (no leading ./ or ../) must still be resolved
+        // against the chapter's directory, not passed through unchanged.
         let svg_content = r#"<svg width="200" height="200">
   <image width="200" height="200" xlink:href="media/Cover.png"/>
 </svg>"#;
 
         let chapter_href = "OEBPS/Text/chapter1.xhtml";
 
-        // Mock resolver
         let resolved_content = resolve_svg_images(svg_content, chapter_href, &mut |path| {
-            if path == "media/Cover.png" {
+            if path == "OEBPS/Text/media/Cover.png" {
                 Some((vec![1, 2, 3, 4], "image/png".to_string()))
             } else {
                 None
             }
         });
 
-        // Should have converted to data URI
         assert!(resolved_content.contains("data:image/png;base64,"));
     }
 
@@ -1834,49 +1795,24 @@ mod tests {
     }
 
     #[test]
-    fn test_normalize_path() {
-        // Test relative paths (these should remain unchanged when no base is provided)
-        println!(
-            "Testing '../media/Cover.png' -> '{}'",
-            normalize_path("../media/Cover.png")
+    fn svg_image_same_dir_as_chapter() {
+        // A plain relative href (no ./ or ../) in an SVG <image> must be resolved
+        // against the chapter's directory, the same as any other relative reference.
+        let svg_content = r#"<svg width="200" height="200">
+  <image width="200" height="200" xlink:href="cover.jpg"/>
+</svg>"#;
+        let chapter_href = "OEBPS/content.xhtml";
+        let resolved_content = resolve_svg_images(svg_content, chapter_href, &mut |path| {
+            if path == "OEBPS/cover.jpg" {
+                Some((vec![1, 2, 3, 4], "image/jpeg".to_string()))
+            } else {
+                None
+            }
+        });
+        assert!(
+            resolved_content.contains("data:image/jpeg;base64,"),
+            "plain relative SVG image href was not resolved against chapter directory"
         );
-        assert_eq!(normalize_path("../media/Cover.png"), "../media/Cover.png");
-
-        println!(
-            "Testing './image.png' -> '{}'",
-            normalize_path("./image.png")
-        );
-        assert_eq!(normalize_path("./image.png"), "image.png");
-
-        // Test path normalization with ".." components
-        println!(
-            "Testing 'OEBPS/../media/Cover.png' -> '{}'",
-            normalize_path("OEBPS/../media/Cover.png")
-        );
-        assert_eq!(
-            normalize_path("OEBPS/../media/Cover.png"),
-            "media/Cover.png"
-        ); // OEBPS + .. = remove OEBPS
-
-        println!(
-            "Testing 'OEBPS/Text/../../media/Cover.png' -> '{}'",
-            normalize_path("OEBPS/Text/../../media/Cover.png")
-        );
-        assert_eq!(
-            normalize_path("OEBPS/Text/../../media/Cover.png"),
-            "media/Cover.png"
-        ); // OEBPS/Text + ../.. = remove OEBPS/Text
-
-        // Test absolute paths
-        assert_eq!(normalize_path("/absolute/path"), "/absolute/path");
-
-        // Test empty path
-        assert_eq!(normalize_path(""), "");
-
-        // Test complex cases
-        assert_eq!(normalize_path("a/b/../c"), "a/c");
-        assert_eq!(normalize_path("a/./b/c"), "a/b/c");
-        assert_eq!(normalize_path("a//b/c"), "a/b/c");
     }
 
     #[test]
