@@ -727,7 +727,9 @@ impl EpubViewer {
     }
 
     fn view_content_paginated(&self) -> Element<'_, EpubViewerMessage> {
-        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing {
+            space_s, space_xxs, ..
+        } = theme::active().cosmic().spacing;
 
         let chapter = match self.chapters.get(self.active_chapter) {
             Some(ch) => ch,
@@ -963,7 +965,10 @@ impl EpubViewer {
             };
             let max_row_width = center_pages_width / 0.8;
             let (zone_length, center_length) = if size.width < max_row_width {
-                (Length::Shrink, Length::Fill)
+                (
+                    Length::Fixed((ICON_SIZE + space_s * 2) as f32),
+                    Length::Fill,
+                )
             } else {
                 (Length::FillPortion(1), Length::FillPortion(10))
             };
