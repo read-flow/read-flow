@@ -551,16 +551,26 @@ impl Pages {
                 }
             }
             PageMessage::KeyEvent(page, modifiers, key, text) => match page {
-                PageSelector::EpubViewer(fingerprint) => self.epub_viewers[&fingerprint]
-                    .update(EpubViewerMessage::Key(modifiers, key, text))
-                    .map(move |action| {
-                        action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
-                    }),
-                PageSelector::MuPdfViewer(fingerprint) => self.mu_pdf_viewers[&fingerprint]
-                    .update(MuPdfViewerMessage::Key(modifiers, key, text))
-                    .map(move |action| {
-                        action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
-                    }),
+                PageSelector::EpubViewer(fingerprint) => {
+                    let Some(viewer) = self.epub_viewers.get_mut(&fingerprint) else {
+                        return Task::none();
+                    };
+                    viewer
+                        .update(EpubViewerMessage::Key(modifiers, key, text))
+                        .map(move |action| {
+                            action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
+                        })
+                }
+                PageSelector::MuPdfViewer(fingerprint) => {
+                    let Some(viewer) = self.mu_pdf_viewers.get_mut(&fingerprint) else {
+                        return Task::none();
+                    };
+                    viewer
+                        .update(MuPdfViewerMessage::Key(modifiers, key, text))
+                        .map(move |action| {
+                            action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
+                        })
+                }
                 PageSelector::Documents => self
                     .documents
                     .update(DocumentListMessage::Key(modifiers, key))
@@ -568,23 +578,36 @@ impl Pages {
                 _ => Task::none(),
             },
             PageMessage::ModifiersChanged(page, modifiers) => match page {
-                PageSelector::EpubViewer(fingerprint) => self.epub_viewers[&fingerprint]
-                    .update(EpubViewerMessage::ModifiersChanged(modifiers))
-                    .map(move |action| {
-                        action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
-                    }),
-                PageSelector::MuPdfViewer(fingerprint) => self.mu_pdf_viewers[&fingerprint]
-                    .update(MuPdfViewerMessage::ModifiersChanged(modifiers))
-                    .map(move |action| {
-                        action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
-                    }),
+                PageSelector::EpubViewer(fingerprint) => {
+                    let Some(viewer) = self.epub_viewers.get_mut(&fingerprint) else {
+                        return Task::none();
+                    };
+                    viewer
+                        .update(EpubViewerMessage::ModifiersChanged(modifiers))
+                        .map(move |action| {
+                            action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
+                        })
+                }
+                PageSelector::MuPdfViewer(fingerprint) => {
+                    let Some(viewer) = self.mu_pdf_viewers.get_mut(&fingerprint) else {
+                        return Task::none();
+                    };
+                    viewer
+                        .update(MuPdfViewerMessage::ModifiersChanged(modifiers))
+                        .map(move |action| {
+                            action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
+                        })
+                }
                 _ => Task::none(),
             },
-            PageMessage::MuPdfViewer(fingerprint, message) => self.mu_pdf_viewers[&fingerprint]
-                .update(message)
-                .map(move |action| {
+            PageMessage::MuPdfViewer(fingerprint, message) => {
+                let Some(viewer) = self.mu_pdf_viewers.get_mut(&fingerprint) else {
+                    return Task::none();
+                };
+                viewer.update(message).map(move |action| {
                     action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
-                }),
+                })
+            }
             PageMessage::CloseMuPdfViewer(fingerprint, page) => {
                 let selector = PageSelector::MuPdfViewer(fingerprint.clone());
                 let _ = self.mu_pdf_viewers.swap_remove(&fingerprint);
@@ -614,14 +637,22 @@ impl Pages {
 
                 Task::batch(tasks)
             }
-            PageMessage::EpubViewer(fingerprint, message) => self.epub_viewers[&fingerprint]
-                .update(message)
-                .map(move |action| {
+            PageMessage::EpubViewer(fingerprint, message) => {
+                let Some(viewer) = self.epub_viewers.get_mut(&fingerprint) else {
+                    return Task::none();
+                };
+                viewer.update(message).map(move |action| {
                     action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
-                }),
-            PageMessage::ImageViewer(id, message) => self.image_viewers[&id]
-                .update(message)
-                .map(move |action| action.map(|msg| map_image_viewer_message(id, msg))),
+                })
+            }
+            PageMessage::ImageViewer(id, message) => {
+                let Some(viewer) = self.image_viewers.get_mut(&id) else {
+                    return Task::none();
+                };
+                viewer
+                    .update(message)
+                    .map(move |action| action.map(|msg| map_image_viewer_message(id, msg)))
+            }
             PageMessage::OpenImageViewer(image) => {
                 let id = self.next_image_viewer_id;
                 self.next_image_viewer_id += 1;
