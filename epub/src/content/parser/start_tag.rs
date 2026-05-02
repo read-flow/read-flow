@@ -86,12 +86,20 @@ pub(super) fn handle_start_tag(
     // Handle <a href="..."> — flush parent, push entry with inherited style + link
     if tag_name == "a" {
         handle_anchor(state, attrs);
+        // Self-closing <a/> is common in XHTML as a named anchor target.
+        // Without this pop the entry stays open and swallows all subsequent siblings.
+        if self_closing {
+            state.stack.pop();
+        }
         return;
     }
 
     // Handle inline style tags: flush parent text, push styled entry
     if matches!(classify(tag_name), TagClass::InlineStyle) {
         handle_inline_tag(state, tag_name, attrs);
+        if self_closing {
+            state.stack.pop();
+        }
         return;
     }
 
@@ -141,6 +149,9 @@ pub(super) fn handle_start_tag(
             entry.span_color = span_color;
             entry.span_font_size_em = span_font_size_em;
             state.stack.push(entry);
+            if self_closing {
+                state.stack.pop();
+            }
             return;
         }
     }

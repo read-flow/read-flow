@@ -905,6 +905,21 @@ mod tests {
         assert!(matches!(&blocks[3], ContentBlock::Paragraph { .. }));
     }
 
+    #[test]
+    fn self_closing_anchor_does_not_swallow_subsequent_siblings() {
+        // XHTML self-closing named anchors like <a id="link1"/> must not leave
+        // an unclosed entry on the stack. If they do, every subsequent sibling
+        // element is silently consumed and lost (including </body>).
+        let blocks = parse(
+            r##"<p><a id="link1"/>First paragraph.</p><p>Second paragraph.</p>"##,
+        );
+        let paragraphs: Vec<_> = blocks
+            .iter()
+            .filter(|b| matches!(b, ContentBlock::Paragraph { .. }))
+            .collect();
+        assert_eq!(paragraphs.len(), 2, "both paragraphs must be present: {blocks:?}");
+    }
+
     // --- normalize_html_whitespace unit tests ---
 
     #[test]
