@@ -88,6 +88,10 @@ pub struct File {
     pub fingerprint: String,
     pub tags: Vec<String>,
     pub status: ReadingStatus,
+    /// Guid of the `Document` this file belongs to, if any.
+    /// `#[serde(default)]` lets remote clients that predate this field deserialise cleanly.
+    #[serde(default)]
+    pub document_guid: Option<String>,
 }
 
 impl From<(DbFile, Vec<ContentTag>)> for File {
@@ -100,6 +104,7 @@ impl From<(DbFile, Vec<ContentTag>)> for File {
             size,
             fingerprint,
             status,
+            document_guid,
             ..
         } = file;
         Self {
@@ -110,6 +115,7 @@ impl From<(DbFile, Vec<ContentTag>)> for File {
             fingerprint,
             tags,
             status: status.into(),
+            document_guid,
         }
     }
 }

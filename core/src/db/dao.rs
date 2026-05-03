@@ -1,10 +1,13 @@
+use std::collections::HashMap;
 use std::io;
+use std::path::Path;
 use std::sync::Arc;
 
 use sqlx::SqliteConnection;
 use sqlx::SqlitePool;
 
 use crate::db::models::ContentTag;
+use crate::db::models::Document;
 use crate::db::models::File;
 use crate::db::models::NewFile;
 use crate::db::models::NewRemote;
@@ -37,8 +40,11 @@ impl From<io::Error> for Error {
 
 /// Shared JOIN fragment used by all file SELECT queries.
 const FILE_SELECT: &str = r#"
-    SELECT f.id, f.guid, f.path, f.type, f.size, f.fingerprint, c.status
-    FROM files f JOIN contents c ON f.fingerprint = c.fingerprint"#;
+    SELECT f.id, f.guid, f.path, f.type, f.size, f.fingerprint, c.status,
+           d.guid AS document_guid
+    FROM files f
+    JOIN contents c ON f.fingerprint = c.fingerprint
+    LEFT JOIN documents d ON c.document_id = d.id"#;
 
 pub async fn insert_file(conn: &mut SqliteConnection, file: NewFile) -> Result<File, Error> {
     sqlx::query(
@@ -272,6 +278,104 @@ pub async fn select_all_distinct_tags(conn: &mut SqliteConnection) -> Result<Vec
         .fetch_all(&mut *conn)
         .await
         .map_err(Into::into)
+}
+
+// ─── Document queries ────────────────────────────────────────────────────────
+
+/// Insert a document with `guid` if it doesn't already exist and return it.
+pub async fn upsert_document(conn: &mut SqliteConnection, guid: &str) -> Result<Document, Error> {
+    sqlx::query("INSERT OR IGNORE INTO documents (guid) VALUES (?)")
+        .bind(guid)
+        .execute(&mut *conn)
+        .await?;
+    let doc = sqlx::query_as::<_, Document>("SELECT id, guid FROM documents WHERE guid = ?")
+        .bind(guid)
+        .fetch_one(&mut *conn)
+        .await?;
+    Ok(doc)
+}
+
+/// Set `document_id` on a content row, but only when it is currently NULL.
+/// This preserves any existing link (whether user-set or from a prior auto-pass).
+pub async fn set_content_document(
+    conn: &mut SqliteConnection,
+    fingerprint: &str,
+    document_id: i32,
+) -> Result<(), Error> {
+    sqlx::query(
+        "UPDATE contents SET document_id = ? WHERE fingerprint = ? AND document_id IS NULL",
+    )
+    .bind(document_id)
+    .bind(fingerprint)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+/// Post-scan pass: group all known files by `(parent_directory, stem)` and
+/// link contents that share a stem — but have distinct fingerprints — to a
+/// common `Document`.  Links are strictly additive; nothing is ever unlinked.
+pub async fn auto_link_documents(pool: &SqlitePool) -> Result<(), Error> {
+    #[derive(sqlx::FromRow)]
+    struct FileForLinking {
+        path: String,
+        fingerprint: String,
+        document_id: Option<i32>,
+    }
+
+    let mut conn = pool.acquire().await?;
+
+    let rows = sqlx::query_as::<_, FileForLinking>(
+        "SELECT f.path, f.fingerprint, c.document_id
+         FROM files f JOIN contents c ON f.fingerprint = c.fingerprint",
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+
+    // Group by (parent_dir, stem) — both case-sensitive strings.
+    let mut groups: HashMap<(String, String), Vec<FileForLinking>> = HashMap::new();
+    for row in rows {
+        let path = Path::new(&row.path);
+        let parent = path
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let stem = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        groups.entry((parent, stem)).or_default().push(row);
+    }
+
+    for files in groups.into_values() {
+        // Only process groups with ≥ 2 distinct fingerprints.
+        let distinct: std::collections::HashSet<&str> =
+            files.iter().map(|f| f.fingerprint.as_str()).collect();
+        if distinct.len() <= 1 {
+            continue;
+        }
+
+        // Find an existing document_id in the group, or create a new one.
+        let document_id = match files.iter().find_map(|f| f.document_id) {
+            Some(id) => id,
+            None => {
+                let new_guid = uuid::Uuid::new_v4().to_string();
+                let doc = upsert_document(&mut conn, &new_guid).await?;
+                tracing::debug!(
+                    "created document {} for stem group ({} files)",
+                    doc.guid,
+                    files.len()
+                );
+                doc.id
+            }
+        };
+
+        for file in &files {
+            set_content_document(&mut conn, &file.fingerprint, document_id).await?;
+        }
+    }
+
+    Ok(())
 }
 
 // ─── Remote queries ───────────────────────────────────────────────────────────

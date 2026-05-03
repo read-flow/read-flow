@@ -103,6 +103,7 @@ impl FileDataSource for DbClient {
             size: file.size,
             fingerprint: file.fingerprint.clone(),
             status: existing.status,
+            document_guid: existing.document_guid.clone(),
         };
         dao::update_file(&mut tx, &updated).await?;
 

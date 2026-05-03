@@ -1,6 +1,12 @@
+CREATE TABLE documents (
+    id   INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    guid TEXT    NOT NULL UNIQUE
+);
+
 CREATE TABLE contents (
     fingerprint TEXT    NOT NULL PRIMARY KEY,
-    status      INTEGER NOT NULL DEFAULT 0
+    status      INTEGER NOT NULL DEFAULT 0,
+    document_id INTEGER REFERENCES documents (id) ON DELETE SET NULL
 );
 
 CREATE TABLE content_tags (

@@ -316,6 +316,11 @@ async fn stage3_writer(
         flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
     }
 
+    // Post-scan: auto-link contents that share a directory/stem into Documents.
+    if let Err(e) = dao::auto_link_documents(&pool).await {
+        tracing::warn!("document auto-link failed: {e}");
+    }
+
     let _ = progress_tx
         .send(ScanProgress::Completed {
             discovered,
@@ -882,5 +887,118 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(count.0, 1);
+    }
+
+    #[tokio::test]
+    async fn auto_link_creates_document_for_matching_stems() {
+        let pool = test_pool().await;
+        let (progress_tx, _) = mpsc::channel(64);
+        let mut processed = 0u64;
+        let mut errors = 0u64;
+
+        // Two files in the same directory sharing the stem "book", different fingerprints.
+        let mut batch = vec![
+            scanned("/tmp/books/book.pdf", "pdf", 10, "fp-pdf", vec![]),
+            scanned("/tmp/books/book.epub", "epub", 20, "fp-epub", vec![]),
+        ];
+        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+
+        dao::auto_link_documents(&pool).await.unwrap();
+
+        // Both contents must share the same non-NULL document_id.
+        let doc_ids: Vec<Option<i64>> =
+            sqlx::query_scalar("SELECT document_id FROM contents ORDER BY fingerprint")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert!(
+            doc_ids.iter().all(|id| id.is_some()),
+            "both contents must have a document"
+        );
+        assert_eq!(
+            doc_ids[0], doc_ids[1],
+            "both contents must share the same document"
+        );
+
+        // Exactly one document must exist.
+        let doc_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM documents")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(doc_count.0, 1);
+
+        // Running again is idempotent — still exactly one document.
+        dao::auto_link_documents(&pool).await.unwrap();
+        let doc_count2: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM documents")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(doc_count2.0, 1);
+    }
+
+    #[tokio::test]
+    async fn auto_link_does_not_link_files_with_different_stems() {
+        let pool = test_pool().await;
+        let (progress_tx, _) = mpsc::channel(64);
+        let mut processed = 0u64;
+        let mut errors = 0u64;
+
+        let mut batch = vec![
+            scanned("/tmp/books/alice.pdf", "pdf", 10, "fp1", vec![]),
+            scanned("/tmp/books/bob.epub", "epub", 20, "fp2", vec![]),
+        ];
+        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+
+        dao::auto_link_documents(&pool).await.unwrap();
+
+        let doc_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM documents")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(doc_count.0, 0, "different stems must not be linked");
+    }
+
+    #[tokio::test]
+    async fn auto_link_new_format_joins_existing_document() {
+        let pool = test_pool().await;
+        let (progress_tx, _) = mpsc::channel(64);
+        let mut processed = 0u64;
+        let mut errors = 0u64;
+
+        // First scan: pdf + epub → document created.
+        let mut batch = vec![
+            scanned("/tmp/books/book.pdf", "pdf", 10, "fp-pdf", vec![]),
+            scanned("/tmp/books/book.epub", "epub", 20, "fp-epub", vec![]),
+        ];
+        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+        dao::auto_link_documents(&pool).await.unwrap();
+
+        // Second scan: mobi added with the same stem.
+        let mut batch = vec![scanned(
+            "/tmp/books/book.mobi",
+            "mobi",
+            30,
+            "fp-mobi",
+            vec![],
+        )];
+        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+        dao::auto_link_documents(&pool).await.unwrap();
+
+        // All three contents must share the same document, and there's still only one document.
+        let doc_ids: Vec<Option<i64>> =
+            sqlx::query_scalar("SELECT document_id FROM contents ORDER BY fingerprint")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        let first = doc_ids[0];
+        assert!(
+            doc_ids.iter().all(|id| id.is_some() && *id == first),
+            "all three formats must share the same document"
+        );
+        let doc_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM documents")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(doc_count.0, 1);
     }
 }

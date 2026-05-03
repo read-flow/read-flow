@@ -547,6 +547,7 @@ impl From<SingleDocumentSource> for File {
             fingerprint: metadata.fingerprint,
             tags: metadata.tags,
             status: metadata.status,
+            document_guid: None,
         }
     }
 }

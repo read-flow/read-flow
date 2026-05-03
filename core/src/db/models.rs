@@ -2,6 +2,12 @@ use serde::Deserialize;
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct Document {
+    pub id: i32,
+    pub guid: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct File {
     pub id: i32,
     pub guid: String,
@@ -12,6 +18,8 @@ pub struct File {
     pub fingerprint: String,
     /// Joined from contents.status
     pub status: i32,
+    /// Joined from documents.guid via contents.document_id (NULL when ungrouped)
+    pub document_guid: Option<String>,
 }
 
 pub struct NewFile {
