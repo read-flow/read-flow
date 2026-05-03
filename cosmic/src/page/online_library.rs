@@ -22,6 +22,7 @@ use read_flow_core::online_library::OnlineCatalog;
 use read_flow_core::online_library::OnlineLibraryClient;
 use read_flow_core::online_library::OpdsClient;
 use read_flow_core::online_library::download_book;
+use read_flow_core::online_library::fetch_cover_bytes;
 
 use crate::ApplicationModule;
 use crate::app::ContextView;
@@ -54,6 +55,7 @@ pub struct OnlineLibraryPage {
     /// None = all catalogs; Some(i) = catalogs[i] only.
     selected_catalog_index: Option<usize>,
     download_state: HashMap<String, DownloadBookState>,
+    cover_images: HashMap<String, widget::image::Handle>,
     format_dialog: Option<OnlineBook>,
     results_layout: ResultsLayout,
     pagination: Pagination,
@@ -85,6 +87,7 @@ pub enum OnlineLibraryMessage {
     DownloadFailed(String, String),
     ImportCompleted(String),
     ImportFailed(String, String),
+    CoverImageLoaded(String, Vec<u8>),
     DismissFormatDialog,
     Out(OnlineLibraryOutput),
 }
@@ -107,6 +110,7 @@ impl OnlineLibraryPage {
             catalogs: Vec::new(),
             selected_catalog_index: None,
             download_state: HashMap::new(),
+            cover_images: HashMap::new(),
             format_dialog: None,
             results_layout: ResultsLayout::default(),
             pagination: Pagination::default(),
@@ -159,7 +163,7 @@ impl Page for OnlineLibraryPage {
                 let items: Vec<Element<'_, OnlineLibraryMessage>> = match self.results_layout {
                     ResultsLayout::Cards => visible
                         .iter()
-                        .map(|b| book_card(b, &self.download_state))
+                        .map(|b| book_card(b, &self.download_state, self.cover_images.get(&b.id)))
                         .collect(),
                     ResultsLayout::Compact => visible
                         .iter()
@@ -320,6 +324,7 @@ impl Page for OnlineLibraryPage {
             OnlineLibraryMessage::ClearSearch => {
                 self.search_query.clear();
                 self.search_state = LoadedState::New;
+                self.cover_images.clear();
                 self.debounce_counter += 1;
                 self.pagination.collection_size = 0;
                 self.pagination.index = 0;
@@ -341,6 +346,7 @@ impl Page for OnlineLibraryPage {
 
             OnlineLibraryMessage::SearchStarted => {
                 self.search_state = LoadedState::Loading;
+                self.cover_images.clear();
                 let am = self.application_module.clone();
                 let query = self.search_query.clone();
                 let catalog_index = self.selected_catalog_index;
@@ -384,8 +390,27 @@ impl Page for OnlineLibraryPage {
                 self.catalogs = catalogs;
                 self.pagination.collection_size = books.len();
                 self.pagination.index = 0;
+                self.cover_images.clear();
+
+                let cover_tasks: Vec<Task<Action<OnlineLibraryMessage>>> = books
+                    .iter()
+                    .filter_map(|b| {
+                        let url = b.cover_url.clone()?;
+                        let book_id = b.id.clone();
+                        Some(task::future(async move {
+                            match fetch_cover_bytes(&url).await {
+                                Ok(bytes) => OnlineLibraryMessage::CoverImageLoaded(book_id, bytes),
+                                Err(e) => {
+                                    tracing::debug!("cover fetch failed for {book_id}: {e}");
+                                    OnlineLibraryMessage::CoverImageLoaded(book_id, vec![])
+                                }
+                            }
+                        }))
+                    })
+                    .collect();
+
                 self.search_state = LoadedState::Loaded(books);
-                Task::none()
+                Task::batch(cover_tasks)
             }
 
             OnlineLibraryMessage::CatalogFilterChanged(index) => {
@@ -465,6 +490,14 @@ impl Page for OnlineLibraryPage {
                 Task::none()
             }
 
+            OnlineLibraryMessage::CoverImageLoaded(book_id, bytes) => {
+                if !bytes.is_empty() {
+                    self.cover_images
+                        .insert(book_id, widget::image::Handle::from_bytes(bytes));
+                }
+                Task::none()
+            }
+
             OnlineLibraryMessage::Out(_) => {
                 panic!("Out message should be handled by parent")
             }
@@ -504,6 +537,7 @@ fn book_action_area<'a>(
 fn book_card<'a>(
     book: &'a OnlineBook,
     download_state: &'a HashMap<String, DownloadBookState>,
+    cover: Option<&'a widget::image::Handle>,
 ) -> Element<'a, OnlineLibraryMessage> {
     let cosmic_theme::Spacing {
         space_xs,
@@ -536,7 +570,7 @@ fn book_card<'a>(
         widget::Space::new().width(0).height(0).into()
     };
 
-    widget::column::with_children(vec![
+    let text_content = widget::column::with_children(vec![
         widget::row::with_children(vec![
             title.into(),
             widget::Space::new().width(Length::Fill).into(),
@@ -549,11 +583,30 @@ fn book_card<'a>(
         book_action_area(book, download_state),
     ])
     .spacing(space_xs)
-    .padding(space_m)
-    .apply(widget::container)
-    .class(cosmic::theme::Container::Card)
-    .width(Length::Fill)
-    .into()
+    .width(Length::Fill);
+
+    let card_body: Element<'_, OnlineLibraryMessage> = if let Some(handle) = cover {
+        widget::row::with_children(vec![
+            widget::image(handle.clone())
+                .width(Length::Fixed(80.0))
+                .height(Length::Fixed(120.0))
+                .content_fit(cosmic::iced::ContentFit::Contain)
+                .into(),
+            text_content.into(),
+        ])
+        .spacing(space_m)
+        .align_y(cosmic::iced::alignment::Vertical::Top)
+        .into()
+    } else {
+        text_content.into()
+    };
+
+    card_body
+        .apply(widget::container)
+        .class(cosmic::theme::Container::Card)
+        .padding(space_m)
+        .width(Length::Fill)
+        .into()
 }
 
 // ─── Compact row layout ───────────────────────────────────────────────────────

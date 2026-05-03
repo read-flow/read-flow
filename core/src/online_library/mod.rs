@@ -442,6 +442,12 @@ pub async fn download_book(
     Ok(target)
 }
 
+pub async fn fetch_cover_bytes(url: &str) -> Result<Vec<u8>, OnlineLibraryError> {
+    let client = Client::new();
+    let bytes = client.get(url).send().await?.bytes().await?;
+    Ok(bytes.to_vec())
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Convert a book title into a safe filename stem.

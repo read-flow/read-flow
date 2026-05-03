@@ -9,14 +9,14 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] ~read-flow::EpubViewer~: Make nav pane resizeable
 - [X] ~read-flow::EpubViewer~: Use `widget::search_input` for search box.
 
-** Tier 2 — High Impact, Moderate Effort [1/6]
+** Tier 2 — High Impact, Moderate Effort [2/6]
 
 - [ ] ~read-flow-core~: HTTP response code & error handling in ~client~ module
 - [ ] ~read-flow-core~: Proper HTTP error handling in ~server~ module, including tests
 - [X] ~read-flow::EpubViewer~: Add progressbar for initial loading.
   - Fixed by speeding up loading
 - [ ] ~read-flow::ImageViewer~: Add image details to context pane, parse from specific image type if possible.
-- [ ] ~read-flow::OnlineLibrary~: Display cover images in book cards (~cover_url~ is already parsed from OPDS feeds but not yet rendered).
+- [X] ~read-flow::OnlineLibrary~: Display cover images in book cards (~cover_url~ is already parsed from OPDS feeds but not yet rendered).
 - [ ] ~read-flow::OnlineLibrary~: Support paginated OPDS results — fetch and display subsequent pages ("load more") when the feed contains an ~rel="next"~ link.
 
 ** Tier 3 — Significant Features [0/10]
