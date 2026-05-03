@@ -4,21 +4,22 @@ This is a tool to help discover and organize files locally and on remote servers
 
 * Open
 
-** Tier 1 — Quick Wins (High value, Low effort) [1/2]
+** Tier 1 — Quick Wins (High value, Low effort) [2/2]
 
-- [ ] ~read-flow::EpubViewer~: Make nav pane resizeable
+- [X] ~read-flow::EpubViewer~: Make nav pane resizeable
 - [X] ~read-flow::EpubViewer~: Use `widget::search_input` for search box.
 
-** Tier 2 — High Impact, Moderate Effort [0/6]
+** Tier 2 — High Impact, Moderate Effort [1/6]
 
 - [ ] ~read-flow-core~: HTTP response code & error handling in ~client~ module
 - [ ] ~read-flow-core~: Proper HTTP error handling in ~server~ module, including tests
-- [ ] ~read-flow::EpubViewer~: Add progressbar for initial loading.
+- [X] ~read-flow::EpubViewer~: Add progressbar for initial loading.
+  - Fixed by speeding up loading
 - [ ] ~read-flow::ImageViewer~: Add image details to context pane, parse from specific image type if possible.
 - [ ] ~read-flow::OnlineLibrary~: Display cover images in book cards (~cover_url~ is already parsed from OPDS feeds but not yet rendered).
 - [ ] ~read-flow::OnlineLibrary~: Support paginated OPDS results — fetch and display subsequent pages ("load more") when the feed contains an ~rel="next"~ link.
 
-** Tier 3 — Significant Features [0/9]
+** Tier 3 — Significant Features [0/10]
 
 - [-] ~read-flow~: Use context view of Document Details page for multiple actions: [3/4]
   - [ ] Remove duplicates (including files)
@@ -54,6 +55,7 @@ This is a tool to help discover and organize files locally and on remote servers
   - videos(.mpeg, .mov, mp4, etc.)
   - audio(.ogg, .mp3, .wav, etc.)
 - [ ] Add unit/integration tests
+- [ ] Add concept of book collections, where the files of each collection are stored under the same directory tree
 
 ** Tier 4 — Useful but Larger Scope [0/7]
 
