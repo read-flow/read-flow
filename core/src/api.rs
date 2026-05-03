@@ -9,8 +9,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use strum::EnumIter;
 
+use crate::db::models::ContentTag;
 use crate::db::models::File as DbFile;
-use crate::db::models::FileTag as DbTag;
 pub use crate::db::models::ReadingProgress;
 
 #[derive(
@@ -81,7 +81,7 @@ pub struct Status {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct File {
-    pub id: i32,
+    pub guid: String,
     pub path: String,
     pub type_: String,
     pub size: i32,
@@ -90,19 +90,20 @@ pub struct File {
     pub status: ReadingStatus,
 }
 
-impl From<(DbFile, Vec<DbTag>)> for File {
-    fn from((file, tags): (DbFile, Vec<DbTag>)) -> Self {
+impl From<(DbFile, Vec<ContentTag>)> for File {
+    fn from((file, tags): (DbFile, Vec<ContentTag>)) -> Self {
         let tags = tags.into_iter().map(|t| t.tag).collect();
         let DbFile {
-            id,
+            guid,
             path,
             type_,
             size,
             fingerprint,
             status,
+            ..
         } = file;
         Self {
-            id,
+            guid,
             path,
             type_,
             size,
@@ -113,36 +114,11 @@ impl From<(DbFile, Vec<DbTag>)> for File {
     }
 }
 
-impl From<File> for (DbFile, Vec<DbTag>) {
-    fn from(
-        File {
-            id,
-            path,
-            type_,
-            size,
-            fingerprint,
-            tags,
-            status,
-        }: File,
-    ) -> Self {
-        let tags = tags.into_iter().map(|tag| DbTag::new(id, tag)).collect();
-        let file = DbFile {
-            id,
-            path,
-            type_,
-            size,
-            fingerprint,
-            status: status.into(),
-        };
-        (file, tags)
-    }
-}
-
 #[async_trait::async_trait]
 pub trait FileDataSource {
     type Error: std::error::Error;
 
-    /// Returns a display name for this data source
+    /// Returns a display name for this data source.
     ///
     /// This is used for UI elements like tab labels and headers.
     /// For local data sources, this should return "Local Files".
@@ -155,19 +131,23 @@ pub trait FileDataSource {
 
     async fn get_files_tags(&self) -> Result<Vec<String>, Self::Error>;
 
-    async fn get_file(&self, id: i32) -> Result<Option<File>, Self::Error>;
+    async fn get_file(&self, guid: &str) -> Result<Option<File>, Self::Error>;
 
-    async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Self::Error>;
+    async fn get_file_tags(&self, guid: &str) -> Result<Vec<String>, Self::Error>;
 
-    async fn add_file_tags(&self, id: i32, tags: Vec<String>) -> Result<Vec<String>, Self::Error>;
+    async fn add_file_tags(
+        &self,
+        guid: &str,
+        tags: Vec<String>,
+    ) -> Result<Vec<String>, Self::Error>;
 
-    async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Self::Error>;
+    async fn delete_file_tags(&self, guid: &str, tags: Vec<String>) -> Result<(), Self::Error>;
 
     async fn update_file(&self, file: File) -> Result<(), Self::Error>;
 
     async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error>;
 
-    /// Delete a file both from the database and the filesystem
+    /// Delete a file both from the database and the filesystem.
     async fn delete_file(&self, file: File) -> Result<(), Self::Error>;
 
     /// Import a file from a local filesystem path into this data source.

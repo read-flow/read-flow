@@ -30,12 +30,10 @@ use rocket_cors::Cors;
 use rocket_cors::CorsOptions;
 
 use crate::ApplicationModule;
-use crate::FxIndexMap;
 use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
 use crate::api::Status;
-use crate::db;
 use crate::db::dao;
 use crate::settings;
 pub use crate::settings::ServerSettings;
@@ -65,7 +63,7 @@ enum Error {
     #[error("could not import file: {0}")]
     #[response(status = 500)]
     Scan(String),
-    #[error("file with id {0} not found")]
+    #[error("file with guid {0} not found")]
     #[response(status = 404)]
     FileNotFound(String),
 }
@@ -190,33 +188,8 @@ async fn get_files(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<File>>> {
-    let pool = application_module.connection_pool().await;
-    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let files = dao::select_all_files(&mut conn).await?;
-    let file_tags = dao::select_all_file_tags(&mut conn).await?;
-
-    let mut file_tags_map: FxIndexMap<_, Vec<_>> = FxIndexMap::default();
-
-    for file_tag in file_tags {
-        match file_tags_map.get_mut(&file_tag.file_id) {
-            Some(tags) => {
-                tags.push(file_tag);
-            }
-            None => {
-                file_tags_map.insert(file_tag.file_id, vec![file_tag]);
-            }
-        };
-    }
-
-    let models: Vec<File> = files
-        .into_iter()
-        .map(|f| {
-            let tags = file_tags_map.get(&f.id).cloned().unwrap_or(vec![]);
-            (f, tags).into()
-        })
-        .collect();
-
-    Ok(Json(models))
+    let files = application_module.db_client().await.get_files().await?;
+    Ok(Json(files))
 }
 
 #[put("/files", data = "<file>")]
@@ -225,11 +198,11 @@ async fn update_file(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<File>> {
-    let (db_file, _) = file.0.clone().into();
-    let pool = application_module.connection_pool().await;
-    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    dao::update_file(&mut conn, db_file).await?;
-
+    application_module
+        .db_client()
+        .await
+        .update_file(file.0.clone())
+        .await?;
     Ok(file)
 }
 
@@ -240,85 +213,91 @@ async fn get_files_tags(
 ) -> Result<Json<Vec<String>>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let tags = dao::select_all_tags(&mut conn).await?;
+    let tags = dao::select_all_distinct_tags(&mut conn).await?;
     Ok(Json(tags))
 }
 
-#[get("/files/<id>")]
+#[get("/files/<guid>")]
 async fn get_file(
-    id: i32,
+    guid: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Option<Json<File>>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let tags = dao::select_file_tags_by_file_id(&mut conn, id).await?;
-    let file = dao::select_file_by_id(&mut conn, id)
-        .await?
-        .map(|file| (file, tags).into());
-
-    Ok(file.map(Json))
+    let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+        return Ok(None);
+    };
+    let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
+    Ok(Some(Json((file, tags).into())))
 }
 
-#[get("/files/<id>/tags")]
+#[get("/files/<guid>/tags")]
 async fn get_file_tags(
-    id: i32,
+    guid: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let tags = dao::select_file_tags_by_file_id(&mut conn, id)
+    let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+        return Ok(Json(vec![]));
+    };
+    let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
         .await?
         .into_iter()
-        .map(|tag| tag.tag)
+        .map(|t| t.tag)
         .collect();
-
     Ok(Json(tags))
 }
 
-#[post("/files/<id>/tags", data = "<tags>")]
+#[post("/files/<guid>/tags", data = "<tags>")]
 async fn post_file_tags(
-    id: i32,
+    guid: &str,
     tags: Json<Vec<String>>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
-    let file_tags = tags
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+        return Ok(Json(vec![]));
+    };
+    let content_tags = tags
         .into_inner()
         .into_iter()
-        .map(|tag| db::models::FileTag::new(id, tag))
+        .map(|tag| crate::db::models::ContentTag::new(file.fingerprint.clone(), tag))
         .collect();
-    let pool = application_module.connection_pool().await;
-    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    dao::upsert_many_file_tags(&mut conn, file_tags).await?;
-
-    get_file_tags(id, application_module, user).await
+    dao::upsert_many_content_tags(&mut conn, content_tags).await?;
+    get_file_tags(guid, application_module, user).await
 }
 
-#[delete("/files/<id>/tags", data = "<tags>")]
+#[delete("/files/<guid>/tags", data = "<tags>")]
 async fn delete_file_tags(
-    id: i32,
+    guid: &str,
     tags: Json<Vec<String>>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
 ) -> Result<Json<Vec<String>>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    dao::delete_file_tags(&mut conn, id, tags.into_inner()).await?;
-    get_file_tags(id, application_module, user).await
+    let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+        return Ok(Json(vec![]));
+    };
+    dao::delete_content_tags(&mut conn, &file.fingerprint, tags.into_inner()).await?;
+    get_file_tags(guid, application_module, user).await
 }
 
-#[get("/files/<id>/download-as/<file_name>")]
+#[get("/files/<guid>/download-as/<file_name>")]
 async fn download_file(
-    id: i32,
+    guid: &str,
     file_name: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<Option<(ContentType, NamedFile)>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let file = dao::select_file_by_id(&mut conn, id).await?;
+    let file = dao::select_file_by_guid(&mut conn, guid).await?;
 
     match file {
         None => Ok(None),
@@ -347,23 +326,20 @@ async fn download_file(
     }
 }
 
-#[delete("/files/<id>")]
+#[delete("/files/<guid>")]
 async fn delete_file(
-    id: i32,
+    guid: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<()> {
     let db_client = application_module.db_client().await;
-    // Get the file to delete
-    let file = db_client.get_file(id).await?;
+    let file = db_client.get_file(guid).await?;
 
     if let Some(file) = file {
-        // Delete the file from the database
         db_client.delete_file(file).await?;
-
         Ok(())
     } else {
-        Err(Error::FileNotFound(id.to_string()))
+        Err(Error::FileNotFound(guid.to_string()))
     }
 }
 

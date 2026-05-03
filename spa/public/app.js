@@ -89,7 +89,7 @@ const fuseOptions = {
 // === Type Definitions ===
 /**
  * @typedef {Object} File
- * @property {number} id
+ * @property {string} guid
  * @property {string} path
  * @property {string} type_
  * @property {number} size
@@ -232,13 +232,13 @@ async function getAllTags() {
 }
 
 /**
- * @param {number} fileId
+ * @param {string} fileGuid
  * @param {string} tag
  * @returns {Promise<void>}
  */
-async function addFileTag(fileId, tag) {
+async function addFileTag(fileGuid, tag) {
   try {
-    const response = await apiFetch(`${CONFIG.API_URL}/files/${fileId}/tags`, {
+    const response = await apiFetch(`${CONFIG.API_URL}/files/${fileGuid}/tags`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify([tag]),
@@ -257,13 +257,13 @@ async function addFileTag(fileId, tag) {
 }
 
 /**
- * @param {number} fileId
+ * @param {string} fileGuid
  * @param {string} tag
  * @returns {Promise<void>}
  */
-async function removeFileTag(fileId, tag) {
+async function removeFileTag(fileGuid, tag) {
   try {
-    const response = await apiFetch(`${CONFIG.API_URL}/files/${fileId}/tags`, {
+    const response = await apiFetch(`${CONFIG.API_URL}/files/${fileGuid}/tags`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify([tag]),
@@ -291,14 +291,14 @@ const resizeHandle = document.getElementById("resize-handle");
 
 // === File Operations ===
 /**
- * @param {number} fileId
+ * @param {string} fileGuid
  * @param {string} fileName
  * @returns {Promise<void>}
  */
-async function downloadFile(fileId, fileName) {
+async function downloadFile(fileGuid, fileName) {
   try {
     const response = await apiFetch(
-      `${CONFIG.API_URL}/files/${fileId}/download-as/${encodeURIComponent(fileName)}`,
+      `${CONFIG.API_URL}/files/${fileGuid}/download-as/${encodeURIComponent(fileName)}`,
     );
 
     if (!response.ok) {
@@ -380,7 +380,7 @@ function createTagButtonHTML(file, tag) {
             </span>
             <button
                 class='absolute -right-1 -top-1 w-4 h-4 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors'
-                onclick='deleteTag(${file.id}, '${tag}')'
+                onclick='deleteTag("${file.guid}", '${tag}')'
                 title='Remove tag'
             >
                 <svg class='w-3 h-3' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
@@ -688,14 +688,14 @@ function createEmptyStateRow() {
 
 // === Helper Functions ===
 /**
- * @param {number} fileId
+ * @param {string} fileGuid
  * @param {string} tag
  * @returns {Promise<void>}
  */
-async function updateTagState(fileId, tag) {
+async function updateTagState(fileGuid, tag) {
   // Get the updated file details
   const updatedFileResponse = await apiFetch(
-    `${CONFIG.API_URL}/files/${fileId}`,
+    `${CONFIG.API_URL}/files/${fileGuid}`,
   );
 
   if (!updatedFileResponse.ok) {
@@ -713,7 +713,7 @@ async function updateTagState(fileId, tag) {
   }
 
   // Update the details pane if it's currently open
-  if (currentFile && currentFile.id === fileId) {
+  if (currentFile && currentFile.guid === fileGuid) {
     if (detailsPane && !detailsPane.classList.contains("hidden")) {
       showFileDetailsPane(updatedFile);
     }
@@ -727,22 +727,22 @@ async function updateTagState(fileId, tag) {
 }
 
 /**
- * @param {number} fileId
+ * @param {string} fileGuid
  * @returns {void}
  */
-function handleTagKeyPress(event, fileId) {
+function handleTagKeyPress(event, fileGuid) {
   if (event.key === "Enter") {
     event.preventDefault();
-    addTag(fileId);
+    addTag(fileGuid);
   }
 }
 
 /**
- * @param {number} fileId
+ * @param {string} fileGuid
  * @returns {Promise<void>}
  */
-async function addTag(fileId) {
-  const input = document.getElementById(`tag-input-${fileId}`);
+async function addTag(fileGuid) {
+  const input = document.getElementById(`tag-input-${fileGuid}`);
   const newTag = input.value.trim();
 
   if (!newTag) {
@@ -751,8 +751,8 @@ async function addTag(fileId) {
   }
 
   try {
-    await addFileTag(fileId, newTag);
-    await updateTagState(fileId, newTag);
+    await addFileTag(fileGuid, newTag);
+    await updateTagState(fileGuid, newTag);
 
     // Clear the input
     input.value = "";
@@ -763,14 +763,14 @@ async function addTag(fileId) {
 }
 
 /**
- * @param {number} fileId
+ * @param {string} fileGuid
  * @param {string} tag
  * @returns {Promise<void>}
  */
-async function deleteTag(fileId, tag) {
+async function deleteTag(fileGuid, tag) {
   try {
-    await removeFileTag(fileId, tag);
-    await updateTagState(fileId, tag);
+    await removeFileTag(fileGuid, tag);
+    await updateTagState(fileGuid, tag);
   } catch (error) {
     console.error("Error deleting tag:", error);
     alert("Failed to delete tag");
@@ -836,7 +836,7 @@ function showFileDetailsPane(file) {
           </div>
           <div class="flex justify-between py-1">
             <span class="text-gray-600">ID:</span>
-            <span class="font-medium">#${file.id}</span>
+            <span class="font-medium">${file.guid}</span>
           </div>
         </div>
       </div>
@@ -854,7 +854,7 @@ function showFileDetailsPane(file) {
         <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Actions</h4>
         <button
           class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
-          onclick="downloadFile(${file.id}, '${fileName}')"
+          onclick="downloadFile('${file.guid}', '${fileName}')"
         >
           Download File
         </button>
@@ -863,7 +863,7 @@ function showFileDetailsPane(file) {
       <!-- Tags Section -->
       <div>
         <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Tags</h4>
-        <div class="flex flex-wrap gap-1 mb-3" data-file-id="${file.id}">
+        <div class="flex flex-wrap gap-1 mb-3" data-file-guid="${file.guid}">
           ${file.tags
             .map(
               (tag) => `
@@ -885,12 +885,12 @@ function showFileDetailsPane(file) {
             type="text"
             placeholder="Enter new tag"
             class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-            id="tag-input-${file.id}"
-            onkeypress="handleTagKeyPress(event, ${file.id})"
+            id="tag-input-${file.guid}"
+            onkeypress="handleTagKeyPress(event, '${file.guid}')"
           >
           <button
             class="w-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-sm font-medium transition-colors"
-            onclick="addTag(${file.id})"
+            onclick="addTag('${file.guid}')"
           >
             Add Tag
           </button>

@@ -5,8 +5,8 @@ use provider::r#async::Provider;
 use crate::ApplicationModule;
 use crate::db::dao;
 use crate::db::dao::Error;
+use crate::db::models::ContentTag;
 use crate::db::models::File;
-use crate::db::models::FileTag;
 use crate::scan::ScanSettings;
 use crate::settings::Settings;
 use crate::settings::SettingsError;
@@ -23,7 +23,7 @@ where
     async fn apply_tags_from_settings(&self, scan_settings: &ScanSettings) -> Result<(), Error> {
         let pool = self.connection_pool().await;
         let mut conn = pool.acquire().await?;
-        let mut file_tags_to_add: Vec<Vec<FileTag>> = Vec::new();
+        let mut tags_to_add: Vec<Vec<ContentTag>> = Vec::new();
 
         for (path, tags) in &scan_settings.auto_tags {
             let files = dao::select_all_files_by_path_like(&mut conn, path).await?;
@@ -32,20 +32,20 @@ where
                     println!("{}: {:?}", file.path, tags);
                 }
             }
-            file_tags_to_add.push(to_all_file_tags(files, tags));
+            tags_to_add.push(to_all_content_tags(files, tags));
         }
 
         if !scan_settings.dry_run {
-            dao::upsert_many_file_tags(&mut conn, concat(file_tags_to_add)).await?;
+            dao::upsert_many_content_tags(&mut conn, concat(tags_to_add)).await?;
         }
         Ok(())
     }
 }
 
-fn to_all_file_tags(files: Vec<File>, tags: &Vec<String>) -> Vec<FileTag> {
+fn to_all_content_tags(files: Vec<File>, tags: &Vec<String>) -> Vec<ContentTag> {
     files
         .into_iter()
         .cartesian_product(tags)
-        .map(|(file, tag)| FileTag::new(file.id, tag.clone()))
-        .collect::<Vec<FileTag>>()
+        .map(|(file, tag)| ContentTag::new(file.fingerprint, tag.clone()))
+        .collect()
 }

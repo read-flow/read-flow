@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::ExitStatus;
 use std::sync::Arc;
@@ -10,14 +11,11 @@ use tokio::process::Command;
 use super::ConnectionPool;
 use super::dao;
 use super::dao::Error;
-use crate::FxIndexMap;
 use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
-use crate::api::ReadingStatus;
 use crate::api::Status;
-use crate::db::models::File as DbFile;
-use crate::db::models::FileTag as DbFileTag;
+use crate::db::models::ContentTag;
 use crate::db::models::NewFile;
 
 #[derive(Clone)]
@@ -51,75 +49,124 @@ impl FileDataSource for DbClient {
     async fn get_files(&self) -> Result<Vec<File>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
         let files = dao::select_all_files(&mut conn).await?;
-        let file_tags = dao::select_all_file_tags(&mut conn).await?;
+        let all_tags = dao::select_all_content_tags(&mut conn).await?;
 
-        let mut result: FxIndexMap<i32, (DbFile, Vec<DbFileTag>)> = files
-            .into_iter()
-            .map(|file| (file.id, (file, Vec::<DbFileTag>::new())))
-            .collect();
-
-        for tag in file_tags {
-            if let Some((_file, tags)) = result.get_mut(&tag.file_id) {
-                tags.push(tag);
-            }
+        let mut tags_by_fp: HashMap<String, Vec<ContentTag>> = HashMap::new();
+        for tag in all_tags {
+            tags_by_fp
+                .entry(tag.fingerprint.clone())
+                .or_default()
+                .push(tag);
         }
 
-        Ok(result.into_values().map(Into::into).collect())
+        Ok(files
+            .into_iter()
+            .map(|file| {
+                let tags = tags_by_fp.remove(&file.fingerprint).unwrap_or_default();
+                (file, tags).into()
+            })
+            .collect())
     }
 
     async fn get_files_tags(&self) -> Result<Vec<String>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::select_all_tags(&mut conn).await
+        dao::select_all_distinct_tags(&mut conn).await
     }
 
-    async fn get_file(&self, id: i32) -> Result<Option<File>, Self::Error> {
+    async fn get_file(&self, guid: &str) -> Result<Option<File>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        let file = dao::select_file_by_id(&mut conn, id).await?;
-        let file_tags = dao::select_file_tags_by_file_id(&mut conn, id).await?;
-        Ok(file.map(|file| (file, file_tags).into()))
+        let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+            return Ok(None);
+        };
+        let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
+        Ok(Some((file, tags).into()))
     }
 
     async fn update_file(&self, file: File) -> Result<(), Self::Error> {
-        let (db_file, tags) = file.into();
-        let file_id = db_file.id;
         let mut tx = self.connection_pool.begin().await?;
-        dao::update_file(&mut tx, db_file).await?;
-        let existing_tags = dao::select_file_tags_by_file_id(&mut tx, file_id).await?;
-        let tags_to_delete: Vec<String> = existing_tags
-            .into_iter()
-            .filter(|tag| !tags.iter().any(|t| t.tag == tag.tag))
-            .map(|tag| tag.tag)
+
+        let Some(existing) = dao::select_file_by_guid(&mut tx, &file.guid).await? else {
+            return Ok(());
+        };
+
+        // If the fingerprint changed, ensure the new content row exists first.
+        if existing.fingerprint != file.fingerprint {
+            dao::upsert_content(&mut tx, &file.fingerprint).await?;
+        }
+
+        // Update file-level fields (path, type, size, fingerprint).
+        let updated = crate::db::models::File {
+            id: existing.id,
+            guid: existing.guid.clone(),
+            path: file.path.clone(),
+            type_: file.type_.clone(),
+            size: file.size,
+            fingerprint: file.fingerprint.clone(),
+            status: existing.status,
+        };
+        dao::update_file(&mut tx, &updated).await?;
+
+        // Update content status.
+        dao::update_content_status(&mut tx, &file.fingerprint, file.status.into()).await?;
+
+        // Sync content tags: delete removed, upsert added.
+        let existing_tags =
+            dao::select_content_tags_by_fingerprint(&mut tx, &file.fingerprint).await?;
+        let to_delete: Vec<String> = existing_tags
+            .iter()
+            .filter(|t| !file.tags.contains(&t.tag))
+            .map(|t| t.tag.clone())
             .collect();
-        dao::delete_file_tags(&mut tx, file_id, tags_to_delete).await?;
-        dao::upsert_many_file_tags(&mut tx, tags).await?;
+        dao::delete_content_tags(&mut tx, &file.fingerprint, to_delete).await?;
+        let to_add: Vec<ContentTag> = file
+            .tags
+            .iter()
+            .filter(|t| !existing_tags.iter().any(|e| &e.tag == *t))
+            .map(|t| ContentTag::new(file.fingerprint.clone(), t.clone()))
+            .collect();
+        dao::upsert_many_content_tags(&mut tx, to_add).await?;
+
         tx.commit().await?;
         Ok(())
     }
 
-    async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Self::Error> {
+    async fn get_file_tags(&self, guid: &str) -> Result<Vec<String>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        let file_tags = dao::select_file_tags_by_file_id(&mut conn, id).await?;
-        Ok(file_tags.into_iter().map(|t| t.tag).collect())
+        let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+            return Ok(vec![]);
+        };
+        let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
+        Ok(tags.into_iter().map(|t| t.tag).collect())
     }
 
-    async fn add_file_tags(&self, id: i32, tags: Vec<String>) -> Result<Vec<String>, Self::Error> {
-        let db_tags: Vec<DbFileTag> = tags
-            .into_iter()
-            .map(|tag| DbFileTag::new(id, tag))
-            .collect();
+    async fn add_file_tags(
+        &self,
+        guid: &str,
+        tags: Vec<String>,
+    ) -> Result<Vec<String>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::upsert_many_file_tags(&mut conn, db_tags).await?;
-        let result = dao::select_file_tags_by_file_id(&mut conn, id)
+        let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+            return Ok(vec![]);
+        };
+        let content_tags: Vec<ContentTag> = tags
+            .into_iter()
+            .map(|tag| ContentTag::new(file.fingerprint.clone(), tag))
+            .collect();
+        dao::upsert_many_content_tags(&mut conn, content_tags).await?;
+        let result = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
             .await?
             .into_iter()
-            .map(|tag| tag.tag)
+            .map(|t| t.tag)
             .collect();
         Ok(result)
     }
 
-    async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Self::Error> {
+    async fn delete_file_tags(&self, guid: &str, tags: Vec<String>) -> Result<(), Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::delete_file_tags(&mut conn, id, tags).await
+        let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+            return Ok(());
+        };
+        dao::delete_content_tags(&mut conn, &file.fingerprint, tags).await
     }
 
     async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error> {
@@ -132,7 +179,11 @@ impl FileDataSource for DbClient {
             tracing::warn!("Failed to delete file from filesystem: {}", e);
             return Err(Error::IO(Arc::new(e)));
         }
-        dao::delete_file_record(&self.connection_pool, file.id).await
+        let mut conn = self.connection_pool.acquire().await?;
+        if let Some(db_file) = dao::select_file_by_guid(&mut conn, &file.guid).await? {
+            dao::delete_file_record(&self.connection_pool, db_file.id).await?;
+        }
+        Ok(())
     }
 
     async fn get_reading_progress(
@@ -168,21 +219,26 @@ impl FileDataSource for DbClient {
             .to_ascii_lowercase();
 
         let path_str = path.display().to_string();
-        let new_file = NewFile {
-            path: path_str.clone(),
-            type_: extension,
-            size,
-            fingerprint,
-            status: ReadingStatus::Unread.into(),
-        };
-
         let mut conn = self.connection_pool.acquire().await?;
-        dao::upsert_file(&mut conn, new_file).await?;
+
+        dao::upsert_content(&mut conn, &fingerprint).await?;
+        dao::upsert_file(
+            &mut conn,
+            NewFile {
+                guid: uuid::Uuid::new_v4().to_string(),
+                path: path_str.clone(),
+                type_: extension,
+                size,
+                fingerprint: fingerprint.clone(),
+            },
+        )
+        .await?;
+
         let db_file = dao::select_file_by_path(&mut conn, &path_str)
             .await?
             .expect("file should exist after upsert");
-        let file_tags = dao::select_file_tags_by_file_id(&mut conn, db_file.id).await?;
-        Ok((db_file, file_tags).into())
+        let tags = dao::select_content_tags_by_fingerprint(&mut conn, &db_file.fingerprint).await?;
+        Ok((db_file, tags).into())
     }
 }
 

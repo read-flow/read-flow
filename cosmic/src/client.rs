@@ -140,20 +140,24 @@ impl FileDataSource for Client {
         delegate!(self, get_files_tags)
     }
 
-    async fn get_file(&self, id: i32) -> Result<Option<File>, Self::Error> {
-        delegate!(self, get_file, id)
+    async fn get_file(&self, guid: &str) -> Result<Option<File>, Self::Error> {
+        delegate!(self, get_file, guid)
     }
 
-    async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Self::Error> {
-        delegate!(self, get_file_tags, id)
+    async fn get_file_tags(&self, guid: &str) -> Result<Vec<String>, Self::Error> {
+        delegate!(self, get_file_tags, guid)
     }
 
-    async fn add_file_tags(&self, id: i32, tags: Vec<String>) -> Result<Vec<String>, Self::Error> {
-        delegate!(self, add_file_tags, id, tags)
+    async fn add_file_tags(
+        &self,
+        guid: &str,
+        tags: Vec<String>,
+    ) -> Result<Vec<String>, Self::Error> {
+        delegate!(self, add_file_tags, guid, tags)
     }
 
-    async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Self::Error> {
-        delegate!(self, delete_file_tags, id, tags)
+    async fn delete_file_tags(&self, guid: &str, tags: Vec<String>) -> Result<(), Self::Error> {
+        delegate!(self, delete_file_tags, guid, tags)
     }
 
     async fn update_file(&self, file: File) -> Result<(), Self::Error> {

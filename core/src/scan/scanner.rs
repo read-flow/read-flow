@@ -797,7 +797,7 @@ mod tests {
         write_file(&mut tx, &file).await.unwrap();
         tx.commit().await.unwrap();
 
-        let tags: Vec<String> = sqlx::query_scalar("SELECT tag FROM file_tags ORDER BY tag")
+        let tags: Vec<String> = sqlx::query_scalar("SELECT tag FROM content_tags ORDER BY tag")
             .fetch_all(&pool)
             .await
             .unwrap();
@@ -820,7 +820,7 @@ mod tests {
         write_file(&mut tx, &file2).await.unwrap();
         tx.commit().await.unwrap();
 
-        let mut tags: Vec<String> = sqlx::query_scalar("SELECT tag FROM file_tags ORDER BY tag")
+        let mut tags: Vec<String> = sqlx::query_scalar("SELECT tag FROM content_tags ORDER BY tag")
             .fetch_all(&pool)
             .await
             .unwrap();

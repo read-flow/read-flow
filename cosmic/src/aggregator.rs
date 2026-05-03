@@ -187,7 +187,7 @@ impl Aggregator {
         let results: Vec<Result<(), FilesClientError>> = stream::iter(self.iter_document(document))
             .map(|(client, file)| {
                 let tags = tags.to_vec();
-                async move { client.delete_file_tags(file.id, tags).await }
+                async move { client.delete_file_tags(&file.guid, tags).await }
             })
             .buffer_unordered(number_of_sources)
             .collect()
@@ -212,7 +212,7 @@ impl Aggregator {
             stream::iter(self.iter_document(document))
                 .map(|(client, file)| {
                     let tags = tags.to_vec();
-                    async move { client.add_file_tags(file.id, tags).await }
+                    async move { client.add_file_tags(&file.guid, tags).await }
                 })
                 .buffer_unordered(number_of_sources)
                 .collect()
@@ -297,7 +297,7 @@ impl Aggregator {
                     let file_path = PathBuf::from(&source.path);
                     let filename = download_folder.join(file_path.file_name().unwrap());
                     files_client
-                        .download_file(source.id, &filename)
+                        .download_file(&source.guid, &filename)
                         .await
                         .map_err(FilesClientError::Remote)?
                 }
@@ -392,7 +392,7 @@ pub struct DocumentMetadata {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DocumentSource {
-    pub id: i32,
+    pub guid: String,
     pub path: String,
     pub client: ClientSelector,
 }
@@ -431,7 +431,7 @@ impl Document {
                 status: ReadingStatus::Unread,
             },
             sources: HashSet::from([DocumentSource {
-                id: 0,
+                guid: String::new(),
                 path: abs_path.to_string_lossy().into_owned(),
                 client: ClientSelector::Local,
             }]),
@@ -511,7 +511,7 @@ impl From<(ClientSelector, File)> for Document {
                 status: file.status,
             },
             sources: HashSet::from_iter([DocumentSource {
-                id: file.id,
+                guid: file.guid,
                 path: file.path,
                 client,
             }]),
@@ -540,7 +540,7 @@ impl From<SingleDocumentSource> for File {
     fn from(source: SingleDocumentSource) -> Self {
         let SingleDocumentSource(source, metadata) = source;
         File {
-            id: source.id,
+            guid: source.guid,
             path: source.path,
             type_: metadata.type_.as_str().to_string(),
             size: metadata.size,

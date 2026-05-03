@@ -4,41 +4,52 @@ use serde::Serialize;
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct File {
     pub id: i32,
+    pub guid: String,
     pub path: String,
     #[sqlx(rename = "type")]
     pub type_: String,
     pub size: i32,
     pub fingerprint: String,
+    /// Joined from contents.status
     pub status: i32,
 }
 
 pub struct NewFile {
+    pub guid: String,
     pub path: String,
     pub type_: String,
     pub size: i32,
     pub fingerprint: String,
-    pub status: i32,
-}
-
-pub struct UpdateFile {
-    pub id: i32,
-    pub path: Option<String>,
-    pub type_: Option<String>,
-    pub size: Option<i32>,
-    pub fingerprint: Option<String>,
-    pub status: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
-pub struct FileTag {
-    pub file_id: i32,
+pub struct Content {
+    pub fingerprint: String,
+    pub status: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct ContentTag {
+    pub fingerprint: String,
     pub tag: String,
 }
 
-impl FileTag {
-    pub fn new(file_id: i32, tag: String) -> Self {
-        Self { file_id, tag }
+impl ContentTag {
+    pub fn new(fingerprint: String, tag: String) -> Self {
+        Self { fingerprint, tag }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct ContentMetadata {
+    pub fingerprint: String,
+    pub title: Option<String>,
+    pub authors: Option<String>,
+    pub language: Option<String>,
+    pub publisher: Option<String>,
+    pub identifier: Option<String>,
+    pub date: Option<String>,
+    pub extracted_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]

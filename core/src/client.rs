@@ -112,11 +112,11 @@ impl FilesClient {
         Ok(file_path)
     }
 
-    pub async fn download_file(&self, id: i32, filename: &Path) -> Result<PathBuf, Error> {
+    pub async fn download_file(&self, guid: &str, filename: &Path) -> Result<PathBuf, Error> {
         let response = self
             .client
             .get(self.base_url.join(&format!(
-                "files/{id}/download-as/{}",
+                "files/{guid}/download-as/{}",
                 filename.file_name().and_then(OsStr::to_str).unwrap()
             ))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
@@ -187,8 +187,8 @@ impl FileDataSource for FilesClient {
         self.get_json("files/tags").await
     }
 
-    async fn get_file(&self, id: i32) -> Result<Option<File>, Error> {
-        self.get_json(&format!("files/{id}")).await
+    async fn get_file(&self, guid: &str) -> Result<Option<File>, Error> {
+        self.get_json(&format!("files/{guid}")).await
     }
 
     async fn update_file(&self, file: File) -> Result<(), Error> {
@@ -206,14 +206,14 @@ impl FileDataSource for FilesClient {
         Ok(())
     }
 
-    async fn get_file_tags(&self, id: i32) -> Result<Vec<String>, Error> {
-        self.get_json(&format!("files/{id}/tags")).await
+    async fn get_file_tags(&self, guid: &str) -> Result<Vec<String>, Error> {
+        self.get_json(&format!("files/{guid}/tags")).await
     }
 
-    async fn add_file_tags(&self, id: i32, tags: Vec<String>) -> Result<Vec<String>, Error> {
+    async fn add_file_tags(&self, guid: &str, tags: Vec<String>) -> Result<Vec<String>, Error> {
         let response = self
             .client
-            .post(self.base_url.join(&format!("/files/{id}/tags"))?)
+            .post(self.base_url.join(&format!("/files/{guid}/tags"))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
             .header(header::AUTHORIZATION, self.get_auth_header())
             .json(&tags)
@@ -225,10 +225,10 @@ impl FileDataSource for FilesClient {
         Ok(result)
     }
 
-    async fn delete_file_tags(&self, id: i32, tags: Vec<String>) -> Result<(), Error> {
+    async fn delete_file_tags(&self, guid: &str, tags: Vec<String>) -> Result<(), Error> {
         let response = self
             .client
-            .delete(self.base_url.join(&format!("/files/{id}/tags"))?)
+            .delete(self.base_url.join(&format!("/files/{guid}/tags"))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
             .header(header::AUTHORIZATION, self.get_auth_header())
             .json(&tags)
@@ -251,7 +251,7 @@ impl FileDataSource for FilesClient {
         let mut filename = tempdir.join(PathBuf::from(file_path.file_name().unwrap()));
 
         if !filename.exists() || fingerprint_of(&filename).await? != file.fingerprint {
-            filename = self.download_file(file.id, &filename).await?;
+            filename = self.download_file(&file.guid, &filename).await?;
         }
 
         // Note that xdg-open will exit while the application is still running, so
@@ -262,10 +262,9 @@ impl FileDataSource for FilesClient {
     }
 
     async fn delete_file(&self, file: File) -> Result<(), Error> {
-        // Send a DELETE request to the server
         let response = self
             .client
-            .delete(self.base_url.join(&format!("files/{}", file.id))?)
+            .delete(self.base_url.join(&format!("files/{}", file.guid))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
             .header(header::AUTHORIZATION, self.get_auth_header())
             .send()
