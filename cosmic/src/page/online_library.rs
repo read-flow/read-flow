@@ -19,7 +19,6 @@ use read_flow_core::api::FileDataSource;
 use read_flow_core::online_library::DownloadFormat;
 use read_flow_core::online_library::OnlineBook;
 use read_flow_core::online_library::OnlineCatalog;
-use read_flow_core::online_library::OnlineLibraryClient;
 use read_flow_core::online_library::OpdsClient;
 use read_flow_core::online_library::download_book;
 use read_flow_core::online_library::fetch_cover_bytes;
@@ -28,6 +27,7 @@ use crate::ApplicationModule;
 use crate::app::ContextView;
 use crate::component::pagination::Pagination;
 use crate::component::pagination::PaginationMessage;
+use crate::component::pagination::PaginationOutput;
 use crate::fl;
 use crate::layout::layout;
 use crate::page::Page;
@@ -56,6 +56,9 @@ pub struct OnlineLibraryPage {
     selected_catalog_index: Option<usize>,
     download_state: HashMap<String, DownloadBookState>,
     cover_images: HashMap<String, widget::image::Handle>,
+    /// catalog_name → next OPDS page URL, when the server has more pages.
+    next_urls: HashMap<String, String>,
+    fetching_more: bool,
     format_dialog: Option<OnlineBook>,
     results_layout: ResultsLayout,
     pagination: Pagination,
@@ -76,7 +79,7 @@ pub enum OnlineLibraryMessage {
     ClearSearch,
     DebounceTimeout(u32, String),
     SearchStarted,
-    SearchCompleted(Vec<OnlineBook>, Vec<OnlineCatalog>),
+    SearchCompleted(Vec<OnlineBook>, Vec<OnlineCatalog>, HashMap<String, String>),
     /// Selects the catalog at index `i`; `None` means "all catalogs".
     CatalogFilterChanged(Option<usize>),
     LayoutChanged(ResultsLayout),
@@ -88,6 +91,8 @@ pub enum OnlineLibraryMessage {
     ImportCompleted(String),
     ImportFailed(String, String),
     CoverImageLoaded(String, Vec<u8>),
+    FetchMore,
+    MoreResultsCompleted(Vec<OnlineBook>, HashMap<String, String>),
     DismissFormatDialog,
     Out(OnlineLibraryOutput),
 }
@@ -111,6 +116,8 @@ impl OnlineLibraryPage {
             selected_catalog_index: None,
             download_state: HashMap::new(),
             cover_images: HashMap::new(),
+            next_urls: HashMap::new(),
+            fetching_more: false,
             format_dialog: None,
             results_layout: ResultsLayout::default(),
             pagination: Pagination::default(),
@@ -325,6 +332,9 @@ impl Page for OnlineLibraryPage {
                 self.search_query.clear();
                 self.search_state = LoadedState::New;
                 self.cover_images.clear();
+                self.next_urls.clear();
+                self.pagination.has_more = false;
+                self.fetching_more = false;
                 self.debounce_counter += 1;
                 self.pagination.collection_size = 0;
                 self.pagination.index = 0;
@@ -347,6 +357,8 @@ impl Page for OnlineLibraryPage {
             OnlineLibraryMessage::SearchStarted => {
                 self.search_state = LoadedState::Loading;
                 self.cover_images.clear();
+                self.next_urls.clear();
+                self.pagination.has_more = false;
                 let am = self.application_module.clone();
                 let query = self.search_query.clone();
                 let catalog_index = self.selected_catalog_index;
@@ -368,29 +380,40 @@ impl Page for OnlineLibraryPage {
                     let searches = to_search.into_iter().map(|catalog| {
                         let q = query.clone();
                         async move {
+                            let catalog_name = catalog.name.clone();
                             let client = OpdsClient::new(catalog);
-                            match client.search(&q).await {
-                                Ok(books) => books,
+                            match client.search_with_next(&q).await {
+                                Ok((books, next_url)) => (catalog_name, books, next_url),
                                 Err(e) => {
                                     tracing::warn!("OPDS search failed: {e}");
-                                    vec![]
+                                    (catalog_name, vec![], None)
                                 }
                             }
                         }
                     });
 
-                    let results: Vec<Vec<OnlineBook>> = futures::future::join_all(searches).await;
-                    let all_results: Vec<OnlineBook> = results.into_iter().flatten().collect();
+                    let results = futures::future::join_all(searches).await;
+                    let mut all_results: Vec<OnlineBook> = Vec::new();
+                    let mut next_urls: HashMap<String, String> = HashMap::new();
+                    for (catalog_name, mut books, next_url) in results {
+                        all_results.append(&mut books);
+                        if let Some(url) = next_url {
+                            next_urls.insert(catalog_name, url);
+                        }
+                    }
 
-                    OnlineLibraryMessage::SearchCompleted(all_results, all_catalogs)
+                    OnlineLibraryMessage::SearchCompleted(all_results, all_catalogs, next_urls)
                 })
             }
 
-            OnlineLibraryMessage::SearchCompleted(books, catalogs) => {
+            OnlineLibraryMessage::SearchCompleted(books, catalogs, next_urls) => {
                 self.catalogs = catalogs;
                 self.pagination.collection_size = books.len();
                 self.pagination.index = 0;
                 self.cover_images.clear();
+                self.next_urls = next_urls;
+                self.pagination.has_more = !self.next_urls.is_empty();
+                self.fetching_more = false;
 
                 let cover_tasks: Vec<Task<Action<OnlineLibraryMessage>>> = books
                     .iter()
@@ -428,6 +451,9 @@ impl Page for OnlineLibraryPage {
             }
 
             OnlineLibraryMessage::Paginate(msg) => {
+                if let PaginationMessage::Out(PaginationOutput::RequestMore) = &msg {
+                    return task::message(OnlineLibraryMessage::FetchMore);
+                }
                 let _ = self.pagination.update(msg);
                 Task::none()
             }
@@ -494,6 +520,89 @@ impl Page for OnlineLibraryPage {
                 if !bytes.is_empty() {
                     self.cover_images
                         .insert(book_id, widget::image::Handle::from_bytes(bytes));
+                }
+                Task::none()
+            }
+
+            OnlineLibraryMessage::FetchMore => {
+                if self.next_urls.is_empty() || self.fetching_more {
+                    return Task::none();
+                }
+                self.fetching_more = true;
+                self.pagination.has_more = false;
+                let am = self.application_module.clone();
+                let next_urls = self.next_urls.clone();
+                task::future(async move {
+                    let settings = am.settings().await;
+                    let catalogs: HashMap<String, OnlineCatalog> = settings
+                        .online_library
+                        .catalogs
+                        .into_iter()
+                        .map(|c| (c.name.clone(), c))
+                        .collect();
+
+                    let fetches = next_urls.into_iter().filter_map(|(catalog_name, url)| {
+                        let catalog = catalogs.get(&catalog_name)?.clone();
+                        Some(async move {
+                            let client = OpdsClient::new(catalog);
+                            match client.fetch_next_page(&url).await {
+                                Ok((books, next_url)) => (catalog_name, books, next_url),
+                                Err(e) => {
+                                    tracing::warn!("OPDS next-page fetch failed: {e}");
+                                    (catalog_name, vec![], None)
+                                }
+                            }
+                        })
+                    });
+
+                    let results = futures::future::join_all(fetches).await;
+                    let mut new_books: Vec<OnlineBook> = Vec::new();
+                    let mut new_next_urls: HashMap<String, String> = HashMap::new();
+                    for (catalog_name, mut books, next_url) in results {
+                        new_books.append(&mut books);
+                        if let Some(url) = next_url {
+                            new_next_urls.insert(catalog_name, url);
+                        }
+                    }
+
+                    OnlineLibraryMessage::MoreResultsCompleted(new_books, new_next_urls)
+                })
+            }
+
+            OnlineLibraryMessage::MoreResultsCompleted(new_books, new_next_urls) => {
+                self.fetching_more = false;
+                self.next_urls = new_next_urls;
+                self.pagination.has_more = !self.next_urls.is_empty();
+
+                if let LoadedState::Loaded(books) = &mut self.search_state {
+                    let old_size = books.len();
+
+                    let cover_tasks: Vec<Task<Action<OnlineLibraryMessage>>> = new_books
+                        .iter()
+                        .filter_map(|b| {
+                            let url = b.cover_url.clone()?;
+                            let book_id = b.id.clone();
+                            Some(task::future(async move {
+                                match fetch_cover_bytes(&url).await {
+                                    Ok(bytes) => {
+                                        OnlineLibraryMessage::CoverImageLoaded(book_id, bytes)
+                                    }
+                                    Err(e) => {
+                                        tracing::debug!("cover fetch failed for {book_id}: {e}");
+                                        OnlineLibraryMessage::CoverImageLoaded(book_id, vec![])
+                                    }
+                                }
+                            }))
+                        })
+                        .collect();
+
+                    books.extend(new_books);
+                    let new_size = books.len();
+                    self.pagination.collection_size = new_size;
+                    // Navigate to the page containing the first new result.
+                    self.pagination.index = old_size.min(new_size.saturating_sub(1));
+
+                    return Task::batch(cover_tasks);
                 }
                 Task::none()
             }

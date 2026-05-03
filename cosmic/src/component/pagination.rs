@@ -24,10 +24,14 @@ pub struct Pagination {
     pub page_size: usize,
     pub collection_size: usize,
     pub index: usize,
+    /// True when the server has more pages beyond the currently loaded results.
+    pub has_more: bool,
 }
 
 #[derive(Debug, Clone)]
-pub enum PaginationOutput {}
+pub enum PaginationOutput {
+    RequestMore,
+}
 
 #[derive(Debug, Clone)]
 pub enum PaginationMessage {
@@ -58,6 +62,7 @@ impl Pagination {
             page_size: 10,
             collection_size,
             index: 0,
+            has_more: false,
         }
     }
 
@@ -105,12 +110,21 @@ impl Pagination {
                 PaginationMessage::ChangePageSize,
             )
             .into(),
-            button::icon(icon::from_name("go-next-symbolic").size(ICON_SIZE))
-                .apply_if(self.page() < self.total_pages(), |button| {
-                    button.on_press(PaginationMessage::NavigateToNextPage)
-                })
-                .tooltip(fl!("pagination-next"))
-                .into(),
+            {
+                let on_next = if self.page() < self.total_pages() {
+                    Some(PaginationMessage::NavigateToNextPage)
+                } else if self.has_more {
+                    Some(PaginationMessage::Out(PaginationOutput::RequestMore))
+                } else {
+                    None
+                };
+                button::icon(icon::from_name("go-next-symbolic").size(ICON_SIZE))
+                    .apply_if(on_next.is_some(), |button| {
+                        button.on_press(on_next.unwrap())
+                    })
+                    .tooltip(fl!("pagination-next"))
+                    .into()
+            },
             button::icon(icon::from_name("go-last-symbolic").size(ICON_SIZE))
                 .apply_if(self.page() < self.total_pages(), |button| {
                     button.on_press(PaginationMessage::NavigateToLastPage)

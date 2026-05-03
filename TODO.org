@@ -17,7 +17,7 @@ This is a tool to help discover and organize files locally and on remote servers
   - Fixed by speeding up loading
 - [ ] ~read-flow::ImageViewer~: Add image details to context pane, parse from specific image type if possible.
 - [X] ~read-flow::OnlineLibrary~: Display cover images in book cards (~cover_url~ is already parsed from OPDS feeds but not yet rendered).
-- [ ] ~read-flow::OnlineLibrary~: Support paginated OPDS results — fetch and display subsequent pages ("load more") when the feed contains an ~rel="next"~ link.
+- [X] ~read-flow::OnlineLibrary~: Support paginated OPDS results — fetch and display subsequent pages ("load more") when the feed contains an ~rel="next"~ link.
 
 ** Tier 3 — Significant Features [0/10]
 

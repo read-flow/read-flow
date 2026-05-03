@@ -141,18 +141,19 @@ impl OpdsClient {
             .error_for_status()?;
         Ok(response.text().await?)
     }
-}
 
-#[async_trait::async_trait]
-impl OnlineLibraryClient for OpdsClient {
-    fn catalog_name(&self) -> &str {
-        &self.catalog.name
-    }
-
-    async fn search(&self, query: &str) -> Result<Vec<OnlineBook>, OnlineLibraryError> {
-        let url = build_search_url(&self.catalog.search_url, query)?;
-        let xml = self.fetch_xml(&url).await?;
-        let FeedResult { mut books, stubs } = parse_opds_feed_full(&xml, &self.catalog.name)?;
+    /// Fetch and parse an OPDS page at `url`, resolving stubs and returning any
+    /// `rel="next"` link alongside the collected books.
+    async fn fetch_page_at_url(
+        &self,
+        url: &str,
+    ) -> Result<(Vec<OnlineBook>, Option<String>), OnlineLibraryError> {
+        let xml = self.fetch_xml(url).await?;
+        let FeedResult {
+            mut books,
+            stubs,
+            next_url,
+        } = parse_opds_feed_full(&xml, &self.catalog.name)?;
 
         if !stubs.is_empty() {
             let client = self.client.clone();
@@ -160,7 +161,7 @@ impl OnlineLibraryClient for OpdsClient {
             let stub_futures = stubs.into_iter().map(|stub| {
                 let client = client.clone();
                 let catalog_name = catalog_name.clone();
-                let sub_url = resolve_url(&url, &stub.subsection_url);
+                let sub_url = resolve_url(url, &stub.subsection_url);
                 async move {
                     let sub_url = sub_url?;
                     let response = client
@@ -186,7 +187,36 @@ impl OnlineLibraryClient for OpdsClient {
             }
         }
 
-        Ok(books)
+        let resolved_next = next_url.and_then(|u| resolve_url(url, &u).ok());
+        Ok((books, resolved_next))
+    }
+
+    /// Like `search`, but also returns the `rel="next"` URL from the feed if present.
+    pub async fn search_with_next(
+        &self,
+        query: &str,
+    ) -> Result<(Vec<OnlineBook>, Option<String>), OnlineLibraryError> {
+        let url = build_search_url(&self.catalog.search_url, query)?;
+        self.fetch_page_at_url(&url).await
+    }
+
+    /// Fetch the next page of results from a URL previously returned as `rel="next"`.
+    pub async fn fetch_next_page(
+        &self,
+        url: &str,
+    ) -> Result<(Vec<OnlineBook>, Option<String>), OnlineLibraryError> {
+        self.fetch_page_at_url(url).await
+    }
+}
+
+#[async_trait::async_trait]
+impl OnlineLibraryClient for OpdsClient {
+    fn catalog_name(&self) -> &str {
+        &self.catalog.name
+    }
+
+    async fn search(&self, query: &str) -> Result<Vec<OnlineBook>, OnlineLibraryError> {
+        Ok(self.search_with_next(query).await?.0)
     }
 }
 
@@ -218,6 +248,7 @@ struct BookStub {
 struct FeedResult {
     books: Vec<OnlineBook>,
     stubs: Vec<BookStub>,
+    next_url: Option<String>,
 }
 
 /// Parse an OPDS 1.x Atom feed XML string into a list of [`OnlineBook`]s.
@@ -236,6 +267,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
 
     let mut books: Vec<OnlineBook> = Vec::new();
     let mut stubs: Vec<BookStub> = Vec::new();
+    let mut feed_next_url: Option<String> = None;
 
     // Per-entry state
     let mut in_entry = false;
@@ -313,6 +345,9 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             &mut cur_subsection_url,
                         );
                     }
+                    b"link" if get_attr(e, b"rel").as_deref() == Some("next") => {
+                        feed_next_url = get_attr(e, b"href");
+                    }
                     _ => {}
                 }
             }
@@ -320,13 +355,17 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
             Ok(Event::Empty(ref e)) => {
                 let name = e.name();
                 let local = local_name(name.as_ref());
-                if local == b"link" && in_entry {
-                    process_link(
-                        e,
-                        &mut cur_formats,
-                        &mut cur_cover_url,
-                        &mut cur_subsection_url,
-                    );
+                if local == b"link" {
+                    if in_entry {
+                        process_link(
+                            e,
+                            &mut cur_formats,
+                            &mut cur_cover_url,
+                            &mut cur_subsection_url,
+                        );
+                    } else if get_attr(e, b"rel").as_deref() == Some("next") {
+                        feed_next_url = get_attr(e, b"href");
+                    }
                 }
             }
 
@@ -410,7 +449,11 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
         }
     }
 
-    Ok(FeedResult { books, stubs })
+    Ok(FeedResult {
+        books,
+        stubs,
+        next_url: feed_next_url,
+    })
 }
 
 // ─── Download ────────────────────────────────────────────────────────────────
@@ -837,5 +880,58 @@ mod tests {
     fn sanitize_title_empty_falls_back_to_book() {
         assert_eq!(sanitize_title(""), "book");
         assert_eq!(sanitize_title("---"), "book");
+    }
+
+    // ── rel="next" pagination ────────────────────────────────────────────────
+
+    #[test]
+    fn parse_feed_extracts_feed_level_next_url() {
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opds="http://opds-spec.org/2010/catalog">
+  <link rel="next" href="/feeds/page/2" type="application/atom+xml"/>
+  <entry>
+    <id>urn:test:1</id>
+    <title>Book One</title>
+    <link rel="http://opds-spec.org/acquisition" href="/files/1.epub" type="application/epub+zip"/>
+  </entry>
+</feed>"#;
+        let result = parse_opds_feed_full(xml, "Test").unwrap();
+        assert_eq!(result.books.len(), 1);
+        assert_eq!(result.next_url.as_deref(), Some("/feeds/page/2"));
+    }
+
+    #[test]
+    fn parse_feed_no_next_url_when_absent() {
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:test:1</id>
+    <title>Book One</title>
+    <link rel="http://opds-spec.org/acquisition" href="/files/1.epub" type="application/epub+zip"/>
+  </entry>
+</feed>"#;
+        let result = parse_opds_feed_full(xml, "Test").unwrap();
+        assert!(result.next_url.is_none());
+    }
+
+    #[test]
+    fn parse_feed_entry_level_next_link_is_not_feed_next() {
+        // A "next" link inside an <entry> (unusual but possible) should NOT be
+        // treated as the feed-level pagination link.
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:test:1</id>
+    <title>Book One</title>
+    <link rel="next" href="/wrong" type="text/html"/>
+    <link rel="http://opds-spec.org/acquisition" href="/files/1.epub" type="application/epub+zip"/>
+  </entry>
+</feed>"#;
+        let result = parse_opds_feed_full(xml, "Test").unwrap();
+        assert!(
+            result.next_url.is_none(),
+            "entry-level 'next' link must not set feed_next_url"
+        );
     }
 }
