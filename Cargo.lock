@@ -5382,7 +5382,9 @@ dependencies = [
 name = "read-flow-widgets"
 version = "0.1.0"
 dependencies = [
+ "cosmic-golden",
  "libcosmic",
+ "rstest",
 ]
 
 [[package]]
