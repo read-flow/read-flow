@@ -320,16 +320,16 @@ impl Pages {
     }
 
     fn deactivate_page(&mut self, selector: &PageSelector) {
-        if let Some(info) = self.page_order.swap_remove(selector) {
-            if self.active == *selector {
-                // Only use the recorded parent if it is still in page_order; a
-                // chain of closures can remove a parent before its child is
-                // deactivated, so fall back to Documents in that case.
-                self.active = info
-                    .parent
-                    .filter(|p| self.page_order.contains_key(p))
-                    .unwrap_or(PageSelector::Documents);
-            }
+        if let Some(info) = self.page_order.swap_remove(selector)
+            && self.active == *selector
+        {
+            // Only use the recorded parent if it is still in page_order; a
+            // chain of closures can remove a parent before its child is
+            // deactivated, so fall back to Documents in that case.
+            self.active = info
+                .parent
+                .filter(|p| self.page_order.contains_key(p))
+                .unwrap_or(PageSelector::Documents);
         }
     }
 

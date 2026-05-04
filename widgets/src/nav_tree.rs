@@ -57,8 +57,8 @@ impl<Message: Clone> NavItem<Message> {
                 on_activate: f(node.on_activate),
                 on_toggle: f(node.on_toggle),
                 children: node.children.into_iter().map(|c| c.map(f)).collect(),
-                on_expand_all: node.on_expand_all.map(|m| f(m)),
-                on_collapse_all: node.on_collapse_all.map(|m| f(m)),
+                on_expand_all: node.on_expand_all.map(f),
+                on_collapse_all: node.on_collapse_all.map(f),
             }),
         }
     }
