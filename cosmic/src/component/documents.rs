@@ -108,7 +108,6 @@ impl DocumentsComponent {
             vec![],
             Orientation::Horizontal,
             fl!("tag-editor-select-tag"),
-            fl!("tag-editor-enter"),
             fl!("tag-editor-no-tags"),
             fl!("tag-editor-remove-tag"),
         );
@@ -147,8 +146,6 @@ impl DocumentsComponent {
     }
 
     fn view_files<'a>(&'a self, files: &'a Filtered<Document>) -> Element<'a, DocumentsMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
         let filtered_files = files.filtered_items();
         let visible_files: Vec<_> = self
             .pagination
@@ -196,10 +193,7 @@ impl DocumentsComponent {
             fl!("document-list-select-all")
         };
         let select_all_row =
-            widget::Row::new()
-                .spacing(space_s)
-                .align_y(Vertical::Center)
-                .width(Length::Fill)
+            widget::settings::item_row(vec![])
                 .push(
                     widget::checkbox(all_selected)
                         .label(checkbox_label)

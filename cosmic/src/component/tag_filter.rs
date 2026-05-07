@@ -7,12 +7,12 @@ use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
 use cosmic::iced::Length;
-use cosmic::iced::widget::combo_box;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::settings;
 use provider::r#async::Provider;
 use read_flow_core::Builder;
+use read_flow_widgets::ComboBox;
 
 use super::provided_state::ProvidedState;
 use super::provided_state::ProvidedStateMessage;
@@ -29,10 +29,12 @@ enum TagKind {
 pub struct TagFilter<P> {
     all_tags: ProvidedState<P, Vec<String>>,
     tags: TagsState,
-    pub allow_tags: HashSet<String>, // Tags that files must have (whitelist)
-    pub deny_tags: HashSet<String>,  // Tags that files must not have (blacklist)
-    new_allow_tag: String,           // Current input for new allow tag
-    new_deny_tag: String,            // Current input for new deny tag
+    pub allow_tags: HashSet<String>,
+    pub deny_tags: HashSet<String>,
+    new_allow_tag: String,
+    new_deny_tag: String,
+    allow_focused: bool,
+    deny_focused: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -42,13 +44,17 @@ pub enum TagFilterOutput {
 
 #[derive(Debug, Clone)]
 pub enum TagFilterMessage {
-    // Tag loading
     Tags(ProvidedStateMessage<Vec<String>>),
-    // Tag filtering messages
     UpdateNewAllowTag(String),
+    SelectAllowTag(String),
+    AllowComboOpened,
+    AllowComboClosed,
     AddAllowTag,
     RemoveAllowTag(String),
     UpdateNewDenyTag(String),
+    SelectDenyTag(String),
+    DenyComboOpened,
+    DenyComboClosed,
     AddDenyTag,
     RemoveDenyTag(String),
     ClearAllTagFilters,
@@ -76,6 +82,8 @@ where
                 deny_tags: HashSet::new(),
                 new_allow_tag: String::new(),
                 new_deny_tag: String::new(),
+                allow_focused: false,
+                deny_focused: false,
             },
             init_task.map(ActionExt::map_into),
         )
@@ -113,24 +121,36 @@ where
             current_tags,
             new_tag_input,
             update_message,
+            select_message,
             add_message,
             remove_message_fn,
+            focused,
+            open_message,
+            close_message,
         ) = match kind {
             TagKind::Allow => (
                 fl!("document-list-allow-tags"),
                 &self.allow_tags,
-                &self.new_allow_tag,
+                self.new_allow_tag.as_str(),
                 TagFilterMessage::UpdateNewAllowTag as fn(String) -> TagFilterMessage,
+                TagFilterMessage::SelectAllowTag as fn(String) -> TagFilterMessage,
                 TagFilterMessage::AddAllowTag,
                 TagFilterMessage::RemoveAllowTag as fn(String) -> TagFilterMessage,
+                self.allow_focused,
+                TagFilterMessage::AllowComboOpened,
+                TagFilterMessage::AllowComboClosed,
             ),
             TagKind::Deny => (
                 fl!("document-list-deny-tags"),
                 &self.deny_tags,
-                &self.new_deny_tag,
+                self.new_deny_tag.as_str(),
                 TagFilterMessage::UpdateNewDenyTag as fn(String) -> TagFilterMessage,
+                TagFilterMessage::SelectDenyTag as fn(String) -> TagFilterMessage,
                 TagFilterMessage::AddDenyTag,
                 TagFilterMessage::RemoveDenyTag as fn(String) -> TagFilterMessage,
+                self.deny_focused,
+                TagFilterMessage::DenyComboOpened,
+                TagFilterMessage::DenyComboClosed,
             ),
         };
 
@@ -138,7 +158,6 @@ where
 
         let mut section = settings::section().title(section_title);
 
-        // Show current tags as removable chips
         if !current_tags.is_empty() {
             let tags: Vec<_> = current_tags
                 .iter()
@@ -158,18 +177,31 @@ where
             section = section.add(widget::text::caption(fl!("document-list-no-tags-selected")));
         }
 
-        // Add tag input
-        section = self.view_tag_input(section, new_tag_input, update_message, add_message);
+        section = self.view_tag_input(
+            section,
+            new_tag_input,
+            update_message,
+            select_message,
+            add_message,
+            focused,
+            open_message,
+            close_message,
+        );
 
         section
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn view_tag_input<'a>(
         &'a self,
         section: settings::Section<'a, TagFilterMessage>,
-        new_tag_input: &String,
+        new_tag_input: &'a str,
         update_message: fn(String) -> TagFilterMessage,
+        select_message: fn(String) -> TagFilterMessage,
         add_message: TagFilterMessage,
+        focused: bool,
+        open_message: TagFilterMessage,
+        close_message: TagFilterMessage,
     ) -> settings::Section<'a, TagFilterMessage> {
         let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
         match &self.tags {
@@ -178,42 +210,39 @@ where
                 available_tags,
             }) => {
                 if all_tags.is_empty() {
-                    // No tags exist in the system at all
                     section.add(widget::text::caption(fl!(
                         "document-list-no-tags-available"
                     )))
+                } else if available_tags.is_empty() {
+                    section.add(widget::text::caption(fl!("document-list-all-tags-in-use")))
                 } else {
-                    // Check if there are any tags available that aren't already in use
-                    let has_available_tags = all_tags
-                        .iter()
-                        .any(|tag| !self.allow_tags.contains(tag) && !self.deny_tags.contains(tag));
+                    let combo = ComboBox::new(
+                        available_tags,
+                        fl!("document-list-select-tag"),
+                        new_tag_input,
+                        update_message,
+                    )
+                    .on_select(select_message)
+                    .on_open(open_message)
+                    .on_close(close_message)
+                    .focused(focused)
+                    .width(Length::Fill)
+                    .view();
 
-                    if !has_available_tags {
-                        // All existing tags are already in use
-                        section.add(widget::text::caption(fl!("document-list-all-tags-in-use")))
-                    } else {
-                        // Show combo box with available tags
-                        let combo = combo_box(
-                            available_tags,
-                            &fl!("document-list-select-tag"),
-                            Some(new_tag_input),
-                            update_message,
-                        )
-                        .width(Length::Fill);
+                    let add_button = widget::button::text(fl!("document-list-add-tag")).apply_if(
+                        !new_tag_input.is_empty(),
+                        |button| {
+                            button
+                                .on_press(add_message)
+                                .class(widget::button::ButtonClass::Suggested)
+                        },
+                    );
 
-                        let add_button = widget::button::text(fl!("document-list-add-tag"))
-                            .apply_if(!new_tag_input.is_empty(), |button| {
-                                button
-                                    .on_press(add_message)
-                                    .class(widget::button::ButtonClass::Suggested)
-                            });
-
-                        let input_row = widget::Row::new()
-                            .push(combo)
-                            .push(add_button)
-                            .spacing(space_xs);
-                        section.add(input_row)
-                    }
+                    let input_row = widget::Row::new()
+                        .push(combo)
+                        .push(widget::space::horizontal().width(space_xs))
+                        .push(add_button);
+                    section.add(input_row)
                 }
             }
             TagsState::Loading => section.add(widget::text::caption("Loading tags...")),
@@ -231,7 +260,7 @@ where
                 .collect();
             Tags {
                 all_tags: all_tags.clone(),
-                available_tags: combo_box::State::new(available_tags),
+                available_tags,
             }
         });
     }
@@ -256,6 +285,25 @@ where
             }
             TagFilterMessage::UpdateNewAllowTag(tag) => {
                 self.new_allow_tag = tag;
+                self.allow_focused = true;
+                Task::none()
+            }
+            TagFilterMessage::SelectAllowTag(tag) => {
+                if !self.allow_tags.contains(&tag) {
+                    self.allow_tags.insert(tag);
+                    self.new_allow_tag.clear();
+                    self.update_available_tags();
+                    cosmic::task::message(TagFilterMessage::Out(TagFilterOutput::TagFiltersUpdated))
+                } else {
+                    Task::none()
+                }
+            }
+            TagFilterMessage::AllowComboOpened => {
+                self.allow_focused = true;
+                Task::none()
+            }
+            TagFilterMessage::AllowComboClosed => {
+                self.allow_focused = false;
                 Task::none()
             }
             TagFilterMessage::AddAllowTag => {
@@ -276,6 +324,25 @@ where
             }
             TagFilterMessage::UpdateNewDenyTag(tag) => {
                 self.new_deny_tag = tag;
+                self.deny_focused = true;
+                Task::none()
+            }
+            TagFilterMessage::SelectDenyTag(tag) => {
+                if !self.deny_tags.contains(&tag) {
+                    self.deny_tags.insert(tag);
+                    self.new_deny_tag.clear();
+                    self.update_available_tags();
+                    cosmic::task::message(TagFilterMessage::Out(TagFilterOutput::TagFiltersUpdated))
+                } else {
+                    Task::none()
+                }
+            }
+            TagFilterMessage::DenyComboOpened => {
+                self.deny_focused = true;
+                Task::none()
+            }
+            TagFilterMessage::DenyComboClosed => {
+                self.deny_focused = false;
                 Task::none()
             }
             TagFilterMessage::AddDenyTag => {
@@ -340,6 +407,7 @@ mod tests {
         let (mut filter, _) = TagFilter::new(Value::new(tags()));
         filter.allow_tags.insert("fiction".to_string());
         filter.deny_tags.insert("unread".to_string());
+        filter.update_available_tags();
         filter.view()
     }
 
@@ -348,6 +416,7 @@ mod tests {
         let (mut filter, _) = TagFilter::new(Value::new(tags()));
         filter.allow_tags.insert("fiction".to_string());
         filter.deny_tags.insert("unread".to_string());
+        filter.update_available_tags();
         filter.view()
     }
 }

@@ -110,7 +110,6 @@ impl DocumentDetails {
             initial_tags,
             Orientation::Horizontal,
             fl!("tag-editor-select-tag"),
-            fl!("tag-editor-enter"),
             fl!("tag-editor-no-tags"),
             fl!("tag-editor-remove-tag"),
         );

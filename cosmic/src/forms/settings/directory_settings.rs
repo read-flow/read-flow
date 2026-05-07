@@ -156,7 +156,6 @@ impl DirectorySettingsForm {
             self.new_directory_scan_tags.clone(),
             Orientation::Vertical,
             fl!("settings-select-directory-tag"),
-            fl!("settings-enter-directory-tag"),
             fl!("settings-no-directory-tags"),
             fl!("settings-remove-directory-tag"),
         );

@@ -9,18 +9,16 @@ use cosmic::Task;
 use cosmic::cosmic_theme;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Vertical;
-use cosmic::iced::widget::combo_box;
 use cosmic::iced::widget::rule;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::Column;
-use cosmic::widget::Id;
-use cosmic::widget::ListColumn;
 use cosmic::widget::Row;
 use cosmic::widget::text;
 use provider::r#async::Provider;
 use read_flow_core::Builder;
+use read_flow_widgets::ComboBox;
 
 use super::provided_state::ProvidedState;
 use super::provided_state::ProvidedStateMessage;
@@ -45,20 +43,16 @@ pub struct TagEditor<P> {
     orientation: Orientation,
     /// Currently selected tags
     selected_tags: Vec<String>,
-    /// Currently selected tag in combo box
-    combo_selection: String,
-    /// Entered tag in text input
-    entered_tag: String,
-    /// Placeholder text for combo box
-    select_placeholder: String,
-    /// Placeholder text for text input
-    enter_placeholder: String,
+    /// Current value in the combo box (typed or selected)
+    tag_value: String,
+    /// Whether the combo box overlay is currently open
+    combo_focused: bool,
+    /// Placeholder text for the combo box
+    placeholder: String,
     /// Text for empty state
     empty_text: String,
     /// Tooltip for remove button
     remove_tooltip: String,
-    /// Input focus ID
-    input_id: Id,
 }
 
 #[derive(Debug, Clone)]
@@ -75,20 +69,20 @@ pub enum TagEditorOutput {
 pub enum TagEditorMessage {
     /// Tags provider state
     Tags(ProvidedStateMessage<Vec<String>>),
-    /// Update selected tag in combo box
-    UpdateComboSelection(String),
-    /// Add selected tag from combo box
-    AddSelectedTag,
-    /// Update entered tag in text input
-    UpdateEnteredTag(String),
-    /// Add entered tag from text input
-    AddEnteredTag(String),
+    /// Update current combo box value (typed)
+    UpdateTagValue(String),
+    /// An option was clicked in the combo box overlay
+    SelectOption(String),
+    /// The combo box overlay was opened (input gained focus)
+    ComboOpened,
+    /// The combo box overlay was closed (input lost focus or dismissed)
+    ComboClosed,
+    /// Add the current combo box value as a tag
+    AddTagValue,
     /// Remove a tag
     RemoveTag(String),
     /// Set the selected tags (for external updates)
     SetTags(Vec<String>),
-    /// Focus the text input
-    FocusInput,
     /// Output message (for parent component)
     Out(TagEditorOutput),
 }
@@ -108,8 +102,7 @@ where
         tags_provider: P,
         initial_tags: Vec<String>,
         orientation: Orientation,
-        select_placeholder: String,
-        enter_placeholder: String,
+        placeholder: String,
         empty_text: String,
         remove_tooltip: String,
     ) -> (Self, Task<Action<TagEditorMessage>>) {
@@ -120,13 +113,11 @@ where
                 tags: TagsState::default(),
                 selected_tags: initial_tags,
                 orientation,
-                combo_selection: String::new(),
-                entered_tag: String::new(),
-                select_placeholder,
-                enter_placeholder,
+                tag_value: String::new(),
+                combo_focused: false,
+                placeholder,
                 empty_text,
                 remove_tooltip,
-                input_id: Id::unique(),
             },
             init_task.map(ActionExt::map_into),
         )
@@ -173,12 +164,9 @@ where
     }
 
     fn view_current_tags(&self, space_xs: u16) -> Element<'_, TagEditorMessage> {
-        // Show existing tags
         if self.selected_tags.is_empty() {
             text(&self.empty_text).into()
         } else {
-            // Create a flow container for the tags
-            // let mut tag_row = FlexRow::new().spacing(space_xs).width(Length::Fill);
             let tag_row = self
                 .selected_tags
                 .iter()
@@ -201,41 +189,36 @@ where
     fn view_tags_form(&self, space_xs: u16) -> Element<'_, TagEditorMessage> {
         match &self.tags {
             TagsState::Loaded(Tags { available_tags, .. }) => {
-                let mut column = ListColumn::default();
-
-                // Add combo box for tag selection
-                let combo = combo_box(
-                    available_tags,
-                    &self.select_placeholder,
-                    Some(&self.combo_selection),
-                    TagEditorMessage::UpdateComboSelection,
-                )
-                .width(Length::Fill);
-
                 let add_button = widget::button::standard(fl!("tag-editor-add"))
-                    .apply_if(!self.combo_selection.is_empty(), |button| {
+                    .apply_if(!self.tag_value.is_empty(), |button| {
                         button
-                            .on_press(TagEditorMessage::AddSelectedTag)
+                            .on_press(TagEditorMessage::AddTagValue)
                             .class(widget::button::ButtonClass::Suggested)
                     })
                     .width(Length::Shrink);
 
-                let input_row = widget::settings::item_row(vec![combo.into(), add_button.into()]);
+                let horizontal_space =
+                    widget::space::horizontal().width(Length::Fixed(space_xs.into()));
 
-                column = column.add(input_row);
+                let combo = ComboBox::new(
+                    available_tags,
+                    &self.placeholder,
+                    &self.tag_value,
+                    TagEditorMessage::UpdateTagValue,
+                )
+                .width(Length::Fill)
+                .on_select(TagEditorMessage::SelectOption)
+                .on_open(TagEditorMessage::ComboOpened)
+                .on_close(TagEditorMessage::ComboClosed)
+                .focused(self.combo_focused)
+                .view();
 
-                // Text input for entering new tags
-                let input = widget::text_input(&self.enter_placeholder, &self.entered_tag)
-                    .id(self.input_id.clone())
-                    .on_input(TagEditorMessage::UpdateEnteredTag)
-                    .on_submit(TagEditorMessage::AddEnteredTag)
-                    .width(Length::Fill);
-
-                let input_row = widget::settings::item_row(vec![input.into()]);
-
-                column.add(input_row).into()
+                widget::Row::with_children(vec![combo, horizontal_space.into(), add_button.into()])
+                    .width(Length::Fill)
+                    .into()
             }
             TagsState::Loading => Row::new()
+                .width(Length::Fill)
                 .spacing(space_xs)
                 .align_y(Vertical::Center)
                 .push(
@@ -260,7 +243,7 @@ where
                 .collect();
             Tags {
                 all_tags: all_tags.clone(),
-                available_tags: combo_box::State::new(available),
+                available_tags: available,
             }
         });
     }
@@ -293,27 +276,29 @@ where
                 self.update_available_tags();
                 task
             }
-            TagEditorMessage::UpdateComboSelection(tag) => {
-                self.combo_selection = tag;
+            TagEditorMessage::UpdateTagValue(value) => {
+                self.tag_value = value;
+                self.combo_focused = true;
                 Task::none()
             }
-            TagEditorMessage::AddSelectedTag => {
-                if self.combo_selection.trim().is_empty() {
+            TagEditorMessage::SelectOption(text) => {
+                self.tag_value = text;
+                self.combo_focused = false;
+                Task::none()
+            }
+            TagEditorMessage::ComboOpened => {
+                self.combo_focused = true;
+                Task::none()
+            }
+            TagEditorMessage::ComboClosed => {
+                self.combo_focused = false;
+                Task::none()
+            }
+            TagEditorMessage::AddTagValue => {
+                if self.tag_value.trim().is_empty() {
                     return Task::none();
                 }
-
-                let tag = std::mem::take(&mut self.combo_selection);
-                self.add_tag(tag)
-            }
-            TagEditorMessage::UpdateEnteredTag(tag) => {
-                self.entered_tag = tag;
-                task::message(TagEditorMessage::FocusInput)
-            }
-            TagEditorMessage::AddEnteredTag(tag) => {
-                if tag.trim().is_empty() {
-                    return Task::none();
-                }
-                self.entered_tag.clear();
+                let tag = std::mem::take(&mut self.tag_value);
                 self.add_tag(tag)
             }
             TagEditorMessage::RemoveTag(tag) => {
@@ -333,7 +318,6 @@ where
                 self.update_available_tags();
                 Task::none()
             }
-            TagEditorMessage::FocusInput => widget::text_input::focus(self.input_id.clone()),
             TagEditorMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }
@@ -368,7 +352,6 @@ mod tests {
             selected,
             orientation,
             "Select a tag".to_string(),
-            "Enter a new tag".to_string(),
             "No tags".to_string(),
             "Remove".to_string(),
         );

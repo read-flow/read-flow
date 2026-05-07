@@ -182,7 +182,6 @@ impl SettingsPage {
             settings.ui.private_tags().to_vec(),
             Orientation::Vertical,
             fl!("settings-select-private-tag"),
-            fl!("settings-enter-private-tag"),
             fl!("settings-no-private-tags"),
             fl!("settings-remove-private-tag"),
         );
