@@ -210,6 +210,7 @@ where
                 .on_select(TagEditorMessage::SelectOption)
                 .on_open(TagEditorMessage::ComboOpened)
                 .on_close(TagEditorMessage::ComboClosed)
+                .on_clear(TagEditorMessage::UpdateTagValue(String::new()))
                 .focused(self.combo_focused)
                 .view();
 

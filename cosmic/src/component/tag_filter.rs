@@ -177,7 +177,9 @@ where
                 available_tags,
             }) => {
                 if all_tags.is_empty() {
-                    section.add(widget::text::caption(fl!("document-list-no-tags-available")))
+                    section.add(widget::text::caption(fl!(
+                        "document-list-no-tags-available"
+                    )))
                 } else if available_tags.is_empty() {
                     section.add(widget::text::caption(fl!("document-list-all-tags-in-use")))
                 } else {
@@ -190,6 +192,7 @@ where
                     .on_select(select_message)
                     .on_open(open_message)
                     .on_close(close_message)
+                    .on_clear(update_message(String::new()))
                     .focused(focused)
                     .width(Length::Fill)
                     .view();

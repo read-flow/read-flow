@@ -40,6 +40,7 @@ pub struct ComboBox<'a, Message> {
     on_select: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_open: Option<Message>,
     on_close: Option<Message>,
+    on_clear: Option<Message>,
     focused: bool,
     width: Length,
 }
@@ -59,6 +60,7 @@ impl<'a, Message: Clone + 'static> ComboBox<'a, Message> {
             on_select: None,
             on_open: None,
             on_close: None,
+            on_clear: None,
             focused: false,
             width: Length::Fill,
         }
@@ -79,6 +81,13 @@ impl<'a, Message: Clone + 'static> ComboBox<'a, Message> {
     /// Message emitted when the input loses focus or the popup is dismissed.
     pub fn on_close(mut self, msg: Message) -> Self {
         self.on_close = Some(msg);
+        self
+    }
+
+    /// Message emitted when the clear icon button is pressed.  The button is
+    /// only shown when the current value is non-empty.
+    pub fn on_clear(mut self, msg: Message) -> Self {
+        self.on_clear = Some(msg);
         self
     }
 
@@ -137,6 +146,18 @@ impl<'a, Message: Clone + 'static> ComboBox<'a, Message> {
         }
         if let Some(msg) = on_close.clone() {
             input = input.on_unfocus(msg);
+        }
+        if let Some(msg) = self.on_clear.filter(|_| !self.value.is_empty()) {
+            // Use zero vertical padding so the button does not increase the
+            // input height compared to a combo box without a clear button.
+            let clear_icon = widget::icon::from_name("edit-clear-symbolic")
+                .size(16)
+                .apply(button::custom)
+                .class(cosmic::theme::Button::Icon)
+                .on_press(msg)
+                .padding([0, 4])
+                .into();
+            input = input.trailing_icon(clear_icon);
         }
 
         // Build the dropdown element — width is set to Fill here but will be
@@ -480,6 +501,14 @@ mod tests {
         let opts = options();
         ComboBox::new(&opts, "Choose or type…", "per", |s| s)
             .focused(true)
+            .view()
+    }
+
+    #[golden_test(400, 100)]
+    fn combo_box_with_clear_button() -> Element<'_, String> {
+        let opts = options();
+        ComboBox::new(&opts, "Choose or type…", "per", |s| s)
+            .on_clear(String::new())
             .view()
     }
 
