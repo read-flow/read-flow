@@ -33,19 +33,30 @@ export class ReadFlowClient {
 		this.authHeader = `Basic ${credentials}`;
 	}
 
+	private headers(extra?: HeadersInit): HeadersInit {
+		return { Authorization: this.authHeader, 'Content-Type': 'application/json', ...extra };
+	}
+
 	private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
 		const response = await fetch(`${this.baseUrl}${path}`, {
 			...options,
-			headers: {
-				Authorization: this.authHeader,
-				'Content-Type': 'application/json',
-				...options.headers,
-			},
+			headers: this.headers(options.headers),
 		});
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status} ${response.statusText} — ${this.baseUrl}${path}`);
 		}
 		return response.json() as Promise<T>;
+	}
+
+	// For endpoints that return 200 with an empty body (e.g. PUT /reading-progress).
+	private async requestVoid(path: string, options: RequestInit = {}): Promise<void> {
+		const response = await fetch(`${this.baseUrl}${path}`, {
+			...options,
+			headers: this.headers(options.headers),
+		});
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status} ${response.statusText} — ${this.baseUrl}${path}`);
+		}
 	}
 
 	async status(): Promise<ServerStatus> {
@@ -88,7 +99,7 @@ export class ReadFlowClient {
 	}
 
 	async upsertReadingProgress(progress: RemoteReadingProgress): Promise<void> {
-		await this.request<void>('/reading-progress', {
+		await this.requestVoid('/reading-progress', {
 			method: 'PUT',
 			body: JSON.stringify(progress),
 		});
