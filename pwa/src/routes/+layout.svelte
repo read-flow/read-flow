@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import { onMount } from 'svelte';
+	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import Icon, { type IconName } from '$lib/components/Icon.svelte';
 	import { theme, initTheme, cycleTheme } from '$lib/stores/theme';
@@ -9,6 +10,16 @@
 
 	onMount(() => initTheme());
 
+	// ── Sidebar collapse (persisted in localStorage for instant restore) ──────
+	const SIDEBAR_KEY = 'read-flow-sidebar-collapsed';
+	let collapsed = $state(browser ? localStorage.getItem(SIDEBAR_KEY) === 'true' : false);
+
+	function toggleSidebar(): void {
+		collapsed = !collapsed;
+		localStorage.setItem(SIDEBAR_KEY, String(collapsed));
+	}
+
+	// ── Navigation ────────────────────────────────────────────────────────────
 	function isActive(href: string): boolean {
 		if (href === '/') return $page.url.pathname === '/';
 		return $page.url.pathname.startsWith(href);
@@ -34,55 +45,106 @@
 <div class="h-dvh flex flex-col md:flex-row overflow-hidden bg-slate-50 dark:bg-slate-900">
 
 	<!-- ── Desktop sidebar ────────────────────────────────────── -->
-	<aside class="hidden md:flex flex-col w-56 shrink-0 border-r border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-		<div class="px-5 py-4 flex items-center gap-2.5 border-b border-slate-100 dark:border-slate-700/50">
-			<Icon name="library" class="w-5 h-5 text-slate-700 dark:text-slate-300" />
-			<span class="font-semibold text-slate-900 dark:text-slate-100 tracking-tight">Read Flow</span>
+	<!--
+		overflow-hidden clips text that hasn't yet disappeared during the width
+		transition, preventing wrapping or horizontal overflow mid-animation.
+	-->
+	<aside
+		class="hidden md:flex flex-col shrink-0 border-r border-slate-200 dark:border-slate-700
+			bg-white dark:bg-slate-800 overflow-hidden transition-[width] duration-200
+			{collapsed ? 'w-14' : 'w-56'}"
+	>
+		<!-- Logo / title -->
+		<div
+			class="flex items-center border-b border-slate-100 dark:border-slate-700/50 px-3 py-4
+				{collapsed ? 'justify-center' : 'gap-2.5 px-5'}"
+		>
+			<Icon name="library" class="w-5 h-5 text-slate-700 dark:text-slate-300 shrink-0" />
+			{#if !collapsed}
+				<span class="font-semibold text-slate-900 dark:text-slate-100 tracking-tight whitespace-nowrap">
+					Read Flow
+				</span>
+			{/if}
 		</div>
 
+		<!-- Navigation links -->
 		<nav class="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
 			<a
 				href="/"
-				class="flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors
-					{isActive('/') ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-medium' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-slate-100'}"
+				title="Library"
+				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
+					{collapsed ? 'justify-center' : 'gap-3'}
+					{isActive('/')
+						? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-medium'
+						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-slate-100'}"
 			>
 				<Icon name="library" class="w-4 h-4 shrink-0" />
-				Library
+				{#if !collapsed}<span class="whitespace-nowrap">Library</span>{/if}
 			</a>
 
 			<a
 				href="/settings"
-				class="flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors
-					{isActive('/settings') && !isActive('/settings/sources') ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-medium' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-slate-100'}"
+				title="Settings"
+				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
+					{collapsed ? 'justify-center' : 'gap-3'}
+					{isActive('/settings') && !isActive('/settings/sources')
+						? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-medium'
+						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-slate-100'}"
 			>
 				<Icon name="settings" class="w-4 h-4 shrink-0" />
-				Settings
+				{#if !collapsed}<span class="whitespace-nowrap">Settings</span>{/if}
 			</a>
 
-			{#if isActive('/settings')}
+			<!-- Sources sub-item — only shown when expanded and on a settings page -->
+			{#if !collapsed && isActive('/settings')}
 				<div class="ml-4 pl-3 border-l border-slate-200 dark:border-slate-600 space-y-0.5">
 					<a
 						href="/settings/sources"
 						class="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors
-							{isActive('/settings/sources') ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-medium' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-200'}"
+							{isActive('/settings/sources')
+								? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-medium'
+								: 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-200'}"
 					>
 						<Icon name="server" class="w-3.5 h-3.5 shrink-0" />
-						Sources
+						<span class="whitespace-nowrap">Sources</span>
 					</a>
 				</div>
 			{/if}
 		</nav>
 
-		<!-- Theme toggle -->
-		<div class="px-2 py-3 border-t border-slate-100 dark:border-slate-700/50">
+		<!-- Footer: theme toggle + collapse button -->
+		<div class="px-2 py-3 border-t border-slate-100 dark:border-slate-700/50 space-y-0.5">
+			<!-- Theme -->
 			<button
 				onclick={() => cycleTheme($theme)}
-				class="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors
+				title={themeLabel[$theme]}
+				class="w-full flex items-center px-3 py-2 rounded-md text-sm transition-colors
+					{collapsed ? 'justify-center' : 'gap-3'}
 					text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-slate-100"
-				title="Switch theme"
 			>
 				<Icon name={themeIcon[$theme]} class="w-4 h-4 shrink-0" />
-				{themeLabel[$theme]}
+				{#if !collapsed}<span class="whitespace-nowrap">{themeLabel[$theme]}</span>{/if}
+			</button>
+
+			<!-- Collapse / expand toggle -->
+			<button
+				onclick={toggleSidebar}
+				title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+				aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+				class="w-full flex items-center px-3 py-2 rounded-md text-sm transition-colors
+					{collapsed ? 'justify-center' : 'gap-3'}
+					text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-700 dark:hover:text-slate-300"
+			>
+				<!--
+					-rotate-90 on chevron-down → points right (expand)
+					 rotate-90 on chevron-down → points left  (collapse)
+				-->
+				<Icon
+					name="chevron-down"
+					class="w-4 h-4 shrink-0 transition-transform duration-200
+						{collapsed ? '-rotate-90' : 'rotate-90'}"
+				/>
+				{#if !collapsed}<span class="whitespace-nowrap text-xs">Collapse</span>{/if}
 			</button>
 		</div>
 	</aside>
