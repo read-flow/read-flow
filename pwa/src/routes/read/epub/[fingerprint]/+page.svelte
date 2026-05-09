@@ -66,8 +66,22 @@
 	}
 
 	// ── Reading theme ─────────────────────────────────────────────────────────
+	// Read the active scheme's colours from the computed CSS variables so the
+	// epub.js iframe always matches whichever colour scheme is currently active.
 	function applyEpubTheme(dark: boolean): void {
-		rendition?.themes.select(dark ? 'dark' : 'light');
+		if (!rendition) return;
+		const cs = getComputedStyle(document.documentElement);
+		const bg   = cs.getPropertyValue(dark ? '--color-slate-900' : '--color-white').trim()
+		             || (dark ? '#1e293b' : '#ffffff');
+		const text = cs.getPropertyValue(dark ? '--color-slate-100' : '--color-slate-900').trim()
+		             || (dark ? '#f1f5f9' : '#0f172a');
+		const name = dark ? 'dark' : 'light';
+		rendition.themes.register(name, {
+			html: { background: bg, color: text },
+			body: { background: `${bg} !important`, color: `${text} !important` },
+			...(dark ? { a: { color: '#93c5fd !important' } } : {}),
+		});
+		rendition.themes.select(name);
 	}
 
 	// ── Font size ─────────────────────────────────────────────────────────────
@@ -172,19 +186,8 @@
 			// Apply initial font size
 			rendition.themes.fontSize(`${fontSize}%`);
 
-			// Register light and dark reading themes, then subscribe to app theme
-			// changes so the EPUB content updates in sync with the rest of the UI.
-			// The subscription fires immediately, so the correct theme is already set
-			// before rendition.display() renders the first page.
-			rendition.themes.register('light', {
-				html: { background: '#ffffff', color: '#1e293b' },
-				body: { 'background': '#ffffff !important', 'color': '#1e293b !important' },
-			});
-			rendition.themes.register('dark', {
-				html: { background: '#1e293b', color: '#e2e8f0' },
-				body: { 'background': '#1e293b !important', 'color': '#e2e8f0 !important' },
-				a: { color: '#93c5fd !important' },
-			});
+			// Subscribe to app theme changes; fires immediately so the correct
+			// scheme colours are applied before rendition.display() renders.
 			themeUnsubscribe = theme.subscribe(() => {
 				applyEpubTheme(document.documentElement.classList.contains('dark'));
 			});

@@ -15,9 +15,19 @@
 		-->
 		<script>
 			try {
-				var t = localStorage.getItem('read-flow-theme');
-				var dark = t === 'dark' || (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+				// Migrate old key if present
+				var _old = localStorage.getItem('read-flow-theme');
+				if (_old && !localStorage.getItem('read-flow-scheme')) {
+					if (_old === 'light') localStorage.setItem('read-flow-scheme', 'slate-light');
+					else if (_old === 'dark') localStorage.setItem('read-flow-scheme', 'slate-dark');
+					localStorage.removeItem('read-flow-theme');
+				}
+				var DARK = ['slate-dark','nord-dark','catppuccin-frappe','catppuccin-macchiato','catppuccin-mocha','one-dark'];
+				var CUSTOM = ['nord-light','nord-dark','catppuccin-latte','catppuccin-frappe','catppuccin-macchiato','catppuccin-mocha','one-light','one-dark'];
+				var s = localStorage.getItem('read-flow-scheme') || 'system';
+				var dark = DARK.indexOf(s) !== -1 || (s === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 				document.documentElement.classList.toggle('dark', dark);
+				if (CUSTOM.indexOf(s) !== -1) document.documentElement.setAttribute('data-scheme', s);
 			} catch (e) {}
 		</script>
 		%sveltekit.head%

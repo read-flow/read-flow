@@ -4,7 +4,7 @@
 	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import Icon, { type IconName } from '$lib/components/Icon.svelte';
-	import { theme, initTheme, cycleTheme } from '$lib/stores/theme';
+	import { theme, initTheme, cycleTheme, schemeIcon, schemeShortLabel } from '$lib/stores/theme';
 
 	let { children } = $props();
 
@@ -30,16 +30,9 @@
 		{ href: '/settings', label: 'Settings', icon: 'settings' },
 	];
 
-	const themeIcon: Record<typeof $theme, IconName> = {
-		system: 'monitor',
-		light: 'sun',
-		dark: 'moon',
-	};
-	const themeLabel: Record<typeof $theme, string> = {
-		system: 'System',
-		light: 'Light',
-		dark: 'Dark',
-	};
+	// Derived values — updated reactively when $theme changes
+	const currentIcon = $derived(schemeIcon($theme) as IconName);
+	const currentLabel = $derived(schemeShortLabel($theme));
 </script>
 
 <div class="h-dvh flex flex-col md:flex-row overflow-hidden bg-slate-50 dark:bg-slate-900">
@@ -117,13 +110,13 @@
 			<!-- Theme -->
 			<button
 				onclick={() => cycleTheme($theme)}
-				title={themeLabel[$theme]}
+				title={currentLabel}
 				class="w-full flex items-center px-3 py-2 rounded-md text-sm transition-colors
 					{collapsed ? 'justify-center' : 'gap-3'}
 					text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-slate-100"
 			>
-				<Icon name={themeIcon[$theme]} class="w-4 h-4 shrink-0" />
-				{#if !collapsed}<span class="whitespace-nowrap">{themeLabel[$theme]}</span>{/if}
+				<Icon name={currentIcon} class="w-4 h-4 shrink-0" />
+				{#if !collapsed}<span class="whitespace-nowrap">{currentLabel}</span>{/if}
 			</button>
 
 			<!-- Collapse / expand toggle -->
@@ -162,7 +155,7 @@
 			class="p-2 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
 			aria-label="Switch theme"
 		>
-			<Icon name={themeIcon[$theme]} class="w-5 h-5" />
+			<Icon name={currentIcon} class="w-5 h-5" />
 		</button>
 	</header>
 
