@@ -1,12 +1,18 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
-	import { filteredDocuments, isLoading, loadError, refreshDocuments, searchQuery } from '$lib/stores/documents';
+	import { allDocuments, filteredDocuments, isLoading, loadError, refreshDocuments, searchQuery } from '$lib/stores/documents';
 	import { sources, loadSources } from '$lib/stores/sources';
+	import { get } from 'svelte/store';
 
 	onMount(async () => {
 		await loadSources();
-		await refreshDocuments();
+		// Only fetch from the server on the initial load (empty store).
+		// Subsequent visits reuse the in-memory store; the Refresh button
+		// triggers an explicit reload.
+		if (get(allDocuments).length === 0) {
+			await refreshDocuments();
+		}
 	});
 
 	function formatSize(bytes: number): string {
