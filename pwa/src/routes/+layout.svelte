@@ -4,7 +4,7 @@
 	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import Icon, { type IconName } from '$lib/components/Icon.svelte';
-	import { theme, initTheme, cycleTheme, schemeIcon, schemeShortLabel } from '$lib/stores/theme';
+	import { mode, initTheme, cycleMode, modeIcon, modeLabel } from '$lib/stores/theme';
 
 	let { children } = $props();
 
@@ -30,9 +30,9 @@
 		{ href: '/settings', label: 'Settings', icon: 'settings' },
 	];
 
-	// Derived values — updated reactively when $theme changes
-	const currentIcon = $derived(schemeIcon($theme) as IconName);
-	const currentLabel = $derived(schemeShortLabel($theme));
+	// Derived values — updated reactively when $mode changes
+	const currentIcon = $derived(modeIcon($mode) as IconName);
+	const currentLabel = $derived(modeLabel($mode));
 </script>
 
 <div class="h-dvh flex flex-col md:flex-row overflow-hidden bg-slate-50 dark:bg-slate-900">
@@ -109,7 +109,7 @@
 		<div class="px-2 py-3 border-t border-slate-100 dark:border-slate-700/50 space-y-0.5">
 			<!-- Theme -->
 			<button
-				onclick={() => cycleTheme($theme)}
+				onclick={() => cycleMode($mode)}
 				title={currentLabel}
 				class="w-full flex items-center px-3 py-2 rounded-md text-sm transition-colors
 					{collapsed ? 'justify-center' : 'gap-3'}
@@ -151,7 +151,7 @@
 			<span class="font-semibold text-slate-900 dark:text-slate-100 tracking-tight">Read Flow</span>
 		</div>
 		<button
-			onclick={() => cycleTheme($theme)}
+			onclick={() => cycleMode($mode)}
 			class="p-2 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
 			aria-label="Switch theme"
 		>
