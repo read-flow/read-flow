@@ -183,6 +183,71 @@ string (to match `mu_pdf_viewer.rs` behavior).
 
 ---
 
+## Theming: Light / Dark / System
+
+The app supports three theme modes selectable by the user and persisted across
+sessions. The default is **System** — it automatically follows the OS
+`prefers-color-scheme` setting and updates live when the user switches their OS
+appearance.
+
+### Implementation
+
+**No-FOUC inline script** in `app.html` runs before any CSS is parsed. It reads
+`localStorage` and applies the `dark` class to `<html>` synchronously, so the
+correct colour scheme is in place before the first paint on every load.
+
+**Tailwind v4 custom variant** in `app.css`:
+```css
+@custom-variant dark (&:where(.dark, .dark *));
+```
+This makes every `dark:` utility class respond to a `.dark` ancestor rather than
+the media query, which allows the JS-controlled toggle to override the OS preference.
+
+**Theme store** (`src/lib/stores/theme.ts`) exposes:
+- `theme: Writable<'system' | 'light' | 'dark'>` — the explicitly saved preference
+- `initTheme()` — called in the root layout's `onMount`; applies the saved preference,
+  sets up a `MediaQueryList` listener so "System" mode tracks OS changes live, and
+  returns a cleanup function
+- `setTheme(t)` — writes to `localStorage` and applies the class immediately
+- `cycleTheme(current)` — rotates system → light → dark → system
+
+**Persistence** uses `localStorage` (not IndexedDB) specifically because theme
+application must be synchronous and happen before the first render. A single key
+(`read-flow-theme`) holds the explicit preference; absence means "system".
+
+### UI controls
+
+| Location | Control |
+|----------|---------|
+| Desktop sidebar (bottom) | Button showing current mode icon + label; click cycles |
+| Mobile top bar (right) | Icon-only button; click cycles |
+| Settings page | Three-way selector (System / Light / Dark) with descriptions |
+
+### Colour palette
+
+All interactive components carry both light and `dark:` Tailwind variants.
+
+| Role | Light | Dark |
+|------|-------|------|
+| App background | `slate-50` | `slate-900` |
+| Card / nav surface | `white` | `slate-800` |
+| Border | `slate-200` | `slate-700` |
+| Text — primary | `slate-900` | `slate-100` |
+| Text — secondary | `slate-600` | `slate-400` |
+| Text — muted | `slate-400` | `slate-500` |
+| Hover surface | `slate-50` | `slate-700/50` |
+| Input background | `slate-50` | `slate-700/50` |
+| Primary button | `slate-900` / white text | `slate-100` / dark text |
+| Active nav item | `slate-100` | `slate-700` |
+| PDF badge | `red-100 / red-700` | `red-900/30 / red-400` |
+| EPUB badge | `blue-100 / blue-700` | `blue-900/30 / blue-400` |
+
+The reader shell (`/read/*`) intentionally remains dark regardless of the overall
+theme — most reading environments are dim — but the actual document canvas will
+adopt appropriate colours once the viewers are implemented.
+
+---
+
 ## Responsive Design
 
 The app must work reliably across the full device spectrum: a 375px-wide mobile phone

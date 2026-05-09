@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/*
+	Make the `dark:` variant respond to a `.dark` class on an ancestor element.
+	This allows the theme store to toggle dark mode manually while still supporting
+	auto-detection via the inline script in app.html.
+*/
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
 	--font-family-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
 		Roboto, "Helvetica Neue", Arial, sans-serif;
