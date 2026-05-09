@@ -7,6 +7,7 @@
 	import { allDocuments, refreshDocuments } from '$lib/stores/documents';
 	import { downloadFileFromSources } from '$lib/api/aggregator';
 	import { loadSources } from '$lib/stores/sources';
+	import { theme } from '$lib/stores/theme';
 	import { db } from '$lib/db';
 	import { get } from 'svelte/store';
 	import type { AggregatedFile } from '$lib/api/aggregator';
@@ -43,9 +44,10 @@
 	// ── DOM ref ────────────────────────────────────────────────────────────────
 	let viewerEl: HTMLDivElement | undefined = $state();
 
-	// ── Timers / observers ────────────────────────────────────────────────────
+	// ── Timers / observers / subscriptions ───────────────────────────────────
 	let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 	let resizeObserver: ResizeObserver | null = null;
+	let themeUnsubscribe: (() => void) | null = null;
 
 	// ── Touch tracking ────────────────────────────────────────────────────────
 	let touchStartX = 0;
@@ -61,6 +63,11 @@
 		if (direction === 'next') await rendition.next();
 		else await rendition.prev();
 		resetToolbarTimer();
+	}
+
+	// ── Reading theme ─────────────────────────────────────────────────────────
+	function applyEpubTheme(dark: boolean): void {
+		rendition?.themes.select(dark ? 'dark' : 'light');
 	}
 
 	// ── Font size ─────────────────────────────────────────────────────────────
@@ -165,6 +172,23 @@
 			// Apply initial font size
 			rendition.themes.fontSize(`${fontSize}%`);
 
+			// Register light and dark reading themes, then subscribe to app theme
+			// changes so the EPUB content updates in sync with the rest of the UI.
+			// The subscription fires immediately, so the correct theme is already set
+			// before rendition.display() renders the first page.
+			rendition.themes.register('light', {
+				html: { background: '#ffffff', color: '#1e293b' },
+				body: { 'background': '#ffffff !important', 'color': '#1e293b !important' },
+			});
+			rendition.themes.register('dark', {
+				html: { background: '#1e293b', color: '#e2e8f0' },
+				body: { 'background': '#1e293b !important', 'color': '#e2e8f0 !important' },
+				a: { color: '#93c5fd !important' },
+			});
+			themeUnsubscribe = theme.subscribe(() => {
+				applyEpubTheme(document.documentElement.classList.contains('dark'));
+			});
+
 			// Track location changes
 			rendition.on('relocated', (location: Location) => {
 				if (location?.start?.index !== undefined) {
@@ -200,6 +224,7 @@
 	});
 
 	onDestroy(() => {
+		themeUnsubscribe?.();
 		if (toolbarTimer) clearTimeout(toolbarTimer);
 		if (resizeTimer) clearTimeout(resizeTimer);
 		resizeObserver?.disconnect();
@@ -284,7 +309,7 @@
 	-->
 	<div
 		bind:this={viewerEl}
-		class="flex-1 overflow-hidden bg-white"
+		class="flex-1 overflow-hidden bg-white dark:bg-slate-800"
 		onclick={handleViewerTap}
 		role="presentation"
 	>
