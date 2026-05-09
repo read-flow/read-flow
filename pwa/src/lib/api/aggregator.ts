@@ -86,12 +86,18 @@ export async function removeTagsFromFile(fingerprint: string, tags: string[]): P
 }
 
 export async function fetchReadingProgress(fingerprint: string): Promise<RemoteReadingProgress | null> {
+	// Check local IndexedDB first — instant and works offline
+	const local = await db.readingProgress.get(fingerprint);
+
 	const clients = await getClients();
 	const results = await Promise.allSettled(
 		clients.map(({ client }) => client.getReadingProgress(fingerprint)),
 	);
 
-	let newest: RemoteReadingProgress | null = null;
+	let newest: RemoteReadingProgress | null = local
+		? { fingerprint: local.fingerprint, progress: local.progress, last_updated: local.lastUpdated }
+		: null;
+
 	for (const result of results) {
 		if (result.status !== 'fulfilled' || result.value === null) continue;
 		if (!newest || result.value.last_updated > newest.last_updated) {
@@ -102,8 +108,15 @@ export async function fetchReadingProgress(fingerprint: string): Promise<RemoteR
 }
 
 export async function saveReadingProgress(progress: RemoteReadingProgress): Promise<void> {
+	// Write to local DB immediately — survives offline and is instant
+	await db.readingProgress.put({
+		fingerprint: progress.fingerprint,
+		progress: progress.progress,
+		lastUpdated: progress.last_updated,
+	});
+
+	// Fan out to remote sources; failures don't block the reader
 	const clients = await getClients();
-	// Write to all sources; failures are logged but don't block the reader.
 	const results = await Promise.allSettled(
 		clients.map(({ client }) => client.upsertReadingProgress(progress)),
 	);
@@ -112,4 +125,31 @@ export async function saveReadingProgress(progress: RemoteReadingProgress): Prom
 			console.warn('Failed to save reading progress to a source:', result.reason);
 		}
 	}
+}
+
+/**
+ * Download a file by trying each source that holds it in order.
+ * `sourceGuids` comes from AggregatedFile.sourceGuids (sourceId → GUID).
+ */
+export async function downloadFileFromSources(
+	sourceGuids: Record<number, string>,
+	fileName: string,
+): Promise<Blob> {
+	const sources = await db.sources.orderBy('order').toArray();
+	const errors: Error[] = [];
+
+	for (const source of sources) {
+		if (source.id === undefined) continue;
+		const guid = sourceGuids[source.id];
+		if (!guid) continue;
+		try {
+			return await new ReadFlowClient(source).downloadFile(guid, fileName);
+		} catch (err) {
+			errors.push(err instanceof Error ? err : new Error(String(err)));
+		}
+	}
+
+	throw new Error(
+		`Could not download "${fileName}" from any source: ${errors.map((e) => e.message).join('; ')}`,
+	);
 }
