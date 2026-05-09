@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+	--font-family-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+		Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Ensure inputs never trigger iOS Safari's auto-zoom (requires font-size >= 16px) */
+input,
+select,
+textarea {
+	font-size: 16px;
+}
+
+@media (min-width: 768px) {
+	input,
+	select,
+	textarea {
+		font-size: 0.875rem; /* 14px — restore smaller size on larger screens */
+	}
+}

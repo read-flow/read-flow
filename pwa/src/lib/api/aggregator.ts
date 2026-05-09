@@ -1,0 +1,115 @@
+import { db } from '$lib/db';
+import { ReadFlowClient, type RemoteFile, type RemoteReadingProgress } from './client';
+
+export interface AggregatedFile extends RemoteFile {
+	/** GUIDs keyed by source id — the same file can exist on multiple sources. */
+	sourceGuids: Record<number, string>;
+}
+
+function mergeFiles(batches: Array<{ sourceId: number; files: RemoteFile[] }>): AggregatedFile[] {
+	const byFingerprint = new Map<string, AggregatedFile>();
+
+	for (const { sourceId, files } of batches) {
+		for (const file of files) {
+			const existing = byFingerprint.get(file.fingerprint);
+			if (existing) {
+				existing.sourceGuids[sourceId] = file.guid;
+				// Merge tags from all sources
+				for (const tag of file.tags) {
+					if (!existing.tags.includes(tag)) existing.tags.push(tag);
+				}
+			} else {
+				byFingerprint.set(file.fingerprint, {
+					...file,
+					sourceGuids: { [sourceId]: file.guid },
+				});
+			}
+		}
+	}
+
+	return Array.from(byFingerprint.values());
+}
+
+async function getClients(): Promise<Array<{ id: number; client: ReadFlowClient }>> {
+	const sources = await db.sources.orderBy('order').toArray();
+	return sources
+		.filter((s) => s.id !== undefined)
+		.map((s) => ({ id: s.id as number, client: new ReadFlowClient(s) }));
+}
+
+export async function fetchAllFiles(): Promise<AggregatedFile[]> {
+	const clients = await getClients();
+	if (clients.length === 0) return [];
+
+	const results = await Promise.allSettled(
+		clients.map(async ({ id, client }) => ({ sourceId: id, files: await client.getFiles() })),
+	);
+
+	const batches = results
+		.filter((r): r is PromiseFulfilledResult<{ sourceId: number; files: RemoteFile[] }> => r.status === 'fulfilled')
+		.map((r) => r.value);
+
+	return mergeFiles(batches);
+}
+
+export async function fetchAllTags(): Promise<string[]> {
+	const clients = await getClients();
+	const results = await Promise.allSettled(clients.map(({ client }) => client.getAllTags()));
+	const tags = new Set<string>();
+	for (const result of results) {
+		if (result.status === 'fulfilled') result.value.forEach((t) => tags.add(t));
+	}
+	return Array.from(tags).sort();
+}
+
+export async function addTagsToFile(fingerprint: string, tags: string[]): Promise<void> {
+	const clients = await getClients();
+	// Fan out to all sources that have the file
+	await Promise.allSettled(
+		clients.map(async ({ client }) => {
+			const files = await client.getFiles();
+			const file = files.find((f) => f.fingerprint === fingerprint);
+			if (file) await client.addTags(file.guid, tags);
+		}),
+	);
+}
+
+export async function removeTagsFromFile(fingerprint: string, tags: string[]): Promise<void> {
+	const clients = await getClients();
+	await Promise.allSettled(
+		clients.map(async ({ client }) => {
+			const files = await client.getFiles();
+			const file = files.find((f) => f.fingerprint === fingerprint);
+			if (file) await client.deleteTags(file.guid, tags);
+		}),
+	);
+}
+
+export async function fetchReadingProgress(fingerprint: string): Promise<RemoteReadingProgress | null> {
+	const clients = await getClients();
+	const results = await Promise.allSettled(
+		clients.map(({ client }) => client.getReadingProgress(fingerprint)),
+	);
+
+	let newest: RemoteReadingProgress | null = null;
+	for (const result of results) {
+		if (result.status !== 'fulfilled' || result.value === null) continue;
+		if (!newest || result.value.last_updated > newest.last_updated) {
+			newest = result.value;
+		}
+	}
+	return newest;
+}
+
+export async function saveReadingProgress(progress: RemoteReadingProgress): Promise<void> {
+	const clients = await getClients();
+	// Write to all sources; failures are logged but don't block the reader.
+	const results = await Promise.allSettled(
+		clients.map(({ client }) => client.upsertReadingProgress(progress)),
+	);
+	for (const result of results) {
+		if (result.status === 'rejected') {
+			console.warn('Failed to save reading progress to a source:', result.reason);
+		}
+	}
+}
