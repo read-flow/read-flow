@@ -30,6 +30,30 @@ The development server starts at `http://localhost:5173`.
 | `npm run preview` | Preview the production build locally |
 | `npm run check` | Run `svelte-check` (TypeScript + Svelte type checking) |
 | `npm run check:watch` | Same as above, in watch mode |
+| `npm test` | Run the unit test suite once |
+| `npm run test:watch` | Run tests in watch mode (re-runs on file change) |
+
+## Running the tests
+
+```bash
+npm test
+```
+
+Tests are written with [Vitest](https://vitest.dev/) and cover the pure business-logic
+modules that have no DOM or browser dependencies:
+
+| Test file | What it covers |
+|-----------|----------------|
+| `src/lib/api/merge.test.ts` | `mergeFiles` — deduplication and tag-union across multiple sources |
+| `src/lib/api/client.test.ts` | `ReadFlowClient` — URL construction, auth header, HTTP error handling |
+| `src/lib/utils/filter.test.ts` | `filterDocuments` — allowed/denied tag filtering and fuzzy search |
+| `src/lib/stores/theme.test.ts` | `isDarkScheme`, `modeIcon`, `modeLabel`, `cycleMode` |
+
+To run in watch mode during development:
+
+```bash
+npm run test:watch
+```
 
 ## Connecting to a read-flow server
 

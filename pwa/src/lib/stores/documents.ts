@@ -1,6 +1,6 @@
 import { writable, derived } from 'svelte/store';
-import Fuse from 'fuse.js';
 import { fetchAllFiles, type AggregatedFile } from '$lib/api/aggregator';
+import { filterDocuments } from '$lib/utils/filter';
 
 export const allDocuments = writable<AggregatedFile[]>([]);
 export const isLoading = writable(false);
@@ -25,30 +25,7 @@ export async function refreshDocuments(): Promise<void> {
 
 export const filteredDocuments = derived(
 	[allDocuments, searchQuery, allowedTags, deniedTags],
-	([$all, $query, $allowed, $denied]) => {
-		let results = $all;
-
-		// Tag filtering (allow = AND, deny = NOT)
-		if ($allowed.size > 0) {
-			results = results.filter((f) => [...$allowed].every((t) => f.tags.includes(t)));
-		}
-		if ($denied.size > 0) {
-			results = results.filter((f) => ![...$denied].some((t) => f.tags.includes(t)));
-		}
-
-		// Fuzzy search
-		if ($query.trim()) {
-			const fuse = new Fuse(results, {
-				keys: ['path'],
-				threshold: 0.3,
-				includeScore: true,
-				minMatchCharLength: 2,
-			});
-			results = fuse.search($query.trim()).map((r) => r.item);
-		}
-
-		return results;
-	},
+	([$all, $query, $allowed, $denied]) => filterDocuments($all, $allowed, $denied, $query),
 );
 
 export const allTags = derived(allDocuments, ($all) => {
