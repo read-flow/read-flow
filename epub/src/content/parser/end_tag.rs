@@ -126,19 +126,30 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
                     style: block_style,
                 })
             } else {
+                // Mixed content: text + block children (e.g. <p>text<img/>more</p>).
+                // Build parallel block/path lists so children_paths stays in sync.
                 let mut blocks = Vec::new();
+                let mut paths: Vec<Vec<u32>> = Vec::new();
                 if !text.is_empty() {
                     blocks.push(ContentBlock::Paragraph {
                         text,
                         spans,
                         style: block_style,
                     });
+                    paths.push(path.clone());
                 }
+                let n = entry.children.len();
                 blocks.extend(entry.children);
+                let mut cpaths = entry.children_paths;
+                cpaths.resize(n, vec![]);
+                paths.extend(cpaths);
+                paths.resize(blocks.len(), vec![]);
                 if let Some(parent) = state.stack.last_mut() {
                     parent.children.extend(blocks);
+                    parent.children_paths.extend(paths);
                 } else {
                     state.output.extend(blocks);
+                    state.output_block_paths.extend(paths);
                 }
                 None
             }
@@ -191,7 +202,15 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
                 })
             } else if !entry.children.is_empty() {
                 // Footnote blocks collected from <li> elements inside a footnote container
-                promote_to_parent(state, path.clone(), String::new(), Vec::new(), entry.children, entry.children_paths, Vec::new());
+                promote_to_parent(
+                    state,
+                    path.clone(),
+                    String::new(),
+                    Vec::new(),
+                    entry.children,
+                    entry.children_paths,
+                    Vec::new(),
+                );
                 None
             } else {
                 None
@@ -205,7 +224,15 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
                 })
             } else if !entry.children.is_empty() {
                 // Footnote blocks collected from <li> elements inside a footnote container
-                promote_to_parent(state, path.clone(), String::new(), Vec::new(), entry.children, entry.children_paths, Vec::new());
+                promote_to_parent(
+                    state,
+                    path.clone(),
+                    String::new(),
+                    Vec::new(),
+                    entry.children,
+                    entry.children_paths,
+                    Vec::new(),
+                );
                 None
             } else {
                 None
@@ -346,11 +373,7 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
                     spans,
                     style: block_style,
                 };
-                if let Some(parent) = state.stack.last_mut() {
-                    parent.children.push(block);
-                } else {
-                    state.output.push(block);
-                }
+                push_block(state, block, path.clone());
             }
             None
         }
@@ -393,11 +416,27 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
                 let anchor = ContentBlock::Anchor { id: id.clone() };
                 push_block(state, anchor, path.clone());
             }
-            promote_to_parent(state, path.clone(), text, spans, entry.children, entry.children_paths, entry.list_items);
+            promote_to_parent(
+                state,
+                path.clone(),
+                text,
+                spans,
+                entry.children,
+                entry.children_paths,
+                entry.list_items,
+            );
             None
         }
         _ => {
-            promote_to_parent(state, path.clone(), text, spans, entry.children, entry.children_paths, entry.list_items);
+            promote_to_parent(
+                state,
+                path.clone(),
+                text,
+                spans,
+                entry.children,
+                entry.children_paths,
+                entry.list_items,
+            );
             None
         }
     };

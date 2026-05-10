@@ -50,11 +50,15 @@ fn handle_start_tag_inner(
     }
 
     if matches!(classify(tag_name), TagClass::Skip) {
+        // <head>, <script>, <style> are real DOM element children; count them so
+        // sibling indices match what epub.js sees in the browser DOM.
+        state.count_element_child();
         state.skip_depth = 1;
         return;
     }
 
     if tag_name == "br" {
+        state.count_element_child();
         if let Some(entry) = state.stack.last_mut() {
             entry.text.push('\n');
         }
@@ -62,13 +66,18 @@ fn handle_start_tag_inner(
     }
 
     if tag_name == "hr" {
+        state.count_element_child();
         if let Some(entry) = state.stack.last_mut() {
+            // Keep children_paths in sync with children (use empty path — HR is
+            // never a progress anchor, so an accurate path is not needed).
             entry.children.push(ContentBlock::HorizontalRule);
+            entry.children_paths.push(vec![]);
         }
         return;
     }
 
     if tag_name == "img" {
+        state.count_element_child();
         handle_img(state, attrs);
         return;
     }
@@ -220,6 +229,7 @@ fn handle_img(state: &mut SinkState, attrs: &[html5ever::Attribute]) {
 
         if let Some(entry) = state.stack.last_mut() {
             entry.children.push(placeholder);
+            entry.children_paths.push(vec![]);
         }
         state.pending_images.push((
             id,
@@ -242,6 +252,7 @@ fn handle_img(state: &mut SinkState, attrs: &[html5ever::Attribute]) {
             }],
             style: BlockStyle::default(),
         });
+        entry.children_paths.push(vec![]);
     }
 }
 

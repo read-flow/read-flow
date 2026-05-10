@@ -207,16 +207,24 @@ impl ContentSink {
 }
 
 impl SinkState {
-    /// Push `entry` onto the stack, recording its element child index and
-    /// incrementing the parent's child count for accurate CFI path generation.
-    pub(super) fn push_element(&mut self, mut entry: StackEntry) {
+    /// Count an element as the next child of the current parent and return its
+    /// 0-based child index.  Call this for elements that do NOT push onto the
+    /// stack (Skip tags, void elements like `<br>`/`<hr>`/`<img>`) so that
+    /// sibling indices stay in sync with the real DOM that epub.js sees.
+    pub(super) fn count_element_child(&mut self) -> u32 {
         let parent_depth = self.stack.len();
-        // Extend the counts vector so slot [parent_depth] exists.
         while self.element_child_counts.len() <= parent_depth {
             self.element_child_counts.push(0);
         }
-        entry.element_child_index = self.element_child_counts[parent_depth];
+        let index = self.element_child_counts[parent_depth];
         self.element_child_counts[parent_depth] += 1;
+        index
+    }
+
+    /// Push `entry` onto the stack, recording its element child index and
+    /// incrementing the parent's child count for accurate CFI path generation.
+    pub(super) fn push_element(&mut self, mut entry: StackEntry) {
+        entry.element_child_index = self.count_element_child();
         self.stack.push(entry);
     }
 

@@ -20,9 +20,7 @@ impl Locator {
     /// The `[id]` assertion is included only when `spine_id` is `Some`.
     pub fn to_cfi(&self, spine_id: Option<&str>) -> String {
         let spine_step = (self.spine_index + 1) * 2;
-        let assertion = spine_id
-            .map(|id| format!("[{id}]"))
-            .unwrap_or_default();
+        let assertion = spine_id.map(|id| format!("[{id}]")).unwrap_or_default();
         let path: String = self
             .node_path
             .iter()
@@ -66,9 +64,7 @@ impl Locator {
             .split('/')
             .filter(|s| !s.is_empty())
             .map_while(|s| {
-                let step_end = s
-                    .find(|c: char| !c.is_ascii_digit())
-                    .unwrap_or(s.len());
+                let step_end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
                 let step: u32 = s[..step_end].parse().ok()?;
                 if step % 2 != 0 {
                     return None; // text-node step — stop here
@@ -215,8 +211,8 @@ mod tests {
     #[case("epubcfi(/6/2[ch]!/4/2:0)",  Some(Locator { spine_index: 0, node_path: vec![1, 0], char_offset: 0 }))]
     // text-node step (/1) truncates path
     #[case("epubcfi(/6/4!/4/6/1:15)",   Some(Locator { spine_index: 1, node_path: vec![1, 2], char_offset: 15 }))]
-    #[case("not-a-cfi",                 None)]
-    #[case("epubcfi(/6/3!/4/6:0)",      None)] // odd spine step
+    #[case("not-a-cfi", None)]
+    #[case("epubcfi(/6/3!/4/6:0)", None)] // odd spine step
     fn test_from_cfi(#[case] cfi: &str, #[case] expected: Option<Locator>) {
         assert_eq!(Locator::from_cfi(cfi), expected);
     }

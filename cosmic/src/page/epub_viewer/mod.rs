@@ -1315,7 +1315,9 @@ impl Page for EpubViewer {
                     if self.pending_block_index.is_none() && !self.pending_node_path.is_empty() {
                         let c = self.active_chapter;
                         let node_path = std::mem::take(&mut self.pending_node_path);
-                        let block_idx = self.chapters.get(c)
+                        let block_idx = self
+                            .chapters
+                            .get(c)
                             .map(|ch| block_index_for_path(ch, &node_path))
                             .unwrap_or(0);
                         self.pending_block_index = Some(block_idx);
@@ -1362,7 +1364,9 @@ impl Page for EpubViewer {
                     self.active_chapter = c;
                     self.sync_raw_html_content();
                     // Chapters already loaded — resolve node path to block index now.
-                    let block_idx = self.chapters.get(c)
+                    let block_idx = self
+                        .chapters
+                        .get(c)
                         .map(|ch| block_index_for_path(ch, &pos.node_path))
                         .unwrap_or(0);
                     let block_idx = pos.block_index.unwrap_or(block_idx);
@@ -1370,9 +1374,9 @@ impl Page for EpubViewer {
                     if self.view_mode == ViewMode::Scroll {
                         let content_w = 800.0;
                         self.ensure_block_heights(c, content_w);
-                        let target_y = self.block_heights_cache
-                            .get(&c)
-                            .map(|(_, _, heights)| y_for_block_index_from_heights(heights, block_idx));
+                        let target_y = self.block_heights_cache.get(&c).map(|(_, _, heights)| {
+                            y_for_block_index_from_heights(heights, block_idx)
+                        });
                         if let Some(y) = target_y {
                             self.scroll_y = y;
                             return scrollable::scroll_to(
@@ -1963,7 +1967,11 @@ fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, EpubViewe
 /// Build a CFI string for the given block in the given chapter.
 fn cfi_for_block(chapters: &[EpubChapter], chapter_idx: usize, block_idx: usize) -> Option<String> {
     let chapter = chapters.get(chapter_idx)?;
-    let node_path = chapter.block_paths.get(block_idx).cloned().unwrap_or_default();
+    let node_path = chapter
+        .block_paths
+        .get(block_idx)
+        .cloned()
+        .unwrap_or_default();
     let locator = epub::Locator {
         spine_index: chapter_idx as u32,
         node_path,
@@ -2038,7 +2046,11 @@ fn parse_reading_progress(progress: &str) -> ReadingPosition {
             }
         }
     }
-    ReadingPosition { chapter, node_path: vec![], block_index }
+    ReadingPosition {
+        chapter,
+        node_path: vec![],
+        block_index,
+    }
 }
 
 /// Extract the string value of a JSON key from a flat JSON object string.
@@ -2128,21 +2140,23 @@ fn load_epub_chapters(
                 let href = &item.href;
                 let raw = String::from_utf8_lossy(&data).into_owned();
                 let stylesheet = load_chapter_stylesheets(&raw, href, &epub_doc);
-                let (mut blocks, block_paths) =
-                    epub::content::parse_xhtml_with_paths(&data, href, &stylesheet, &mut |img_path| {
-                        match epub_doc.resolve_resource(img_path) {
-                            Ok(img_data) => {
-                                let media_type = epub::content::guess_media_type(img_path);
-                                Some((img_data, media_type))
-                            }
-                            Err(e) => {
-                                tracing::info!(
-                                    "image resource not found in chapter {href}: {img_path} ({e})"
-                                );
-                                None
-                            }
+                let (mut blocks, block_paths) = epub::content::parse_xhtml_with_paths(
+                    &data,
+                    href,
+                    &stylesheet,
+                    &mut |img_path| match epub_doc.resolve_resource(img_path) {
+                        Ok(img_data) => {
+                            let media_type = epub::content::guess_media_type(img_path);
+                            Some((img_data, media_type))
                         }
-                    });
+                        Err(e) => {
+                            tracing::info!(
+                                "image resource not found in chapter {href}: {img_path} ({e})"
+                            );
+                            None
+                        }
+                    },
+                );
                 resolve_svg_blocks(&mut blocks, href, &epub_doc);
                 (blocks, block_paths, raw)
             }

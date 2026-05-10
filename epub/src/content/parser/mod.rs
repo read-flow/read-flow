@@ -384,6 +384,65 @@ mod tests {
         )
     }
 
+    fn parse_with_paths(html: &str) -> (Vec<ContentBlock>, Vec<Vec<u32>>) {
+        parse_xhtml_with_paths(
+            html.as_bytes(),
+            "OEBPS/Text/ch1.xhtml",
+            &StyleSheet::empty(),
+            &mut |_| None,
+        )
+    }
+
+    // ── Node-path / CFI tests ─────────────────────────────────────────────────
+
+    /// `<head>` must be counted as an element child of `<html>` so that `<body>`
+    /// receives child index 1 (CFI step 4), matching epub.js's DOM-based CFI.
+    #[test]
+    fn head_counted_so_body_gets_index_1() {
+        let (_blocks, paths) = parse_with_paths(
+            "<html><head><title>T</title></head><body><p>A</p><p>B</p></body></html>",
+        );
+        // body is html's 2nd element child (index 1); first paragraph is body's 1st (index 0)
+        assert_eq!(_blocks.len(), 2);
+        assert_eq!(paths[0], vec![1, 0], "first paragraph: body=1, p=0");
+        assert_eq!(paths[1], vec![1, 1], "second paragraph: body=1, p=1");
+    }
+
+    /// `<br>` and `<hr>` must be counted so siblings get correct indices.
+    #[test]
+    fn void_elements_counted_as_siblings() {
+        // body has: <p>(0), <hr/>(1), <p>(2)
+        let (blocks, paths) = parse_with_paths(
+            "<html><head></head><body><p>first</p><hr/><p>second</p></body></html>",
+        );
+        let para_paths: Vec<_> = paths.iter().filter(|p| !p.is_empty()).collect();
+        // First <p>: body(1), p(0) → step 4/2
+        // Second <p>: body(1), p(2) → step 4/6  (hr at index 1 is counted)
+        assert!(
+            para_paths.iter().any(|p| **p == vec![1u32, 0]),
+            "first p at index 0"
+        );
+        assert!(
+            para_paths.iter().any(|p| **p == vec![1u32, 2]),
+            "second p at index 2 (hr counted)"
+        );
+    }
+
+    /// paths vector must stay in sync with blocks vector (same length).
+    #[test]
+    fn paths_length_matches_blocks() {
+        let (blocks, paths) = parse_with_paths(
+            "<html><head></head><body>\
+             <p>text</p><hr/><p>more</p>\
+             </body></html>",
+        );
+        assert_eq!(
+            blocks.len(),
+            paths.len(),
+            "paths and blocks must have equal length"
+        );
+    }
+
     #[test]
     fn parses_paragraph() {
         let blocks = parse("<html><body><p>Hello world</p></body></html>");
