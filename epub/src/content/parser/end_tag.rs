@@ -12,11 +12,40 @@ use crate::content::block::ListItem;
 use crate::content::block::TableCell;
 use crate::content::block::TextSpan;
 
+/// Compute the DOM node path for the element represented by `entry`, relative
+/// to the content document root (i.e. starting from `<html>`'s children).
+///
+/// `state.stack` must already have `entry` popped.  The path is built from
+/// the element-child indices stored on each remaining stack entry, skipping
+/// the pseudo-root (index 0) and the `<html>` entry (index 1, since CFI paths
+/// after `!` start from html's children), then appending `entry`'s own index.
+fn block_path(stack: &[StackEntry], entry_index: u32) -> Vec<u32> {
+    stack
+        .iter()
+        .skip(2) // skip pseudo-root and <html>
+        .map(|e| e.element_child_index)
+        .chain(std::iter::once(entry_index))
+        .collect()
+}
+
+/// Push `block` and its corresponding `path` into the parent or top-level output.
+fn push_block(state: &mut SinkState, block: ContentBlock, path: Vec<u32>) {
+    if let Some(parent) = state.stack.last_mut() {
+        parent.children_paths.push(path);
+        parent.children.push(block);
+    } else {
+        state.output_block_paths.push(path);
+        state.output.push(block);
+    }
+}
+
 /// Process an HTML end tag, updating `state` accordingly.
 ///
 /// The entry for `tag_name` has already been popped from the stack and
 /// is passed in as `entry`.
 pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: StackEntry) {
+    // Compute the DOM path for this element once, reused for all blocks it emits.
+    let path = block_path(&state.stack, entry.element_child_index);
     // Capture end tags within SVG elements (but not the SVG closing tag itself)
     if tag_name != "svg"
         && let Some(svg_entry) = state.stack.iter_mut().find(|e| e.tag == "svg")
@@ -162,7 +191,7 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
                 })
             } else if !entry.children.is_empty() {
                 // Footnote blocks collected from <li> elements inside a footnote container
-                promote_to_parent(state, String::new(), Vec::new(), entry.children, Vec::new());
+                promote_to_parent(state, path.clone(), String::new(), Vec::new(), entry.children, entry.children_paths, Vec::new());
                 None
             } else {
                 None
@@ -176,7 +205,7 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
                 })
             } else if !entry.children.is_empty() {
                 // Footnote blocks collected from <li> elements inside a footnote container
-                promote_to_parent(state, String::new(), Vec::new(), entry.children, Vec::new());
+                promote_to_parent(state, path.clone(), String::new(), Vec::new(), entry.children, entry.children_paths, Vec::new());
                 None
             } else {
                 None
@@ -362,17 +391,13 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
                 && matches!(classify(tag_name), TagClass::AnchorContainer)
             {
                 let anchor = ContentBlock::Anchor { id: id.clone() };
-                if let Some(parent) = state.stack.last_mut() {
-                    parent.children.push(anchor);
-                } else {
-                    state.output.push(anchor);
-                }
+                push_block(state, anchor, path.clone());
             }
-            promote_to_parent(state, text, spans, entry.children, entry.list_items);
+            promote_to_parent(state, path.clone(), text, spans, entry.children, entry.children_paths, entry.list_items);
             None
         }
         _ => {
-            promote_to_parent(state, text, spans, entry.children, entry.list_items);
+            promote_to_parent(state, path.clone(), text, spans, entry.children, entry.children_paths, entry.list_items);
             None
         }
     };
@@ -383,13 +408,10 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
     // footnote back-reference links (e.g. href="#fnref1") to navigate directly
     // to the call-site paragraph.
     if block.is_some() {
-        for id in state.pending_inline_anchors.drain(..) {
-            let anchor = ContentBlock::Anchor { id };
-            if let Some(parent) = state.stack.last_mut() {
-                parent.children.push(anchor);
-            } else {
-                state.output.push(anchor);
-            }
+        // Collect first to avoid a double-borrow of `state` inside the loop.
+        let inline_anchors: Vec<String> = state.pending_inline_anchors.drain(..).collect();
+        for id in inline_anchors {
+            push_block(state, ContentBlock::Anchor { id }, vec![]);
         }
     }
 
@@ -403,26 +425,20 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
         && !id.is_empty()
     {
         let anchor = ContentBlock::Anchor { id: id.clone() };
-        if let Some(parent) = state.stack.last_mut() {
-            parent.children.push(anchor);
-        } else {
-            state.output.push(anchor);
-        }
+        push_block(state, anchor, path.clone());
     }
     if let Some(block) = block {
-        if let Some(parent) = state.stack.last_mut() {
-            parent.children.push(block);
-        } else {
-            state.output.push(block);
-        }
+        push_block(state, block, path);
     }
 }
 
 fn promote_to_parent(
     state: &mut SinkState,
+    container_path: Vec<u32>,
     text: String,
     spans: Vec<TextSpan>,
     children: Vec<ContentBlock>,
+    children_paths: Vec<Vec<u32>>,
     list_items: Vec<ListItem>,
 ) {
     if let Some(parent) = state.stack.last_mut() {
@@ -441,7 +457,11 @@ fn promote_to_parent(
             }
             parent.text.push_str(&text);
         }
+        let n = children.len();
         parent.children.extend(children);
+        let mut cpaths = children_paths;
+        cpaths.resize(n, vec![]);
+        parent.children_paths.extend(cpaths);
         parent.list_items.extend(list_items);
     } else {
         if !text.is_empty() {
@@ -450,7 +470,12 @@ fn promote_to_parent(
                 spans,
                 style: BlockStyle::default(),
             });
+            state.output_block_paths.push(container_path);
         }
+        let n = children.len();
         state.output.extend(children);
+        let mut cpaths = children_paths;
+        cpaths.resize(n, vec![]);
+        state.output_block_paths.extend(cpaths);
     }
 }

@@ -13,6 +13,7 @@ pub use content::TableCell;
 pub use content::TextAlign;
 pub use content::TextSpan;
 pub use content::parse_css;
+pub use content::parse_xhtml_with_paths;
 pub use domain::document::Document;
 pub use domain::locator::Locator;
 pub use domain::metadata::DocumentMetadata;

@@ -32,6 +32,7 @@ pub(super) fn handle_start_tag(
     handle_start_tag_inner(state, tag_name, attrs, self_closing);
     if self_closing && state.stack.len() > depth_before {
         state.stack.pop();
+        state.clear_child_count_for_closed_element();
     }
 }
 
@@ -153,7 +154,7 @@ fn handle_start_tag_inner(
             let mut entry = StackEntry::new_with_style("span", style, parent_link);
             entry.span_color = span_color;
             entry.span_font_size_em = span_font_size_em;
-            state.stack.push(entry);
+            state.push_element(entry);
             return;
         }
     }
@@ -184,7 +185,7 @@ fn handle_start_tag_inner(
         entry.is_footnote_container = is_footnote_container_element(attrs);
     }
 
-    state.stack.push(entry);
+    state.push_element(entry);
 }
 
 fn handle_img(state: &mut SinkState, attrs: &[html5ever::Attribute]) {
@@ -281,7 +282,7 @@ fn handle_svg_start(
         entry.svg_content.push('>');
     }
 
-    state.stack.push(entry);
+    state.push_element(entry);
 }
 
 fn handle_anchor(state: &mut SinkState, attrs: &[html5ever::Attribute]) {
@@ -316,7 +317,7 @@ fn handle_anchor(state: &mut SinkState, attrs: &[html5ever::Attribute]) {
     let mut entry = StackEntry::new_with_style("a", parent_style, link);
     entry.span_color = span_color;
     entry.span_font_size_em = span_font_size_em;
-    state.stack.push(entry);
+    state.push_element(entry);
 }
 
 fn handle_inline_tag(state: &mut SinkState, tag_name: &str, attrs: &[html5ever::Attribute]) {
@@ -360,5 +361,5 @@ fn handle_inline_tag(state: &mut SinkState, tag_name: &str, attrs: &[html5ever::
     let mut entry = StackEntry::new_with_style(tag_name, style, parent_link);
     entry.span_color = span_color;
     entry.span_font_size_em = span_font_size_em;
-    state.stack.push(entry);
+    state.push_element(entry);
 }

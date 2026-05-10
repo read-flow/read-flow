@@ -57,7 +57,11 @@ impl TokenSink for ContentSink {
                 }
 
                 let entry = if state.stack.last().is_some_and(|e| e.tag == tag_name) {
-                    state.stack.pop().unwrap()
+                    let e = state.stack.pop().unwrap();
+                    // Clear children-depth slot so sibling elements start their
+                    // child counts from 0, not inherited from this element's subtree.
+                    state.clear_child_count_for_closed_element();
+                    e
                 } else {
                     return TokenSinkResult::Continue;
                 };
@@ -134,7 +138,7 @@ where
     let _ = tokenizer.feed(&buf);
     tokenizer.end();
 
-    let (mut blocks, pending_images) = tokenizer.sink.into_blocks_and_pending();
+    let (mut blocks, _paths, pending_images) = tokenizer.sink.into_blocks_and_pending();
 
     // Resolve pending images by walking the block tree
     if !pending_images.is_empty() {
@@ -142,6 +146,42 @@ where
     }
 
     blocks
+}
+
+/// Like [`parse_xhtml`] but also returns a parallel vector of DOM node paths,
+/// one per top-level block.
+///
+/// Each path is a slice of 0-based element-child indices starting from within
+/// the `<html>` element (i.e. the first entry is the index of `<body>` among
+/// `<html>`'s element children, typically `1`).  This encodes the same
+/// information as the within-document part of an EPUB CFI after the `!`.
+pub fn parse_xhtml_with_paths<F>(
+    xhtml: &[u8],
+    chapter_href: &str,
+    stylesheet: &StyleSheet,
+    resolve_image: &mut F,
+) -> (Vec<ContentBlock>, Vec<Vec<u32>>)
+where
+    F: FnMut(&str) -> Option<(Vec<u8>, String)>,
+{
+    let html_str = String::from_utf8_lossy(xhtml);
+    let sink = ContentSink::new(chapter_href, stylesheet.clone());
+    let tokenizer = Tokenizer::new(sink, TokenizerOpts::default());
+    let buf = BufferQueue::default();
+    buf.push_back(html5ever::tendril::StrTendril::from(html_str.as_ref()));
+    let _ = tokenizer.feed(&buf);
+    tokenizer.end();
+
+    let (mut blocks, mut paths, pending_images) = tokenizer.sink.into_blocks_and_pending();
+
+    if !pending_images.is_empty() {
+        resolve_images(&mut blocks, &pending_images, resolve_image);
+    }
+
+    // Ensure paths is the same length as blocks (pad with empty if necessary).
+    paths.resize(blocks.len(), vec![]);
+
+    (blocks, paths)
 }
 
 /// Resolve embedded image references in SVG content by converting xlink:href to data URIs.

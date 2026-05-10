@@ -15,7 +15,12 @@ pub(super) struct StackEntry {
     pub(super) tag: String,
     pub(super) text: String,
     pub(super) children: Vec<ContentBlock>,
+    /// Node paths parallel to `children` — the DOM path for each child block.
+    pub(super) children_paths: Vec<Vec<u32>>,
     pub(super) list_items: Vec<ListItem>,
+    /// This element's 0-based index among its parent's element children.
+    /// Set by `SinkState::push_element` when the element is pushed onto the stack.
+    pub(super) element_child_index: u32,
     /// For `<ol>` elements, the start attribute value.
     pub(super) ol_start: u32,
     /// Accumulated styled spans for this element.
@@ -57,7 +62,9 @@ impl StackEntry {
             tag: tag.to_string(),
             text: String::new(),
             children: Vec::new(),
+            children_paths: Vec::new(),
             list_items: Vec::new(),
+            element_child_index: 0,
             ol_start: 1,
             spans: Vec::new(),
             inline_style: InlineStyle::default(),
@@ -82,7 +89,9 @@ impl StackEntry {
             tag: tag.to_string(),
             text: String::new(),
             children: Vec::new(),
+            children_paths: Vec::new(),
             list_items: Vec::new(),
+            element_child_index: 0,
             ol_start: 1,
             spans: Vec::new(),
             inline_style: style,
@@ -120,6 +129,8 @@ impl StackEntry {
 pub(super) struct SinkState {
     pub(super) stack: Vec<StackEntry>,
     pub(super) output: Vec<ContentBlock>,
+    /// DOM node paths parallel to `output` — one path per top-level block.
+    pub(super) output_block_paths: Vec<Vec<u32>>,
     pub(super) skip_depth: usize,
     pub(super) base_href: String,
     /// Images collected during parsing, keyed to their position in the output.
@@ -135,6 +146,10 @@ pub(super) struct SinkState {
     /// block-level element so that back-reference links can navigate to the
     /// exact call-site paragraph.
     pub(super) pending_inline_anchors: Vec<String>,
+    /// Running count of element children at each stack depth.
+    /// `element_child_counts[d]` = number of element children seen so far
+    /// when the stack has `d` entries (= parent depth index).
+    pub(super) element_child_counts: Vec<u32>,
 }
 
 /// Token sink that builds `Vec<ContentBlock>` from XHTML tokens.
@@ -148,21 +163,31 @@ impl ContentSink {
             state: RefCell::new(SinkState {
                 stack: vec![StackEntry::new("root")],
                 output: Vec::new(),
+                output_block_paths: Vec::new(),
                 skip_depth: 0,
                 base_href: base_href.to_string(),
                 pending_images: Vec::new(),
                 image_counter: 0,
                 stylesheet,
                 pending_inline_anchors: Vec::new(),
+                element_child_counts: Vec::new(),
             }),
         }
     }
 
-    pub(super) fn into_blocks_and_pending(self) -> (Vec<ContentBlock>, Vec<(usize, PendingImage)>) {
+    pub(super) fn into_blocks_and_pending(
+        self,
+    ) -> (Vec<ContentBlock>, Vec<Vec<u32>>, Vec<(usize, PendingImage)>) {
         let mut state = self.state.into_inner();
         if let Some(mut root) = state.stack.pop() {
             root.flush_text();
+            let n = root.children.len();
             state.output.extend(root.children);
+            // Pad paths: root.children_paths may be shorter if some blocks were
+            // emitted without tracking (e.g. dangling spans).
+            let mut paths = root.children_paths;
+            paths.resize(n, vec![]);
+            state.output_block_paths.extend(paths);
             // Convert dangling root-level spans (e.g. from a standalone <a> directly
             // in <body>) into a trailing paragraph so they are not silently discarded.
             if !root.spans.is_empty() {
@@ -173,10 +198,36 @@ impl ContentSink {
                         spans: root.spans,
                         style: BlockStyle::default(),
                     });
+                    state.output_block_paths.push(vec![]);
                 }
             }
         }
-        (state.output, state.pending_images)
+        (state.output, state.output_block_paths, state.pending_images)
+    }
+}
+
+impl SinkState {
+    /// Push `entry` onto the stack, recording its element child index and
+    /// incrementing the parent's child count for accurate CFI path generation.
+    pub(super) fn push_element(&mut self, mut entry: StackEntry) {
+        let parent_depth = self.stack.len();
+        // Extend the counts vector so slot [parent_depth] exists.
+        while self.element_child_counts.len() <= parent_depth {
+            self.element_child_counts.push(0);
+        }
+        entry.element_child_index = self.element_child_counts[parent_depth];
+        self.element_child_counts[parent_depth] += 1;
+        self.stack.push(entry);
+    }
+
+    /// Clear the element-child count for the depth that was just closed,
+    /// so that the next sibling element's children start counting from 0.
+    /// Call this after popping an element from the stack.
+    pub(super) fn clear_child_count_for_closed_element(&mut self) {
+        let new_depth = self.stack.len();
+        if let Some(slot) = self.element_child_counts.get_mut(new_depth + 1) {
+            *slot = 0;
+        }
     }
 }
 

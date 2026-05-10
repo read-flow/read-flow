@@ -5,7 +5,7 @@
 	import type { Rendition, Location } from 'epubjs';
 	import Icon from '$lib/components/Icon.svelte';
 	import { allDocuments, refreshDocuments } from '$lib/stores/documents';
-	import { downloadFileFromSources } from '$lib/api/aggregator';
+	import { downloadFileFromSources, fetchReadingProgress, saveReadingProgress } from '$lib/api/aggregator';
 	import { loadSources } from '$lib/stores/sources';
 	import { theme } from '$lib/stores/theme';
 	import { db } from '$lib/db';
@@ -15,6 +15,7 @@
 	const PREF_FONT_SIZE_KEY = 'epub-font-size';
 	const RESIZE_DEBOUNCE_MS = 100;
 	const TOOLBAR_HIDE_DELAY_MS = 3000;
+	const PROGRESS_SAVE_DEBOUNCE_MS = 2000;
 	const SWIPE_THRESHOLD_PX = 50;
 	const FONT_SIZE_STEP = 10;
 	const FONT_SIZE_MIN = 75;
@@ -46,6 +47,7 @@
 
 	// ── Timers / observers / subscriptions ───────────────────────────────────
 	let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+	let progressTimer: ReturnType<typeof setTimeout> | null = null;
 	let resizeObserver: ResizeObserver | null = null;
 	let themeUnsubscribe: (() => void) | null = null;
 
@@ -89,6 +91,24 @@
 		fontSize = Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, fontSize + delta));
 		rendition?.themes.fontSize(`${fontSize}%`);
 		await db.preferences.put({ key: PREF_FONT_SIZE_KEY, value: String(fontSize) });
+	}
+
+	// ── Reading progress ──────────────────────────────────────────────────────
+	function scheduleProgressSave(cfi: string, pct: number): void {
+		if (progressTimer) clearTimeout(progressTimer);
+		progressTimer = setTimeout(async () => {
+			const now = new Date().toISOString();
+			const fp = fingerprint;
+			try {
+				await saveReadingProgress({
+					fingerprint: fp,
+					progress: JSON.stringify({ cfi, percentage: pct }),
+					last_updated: now,
+				});
+			} catch (e) {
+				console.warn('Failed to save EPUB progress:', e);
+			}
+		}, PROGRESS_SAVE_DEBOUNCE_MS);
 	}
 
 	// ── Toolbar ───────────────────────────────────────────────────────────────
@@ -192,7 +212,7 @@
 				applyEpubTheme(document.documentElement.classList.contains('dark'));
 			});
 
-			// Track location changes
+			// Track location changes and debounce-save CFI progress
 			rendition.on('relocated', (location: Location) => {
 				if (location?.start?.index !== undefined) {
 					spineIndex = location.start.index;
@@ -200,13 +220,26 @@
 				if (typeof location?.start?.percentage === 'number') {
 					percentage = Math.round(location.start.percentage * 100);
 				}
+				if (location?.start?.cfi) {
+					scheduleProgressSave(location.start.cfi, location.start.percentage ?? 0);
+				}
 			});
 
 			// Forward keyboard events from inside the iframe
 			rendition.on('keydown', handleKeydown);
 
-			// Render the first page
-			await rendition.display();
+			// Restore saved CFI position, or start from the beginning
+			let startTarget: string | undefined;
+			try {
+				const saved = await fetchReadingProgress(fingerprint);
+				if (saved?.progress) {
+					const parsed = JSON.parse(saved.progress) as { cfi?: string };
+					if (typeof parsed.cfi === 'string') startTarget = parsed.cfi;
+				}
+			} catch {
+				// Silently ignore — start from beginning
+			}
+			await rendition.display(startTarget);
 			renditionReady = true;
 			isLoading = false;
 
@@ -230,6 +263,7 @@
 		themeUnsubscribe?.();
 		if (toolbarTimer) clearTimeout(toolbarTimer);
 		if (resizeTimer) clearTimeout(resizeTimer);
+		if (progressTimer) clearTimeout(progressTimer);
 		resizeObserver?.disconnect();
 		rendition?.destroy();
 		(book as any)?.destroy();

@@ -298,6 +298,10 @@ pub(crate) struct EpubChapter {
     /// Resolved zip path for this spine item (e.g. `OEBPS/Text/ch1.xhtml`).
     href: String,
     blocks: Vec<ContentBlock>,
+    /// DOM node paths parallel to `blocks`, one per top-level block.
+    /// Each path is a sequence of 0-based element-child indices starting from
+    /// within `<html>` (body index first, then block index within body).
+    block_paths: Vec<Vec<u32>>,
     /// Stable image handles keyed by the raw pointer of each image's data `Vec`.
     /// Created once so the handle ID is stable across frames; required because
     /// the wgpu renderer decodes images asynchronously keyed by handle ID —
@@ -439,6 +443,9 @@ pub struct EpubViewer {
     /// is loaded but pagination hasn't run yet (viewport_size still 0×0).
     /// Consumed by `maybe_repaginate()` once a valid layout is available.
     pending_block_index: Option<usize>,
+    /// CFI node path stored when progress is loaded before chapters are ready.
+    /// Resolved to a block index in `EpubLoaded` once chapters are available.
+    pending_node_path: Vec<u32>,
     /// Font family used for rendering EPUB content.
     font_family: FontFamily,
     /// Pre-computed display names for the font family dropdown.
@@ -509,6 +516,7 @@ impl EpubViewer {
             viewport_size: Cell::new((0.0, 0.0)),
             dual_page: saved_prefs.dual_page,
             pending_block_index: None,
+            pending_node_path: Vec::new(),
             font_family: saved_prefs.font_family,
             font_family_names: widget::combo_box::State::new(FontFamily::all()),
             nav_entries: Vec::new(),
@@ -1108,11 +1116,9 @@ impl Page for EpubViewer {
                                 .unwrap_or(0),
                         };
                         Some(serialize_progress(
+                            &self.chapters,
                             self.active_chapter,
-                            self.scroll_y,
                             first_block,
-                            self.view_mode,
-                            self.base_font_size,
                         ))
                     },
                 )))
@@ -1305,6 +1311,15 @@ impl Page for EpubViewer {
                         .initial_chapter
                         .unwrap_or(0)
                         .min(self.chapters.len() - 1);
+                    // If progress arrived before chapters, resolve the node path now.
+                    if self.pending_block_index.is_none() && !self.pending_node_path.is_empty() {
+                        let c = self.active_chapter;
+                        let node_path = std::mem::take(&mut self.pending_node_path);
+                        let block_idx = self.chapters.get(c)
+                            .map(|ch| block_index_for_path(ch, &node_path))
+                            .unwrap_or(0);
+                        self.pending_block_index = Some(block_idx);
+                    }
                 }
                 self.sync_raw_html_content();
                 // Restore scroll position once content is available.
@@ -1340,45 +1355,36 @@ impl Page for EpubViewer {
             }
             EpubViewerMessage::ReadingProgressLoaded(pos) => {
                 self.initial_chapter = pos.chapter;
-                self.scroll_y = pos.scroll_y;
                 if !self.chapters.is_empty()
                     && let Some(c) = pos.chapter
                     && c < self.chapters.len()
                 {
                     self.active_chapter = c;
                     self.sync_raw_html_content();
-                }
-                // Restore view mode if it was persisted.
-                if let Some(mode) = pos.view_mode {
-                    self.view_mode = mode;
-                }
-                // Store block index for deferred restoration in both modes.
-                // For paginated mode, `maybe_repaginate()` consumes it to
-                // find the right page once a valid viewport is known.
-                // For scroll mode, if chapters are already loaded we compute
-                // the y offset immediately; otherwise EpubLoaded will do it.
-                self.pending_block_index = pos.block_index;
-                if self.view_mode == ViewMode::Scroll && !self.chapters.is_empty() {
-                    // Chapters loaded before progress — compute y now.
-                    let target_y = if let Some(bi) = self.pending_block_index.take() {
+                    // Chapters already loaded — resolve node path to block index now.
+                    let block_idx = self.chapters.get(c)
+                        .map(|ch| block_index_for_path(ch, &pos.node_path))
+                        .unwrap_or(0);
+                    let block_idx = pos.block_index.unwrap_or(block_idx);
+                    self.pending_block_index = Some(block_idx);
+                    if self.view_mode == ViewMode::Scroll {
                         let content_w = 800.0;
-                        let chapter_idx = self.active_chapter;
-                        self.ensure_block_heights(chapter_idx, content_w);
-                        self.block_heights_cache
-                            .get(&chapter_idx)
-                            .map(|(_, _, heights)| y_for_block_index_from_heights(heights, bi))
-                    } else if self.scroll_y > 0.0 {
-                        Some(self.scroll_y)
-                    } else {
-                        None
-                    };
-                    if let Some(y) = target_y {
-                        self.scroll_y = y;
-                        return scrollable::scroll_to(
-                            self.content_scroll_id.clone(),
-                            scrollable::AbsoluteOffset { x: 0.0, y }.into(),
-                        );
+                        self.ensure_block_heights(c, content_w);
+                        let target_y = self.block_heights_cache
+                            .get(&c)
+                            .map(|(_, _, heights)| y_for_block_index_from_heights(heights, block_idx));
+                        if let Some(y) = target_y {
+                            self.scroll_y = y;
+                            return scrollable::scroll_to(
+                                self.content_scroll_id.clone(),
+                                scrollable::AbsoluteOffset { x: 0.0, y }.into(),
+                            );
+                        }
                     }
+                } else {
+                    // Chapters not yet loaded — store for resolution in EpubLoaded.
+                    self.pending_node_path = pos.node_path;
+                    self.pending_block_index = pos.block_index;
                 }
                 Task::none()
             }
@@ -1598,7 +1604,7 @@ impl Page for EpubViewer {
                         if let Ok(data) = doc.resolve_resource(&resolved) {
                             let raw_html = String::from_utf8_lossy(&data).into_owned();
                             let stylesheet = load_chapter_stylesheets(&raw_html, &resolved, doc);
-                            let mut blocks = epub::content::parse_xhtml(
+                            let (mut blocks, block_paths) = epub::content::parse_xhtml_with_paths(
                                 &data,
                                 &resolved,
                                 &stylesheet,
@@ -1617,6 +1623,7 @@ impl Page for EpubViewer {
                                 label: resolved.clone(),
                                 href: resolved.clone(),
                                 blocks,
+                                block_paths,
                                 image_handles,
                                 raw_html,
                             });
@@ -1953,62 +1960,97 @@ fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, EpubViewe
 /// Includes scroll offset, block index, view mode, and font size so that
 /// the position can be accurately restored.  The format is backward-compatible:
 /// older readers silently ignore unknown fields.
-fn serialize_progress(
-    chapter: usize,
-    scroll_y: f32,
-    first_block: usize,
-    view_mode: ViewMode,
-    font_size: f32,
-) -> String {
-    let mode = match view_mode {
-        ViewMode::Scroll => "scroll",
-        ViewMode::Paginated => "paginated",
+/// Build a CFI string for the given block in the given chapter.
+fn cfi_for_block(chapters: &[EpubChapter], chapter_idx: usize, block_idx: usize) -> Option<String> {
+    let chapter = chapters.get(chapter_idx)?;
+    let node_path = chapter.block_paths.get(block_idx).cloned().unwrap_or_default();
+    let locator = epub::Locator {
+        spine_index: chapter_idx as u32,
+        node_path,
+        char_offset: 0,
     };
-    format!(
-        "{{\"chapter\":{chapter},\"scroll\":{scroll_y},\"block\":{first_block},\
-\"mode\":\"{mode}\",\"font_size\":{font_size}}}"
-    )
+    Some(locator.to_cfi(None))
 }
 
-/// Parsed reading position from a progress JSON string.
+/// Find the flat block index in `chapter` whose stored node path best matches `target`.
+/// "Best match" means the stored path is the longest prefix of `target`, giving
+/// paragraph-level granularity for any CFI including text-node sub-offsets.
+fn block_index_for_path(chapter: &EpubChapter, target: &[u32]) -> usize {
+    if target.is_empty() {
+        return 0;
+    }
+    chapter
+        .block_paths
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| !p.is_empty() && target.starts_with(p.as_slice()))
+        .max_by_key(|(_, p)| p.len())
+        .map(|(i, _)| i)
+        .unwrap_or(0)
+}
+
+/// Serialize reading progress as a JSON object containing an EPUB CFI.
+fn serialize_progress(chapters: &[EpubChapter], chapter_idx: usize, first_block: usize) -> String {
+    let cfi = cfi_for_block(chapters, chapter_idx, first_block)
+        .unwrap_or_else(|| format!("epubcfi(/6/{}!:0)", (chapter_idx as u32 + 1) * 2));
+    // Percentage omitted — it is display-only and not used for restoration.
+    format!("{{\"cfi\":\"{cfi}\"}}")
+}
+
+/// Parsed reading position from a CFI-based progress JSON string.
+///
+/// Accepts both the new format `{"cfi":"epubcfi(...)"}` and falls back to
+/// the legacy format `{"chapter":N,"block":M,...}` for forward-compatibility.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ReadingPosition {
+    /// Parsed spine index from the CFI (used to select the chapter).
     chapter: Option<usize>,
-    scroll_y: f32,
-    /// Index of the first visible block (for paginated and scroll mode restoration).
+    /// DOM node path extracted from the CFI; resolved to a block index once
+    /// chapters are available.  Empty when parsed from the legacy format.
+    node_path: Vec<u32>,
+    /// Flat block index from the legacy format (already resolved).
     block_index: Option<usize>,
-    /// View mode that was active when progress was saved.
-    view_mode: Option<ViewMode>,
-    /// Base font size that was active when progress was saved (px).
-    font_size: Option<f32>,
 }
 
-/// Parse reading progress from a JSON string like
-/// `{"chapter":2,"scroll":340.5,"block":15,"mode":"paginated"}`.
 fn parse_reading_progress(progress: &str) -> ReadingPosition {
-    let mut pos = ReadingPosition::default();
+    // Try new CFI format first.
+    if let Some(cfi_str) = extract_json_string(progress, "cfi") {
+        if let Some(locator) = epub::Locator::from_cfi(&cfi_str) {
+            return ReadingPosition {
+                chapter: Some(locator.spine_index as usize),
+                node_path: locator.node_path,
+                block_index: None, // resolved in ReadingProgressLoaded when chapters available
+            };
+        }
+    }
+    // Fall back to legacy format for graceful migration.
+    let mut chapter = None;
+    let mut block_index = None;
     let progress = progress.trim();
     if let Some(inner) = progress.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
         for part in inner.split(',') {
             if let Some((key, value)) = part.split_once(':') {
                 match key.trim().trim_matches('"') {
-                    "chapter" => pos.chapter = value.trim().parse().ok(),
-                    "scroll" => pos.scroll_y = value.trim().parse().unwrap_or(0.0),
-                    "block" => pos.block_index = value.trim().parse().ok(),
-                    "mode" => {
-                        pos.view_mode = match value.trim().trim_matches('"') {
-                            "paginated" => Some(ViewMode::Paginated),
-                            "scroll" => Some(ViewMode::Scroll),
-                            _ => None,
-                        }
-                    }
-                    "font_size" => pos.font_size = value.trim().parse().ok(),
+                    "chapter" => chapter = value.trim().parse().ok(),
+                    "block" => block_index = value.trim().parse().ok(),
                     _ => {}
                 }
             }
         }
     }
-    pos
+    ReadingPosition { chapter, node_path: vec![], block_index }
+}
+
+/// Extract the string value of a JSON key from a flat JSON object string.
+/// Only handles simple string values without escaped quotes.
+fn extract_json_string(json: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{}\"", key);
+    let after_key = json.find(&needle)? + needle.len();
+    let rest = json[after_key..].trim_start();
+    let rest = rest.strip_prefix(':')?;
+    let rest = rest.trim_start().strip_prefix('"')?;
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
 }
 
 /// Resolve embedded SVG image references in-place at chapter load time, so that
@@ -2081,13 +2123,13 @@ fn load_epub_chapters(
             .unwrap_or_else(|| item.id.clone())
             .apply_when(String::is_empty, |_| format!("Chapter {}", idx + 1));
 
-        let (blocks, raw_html) = match epub_doc.resolve_resource(&item.href) {
+        let (blocks, block_paths, raw_html) = match epub_doc.resolve_resource(&item.href) {
             Ok(data) => {
                 let href = &item.href;
                 let raw = String::from_utf8_lossy(&data).into_owned();
                 let stylesheet = load_chapter_stylesheets(&raw, href, &epub_doc);
-                let mut blocks =
-                    epub::content::parse_xhtml(&data, href, &stylesheet, &mut |img_path| {
+                let (mut blocks, block_paths) =
+                    epub::content::parse_xhtml_with_paths(&data, href, &stylesheet, &mut |img_path| {
                         match epub_doc.resolve_resource(img_path) {
                             Ok(img_data) => {
                                 let media_type = epub::content::guess_media_type(img_path);
@@ -2102,11 +2144,11 @@ fn load_epub_chapters(
                         }
                     });
                 resolve_svg_blocks(&mut blocks, href, &epub_doc);
-                (blocks, raw)
+                (blocks, block_paths, raw)
             }
             Err(e) => {
                 tracing::warn!("failed to resolve spine item {}: {e}", item.href);
-                (Vec::new(), String::new())
+                (Vec::new(), Vec::new(), String::new())
             }
         };
 
@@ -2116,6 +2158,7 @@ fn load_epub_chapters(
             label,
             href: item.href.clone(),
             blocks,
+            block_paths,
             image_handles,
             raw_html,
         });
