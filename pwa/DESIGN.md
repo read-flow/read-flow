@@ -2,7 +2,7 @@
 
 ## Overview
 
-Replace the existing Express.js SPA (`spa/`) with a Progressive Web App (PWA) built with
+A Progressive Web App (PWA) built with
 SvelteKit and TypeScript. The PWA runs entirely in the browser — no dedicated backend.
 It connects to one or more remote `read-flow` servers as data sources, is installable as a
 desktop/mobile app, and caches the app shell for offline use.
@@ -15,12 +15,12 @@ desktop/mobile app, and caches the app shell for offline use.
 |---------|--------|-----------|
 | Framework | SvelteKit (`adapter-static`) | File-based routing, TypeScript-first, SSR disabled for pure SPA/PWA mode |
 | Language | TypeScript | Type safety across the whole app |
-| Styling | Tailwind CSS v4 | Utility-first, minimal bundle, consistent with existing `spa/` |
-| PDF rendering | `pdfjs-dist` | Already used in `spa/`; well-maintained, standard choice |
+| Styling | Tailwind CSS v4 | Utility-first, minimal bundle |
+| PDF rendering | `pdfjs-dist` | Well-maintained, standard choice |
 | EPUB rendering | `epub.js` (`epubjs`) | See assessment below |
 | Local storage | `Dexie.js` (IndexedDB) | See storage strategy |
 | PWA plumbing | `vite-plugin-pwa` | Generates service worker + web manifest, integrates with SvelteKit/Vite |
-| Fuzzy search | `fuse.js` | Already used in `spa/`; lightweight, no server dependency |
+| Fuzzy search | `fuse.js` | Lightweight, no server dependency |
 
 ---
 

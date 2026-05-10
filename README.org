@@ -74,18 +74,19 @@ A lightweight dependency injection and observable pattern library:
 - Observable caching with invalidation support
 - Generic provider traits for dependency management
 
-*** =spa= (Single Page Application)
-A vanilla JavaScript web interface served independently:
-- Express.js server for static file serving
-- Tailwind CSS for styling
+*** =pwa= (Progressive Web App)
+A SvelteKit + TypeScript PWA that runs entirely in the browser:
+- SvelteKit with =adapter-static= (no dedicated backend)
+- Tailwind CSS v4 for styling
 - Fuse.js for client-side fuzzy search
-- PDF.js for PDF rendering
-- Real-time file filtering and tagging
+- PDF.js for PDF rendering, epub.js for EPUB rendering
+- IndexedDB via Dexie for local storage (sources, reading progress, preferences)
+- Connects to one or more remote =read-flow= servers as data sources
 
 *Files:*
-- =public/= - Static assets (HTML, CSS, JS)
-- =server.js= - Express server for SPA
-- =FUZZY_SEARCH_EXAMPLES.md= - Documentation for search features
+- =src/= - SvelteKit source (routes, lib, stores, API client)
+- =vite.config.ts= - Vite + vite-plugin-pwa configuration
+- =svelte.config.js= - SvelteKit adapter-static configuration
 
 * Project Structure
 
@@ -124,14 +125,13 @@ read-flow/
 │   │   └── lib.rs                     # Library root
 │   └── Cargo.toml                     # Rust package manifest
 │
-├── spa/                               # Web interface
-│   ├── public/
-│   │   ├── index.html                 # Main HTML
-│   │   ├── app.js                     # Application logic
-│   │   └── styles.css                 # Compiled styles
-│   ├── server.js                      # Express server
-│   ├── package.json                   # Node dependencies
-│   └── FUZZY_SEARCH_EXAMPLES.md       # Search documentation
+├── pwa/                               # Progressive Web App
+│   ├── src/
+│   │   ├── lib/                       # Stores, API client, DB schema
+│   │   └── routes/                    # SvelteKit pages
+│   ├── vite.config.ts                 # Vite + PWA plugin config
+│   ├── svelte.config.js               # adapter-static config
+│   └── package.json                   # Node dependencies
 │
 ├── Cargo.toml                         # Workspace manifest
 ├── Cargo.lock                         # Dependency lock file
@@ -253,12 +253,11 @@ cargo build --release
 cargo run
 #+END_SRC
 
-*** Web Interface
+*** Web Interface (PWA)
 #+BEGIN_SRC bash
-cd spa
+cd pwa
 npm install
-npm run build:css
-npm start
+npm run dev
 #+END_SRC
 
 * Development
