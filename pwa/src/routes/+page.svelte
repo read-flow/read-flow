@@ -1,7 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
-	import { allDocuments, filteredDocuments, isLoading, loadError, refreshDocuments, searchQuery } from '$lib/stores/documents';
+	import {
+		allDocuments,
+		filteredDocuments,
+		isLoading,
+		loadError,
+		refreshDocuments,
+		searchQuery,
+		allowedTags,
+		deniedTags,
+		allTags,
+	} from '$lib/stores/documents';
 	import { sources, loadSources } from '$lib/stores/sources';
 	import { get } from 'svelte/store';
 
@@ -24,6 +34,32 @@
 	function basename(path: string): string {
 		return path.split('/').pop() ?? path;
 	}
+
+	function tagState(tag: string): 'allowed' | 'denied' | 'off' {
+		if ($allowedTags.has(tag)) return 'allowed';
+		if ($deniedTags.has(tag)) return 'denied';
+		return 'off';
+	}
+
+	function cycleTag(tag: string) {
+		const state = tagState(tag);
+		if (state === 'off') {
+			allowedTags.update((s) => { s.add(tag); return s; });
+		} else if (state === 'allowed') {
+			allowedTags.update((s) => { s.delete(tag); return s; });
+			deniedTags.update((s) => { s.add(tag); return s; });
+		} else {
+			deniedTags.update((s) => { s.delete(tag); return s; });
+		}
+	}
+
+	function clearTagFilters() {
+		allowedTags.set(new Set());
+		deniedTags.set(new Set());
+	}
+
+	$: hasFilters = $allowedTags.size > 0 || $deniedTags.size > 0;
+	$: isFiltered = hasFilters || $searchQuery.trim().length > 0;
 </script>
 
 <svelte:head>
@@ -58,6 +94,42 @@
 					placeholder:text-slate-400 dark:placeholder:text-slate-500"
 			/>
 		</div>
+
+		<!-- Tag filters -->
+		{#if $allTags.length > 0}
+			<div class="mt-2.5 flex items-center gap-2 flex-wrap">
+				{#each $allTags as tag}
+					{@const state = tagState(tag)}
+					<button
+						onclick={() => cycleTag(tag)}
+						class="px-2 py-0.5 rounded-full text-xs font-medium transition-colors
+							{state === 'allowed'
+								? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 ring-1 ring-green-400 dark:ring-green-600'
+								: state === 'denied'
+									? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 ring-1 ring-red-400 dark:ring-red-600'
+									: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'}"
+					>
+						{#if state === 'allowed'}+{:else if state === 'denied'}−{/if}{tag}
+					</button>
+				{/each}
+
+				{#if hasFilters}
+					<button
+						onclick={clearTagFilters}
+						class="px-2 py-0.5 rounded-full text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors underline underline-offset-2"
+					>
+						Clear filters
+					</button>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Result count (shown when filtering or searching) -->
+		{#if isFiltered && !$isLoading && $sources.length > 0}
+			<p class="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
+				{$filteredDocuments.length} of {$allDocuments.length} documents
+			</p>
+		{/if}
 	</div>
 
 	<!-- Content -->
@@ -92,6 +164,14 @@
 			<div class="flex flex-col items-center gap-3 py-20 px-6 text-center">
 				<Icon name="search" class="w-8 h-8 text-slate-300 dark:text-slate-600" />
 				<p class="text-sm text-slate-500 dark:text-slate-400">No documents match your search or filters.</p>
+				{#if isFiltered}
+					<button
+						onclick={() => { $searchQuery = ''; clearTagFilters(); }}
+						class="text-sm text-slate-500 dark:text-slate-400 underline underline-offset-2 hover:text-slate-700 dark:hover:text-slate-300"
+					>
+						Clear all filters
+					</button>
+				{/if}
 			</div>
 		{:else}
 			<ul class="divide-y divide-slate-100 dark:divide-slate-700/50">
@@ -120,7 +200,14 @@
 								{#if doc.tags.length > 0}
 									<div class="hidden sm:flex flex-wrap gap-1 mt-1.5">
 										{#each doc.tags.slice(0, 4) as tag}
-											<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400">
+											<span
+												class="inline-flex items-center px-1.5 py-0.5 rounded text-xs
+													{$allowedTags.has(tag)
+														? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+														: $deniedTags.has(tag)
+															? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+															: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}"
+											>
 												{tag}
 											</span>
 										{/each}

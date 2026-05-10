@@ -2,7 +2,8 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
-	import { allDocuments, refreshDocuments } from '$lib/stores/documents';
+	import { allDocuments, refreshDocuments, allTags } from '$lib/stores/documents';
+	import { addTagsToFile, removeTagsFromFile } from '$lib/api/aggregator';
 	import { get } from 'svelte/store';
 	import type { AggregatedFile } from '$lib/api/aggregator';
 
@@ -10,6 +11,9 @@
 
 	let doc = $state<AggregatedFile | null>(null);
 	let loading = $state(true);
+	let newTag = $state('');
+	let saving = $state(false);
+	let tagError = $state('');
 
 	onMount(async () => {
 		let docs = get(allDocuments);
@@ -33,6 +37,52 @@
 		if (d.type_ === 'epub') return `/read/epub/${d.fingerprint}`;
 		if (d.type_ === 'pdf') return `/read/pdf/${d.fingerprint}`;
 		return '#';
+	}
+
+	async function removeTag(tag: string) {
+		if (!doc || saving) return;
+		// Optimistic update
+		doc = { ...doc, tags: doc.tags.filter((t) => t !== tag) };
+		saving = true;
+		tagError = '';
+		try {
+			await removeTagsFromFile(fingerprint, [tag]);
+			await refreshDocuments();
+		} catch {
+			tagError = `Failed to remove tag "${tag}".`;
+			// Re-fetch from store to restore consistent state
+			const docs = get(allDocuments);
+			doc = docs.find((d) => d.fingerprint === fingerprint) ?? doc;
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function addTag() {
+		const tag = newTag.trim();
+		if (!doc || !tag || saving) return;
+		if (doc.tags.includes(tag)) {
+			newTag = '';
+			return;
+		}
+		// Optimistic update
+		doc = { ...doc, tags: [...doc.tags, tag] };
+		newTag = '';
+		saving = true;
+		tagError = '';
+		try {
+			await addTagsToFile(fingerprint, [tag]);
+			await refreshDocuments();
+			// Sync with updated store (tags may have been normalised server-side)
+			const docs = get(allDocuments);
+			doc = docs.find((d) => d.fingerprint === fingerprint) ?? doc;
+		} catch {
+			tagError = `Failed to add tag "${tag}".`;
+			const docs = get(allDocuments);
+			doc = docs.find((d) => d.fingerprint === fingerprint) ?? doc;
+		} finally {
+			saving = false;
+		}
 	}
 </script>
 
@@ -99,16 +149,64 @@
 			<!-- Tags -->
 			<div>
 				<h2 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tags</h2>
-				{#if doc.tags.length === 0}
-					<p class="text-sm text-slate-400 dark:text-slate-500">No tags.</p>
-				{:else}
-					<div class="flex flex-wrap gap-1.5">
+
+				{#if doc.tags.length > 0}
+					<div class="flex flex-wrap gap-1.5 mb-3">
 						{#each doc.tags as tag}
-							<span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+							<span class="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
 								{tag}
+								<button
+									onclick={() => removeTag(tag)}
+									disabled={saving}
+									aria-label="Remove tag {tag}"
+									class="flex items-center justify-center w-4 h-4 rounded-full text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600 hover:text-slate-600 dark:hover:text-slate-300 transition-colors disabled:opacity-40"
+								>
+									<Icon name="x" class="w-3 h-3" />
+								</button>
 							</span>
 						{/each}
 					</div>
+				{:else}
+					<p class="text-sm text-slate-400 dark:text-slate-500 mb-3">No tags.</p>
+				{/if}
+
+				<!-- Add tag form -->
+				<div class="flex gap-2">
+					<div class="relative flex-1">
+						<input
+							type="text"
+							list="tag-suggestions"
+							bind:value={newTag}
+							onkeydown={(e) => e.key === 'Enter' && addTag()}
+							disabled={saving}
+							placeholder="Add a tag…"
+							class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+								bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100 text-sm
+								focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-transparent
+								placeholder:text-slate-400 dark:placeholder:text-slate-500 disabled:opacity-50"
+						/>
+						<datalist id="tag-suggestions">
+							{#each $allTags.filter((t) => !doc?.tags.includes(t)) as t}
+								<option value={t} />
+							{/each}
+						</datalist>
+					</div>
+					<button
+						onclick={addTag}
+						disabled={saving || !newTag.trim()}
+						class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+					>
+						{#if saving}
+							<Icon name="loader" class="w-4 h-4 animate-spin" />
+						{:else}
+							<Icon name="plus" class="w-4 h-4" />
+						{/if}
+						Add
+					</button>
+				</div>
+
+				{#if tagError}
+					<p class="mt-2 text-xs text-red-500 dark:text-red-400">{tagError}</p>
 				{/if}
 			</div>
 		</div>
