@@ -82,7 +82,7 @@ describe('filterDocuments — search', () => {
 });
 
 describe('filterDocuments — combined tag + search', () => {
-	it('search runs before tag filtering and results compose correctly', () => {
+	it('tag filter and text search compose (AND logic)', () => {
 		// "quantum" matches fp-1 and fp-3; allowed: technology narrows to fp-3
 		const result = filterDocuments(library, new Set(['technology']), new Set(), 'quantum');
 		expect(result.map((d) => d.fingerprint)).toEqual(['fp-3']);
@@ -91,6 +91,77 @@ describe('filterDocuments — combined tag + search', () => {
 	it('returns empty when search hits docs that are all tag-excluded', () => {
 		// "quantum" hits science docs; denied: science → none survive
 		const result = filterDocuments(library, new Set(), new Set(['science']), 'quantum');
+		expect(result).toHaveLength(0);
+	});
+});
+
+// Fixtures with deeply-nested paths to exercise the basename search fix.
+const deepLibrary: AggregatedFile[] = [
+	makeDoc({
+		fingerprint: 'dp-1',
+		path: '/books/great-gatsby.epub',
+		tags: ['fiction'],
+	}),
+	makeDoc({
+		fingerprint: 'dp-2',
+		path: '/home/user/documents/fiction/classics/great-gatsby.epub',
+		tags: ['fiction'],
+	}),
+	makeDoc({
+		fingerprint: 'dp-3',
+		path: '/docs/quantum-physics.pdf',
+		tags: ['science'],
+	}),
+	makeDoc({
+		fingerprint: 'dp-4',
+		path: '/home/user/very/deep/nested/path/quantum-physics.pdf',
+		tags: ['science'],
+	}),
+];
+
+describe('filterDocuments — search: basename matching', () => {
+	it('returns the same results for shallow and deeply-nested files with the same filename', () => {
+		const result = filterDocuments(deepLibrary, new Set(), new Set(), 'quantum');
+		const fps = result.map((d) => d.fingerprint).sort();
+		// Both dp-3 (shallow) and dp-4 (deep) must match — the deep one was
+		// silently dropped before the fix because Fuse.js penalises late-in-string matches.
+		expect(fps).toEqual(['dp-3', 'dp-4']);
+	});
+
+	it('matches case-insensitively', () => {
+		const result = filterDocuments(deepLibrary, new Set(), new Set(), 'GATSBY');
+		expect(result.map((d) => d.fingerprint).sort()).toEqual(['dp-1', 'dp-2']);
+	});
+
+	it('matches when the user omits the file extension', () => {
+		const result = filterDocuments(deepLibrary, new Set(), new Set(), 'quantum-physics');
+		expect(result.map((d) => d.fingerprint).sort()).toEqual(['dp-3', 'dp-4']);
+	});
+
+	it('fuzzy-matches a query with spaces against a hyphenated filename', () => {
+		// "great gatsby" (space) vs "great-gatsby" (hyphen) — 1 character difference
+		const result = filterDocuments(deepLibrary, new Set(), new Set(), 'great gatsby');
+		expect(result.map((d) => d.fingerprint).sort()).toEqual(['dp-1', 'dp-2']);
+	});
+
+	it('returns nothing for a single-character query (below minMatchCharLength)', () => {
+		expect(filterDocuments(deepLibrary, new Set(), new Set(), 'g')).toHaveLength(0);
+	});
+
+	it('accepts a 2-character query', () => {
+		const result = filterDocuments(deepLibrary, new Set(), new Set(), 'ga');
+		expect(result.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('fuzzy-tolerates a single typo in the query', () => {
+		// "quantun" has one substitution vs "quantum"
+		const result = filterDocuments(deepLibrary, new Set(), new Set(), 'quantun');
+		expect(result.length).toBeGreaterThanOrEqual(1);
+	});
+
+	it('composes correctly with tag filters', () => {
+		// "quantum" matches dp-3 and dp-4 (both science); denied: science → none
+		const result = filterDocuments(deepLibrary, new Set(), new Set(['science']), 'quantum');
 		expect(result).toHaveLength(0);
 	});
 });

@@ -17,7 +17,15 @@ export function filterDocuments(
 	}
 	if (query.trim()) {
 		const fuse = new Fuse(results, {
-			keys: ['path'],
+			keys: [
+				{
+					name: 'basename',
+					getFn: (doc) => {
+						const name = doc.path.split('/').pop() ?? doc.path;
+						return name.replace(/\.[^/.]+$/, '');
+					},
+				},
+			],
 			threshold: 0.3,
 			includeScore: true,
 			minMatchCharLength: 2,
