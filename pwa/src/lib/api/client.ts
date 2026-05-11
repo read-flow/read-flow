@@ -26,15 +26,24 @@ export interface ServerStatus {
 export class ReadFlowClient {
 	private baseUrl: string;
 	private authHeader: string;
+	private privateMode: boolean;
 
 	constructor(source: Source) {
 		this.baseUrl = source.baseUrl.replace(/\/$/, '');
 		const credentials = btoa(`${source.userId}:${source.passphrase}`);
 		this.authHeader = `Basic ${credentials}`;
+		this.privateMode = source.privateMode ?? false;
 	}
 
 	private headers(extra?: HeadersInit): HeadersInit {
-		return { Authorization: this.authHeader, 'Content-Type': 'application/json', ...extra };
+		const base: Record<string, string> = {
+			Authorization: this.authHeader,
+			'Content-Type': 'application/json',
+		};
+		if (this.privateMode) {
+			base['X-Private-Mode'] = 'true';
+		}
+		return { ...base, ...extra };
 	}
 
 	private async request<T>(path: string, options: RequestInit = {}): Promise<T> {

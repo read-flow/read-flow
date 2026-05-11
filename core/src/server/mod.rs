@@ -6,6 +6,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use authn::AuthorizedUser;
+use authn::PrivateModeHeader;
 use figment::Figment;
 use provider::r#async::AndThen;
 use provider::r#async::Provider;
@@ -66,6 +67,9 @@ enum Error {
     #[error("file with guid {0} not found")]
     #[response(status = 404)]
     FileNotFound(String),
+    #[error("private mode access requires owner role")]
+    #[response(status = 403)]
+    Forbidden(String),
 }
 
 impl From<dao::Error> for Error {
@@ -186,9 +190,40 @@ async fn status(
 #[get("/files")]
 async fn get_files(
     application_module: &State<ApplicationModule<SettingsProvider>>,
-    _user: AuthorizedUser,
+    user: AuthorizedUser,
+    private_mode: PrivateModeHeader,
 ) -> Result<Json<Vec<File>>> {
-    let files = application_module.db_client().await.get_files().await?;
+    if private_mode.0 {
+        if !user.has_role("owner") {
+            return Err(Error::Forbidden(
+                "private mode access requires owner role".into(),
+            ));
+        }
+        let files = application_module.db_client().await.get_files().await?;
+        return Ok(Json(files));
+    }
+
+    let settings = application_module.settings().await;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let excluded = settings.ui.private_tags().to_vec();
+    let db_files = dao::select_all_files_excluding_tags(&mut conn, &excluded).await?;
+    let all_tags = dao::select_all_content_tags(&mut conn).await?;
+    let mut tags_by_fp: std::collections::HashMap<String, Vec<crate::db::models::ContentTag>> =
+        std::collections::HashMap::new();
+    for tag in all_tags {
+        tags_by_fp
+            .entry(tag.fingerprint.clone())
+            .or_default()
+            .push(tag);
+    }
+    let files = db_files
+        .into_iter()
+        .map(|file| {
+            let tags = tags_by_fp.remove(&file.fingerprint).unwrap_or_default();
+            (file, tags).into()
+        })
+        .collect();
     Ok(Json(files))
 }
 
@@ -209,11 +244,25 @@ async fn update_file(
 #[get("/files/tags")]
 async fn get_files_tags(
     application_module: &State<ApplicationModule<SettingsProvider>>,
-    _user: AuthorizedUser,
+    user: AuthorizedUser,
+    private_mode: PrivateModeHeader,
 ) -> Result<Json<Vec<String>>> {
+    if private_mode.0 {
+        if !user.has_role("owner") {
+            return Err(Error::Forbidden(
+                "private mode access requires owner role".into(),
+            ));
+        }
+        let pool = application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+        let tags = dao::select_all_distinct_tags(&mut conn).await?;
+        return Ok(Json(tags));
+    }
+    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let tags = dao::select_all_distinct_tags(&mut conn).await?;
+    let excluded = settings.ui.private_tags().to_vec();
+    let tags = dao::select_all_distinct_tags_excluding(&mut conn, &excluded).await?;
     Ok(Json(tags))
 }
 
@@ -221,14 +270,28 @@ async fn get_files_tags(
 async fn get_file(
     guid: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
-    _user: AuthorizedUser,
+    user: AuthorizedUser,
+    private_mode: PrivateModeHeader,
 ) -> Result<Option<Json<File>>> {
+    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
         return Ok(None);
     };
     let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
+    if private_mode.0 {
+        if !user.has_role("owner") {
+            return Err(Error::Forbidden(
+                "private mode access requires owner role".into(),
+            ));
+        }
+    } else if settings
+        .ui
+        .contains_hidden_tag(&tags.iter().map(|t| t.tag.clone()).collect::<Vec<_>>())
+    {
+        return Ok(None);
+    }
     Ok(Some(Json((file, tags).into())))
 }
 
@@ -236,19 +299,28 @@ async fn get_file(
 async fn get_file_tags(
     guid: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
-    _user: AuthorizedUser,
+    user: AuthorizedUser,
+    private_mode: PrivateModeHeader,
 ) -> Result<Json<Vec<String>>> {
+    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
         return Ok(Json(vec![]));
     };
-    let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
-        .await?
-        .into_iter()
-        .map(|t| t.tag)
-        .collect();
-    Ok(Json(tags))
+    let content_tags =
+        dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
+    let tag_strings: Vec<String> = content_tags.iter().map(|t| t.tag.clone()).collect();
+    if private_mode.0 {
+        if !user.has_role("owner") {
+            return Err(Error::Forbidden(
+                "private mode access requires owner role".into(),
+            ));
+        }
+    } else if settings.ui.contains_hidden_tag(&tag_strings) {
+        return Ok(Json(vec![]));
+    }
+    Ok(Json(tag_strings))
 }
 
 #[post("/files/<guid>/tags", data = "<tags>")]
@@ -257,19 +329,35 @@ async fn post_file_tags(
     tags: Json<Vec<String>>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
+    private_mode: PrivateModeHeader,
 ) -> Result<Json<Vec<String>>> {
+    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
         return Ok(Json(vec![]));
     };
+    let existing_tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
+        .await?
+        .iter()
+        .map(|t| t.tag.clone())
+        .collect::<Vec<_>>();
+    if private_mode.0 {
+        if !user.has_role("owner") {
+            return Err(Error::Forbidden(
+                "private mode access requires owner role".into(),
+            ));
+        }
+    } else if settings.ui.contains_hidden_tag(&existing_tags) {
+        return Ok(Json(vec![]));
+    }
     let content_tags = tags
         .into_inner()
         .into_iter()
         .map(|tag| crate::db::models::ContentTag::new(file.fingerprint.clone(), tag))
         .collect();
     dao::upsert_many_content_tags(&mut conn, content_tags).await?;
-    get_file_tags(guid, application_module, user).await
+    get_file_tags(guid, application_module, user, private_mode).await
 }
 
 #[delete("/files/<guid>/tags", data = "<tags>")]
@@ -278,14 +366,30 @@ async fn delete_file_tags(
     tags: Json<Vec<String>>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
+    private_mode: PrivateModeHeader,
 ) -> Result<Json<Vec<String>>> {
+    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
         return Ok(Json(vec![]));
     };
+    let existing_tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
+        .await?
+        .iter()
+        .map(|t| t.tag.clone())
+        .collect::<Vec<_>>();
+    if private_mode.0 {
+        if !user.has_role("owner") {
+            return Err(Error::Forbidden(
+                "private mode access requires owner role".into(),
+            ));
+        }
+    } else if settings.ui.contains_hidden_tag(&existing_tags) {
+        return Ok(Json(vec![]));
+    }
     dao::delete_content_tags(&mut conn, &file.fingerprint, tags.into_inner()).await?;
-    get_file_tags(guid, application_module, user).await
+    get_file_tags(guid, application_module, user, private_mode).await
 }
 
 #[get("/files/<guid>/download-as/<file_name>")]
@@ -293,8 +397,10 @@ async fn download_file(
     guid: &str,
     file_name: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
-    _user: AuthorizedUser,
+    user: AuthorizedUser,
+    private_mode: PrivateModeHeader,
 ) -> Result<Option<(ContentType, NamedFile)>> {
+    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let file = dao::select_file_by_guid(&mut conn, guid).await?;
@@ -302,6 +408,20 @@ async fn download_file(
     match file {
         None => Ok(None),
         Some(file) => {
+            let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
+                .await?
+                .iter()
+                .map(|t| t.tag.clone())
+                .collect::<Vec<_>>();
+            if private_mode.0 {
+                if !user.has_role("owner") {
+                    return Err(Error::Forbidden(
+                        "private mode access requires owner role".into(),
+                    ));
+                }
+            } else if settings.ui.contains_hidden_tag(&tags) {
+                return Ok(None);
+            }
             if !file_name.ends_with(&file.type_.to_lowercase()) {
                 tracing::error!(
                     "Incorrect file extension on `{file_name}`, expected `{}`",
@@ -330,13 +450,24 @@ async fn download_file(
 async fn delete_file(
     guid: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
-    _user: AuthorizedUser,
+    user: AuthorizedUser,
+    private_mode: PrivateModeHeader,
 ) -> Result<()> {
+    let settings = application_module.settings().await;
     let db_client = application_module.db_client().await;
     let file = db_client.get_file(guid).await?;
 
-    if let Some(file) = file {
-        db_client.delete_file(file).await?;
+    if let Some(ref file) = file {
+        if private_mode.0 {
+            if !user.has_role("owner") {
+                return Err(Error::Forbidden(
+                    "private mode access requires owner role".into(),
+                ));
+            }
+        } else if settings.ui.contains_hidden_tag(&file.tags) {
+            return Err(Error::FileNotFound(guid.to_string()));
+        }
+        db_client.delete_file(file.clone()).await?;
         Ok(())
     } else {
         Err(Error::FileNotFound(guid.to_string()))

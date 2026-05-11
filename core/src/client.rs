@@ -15,6 +15,7 @@ use reqwest::header;
 use tokio::fs;
 use tokio::process::Command;
 
+use crate::Builder;
 use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
@@ -27,6 +28,7 @@ pub struct FilesClient {
     pub base_url: Url,
     user_id: String,
     passphrase: String,
+    private_mode: bool,
     client: Client,
 }
 
@@ -65,11 +67,13 @@ impl FilesClient {
         base_url: U,
         user_id: String,
         passphrase: String,
+        private_mode: bool,
     ) -> Result<Self, Infallible> {
         let result = Self {
             base_url: base_url.into(),
             user_id,
             passphrase,
+            private_mode,
             client: Client::new(),
         };
         Ok(result)
@@ -90,16 +94,18 @@ impl FilesClient {
     where
         T: for<'a> serde::Deserialize<'a>,
     {
-        let response = self
+        let result = self
             .client
             .get(self.base_url.join(relative_url)?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
             .header(header::AUTHORIZATION, self.get_auth_header())
+            .apply_if(self.private_mode, |req| {
+                req.header("x-private-mode", "true")
+            })
             .send()
+            .await?
+            .json()
             .await?;
-
-        let result = response.json().await?;
-
         Ok(result)
     }
 

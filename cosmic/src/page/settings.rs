@@ -22,8 +22,8 @@ use read_flow_core::Builder;
 use read_flow_core::ExpandedPath;
 use read_flow_core::scan::DirectorySettings;
 use read_flow_core::scan::DocumentType;
-use read_flow_core::settings::HashedPassword;
 use read_flow_core::settings::Settings;
+use read_flow_core::settings::UserEntry;
 use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 
@@ -169,6 +169,10 @@ impl From<AuthorizedUserFormMessage> for SettingsMessage {
 }
 
 impl SettingsPage {
+    pub fn current_private_mode(&self) -> bool {
+        self.settings.ui.private_mode()
+    }
+
     pub fn new(
         application_module: Arc<ApplicationModule>,
         document_provider: Arc<DocumentProvider>,
@@ -221,14 +225,19 @@ impl SettingsPage {
     fn view_authorized_user_input<'a>(
         &'a self,
         user_id: &'a String,
-        passphrase: &'a HashedPassword,
+        entry: &'a UserEntry,
     ) -> Element<'a, SettingsMessage> {
         let is_editing = self.is_editing_authorized_user(user_id);
+        let icon_name = if entry.has_role("owner") {
+            "security-high-symbolic"
+        } else {
+            "avatar-default-symbolic"
+        };
 
         widget::settings::item::builder(user_id)
-            .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))
+            .icon(widget::icon::from_name(icon_name).size(ICON_SIZE))
             .control(widget::settings::item_row(vec![
-                widget::text_input("", format!("{passphrase}")).into(),
+                widget::text_input("", format!("{}", entry.password())).into(),
                 widget::button::icon(
                     widget::icon::from_name(if is_editing {
                         "edit-clear-symbolic"
@@ -488,8 +497,8 @@ impl SettingsPage {
                         widget::text::body(fl!("settings-server-authorized-users-description"))
                             .width(Length::Fill),
                     ),
-                |acc, (_index, (user_id, hashed_password))| {
-                    acc.add(self.view_authorized_user_input(user_id, hashed_password))
+                |acc, (_index, (user_id, entry))| {
+                    acc.add(self.view_authorized_user_input(user_id, entry))
                 },
             )
             .add(widget::settings::item_row(vec![
@@ -825,7 +834,7 @@ impl Page for SettingsPage {
             }
             SettingsMessage::AddAuthorizedUser => {
                 let (authorized_user_form, init_authorized_user_form) =
-                    AuthorizedUserForm::new(None);
+                    AuthorizedUserForm::new(None, vec![]);
                 self.authorized_user_form = Some(authorized_user_form);
                 init_authorized_user_form.map(ActionExt::map_into)
             }
@@ -837,12 +846,16 @@ impl Page for SettingsPage {
                 Task::none()
             }
             SettingsMessage::EditAuthorizedUser(user_id) => {
-                if !self.settings.server.authorized_users.contains_key(&user_id) {
-                    return Task::none();
-                };
+                let roles = self
+                    .settings
+                    .server
+                    .authorized_users
+                    .get(&user_id)
+                    .map(|e| e.roles().to_vec())
+                    .unwrap_or_default();
 
                 let (authorized_user_form, init_authorized_user_form) =
-                    AuthorizedUserForm::new(Some(user_id));
+                    AuthorizedUserForm::new(Some(user_id), roles);
                 self.authorized_user_form = Some(authorized_user_form);
                 init_authorized_user_form.map(ActionExt::map_into)
             }
@@ -853,22 +866,23 @@ impl Page for SettingsPage {
                             Some(original_user_id),
                             user_id,
                             passphrase,
+                            roles,
                         ) => {
                             let authorized_users = &mut self.settings.server.authorized_users;
-
+                            // TODO: error handling
+                            let entry = make_user_entry(passphrase, roles);
                             if original_user_id != user_id {
                                 authorized_users.shift_remove(&original_user_id);
-                                // TODO: error handling
-                                authorized_users.insert(user_id, passphrase.try_into().unwrap());
+                                authorized_users.insert(user_id, entry);
                             } else if let Some(value) = authorized_users.get_mut(&user_id) {
-                                *value = passphrase.try_into().unwrap(); // TODO: error handling
+                                *value = entry;
                             }
                         }
-                        AuthorizedUserFormOutput::Submit(None, user_id, passphrase) => {
+                        AuthorizedUserFormOutput::Submit(None, user_id, passphrase, roles) => {
                             self.settings
                                 .server
                                 .authorized_users
-                                .insert(user_id, passphrase.try_into().unwrap());
+                                .insert(user_id, make_user_entry(passphrase, roles));
                         }
                         AuthorizedUserFormOutput::Cancel => {
                             // Nothing to do, form will be deleted
@@ -902,6 +916,18 @@ impl Page for SettingsPage {
                 Task::none()
             }
             SettingsMessage::Noop => task::none(),
+        }
+    }
+}
+
+fn make_user_entry(passphrase: String, roles: Vec<String>) -> UserEntry {
+    let hashed: read_flow_core::settings::HashedPassword = passphrase.try_into().unwrap();
+    if roles.is_empty() {
+        UserEntry::Simple(hashed)
+    } else {
+        UserEntry::Extended {
+            password: hashed,
+            roles,
         }
     }
 }

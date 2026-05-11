@@ -70,14 +70,6 @@ impl Aggregator {
         self.clients.keys().cloned().collect()
     }
 
-    async fn filter_out_hidden_files(&self, files: Vec<File>) -> Vec<File> {
-        let ui_settings = self.application_module.settings().await.ui;
-        files
-            .into_iter()
-            .filter(|file| !ui_settings.contains_hidden_tag(&file.tags))
-            .collect()
-    }
-
     pub async fn aggregate(&self) -> Result<Documents, FilesClientError> {
         // Clone clients into a Vec to avoid lifetime issues with async closures
         let clients: Vec<(ClientSelector, Client)> = self
@@ -91,7 +83,6 @@ impl Aggregator {
             stream::iter(clients)
                 .map(|(selector, client)| async move {
                     let files = client.get_files().await?;
-                    let files = self.filter_out_hidden_files(files).await;
                     Ok((selector, files))
                 })
                 .buffer_unordered(self.clients.len())

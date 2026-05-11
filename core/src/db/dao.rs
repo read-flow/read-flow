@@ -280,6 +280,46 @@ pub async fn select_all_distinct_tags(conn: &mut SqliteConnection) -> Result<Vec
         .map_err(Into::into)
 }
 
+pub async fn select_all_files_excluding_tags(
+    conn: &mut SqliteConnection,
+    excluded: &[String],
+) -> Result<Vec<File>, Error> {
+    if excluded.is_empty() {
+        return select_all_files(conn).await;
+    }
+    let placeholders = excluded.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+    let query = format!(
+        "{FILE_SELECT} WHERE NOT EXISTS (
+            SELECT 1 FROM content_tags ct
+            WHERE ct.fingerprint = f.fingerprint
+            AND ct.tag IN ({placeholders})
+        )"
+    );
+    let mut q = sqlx::query_as::<_, File>(&query);
+    for tag in excluded {
+        q = q.bind(tag);
+    }
+    q.fetch_all(&mut *conn).await.map_err(Into::into)
+}
+
+pub async fn select_all_distinct_tags_excluding(
+    conn: &mut SqliteConnection,
+    excluded: &[String],
+) -> Result<Vec<String>, Error> {
+    if excluded.is_empty() {
+        return select_all_distinct_tags(conn).await;
+    }
+    let placeholders = excluded.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+    let query = format!(
+        "SELECT DISTINCT tag FROM content_tags WHERE tag NOT IN ({placeholders}) ORDER BY tag"
+    );
+    let mut q = sqlx::query_scalar::<_, String>(&query);
+    for tag in excluded {
+        q = q.bind(tag);
+    }
+    q.fetch_all(&mut *conn).await.map_err(Into::into)
+}
+
 // ─── Document queries ────────────────────────────────────────────────────────
 
 /// Insert a document with `guid` if it doesn't already exist and return it.

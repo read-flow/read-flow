@@ -133,11 +133,28 @@ impl FileDataSource for Client {
     }
 
     async fn get_files(&self) -> Result<Vec<File>, Self::Error> {
-        delegate!(self, get_files)
+        match self {
+            Client::Local(module) => {
+                let hidden = module.settings().await.ui.hidden_tags().to_vec();
+                let files = module.db_client().await.get_files().await?;
+                Ok(files
+                    .into_iter()
+                    .filter(|f| !f.tags.iter().any(|t| hidden.contains(t)))
+                    .collect())
+            }
+            Client::Remote(client) => Ok(client.get_files().await?),
+        }
     }
 
     async fn get_files_tags(&self) -> Result<Vec<String>, Self::Error> {
-        delegate!(self, get_files_tags)
+        match self {
+            Client::Local(module) => {
+                let hidden = module.settings().await.ui.hidden_tags().to_vec();
+                let tags = module.db_client().await.get_files_tags().await?;
+                Ok(tags.into_iter().filter(|t| !hidden.contains(t)).collect())
+            }
+            Client::Remote(client) => Ok(client.get_files_tags().await?),
+        }
     }
 
     async fn get_file(&self, guid: &str) -> Result<Option<File>, Self::Error> {

@@ -412,7 +412,7 @@ mod tests {
     #[test]
     fn void_elements_counted_as_siblings() {
         // body has: <p>(0), <hr/>(1), <p>(2)
-        let (blocks, paths) = parse_with_paths(
+        let (_blocks, paths) = parse_with_paths(
             "<html><head></head><body><p>first</p><hr/><p>second</p></body></html>",
         );
         let para_paths: Vec<_> = paths.iter().filter(|p| !p.is_empty()).collect();

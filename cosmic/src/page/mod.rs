@@ -475,11 +475,16 @@ impl Pages {
                     action.map(|msg| map_document_details_message(fingerprint.clone(), msg))
                 }),
             PageMessage::AddRemote(url, user_id, passphrase) => {
+                let private_mode = self.settings.current_private_mode();
                 let document_provider = self.document_provider.clone();
                 task::future(async move {
                     tracing::debug!("adding remote client: {url}");
                     document_provider
-                        .add_client(FilesClient::new(url, user_id, passphrase).unwrap().into())
+                        .add_client(
+                            FilesClient::new(url, user_id, passphrase, private_mode)
+                                .unwrap()
+                                .into(),
+                        )
                         .await;
                     PageMessage::Noop
                 })

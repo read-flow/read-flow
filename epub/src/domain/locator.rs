@@ -47,7 +47,7 @@ impl Locator {
             .find(|c: char| !c.is_ascii_digit())
             .unwrap_or(after_slash6.len());
         let spine_step: u32 = after_slash6[..step_end].parse().ok()?;
-        if spine_step < 2 || spine_step % 2 != 0 {
+        if spine_step < 2 || !spine_step.is_multiple_of(2) {
             return None;
         }
         let spine_index = spine_step / 2 - 1;
@@ -66,7 +66,7 @@ impl Locator {
             .map_while(|s| {
                 let step_end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
                 let step: u32 = s[..step_end].parse().ok()?;
-                if step % 2 != 0 {
+                if !step.is_multiple_of(2) {
                     return None; // text-node step — stop here
                 }
                 if step < 2 {

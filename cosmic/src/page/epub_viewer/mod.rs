@@ -2022,14 +2022,14 @@ pub(crate) struct ReadingPosition {
 
 fn parse_reading_progress(progress: &str) -> ReadingPosition {
     // Try new CFI format first.
-    if let Some(cfi_str) = extract_json_string(progress, "cfi") {
-        if let Some(locator) = epub::Locator::from_cfi(&cfi_str) {
-            return ReadingPosition {
-                chapter: Some(locator.spine_index as usize),
-                node_path: locator.node_path,
-                block_index: None, // resolved in ReadingProgressLoaded when chapters available
-            };
-        }
+    if let Some(cfi_str) = extract_json_string(progress, "cfi")
+        && let Some(locator) = epub::Locator::from_cfi(&cfi_str)
+    {
+        return ReadingPosition {
+            chapter: Some(locator.spine_index as usize),
+            node_path: locator.node_path,
+            block_index: None, // resolved in ReadingProgressLoaded when chapters available
+        };
     }
     // Fall back to legacy format for graceful migration.
     let mut chapter = None;

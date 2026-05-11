@@ -7,6 +7,7 @@ export interface Source {
 	userId: string;
 	passphrase: string;
 	order: number;
+	privateMode?: boolean;
 }
 
 export interface ReadingProgress {
@@ -31,5 +32,20 @@ db.version(1).stores({
 	readingProgress: 'fingerprint',
 	preferences: 'key',
 });
+
+db.version(2)
+	.stores({
+		sources: '++id, order',
+		readingProgress: 'fingerprint',
+		preferences: 'key',
+	})
+	.upgrade((tx) => {
+		return tx
+			.table('sources')
+			.toCollection()
+			.modify((source) => {
+				source.privateMode = false;
+			});
+	});
 
 export { db };

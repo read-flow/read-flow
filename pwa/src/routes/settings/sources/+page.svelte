@@ -11,6 +11,7 @@
 	let baseUrl = $state('');
 	let userId = $state('');
 	let passphrase = $state('');
+	let privateMode = $state(false);
 
 	onMount(loadSources);
 
@@ -19,7 +20,7 @@
 		isSubmitting = true;
 		submitError = null;
 
-		const result = await addSource({ name, baseUrl, userId, passphrase });
+		const result = await addSource({ name, baseUrl, userId, passphrase, privateMode });
 		isSubmitting = false;
 
 		if (result.ok) {
@@ -27,6 +28,7 @@
 			baseUrl = '';
 			userId = '';
 			passphrase = '';
+			privateMode = false;
 			showForm = false;
 		} else {
 			submitError = result.error;
@@ -132,6 +134,16 @@
 						/>
 					</div>
 				</div>
+
+				<label class="flex items-center gap-2 cursor-pointer select-none">
+					<input
+						type="checkbox"
+						bind:checked={privateMode}
+						class="w-4 h-4 rounded border border-slate-300 dark:border-slate-600 accent-slate-800 dark:accent-slate-200"
+					/>
+					<span class="text-sm text-slate-700 dark:text-slate-300">Private mode</span>
+					<span class="text-xs text-slate-400 dark:text-slate-500">(requires owner role on the server)</span>
+				</label>
 			</div>
 
 			{#if submitError}
@@ -180,7 +192,12 @@
 					<Icon name="server" class="w-5 h-5 text-slate-400 dark:text-slate-500 shrink-0" />
 
 					<div class="flex-1 min-w-0">
-						<p class="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{source.name}</p>
+						<div class="flex items-center gap-1.5">
+							<p class="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{source.name}</p>
+							{#if source.privateMode}
+								<span class="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 shrink-0">private</span>
+							{/if}
+						</div>
 						<p class="text-xs text-slate-400 dark:text-slate-500 truncate">{source.baseUrl}</p>
 					</div>
 

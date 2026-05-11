@@ -135,6 +135,47 @@ impl Default for ClientSettings {
     }
 }
 
+/// A user entry in `authorized_users`. Accepts either a plain password string
+/// (legacy) or an extended form with optional roles.
+///
+/// ```toml
+/// # legacy — no roles
+/// guest = "$pbkdf2-sha256$..."
+/// # extended — with owner role
+/// alice = { password = "$pbkdf2-sha256$...", roles = ["owner"] }
+/// ```
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "server", serde(crate = "rocket::serde"))]
+#[serde(untagged)]
+pub enum UserEntry {
+    Simple(HashedPassword),
+    Extended {
+        password: HashedPassword,
+        #[serde(default)]
+        roles: Vec<String>,
+    },
+}
+
+impl UserEntry {
+    pub fn password(&self) -> &HashedPassword {
+        match self {
+            UserEntry::Simple(p) => p,
+            UserEntry::Extended { password, .. } => password,
+        }
+    }
+
+    pub fn roles(&self) -> &[String] {
+        match self {
+            UserEntry::Simple(_) => &[],
+            UserEntry::Extended { roles, .. } => roles,
+        }
+    }
+
+    pub fn has_role(&self, role: &str) -> bool {
+        self.roles().iter().any(|r| r == role)
+    }
+}
+
 /// Settings for the `server` feature.
 ///
 /// Exposed here so they can be edited by the cosmic application.
@@ -143,7 +184,7 @@ impl Default for ClientSettings {
 pub struct ServerSettings {
     pub download_folder: ExpandedPath,
 
-    pub authorized_users: IndexMap<String, HashedPassword>,
+    pub authorized_users: IndexMap<String, UserEntry>,
 }
 
 impl Default for ServerSettings {
@@ -259,6 +300,37 @@ impl UiSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn user_entry_simple_parses_from_plain_string() {
+        let toml = r#"
+[server]
+download_folder = "/tmp"
+
+[server.authorized_users]
+guest = "$pbkdf2-sha256$i=100000,l=32$abc$def"
+"#;
+        let settings: Settings = toml::from_str(toml).unwrap();
+        let entry = settings.server.authorized_users.get("guest").unwrap();
+        assert!(matches!(entry, UserEntry::Simple(_)));
+        assert_eq!(entry.roles(), &[] as &[String]);
+        assert!(!entry.has_role("owner"));
+    }
+
+    #[test]
+    fn user_entry_extended_parses_with_roles() {
+        let toml = r#"
+[server]
+download_folder = "/tmp"
+
+[server.authorized_users]
+alice = { password = "$pbkdf2-sha256$i=100000,l=32$abc$def", roles = ["owner"] }
+"#;
+        let settings: Settings = toml::from_str(toml).unwrap();
+        let entry = settings.server.authorized_users.get("alice").unwrap();
+        assert!(entry.has_role("owner"));
+        assert!(!entry.has_role("admin"));
+    }
 
     #[test]
     fn online_library_settings_default_round_trips_through_toml() {
