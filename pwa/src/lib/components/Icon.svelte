@@ -17,7 +17,9 @@
 		| 'sun'
 		| 'moon'
 		| 'monitor'
-		| 'minus';
+		| 'minus'
+		| 'maximize'
+		| 'minimize';
 </script>
 
 <script lang="ts">
@@ -121,5 +123,15 @@
 		<line x1="12" y1="17" x2="12" y2="21" />
 	{:else if name === 'minus'}
 		<line x1="5" y1="12" x2="19" y2="12" />
+	{:else if name === 'maximize'}
+		<polyline points="15 3 21 3 21 9" />
+		<polyline points="9 21 3 21 3 15" />
+		<line x1="21" y1="3" x2="14" y2="10" />
+		<line x1="3" y1="21" x2="10" y2="14" />
+	{:else if name === 'minimize'}
+		<polyline points="4 14 10 14 10 20" />
+		<polyline points="20 10 14 10 14 4" />
+		<line x1="10" y1="14" x2="3" y2="21" />
+		<line x1="21" y1="3" x2="14" y2="10" />
 	{/if}
 </svg>

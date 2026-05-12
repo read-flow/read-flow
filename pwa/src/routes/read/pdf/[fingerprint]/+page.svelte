@@ -23,6 +23,7 @@
 	).href;
 
 	const PREF_ZOOM_KEY = 'pdf-zoom';
+	const PREF_MAXIMIZED_KEY = 'pdf-maximized';
 	const PROGRESS_DEBOUNCE_MS = 2000;
 	const RESIZE_DEBOUNCE_MS = 100;
 	const TOOLBAR_HIDE_DELAY_MS = 3000;
@@ -44,6 +45,7 @@
 	// ── Toolbar visibility (mobile auto-hide) ──────────────────────────────────
 	let toolbarVisible = $state(true);
 	let toolbarTimer: ReturnType<typeof setTimeout> | null = null;
+	let maximized = $state(false);
 
 	// ── DOM refs ───────────────────────────────────────────────────────────────
 	let canvasEl: HTMLCanvasElement | undefined = $state();
@@ -131,6 +133,11 @@
 		resetToolbarTimer();
 	}
 
+	function toggleMaximized(): void {
+		maximized = !maximized;
+		void db.preferences.put({ key: PREF_MAXIMIZED_KEY, value: String(maximized) });
+	}
+
 	// ── Keyboard ──────────────────────────────────────────────────────────────
 	function handleKeydown(e: KeyboardEvent): void {
 		if (e.target instanceof HTMLInputElement) return;
@@ -153,6 +160,10 @@
 			case 'End':
 				e.preventDefault();
 				void goToPage(totalPages);
+				break;
+			case 'm':
+				e.preventDefault();
+				toggleMaximized();
 				break;
 		}
 	}
@@ -178,6 +189,9 @@
 			const parsed = parseFloat(savedZoom.value);
 			if (isFinite(parsed)) userScale = clamp(parsed, 0.5, 3.0);
 		}
+
+		const savedMaximized = await db.preferences.get(PREF_MAXIMIZED_KEY);
+		if (savedMaximized?.value === 'true') maximized = true;
 
 		await loadSources();
 
@@ -261,7 +275,7 @@
 	Toolbars slide off-screen on mobile after inactivity; on md+ they are always visible.
 -->
 <div
-	class="relative flex flex-col h-full"
+	class="relative flex flex-col h-full overflow-hidden"
 	ontouchstart={handleTouchStart}
 	ontouchend={handleTouchEnd}
 	role="application"
@@ -269,9 +283,9 @@
 >
 	<!-- ── Toolbar ────────────────────────────────────────────── -->
 	<header
-		class="flex items-center gap-3 px-4 py-3 shrink-0 bg-slate-800/95 backdrop-blur-sm z-10
+		class="absolute inset-x-0 top-0 flex items-center gap-3 px-4 py-3 bg-slate-800/95 backdrop-blur-sm z-10
 			transition-transform duration-200
-			{toolbarVisible ? 'translate-y-0' : '-translate-y-full'} md:translate-y-0"
+			{toolbarVisible ? 'translate-y-0' : '-translate-y-full'} {maximized ? 'md:-translate-y-full' : 'md:translate-y-0'}"
 	>
 		<a
 			href="/documents/{fingerprint}"
@@ -307,12 +321,20 @@
 				<Icon name="plus" class="w-4 h-4" />
 			</button>
 		</div>
+
+		<button
+			onclick={toggleMaximized}
+			class="hidden md:flex p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-700 transition-colors shrink-0"
+			aria-label={maximized ? 'Restore toolbar' : 'Maximize viewer'}
+		>
+			<Icon name={maximized ? 'minimize' : 'maximize'} class="w-4 h-4" />
+		</button>
 	</header>
 
 	<!-- ── Canvas area ───────────────────────────────────────── -->
 	<div
 		bind:this={containerEl}
-		class="flex-1 overflow-auto bg-slate-700 flex flex-col items-center py-4"
+		class="flex-1 overflow-y-auto bg-slate-700 flex flex-col items-center py-4"
 		onclick={handleCanvasTap}
 		role="presentation"
 	>
@@ -343,9 +365,9 @@
 
 	<!-- ── Bottom navigation ─────────────────────────────────── -->
 	<footer
-		class="flex items-center justify-between px-6 shrink-0 bg-slate-800/95 backdrop-blur-sm
+		class="absolute inset-x-0 bottom-0 flex items-center justify-between px-6 bg-slate-800/95 backdrop-blur-sm z-10
 			transition-transform duration-200
-			{toolbarVisible ? 'translate-y-0' : 'translate-y-full'} md:translate-y-0"
+			{toolbarVisible ? 'translate-y-0' : 'translate-y-full'} {maximized ? 'md:translate-y-full' : 'md:translate-y-0'}"
 		style="padding-top: 0.75rem; padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px))"
 	>
 		<button
@@ -374,4 +396,15 @@
 			<Icon name="chevron-down" class="w-5 h-5 -rotate-90" />
 		</button>
 	</footer>
+
+	{#if maximized}
+		<button
+			onclick={toggleMaximized}
+			class="hidden md:flex absolute top-3 right-3 z-20 p-1.5 rounded bg-slate-800/70 text-slate-400
+				hover:text-white hover:bg-slate-700/90 transition-all"
+			aria-label="Restore toolbar"
+		>
+			<Icon name="minimize" class="w-4 h-4" />
+		</button>
+	{/if}
 </div>
