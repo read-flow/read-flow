@@ -53,6 +53,7 @@
 
 	// ── Touch tracking ────────────────────────────────────────────────────────
 	let touchStartX = 0;
+	let touchStartY = 0;
 
 	// ── Helpers ───────────────────────────────────────────────────────────────
 	function basename(path: string): string {
@@ -142,17 +143,33 @@
 		}
 	}
 
-	// ── Touch / swipe ─────────────────────────────────────────────────────────
+	// ── Touch / swipe / side-tap zones ───────────────────────────────────────
 	function handleTouchStart(e: TouchEvent): void {
 		touchStartX = e.touches[0].clientX;
+		touchStartY = e.touches[0].clientY;
 	}
 
 	function handleTouchEnd(e: TouchEvent): void {
-		const dx = e.changedTouches[0].clientX - touchStartX;
+		const touch = e.changedTouches[0];
+		const dx = touch.clientX - touchStartX;
+		const dy = touch.clientY - touchStartY;
+
 		if (Math.abs(dx) >= SWIPE_THRESHOLD_PX) {
 			void navigate(dx < 0 ? 'next' : 'prev');
+		} else if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+			// True tap — check left/right zones
+			const x = touch.clientX;
+			const w = window.innerWidth;
+			if (x < w * 0.2) {
+				void navigate('prev');
+			} else if (x > w * 0.8) {
+				void navigate('next');
+			} else {
+				resetToolbarTimer();
+			}
+		} else {
+			resetToolbarTimer();
 		}
-		resetToolbarTimer();
 	}
 
 	// ── Lifecycle ─────────────────────────────────────────────────────────────

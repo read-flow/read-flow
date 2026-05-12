@@ -58,6 +58,10 @@
 
 	// ── Touch tracking ────────────────────────────────────────────────────────
 	let touchStartX = 0;
+	let isPinching = false;
+	let pinchStartDist = 0;
+	let pinchStartScale = 1.0;
+	let pinchAbortController: AbortController | null = null;
 
 	// ── Helpers ───────────────────────────────────────────────────────────────
 	function basename(path: string): string {
@@ -168,12 +172,38 @@
 		}
 	}
 
-	// ── Touch / swipe ─────────────────────────────────────────────────────────
+	// ── Touch / swipe / pinch-to-zoom ────────────────────────────────────────
+	function getTouchDist(touches: TouchList): number {
+		const dx = touches[0].clientX - touches[1].clientX;
+		const dy = touches[0].clientY - touches[1].clientY;
+		return Math.sqrt(dx * dx + dy * dy);
+	}
+
 	function handleTouchStart(e: TouchEvent): void {
-		touchStartX = e.touches[0].clientX;
+		if (e.touches.length === 2) {
+			isPinching = true;
+			pinchStartDist = getTouchDist(e.touches);
+			pinchStartScale = userScale;
+		} else {
+			isPinching = false;
+			touchStartX = e.touches[0].clientX;
+		}
+	}
+
+	function handleTouchMove(e: TouchEvent): void {
+		if (e.touches.length === 2 && isPinching) {
+			e.preventDefault();
+			userScale = clamp(pinchStartScale * (getTouchDist(e.touches) / pinchStartDist), 0.5, 3.0);
+		}
 	}
 
 	function handleTouchEnd(e: TouchEvent): void {
+		if (isPinching && e.touches.length < 2) {
+			isPinching = false;
+			void db.preferences.put({ key: PREF_ZOOM_KEY, value: String(userScale) });
+			void renderPage(currentPage);
+			return;
+		}
 		const dx = e.changedTouches[0].clientX - touchStartX;
 		if (Math.abs(dx) >= SWIPE_THRESHOLD_PX) {
 			void goToPage(dx < 0 ? currentPage + 1 : currentPage - 1);
@@ -247,6 +277,13 @@
 			isLoading = false;
 		}
 
+		// Register non-passive touchmove listener for pinch-to-zoom
+		pinchAbortController = new AbortController();
+		containerEl?.addEventListener('touchmove', handleTouchMove, {
+			passive: false,
+			signal: pinchAbortController.signal,
+		});
+
 		// Start the toolbar auto-hide timer on mobile
 		resetToolbarTimer();
 	});
@@ -260,6 +297,7 @@
 		if (toolbarTimer) clearTimeout(toolbarTimer);
 		if (resizeTimer) clearTimeout(resizeTimer);
 		resizeObserver?.disconnect();
+		pinchAbortController?.abort();
 		pdfDoc?.destroy();
 	});
 </script>

@@ -164,7 +164,9 @@
 		class="flex-1 overflow-y-auto md:pb-0"
 		style="padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px))"
 	>
-		{@render children()}
+		<div class="max-w-screen-2xl mx-auto w-full h-full">
+			{@render children()}
+		</div>
 	</main>
 
 	<!-- ── Mobile bottom navigation ───────────────────────────── -->
