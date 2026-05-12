@@ -187,7 +187,7 @@
 						/>
 						<datalist id="tag-suggestions">
 							{#each $allTags.filter((t) => !doc?.tags.includes(t)) as t}
-								<option value={t} />
+								<option value={t}></option>
 							{/each}
 						</datalist>
 					</div>
