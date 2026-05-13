@@ -34,6 +34,11 @@ export async function removeSource(id: number): Promise<void> {
 	await loadSources();
 }
 
+export async function updateSource(id: number, data: Partial<Omit<Source, 'id' | 'order'>>): Promise<void> {
+	await db.sources.update(id, data);
+	await loadSources();
+}
+
 export async function moveSource(id: number, direction: 'up' | 'down'): Promise<void> {
 	const all = await db.sources.orderBy('order').toArray();
 	const idx = all.findIndex((s) => s.id === id);

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
-	import { sources, loadSources, addSource, removeSource, moveSource } from '$lib/stores/sources';
+	import { sources, loadSources, addSource, removeSource, moveSource, updateSource } from '$lib/stores/sources';
 
 	let showForm = $state(false);
 	let isSubmitting = $state(false);
@@ -38,6 +38,12 @@
 	async function handleRemove(id: number) {
 		if (!confirm('Remove this source?')) return;
 		await removeSource(id);
+	}
+
+	async function togglePrivateMode(id: number) {
+		const source = $sources.find((s) => s.id === id);
+		if (!source) return;
+		await updateSource(id, { privateMode: !source.privateMode });
 	}
 </script>
 
@@ -194,9 +200,16 @@
 					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-1.5">
 							<p class="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{source.name}</p>
-							{#if source.privateMode}
-								<span class="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 shrink-0">private</span>
-							{/if}
+							<button
+								onclick={() => togglePrivateMode(source.id!)}
+								title={source.privateMode ? 'Private mode on — click to disable' : 'Private mode off — click to enable'}
+								class="text-xs px-1.5 py-0.5 rounded transition-colors shrink-0
+									{source.privateMode
+										? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-800/50'
+										: 'bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600 hover:text-slate-600 dark:hover:text-slate-300'}"
+							>
+								private
+							</button>
 						</div>
 						<p class="text-xs text-slate-400 dark:text-slate-500 truncate">{source.baseUrl}</p>
 					</div>
