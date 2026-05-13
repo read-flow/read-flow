@@ -76,10 +76,6 @@ export class ReadFlowClient {
 		return this.request<RemoteFile[]>('/files');
 	}
 
-	async getFile(guid: string): Promise<RemoteFile> {
-		return this.request<RemoteFile>(`/files/${guid}`);
-	}
-
 	async getAllTags(): Promise<string[]> {
 		return this.request<string[]>('/files/tags');
 	}

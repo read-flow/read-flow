@@ -59,7 +59,7 @@
 		saving = true;
 		tagError = '';
 		try {
-			await removeTagsFromFile(fingerprint, [tag]);
+			await removeTagsFromFile(doc.sourceGuids, [tag]);
 			await refreshDocuments();
 		} catch {
 			tagError = `Failed to remove tag "${tag}".`;
@@ -82,7 +82,7 @@
 		saving = true;
 		tagError = '';
 		try {
-			await addTagsToFile(fingerprint, [tag]);
+			await addTagsToFile(doc.sourceGuids, [tag]);
 			await refreshDocuments();
 			const docs = get(allDocuments);
 			doc = docs.find((d) => d.fingerprint === fingerprint) ?? doc;

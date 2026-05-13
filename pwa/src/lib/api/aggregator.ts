@@ -36,26 +36,21 @@ export async function fetchAllTags(): Promise<string[]> {
 	return Array.from(tags).sort();
 }
 
-export async function addTagsToFile(fingerprint: string, tags: string[]): Promise<void> {
-	const clients = await getClients();
-	// Fan out to all sources that have the file
+export async function addTagsToFile(sourceGuids: Record<number, string>, tags: string[]): Promise<void> {
+	const sources = await db.sources.orderBy('order').toArray();
 	await Promise.allSettled(
-		clients.map(async ({ client }) => {
-			const files = await client.getFiles();
-			const file = files.find((f) => f.fingerprint === fingerprint);
-			if (file) await client.addTags(file.guid, tags);
-		}),
+		sources
+			.filter((s) => s.id !== undefined && sourceGuids[s.id as number] !== undefined)
+			.map((s) => new ReadFlowClient(s).addTags(sourceGuids[s.id as number], tags)),
 	);
 }
 
-export async function removeTagsFromFile(fingerprint: string, tags: string[]): Promise<void> {
-	const clients = await getClients();
+export async function removeTagsFromFile(sourceGuids: Record<number, string>, tags: string[]): Promise<void> {
+	const sources = await db.sources.orderBy('order').toArray();
 	await Promise.allSettled(
-		clients.map(async ({ client }) => {
-			const files = await client.getFiles();
-			const file = files.find((f) => f.fingerprint === fingerprint);
-			if (file) await client.deleteTags(file.guid, tags);
-		}),
+		sources
+			.filter((s) => s.id !== undefined && sourceGuids[s.id as number] !== undefined)
+			.map((s) => new ReadFlowClient(s).deleteTags(sourceGuids[s.id as number], tags)),
 	);
 }
 

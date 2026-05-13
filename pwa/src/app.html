@@ -50,7 +50,8 @@
 				if (scheme === 'custom-dark' || scheme === 'custom-light') {
 					var _cc = JSON.parse(localStorage.getItem('read-flow-custom-colors') || 'null');
 					if (_cc && _cc.bg && _cc.surface && _cc.accent) {
-						var _lerp = function(h1, h2, t) {
+						// Mirror of lerpColors/applyCustomVars in theme.ts — keep weights in sync.
+				var _lerp = function(h1, h2, t) {
 							var n1 = parseInt(h1.slice(1), 16), n2 = parseInt(h2.slice(1), 16);
 							var r = Math.round(((n1>>16)&0xff) + (((n2>>16)&0xff)-((n1>>16)&0xff))*t);
 							var g = Math.round(((n1>>8)&0xff)  + (((n2>>8)&0xff) -((n1>>8)&0xff))*t);

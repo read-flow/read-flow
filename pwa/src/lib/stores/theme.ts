@@ -76,24 +76,27 @@ export const theme = derived(
 
 // ── Custom colour helpers ──────────────────────────────────────────────────
 
-function hexToRgb(hex: string): [number, number, number] {
+// NOTE: The interpolation weights below are mirrored in the no-FOUC inline
+// script in app.html (_lerp). If you change coefficients here, update that
+// script too.
+export function hexToRgb(hex: string): [number, number, number] {
 	const n = parseInt(hex.slice(1), 16);
 	return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
 }
 
-function rgbToHex(r: number, g: number, b: number): string {
+export function rgbToHex(r: number, g: number, b: number): string {
 	return '#' + [r, g, b]
 		.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
 		.join('');
 }
 
-function lerpColors(c1: string, c2: string, t: number): string {
+export function lerpColors(c1: string, c2: string, t: number): string {
 	const [r1, g1, b1] = hexToRgb(c1);
 	const [r2, g2, b2] = hexToRgb(c2);
 	return rgbToHex(r1 + (r2 - r1) * t, g1 + (g2 - g1) * t, b1 + (b2 - b1) * t);
 }
 
-function relativeLuminance(hex: string): number {
+export function relativeLuminance(hex: string): number {
 	const [r, g, b] = hexToRgb(hex).map(v => {
 		const s = v / 255;
 		return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
