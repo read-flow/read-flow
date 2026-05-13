@@ -432,12 +432,14 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
             .icon()
             .into(),
         display_path(&document.local_or_any_source().path),
-        widget::button::icon(widget::icon::from_name("document-edit-symbolic").size(ICON_SIZE))
-            .on_press(DocumentsMessage::Out(DocumentsOutput::OpenDocumentDetails(
-                document.clone(),
-            )))
-            .tooltip(fl!("document-list-open-document-details"))
-            .into(),
+        widget::button::icon(
+            widget::icon::from_name("dialog-information-symbolic").size(ICON_SIZE),
+        )
+        .on_press(DocumentsMessage::Out(DocumentsOutput::OpenDocumentDetails(
+            document.clone(),
+        )))
+        .tooltip(fl!("document-list-open-document-details"))
+        .into(),
     ]
     .apply(widget::settings::item_row)
     .apply(widget::button::custom)
