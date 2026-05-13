@@ -15,6 +15,7 @@
 	} from '$lib/stores/documents';
 	import { sources, loadSources } from '$lib/stores/sources';
 	import { get } from 'svelte/store';
+	import type { AggregatedFile } from '$lib/api/aggregator';
 
 	// ── Virtual list ──────────────────────────────────────────────────────────
 	const ITEM_HEIGHT = 72; // estimated row height in px
@@ -87,8 +88,15 @@
 		deniedTags.set(new Set());
 	}
 
-	// ── Row click: inline sidebar on lg+, navigate on smaller screens ─────────
-	function handleDocumentClick(fingerprint: string, e: MouseEvent): void {
+	// ── Reader href (primary row action) ─────────────────────────────────────
+	function readerHref(doc: AggregatedFile): string {
+		if (doc.type_ === 'pdf')  return `/read/pdf/${doc.fingerprint}`;
+		if (doc.type_ === 'epub') return `/read/epub/${doc.fingerprint}`;
+		return `/documents/${doc.fingerprint}`;
+	}
+
+	// ── Details button: inline sidebar on lg+, navigate on smaller screens ───
+	function handleDetailsClick(fingerprint: string, e: MouseEvent): void {
 		if (window.innerWidth >= 1024) {
 			e.preventDefault();
 			selectedFingerprint = fingerprint;
@@ -219,14 +227,15 @@
 				<div style="padding-top: {paddingTop}px; padding-bottom: {paddingBottom}px">
 					<ul class="divide-y divide-slate-100 dark:divide-slate-700/50">
 						{#each visibleItems as doc (doc.fingerprint)}
-							<li>
+							<li
+								class="flex items-stretch transition-colors
+									{selectedFingerprint === doc.fingerprint ? 'bg-slate-100 dark:bg-slate-700/60' : ''}"
+							>
+								<!-- Primary action: open in reader -->
 								<a
-									href="/documents/{doc.fingerprint}"
-									onclick={(e) => handleDocumentClick(doc.fingerprint, e)}
-									class="flex items-start gap-3 px-4 py-3 md:px-6 transition-colors
-										{selectedFingerprint === doc.fingerprint
-											? 'bg-slate-100 dark:bg-slate-700/60'
-											: 'hover:bg-slate-50 dark:hover:bg-slate-800/60'}"
+									href={readerHref(doc)}
+									class="flex items-start gap-3 px-4 py-3 md:px-6 flex-1 min-w-0 transition-colors
+										{selectedFingerprint !== doc.fingerprint ? 'hover:bg-slate-50 dark:hover:bg-slate-800/60' : ''}"
 								>
 									<!-- File type badge -->
 									<span
@@ -264,11 +273,25 @@
 											</div>
 										{/if}
 									</div>
+								</a>
 
-									<span class="hidden md:block shrink-0 text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+								<!-- Secondary actions: size + details button -->
+								<div class="flex items-center gap-1.5 pr-3 md:pr-4 shrink-0">
+									<span class="hidden md:block text-xs text-slate-400 dark:text-slate-500 tabular-nums">
 										{formatSize(doc.size)}
 									</span>
-								</a>
+									<a
+										href="/documents/{doc.fingerprint}"
+										onclick={(e) => handleDetailsClick(doc.fingerprint, e)}
+										aria-label="View details"
+										class="p-1.5 rounded text-slate-300 dark:text-slate-600
+											hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700
+											{selectedFingerprint === doc.fingerprint ? 'text-slate-500 dark:text-slate-400' : ''}
+											transition-colors"
+									>
+										<Icon name="info" class="w-4 h-4" />
+									</a>
+								</div>
 							</li>
 						{/each}
 					</ul>

@@ -13,6 +13,7 @@
 		| 'chevron-down'
 		| 'loader'
 		| 'alert-circle'
+		| 'info'
 		| 'wifi-off'
 		| 'sun'
 		| 'moon'
@@ -97,6 +98,10 @@
 		<circle cx="12" cy="12" r="10" />
 		<line x1="12" y1="8" x2="12" y2="12" />
 		<line x1="12" y1="16" x2="12.01" y2="16" />
+	{:else if name === 'info'}
+		<circle cx="12" cy="12" r="10" />
+		<line x1="12" y1="16" x2="12" y2="12" />
+		<line x1="12" y1="8" x2="12.01" y2="8" />
 	{:else if name === 'wifi-off'}
 		<line x1="1" y1="1" x2="23" y2="23" />
 		<path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55" />
