@@ -15,8 +15,8 @@
 		-->
 		<script>
 			try {
-				var DARK = ['slate-dark','nord-dark','catppuccin-frappe','catppuccin-macchiato','catppuccin-mocha','one-dark'];
-				var CUSTOM = ['nord-light','nord-dark','catppuccin-latte','catppuccin-frappe','catppuccin-macchiato','catppuccin-mocha','one-light','one-dark'];
+				var DARK = ['slate-dark','nord-dark','catppuccin-frappe','catppuccin-macchiato','catppuccin-mocha','one-dark','custom-dark'];
+				var CUSTOM = ['nord-light','nord-dark','catppuccin-latte','catppuccin-frappe','catppuccin-macchiato','catppuccin-mocha','one-light','one-dark','custom-light','custom-dark'];
 
 				// Migrate from intermediate 'read-flow-scheme' key
 				var _prev = localStorage.getItem('read-flow-scheme');
@@ -45,6 +45,48 @@
 				var scheme = mode === 'light' ? light : mode === 'dark' ? dark : (osDark ? dark : light);
 				document.documentElement.classList.toggle('dark', DARK.indexOf(scheme) !== -1);
 				if (CUSTOM.indexOf(scheme) !== -1) document.documentElement.setAttribute('data-scheme', scheme);
+
+				// Apply custom CSS variables inline so custom themes have no FOUC
+				if (scheme === 'custom-dark' || scheme === 'custom-light') {
+					var _cc = JSON.parse(localStorage.getItem('read-flow-custom-colors') || 'null');
+					if (_cc && _cc.bg && _cc.surface && _cc.accent) {
+						var _lerp = function(h1, h2, t) {
+							var n1 = parseInt(h1.slice(1), 16), n2 = parseInt(h2.slice(1), 16);
+							var r = Math.round(((n1>>16)&0xff) + (((n2>>16)&0xff)-((n1>>16)&0xff))*t);
+							var g = Math.round(((n1>>8)&0xff)  + (((n2>>8)&0xff) -((n1>>8)&0xff))*t);
+							var b = Math.round((n1&0xff)        + ((n2&0xff)       -(n1&0xff))*t);
+							var c = function(v){return Math.max(0,Math.min(255,v)).toString(16).padStart(2,'0');};
+							return '#'+c(r)+c(g)+c(b);
+						};
+						var _s = document.documentElement.style;
+						var bg = _cc.bg, sf = _cc.surface, ac = _cc.accent;
+						if (scheme === 'custom-dark') {
+							_s.setProperty('--color-slate-900', bg);
+							_s.setProperty('--color-slate-800', sf);
+							_s.setProperty('--color-slate-700', _lerp(sf, ac, 0.12));
+							_s.setProperty('--color-slate-600', _lerp(sf, ac, 0.25));
+							_s.setProperty('--color-slate-500', _lerp(sf, ac, 0.40));
+							_s.setProperty('--color-slate-400', _lerp(sf, ac, 0.55));
+							_s.setProperty('--color-slate-300', _lerp(sf, ac, 0.68));
+							_s.setProperty('--color-slate-200', _lerp(sf, ac, 0.80));
+							_s.setProperty('--color-slate-100', ac);
+							_s.setProperty('--color-slate-50',  _lerp(ac, '#ffffff', 0.25));
+							_s.setProperty('--color-white',     _lerp(ac, '#ffffff', 0.12));
+						} else {
+							_s.setProperty('--color-slate-50',  bg);
+							_s.setProperty('--color-white',     sf);
+							_s.setProperty('--color-slate-100', _lerp(bg, ac, 0.08));
+							_s.setProperty('--color-slate-200', _lerp(bg, ac, 0.18));
+							_s.setProperty('--color-slate-300', _lerp(bg, ac, 0.30));
+							_s.setProperty('--color-slate-400', _lerp(bg, ac, 0.45));
+							_s.setProperty('--color-slate-500', _lerp(bg, ac, 0.58));
+							_s.setProperty('--color-slate-600', _lerp(bg, ac, 0.70));
+							_s.setProperty('--color-slate-700', _lerp(bg, ac, 0.82));
+							_s.setProperty('--color-slate-800', _lerp(bg, ac, 0.90));
+							_s.setProperty('--color-slate-900', ac);
+						}
+					}
+				}
 			} catch (e) {}
 		</script>
 		%sveltekit.head%
