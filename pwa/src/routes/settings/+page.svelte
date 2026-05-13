@@ -251,9 +251,22 @@
 								}}
 								class="w-full h-10 rounded-lg cursor-pointer border border-slate-200 dark:border-slate-600 p-0.5 bg-transparent"
 							/>
-							<span class="text-xs text-slate-400 dark:text-slate-500 font-mono tabular-nums">
-								{draft[field.key as keyof CustomColors]}
-							</span>
+							<input
+								type="text"
+								value={draft[field.key as keyof CustomColors]}
+								oninput={(e) => {
+									const raw = (e.target as HTMLInputElement).value.trim();
+									const val = raw.startsWith('#') ? raw : '#' + raw;
+									if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+										draft = { ...draft, [field.key]: val.toLowerCase() };
+									}
+								}}
+								placeholder="#000000"
+								maxlength={7}
+								class="w-full px-2 py-1 text-xs font-mono text-center rounded-md border border-slate-200 dark:border-slate-600
+									bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300
+									focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-transparent"
+							/>
 						</label>
 					{/each}
 				</div>
