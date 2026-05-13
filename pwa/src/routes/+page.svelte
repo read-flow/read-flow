@@ -284,9 +284,9 @@
 										href="/documents/{doc.fingerprint}"
 										onclick={(e) => handleDetailsClick(doc.fingerprint, e)}
 										aria-label="View details"
-										class="p-1.5 rounded text-slate-300 dark:text-slate-600
-											hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700
-											{selectedFingerprint === doc.fingerprint ? 'text-slate-500 dark:text-slate-400' : ''}
+										class="p-1.5 rounded text-slate-400 dark:text-slate-500
+											hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700
+											{selectedFingerprint === doc.fingerprint ? 'text-slate-600 dark:text-slate-300' : ''}
 											transition-colors"
 									>
 										<Icon name="info" class="w-4 h-4" />
