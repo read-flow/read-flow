@@ -102,7 +102,7 @@ macro_rules! delegate {
     ( $e:expr, $f:ident ) => {
         {
 	    match $e {
-		Client::Local(client) => Ok(client.db_client().await.$f().await?),
+		Client::Local(client) => Ok(client.filtered_db_client().await.$f().await?),
 		Client::Remote(client) => Ok(client.$f().await?),
 	    }
         }
@@ -110,7 +110,7 @@ macro_rules! delegate {
     ( $e:expr, $f:ident, $( $x:expr ),* ) => {
         {
 	    match $e {
-		Client::Local(client) => Ok(client.db_client().await.$f($($x),*).await?),
+		Client::Local(client) => Ok(client.filtered_db_client().await.$f($($x),*).await?),
 		Client::Remote(client) => Ok(client.$f($($x),*).await?),
 	    }
         }
@@ -133,28 +133,11 @@ impl FileDataSource for Client {
     }
 
     async fn get_files(&self) -> Result<Vec<File>, Self::Error> {
-        match self {
-            Client::Local(module) => {
-                let hidden = module.settings().await.ui.hidden_tags().to_vec();
-                let files = module.db_client().await.get_files().await?;
-                Ok(files
-                    .into_iter()
-                    .filter(|f| !f.tags.iter().any(|t| hidden.contains(t)))
-                    .collect())
-            }
-            Client::Remote(client) => Ok(client.get_files().await?),
-        }
+        delegate!(self, get_files)
     }
 
     async fn get_files_tags(&self) -> Result<Vec<String>, Self::Error> {
-        match self {
-            Client::Local(module) => {
-                let hidden = module.settings().await.ui.hidden_tags().to_vec();
-                let tags = module.db_client().await.get_files_tags().await?;
-                Ok(tags.into_iter().filter(|t| !hidden.contains(t)).collect())
-            }
-            Client::Remote(client) => Ok(client.get_files_tags().await?),
-        }
+        delegate!(self, get_files_tags)
     }
 
     async fn get_file(&self, guid: &str) -> Result<Option<File>, Self::Error> {

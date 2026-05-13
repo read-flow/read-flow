@@ -243,6 +243,97 @@ impl FileDataSource for DbClient {
     }
 }
 
+/// Wraps a [`DbClient`] and filters out files/tags whose tags include any of
+/// the configured hidden (private) tags. Constructed via
+/// [`ApplicationModule::filtered_db_client`].
+#[derive(Clone)]
+pub struct FilteredDbClient {
+    inner: DbClient,
+    hidden_tags: Vec<String>,
+}
+
+impl FilteredDbClient {
+    pub fn new(inner: DbClient, hidden_tags: Vec<String>) -> Self {
+        Self { inner, hidden_tags }
+    }
+}
+
+#[async_trait::async_trait]
+impl FileDataSource for FilteredDbClient {
+    type Error = Error;
+
+    fn display_name(&self) -> String {
+        self.inner.display_name()
+    }
+
+    async fn status(&self) -> Result<Status, Self::Error> {
+        self.inner.status().await
+    }
+
+    async fn get_files(&self) -> Result<Vec<File>, Self::Error> {
+        let files = self.inner.get_files().await?;
+        Ok(files
+            .into_iter()
+            .filter(|f| !f.tags.iter().any(|t| self.hidden_tags.contains(t)))
+            .collect())
+    }
+
+    async fn get_files_tags(&self) -> Result<Vec<String>, Self::Error> {
+        let tags = self.inner.get_files_tags().await?;
+        Ok(tags
+            .into_iter()
+            .filter(|t| !self.hidden_tags.contains(t))
+            .collect())
+    }
+
+    async fn get_file(&self, guid: &str) -> Result<Option<File>, Self::Error> {
+        self.inner.get_file(guid).await
+    }
+
+    async fn get_file_tags(&self, guid: &str) -> Result<Vec<String>, Self::Error> {
+        self.inner.get_file_tags(guid).await
+    }
+
+    async fn add_file_tags(
+        &self,
+        guid: &str,
+        tags: Vec<String>,
+    ) -> Result<Vec<String>, Self::Error> {
+        self.inner.add_file_tags(guid, tags).await
+    }
+
+    async fn delete_file_tags(&self, guid: &str, tags: Vec<String>) -> Result<(), Self::Error> {
+        self.inner.delete_file_tags(guid, tags).await
+    }
+
+    async fn update_file(&self, file: File) -> Result<(), Self::Error> {
+        self.inner.update_file(file).await
+    }
+
+    async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error> {
+        self.inner.xdg_open_file(file).await
+    }
+
+    async fn delete_file(&self, file: File) -> Result<(), Self::Error> {
+        self.inner.delete_file(file).await
+    }
+
+    async fn import_file(&self, path: &Path) -> Result<File, Self::Error> {
+        self.inner.import_file(path).await
+    }
+
+    async fn get_reading_progress(
+        &self,
+        fingerprint: &str,
+    ) -> Result<Option<ReadingProgress>, Self::Error> {
+        self.inner.get_reading_progress(fingerprint).await
+    }
+
+    async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error> {
+        self.inner.upsert_reading_progress(progress).await
+    }
+}
+
 async fn compute_sha256(path: &Path) -> Result<String, std::io::Error> {
     let mut file = tokio::fs::File::open(path).await?;
     let mut hasher = Sha256::new();
