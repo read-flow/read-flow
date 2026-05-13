@@ -117,7 +117,7 @@ export class ReadFlowClient {
 	async downloadFile(guid: string, fileName: string): Promise<Blob> {
 		const response = await fetch(
 			`${this.baseUrl}/files/${guid}/download-as/${encodeURIComponent(fileName)}`,
-			{ headers: { Authorization: this.authHeader } },
+			{ headers: this.headers() },
 		);
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status} ${response.statusText}`);
