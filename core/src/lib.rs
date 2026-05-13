@@ -22,6 +22,7 @@ use api::FileDataSource;
 use db::ConnectionPool;
 use db::dao;
 use db::datasource::DbClient;
+use db::datasource::FilteredDbClient;
 use expanduser::expanduser;
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -145,6 +146,11 @@ where
 
     pub async fn db_client(&self) -> DbClient {
         self.db_client.provide().await.unwrap()
+    }
+
+    pub async fn filtered_db_client(&self) -> FilteredDbClient {
+        let hidden = self.settings().await.ui.hidden_tags().to_vec();
+        FilteredDbClient::new(self.db_client().await, hidden)
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<Invalidated> {

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.png" />
+		<!-- viewport-fit=cover enables env(safe-area-inset-*) for iOS notch/home bar -->
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="theme-color" content="#1e293b" />
+		<meta name="description" content="Personal document library and reader" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<!--
+			Apply the saved theme before the first paint to prevent a flash of the wrong
+			colour scheme. localStorage is synchronous and runs before any CSS is applied.
+		-->
+		<script>
+			try {
+				var DARK = ['slate-dark','nord-dark','catppuccin-frappe','catppuccin-macchiato','catppuccin-mocha','one-dark','custom-dark'];
+				var CUSTOM = ['nord-light','nord-dark','catppuccin-latte','catppuccin-frappe','catppuccin-macchiato','catppuccin-mocha','one-light','one-dark','custom-light','custom-dark'];
+
+				// Migrate from intermediate 'read-flow-scheme' key
+				var _prev = localStorage.getItem('read-flow-scheme');
+				if (_prev && !localStorage.getItem('read-flow-mode')) {
+					if (DARK.indexOf(_prev) !== -1) {
+						localStorage.setItem('read-flow-mode', 'dark');
+						localStorage.setItem('read-flow-dark-scheme', _prev);
+					} else if (_prev !== 'system') {
+						localStorage.setItem('read-flow-mode', 'light');
+						localStorage.setItem('read-flow-light-scheme', _prev);
+					}
+					localStorage.removeItem('read-flow-scheme');
+				}
+				// Migrate from oldest 'read-flow-theme' key
+				var _oldest = localStorage.getItem('read-flow-theme');
+				if (_oldest && !localStorage.getItem('read-flow-mode')) {
+					if (_oldest === 'dark') localStorage.setItem('read-flow-mode', 'dark');
+					if (_oldest === 'light') localStorage.setItem('read-flow-mode', 'light');
+					localStorage.removeItem('read-flow-theme');
+				}
+
+				var mode  = localStorage.getItem('read-flow-mode') || 'system';
+				var light = localStorage.getItem('read-flow-light-scheme') || 'slate-light';
+				var dark  = localStorage.getItem('read-flow-dark-scheme')  || 'slate-dark';
+				var osDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+				var scheme = mode === 'light' ? light : mode === 'dark' ? dark : (osDark ? dark : light);
+				document.documentElement.classList.toggle('dark', DARK.indexOf(scheme) !== -1);
+				if (CUSTOM.indexOf(scheme) !== -1) document.documentElement.setAttribute('data-scheme', scheme);
+
+				// Apply custom CSS variables inline so custom themes have no FOUC
+				if (scheme === 'custom-dark' || scheme === 'custom-light') {
+					var _cc = JSON.parse(localStorage.getItem('read-flow-custom-colors') || 'null');
+					if (_cc && _cc.bg && _cc.surface && _cc.accent) {
+						// Mirror of lerpColors/applyCustomVars in theme.ts — keep weights in sync.
+				var _lerp = function(h1, h2, t) {
+							var n1 = parseInt(h1.slice(1), 16), n2 = parseInt(h2.slice(1), 16);
+							var r = Math.round(((n1>>16)&0xff) + (((n2>>16)&0xff)-((n1>>16)&0xff))*t);
+							var g = Math.round(((n1>>8)&0xff)  + (((n2>>8)&0xff) -((n1>>8)&0xff))*t);
+							var b = Math.round((n1&0xff)        + ((n2&0xff)       -(n1&0xff))*t);
+							var c = function(v){return Math.max(0,Math.min(255,v)).toString(16).padStart(2,'0');};
+							return '#'+c(r)+c(g)+c(b);
+						};
+						var _s = document.documentElement.style;
+						var bg = _cc.bg, sf = _cc.surface, ac = _cc.accent;
+						if (scheme === 'custom-dark') {
+							_s.setProperty('--color-slate-900', bg);
+							_s.setProperty('--color-slate-800', sf);
+							_s.setProperty('--color-slate-700', _lerp(sf, ac, 0.12));
+							_s.setProperty('--color-slate-600', _lerp(sf, ac, 0.25));
+							_s.setProperty('--color-slate-500', _lerp(sf, ac, 0.40));
+							_s.setProperty('--color-slate-400', _lerp(sf, ac, 0.55));
+							_s.setProperty('--color-slate-300', _lerp(sf, ac, 0.68));
+							_s.setProperty('--color-slate-200', _lerp(sf, ac, 0.80));
+							_s.setProperty('--color-slate-100', ac);
+							_s.setProperty('--color-slate-50',  _lerp(ac, '#ffffff', 0.25));
+							_s.setProperty('--color-white',     _lerp(ac, '#ffffff', 0.12));
+						} else {
+							_s.setProperty('--color-slate-50',  bg);
+							_s.setProperty('--color-white',     sf);
+							_s.setProperty('--color-slate-100', _lerp(bg, ac, 0.08));
+							_s.setProperty('--color-slate-200', _lerp(bg, ac, 0.18));
+							_s.setProperty('--color-slate-300', _lerp(bg, ac, 0.30));
+							_s.setProperty('--color-slate-400', _lerp(bg, ac, 0.45));
+							_s.setProperty('--color-slate-500', _lerp(bg, ac, 0.58));
+							_s.setProperty('--color-slate-600', _lerp(bg, ac, 0.70));
+							_s.setProperty('--color-slate-700', _lerp(bg, ac, 0.82));
+							_s.setProperty('--color-slate-800', _lerp(bg, ac, 0.90));
+							_s.setProperty('--color-slate-900', ac);
+						}
+					}
+				}
+			} catch (e) {}
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

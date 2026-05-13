@@ -13,6 +13,76 @@ pub struct Locator {
 }
 
 impl Locator {
+    /// Serialize to an EPUB CFI string.
+    ///
+    /// Format: `epubcfi(/6/{step}[id]!/{path}:offset)`
+    /// where step = (spine_index + 1) * 2 and each path step = (child_index + 1) * 2.
+    /// The `[id]` assertion is included only when `spine_id` is `Some`.
+    pub fn to_cfi(&self, spine_id: Option<&str>) -> String {
+        let spine_step = (self.spine_index + 1) * 2;
+        let assertion = spine_id.map(|id| format!("[{id}]")).unwrap_or_default();
+        let path: String = self
+            .node_path
+            .iter()
+            .map(|&idx| format!("/{}", (idx + 1) * 2))
+            .collect();
+        format!(
+            "epubcfi(/6/{spine_step}{assertion}!{path}:{})",
+            self.char_offset
+        )
+    }
+
+    /// Parse a `Locator` from an EPUB CFI string.
+    ///
+    /// Odd-numbered path steps (text-node steps in CFI) are truncated — the
+    /// path ends at the last even step, giving the containing element.
+    /// Returns `None` if the string is not a recognisable EPUB CFI.
+    pub fn from_cfi(cfi: &str) -> Option<Self> {
+        let inner = cfi.strip_prefix("epubcfi(")?.strip_suffix(')')?;
+        let (spine_part, doc_part) = inner.split_once('!')?;
+
+        // Parse spine: "/6/{step}[optional-id]"
+        let after_slash6 = spine_part.strip_prefix("/6/")?;
+        let step_end = after_slash6
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(after_slash6.len());
+        let spine_step: u32 = after_slash6[..step_end].parse().ok()?;
+        if spine_step < 2 || !spine_step.is_multiple_of(2) {
+            return None;
+        }
+        let spine_index = spine_step / 2 - 1;
+
+        // Parse document path: "/{step}/...:{char_offset}"
+        // The terminal ":{offset}" may be absent (some epub.js variants).
+        let (path_str, char_offset) = match doc_part.rsplit_once(':') {
+            Some((p, o)) => (p, o.parse::<u32>().unwrap_or(0)),
+            None => (doc_part, 0),
+        };
+
+        // Map even CFI steps to 0-based child indices; stop at odd (text-node) steps.
+        let node_path: Vec<u32> = path_str
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .map_while(|s| {
+                let step_end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+                let step: u32 = s[..step_end].parse().ok()?;
+                if !step.is_multiple_of(2) {
+                    return None; // text-node step — stop here
+                }
+                if step < 2 {
+                    return None;
+                }
+                Some(step / 2 - 1)
+            })
+            .collect();
+
+        Some(Locator {
+            spine_index,
+            node_path,
+            char_offset,
+        })
+    }
+
     /// Serialize to an `rf://` URI.
     ///
     /// Format: `rf://doc/<document_hash>/spine/<i>/node/<path>/char/<o>`
@@ -109,6 +179,53 @@ mod tests {
         let hash = "sha256:deadbeef";
         let uri = locator.to_uri(hash);
         let parsed = Locator::from_uri(&uri).expect("should parse");
+        assert_eq!(parsed, locator);
+    }
+
+    #[rstest]
+    #[case(
+        Locator { spine_index: 1, node_path: vec![1, 2], char_offset: 0 },
+        None,
+        "epubcfi(/6/4!/4/6:0)"
+    )]
+    #[case(
+        Locator { spine_index: 0, node_path: vec![1, 0], char_offset: 0 },
+        Some("chap01"),
+        "epubcfi(/6/2[chap01]!/4/2:0)"
+    )]
+    #[case(
+        Locator { spine_index: 3, node_path: vec![], char_offset: 0 },
+        None,
+        "epubcfi(/6/8!:0)"
+    )]
+    fn test_to_cfi(
+        #[case] locator: Locator,
+        #[case] spine_id: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(locator.to_cfi(spine_id), expected);
+    }
+
+    #[rstest]
+    #[case("epubcfi(/6/4!/4/6:0)",      Some(Locator { spine_index: 1, node_path: vec![1, 2], char_offset: 0 }))]
+    #[case("epubcfi(/6/2[ch]!/4/2:0)",  Some(Locator { spine_index: 0, node_path: vec![1, 0], char_offset: 0 }))]
+    // text-node step (/1) truncates path
+    #[case("epubcfi(/6/4!/4/6/1:15)",   Some(Locator { spine_index: 1, node_path: vec![1, 2], char_offset: 15 }))]
+    #[case("not-a-cfi", None)]
+    #[case("epubcfi(/6/3!/4/6:0)", None)] // odd spine step
+    fn test_from_cfi(#[case] cfi: &str, #[case] expected: Option<Locator>) {
+        assert_eq!(Locator::from_cfi(cfi), expected);
+    }
+
+    #[test]
+    fn test_cfi_roundtrip() {
+        let locator = Locator {
+            spine_index: 2,
+            node_path: vec![1, 4, 1],
+            char_offset: 0,
+        };
+        let cfi = locator.to_cfi(None);
+        let parsed = Locator::from_cfi(&cfi).expect("should parse");
         assert_eq!(parsed, locator);
     }
 }

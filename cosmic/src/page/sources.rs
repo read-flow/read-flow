@@ -550,8 +550,9 @@ impl Page for SourcesPage {
                 widget,
             } => {
                 self.url_verification_state = UrlVerificationState::Loading;
-                let client = FilesClient::new(url.clone(), user_id.clone(), passphrase.clone())
-                    .expect("valid url");
+                let client =
+                    FilesClient::new(url.clone(), user_id.clone(), passphrase.clone(), false)
+                        .expect("valid url");
                 Task::batch(vec![
                     widget::text_input::focus(widget.clone()),
                     task::future(async move {
@@ -729,7 +730,8 @@ impl Page for SourcesPage {
                     let reachable = match remote.base_url.parse::<Url>() {
                         Ok(url) => {
                             let client =
-                                FilesClient::new(url, remote.user_id, remote.passphrase).unwrap();
+                                FilesClient::new(url, remote.user_id, remote.passphrase, false)
+                                    .unwrap();
                             client.status().await.is_ok()
                         }
                         Err(_) => false,

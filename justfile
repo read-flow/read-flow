@@ -97,3 +97,33 @@ vendor:
 vendor-extract:
     rm -rf vendor
     tar pxf vendor.tar
+
+# ── PWA ───────────────────────────────────────────────────────────────────────
+
+# Installs PWA dependencies
+pwa-install:
+    cd pwa && npm install
+
+# Starts the PWA dev server
+pwa-dev:
+    cd pwa && npm run dev
+
+# Builds the PWA for production
+pwa-build:
+    cd pwa && npm run build
+
+# Previews the PWA production build
+pwa-preview:
+    cd pwa && npm run preview
+
+# Type-checks the PWA
+pwa-check:
+    cd pwa && npm run check
+
+# Runs PWA tests
+pwa-test:
+    cd pwa && npm test
+
+# Runs PWA tests in watch mode
+pwa-test-watch:
+    cd pwa && npm run test:watch

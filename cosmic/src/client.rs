@@ -102,7 +102,7 @@ macro_rules! delegate {
     ( $e:expr, $f:ident ) => {
         {
 	    match $e {
-		Client::Local(client) => Ok(client.db_client().await.$f().await?),
+		Client::Local(client) => Ok(client.filtered_db_client().await.$f().await?),
 		Client::Remote(client) => Ok(client.$f().await?),
 	    }
         }
@@ -110,7 +110,7 @@ macro_rules! delegate {
     ( $e:expr, $f:ident, $( $x:expr ),* ) => {
         {
 	    match $e {
-		Client::Local(client) => Ok(client.db_client().await.$f($($x),*).await?),
+		Client::Local(client) => Ok(client.filtered_db_client().await.$f($($x),*).await?),
 		Client::Remote(client) => Ok(client.$f($($x),*).await?),
 	    }
         }

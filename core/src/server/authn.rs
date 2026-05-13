@@ -10,6 +10,29 @@ use crate::server::SettingsProvider;
 
 pub struct AuthorizedUser {
     pub user_id: String,
+    pub roles: Vec<String>,
+}
+
+impl AuthorizedUser {
+    pub fn has_role(&self, role: &str) -> bool {
+        self.roles.iter().any(|r| r == role)
+    }
+}
+
+pub struct PrivateModeHeader(pub bool);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for PrivateModeHeader {
+    type Error = std::convert::Infallible;
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let value = request
+            .headers()
+            .get_one("x-private-mode")
+            .map(|v| v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        Outcome::Success(PrivateModeHeader(value))
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -82,12 +105,12 @@ impl<'r> FromRequest<'r> for AuthorizedUser {
                 if authorization_header.to_lowercase().starts_with("basic ") {
                     match Self::extract_basic_auth(authorization_header) {
                         Ok((user_id, passphrase)) => {
-                            // Check against authorized_users hashmap
-                            if let Some(stored_passphrase) =
-                                settings.server.authorized_users.get(&user_id)
-                            {
-                                if stored_passphrase.verify(&passphrase).is_ok() {
-                                    Outcome::Success(AuthorizedUser { user_id })
+                            if let Some(entry) = settings.server.authorized_users.get(&user_id) {
+                                if entry.password().verify(&passphrase).is_ok() {
+                                    Outcome::Success(AuthorizedUser {
+                                        user_id,
+                                        roles: entry.roles().to_vec(),
+                                    })
                                 } else {
                                     Outcome::Error((Status::Forbidden, Error::InvalidCredentials))
                                 }
@@ -102,13 +125,11 @@ impl<'r> FromRequest<'r> for AuthorizedUser {
                 else {
                     match Self::extract_bearer_token(authorization_header) {
                         Ok(token) => {
-                            // Check if token matches any stored passphrase (legacy support)
-                            for (user_id, stored_passphrase) in
-                                settings.server.authorized_users.iter()
-                            {
-                                if stored_passphrase.verify(token).is_ok() {
+                            for (user_id, entry) in settings.server.authorized_users.iter() {
+                                if entry.password().verify(token).is_ok() {
                                     return Outcome::Success(AuthorizedUser {
                                         user_id: user_id.clone(),
+                                        roles: entry.roles().to_vec(),
                                     });
                                 }
                             }

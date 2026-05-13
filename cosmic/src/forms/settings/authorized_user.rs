@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: GPL-3.0-or-other
 
 use cosmic::Action;
 use cosmic::Element;
@@ -16,6 +16,7 @@ pub struct AuthorizedUserForm {
     editing_user_id: String,
     editing_passphrase: String,
     show_passphrase: bool,
+    owner_role: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -23,12 +24,14 @@ pub enum AuthorizedUserFormMessage {
     EditUserId(String),
     EditPassphrase(String),
     ToggleShowPassphrase,
+    ToggleOwnerRole(bool),
     Out(AuthorizedUserFormOutput),
 }
 
 #[derive(Debug, Clone)]
 pub enum AuthorizedUserFormOutput {
-    Submit(Option<String>, String, String), // original_user_id, editing_user_id, editing_passphrase
+    /// original_user_id, user_id, passphrase, roles
+    Submit(Option<String>, String, String, Vec<String>),
     Cancel,
 }
 
@@ -39,13 +42,18 @@ impl From<AuthorizedUserFormOutput> for AuthorizedUserFormMessage {
 }
 
 impl AuthorizedUserForm {
-    pub fn new(user_id: Option<String>) -> (Self, Task<Action<AuthorizedUserFormMessage>>) {
+    pub fn new(
+        user_id: Option<String>,
+        roles: Vec<String>,
+    ) -> (Self, Task<Action<AuthorizedUserFormMessage>>) {
+        let owner_role = roles.contains(&"owner".to_string());
         (
             Self {
                 original_user_id: user_id.clone(),
                 editing_user_id: user_id.unwrap_or_default(),
                 editing_passphrase: String::new(),
                 show_passphrase: false,
+                owner_role,
             },
             task::none(),
         )
@@ -59,6 +67,14 @@ impl AuthorizedUserForm {
     fn is_submittable(&self) -> bool {
         !self.editing_user_id.is_empty()
             && Self::password_meets_requirements(&self.editing_passphrase)
+    }
+
+    fn current_roles(&self) -> Vec<String> {
+        if self.owner_role {
+            vec!["owner".to_string()]
+        } else {
+            vec![]
+        }
     }
 
     pub fn view(&self) -> Element<'_, AuthorizedUserFormMessage> {
@@ -100,6 +116,12 @@ impl AuthorizedUserForm {
                         .width(Length::FillPortion(1)),
                     ),
             )
+            .add(
+                widget::settings::item::builder(fl!("settings-server-owner-role"))
+                    .description(fl!("settings-server-owner-role-description"))
+                    .icon(widget::icon::from_name("security-high-symbolic").size(ICON_SIZE))
+                    .toggler(self.owner_role, AuthorizedUserFormMessage::ToggleOwnerRole),
+            )
             .add(widget::settings::item_row(vec![
                 widget::space::horizontal().width(Length::Fill).into(),
                 // Cancel button
@@ -124,6 +146,7 @@ impl AuthorizedUserForm {
                             self.original_user_id.clone(),
                             self.editing_user_id.clone(),
                             self.editing_passphrase.clone(),
+                            self.current_roles(),
                         )
                         .into(),
                     )
@@ -149,6 +172,10 @@ impl AuthorizedUserForm {
             }
             AuthorizedUserFormMessage::ToggleShowPassphrase => {
                 self.show_passphrase = !self.show_passphrase;
+                task::none()
+            }
+            AuthorizedUserFormMessage::ToggleOwnerRole(value) => {
+                self.owner_role = value;
                 task::none()
             }
             AuthorizedUserFormMessage::Out(_) => {

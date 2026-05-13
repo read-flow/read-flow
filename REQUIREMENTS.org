@@ -12,7 +12,7 @@ PDF files. It consists of four Rust libraries plus a JavaScript web frontend:
 - =provider= — generic async dependency-injection and observable-cache primitives
 - =epub= — EPUB3 parsing, content modelling, and rendering protocol
 - =read-flow= (=cosmic/=) — COSMIC desktop GUI
-- =spa/= — Express.js / vanilla-JS web frontend
+- =pwa/= — SvelteKit / TypeScript Progressive Web App
 
 * Provider Library
 

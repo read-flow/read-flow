@@ -57,7 +57,11 @@ impl TokenSink for ContentSink {
                 }
 
                 let entry = if state.stack.last().is_some_and(|e| e.tag == tag_name) {
-                    state.stack.pop().unwrap()
+                    let e = state.stack.pop().unwrap();
+                    // Clear children-depth slot so sibling elements start their
+                    // child counts from 0, not inherited from this element's subtree.
+                    state.clear_child_count_for_closed_element();
+                    e
                 } else {
                     return TokenSinkResult::Continue;
                 };
@@ -134,7 +138,7 @@ where
     let _ = tokenizer.feed(&buf);
     tokenizer.end();
 
-    let (mut blocks, pending_images) = tokenizer.sink.into_blocks_and_pending();
+    let (mut blocks, _paths, pending_images) = tokenizer.sink.into_blocks_and_pending();
 
     // Resolve pending images by walking the block tree
     if !pending_images.is_empty() {
@@ -142,6 +146,42 @@ where
     }
 
     blocks
+}
+
+/// Like [`parse_xhtml`] but also returns a parallel vector of DOM node paths,
+/// one per top-level block.
+///
+/// Each path is a slice of 0-based element-child indices starting from within
+/// the `<html>` element (i.e. the first entry is the index of `<body>` among
+/// `<html>`'s element children, typically `1`).  This encodes the same
+/// information as the within-document part of an EPUB CFI after the `!`.
+pub fn parse_xhtml_with_paths<F>(
+    xhtml: &[u8],
+    chapter_href: &str,
+    stylesheet: &StyleSheet,
+    resolve_image: &mut F,
+) -> (Vec<ContentBlock>, Vec<Vec<u32>>)
+where
+    F: FnMut(&str) -> Option<(Vec<u8>, String)>,
+{
+    let html_str = String::from_utf8_lossy(xhtml);
+    let sink = ContentSink::new(chapter_href, stylesheet.clone());
+    let tokenizer = Tokenizer::new(sink, TokenizerOpts::default());
+    let buf = BufferQueue::default();
+    buf.push_back(html5ever::tendril::StrTendril::from(html_str.as_ref()));
+    let _ = tokenizer.feed(&buf);
+    tokenizer.end();
+
+    let (mut blocks, mut paths, pending_images) = tokenizer.sink.into_blocks_and_pending();
+
+    if !pending_images.is_empty() {
+        resolve_images(&mut blocks, &pending_images, resolve_image);
+    }
+
+    // Ensure paths is the same length as blocks (pad with empty if necessary).
+    paths.resize(blocks.len(), vec![]);
+
+    (blocks, paths)
 }
 
 /// Resolve embedded image references in SVG content by converting xlink:href to data URIs.
@@ -342,6 +382,65 @@ mod tests {
             &StyleSheet::empty(),
             &mut |_| None,
         )
+    }
+
+    fn parse_with_paths(html: &str) -> (Vec<ContentBlock>, Vec<Vec<u32>>) {
+        parse_xhtml_with_paths(
+            html.as_bytes(),
+            "OEBPS/Text/ch1.xhtml",
+            &StyleSheet::empty(),
+            &mut |_| None,
+        )
+    }
+
+    // ── Node-path / CFI tests ─────────────────────────────────────────────────
+
+    /// `<head>` must be counted as an element child of `<html>` so that `<body>`
+    /// receives child index 1 (CFI step 4), matching epub.js's DOM-based CFI.
+    #[test]
+    fn head_counted_so_body_gets_index_1() {
+        let (_blocks, paths) = parse_with_paths(
+            "<html><head><title>T</title></head><body><p>A</p><p>B</p></body></html>",
+        );
+        // body is html's 2nd element child (index 1); first paragraph is body's 1st (index 0)
+        assert_eq!(_blocks.len(), 2);
+        assert_eq!(paths[0], vec![1, 0], "first paragraph: body=1, p=0");
+        assert_eq!(paths[1], vec![1, 1], "second paragraph: body=1, p=1");
+    }
+
+    /// `<br>` and `<hr>` must be counted so siblings get correct indices.
+    #[test]
+    fn void_elements_counted_as_siblings() {
+        // body has: <p>(0), <hr/>(1), <p>(2)
+        let (_blocks, paths) = parse_with_paths(
+            "<html><head></head><body><p>first</p><hr/><p>second</p></body></html>",
+        );
+        let para_paths: Vec<_> = paths.iter().filter(|p| !p.is_empty()).collect();
+        // First <p>: body(1), p(0) → step 4/2
+        // Second <p>: body(1), p(2) → step 4/6  (hr at index 1 is counted)
+        assert!(
+            para_paths.iter().any(|p| **p == vec![1u32, 0]),
+            "first p at index 0"
+        );
+        assert!(
+            para_paths.iter().any(|p| **p == vec![1u32, 2]),
+            "second p at index 2 (hr counted)"
+        );
+    }
+
+    /// paths vector must stay in sync with blocks vector (same length).
+    #[test]
+    fn paths_length_matches_blocks() {
+        let (blocks, paths) = parse_with_paths(
+            "<html><head></head><body>\
+             <p>text</p><hr/><p>more</p>\
+             </body></html>",
+        );
+        assert_eq!(
+            blocks.len(),
+            paths.len(),
+            "paths and blocks must have equal length"
+        );
     }
 
     #[test]
