@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { allDocuments, refreshDocuments, allTags } from '$lib/stores/documents';
 	import { addTagsToFile, removeTagsFromFile } from '$lib/api/aggregator';
@@ -19,12 +18,23 @@
 	let saving = $state(false);
 	let tagError = $state('');
 
-	onMount(async () => {
-		let docs = get(allDocuments);
-		if (docs.length === 0) await refreshDocuments();
-		docs = get(allDocuments);
-		doc = docs.find((d) => d.fingerprint === fingerprint) ?? null;
-		loading = false;
+	$effect(() => {
+		// Re-runs whenever `fingerprint` changes, so switching rows updates the pane.
+		const fp = fingerprint;
+		loading = true;
+		doc = null;
+		newTag = '';
+		tagError = '';
+		void (async () => {
+			let docs = get(allDocuments);
+			if (docs.length === 0) await refreshDocuments();
+			docs = get(allDocuments);
+			// Guard against a later click overtaking this async lookup
+			if (fp === fingerprint) {
+				doc = docs.find((d) => d.fingerprint === fp) ?? null;
+				loading = false;
+			}
+		})();
 	});
 
 	function formatSize(bytes: number): string {
