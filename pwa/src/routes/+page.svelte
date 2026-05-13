@@ -130,9 +130,9 @@
 			/>
 		</div>
 
-		<!-- Tag filters — visible on < lg (on lg+ they live in the left sidebar) -->
+		<!-- Tag filters -->
 		{#if $allTags.length > 0}
-			<div class="lg:hidden mt-2.5 flex items-center gap-2 flex-wrap">
+			<div class="mt-2.5 flex items-center gap-2 flex-wrap">
 				{#each $allTags as tag}
 					<button
 						onclick={() => cycleTag(tag)}
@@ -169,38 +169,7 @@
 	<!-- ── Body: three columns on lg+, single column below ─────────────────── -->
 	<div class="flex flex-1 min-h-0">
 
-		<!-- Left: tag filter panel (lg+ only) -->
-		{#if $allTags.length > 0}
-			<aside class="hidden lg:flex flex-col w-52 shrink-0 overflow-y-auto border-r border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
-				<div class="p-4 space-y-1.5">
-					<p class="text-xs font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wide pb-1">Filter by tag</p>
-					{#each $allTags as tag}
-						<button
-							onclick={() => cycleTag(tag)}
-							class="w-full text-left px-2.5 py-1.5 rounded-lg text-sm transition-colors
-								{$allowedTags.has(tag)
-									? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400 font-medium'
-									: $deniedTags.has(tag)
-										? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 font-medium'
-										: 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'}"
-						>
-							{#if $allowedTags.has(tag)}<span class="mr-1">+</span>{:else if $deniedTags.has(tag)}<span class="mr-1">−</span>{/if}{tag}
-						</button>
-					{/each}
-
-					{#if $allowedTags.size > 0 || $deniedTags.size > 0}
-						<button
-							onclick={clearTagFilters}
-							class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors underline underline-offset-2"
-						>
-							Clear filters
-						</button>
-					{/if}
-				</div>
-			</aside>
-		{/if}
-
-		<!-- Center: document list (virtual) -->
+		<!-- Document list (virtual) -->
 		<div
 			bind:this={listContainerEl}
 			onscroll={(e) => (scrollTop = (e.currentTarget as HTMLElement).scrollTop)}
