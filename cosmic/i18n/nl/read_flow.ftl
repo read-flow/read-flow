@@ -61,6 +61,7 @@ document-details-metadata-authors = Auteur(s)
 document-details-metadata-publisher = Uitgever
 document-details-metadata-language = Taal
 document-details-metadata-date = Datum
+document-details-metadata-identifier = Identificatie
 document-details-metadata-subject = Onderwerp
 document-details-basic-info = Basisinformatie
 document-details-close = Terug

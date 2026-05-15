@@ -46,6 +46,8 @@ uuid.workspace = true
 
 quick-xml = { workspace = true }
 
+epub.path = "../epub"
+mupdf.workspace = true
 provider.path = "../provider"
 
 rocket = { workspace = true, optional = true, features = ["http2", "json"] }

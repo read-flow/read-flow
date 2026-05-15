@@ -1,3 +1,4 @@
+pub mod metadata;
 pub mod pipeline;
 pub mod scanner;
 

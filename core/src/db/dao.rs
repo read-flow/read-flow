@@ -6,6 +6,7 @@ use std::sync::Arc;
 use sqlx::SqliteConnection;
 use sqlx::SqlitePool;
 
+use crate::db::models::ContentMetadata;
 use crate::db::models::ContentTag;
 use crate::db::models::Document;
 use crate::db::models::File;
@@ -545,6 +546,52 @@ pub async fn upsert_reading_progress(
     Ok(())
 }
 
+// ─── Content metadata ────────────────────────────────────────────────────────
+
+/// Insert metadata for a fingerprint. Skips if a row already exists (`INSERT OR IGNORE`).
+pub async fn upsert_content_metadata(
+    conn: &mut SqliteConnection,
+    fingerprint: &str,
+    title: Option<&str>,
+    authors: Option<&str>,
+    language: Option<&str>,
+    publisher: Option<&str>,
+    identifier: Option<&str>,
+    date: Option<&str>,
+    subject: Option<&str>,
+) -> Result<(), Error> {
+    sqlx::query(
+        "INSERT OR IGNORE INTO content_metadata \
+         (fingerprint, title, authors, language, publisher, identifier, date, subject, extracted_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+    )
+    .bind(fingerprint)
+    .bind(title)
+    .bind(authors)
+    .bind(language)
+    .bind(publisher)
+    .bind(identifier)
+    .bind(date)
+    .bind(subject)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+pub async fn select_content_metadata(
+    conn: &mut SqliteConnection,
+    fingerprint: &str,
+) -> Result<Option<ContentMetadata>, Error> {
+    sqlx::query_as::<_, ContentMetadata>(
+        "SELECT fingerprint, title, authors, language, publisher, identifier, date, subject, extracted_at \
+         FROM content_metadata WHERE fingerprint = ?",
+    )
+    .bind(fingerprint)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(Into::into)
+}
+
 // ─── High-level scan writer ───────────────────────────────────────────────────
 
 /// Write a single scanned file (upsert content + upsert file + add tags).
@@ -609,4 +656,110 @@ pub async fn write_scanned_file(
     }
 
     Ok((was_new, was_updated))
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn test_pool() -> sqlx::SqlitePool {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("in-memory pool");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("migrations");
+        pool
+    }
+
+    #[tokio::test]
+    async fn upsert_content_metadata_inserts_row() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp1").await.unwrap();
+        upsert_content_metadata(
+            &mut conn,
+            "fp1",
+            Some("My Title"),
+            Some("Alice"),
+            Some("en"),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let row: (String, String, String) = sqlx::query_as(
+            "SELECT title, authors, language FROM content_metadata WHERE fingerprint = 'fp1'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row.0, "My Title");
+        assert_eq!(row.1, "Alice");
+        assert_eq!(row.2, "en");
+    }
+
+    #[tokio::test]
+    async fn upsert_content_metadata_is_idempotent() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp2").await.unwrap();
+        upsert_content_metadata(
+            &mut conn,
+            "fp2",
+            Some("First"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        // Second call must not overwrite.
+        upsert_content_metadata(
+            &mut conn,
+            "fp2",
+            Some("Second"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let title: (String,) =
+            sqlx::query_as("SELECT title FROM content_metadata WHERE fingerprint = 'fp2'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(title.0, "First");
+    }
+
+    #[tokio::test]
+    async fn upsert_content_metadata_stores_null_fields() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp3").await.unwrap();
+        upsert_content_metadata(&mut conn, "fp3", None, None, None, None, None, None, None)
+            .await
+            .unwrap();
+
+        let count: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM content_metadata WHERE fingerprint = 'fp3'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(count.0, 1);
+    }
 }

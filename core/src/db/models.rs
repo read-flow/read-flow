@@ -57,6 +57,7 @@ pub struct ContentMetadata {
     pub publisher: Option<String>,
     pub identifier: Option<String>,
     pub date: Option<String>,
+    pub subject: Option<String>,
     pub extracted_at: String,
 }
 

@@ -25,6 +25,7 @@ CREATE TABLE content_metadata (
     publisher    TEXT,
     identifier   TEXT,
     date         TEXT,
+    subject      TEXT,
     extracted_at TEXT NOT NULL
 );
 

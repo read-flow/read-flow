@@ -60,6 +60,7 @@ document-details-metadata-authors = Auteur(s)
 document-details-metadata-publisher = Éditeur
 document-details-metadata-language = Langue
 document-details-metadata-date = Date
+document-details-metadata-identifier = Identifiant
 document-details-metadata-subject = Sujet
 document-details-basic-info = Informations de base
 document-details-close = Retour

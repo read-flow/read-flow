@@ -15,13 +15,16 @@ use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Row;
 use cosmic::widget::text;
-use epub::Document as EpubDocumentTrait;
 use read_flow_core::api::ReadingStatus;
+use read_flow_core::db::datasource::DbClient;
+use read_flow_core::db::models::ContentMetadata;
+use read_flow_core::scan::metadata;
+use read_flow_core::scan::metadata::ExtractedMetadata;
 
+use crate::ApplicationModule;
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::aggregator::DocumentSource;
-use crate::aggregator::DocumentType;
 use crate::client::ClientSelector;
 use crate::component::provided_state::ProvidedState;
 use crate::component::provided_state::ProvidedStateMessage;
@@ -36,25 +39,15 @@ use crate::layout::layout;
 use crate::page::Page;
 use crate::state::LoadedState;
 
-/// Format-specific metadata loaded on demand from the document file.
-#[derive(Debug, Clone, Default)]
-pub struct FormatMetadata {
-    pub title: Option<String>,
-    pub authors: Vec<String>,
-    pub publisher: Option<String>,
-    pub language: Option<String>,
-    pub date: Option<String>,
-    pub subject: Option<String>,
-}
-
 pub struct DocumentDetails {
     document: Document,
     document_provider: Arc<DocumentProvider>,
+    application_module: Arc<ApplicationModule>,
     all_clients: ProvidedState<Arc<DocumentProvider>, Vec<ClientSelector>>,
     tag_editor: TagEditor<Arc<DocumentProvider>>,
     editing_sources: bool,
     pending_source_deletion: Option<DocumentSource>,
-    format_metadata: Option<FormatMetadata>,
+    format_metadata: Option<ExtractedMetadata>,
     format_metadata_loading: bool,
 }
 
@@ -86,7 +79,7 @@ pub enum DocumentDetailsMessage {
     SendToClient(ClientSelector),
     SentToClient(Result<(), String>),
     LoadFormatMetadata,
-    FormatMetadataLoaded(Result<FormatMetadata, String>),
+    FormatMetadataLoaded(Result<ExtractedMetadata, String>),
 
     // Message intended for the parent module
     Out(DocumentDetailsOutput),
@@ -102,6 +95,7 @@ impl DocumentDetails {
     pub fn new(
         document: Document,
         document_provider: Arc<DocumentProvider>,
+        application_module: Arc<ApplicationModule>,
     ) -> (Self, Task<Action<DocumentDetailsMessage>>) {
         let initial_tags = document.metadata.tags.clone();
 
@@ -118,6 +112,7 @@ impl DocumentDetails {
         let file_details = DocumentDetails {
             document,
             document_provider,
+            application_module,
             all_clients,
             tag_editor,
             editing_sources: false,
@@ -236,6 +231,14 @@ impl DocumentDetails {
             section = section.add(
                 widget::settings::item::builder(fl!("document-details-metadata-date"))
                     .icon(widget::icon::from_name("x-office-calendar-symbolic").size(ICON_SIZE))
+                    .control(text(val)),
+            );
+            has_items = true;
+        }
+        if let Some(val) = &meta.identifier {
+            section = section.add(
+                widget::settings::item::builder(fl!("document-details-metadata-identifier"))
+                    .icon(widget::icon::from_name("dialog-information-symbolic").size(ICON_SIZE))
                     .control(text(val)),
             );
             has_items = true;
@@ -773,13 +776,24 @@ impl Page for DocumentDetails {
                     return Task::none();
                 }
                 self.format_metadata_loading = true;
+                let fingerprint = self.document.metadata.fingerprint.clone();
                 let type_ = self.document.metadata.type_.clone();
                 let path = self.document.sources.iter().next().unwrap().path.clone();
+                let application_module = self.application_module.clone();
                 Task::perform(
                     async move {
-                        tokio::task::spawn_blocking(move || load_format_metadata(&type_, &path))
-                            .await
-                            .unwrap()
+                        let pool = application_module.connection_pool().await;
+                        let db_client = DbClient::new(pool);
+                        if let Ok(Some(row)) = db_client.get_content_metadata(&fingerprint).await {
+                            return Ok(content_metadata_to_extracted(row));
+                        }
+                        let ext = type_.as_str().to_owned();
+                        tokio::task::spawn_blocking(move || {
+                            metadata::extract_metadata(std::path::Path::new(&path), &ext)
+                                .ok_or_else(|| "unsupported format".to_string())
+                        })
+                        .await
+                        .unwrap_or_else(|_| Err("task panicked".to_string()))
                     },
                     |r| cosmic::action::app(DocumentDetailsMessage::FormatMetadataLoaded(r)),
                 )
@@ -796,50 +810,17 @@ impl Page for DocumentDetails {
     }
 }
 
-fn load_format_metadata(type_: &DocumentType, path: &str) -> Result<FormatMetadata, String> {
-    match type_ {
-        DocumentType::Epub => load_epub_format_metadata(path),
-        DocumentType::Pdf => load_pdf_format_metadata(path),
-        _ => Ok(FormatMetadata::default()),
-    }
-}
-
-fn load_epub_format_metadata(path: &str) -> Result<FormatMetadata, String> {
-    let doc = epub::EpubDocument::open(path).map_err(|e| e.to_string())?;
-    let m = doc.metadata();
-    Ok(FormatMetadata {
-        title: m.title.clone(),
-        authors: m.authors.clone(),
-        publisher: m.publisher.clone(),
-        language: m.language.clone(),
-        date: m.date.clone(),
-        subject: None,
-    })
-}
-
-fn load_pdf_format_metadata(path: &str) -> Result<FormatMetadata, String> {
-    let doc =
-        mupdf::Document::open(std::path::Path::new(path).as_os_str()).map_err(|e| e.to_string())?;
-    let get = |name| doc.metadata(name).ok().filter(|s: &String| !s.is_empty());
-    Ok(FormatMetadata {
-        title: get(mupdf::MetadataName::Title),
-        authors: get(mupdf::MetadataName::Author)
-            .map(|a| vec![a])
+fn content_metadata_to_extracted(row: ContentMetadata) -> ExtractedMetadata {
+    ExtractedMetadata {
+        title: row.title,
+        authors: row
+            .authors
+            .map(|s| s.split(", ").map(str::to_owned).collect())
             .unwrap_or_default(),
-        publisher: None,
-        language: None,
-        date: get(mupdf::MetadataName::CreationDate).map(format_pdf_date),
-        subject: get(mupdf::MetadataName::Subject),
-    })
-}
-
-/// PDF dates use the format `D:YYYYMMDDHHmmSS±HH'mm'` (PDF ref §3.8.3).
-/// We display just the date portion as YYYY-MM-DD, falling back to the raw string.
-fn format_pdf_date(raw: String) -> String {
-    let digits = raw.strip_prefix("D:").unwrap_or(&raw);
-    if digits.len() >= 8 {
-        format!("{}-{}-{}", &digits[0..4], &digits[4..6], &digits[6..8])
-    } else {
-        raw
+        language: row.language,
+        publisher: row.publisher,
+        identifier: row.identifier,
+        date: row.date,
+        subject: row.subject,
     }
 }

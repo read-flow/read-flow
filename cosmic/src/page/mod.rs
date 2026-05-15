@@ -79,6 +79,7 @@ pub struct PageInfo {
 
 pub struct Pages {
     pub(crate) document_provider: Arc<DocumentProvider>,
+    application_module: Arc<ApplicationModule>,
 
     epub_viewer_config: EpubViewerConfig,
     app_settings: AppSettingsPage,
@@ -267,6 +268,7 @@ impl Pages {
         (
             Self {
                 document_provider,
+                application_module,
                 epub_viewer_config,
                 app_settings,
                 sources,
@@ -537,8 +539,11 @@ impl Pages {
                 } else {
                     let parent = self.active.clone();
                     let fingerprint_1 = fingerprint.clone();
-                    let (document_details, initialization) =
-                        DocumentDetails::new(document, self.documents.document_provider.clone());
+                    let (document_details, initialization) = DocumentDetails::new(
+                        document,
+                        self.documents.document_provider.clone(),
+                        self.application_module.clone(),
+                    );
                     self.document_details
                         .insert(fingerprint.clone(), document_details);
                     let selector = PageSelector::DocumentDetails(fingerprint);

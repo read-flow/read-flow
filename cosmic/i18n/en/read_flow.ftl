@@ -58,6 +58,7 @@ document-details-metadata-authors = Author(s)
 document-details-metadata-publisher = Publisher
 document-details-metadata-language = Language
 document-details-metadata-date = Date
+document-details-metadata-identifier = Identifier
 document-details-metadata-subject = Subject
 
 # Tag editor

@@ -636,26 +636,26 @@ impl cosmic::Application for ReadFlow {
                             DirectorySettings::Ignore { .. } => None,
                         })
                         .collect();
-                    let mut receivers = vec![];
-                    for dir in scan_dirs {
-                        match application_module.start_scan(&dir).await {
-                            Ok(rx) => receivers.push(rx),
-                            Err(e) => {
-                                tracing::error!("error starting scan of `{dir}`: {e}");
-                            }
-                        }
-                    }
-                    receivers
+                    (application_module, scan_dirs)
                 })
-                .flat_map(|receivers| {
-                    receivers
-                        .into_iter()
-                        .fold(futures::stream::empty().boxed(), |acc, rx| {
-                            acc.chain(futures::stream::unfold(rx, |mut rx| async move {
-                                rx.recv().await.map(|item| (item, rx))
-                            }))
-                            .boxed()
+                .flat_map(|(application_module, scan_dirs)| {
+                    futures::stream::iter(scan_dirs)
+                        .then(move |dir| {
+                            let application_module = application_module.clone();
+                            async move {
+                                match application_module.start_scan(&dir).await {
+                                    Ok(rx) => futures::stream::unfold(rx, |mut rx| async move {
+                                        rx.recv().await.map(|item| (item, rx))
+                                    })
+                                    .boxed(),
+                                    Err(e) => {
+                                        tracing::error!("error starting scan of `{dir}`: {e}");
+                                        futures::stream::empty().boxed()
+                                    }
+                                }
+                            }
                         })
+                        .flatten()
                 });
 
                 task::stream(

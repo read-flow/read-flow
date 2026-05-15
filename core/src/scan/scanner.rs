@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use super::ScanSettings;
+use super::metadata;
 use super::pipeline::ScanProgress;
 use super::pipeline::ScannedFile;
 use super::pipeline::TraversalItem;
@@ -356,6 +357,10 @@ async fn flush_batch(
         }
     };
 
+    // Collect (fingerprint, path, extension) for files that are new or updated,
+    // so we can extract their metadata after the transaction commits.
+    let mut needs_metadata: Vec<(String, PathBuf, String)> = Vec::new();
+
     for file in items {
         let path_str = file.path.to_string_lossy();
         match dao::write_scanned_file(
@@ -369,6 +374,13 @@ async fn flush_batch(
         .await
         {
             Ok((was_new, was_updated)) => {
+                if was_new || was_updated {
+                    needs_metadata.push((
+                        file.fingerprint.clone(),
+                        file.path.clone(),
+                        file.extension.clone(),
+                    ));
+                }
                 *processed += 1;
                 let _ = progress_tx
                     .send(ScanProgress::FileProcessed {
@@ -393,6 +405,48 @@ async fn flush_batch(
 
     if let Err(e) = tx.commit().await {
         tracing::error!("failed to commit batch: {e}");
+        return;
+    }
+
+    // Extract and store metadata for new/updated files outside the main transaction.
+    for (fingerprint, path, extension) in needs_metadata {
+        let path_clone = path.clone();
+        let ext_clone = extension.clone();
+        let extracted = tokio::task::spawn_blocking(move || {
+            metadata::extract_metadata(&path_clone, &ext_clone)
+        })
+        .await
+        .unwrap_or(None);
+
+        let Some(meta) = extracted.filter(|m| !m.is_empty()) else {
+            continue;
+        };
+
+        match pool.acquire().await {
+            Ok(mut conn) => {
+                let authors_str = if meta.authors.is_empty() {
+                    None
+                } else {
+                    Some(meta.authors.join(", "))
+                };
+                if let Err(e) = dao::upsert_content_metadata(
+                    &mut conn,
+                    &fingerprint,
+                    meta.title.as_deref(),
+                    authors_str.as_deref(),
+                    meta.language.as_deref(),
+                    meta.publisher.as_deref(),
+                    meta.identifier.as_deref(),
+                    meta.date.as_deref(),
+                    meta.subject.as_deref(),
+                )
+                .await
+                {
+                    tracing::warn!("failed to store metadata for {fingerprint}: {e}");
+                }
+            }
+            Err(e) => tracing::warn!("failed to acquire connection for metadata: {e}"),
+        }
     }
 }
 

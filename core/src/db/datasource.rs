@@ -15,6 +15,7 @@ use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
 use crate::api::Status;
+use crate::db::models::ContentMetadata;
 use crate::db::models::ContentTag;
 use crate::db::models::NewFile;
 
@@ -240,6 +241,16 @@ impl FileDataSource for DbClient {
             .expect("file should exist after upsert");
         let tags = dao::select_content_tags_by_fingerprint(&mut conn, &db_file.fingerprint).await?;
         Ok((db_file, tags).into())
+    }
+}
+
+impl DbClient {
+    pub async fn get_content_metadata(
+        &self,
+        fingerprint: &str,
+    ) -> Result<Option<ContentMetadata>, Error> {
+        let mut conn = self.connection_pool.acquire().await?;
+        dao::select_content_metadata(&mut conn, fingerprint).await
     }
 }
 
