@@ -126,6 +126,8 @@ pub enum SettingsMessage {
     SaveError(String),
     /// Toggle a document file type in the scan extensions list
     ToggleDocumentType(DocumentType, bool),
+    /// Select or deselect all document file types at once
+    ToggleAllDocumentTypes(bool),
     /// Switch to a different settings section
     SectionChanged(SettingsSection),
     /// No-op message
@@ -403,9 +405,23 @@ impl SettingsPage {
                     .toggler(self.settings.scan.dry_run, SettingsMessage::ToggleDryRun),
             );
 
+        let all_selected = DocumentType::all()
+            .iter()
+            .all(|t| self.settings.scan.extensions.contains(t));
+        let toggle_all_button = widget::button::text(if all_selected {
+            fl!("settings-scan-file-types-deselect-all")
+        } else {
+            fl!("settings-scan-file-types-select-all")
+        })
+        .on_press(SettingsMessage::ToggleAllDocumentTypes(!all_selected));
+
         let file_types_section = DocumentType::all().iter().fold(
             widget::settings::section()
-                .title(fl!("settings-scan-file-types-section"))
+                .header(widget::settings::item_row(vec![
+                    widget::text::heading(fl!("settings-scan-file-types-section")).into(),
+                    widget::space::horizontal().into(),
+                    toggle_all_button.into(),
+                ]))
                 .add(
                     widget::text::body(fl!("settings-scan-file-types-description"))
                         .width(Length::Fill),
@@ -449,8 +465,8 @@ impl SettingsPage {
         let mut items: Vec<Element<'_, SettingsMessage>> = vec![
             widget::text::title2(fl!("settings-scan-section")).into(),
             scan_section.into(),
-            file_types_section.into(),
             directories_section.into(),
+            file_types_section.into(),
         ];
 
         if let Some(form) = self.directory_settings_form.as_ref() {
@@ -904,6 +920,15 @@ impl Page for SettingsPage {
                     }
                 } else {
                     self.settings.scan.extensions.retain(|x| x != &doc_type);
+                }
+                self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            SettingsMessage::ToggleAllDocumentTypes(enabled) => {
+                if enabled {
+                    self.settings.scan.extensions = DocumentType::all().to_vec();
+                } else {
+                    self.settings.scan.extensions.clear();
                 }
                 self.save_state = SaveState::Idle;
                 Task::none()
