@@ -105,7 +105,10 @@ impl Package {
                             Some("publisher") => metadata.publisher = Some(text),
                             Some("identifier") => metadata.identifier = Some(text),
                             Some("date") => metadata.date = Some(text),
-                            _ => {}
+                            Some(tag) => {
+                                tracing::debug!("unsupported EPUB metadata tag: {tag}");
+                            }
+                            None => {}
                         }
                     }
                 }
