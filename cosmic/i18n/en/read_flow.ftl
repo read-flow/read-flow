@@ -142,6 +142,10 @@ document-list-selected-count = Selected { $count } documents
 document-list-selection-count = Selected { $selected } of { $total }
 document-list-keyboard-shortcuts = Keyboard shortcuts
 document-list-shortcut-toggle-search-mode = Toggle search mode (Fuzzy / Regex)
+document-list-shortcut-previous-page = Go to previous page
+document-list-shortcut-next-page = Go to next page
+document-list-shortcut-first-page = Go to first page
+document-list-shortcut-last-page = Go to last page
 
 # Page messages
 page-not-found = ⚠ Not found

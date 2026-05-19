@@ -163,6 +163,10 @@ document-list-selected-count = { $count } documents sélectionnés
 document-list-selection-count = { $selected } de { $total } sélectionnés
 document-list-keyboard-shortcuts = Raccourcis clavier
 document-list-shortcut-toggle-search-mode = Basculer le mode de recherche (Flou / Regex)
+document-list-shortcut-previous-page = Aller à la page précédente
+document-list-shortcut-next-page = Aller à la page suivante
+document-list-shortcut-first-page = Aller à la première page
+document-list-shortcut-last-page = Aller à la dernière page
 
 # Page messages
 page-not-found = ⚠ Non trouvé

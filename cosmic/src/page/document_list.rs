@@ -18,6 +18,7 @@ use cosmic::iced;
 use cosmic::iced::Length;
 use cosmic::iced::keyboard::Key;
 use cosmic::iced::keyboard::Modifiers;
+use cosmic::iced::keyboard::key::Named;
 use cosmic::task;
 use cosmic::widget;
 use read_flow_core::Builder;
@@ -662,6 +663,22 @@ impl Page for DocumentList {
             .add(shortcut_item(
                 "Ctrl+M",
                 fl!("document-list-shortcut-toggle-search-mode"),
+            ))
+            .add(shortcut_item(
+                "← ↑ PgUp",
+                fl!("document-list-shortcut-previous-page"),
+            ))
+            .add(shortcut_item(
+                "→ ↓ PgDn",
+                fl!("document-list-shortcut-next-page"),
+            ))
+            .add(shortcut_item(
+                "Home",
+                fl!("document-list-shortcut-first-page"),
+            ))
+            .add(shortcut_item(
+                "End",
+                fl!("document-list-shortcut-last-page"),
             ));
 
         ContextView {
@@ -841,7 +858,31 @@ impl Page for DocumentList {
                     };
                     task::message(DocumentListMessage::SearchModeChanged(next_mode))
                 } else {
-                    Task::none()
+                    match key {
+                        Key::Named(Named::ArrowLeft | Named::ArrowUp | Named::PageUp) => {
+                            task::message(DocumentListMessage::DocumentsComponent(
+                                DocumentsMessage::Pagination(
+                                    PaginationMessage::NavigateToPreviousPage,
+                                ),
+                            ))
+                        }
+                        Key::Named(Named::ArrowRight | Named::ArrowDown | Named::PageDown) => {
+                            task::message(DocumentListMessage::DocumentsComponent(
+                                DocumentsMessage::Pagination(PaginationMessage::NavigateToNextPage),
+                            ))
+                        }
+                        Key::Named(Named::Home) => task::message(
+                            DocumentListMessage::DocumentsComponent(DocumentsMessage::Pagination(
+                                PaginationMessage::NavigateToFirstPage,
+                            )),
+                        ),
+                        Key::Named(Named::End) => {
+                            task::message(DocumentListMessage::DocumentsComponent(
+                                DocumentsMessage::Pagination(PaginationMessage::NavigateToLastPage),
+                            ))
+                        }
+                        _ => Task::none(),
+                    }
                 }
             }
             DocumentListMessage::StatusFilterChanged(status) => {

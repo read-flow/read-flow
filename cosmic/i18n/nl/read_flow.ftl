@@ -164,6 +164,10 @@ document-list-selected-count = { $count } documenten geselecteerd
 document-list-selection-count = { $selected } van { $total } geselecteerd
 document-list-keyboard-shortcuts = Toetsenbordsnelkoppelingen
 document-list-shortcut-toggle-search-mode = Zoekmodus wisselen (Vaag / Regex)
+document-list-shortcut-previous-page = Ga naar de vorige pagina
+document-list-shortcut-next-page = Ga naar de volgende pagina
+document-list-shortcut-first-page = Ga naar de eerste pagina
+document-list-shortcut-last-page = Ga naar de laatste pagina
 
 # Page messages
 page-not-found = ⚠ Niet gevonden
