@@ -170,7 +170,7 @@
 					<div class="h-5 w-40 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
 				{:else if doc}
 					{@const m = doc.document_guid ? $documentMetaMap.get(doc.document_guid) : undefined}
-					<h2 class="text-base font-semibold text-slate-900 dark:text-slate-100 break-words leading-snug">
+					<h2 class="text-base font-semibold break-words leading-snug">
 						{m?.title ?? basename(doc.path)}
 					</h2>
 					<p class="text-xs text-slate-400 dark:text-slate-500 mt-0.5 break-all">{doc.path}</p>
@@ -202,7 +202,7 @@
 		{#if !onclose}
 			<!-- Standalone page heading (no close button) -->
 			<div>
-				<h1 class="text-lg font-semibold text-slate-900 dark:text-slate-100 break-words">
+				<h1 class="text-lg font-semibold break-words">
 					{docMeta?.title ?? basename(doc.path)}
 				</h1>
 				<p class="text-sm text-slate-400 dark:text-slate-500 mt-1 break-all">{doc.path}</p>
@@ -298,7 +298,7 @@
 							<select
 								id="meta-type-{fingerprint}"
 								bind:value={metaDraft.document_type}
-								class="ml-3 flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 focus:outline-none"
+								class="ml-3 flex-1 min-w-0 bg-transparent text-right focus:outline-none"
 							>
 								<option value={null}>Not set</option>
 								{#each DOC_TYPES as t}
@@ -314,7 +314,7 @@
 								type="text"
 								bind:value={metaDraft.title}
 								placeholder={basename(doc.path)}
-								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none"
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none"
 							/>
 						</div>
 						<!-- Subtitle -->
@@ -324,7 +324,7 @@
 								id="meta-subtitle-{fingerprint}"
 								type="text"
 								bind:value={metaDraft.subtitle}
-								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none"
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none"
 							/>
 						</div>
 						<!-- Authors -->
@@ -337,7 +337,7 @@
 											type="text"
 											bind:value={authorsList[idx]}
 											placeholder="Author name"
-											class="flex-1 min-w-0 bg-transparent text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none border-b border-slate-200 dark:border-slate-600 py-0.5"
+											class="flex-1 min-w-0 bg-transparent placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none border-b border-slate-200 dark:border-slate-600 py-0.5"
 										/>
 										<button
 											type="button"
@@ -366,38 +366,38 @@
 								id="meta-desc-{fingerprint}"
 								bind:value={metaDraft.description}
 								rows="2"
-								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 resize-none focus:outline-none"
+								class="flex-1 min-w-0 bg-transparent text-right resize-none focus:outline-none"
 							></textarea>
 						</div>
 						<!-- Language -->
 						<div class="flex items-center px-4 py-3 gap-3">
 							<label for="meta-lang-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Language</label>
 							<input id="meta-lang-{fingerprint}" type="text" bind:value={metaDraft.language}
-								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
 						</div>
 						<!-- Publisher -->
 						<div class="flex items-center px-4 py-3 gap-3">
 							<label for="meta-pub-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Publisher</label>
 							<input id="meta-pub-{fingerprint}" type="text" bind:value={metaDraft.publisher}
-								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
 						</div>
 						<!-- Identifier -->
 						<div class="flex items-center px-4 py-3 gap-3">
 							<label for="meta-id-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Identifier</label>
 							<input id="meta-id-{fingerprint}" type="text" bind:value={metaDraft.identifier}
-								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
 						</div>
 						<!-- Date -->
 						<div class="flex items-center px-4 py-3 gap-3">
 							<label for="meta-date-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Date</label>
 							<input id="meta-date-{fingerprint}" type="text" bind:value={metaDraft.date}
-								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
 						</div>
 						<!-- Subject -->
 						<div class="flex items-center px-4 py-3 gap-3">
 							<label for="meta-subj-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Subject</label>
 							<input id="meta-subj-{fingerprint}" type="text" bind:value={metaDraft.subject}
-								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
 						</div>
 					</div>
 					{#if metaError}
@@ -408,19 +408,19 @@
 						{#if docMeta?.document_type}
 							<div class="flex items-center justify-between px-4 py-3">
 								<dt class="text-slate-500 dark:text-slate-400">Type</dt>
-								<dd class="font-medium text-slate-900 dark:text-slate-100">{docMeta.document_type}</dd>
+								<dd class="font-medium">{docMeta.document_type}</dd>
 							</div>
 						{/if}
 						{#if docMeta?.title}
 							<div class="flex items-center justify-between px-4 py-3">
 								<dt class="text-slate-500 dark:text-slate-400">Title</dt>
-								<dd class="font-medium text-slate-900 dark:text-slate-100 text-right break-words max-w-[60%]">{docMeta.title}</dd>
+								<dd class="font-medium text-right break-words max-w-[60%]">{docMeta.title}</dd>
 							</div>
 						{/if}
 						{#if docMeta?.subtitle}
 							<div class="flex items-center justify-between px-4 py-3">
 								<dt class="text-slate-500 dark:text-slate-400">Subtitle</dt>
-								<dd class="font-medium text-slate-900 dark:text-slate-100 text-right break-words max-w-[60%]">{docMeta.subtitle}</dd>
+								<dd class="font-medium text-right break-words max-w-[60%]">{docMeta.subtitle}</dd>
 							</div>
 						{/if}
 						{#if docMeta?.authors?.length}
@@ -428,7 +428,7 @@
 								<dt class="text-slate-500 dark:text-slate-400 shrink-0">Authors</dt>
 								<dd class="flex flex-col items-end gap-0.5">
 									{#each docMeta.authors as author}
-										<span class="font-medium text-slate-900 dark:text-slate-100 text-right">{author}</span>
+										<span class="font-medium text-right">{author}</span>
 									{/each}
 								</dd>
 							</div>
@@ -436,37 +436,37 @@
 						{#if docMeta?.description}
 							<div class="flex items-start justify-between px-4 py-3 gap-4">
 								<dt class="text-slate-500 dark:text-slate-400 shrink-0">Description</dt>
-								<dd class="text-slate-900 dark:text-slate-100 text-right text-xs break-words">{docMeta.description}</dd>
+								<dd class="text-right text-xs break-words">{docMeta.description}</dd>
 							</div>
 						{/if}
 						{#if docMeta?.language}
 							<div class="flex items-center justify-between px-4 py-3">
 								<dt class="text-slate-500 dark:text-slate-400">Language</dt>
-								<dd class="font-medium text-slate-900 dark:text-slate-100">{docMeta.language}</dd>
+								<dd class="font-medium">{docMeta.language}</dd>
 							</div>
 						{/if}
 						{#if docMeta?.publisher}
 							<div class="flex items-center justify-between px-4 py-3">
 								<dt class="text-slate-500 dark:text-slate-400">Publisher</dt>
-								<dd class="font-medium text-slate-900 dark:text-slate-100 text-right break-words max-w-[60%]">{docMeta.publisher}</dd>
+								<dd class="font-medium text-right break-words max-w-[60%]">{docMeta.publisher}</dd>
 							</div>
 						{/if}
 						{#if docMeta?.identifier}
 							<div class="flex items-center justify-between px-4 py-3">
 								<dt class="text-slate-500 dark:text-slate-400">Identifier</dt>
-								<dd class="font-mono text-xs text-slate-900 dark:text-slate-100">{docMeta.identifier}</dd>
+								<dd class="font-mono text-xs">{docMeta.identifier}</dd>
 							</div>
 						{/if}
 						{#if docMeta?.date}
 							<div class="flex items-center justify-between px-4 py-3">
 								<dt class="text-slate-500 dark:text-slate-400">Date</dt>
-								<dd class="font-medium text-slate-900 dark:text-slate-100">{docMeta.date}</dd>
+								<dd class="font-medium">{docMeta.date}</dd>
 							</div>
 						{/if}
 						{#if docMeta?.subject}
 							<div class="flex items-center justify-between px-4 py-3">
 								<dt class="text-slate-500 dark:text-slate-400">Subject</dt>
-								<dd class="font-medium text-slate-900 dark:text-slate-100 text-right break-words max-w-[60%]">{docMeta.subject}</dd>
+								<dd class="font-medium text-right break-words max-w-[60%]">{docMeta.subject}</dd>
 							</div>
 						{/if}
 						{#if !docMeta?.document_type && !docMeta?.title && !docMeta?.authors?.length}
@@ -512,7 +512,7 @@
 						disabled={saving}
 						placeholder="Add a tag…"
 						class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
-							bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100 text-sm
+							bg-slate-50 dark:bg-slate-700/50 text-sm
 							focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-transparent
 							placeholder:text-slate-400 dark:placeholder:text-slate-500 disabled:opacity-50"
 					/>

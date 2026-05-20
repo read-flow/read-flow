@@ -122,7 +122,7 @@
 	<!-- ── Page header ──────────────────────────────────────────────────────── -->
 	<div class="px-4 pt-5 pb-3 md:px-6 md:pt-6 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shrink-0">
 		<div class="flex items-center justify-between gap-3 mb-3">
-			<h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Library</h1>
+			<h1 class="text-xl font-semibold">Library</h1>
 			{#if !$isLoading}
 				<button
 					onclick={() => refreshDocuments()}
@@ -141,7 +141,7 @@
 				placeholder="Search documents…"
 				bind:value={$searchQuery}
 				class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600
-					bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100
+					bg-slate-50 dark:bg-slate-700/50
 					focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-transparent
 					placeholder:text-slate-400 dark:placeholder:text-slate-500"
 			/>
@@ -274,7 +274,7 @@
 									{/if}
 									<div class="flex-1 min-w-0">
 										<!-- Primary: user title or filename -->
-										<p class="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+										<p class="text-sm font-medium truncate">
 											{docMeta?.title ?? basename(doc.path)}
 										</p>
 										<!-- Secondary: authors or full path -->
@@ -347,7 +347,7 @@
 					class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6 w-80 max-w-[90vw]"
 					onclick={(e) => e.stopPropagation()}
 				>
-					<h2 class="text-base font-semibold text-slate-900 dark:text-slate-100 mb-1">Choose format</h2>
+					<h2 class="text-base font-semibold mb-1">Choose format</h2>
 					<p class="text-sm text-slate-500 dark:text-slate-400 mb-4 truncate">
 						{pickerMeta?.title ?? formatPickDoc.path.split('/').pop()}
 					</p>

@@ -54,7 +54,7 @@
 </svelte:head>
 
 <div class="max-w-2xl mx-auto px-4 py-6 md:px-6">
-	<h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100 mb-6">Settings</h1>
+	<h1 class="text-xl font-semibold mb-6">Settings</h1>
 
 	<!-- Sources link -->
 	<nav class="space-y-2 mb-8">
@@ -67,7 +67,7 @@
 					<Icon name="server" class="w-5 h-5 text-slate-600 dark:text-slate-400" />
 				</div>
 				<div>
-					<p class="text-sm font-medium text-slate-900 dark:text-slate-100">Sources</p>
+					<p class="text-sm font-medium">Sources</p>
 					<p class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Manage remote read-flow servers</p>
 				</div>
 			</div>
@@ -91,7 +91,7 @@
 						onclick={() => setMode(m)}
 						class="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-colors
 							{active
-								? 'border-slate-900 dark:border-slate-300 bg-slate-50 dark:bg-slate-700/60 text-slate-900 dark:text-slate-100'
+								? 'border-slate-900 dark:border-slate-300 bg-slate-50 dark:bg-slate-700/60'
 								: 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/40'}"
 					>
 						<Icon name={modeIcon(m)} class="w-4 h-4 shrink-0" />

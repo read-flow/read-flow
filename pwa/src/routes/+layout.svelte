@@ -54,7 +54,7 @@
 		>
 			<Icon name="library" class="w-5 h-5 text-slate-700 dark:text-slate-300 shrink-0" />
 			{#if !collapsed}
-				<span class="font-semibold text-slate-900 dark:text-slate-100 tracking-tight whitespace-nowrap">
+				<span class="font-semibold tracking-tight whitespace-nowrap">
 					Read Flow
 				</span>
 			{/if}
@@ -68,8 +68,8 @@
 				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
 					{collapsed ? 'justify-center' : 'gap-3'}
 					{isActive('/')
-						? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-medium'
-						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-slate-100'}"
+						? 'bg-slate-100 dark:bg-slate-700 font-medium'
+						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white'}"
 			>
 				<Icon name="library" class="w-4 h-4 shrink-0" />
 				{#if !collapsed}<span class="whitespace-nowrap">Library</span>{/if}
@@ -81,8 +81,8 @@
 				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
 					{collapsed ? 'justify-center' : 'gap-3'}
 					{isActive('/settings') && !isActive('/settings/sources')
-						? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-medium'
-						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-slate-100'}"
+						? 'bg-slate-100 dark:bg-slate-700 font-medium'
+						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white'}"
 			>
 				<Icon name="settings" class="w-4 h-4 shrink-0" />
 				{#if !collapsed}<span class="whitespace-nowrap">Settings</span>{/if}
@@ -95,7 +95,7 @@
 						href="/settings/sources"
 						class="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors
 							{isActive('/settings/sources')
-								? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-medium'
+								? 'bg-slate-100 dark:bg-slate-700 font-medium'
 								: 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-200'}"
 					>
 						<Icon name="server" class="w-3.5 h-3.5 shrink-0" />
@@ -113,7 +113,7 @@
 				title={currentLabel}
 				class="w-full flex items-center px-3 py-2 rounded-md text-sm transition-colors
 					{collapsed ? 'justify-center' : 'gap-3'}
-					text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-900 dark:hover:text-slate-100"
+					text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white"
 			>
 				<Icon name={currentIcon} class="w-4 h-4 shrink-0" />
 				{#if !collapsed}<span class="whitespace-nowrap">{currentLabel}</span>{/if}
@@ -148,7 +148,7 @@
 	>
 		<div class="flex items-center gap-2">
 			<Icon name="library" class="w-5 h-5 text-slate-700 dark:text-slate-300" />
-			<span class="font-semibold text-slate-900 dark:text-slate-100 tracking-tight">Read Flow</span>
+			<span class="font-semibold tracking-tight">Read Flow</span>
 		</div>
 		<button
 			onclick={() => cycleMode($mode)}
@@ -178,7 +178,7 @@
 			<a
 				href={link.href}
 				class="flex-1 flex flex-col items-center gap-1 pt-2 pb-2 text-xs font-medium transition-colors min-h-[44px]
-					{isActive(link.href) ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}"
+					{isActive(link.href) ? '' : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}"
 			>
 				<Icon name={link.icon} class="w-5 h-5" />
 				<span>{link.label}</span>
