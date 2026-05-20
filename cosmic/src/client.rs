@@ -3,6 +3,8 @@ use std::path::Path;
 use std::process::ExitStatus;
 use std::sync::Arc;
 
+use read_flow_core::api::ApiDocument;
+use read_flow_core::api::DocumentMeta;
 use read_flow_core::api::File;
 use read_flow_core::api::FileDataSource;
 use read_flow_core::api::ReadingProgress;
@@ -10,6 +12,7 @@ use read_flow_core::api::Status;
 use read_flow_core::client;
 use read_flow_core::client::FilesClient;
 use read_flow_core::db::dao;
+use read_flow_core::db::models::ContentMetadata;
 use url::Url;
 
 use crate::ApplicationModule;
@@ -185,5 +188,52 @@ impl FileDataSource for Client {
 
     async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error> {
         delegate!(self, upsert_reading_progress, progress)
+    }
+}
+
+impl Client {
+    pub async fn get_documents(&self) -> Result<Vec<ApiDocument>, FilesClientError> {
+        match self {
+            Client::Local(module) => Ok(module.db_client().await.get_documents().await?),
+            Client::Remote(client) => Ok(client.get_documents().await?),
+        }
+    }
+
+    pub async fn get_document(&self, guid: &str) -> Result<Option<ApiDocument>, FilesClientError> {
+        match self {
+            Client::Local(module) => Ok(module.db_client().await.get_document(guid).await?),
+            Client::Remote(client) => Ok(client.get_document(guid).await?),
+        }
+    }
+
+    pub async fn update_document_metadata(
+        &self,
+        guid: &str,
+        meta: DocumentMeta,
+    ) -> Result<Option<ApiDocument>, FilesClientError> {
+        match self {
+            Client::Local(module) => Ok(module
+                .db_client()
+                .await
+                .update_document_metadata(guid, meta)
+                .await?),
+            Client::Remote(client) => Ok(Some(client.update_document_metadata(guid, meta).await?)),
+        }
+    }
+
+    pub async fn get_document_extracted_metadata(
+        &self,
+        document_guid: &str,
+    ) -> Result<Option<ContentMetadata>, FilesClientError> {
+        match self {
+            Client::Local(module) => Ok(module
+                .db_client()
+                .await
+                .get_document_extracted_metadata(document_guid)
+                .await?),
+            Client::Remote(client) => {
+                Ok(client.get_document_extracted_metadata(document_guid).await?)
+            }
+        }
     }
 }

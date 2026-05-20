@@ -11,6 +11,8 @@ use tokio::process::Command;
 use super::ConnectionPool;
 use super::dao;
 use super::dao::Error;
+use crate::api::ApiDocument;
+use crate::api::DocumentMeta;
 use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
@@ -251,6 +253,48 @@ impl DbClient {
     ) -> Result<Option<ContentMetadata>, Error> {
         let mut conn = self.connection_pool.acquire().await?;
         dao::select_content_metadata(&mut conn, fingerprint).await
+    }
+
+    pub async fn get_documents(&self) -> Result<Vec<ApiDocument>, Error> {
+        let mut conn = self.connection_pool.acquire().await?;
+        dao::select_all_api_documents(&mut conn).await
+    }
+
+    pub async fn get_document(&self, guid: &str) -> Result<Option<ApiDocument>, Error> {
+        let mut conn = self.connection_pool.acquire().await?;
+        dao::select_api_document_by_guid(&mut conn, guid).await
+    }
+
+    pub async fn update_document_metadata(
+        &self,
+        guid: &str,
+        meta: DocumentMeta,
+    ) -> Result<Option<ApiDocument>, Error> {
+        let mut conn = self.connection_pool.acquire().await?;
+        let Some(doc_row) = dao::select_document_by_guid(&mut conn, guid).await? else {
+            return Ok(None);
+        };
+        let doc_type_str = meta.document_type_str();
+        let authors_json = meta.authors_json();
+        dao::upsert_document_user_metadata(
+            &mut conn,
+            doc_row.id,
+            doc_type_str.as_deref(),
+            meta.title.as_deref(),
+            meta.subtitle.as_deref(),
+            authors_json.as_deref(),
+            meta.description.as_deref(),
+        )
+        .await?;
+        dao::select_api_document_by_guid(&mut conn, guid).await
+    }
+
+    pub async fn get_document_extracted_metadata(
+        &self,
+        document_guid: &str,
+    ) -> Result<Option<ContentMetadata>, Error> {
+        let mut conn = self.connection_pool.acquire().await?;
+        dao::select_extracted_metadata_for_document(&mut conn, document_guid).await
     }
 }
 

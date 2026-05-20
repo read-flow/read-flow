@@ -18,6 +18,7 @@ use crate::aggregator::Document;
 use crate::aggregator::DocumentMetadata;
 use crate::aggregator::DocumentSource;
 use crate::aggregator::Documents;
+use crate::aggregator::UserMeta;
 use crate::client::Client;
 use crate::client::ClientSelector;
 use crate::client::FilesClientError;
@@ -124,6 +125,24 @@ impl DocumentProvider {
     /// Automatically invalidates the cache after the update.
     pub async fn update_document(&self, document: Document) -> Result<(), FilesClientError> {
         let result = self.aggregator.read().await.update_document(document).await;
+        self.set_expired().await;
+        result
+    }
+
+    /// Update user-edited document metadata (title, type, authors, etc.) across all sources.
+    ///
+    /// Automatically invalidates the cache after the update.
+    pub async fn update_document_metadata(
+        &self,
+        document: &Document,
+        meta: UserMeta,
+    ) -> Result<(), FilesClientError> {
+        let result = self
+            .aggregator
+            .read()
+            .await
+            .update_document_metadata(document, meta)
+            .await;
         self.set_expired().await;
         result
     }

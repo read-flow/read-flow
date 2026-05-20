@@ -11,6 +11,7 @@ use std::sync::Arc;
 use futures_util::stream;
 use futures_util::stream::StreamExt;
 use provider::r#async::Provider;
+use read_flow_core::api::DocumentMeta;
 use read_flow_core::api::File;
 use read_flow_core::api::FileDataSource;
 use read_flow_core::api::ReadingProgress;
@@ -90,7 +91,7 @@ impl Aggregator {
                 .await;
 
         // Process results and aggregate documents
-        let documents = results
+        let mut documents = results
             .into_iter()
             .filter_map(move |result| match result {
                 Ok(result) => Some(result),
@@ -105,7 +106,59 @@ impl Aggregator {
                 acc
             });
 
+        // Fetch user-edited document metadata from the local source and merge by document_guid.
+        let local_docs: HashMap<String, DocumentMeta> = {
+            let local = self
+                .application_module
+                .db_client()
+                .await
+                .get_documents()
+                .await
+                .unwrap_or_default();
+            local.into_iter().map(|d| (d.guid, d.metadata)).collect()
+        };
+        for doc in documents.0.values_mut() {
+            if let Some(ref guid) = doc.document_guid {
+                if let Some(meta) = local_docs.get(guid) {
+                    doc.user_meta = meta.clone();
+                }
+            }
+        }
+
         Ok(documents)
+    }
+
+    /// Update user-edited document metadata on all sources that hold the document.
+    pub async fn update_document_metadata(
+        &self,
+        document: &Document,
+        meta: DocumentMeta,
+    ) -> Result<(), FilesClientError> {
+        let Some(ref guid) = document.document_guid else {
+            return Ok(());
+        };
+        let clients: Vec<_> = document
+            .sources
+            .iter()
+            .filter_map(|s| self.clients.get(&s.client).cloned())
+            .collect();
+
+        let results: Vec<Result<Option<_>, FilesClientError>> = stream::iter(clients)
+            .map(|client| {
+                let guid = guid.clone();
+                let meta = meta.clone();
+                async move { client.update_document_metadata(&guid, meta).await }
+            })
+            .buffer_unordered(document.sources.len().max(1))
+            .collect()
+            .await;
+
+        results
+            .into_iter()
+            .filter_map(Result::err)
+            .for_each(|e| tracing::warn!("error updating document metadata: {e}"));
+
+        Ok(())
     }
 
     fn iter_document(&self, document: Document) -> impl Iterator<Item = (Client, File)> {
@@ -381,6 +434,8 @@ pub struct DocumentMetadata {
     pub status: ReadingStatus,
 }
 
+pub use read_flow_core::api::DocumentMeta as UserMeta;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DocumentSource {
     pub guid: String,
@@ -392,6 +447,10 @@ pub struct DocumentSource {
 pub struct Document {
     pub metadata: DocumentMetadata,
     pub sources: HashSet<DocumentSource>,
+    /// GUID from the `documents` table, linking multiple file formats of the same content.
+    pub document_guid: Option<String>,
+    /// User-edited document metadata (title, type, authors, etc.).
+    pub user_meta: UserMeta,
 }
 
 impl fmt::Debug for Document {
@@ -426,6 +485,8 @@ impl Document {
                 path: abs_path.to_string_lossy().into_owned(),
                 client: ClientSelector::Local,
             }]),
+            document_guid: None,
+            user_meta: UserMeta::default(),
         })
     }
 
@@ -474,7 +535,11 @@ impl Documents {
     pub fn push(&mut self, document: Document) {
         match self.0.entry(document.metadata.fingerprint.clone()) {
             Entry::Occupied(mut occupied_entry) => {
-                occupied_entry.get_mut().sources.extend(document.sources)
+                let existing = occupied_entry.get_mut();
+                existing.sources.extend(document.sources);
+                if existing.document_guid.is_none() {
+                    existing.document_guid = document.document_guid;
+                }
             }
             Entry::Vacant(vacant_entry) => {
                 vacant_entry.insert(document);
@@ -493,6 +558,7 @@ impl Documents {
 
 impl From<(ClientSelector, File)> for Document {
     fn from((client, file): (ClientSelector, File)) -> Self {
+        let document_guid = file.document_guid.clone();
         Document {
             metadata: DocumentMetadata {
                 type_: file.type_.parse().unwrap(), // safe because only supported types are stored in the database
@@ -506,6 +572,8 @@ impl From<(ClientSelector, File)> for Document {
                 path: file.path,
                 client,
             }]),
+            document_guid,
+            user_meta: UserMeta::default(),
         }
     }
 }

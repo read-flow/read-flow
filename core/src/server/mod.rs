@@ -558,7 +558,7 @@ async fn get_documents(
 ) -> Result<Json<Vec<ApiDocument>>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let docs = build_api_documents(&mut conn).await?;
+    let docs = dao::select_all_api_documents(&mut conn).await?;
     Ok(Json(docs))
 }
 
@@ -570,7 +570,7 @@ async fn get_document(
 ) -> Result<Option<Json<ApiDocument>>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let doc = build_api_document_by_guid(&mut conn, guid).await?;
+    let doc = dao::select_api_document_by_guid(&mut conn, guid).await?;
     Ok(doc.map(Json))
 }
 
@@ -584,14 +584,9 @@ async fn put_document_metadata(
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
 
-    let doc_row = sqlx::query_as::<_, crate::db::models::Document>(
-        "SELECT id, guid FROM documents WHERE guid = ?",
-    )
-    .bind(guid)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(dao::Error::from)?
-    .ok_or_else(|| Error::FileNotFound(guid.to_string()))?;
+    let doc_row = dao::select_document_by_guid(&mut conn, guid)
+        .await?
+        .ok_or_else(|| Error::FileNotFound(guid.to_string()))?;
 
     let meta = meta.into_inner();
     let doc_type_str = meta.document_type_str();
@@ -607,7 +602,7 @@ async fn put_document_metadata(
     )
     .await?;
 
-    let updated = build_api_document_by_guid(&mut conn, guid)
+    let updated = dao::select_api_document_by_guid(&mut conn, guid)
         .await?
         .expect("document must exist after upsert");
     Ok(Json(updated))
@@ -621,94 +616,8 @@ async fn get_document_extracted_metadata(
 ) -> Result<Option<Json<ContentMetadata>>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-
-    // Find the first fingerprint belonging to this document.
-    let fingerprint: Option<String> = sqlx::query_scalar(
-        "SELECT f.fingerprint FROM files f
-         JOIN contents c ON f.fingerprint = c.fingerprint
-         JOIN documents d ON c.document_id = d.id
-         WHERE d.guid = ?
-         LIMIT 1",
-    )
-    .bind(guid)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(dao::Error::from)?;
-
-    let Some(fp) = fingerprint else {
-        return Ok(None);
-    };
-    let meta = dao::select_content_metadata(&mut conn, &fp).await?;
+    let meta = dao::select_extracted_metadata_for_document(&mut conn, guid).await?;
     Ok(meta.map(Json))
-}
-
-// ─── Document helpers ─────────────────────────────────────────────────────────
-
-async fn build_api_documents(
-    conn: &mut sqlx::SqliteConnection,
-) -> Result<Vec<ApiDocument>> {
-    #[derive(sqlx::FromRow)]
-    struct DocRow {
-        id: i32,
-        guid: String,
-    }
-    let docs = sqlx::query_as::<_, DocRow>("SELECT id, guid FROM documents")
-        .fetch_all(&mut *conn)
-        .await
-        .map_err(dao::Error::from)?;
-
-    let mut result = Vec::with_capacity(docs.len());
-    for row in docs {
-        result.push(load_api_document(conn, row.id, row.guid).await?);
-    }
-    Ok(result)
-}
-
-async fn build_api_document_by_guid(
-    conn: &mut sqlx::SqliteConnection,
-    guid: &str,
-) -> Result<Option<ApiDocument>> {
-    #[derive(sqlx::FromRow)]
-    struct DocRow {
-        id: i32,
-        guid: String,
-    }
-    let row = sqlx::query_as::<_, DocRow>("SELECT id, guid FROM documents WHERE guid = ?")
-        .bind(guid)
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(dao::Error::from)?;
-    match row {
-        None => Ok(None),
-        Some(r) => Ok(Some(load_api_document(conn, r.id, r.guid).await?)),
-    }
-}
-
-async fn load_api_document(
-    conn: &mut sqlx::SqliteConnection,
-    document_id: i32,
-    guid: String,
-) -> Result<ApiDocument> {
-    let user_meta = dao::get_document_user_metadata(conn, document_id).await?;
-    let metadata = user_meta
-        .map(DocumentMeta::from_db)
-        .unwrap_or_default();
-
-    let file_guids: Vec<String> = sqlx::query_scalar(
-        "SELECT f.guid FROM files f
-         JOIN contents c ON f.fingerprint = c.fingerprint
-         WHERE c.document_id = ?",
-    )
-    .bind(document_id)
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(dao::Error::from)?;
-
-    Ok(ApiDocument {
-        guid,
-        metadata,
-        file_guids,
-    })
 }
 
 fn extension_to_content_type(extension: &str) -> Result<ContentType> {

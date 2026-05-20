@@ -6,6 +6,8 @@ use std::sync::Arc;
 use sqlx::SqliteConnection;
 use sqlx::SqlitePool;
 
+use crate::api::ApiDocument;
+use crate::api::DocumentMeta;
 use crate::db::models::ContentMetadata;
 use crate::db::models::ContentTag;
 use crate::db::models::Document;
@@ -709,6 +711,98 @@ pub async fn upsert_document_user_metadata(
         .await?
         .expect("row must exist after upsert");
     Ok(row)
+}
+
+// ─── High-level document queries (ApiDocument) ───────────────────────────────
+
+pub async fn select_all_api_documents(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<ApiDocument>, Error> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: i32,
+        guid: String,
+    }
+    let rows = sqlx::query_as::<_, Row>("SELECT id, guid FROM documents")
+        .fetch_all(&mut *conn)
+        .await?;
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        result.push(load_api_document(&mut *conn, row.id, row.guid).await?);
+    }
+    Ok(result)
+}
+
+pub async fn select_api_document_by_guid(
+    conn: &mut SqliteConnection,
+    guid: &str,
+) -> Result<Option<ApiDocument>, Error> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        id: i32,
+        guid: String,
+    }
+    let row = sqlx::query_as::<_, Row>("SELECT id, guid FROM documents WHERE guid = ?")
+        .bind(guid)
+        .fetch_optional(&mut *conn)
+        .await?;
+    match row {
+        None => Ok(None),
+        Some(r) => Ok(Some(load_api_document(&mut *conn, r.id, r.guid).await?)),
+    }
+}
+
+pub async fn select_document_by_guid(
+    conn: &mut SqliteConnection,
+    guid: &str,
+) -> Result<Option<Document>, Error> {
+    sqlx::query_as::<_, Document>("SELECT id, guid FROM documents WHERE guid = ?")
+        .bind(guid)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(Into::into)
+}
+
+pub async fn select_extracted_metadata_for_document(
+    conn: &mut SqliteConnection,
+    document_guid: &str,
+) -> Result<Option<ContentMetadata>, Error> {
+    let fingerprint: Option<String> = sqlx::query_scalar(
+        "SELECT f.fingerprint FROM files f
+         JOIN contents c ON f.fingerprint = c.fingerprint
+         JOIN documents d ON c.document_id = d.id
+         WHERE d.guid = ?
+         LIMIT 1",
+    )
+    .bind(document_guid)
+    .fetch_optional(&mut *conn)
+    .await?;
+    match fingerprint {
+        None => Ok(None),
+        Some(fp) => select_content_metadata(&mut *conn, &fp).await,
+    }
+}
+
+async fn load_api_document(
+    conn: &mut SqliteConnection,
+    document_id: i32,
+    guid: String,
+) -> Result<ApiDocument, Error> {
+    let user_meta = get_document_user_metadata(&mut *conn, document_id).await?;
+    let metadata = user_meta.map(DocumentMeta::from_db).unwrap_or_default();
+    let file_guids: Vec<String> = sqlx::query_scalar(
+        "SELECT f.guid FROM files f
+         JOIN contents c ON f.fingerprint = c.fingerprint
+         WHERE c.document_id = ?",
+    )
+    .bind(document_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    Ok(ApiDocument {
+        guid,
+        metadata,
+        file_guids,
+    })
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
