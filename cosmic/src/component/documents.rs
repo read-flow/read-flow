@@ -421,7 +421,6 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
         ("checkbox-symbolic", ButtonClass::Icon)
     };
 
-    // Create a button with icon and file path that fills the width
     vec![
         widget::button::icon(widget::icon::from_name(selected_icon_name).size(ICON_SIZE))
             .class(selected_icon_class)
@@ -431,7 +430,7 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
             .size(ICON_SIZE)
             .icon()
             .into(),
-        display_path(&document.local_or_any_source().path),
+        display_document_title(document),
         widget::button::icon(
             widget::icon::from_name("dialog-information-symbolic").size(ICON_SIZE),
         )
@@ -451,20 +450,50 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
     .into()
 }
 
-fn display_path<'a>(path: &'a str) -> Element<'a, DocumentsMessage> {
+fn display_document_title<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
     let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
-    let path: &Path = path.as_ref();
-    let directory = path.parent().unwrap().display().to_string();
-    let filename = path.file_name().unwrap();
-    cosmic::iced::widget::column![
-        widget::text(filename.display().to_string()),
-        widget::text(directory).size(11),
+    let path: &Path = document.local_or_any_source().path.as_ref();
+
+    // Primary label: user title if set, otherwise filename
+    let primary = document
+        .user_meta
+        .title
+        .as_deref()
+        .unwrap_or_else(|| path.file_name().and_then(|n| n.to_str()).unwrap_or(""));
+
+    // Secondary label: authors if set, otherwise directory
+    let secondary: String = if let Some(authors) = document.user_meta.authors.as_deref() {
+        if !authors.is_empty() {
+            authors.join(", ")
+        } else {
+            path.parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()
+        }
+    } else {
+        path.parent()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
+    };
+
+    let mut col = cosmic::iced::widget::column![
+        widget::text(primary.to_string()),
+        widget::text(secondary).size(11),
     ]
-    .spacing(space_xxs)
-    .apply(widget::container)
-    .width(Length::Fill)
-    .into()
+    .spacing(space_xxs);
+
+    // Document-type badge when set
+    if let Some(doc_type) = &document.user_meta.document_type {
+        col = col.push(
+            widget::text(doc_type.to_string())
+                .size(10)
+                .apply(widget::container)
+                .padding([1, 4]),
+        );
+    }
+
+    col.apply(widget::container).width(Length::Fill).into()
 }
 
 /// Get tags that are common to all selected documents

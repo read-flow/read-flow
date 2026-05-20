@@ -146,6 +146,7 @@ document-list-search-placeholder = Rechercher des fichiers...
 document-list-select-tag = Sélectionner une étiquette
 document-list-sort-by = Trier par
 document-list-sort-filename = Nom
+document-list-sort-title = Titre
 document-list-sort-size = Taille
 document-list-sort-status = Statut
 document-list-sort-type = Type

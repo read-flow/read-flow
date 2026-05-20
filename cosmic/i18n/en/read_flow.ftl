@@ -125,6 +125,7 @@ document-list-search-placeholder = Search files...
 document-list-select-tag = Select a tag
 document-list-sort-by = Sort by
 document-list-sort-filename = Name
+document-list-sort-title = Title
 document-list-sort-size = Size
 document-list-sort-status = Status
 document-list-sort-type = Type

@@ -79,6 +79,7 @@ fn load_document_list_prefs() -> (SortSubject, SortDirection, SearchMode) {
     };
     let sort_subject = if let Ok(s) = ctx.get::<String>(KEY_SORT_SUBJECT) {
         match s.as_str() {
+            "title" => SortSubject::Title,
             "size" => SortSubject::Size,
             "type" => SortSubject::Type,
             "status" => SortSubject::Status,
@@ -116,6 +117,7 @@ fn save_document_list_prefs(
     };
     let subject_str = match sort_subject {
         SortSubject::Filename => "filename",
+        SortSubject::Title => "title",
         SortSubject::Size => "size",
         SortSubject::Type => "type",
         SortSubject::Status => "status",
@@ -138,19 +140,27 @@ fn save_document_list_prefs(
 pub enum SortSubject {
     #[default]
     Filename,
+    Title,
     Size,
     Type,
     Status,
 }
 
 impl SortSubject {
-    pub const ALL: &'static [Self] = &[Self::Filename, Self::Size, Self::Type, Self::Status];
+    pub const ALL: &'static [Self] = &[
+        Self::Filename,
+        Self::Title,
+        Self::Size,
+        Self::Type,
+        Self::Status,
+    ];
 }
 
 impl fmt::Display for SortSubject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let label = match self {
             Self::Filename => fl!("document-list-sort-filename"),
+            Self::Title => fl!("document-list-sort-title"),
             Self::Size => fl!("document-list-sort-size"),
             Self::Type => fl!("document-list-sort-type"),
             Self::Status => fl!("document-list-sort-status"),
@@ -429,6 +439,9 @@ fn compare_documents(
         SortSubject::Filename => get_filename(a)
             .to_lowercase()
             .cmp(&get_filename(b).to_lowercase()),
+        SortSubject::Title => get_display_title(a)
+            .to_lowercase()
+            .cmp(&get_display_title(b).to_lowercase()),
         SortSubject::Size => a.metadata.size.cmp(&b.metadata.size),
         SortSubject::Type => a.metadata.type_.as_str().cmp(b.metadata.type_.as_str()),
         SortSubject::Status => {
@@ -446,6 +459,14 @@ fn compare_documents(
 fn get_filename(doc: &Document) -> &str {
     let source = doc.local_or_any_source();
     source.path.rsplit('/').next().unwrap_or(&source.path)
+}
+
+/// Get the display title: user-edited title if set, otherwise the filename.
+fn get_display_title(doc: &Document) -> &str {
+    doc.user_meta
+        .title
+        .as_deref()
+        .unwrap_or_else(|| get_filename(doc))
 }
 
 /// Convert reading status to a sortable order (Unread=0, Reading=1, Read=2)
@@ -502,7 +523,23 @@ fn filter_document(
                     .filter(|path| fuzzy_match(&query, path))
                     .count();
                 let tags_lower = document.metadata.tags.join(" ").to_lowercase();
-                path_matches > 0 || fuzzy_match(&query, &tags_lower)
+                let title_lower = document
+                    .user_meta
+                    .title
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase();
+                let authors_lower = document
+                    .user_meta
+                    .authors
+                    .as_deref()
+                    .unwrap_or(&[])
+                    .join(" ")
+                    .to_lowercase();
+                path_matches > 0
+                    || fuzzy_match(&query, &tags_lower)
+                    || fuzzy_match(&query, &title_lower)
+                    || fuzzy_match(&query, &authors_lower)
             }
             SearchMode::Regex => {
                 if let Some(re) = compiled_regex {
@@ -511,7 +548,17 @@ fn filter_document(
                         .iter()
                         .any(|source| re.is_match(&source.path));
                     let tags = document.metadata.tags.join(" ");
-                    path_matches || re.is_match(&tags)
+                    let title = document.user_meta.title.as_deref().unwrap_or("");
+                    let authors = document
+                        .user_meta
+                        .authors
+                        .as_deref()
+                        .unwrap_or(&[])
+                        .join(" ");
+                    path_matches
+                        || re.is_match(&tags)
+                        || re.is_match(title)
+                        || re.is_match(&authors)
                 } else {
                     // Invalid or empty regex: show all results
                     true

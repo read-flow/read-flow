@@ -147,6 +147,7 @@ document-list-search-placeholder = Bestanden zoeken...
 document-list-select-tag = Selecteer een tag
 document-list-sort-by = Sorteren op
 document-list-sort-filename = Naam
+document-list-sort-title = Titel
 document-list-sort-size = Grootte
 document-list-sort-status = Status
 document-list-sort-type = Type
