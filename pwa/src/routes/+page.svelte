@@ -259,33 +259,34 @@
 										<p class="text-xs text-slate-400 dark:text-slate-500 truncate mt-0.5">
 											{docMeta?.authors?.length ? docMeta.authors.join(', ') : doc.path}
 										</p>
-
-										<div class="hidden sm:flex flex-wrap items-center gap-1 mt-1.5">
-											<!-- Document type badge -->
-											{#if docMeta?.document_type}
-												<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
-													{docMeta.document_type}
-												</span>
-											{/if}
-											<!-- Tags -->
-											{#each doc.tags.slice(0, 4) as tag}
-												<span
-													class="inline-flex items-center px-1.5 py-0.5 rounded text-xs
-														{$allowedTags.has(tag)
-															? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-															: $deniedTags.has(tag)
-																? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-																: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}"
-												>
-													{tag}
-												</span>
-											{/each}
-											{#if doc.tags.length > 4}
-												<span class="text-xs text-slate-400 dark:text-slate-500">+{doc.tags.length - 4}</span>
-											{/if}
-										</div>
 									</div>
 								</a>
+
+								<!-- Pills: document type + tags (right-aligned, hidden on xs) -->
+								<div class="hidden sm:flex items-center gap-1 px-2 shrink-0">
+									{#if docMeta?.document_type}
+										<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+											{docMeta.document_type}
+										</span>
+									{/if}
+									{#each doc.tags.slice(0, 3) as tag}
+										<span
+											class="inline-flex items-center px-1.5 py-0.5 rounded text-xs
+												{$allowedTags.has(tag)
+													? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+													: $deniedTags.has(tag)
+														? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+														: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}"
+										>
+											{tag}
+										</span>
+									{/each}
+									{#if doc.tags.length > 3}
+										<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500">
+											+{doc.tags.length - 3}
+										</span>
+									{/if}
+								</div>
 
 								<!-- Secondary actions: size + details button -->
 								<div class="flex items-center gap-1.5 pr-3 md:pr-4 shrink-0">
