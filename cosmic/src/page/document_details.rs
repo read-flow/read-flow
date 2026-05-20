@@ -47,7 +47,6 @@ pub struct DocumentDetails {
     pending_source_deletion: Option<DocumentSource>,
     editing_user_meta: bool,
     user_meta_draft: UserMeta,
-    user_meta_authors_text: String,
 }
 
 #[derive(Debug, Clone)]
@@ -86,7 +85,9 @@ pub enum DocumentDetailsMessage {
     UserMetaSubtitleChanged(String),
     UserMetaDocTypeChanged(Option<DocumentType>),
     UserMetaDescriptionChanged(String),
-    UserMetaAuthorsChanged(String),
+    UserMetaAuthorChanged(usize, String),
+    UserMetaAuthorRemoved(usize),
+    UserMetaAuthorAdded,
     UserMetaLanguageChanged(String),
     UserMetaPublisherChanged(String),
     UserMetaIdentifierChanged(String),
@@ -122,11 +123,6 @@ impl DocumentDetails {
 
         let (all_clients, init_all_clients) = ProvidedState::new(document_provider.clone());
         let initial_user_meta = document.user_meta.clone();
-        let initial_authors_text = initial_user_meta
-            .authors
-            .as_deref()
-            .unwrap_or(&[])
-            .join(", ");
         let file_details = DocumentDetails {
             document,
             document_provider,
@@ -136,7 +132,6 @@ impl DocumentDetails {
             pending_source_deletion: None,
             editing_user_meta: false,
             user_meta_draft: initial_user_meta,
-            user_meta_authors_text: initial_authors_text,
         };
 
         (
@@ -188,7 +183,12 @@ impl DocumentDetails {
 
 impl DocumentDetails {
     fn user_meta_section_view(&self) -> Element<'_, DocumentDetailsMessage> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing {
+            space_xxs,
+            space_xs,
+            space_s,
+            ..
+        } = theme::active().cosmic().spacing;
 
         let edit_button = if self.editing_user_meta {
             Row::new()
@@ -256,22 +256,43 @@ impl DocumentDetails {
         };
 
         // Authors: comma-separated display in view mode, free-text input in edit mode.
-        let authors_val = meta
-            .authors
-            .as_deref()
-            .filter(|a| !a.is_empty())
-            .map(|a| a.join(", "))
-            .unwrap_or_default();
         let authors_control: Option<Element<'_, DocumentDetailsMessage>> = if editing {
-            Some(
-                widget::text_input("", &self.user_meta_authors_text)
-                    .on_input(DocumentDetailsMessage::UserMetaAuthorsChanged)
-                    .into(),
-            )
-        } else if authors_val.is_empty() {
-            None
+            let draft_authors = self.user_meta_draft.authors.as_deref().unwrap_or(&[]);
+            let mut col = Column::new().spacing(space_xs);
+            for (idx, author) in draft_authors.iter().enumerate() {
+                col = col.push(
+                    Row::new()
+                        .spacing(space_xs)
+                        .align_y(Vertical::Center)
+                        .push(
+                            widget::text_input("", author.as_str())
+                                .on_input(move |v| {
+                                    DocumentDetailsMessage::UserMetaAuthorChanged(idx, v)
+                                })
+                                .width(Length::Fill),
+                        )
+                        .push(
+                            widget::button::icon(
+                                widget::icon::from_name("list-remove-symbolic").size(ICON_SIZE),
+                            )
+                            .on_press(DocumentDetailsMessage::UserMetaAuthorRemoved(idx)),
+                        ),
+                );
+            }
+            col = col.push(
+                widget::button::standard(fl!("document-details-user-meta-authors-add"))
+                    .on_press(DocumentDetailsMessage::UserMetaAuthorAdded),
+            );
+            Some(col.into())
         } else {
-            Some(text(authors_val).into())
+            match meta.authors.as_deref().filter(|a| !a.is_empty()) {
+                None => None,
+                Some(authors) => {
+                    let items: Vec<Element<'_, DocumentDetailsMessage>> =
+                        authors.iter().map(|a| text(a.as_str()).into()).collect();
+                    Some(Column::new().spacing(space_xxs).extend(items).into())
+                }
+            }
         };
 
         // Conditionally add each field row.
@@ -828,12 +849,6 @@ impl Page for DocumentDetails {
             },
             DocumentDetailsMessage::EditUserMeta => {
                 self.user_meta_draft = self.document.user_meta.clone();
-                self.user_meta_authors_text = self
-                    .user_meta_draft
-                    .authors
-                    .as_deref()
-                    .unwrap_or(&[])
-                    .join(", ");
                 self.editing_user_meta = true;
                 Task::none()
             }
@@ -842,19 +857,13 @@ impl Page for DocumentDetails {
                 Task::none()
             }
             DocumentDetailsMessage::SaveUserMeta => {
-                // Parse authors from comma-separated text
-                let authors: Vec<String> = self
-                    .user_meta_authors_text
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_owned)
-                    .collect();
-                self.user_meta_draft.authors = if authors.is_empty() {
-                    None
-                } else {
-                    Some(authors)
-                };
+                // Drop empty author entries before saving.
+                if let Some(authors) = &mut self.user_meta_draft.authors {
+                    authors.retain(|a| !a.trim().is_empty());
+                    if authors.is_empty() {
+                        self.user_meta_draft.authors = None;
+                    }
+                }
                 let draft = self.user_meta_draft.clone();
                 let document = self.document.clone();
                 let document_provider = self.document_provider.clone();
@@ -890,8 +899,30 @@ impl Page for DocumentDetails {
                 self.user_meta_draft.description = if val.is_empty() { None } else { Some(val) };
                 Task::none()
             }
-            DocumentDetailsMessage::UserMetaAuthorsChanged(val) => {
-                self.user_meta_authors_text = val;
+            DocumentDetailsMessage::UserMetaAuthorChanged(idx, val) => {
+                if let Some(authors) = &mut self.user_meta_draft.authors {
+                    if let Some(author) = authors.get_mut(idx) {
+                        *author = val;
+                    }
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaAuthorRemoved(idx) => {
+                if let Some(authors) = &mut self.user_meta_draft.authors {
+                    if idx < authors.len() {
+                        authors.remove(idx);
+                    }
+                    if authors.is_empty() {
+                        self.user_meta_draft.authors = None;
+                    }
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaAuthorAdded => {
+                self.user_meta_draft
+                    .authors
+                    .get_or_insert_with(Vec::new)
+                    .push(String::new());
                 Task::none()
             }
             DocumentDetailsMessage::UserMetaLanguageChanged(val) => {

@@ -71,6 +71,7 @@ document-details-user-meta-type-none = Non défini
 document-details-user-meta-title = Titre
 document-details-user-meta-subtitle = Sous-titre
 document-details-user-meta-authors = Auteurs
+document-details-user-meta-authors-add = Ajouter un auteur
 document-details-user-meta-description = Description
 document-details-basic-info = Informations de base
 document-details-close = Retour

@@ -71,6 +71,7 @@ document-details-user-meta-type-none = Not set
 document-details-user-meta-title = Title
 document-details-user-meta-subtitle = Subtitle
 document-details-user-meta-authors = Authors
+document-details-user-meta-authors-add = Add author
 document-details-user-meta-description = Description
 
 # Tag editor

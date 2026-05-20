@@ -72,6 +72,7 @@ document-details-user-meta-type-none = Niet ingesteld
 document-details-user-meta-title = Titel
 document-details-user-meta-subtitle = Ondertitel
 document-details-user-meta-authors = Auteurs
+document-details-user-meta-authors-add = Auteur toevoegen
 document-details-user-meta-description = Beschrijving
 document-details-basic-info = Basisinformatie
 document-details-close = Terug

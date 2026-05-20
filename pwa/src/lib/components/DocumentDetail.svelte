@@ -34,7 +34,7 @@
 		document_type: null, title: null, subtitle: null, authors: null, description: null,
 		language: null, publisher: null, identifier: null, date: null, subject: null,
 	});
-	let authorsText = $state('');
+	let authorsList = $state<string[]>([]);
 	let metaSaving = $state(false);
 	let metaError = $state('');
 
@@ -52,7 +52,7 @@
 			date: current?.date ?? null,
 			subject: current?.subject ?? null,
 		};
-		authorsText = metaDraft.authors?.join(', ') ?? '';
+		authorsList = [...(metaDraft.authors ?? [])];
 		metaError = '';
 		editingMeta = true;
 	}
@@ -66,7 +66,7 @@
 		if (!doc || metaSaving) return;
 		metaSaving = true;
 		metaError = '';
-		const authors = authorsText.split(',').map((s) => s.trim()).filter(Boolean);
+		const authors = authorsList.map((a) => a.trim()).filter(Boolean);
 		const payload: DocumentMeta = {
 			...metaDraft,
 			authors: authors.length ? authors : null,
@@ -328,15 +328,36 @@
 							/>
 						</div>
 						<!-- Authors -->
-						<div class="flex items-center px-4 py-3 gap-3">
-							<label for="meta-authors-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Authors</label>
-							<input
-								id="meta-authors-{fingerprint}"
-								type="text"
-								bind:value={authorsText}
-								placeholder="Author 1, Author 2"
-								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none"
-							/>
+						<div class="px-4 py-3">
+							<p class="text-slate-500 dark:text-slate-400 text-sm mb-2">Authors</p>
+							<div class="flex flex-col gap-2">
+								{#each authorsList as author, idx}
+									<div class="flex items-center gap-2">
+										<input
+											type="text"
+											bind:value={authorsList[idx]}
+											placeholder="Author name"
+											class="flex-1 min-w-0 bg-transparent text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none border-b border-slate-200 dark:border-slate-600 py-0.5"
+										/>
+										<button
+											type="button"
+											onclick={() => { authorsList = authorsList.filter((_, i) => i !== idx); }}
+											class="shrink-0 p-1 rounded text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+											aria-label="Remove author"
+										>
+											<Icon name="x" class="w-3.5 h-3.5" />
+										</button>
+									</div>
+								{/each}
+								<button
+									type="button"
+									onclick={() => { authorsList = [...authorsList, '']; }}
+									class="self-start text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors flex items-center gap-1 mt-1"
+								>
+									<Icon name="plus" class="w-3.5 h-3.5" />
+									Add author
+								</button>
+							</div>
 						</div>
 						<!-- Description -->
 						<div class="flex items-start px-4 py-3 gap-3">
@@ -403,9 +424,13 @@
 							</div>
 						{/if}
 						{#if docMeta?.authors?.length}
-							<div class="flex items-center justify-between px-4 py-3">
-								<dt class="text-slate-500 dark:text-slate-400">Authors</dt>
-								<dd class="font-medium text-slate-900 dark:text-slate-100 text-right">{docMeta.authors.join(', ')}</dd>
+							<div class="flex items-start justify-between px-4 py-3 gap-4">
+								<dt class="text-slate-500 dark:text-slate-400 shrink-0">Authors</dt>
+								<dd class="flex flex-col items-end gap-0.5">
+									{#each docMeta.authors as author}
+										<span class="font-medium text-slate-900 dark:text-slate-100 text-right">{author}</span>
+									{/each}
+								</dd>
 							</div>
 						{/if}
 						{#if docMeta?.description}
