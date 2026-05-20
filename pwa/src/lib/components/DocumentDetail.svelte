@@ -224,34 +224,39 @@
 			</div>
 		{/if}
 
-		<!-- Metadata -->
-		<dl class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
-			<div class="flex items-center justify-between px-4 py-3">
-				<dt class="text-slate-500 dark:text-slate-400">Format</dt>
-				<dd class="flex gap-1 flex-wrap justify-end">
-					{#each [doc, ...doc.otherFormats] as fmt}
-						<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
+		<!-- Reading status -->
+		<div class="flex items-center justify-between">
+			<span class="text-sm text-slate-500 dark:text-slate-400">Reading status</span>
+			<span class="text-sm font-medium
+				{doc.status === 'Read' ? 'text-green-600 dark:text-green-400'
+				: doc.status === 'Reading' ? 'text-blue-600 dark:text-blue-400'
+				: 'text-slate-500 dark:text-slate-400'}">
+				{doc.status}
+			</span>
+		</div>
+
+		<!-- Files -->
+		<div>
+			<h2 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Files</h2>
+			<ul class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
+				{#each [doc, ...doc.otherFormats] as fmt}
+					<li class="flex items-center gap-3 px-4 py-3">
+						<span class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
 							{fmt.type_ === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
 							: fmt.type_ === 'epub' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
 							: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}">
 							{fmt.type_}
 						</span>
-					{/each}
-				</dd>
-			</div>
-			<div class="flex items-center justify-between px-4 py-3">
-				<dt class="text-slate-500 dark:text-slate-400">Size</dt>
-				<dd class="font-medium text-slate-900 dark:text-slate-100">{formatSize(doc.size)}</dd>
-			</div>
-			<div class="flex items-center justify-between px-4 py-3">
-				<dt class="text-slate-500 dark:text-slate-400">Status</dt>
-				<dd class="font-medium text-slate-900 dark:text-slate-100">{doc.status}</dd>
-			</div>
-			<div class="flex px-4 py-3 gap-4">
-				<dt class="text-slate-500 dark:text-slate-400 shrink-0">Fingerprint</dt>
-				<dd class="font-mono text-xs text-slate-500 dark:text-slate-400 break-all">{doc.fingerprint}</dd>
-			</div>
-		</dl>
+						<span class="flex-1 min-w-0 text-slate-700 dark:text-slate-300 truncate" title={fmt.path}>
+							{basename(fmt.path)}
+						</span>
+						<span class="shrink-0 text-xs text-slate-400 dark:text-slate-500 tabular-nums">
+							{formatSize(fmt.size)}
+						</span>
+					</li>
+				{/each}
+			</ul>
+		</div>
 
 		<!-- User-editable metadata -->
 		<div>

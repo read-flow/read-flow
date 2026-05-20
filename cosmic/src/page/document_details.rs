@@ -187,24 +187,6 @@ impl DocumentDetails {
 }
 
 impl DocumentDetails {
-    // Format file size in human-readable format
-    fn format_file_size(&self, size: i64) -> String {
-        const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-        let mut size = size as f64;
-        let mut unit_index = 0;
-
-        while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-            size /= 1024.0;
-            unit_index += 1;
-        }
-
-        if unit_index == 0 {
-            format!("{} {}", size as i64, UNITS[unit_index])
-        } else {
-            format!("{:.1} {}", size, UNITS[unit_index])
-        }
-    }
-
     fn user_meta_section_view(&self) -> Element<'_, DocumentDetailsMessage> {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
@@ -472,6 +454,13 @@ impl DocumentDetails {
                                         .class(theme::Container::Primary)
                                         .padding([2, 6]),
                                 )
+                                .push(
+                                    widget::container(
+                                        text(source.type_.as_str().to_uppercase()).size(12),
+                                    )
+                                    .class(theme::Container::Card)
+                                    .padding([2, 6]),
+                                )
                                 .push(text(filename).width(Length::Fill)),
                         )
                         .push(text(folder).size(12))
@@ -567,70 +556,22 @@ impl Page for DocumentDetails {
     type Message = DocumentDetailsMessage;
 
     fn view(&self) -> Element<'_, DocumentDetailsMessage> {
-        // Extract filename and folder using std::path
-        let path = Path::new(&self.document.sources.iter().next().unwrap().path);
-
-        // Get filename without extension
-        let filename = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Unknown");
-
-        // Get the folder path
-        let folder = path
-            .parent()
-            .and_then(|parent| parent.to_str())
-            .unwrap_or("");
-
-        // Build settings sections
-        let basic_info_section = widget::settings::section()
-            .title(fl!("document-details-basic-info"))
-            .add(
-                widget::settings::item::builder(fl!("document-details-filename"))
-                    .icon(widget::icon::from_name("document-open-symbolic").size(ICON_SIZE))
-                    .control(text(filename)),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-folder"))
-                    .icon(widget::icon::from_name("folder-symbolic").size(ICON_SIZE))
-                    .control(text(folder)),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-type"))
-                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
-                    .control(text(self.document.metadata.type_.as_str())),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-size"))
-                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
-                    .control(text(
-                        self.format_file_size(self.document.metadata.size.into()),
-                    )),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-status"))
-                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
-                    .control(
-                        cosmic::iced::widget::pick_list(
-                            [
-                                ReadingStatus::Unread,
-                                ReadingStatus::Reading,
-                                ReadingStatus::Read,
-                            ],
-                            Some(self.document.metadata.status),
-                            DocumentDetailsMessage::UpdateReadingStatus,
-                        )
-                        .placeholder(fl!("document-details-select-status")),
-                    ),
-            );
-
-        let technical_section = widget::settings::section()
-            .title(fl!("document-details-technical"))
-            .add(
-                widget::settings::item::builder(fl!("document-details-fingerprint"))
-                    .icon(widget::icon::from_name("auth-fingerprint-symbolic").size(ICON_SIZE))
-                    .control(text(&self.document.metadata.fingerprint)),
-            );
+        let status_section = widget::settings::section().add(
+            widget::settings::item::builder(fl!("document-details-status"))
+                .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
+                .control(
+                    cosmic::iced::widget::pick_list(
+                        [
+                            ReadingStatus::Unread,
+                            ReadingStatus::Reading,
+                            ReadingStatus::Read,
+                        ],
+                        Some(self.document.metadata.status),
+                        DocumentDetailsMessage::UpdateReadingStatus,
+                    )
+                    .placeholder(fl!("document-details-select-status")),
+                ),
+        );
 
         let tags_section = widget::settings::section()
             .title(fl!("document-details-tags"))
@@ -648,8 +589,7 @@ impl Page for DocumentDetails {
 
         // Main layout using settings view_column
         let mut sections: Vec<Element<'_, DocumentDetailsMessage>> =
-            vec![basic_info_section.into(), self.user_meta_section_view()];
-        sections.push(technical_section.into());
+            vec![status_section.into(), self.user_meta_section_view()];
         sections.push(tags_section.into());
         sections.extend(self.sources_view());
 
