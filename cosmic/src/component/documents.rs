@@ -431,6 +431,7 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
             .icon()
             .into(),
         display_document_title(document),
+        display_pills(document),
         widget::button::icon(
             widget::icon::from_name("dialog-information-symbolic").size(ICON_SIZE),
         )
@@ -455,14 +456,12 @@ fn display_document_title<'a>(document: &'a Document) -> Element<'a, DocumentsMe
 
     let path: &Path = document.local_or_any_source().path.as_ref();
 
-    // Primary label: user title if set, otherwise filename
     let primary = document
         .user_meta
         .title
         .as_deref()
         .unwrap_or_else(|| path.file_name().and_then(|n| n.to_str()).unwrap_or(""));
 
-    // Secondary label: authors if set, otherwise directory
     let secondary: String = if let Some(authors) = document.user_meta.authors.as_deref() {
         if !authors.is_empty() {
             authors.join(", ")
@@ -477,23 +476,51 @@ fn display_document_title<'a>(document: &'a Document) -> Element<'a, DocumentsMe
             .unwrap_or_default()
     };
 
-    let mut col = cosmic::iced::widget::column![
+    cosmic::iced::widget::column![
         widget::text(primary.to_string()),
         widget::text(secondary).size(11),
     ]
-    .spacing(space_xxs);
+    .spacing(space_xxs)
+    .apply(widget::container)
+    .width(Length::Fill)
+    .into()
+}
 
-    // Document-type badge when set
+fn pill<'a, Message: 'a>(label: impl ToString) -> Element<'a, Message> {
+    let cosmic_theme::Spacing {
+        space_xxs,
+        space_xs,
+        ..
+    } = theme::active().cosmic().spacing;
+    widget::text::caption(label.to_string())
+        .apply(widget::container)
+        .class(cosmic::theme::Container::Card)
+        .padding([space_xxs, space_xs])
+        .into()
+}
+
+fn display_pills<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
+    let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+    const MAX_TAGS: usize = 3;
+
+    let mut row = Row::new().spacing(space_xxs).align_y(Vertical::Center);
+
+    // Document type pill (if set)
     if let Some(doc_type) = &document.user_meta.document_type {
-        col = col.push(
-            widget::text(doc_type.to_string())
-                .size(10)
-                .apply(widget::container)
-                .padding([1, 4]),
-        );
+        row = row.push(pill(doc_type.to_string()));
     }
 
-    col.apply(widget::container).width(Length::Fill).into()
+    // Tag pills (up to MAX_TAGS, then a count badge)
+    let tags = &document.metadata.tags;
+    let shown = tags.len().min(MAX_TAGS);
+    for tag in &tags[..shown] {
+        row = row.push(pill(tag));
+    }
+    if tags.len() > MAX_TAGS {
+        row = row.push(pill(format!("+{}", tags.len() - MAX_TAGS)));
+    }
+
+    row.into()
 }
 
 /// Get tags that are common to all selected documents
