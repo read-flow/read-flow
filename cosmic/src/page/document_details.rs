@@ -16,11 +16,7 @@ use cosmic::widget::Column;
 use cosmic::widget::Row;
 use cosmic::widget::text;
 use read_flow_core::api::ReadingStatus;
-use read_flow_core::db::datasource::DbClient;
-use read_flow_core::db::models::ContentMetadata;
 use read_flow_core::db::models::DocumentType;
-use read_flow_core::scan::metadata;
-use read_flow_core::scan::metadata::ExtractedMetadata;
 use strum::IntoEnumIterator;
 
 use crate::ApplicationModule;
@@ -45,13 +41,10 @@ use crate::state::LoadedState;
 pub struct DocumentDetails {
     document: Document,
     document_provider: Arc<DocumentProvider>,
-    application_module: Arc<ApplicationModule>,
     all_clients: ProvidedState<Arc<DocumentProvider>, Vec<ClientSelector>>,
     tag_editor: TagEditor<Arc<DocumentProvider>>,
     editing_sources: bool,
     pending_source_deletion: Option<DocumentSource>,
-    format_metadata: Option<ExtractedMetadata>,
-    format_metadata_loading: bool,
     editing_user_meta: bool,
     user_meta_draft: UserMeta,
     user_meta_authors_text: String,
@@ -84,8 +77,6 @@ pub enum DocumentDetailsMessage {
     AllClients(ProvidedStateMessage<Vec<ClientSelector>>),
     SendToClient(ClientSelector),
     SentToClient(Result<(), String>),
-    LoadFormatMetadata,
-    FormatMetadataLoaded(Result<ExtractedMetadata, String>),
 
     EditUserMeta,
     CancelUserMeta,
@@ -96,6 +87,11 @@ pub enum DocumentDetailsMessage {
     UserMetaDocTypeChanged(Option<DocumentType>),
     UserMetaDescriptionChanged(String),
     UserMetaAuthorsChanged(String),
+    UserMetaLanguageChanged(String),
+    UserMetaPublisherChanged(String),
+    UserMetaIdentifierChanged(String),
+    UserMetaDateChanged(String),
+    UserMetaSubjectChanged(String),
 
     // Message intended for the parent module
     Out(DocumentDetailsOutput),
@@ -111,7 +107,7 @@ impl DocumentDetails {
     pub fn new(
         document: Document,
         document_provider: Arc<DocumentProvider>,
-        application_module: Arc<ApplicationModule>,
+        _application_module: Arc<ApplicationModule>,
     ) -> (Self, Task<Action<DocumentDetailsMessage>>) {
         let initial_tags = document.metadata.tags.clone();
 
@@ -134,13 +130,10 @@ impl DocumentDetails {
         let file_details = DocumentDetails {
             document,
             document_provider,
-            application_module,
             all_clients,
             tag_editor,
             editing_sources: false,
             pending_source_deletion: None,
-            format_metadata: None,
-            format_metadata_loading: false,
             editing_user_meta: false,
             user_meta_draft: initial_user_meta,
             user_meta_authors_text: initial_authors_text,
@@ -151,7 +144,6 @@ impl DocumentDetails {
             task::batch([
                 tag_editor_task.map(|action| action.map(DocumentDetailsMessage::TagEditor)),
                 init_all_clients.map(ActionExt::map_into),
-                task::message(DocumentDetailsMessage::LoadFormatMetadata),
             ]),
         )
     }
@@ -267,15 +259,9 @@ impl DocumentDetails {
         };
 
         let title_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
-            widget::text_input(
-                self.format_metadata
-                    .as_ref()
-                    .and_then(|m| m.title.as_deref())
-                    .unwrap_or(""),
-                meta.title.as_deref().unwrap_or(""),
-            )
-            .on_input(DocumentDetailsMessage::UserMetaTitleChanged)
-            .into()
+            widget::text_input("", meta.title.as_deref().unwrap_or(""))
+                .on_input(DocumentDetailsMessage::UserMetaTitleChanged)
+                .into()
         } else {
             text(meta.title.as_deref().unwrap_or("—")).into()
         };
@@ -310,6 +296,46 @@ impl DocumentDetails {
             text(meta.description.as_deref().unwrap_or("—")).into()
         };
 
+        let language_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
+            widget::text_input("", meta.language.as_deref().unwrap_or(""))
+                .on_input(DocumentDetailsMessage::UserMetaLanguageChanged)
+                .into()
+        } else {
+            text(meta.language.as_deref().unwrap_or("—")).into()
+        };
+
+        let publisher_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
+            widget::text_input("", meta.publisher.as_deref().unwrap_or(""))
+                .on_input(DocumentDetailsMessage::UserMetaPublisherChanged)
+                .into()
+        } else {
+            text(meta.publisher.as_deref().unwrap_or("—")).into()
+        };
+
+        let identifier_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
+            widget::text_input("", meta.identifier.as_deref().unwrap_or(""))
+                .on_input(DocumentDetailsMessage::UserMetaIdentifierChanged)
+                .into()
+        } else {
+            text(meta.identifier.as_deref().unwrap_or("—")).into()
+        };
+
+        let date_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
+            widget::text_input("", meta.date.as_deref().unwrap_or(""))
+                .on_input(DocumentDetailsMessage::UserMetaDateChanged)
+                .into()
+        } else {
+            text(meta.date.as_deref().unwrap_or("—")).into()
+        };
+
+        let subject_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
+            widget::text_input("", meta.subject.as_deref().unwrap_or(""))
+                .on_input(DocumentDetailsMessage::UserMetaSubjectChanged)
+                .into()
+        } else {
+            text(meta.subject.as_deref().unwrap_or("—")).into()
+        };
+
         let section = section
             .add(
                 widget::settings::item::builder(fl!("document-details-user-meta-type"))
@@ -337,82 +363,37 @@ impl DocumentDetails {
                         widget::icon::from_name("accessories-text-editor-symbolic").size(ICON_SIZE),
                     )
                     .control(description_control),
-            );
-
-        section.into()
-    }
-
-    fn format_metadata_section_view(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
-        let meta = self.format_metadata.as_ref()?;
-        let mut section =
-            widget::settings::section().title(fl!("document-details-metadata-section"));
-        let mut has_items = false;
-
-        if let Some(val) = &meta.title {
-            section = section.add(
-                widget::settings::item::builder(fl!("document-details-metadata-title"))
-                    .icon(widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE))
-                    .control(text(val)),
-            );
-            has_items = true;
-        }
-        if !meta.authors.is_empty() {
-            section = section.add(
-                widget::settings::item::builder(fl!("document-details-metadata-authors"))
-                    .icon(widget::icon::from_name("system-users-symbolic").size(ICON_SIZE))
-                    .control(text(meta.authors.join(", "))),
-            );
-            has_items = true;
-        }
-        if let Some(val) = &meta.publisher {
-            section = section.add(
-                widget::settings::item::builder(fl!("document-details-metadata-publisher"))
-                    .icon(widget::icon::from_name("x-office-address-book-symbolic").size(ICON_SIZE))
-                    .control(text(val)),
-            );
-            has_items = true;
-        }
-        if let Some(val) = &meta.language {
-            section = section.add(
+            )
+            .add(
                 widget::settings::item::builder(fl!("document-details-metadata-language"))
                     .icon(
                         widget::icon::from_name("preferences-desktop-locale-symbolic")
                             .size(ICON_SIZE),
                     )
-                    .control(text(val)),
-            );
-            has_items = true;
-        }
-        if let Some(val) = &meta.date {
-            section = section.add(
-                widget::settings::item::builder(fl!("document-details-metadata-date"))
-                    .icon(widget::icon::from_name("x-office-calendar-symbolic").size(ICON_SIZE))
-                    .control(text(val)),
-            );
-            has_items = true;
-        }
-        if let Some(val) = &meta.identifier {
-            section = section.add(
+                    .control(language_control),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-metadata-publisher"))
+                    .icon(widget::icon::from_name("x-office-address-book-symbolic").size(ICON_SIZE))
+                    .control(publisher_control),
+            )
+            .add(
                 widget::settings::item::builder(fl!("document-details-metadata-identifier"))
                     .icon(widget::icon::from_name("dialog-information-symbolic").size(ICON_SIZE))
-                    .control(text(val)),
-            );
-            has_items = true;
-        }
-        if let Some(val) = &meta.subject {
-            section = section.add(
+                    .control(identifier_control),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-metadata-date"))
+                    .icon(widget::icon::from_name("x-office-calendar-symbolic").size(ICON_SIZE))
+                    .control(date_control),
+            )
+            .add(
                 widget::settings::item::builder(fl!("document-details-metadata-subject"))
                     .icon(widget::icon::from_name("edit-find-symbolic").size(ICON_SIZE))
-                    .control(text(val)),
+                    .control(subject_control),
             );
-            has_items = true;
-        }
 
-        if has_items {
-            Some(section.into())
-        } else {
-            None
-        }
+        section.into()
     }
 
     // Sources sections showing all locations where this document exists
@@ -668,9 +649,6 @@ impl Page for DocumentDetails {
         // Main layout using settings view_column
         let mut sections: Vec<Element<'_, DocumentDetailsMessage>> =
             vec![basic_info_section.into(), self.user_meta_section_view()];
-        if let Some(meta_section) = self.format_metadata_section_view() {
-            sections.push(meta_section);
-        }
         sections.push(technical_section.into());
         sections.push(tags_section.into());
         sections.extend(self.sources_view());
@@ -928,41 +906,6 @@ impl Page for DocumentDetails {
                     Task::none()
                 }
             },
-            DocumentDetailsMessage::LoadFormatMetadata => {
-                if self.format_metadata_loading {
-                    return Task::none();
-                }
-                self.format_metadata_loading = true;
-                let fingerprint = self.document.metadata.fingerprint.clone();
-                let type_ = self.document.metadata.type_.clone();
-                let path = self.document.sources.iter().next().unwrap().path.clone();
-                let application_module = self.application_module.clone();
-                Task::perform(
-                    async move {
-                        let pool = application_module.connection_pool().await;
-                        let db_client = DbClient::new(pool);
-                        if let Ok(Some(row)) = db_client.get_content_metadata(&fingerprint).await {
-                            return Ok(content_metadata_to_extracted(row));
-                        }
-                        let ext = type_.as_str().to_owned();
-                        tokio::task::spawn_blocking(move || {
-                            metadata::extract_metadata(std::path::Path::new(&path), &ext)
-                                .ok_or_else(|| "unsupported format".to_string())
-                        })
-                        .await
-                        .unwrap_or_else(|_| Err("task panicked".to_string()))
-                    },
-                    |r| cosmic::action::app(DocumentDetailsMessage::FormatMetadataLoaded(r)),
-                )
-            }
-            DocumentDetailsMessage::FormatMetadataLoaded(result) => {
-                self.format_metadata_loading = false;
-                match result {
-                    Ok(meta) => self.format_metadata = Some(meta),
-                    Err(err) => tracing::warn!("Failed to load format metadata: {err}"),
-                }
-                Task::none()
-            }
             DocumentDetailsMessage::EditUserMeta => {
                 self.user_meta_draft = self.document.user_meta.clone();
                 self.user_meta_authors_text = self
@@ -1031,21 +974,26 @@ impl Page for DocumentDetails {
                 self.user_meta_authors_text = val;
                 Task::none()
             }
+            DocumentDetailsMessage::UserMetaLanguageChanged(val) => {
+                self.user_meta_draft.language = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaPublisherChanged(val) => {
+                self.user_meta_draft.publisher = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaIdentifierChanged(val) => {
+                self.user_meta_draft.identifier = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaDateChanged(val) => {
+                self.user_meta_draft.date = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaSubjectChanged(val) => {
+                self.user_meta_draft.subject = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
         }
-    }
-}
-
-fn content_metadata_to_extracted(row: ContentMetadata) -> ExtractedMetadata {
-    ExtractedMetadata {
-        title: row.title,
-        authors: row
-            .authors
-            .map(|s| s.split(", ").map(str::to_owned).collect())
-            .unwrap_or_default(),
-        language: row.language,
-        publisher: row.publisher,
-        identifier: row.identifier,
-        date: row.date,
-        subject: row.subject,
     }
 }

@@ -17,7 +17,6 @@ use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
 use crate::api::Status;
-use crate::db::models::ContentMetadata;
 use crate::db::models::ContentTag;
 use crate::db::models::NewFile;
 
@@ -247,14 +246,6 @@ impl FileDataSource for DbClient {
 }
 
 impl DbClient {
-    pub async fn get_content_metadata(
-        &self,
-        fingerprint: &str,
-    ) -> Result<Option<ContentMetadata>, Error> {
-        let mut conn = self.connection_pool.acquire().await?;
-        dao::select_content_metadata(&mut conn, fingerprint).await
-    }
-
     pub async fn get_documents(&self) -> Result<Vec<ApiDocument>, Error> {
         let mut conn = self.connection_pool.acquire().await?;
         dao::select_all_api_documents(&mut conn).await
@@ -284,17 +275,14 @@ impl DbClient {
             meta.subtitle.as_deref(),
             authors_json.as_deref(),
             meta.description.as_deref(),
+            meta.language.as_deref(),
+            meta.publisher.as_deref(),
+            meta.identifier.as_deref(),
+            meta.date.as_deref(),
+            meta.subject.as_deref(),
         )
         .await?;
         dao::select_api_document_by_guid(&mut conn, guid).await
-    }
-
-    pub async fn get_document_extracted_metadata(
-        &self,
-        document_guid: &str,
-    ) -> Result<Option<ContentMetadata>, Error> {
-        let mut conn = self.connection_pool.acquire().await?;
-        dao::select_extracted_metadata_for_document(&mut conn, document_guid).await
     }
 
     pub async fn ensure_document_for_file(&self, file_guid: &str) -> Result<ApiDocument, Error> {

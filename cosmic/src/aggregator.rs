@@ -118,10 +118,10 @@ impl Aggregator {
             local.into_iter().map(|d| (d.guid, d.metadata)).collect()
         };
         for doc in documents.0.values_mut() {
-            if let Some(ref guid) = doc.document_guid {
-                if let Some(meta) = local_docs.get(guid) {
-                    doc.user_meta = meta.clone();
-                }
+            if let Some(ref guid) = doc.document_guid
+                && let Some(meta) = local_docs.get(guid)
+            {
+                doc.user_meta = meta.clone();
             }
         }
 

@@ -22,7 +22,6 @@ use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
 use crate::api::Status;
-use crate::db::models::ContentMetadata;
 use crate::extension_of;
 use crate::to_unique_file;
 
@@ -361,26 +360,6 @@ impl FilesClient {
             .send()
             .await?;
         response.error_for_status_ref()?;
-        Ok(response.json().await?)
-    }
-
-    pub async fn get_document_extracted_metadata(
-        &self,
-        guid: &str,
-    ) -> Result<Option<ContentMetadata>, Error> {
-        let response = self
-            .client
-            .get(
-                self.base_url
-                    .join(&format!("documents/{guid}/extracted-metadata"))?,
-            )
-            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .send()
-            .await?;
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
         Ok(response.json().await?)
     }
 

@@ -32,6 +32,7 @@
 	let editingMeta = $state(false);
 	let metaDraft = $state<DocumentMeta>({
 		document_type: null, title: null, subtitle: null, authors: null, description: null,
+		language: null, publisher: null, identifier: null, date: null, subject: null,
 	});
 	let authorsText = $state('');
 	let metaSaving = $state(false);
@@ -45,6 +46,11 @@
 			subtitle: current?.subtitle ?? null,
 			authors: current?.authors ?? null,
 			description: current?.description ?? null,
+			language: current?.language ?? null,
+			publisher: current?.publisher ?? null,
+			identifier: current?.identifier ?? null,
+			date: current?.date ?? null,
+			subject: current?.subject ?? null,
 		};
 		authorsText = metaDraft.authors?.join(', ') ?? '';
 		metaError = '';
@@ -323,6 +329,36 @@
 								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 resize-none focus:outline-none"
 							></textarea>
 						</div>
+						<!-- Language -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-lang-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Language</label>
+							<input id="meta-lang-{fingerprint}" type="text" bind:value={metaDraft.language}
+								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+						</div>
+						<!-- Publisher -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-pub-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Publisher</label>
+							<input id="meta-pub-{fingerprint}" type="text" bind:value={metaDraft.publisher}
+								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+						</div>
+						<!-- Identifier -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-id-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Identifier</label>
+							<input id="meta-id-{fingerprint}" type="text" bind:value={metaDraft.identifier}
+								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+						</div>
+						<!-- Date -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-date-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Date</label>
+							<input id="meta-date-{fingerprint}" type="text" bind:value={metaDraft.date}
+								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+						</div>
+						<!-- Subject -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-subj-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Subject</label>
+							<input id="meta-subj-{fingerprint}" type="text" bind:value={metaDraft.subject}
+								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+						</div>
 					</div>
 					{#if metaError}
 						<p class="mt-2 text-xs text-red-500 dark:text-red-400">{metaError}</p>
@@ -357,6 +393,36 @@
 							<div class="flex items-start justify-between px-4 py-3 gap-4">
 								<dt class="text-slate-500 dark:text-slate-400 shrink-0">Description</dt>
 								<dd class="text-slate-900 dark:text-slate-100 text-right text-xs break-words">{docMeta.description}</dd>
+							</div>
+						{/if}
+						{#if docMeta?.language}
+							<div class="flex items-center justify-between px-4 py-3">
+								<dt class="text-slate-500 dark:text-slate-400">Language</dt>
+								<dd class="font-medium text-slate-900 dark:text-slate-100">{docMeta.language}</dd>
+							</div>
+						{/if}
+						{#if docMeta?.publisher}
+							<div class="flex items-center justify-between px-4 py-3">
+								<dt class="text-slate-500 dark:text-slate-400">Publisher</dt>
+								<dd class="font-medium text-slate-900 dark:text-slate-100 text-right break-words max-w-[60%]">{docMeta.publisher}</dd>
+							</div>
+						{/if}
+						{#if docMeta?.identifier}
+							<div class="flex items-center justify-between px-4 py-3">
+								<dt class="text-slate-500 dark:text-slate-400">Identifier</dt>
+								<dd class="font-mono text-xs text-slate-900 dark:text-slate-100">{docMeta.identifier}</dd>
+							</div>
+						{/if}
+						{#if docMeta?.date}
+							<div class="flex items-center justify-between px-4 py-3">
+								<dt class="text-slate-500 dark:text-slate-400">Date</dt>
+								<dd class="font-medium text-slate-900 dark:text-slate-100">{docMeta.date}</dd>
+							</div>
+						{/if}
+						{#if docMeta?.subject}
+							<div class="flex items-center justify-between px-4 py-3">
+								<dt class="text-slate-500 dark:text-slate-400">Subject</dt>
+								<dd class="font-medium text-slate-900 dark:text-slate-100 text-right break-words max-w-[60%]">{docMeta.subject}</dd>
 							</div>
 						{/if}
 						{#if !docMeta?.document_type && !docMeta?.title && !docMeta?.authors?.length}

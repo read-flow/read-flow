@@ -8,7 +8,6 @@ use sqlx::SqlitePool;
 
 use crate::api::ApiDocument;
 use crate::api::DocumentMeta;
-use crate::db::models::ContentMetadata;
 use crate::db::models::ContentTag;
 use crate::db::models::Document;
 use crate::db::models::DocumentUserMetadata;
@@ -17,6 +16,7 @@ use crate::db::models::NewFile;
 use crate::db::models::NewRemote;
 use crate::db::models::ReadingProgress;
 use crate::db::models::Remote;
+use crate::scan::metadata::ExtractedMetadata;
 
 // ─── Error ───────────────────────────────────────────────────────────────────
 
@@ -356,9 +356,12 @@ pub async fn set_content_document(
     Ok(())
 }
 
-/// Post-scan pass: group all known files by `(parent_directory, stem)` and
-/// link contents that share a stem — but have distinct fingerprints — to a
-/// common `Document`.  Links are strictly additive; nothing is ever unlinked.
+/// Post-scan pass: group all known files by `(parent_directory, stem)` and link
+/// contents that share a stem but have distinct fingerprints to a common `Document`.
+///
+/// When multiple documents already exist in a group they are merged: metadata from
+/// non-canonical documents is merged into the canonical one (extending the authors
+/// list), and all content rows are pointed at the canonical document.
 pub async fn auto_link_documents(pool: &SqlitePool) -> Result<(), Error> {
     #[derive(sqlx::FromRow)]
     struct FileForLinking {
@@ -393,29 +396,56 @@ pub async fn auto_link_documents(pool: &SqlitePool) -> Result<(), Error> {
 
     for files in groups.into_values() {
         // Only process groups with ≥ 2 distinct fingerprints.
-        let distinct: std::collections::HashSet<&str> =
+        let distinct_fps: std::collections::HashSet<&str> =
             files.iter().map(|f| f.fingerprint.as_str()).collect();
-        if distinct.len() <= 1 {
+        if distinct_fps.len() <= 1 {
             continue;
         }
 
-        // Find an existing document_id in the group, or create a new one.
-        let document_id = match files.iter().find_map(|f| f.document_id) {
-            Some(id) => id,
-            None => {
-                let new_guid = uuid::Uuid::new_v4().to_string();
-                let doc = upsert_document(&mut conn, &new_guid).await?;
-                tracing::debug!(
-                    "created document {} for stem group ({} files)",
-                    doc.guid,
-                    files.len()
-                );
-                doc.id
-            }
+        // Collect the distinct document_ids present in this group.
+        let mut seen_ids = std::collections::HashSet::new();
+        let distinct_doc_ids: Vec<i32> = files
+            .iter()
+            .filter_map(|f| f.document_id)
+            .filter(|&id| seen_ids.insert(id))
+            .collect();
+
+        if distinct_doc_ids.len() == 1
+            && files
+                .iter()
+                .all(|f| f.document_id == distinct_doc_ids.first().copied())
+        {
+            // Already fully linked to a single document — nothing to do.
+            continue;
+        }
+
+        // Pick or create the canonical document.
+        let canonical_id = if let Some(&first) = distinct_doc_ids.first() {
+            first
+        } else {
+            let new_guid = uuid::Uuid::new_v4().to_string();
+            let doc = upsert_document(&mut conn, &new_guid).await?;
+            tracing::debug!(
+                "created document {} for stem group ({} files)",
+                doc.guid,
+                files.len()
+            );
+            doc.id
         };
 
+        // Merge metadata from every non-canonical document into the canonical one.
+        for &other_id in distinct_doc_ids.iter().filter(|&&id| id != canonical_id) {
+            merge_document_metadata_from_document(&mut conn, canonical_id, other_id).await?;
+        }
+
+        // Link all files in the group to the canonical document, overriding any
+        // previously assigned document_id (removes the NULL-only restriction).
         for file in &files {
-            set_content_document(&mut conn, &file.fingerprint, document_id).await?;
+            sqlx::query("UPDATE contents SET document_id = ? WHERE fingerprint = ?")
+                .bind(canonical_id)
+                .bind(&file.fingerprint)
+                .execute(&mut *conn)
+                .await?;
         }
     }
 
@@ -549,52 +579,6 @@ pub async fn upsert_reading_progress(
     Ok(())
 }
 
-// ─── Content metadata ────────────────────────────────────────────────────────
-
-/// Insert metadata for a fingerprint. Skips if a row already exists (`INSERT OR IGNORE`).
-pub async fn upsert_content_metadata(
-    conn: &mut SqliteConnection,
-    fingerprint: &str,
-    title: Option<&str>,
-    authors: Option<&str>,
-    language: Option<&str>,
-    publisher: Option<&str>,
-    identifier: Option<&str>,
-    date: Option<&str>,
-    subject: Option<&str>,
-) -> Result<(), Error> {
-    sqlx::query(
-        "INSERT OR IGNORE INTO content_metadata \
-         (fingerprint, title, authors, language, publisher, identifier, date, subject, extracted_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
-    )
-    .bind(fingerprint)
-    .bind(title)
-    .bind(authors)
-    .bind(language)
-    .bind(publisher)
-    .bind(identifier)
-    .bind(date)
-    .bind(subject)
-    .execute(&mut *conn)
-    .await?;
-    Ok(())
-}
-
-pub async fn select_content_metadata(
-    conn: &mut SqliteConnection,
-    fingerprint: &str,
-) -> Result<Option<ContentMetadata>, Error> {
-    sqlx::query_as::<_, ContentMetadata>(
-        "SELECT fingerprint, title, authors, language, publisher, identifier, date, subject, extracted_at \
-         FROM content_metadata WHERE fingerprint = ?",
-    )
-    .bind(fingerprint)
-    .fetch_optional(&mut *conn)
-    .await
-    .map_err(Into::into)
-}
-
 // ─── High-level scan writer ───────────────────────────────────────────────────
 
 /// Write a single scanned file (upsert content + upsert file + add tags).
@@ -668,7 +652,8 @@ pub async fn get_document_user_metadata(
     document_id: i32,
 ) -> Result<Option<DocumentUserMetadata>, Error> {
     sqlx::query_as::<_, DocumentUserMetadata>(
-        "SELECT document_id, document_type, title, subtitle, authors, description, updated_at \
+        "SELECT document_id, document_type, title, subtitle, authors, description, \
+                language, publisher, identifier, date, subject, updated_at \
          FROM document_metadata WHERE document_id = ?",
     )
     .bind(document_id)
@@ -677,6 +662,7 @@ pub async fn get_document_user_metadata(
     .map_err(Into::into)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn upsert_document_user_metadata(
     conn: &mut SqliteConnection,
     document_id: i32,
@@ -685,17 +671,28 @@ pub async fn upsert_document_user_metadata(
     subtitle: Option<&str>,
     authors: Option<&str>,
     description: Option<&str>,
+    language: Option<&str>,
+    publisher: Option<&str>,
+    identifier: Option<&str>,
+    date: Option<&str>,
+    subject: Option<&str>,
 ) -> Result<DocumentUserMetadata, Error> {
     sqlx::query(
         "INSERT INTO document_metadata \
-             (document_id, document_type, title, subtitle, authors, description) \
-         VALUES (?, ?, ?, ?, ?, ?) \
+             (document_id, document_type, title, subtitle, authors, description, \
+              language, publisher, identifier, date, subject) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
          ON CONFLICT(document_id) DO UPDATE SET \
              document_type = excluded.document_type, \
              title         = excluded.title, \
              subtitle      = excluded.subtitle, \
              authors       = excluded.authors, \
              description   = excluded.description, \
+             language      = excluded.language, \
+             publisher     = excluded.publisher, \
+             identifier    = excluded.identifier, \
+             date          = excluded.date, \
+             subject       = excluded.subject, \
              updated_at    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
     )
     .bind(document_id)
@@ -704,6 +701,11 @@ pub async fn upsert_document_user_metadata(
     .bind(subtitle)
     .bind(authors)
     .bind(description)
+    .bind(language)
+    .bind(publisher)
+    .bind(identifier)
+    .bind(date)
+    .bind(subject)
     .execute(&mut *conn)
     .await?;
 
@@ -713,23 +715,131 @@ pub async fn upsert_document_user_metadata(
     Ok(row)
 }
 
+/// Smart-merge extracted file metadata into a document's metadata row.
+///
+/// Rules:
+/// - Scalar fields (title, language, publisher, identifier, date, subject): keep
+///   existing value if non-null; fill in from extracted only when absent.
+/// - Authors: extend the existing list with any new unique values from the
+///   extracted metadata so the user can choose the best-formatted name.
+pub async fn merge_document_metadata_from_extracted(
+    conn: &mut SqliteConnection,
+    document_id: i32,
+    meta: &ExtractedMetadata,
+) -> Result<(), Error> {
+    let existing = get_document_user_metadata(&mut *conn, document_id).await?;
+
+    let authors_json = |authors: &[String]| -> Option<String> {
+        if authors.is_empty() {
+            None
+        } else {
+            serde_json::to_string(authors).ok()
+        }
+    };
+
+    match existing {
+        None => {
+            // No row yet — insert directly from extracted metadata.
+            let authors = authors_json(&meta.authors);
+            sqlx::query(
+                "INSERT INTO document_metadata \
+                 (document_id, title, authors, language, publisher, \
+                  identifier, date, subject) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(document_id)
+            .bind(&meta.title)
+            .bind(authors.as_deref())
+            .bind(&meta.language)
+            .bind(&meta.publisher)
+            .bind(&meta.identifier)
+            .bind(&meta.date)
+            .bind(&meta.subject)
+            .execute(&mut *conn)
+            .await?;
+        }
+        Some(existing) => {
+            // Merge: for scalar fields keep existing if set, fill from extracted otherwise.
+            let merged_title = existing.title.or_else(|| meta.title.clone());
+            let merged_language = existing.language.or_else(|| meta.language.clone());
+            let merged_publisher = existing.publisher.or_else(|| meta.publisher.clone());
+            let merged_identifier = existing.identifier.or_else(|| meta.identifier.clone());
+            let merged_date = existing.date.or_else(|| meta.date.clone());
+            let merged_subject = existing.subject.or_else(|| meta.subject.clone());
+
+            // Authors: parse existing JSON array, append any new unique values.
+            let mut all_authors: Vec<String> = existing
+                .authors
+                .as_deref()
+                .and_then(|s| serde_json::from_str(s).ok())
+                .unwrap_or_default();
+            for author in &meta.authors {
+                if !all_authors.contains(author) {
+                    all_authors.push(author.clone());
+                }
+            }
+            let merged_authors = authors_json(&all_authors);
+
+            sqlx::query(
+                "UPDATE document_metadata SET \
+                 title = ?, authors = ?, language = ?, publisher = ?, \
+                 identifier = ?, date = ?, subject = ?, \
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
+                 WHERE document_id = ?",
+            )
+            .bind(&merged_title)
+            .bind(merged_authors.as_deref())
+            .bind(&merged_language)
+            .bind(&merged_publisher)
+            .bind(&merged_identifier)
+            .bind(&merged_date)
+            .bind(&merged_subject)
+            .bind(document_id)
+            .execute(&mut *conn)
+            .await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Merge the metadata of `source_id` into `canonical_id` using the same smart-merge
+/// rules as `merge_document_metadata_from_extracted`.
+pub async fn merge_document_metadata_from_document(
+    conn: &mut SqliteConnection,
+    canonical_id: i32,
+    source_id: i32,
+) -> Result<(), Error> {
+    let Some(src) = get_document_user_metadata(&mut *conn, source_id).await? else {
+        return Ok(());
+    };
+    let src_authors: Vec<String> = src
+        .authors
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+    let extracted = ExtractedMetadata {
+        title: src.title,
+        authors: src_authors,
+        language: src.language,
+        publisher: src.publisher,
+        identifier: src.identifier,
+        date: src.date,
+        subject: src.subject,
+    };
+    merge_document_metadata_from_extracted(&mut *conn, canonical_id, &extracted).await
+}
+
 /// Get or create a `documents` row for the file identified by `file_guid`.
 ///
-/// If the file's content is already linked to a document, returns that document.
-/// Otherwise creates a new document, links the content to it, and returns it.
-pub async fn ensure_document_for_file_guid(
+/// Get or create a `documents` row for the content identified by `fingerprint`.
+pub async fn ensure_document_for_fingerprint(
     conn: &mut SqliteConnection,
-    file_guid: &str,
+    fingerprint: &str,
 ) -> Result<ApiDocument, Error> {
-    // Look up the file to get its fingerprint.
-    let file = select_file_by_guid(&mut *conn, file_guid)
-        .await?
-        .ok_or_else(|| Error::Sqlx(Arc::new(sqlx::Error::RowNotFound)))?;
-
-    // Check whether the content is already linked to a document.
     let document_id: Option<i32> =
         sqlx::query_scalar("SELECT document_id FROM contents WHERE fingerprint = ?")
-            .bind(&file.fingerprint)
+            .bind(fingerprint)
             .fetch_optional(&mut *conn)
             .await?
             .flatten();
@@ -743,11 +853,26 @@ pub async fn ensure_document_for_file_guid(
     } else {
         let new_guid = uuid::Uuid::new_v4().to_string();
         let doc = upsert_document(&mut *conn, &new_guid).await?;
-        set_content_document(&mut *conn, &file.fingerprint, doc.id).await?;
+        sqlx::query("UPDATE contents SET document_id = ? WHERE fingerprint = ?")
+            .bind(doc.id)
+            .bind(fingerprint)
+            .execute(&mut *conn)
+            .await?;
         (doc.id, new_guid)
     };
 
     load_api_document(&mut *conn, document_id, document_guid).await
+}
+
+/// Get or create a `documents` row for the file identified by `file_guid`.
+pub async fn ensure_document_for_file_guid(
+    conn: &mut SqliteConnection,
+    file_guid: &str,
+) -> Result<ApiDocument, Error> {
+    let file = select_file_by_guid(&mut *conn, file_guid)
+        .await?
+        .ok_or_else(|| Error::Sqlx(Arc::new(sqlx::Error::RowNotFound)))?;
+    ensure_document_for_fingerprint(&mut *conn, &file.fingerprint).await
 }
 
 // ─── High-level document queries (ApiDocument) ───────────────────────────────
@@ -800,26 +925,6 @@ pub async fn select_document_by_guid(
         .map_err(Into::into)
 }
 
-pub async fn select_extracted_metadata_for_document(
-    conn: &mut SqliteConnection,
-    document_guid: &str,
-) -> Result<Option<ContentMetadata>, Error> {
-    let fingerprint: Option<String> = sqlx::query_scalar(
-        "SELECT f.fingerprint FROM files f
-         JOIN contents c ON f.fingerprint = c.fingerprint
-         JOIN documents d ON c.document_id = d.id
-         WHERE d.guid = ?
-         LIMIT 1",
-    )
-    .bind(document_guid)
-    .fetch_optional(&mut *conn)
-    .await?;
-    match fingerprint {
-        None => Ok(None),
-        Some(fp) => select_content_metadata(&mut *conn, &fp).await,
-    }
-}
-
 async fn load_api_document(
     conn: &mut SqliteConnection,
     document_id: i32,
@@ -860,94 +965,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upsert_content_metadata_inserts_row() {
-        let pool = test_pool().await;
-        let mut conn = pool.acquire().await.unwrap();
-        upsert_content(&mut conn, "fp1").await.unwrap();
-        upsert_content_metadata(
-            &mut conn,
-            "fp1",
-            Some("My Title"),
-            Some("Alice"),
-            Some("en"),
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-
-        let row: (String, String, String) = sqlx::query_as(
-            "SELECT title, authors, language FROM content_metadata WHERE fingerprint = 'fp1'",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(row.0, "My Title");
-        assert_eq!(row.1, "Alice");
-        assert_eq!(row.2, "en");
-    }
-
-    #[tokio::test]
-    async fn upsert_content_metadata_is_idempotent() {
-        let pool = test_pool().await;
-        let mut conn = pool.acquire().await.unwrap();
-        upsert_content(&mut conn, "fp2").await.unwrap();
-        upsert_content_metadata(
-            &mut conn,
-            "fp2",
-            Some("First"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-        // Second call must not overwrite.
-        upsert_content_metadata(
-            &mut conn,
-            "fp2",
-            Some("Second"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
-
-        let title: (String,) =
-            sqlx::query_as("SELECT title FROM content_metadata WHERE fingerprint = 'fp2'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(title.0, "First");
-    }
-
-    #[tokio::test]
-    async fn upsert_content_metadata_stores_null_fields() {
-        let pool = test_pool().await;
-        let mut conn = pool.acquire().await.unwrap();
-        upsert_content(&mut conn, "fp3").await.unwrap();
-        upsert_content_metadata(&mut conn, "fp3", None, None, None, None, None, None, None)
-            .await
-            .unwrap();
-
-        let count: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM content_metadata WHERE fingerprint = 'fp3'")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert_eq!(count.0, 1);
-    }
-
-    #[tokio::test]
     async fn upsert_document_user_metadata_inserts_and_updates() {
         let pool = test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
@@ -961,6 +978,11 @@ mod tests {
             None,
             Some(r#"["Alice","Bob"]"#),
             None,
+            Some("en"),
+            None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -969,6 +991,7 @@ mod tests {
         assert_eq!(row.title.as_deref(), Some("My Title"));
         assert_eq!(row.document_type.as_deref(), Some("Book"));
         assert_eq!(row.authors.as_deref(), Some(r#"["Alice","Bob"]"#));
+        assert_eq!(row.language.as_deref(), Some("en"));
 
         // Second call must overwrite.
         let updated = upsert_document_user_metadata(
@@ -976,6 +999,11 @@ mod tests {
             doc.id,
             Some("Article"),
             Some("Updated Title"),
+            None,
+            None,
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -993,5 +1021,85 @@ mod tests {
         let doc = upsert_document(&mut conn, "doc-guid-2").await.unwrap();
         let result = get_document_user_metadata(&mut conn, doc.id).await.unwrap();
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn merge_metadata_inserts_when_absent() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let doc = upsert_document(&mut conn, "doc-m1").await.unwrap();
+
+        let meta = ExtractedMetadata {
+            title: Some("The Book".into()),
+            authors: vec!["Alice".into()],
+            language: Some("en".into()),
+            publisher: None,
+            identifier: None,
+            date: None,
+            subject: None,
+        };
+        merge_document_metadata_from_extracted(&mut conn, doc.id, &meta)
+            .await
+            .unwrap();
+
+        let row = get_document_user_metadata(&mut conn, doc.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.title.as_deref(), Some("The Book"));
+        assert_eq!(row.language.as_deref(), Some("en"));
+        let authors: Vec<String> = serde_json::from_str(row.authors.as_deref().unwrap()).unwrap();
+        assert_eq!(authors, vec!["Alice"]);
+    }
+
+    #[tokio::test]
+    async fn merge_metadata_keeps_existing_scalars_and_extends_authors() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let doc = upsert_document(&mut conn, "doc-m2").await.unwrap();
+
+        // Insert initial metadata (simulates what scan writes for file A).
+        let first = ExtractedMetadata {
+            title: Some("The Book".into()),
+            authors: vec!["Alice".into()],
+            language: Some("en".into()),
+            publisher: Some("Pub A".into()),
+            identifier: None,
+            date: None,
+            subject: None,
+        };
+        merge_document_metadata_from_extracted(&mut conn, doc.id, &first)
+            .await
+            .unwrap();
+
+        // Merge metadata for a second format of the same book (different author spelling).
+        let second = ExtractedMetadata {
+            title: Some("The Book (alternate title)".into()),
+            authors: vec!["Alice".into(), "Bob".into()],
+            language: Some("fr".into()),
+            publisher: Some("Pub B".into()),
+            identifier: Some("isbn-123".into()),
+            date: None,
+            subject: None,
+        };
+        merge_document_metadata_from_extracted(&mut conn, doc.id, &second)
+            .await
+            .unwrap();
+
+        let row = get_document_user_metadata(&mut conn, doc.id)
+            .await
+            .unwrap()
+            .unwrap();
+        // Scalar fields: first value wins.
+        assert_eq!(row.title.as_deref(), Some("The Book"));
+        assert_eq!(row.language.as_deref(), Some("en"));
+        assert_eq!(row.publisher.as_deref(), Some("Pub A"));
+        // New scalar that was absent in first merge gets filled.
+        assert_eq!(row.identifier.as_deref(), Some("isbn-123"));
+        // Authors: extended with new unique entries.
+        let authors: Vec<String> = serde_json::from_str(row.authors.as_deref().unwrap()).unwrap();
+        assert!(authors.contains(&"Alice".to_string()));
+        assert!(authors.contains(&"Bob".to_string()));
+        assert_eq!(authors.len(), 2); // "Alice" not duplicated
     }
 }

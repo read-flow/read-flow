@@ -408,7 +408,10 @@ async fn flush_batch(
         return;
     }
 
-    // Extract and store metadata for new/updated files outside the main transaction.
+    // Extract metadata and store in document_metadata for new/updated files.
+    // Each file gets a document record (created on demand) and its metadata is
+    // smart-merged so that re-scanning extends the authors list rather than
+    // overwriting it.
     for (fingerprint, path, extension) in needs_metadata {
         let path_clone = path.clone();
         let ext_clone = extension.clone();
@@ -424,25 +427,36 @@ async fn flush_batch(
 
         match pool.acquire().await {
             Ok(mut conn) => {
-                let authors_str = if meta.authors.is_empty() {
-                    None
-                } else {
-                    Some(meta.authors.join(", "))
-                };
-                if let Err(e) = dao::upsert_content_metadata(
-                    &mut conn,
-                    &fingerprint,
-                    meta.title.as_deref(),
-                    authors_str.as_deref(),
-                    meta.language.as_deref(),
-                    meta.publisher.as_deref(),
-                    meta.identifier.as_deref(),
-                    meta.date.as_deref(),
-                    meta.subject.as_deref(),
-                )
-                .await
-                {
-                    tracing::warn!("failed to store metadata for {fingerprint}: {e}");
+                match dao::ensure_document_for_fingerprint(&mut conn, &fingerprint).await {
+                    Ok(api_doc) => {
+                        // Resolve document_id from the returned guid.
+                        let doc_id_result =
+                            sqlx::query_scalar::<_, i32>("SELECT id FROM documents WHERE guid = ?")
+                                .bind(&api_doc.guid)
+                                .fetch_one(&mut *conn)
+                                .await;
+                        match doc_id_result {
+                            Ok(doc_id) => {
+                                if let Err(e) = dao::merge_document_metadata_from_extracted(
+                                    &mut conn, doc_id, &meta,
+                                )
+                                .await
+                                {
+                                    tracing::warn!(
+                                        "failed to merge metadata for {fingerprint}: {e}"
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "failed to resolve document id for {fingerprint}: {e}"
+                                )
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("failed to ensure document for {fingerprint}: {e}")
+                    }
                 }
             }
             Err(e) => tracing::warn!("failed to acquire connection for metadata: {e}"),

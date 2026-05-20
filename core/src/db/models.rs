@@ -41,6 +41,11 @@ pub struct DocumentUserMetadata {
     pub subtitle: Option<String>,
     pub authors: Option<String>,
     pub description: Option<String>,
+    pub language: Option<String>,
+    pub publisher: Option<String>,
+    pub identifier: Option<String>,
+    pub date: Option<String>,
+    pub subject: Option<String>,
     pub updated_at: String,
 }
 
@@ -83,19 +88,6 @@ impl ContentTag {
     pub fn new(fingerprint: String, tag: String) -> Self {
         Self { fingerprint, tag }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
-pub struct ContentMetadata {
-    pub fingerprint: String,
-    pub title: Option<String>,
-    pub authors: Option<String>,
-    pub language: Option<String>,
-    pub publisher: Option<String>,
-    pub identifier: Option<String>,
-    pub date: Option<String>,
-    pub subject: Option<String>,
-    pub extracted_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]

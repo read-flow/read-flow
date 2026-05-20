@@ -13,6 +13,7 @@ use crate::db::models::ContentTag;
 use crate::db::models::DocumentUserMetadata;
 use crate::db::models::File as DbFile;
 pub use crate::db::models::ReadingProgress;
+pub use crate::scan::metadata::ExtractedMetadata;
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, PartialOrd, Ord, EnumIter, Hash,
@@ -123,19 +124,23 @@ impl From<(DbFile, Vec<ContentTag>)> for File {
 
 pub use crate::db::models::DocumentType;
 
-/// User-edited document-level metadata (separate from auto-extracted `ContentMetadata`).
+/// Document metadata — single source of truth for both user-edited and auto-extracted fields.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
 pub struct DocumentMeta {
     pub document_type: Option<DocumentType>,
     pub title: Option<String>,
     pub subtitle: Option<String>,
-    /// Ordered list of author names.
+    /// All known author name variants across formats, ordered.
     pub authors: Option<Vec<String>>,
     pub description: Option<String>,
+    pub language: Option<String>,
+    pub publisher: Option<String>,
+    pub identifier: Option<String>,
+    pub date: Option<String>,
+    pub subject: Option<String>,
 }
 
 impl DocumentMeta {
-    /// Deserialise from a `DocumentUserMetadata` DB row, parsing the JSON authors field.
     pub fn from_db(row: DocumentUserMetadata) -> Self {
         let document_type = row
             .document_type
@@ -152,6 +157,11 @@ impl DocumentMeta {
             subtitle: row.subtitle,
             authors,
             description: row.description,
+            language: row.language,
+            publisher: row.publisher,
+            identifier: row.identifier,
+            date: row.date,
+            subject: row.subject,
         }
     }
 

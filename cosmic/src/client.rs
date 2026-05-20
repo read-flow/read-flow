@@ -12,7 +12,6 @@ use read_flow_core::api::Status;
 use read_flow_core::client;
 use read_flow_core::client::FilesClient;
 use read_flow_core::db::dao;
-use read_flow_core::db::models::ContentMetadata;
 use url::Url;
 
 use crate::ApplicationModule;
@@ -218,22 +217,6 @@ impl Client {
                 .update_document_metadata(guid, meta)
                 .await?),
             Client::Remote(client) => Ok(Some(client.update_document_metadata(guid, meta).await?)),
-        }
-    }
-
-    pub async fn get_document_extracted_metadata(
-        &self,
-        document_guid: &str,
-    ) -> Result<Option<ContentMetadata>, FilesClientError> {
-        match self {
-            Client::Local(module) => Ok(module
-                .db_client()
-                .await
-                .get_document_extracted_metadata(document_guid)
-                .await?),
-            Client::Remote(client) => Ok(client
-                .get_document_extracted_metadata(document_guid)
-                .await?),
         }
     }
 

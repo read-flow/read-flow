@@ -16,24 +16,17 @@ export interface DocumentMeta {
 	subtitle: string | null;
 	authors: string[] | null;
 	description: string | null;
+	language: string | null;
+	publisher: string | null;
+	identifier: string | null;
+	date: string | null;
+	subject: string | null;
 }
 
 export interface RemoteDocument {
 	guid: string;
 	metadata: DocumentMeta;
 	file_guids: string[];
-}
-
-export interface ExtractedMetadata {
-	fingerprint: string;
-	title: string | null;
-	authors: string | null;
-	language: string | null;
-	publisher: string | null;
-	identifier: string | null;
-	date: string | null;
-	subject: string | null;
-	extracted_at: string;
 }
 
 export interface RemoteFile {
@@ -181,12 +174,4 @@ export class ReadFlowClient {
 		});
 	}
 
-	async getDocumentExtractedMetadata(guid: string): Promise<ExtractedMetadata | null> {
-		try {
-			return await this.request<ExtractedMetadata>(`/documents/${guid}/extracted-metadata`);
-		} catch (err) {
-			if (err instanceof Error && err.message.includes('HTTP 404')) return null;
-			throw err;
-		}
-	}
 }
