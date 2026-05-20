@@ -296,6 +296,11 @@ impl DbClient {
         let mut conn = self.connection_pool.acquire().await?;
         dao::select_extracted_metadata_for_document(&mut conn, document_guid).await
     }
+
+    pub async fn ensure_document_for_file(&self, file_guid: &str) -> Result<ApiDocument, Error> {
+        let mut conn = self.connection_pool.acquire().await?;
+        dao::ensure_document_for_file_guid(&mut conn, file_guid).await
+    }
 }
 
 /// Wraps a [`DbClient`] and filters out files/tags whose tags include any of

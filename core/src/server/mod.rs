@@ -168,6 +168,7 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         get_document,
         put_document_metadata,
         get_document_extracted_metadata,
+        ensure_document_for_file,
     ];
 
     rocket::custom(figment)
@@ -618,6 +619,18 @@ async fn get_document_extracted_metadata(
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let meta = dao::select_extracted_metadata_for_document(&mut conn, guid).await?;
     Ok(meta.map(Json))
+}
+
+#[post("/files/<guid>/document")]
+async fn ensure_document_for_file(
+    guid: &str,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Json<ApiDocument>> {
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let doc = dao::ensure_document_for_file_guid(&mut conn, guid).await?;
+    Ok(Json(doc))
 }
 
 fn extension_to_content_type(extension: &str) -> Result<ContentType> {

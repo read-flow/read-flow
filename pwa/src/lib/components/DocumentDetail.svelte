@@ -57,7 +57,7 @@
 	}
 
 	async function saveMeta() {
-		if (!doc?.document_guid || metaSaving) return;
+		if (!doc || metaSaving) return;
 		metaSaving = true;
 		metaError = '';
 		const authors = authorsText.split(',').map((s) => s.trim()).filter(Boolean);
@@ -66,7 +66,8 @@
 			authors: authors.length ? authors : null,
 		};
 		try {
-			await updateDocumentMetadata(doc.document_guid, payload);
+			// Pass sourceGuids so the aggregator can create the document record when needed.
+			await updateDocumentMetadata(doc.document_guid, payload, doc.sourceGuids);
 			await refreshDocuments();
 			editingMeta = false;
 		} catch (err) {
@@ -233,9 +234,8 @@
 		</dl>
 
 		<!-- User-editable metadata -->
-		{#if doc.document_guid}
-			<div>
-				<div class="flex items-center justify-between mb-2">
+		<div>
+			<div class="flex items-center justify-between mb-2">
 					<h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Document Info</h2>
 					{#if editingMeta}
 						<div class="flex gap-2">
@@ -367,7 +367,6 @@
 					</dl>
 				{/if}
 			</div>
-		{/if}
 
 		<!-- Tags -->
 		<div>

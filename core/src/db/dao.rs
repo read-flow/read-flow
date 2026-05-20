@@ -713,6 +713,43 @@ pub async fn upsert_document_user_metadata(
     Ok(row)
 }
 
+/// Get or create a `documents` row for the file identified by `file_guid`.
+///
+/// If the file's content is already linked to a document, returns that document.
+/// Otherwise creates a new document, links the content to it, and returns it.
+pub async fn ensure_document_for_file_guid(
+    conn: &mut SqliteConnection,
+    file_guid: &str,
+) -> Result<ApiDocument, Error> {
+    // Look up the file to get its fingerprint.
+    let file = select_file_by_guid(&mut *conn, file_guid)
+        .await?
+        .ok_or_else(|| Error::Sqlx(Arc::new(sqlx::Error::RowNotFound)))?;
+
+    // Check whether the content is already linked to a document.
+    let document_id: Option<i32> =
+        sqlx::query_scalar("SELECT document_id FROM contents WHERE fingerprint = ?")
+            .bind(&file.fingerprint)
+            .fetch_optional(&mut *conn)
+            .await?
+            .flatten();
+
+    let (document_id, document_guid) = if let Some(id) = document_id {
+        let guid: String = sqlx::query_scalar("SELECT guid FROM documents WHERE id = ?")
+            .bind(id)
+            .fetch_one(&mut *conn)
+            .await?;
+        (id, guid)
+    } else {
+        let new_guid = uuid::Uuid::new_v4().to_string();
+        let doc = upsert_document(&mut *conn, &new_guid).await?;
+        set_content_document(&mut *conn, &file.fingerprint, doc.id).await?;
+        (doc.id, new_guid)
+    };
+
+    load_api_document(&mut *conn, document_id, document_guid).await
+}
+
 // ─── High-level document queries (ApiDocument) ───────────────────────────────
 
 pub async fn select_all_api_documents(

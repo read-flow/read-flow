@@ -157,6 +157,10 @@ export class ReadFlowClient {
 		return response.blob();
 	}
 
+	async ensureDocumentForFile(fileGuid: string): Promise<RemoteDocument> {
+		return this.request<RemoteDocument>(`/files/${fileGuid}/document`, { method: 'POST' });
+	}
+
 	async getDocuments(): Promise<RemoteDocument[]> {
 		return this.request<RemoteDocument[]>('/documents');
 	}

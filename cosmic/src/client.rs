@@ -231,9 +231,23 @@ impl Client {
                 .await
                 .get_document_extracted_metadata(document_guid)
                 .await?),
-            Client::Remote(client) => {
-                Ok(client.get_document_extracted_metadata(document_guid).await?)
-            }
+            Client::Remote(client) => Ok(client
+                .get_document_extracted_metadata(document_guid)
+                .await?),
+        }
+    }
+
+    pub async fn ensure_document_for_file(
+        &self,
+        file_guid: &str,
+    ) -> Result<ApiDocument, FilesClientError> {
+        match self {
+            Client::Local(module) => Ok(module
+                .db_client()
+                .await
+                .ensure_document_for_file(file_guid)
+                .await?),
+            Client::Remote(client) => Ok(client.ensure_document_for_file(file_guid).await?),
         }
     }
 }

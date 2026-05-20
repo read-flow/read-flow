@@ -126,14 +126,53 @@ export async function fetchDocumentMetaMap(): Promise<Map<string, DocumentMeta>>
 }
 
 /**
+ * Ensure a document record exists for the given file GUID on a single source client.
+ * Returns the document GUID.
+ */
+async function ensureDocumentOnSource(
+	client: ReadFlowClient,
+	fileGuid: string,
+): Promise<string> {
+	const doc = await client.ensureDocumentForFile(fileGuid);
+	return doc.guid;
+}
+
+/**
  * Update document metadata on all sources that hold the document.
+ *
+ * If `documentGuid` is null (no document record exists yet for the file),
+ * this first calls `ensureDocumentForFile` on each source to create the record,
+ * then updates the metadata using the resulting GUID.
+ *
+ * `sourceGuids` is required when `documentGuid` is null — it maps source IDs to
+ * file GUIDs so we know which file to link on each source.
  */
 export async function updateDocumentMetadata(
-	documentGuid: string,
+	documentGuid: string | null,
 	meta: DocumentMeta,
+	sourceGuids?: Record<number, string>,
 ): Promise<void> {
-	const clients = await getClients();
-	await Promise.allSettled(clients.map(({ client }) => client.updateDocumentMetadata(documentGuid, meta)));
+	const sources = await db.sources.orderBy('order').toArray();
+
+	if (documentGuid) {
+		// Fast path: document record already exists.
+		await Promise.allSettled(
+			sources.map((s) => new ReadFlowClient(s).updateDocumentMetadata(documentGuid, meta)),
+		);
+	} else {
+		// Slow path: ensure a document record per source, then update metadata.
+		if (!sourceGuids) return;
+		await Promise.allSettled(
+			sources
+				.filter((s) => s.id !== undefined && sourceGuids[s.id as number] !== undefined)
+				.map(async (s) => {
+					const client = new ReadFlowClient(s);
+					const fileGuid = sourceGuids[s.id as number];
+					const docGuid = await ensureDocumentOnSource(client, fileGuid);
+					await client.updateDocumentMetadata(docGuid, meta);
+				}),
+		);
+	}
 }
 
 /**

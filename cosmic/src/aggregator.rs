@@ -129,34 +129,68 @@ impl Aggregator {
     }
 
     /// Update user-edited document metadata on all sources that hold the document.
+    ///
+    /// If the document has no `document_guid` yet (single-file document that was never
+    /// auto-linked), this first calls `ensure_document_for_file` on each source to create
+    /// the `documents` row, then saves the metadata.
     pub async fn update_document_metadata(
         &self,
         document: &Document,
         meta: DocumentMeta,
     ) -> Result<(), FilesClientError> {
-        let Some(ref guid) = document.document_guid else {
-            return Ok(());
-        };
-        let clients: Vec<_> = document
-            .sources
-            .iter()
-            .filter_map(|s| self.clients.get(&s.client).cloned())
-            .collect();
+        let source_count = document.sources.len().max(1);
 
-        let results: Vec<Result<Option<_>, FilesClientError>> = stream::iter(clients)
-            .map(|client| {
-                let guid = guid.clone();
-                let meta = meta.clone();
-                async move { client.update_document_metadata(&guid, meta).await }
-            })
-            .buffer_unordered(document.sources.len().max(1))
-            .collect()
-            .await;
+        if let Some(ref guid) = document.document_guid {
+            // Fast path: document record already exists, same guid on all sources.
+            let clients: Vec<_> = document
+                .sources
+                .iter()
+                .filter_map(|s| self.clients.get(&s.client).cloned())
+                .collect();
 
-        results
-            .into_iter()
-            .filter_map(Result::err)
-            .for_each(|e| tracing::warn!("error updating document metadata: {e}"));
+            let results: Vec<Result<Option<_>, FilesClientError>> = stream::iter(clients)
+                .map(|client| {
+                    let guid = guid.clone();
+                    let meta = meta.clone();
+                    async move { client.update_document_metadata(&guid, meta).await }
+                })
+                .buffer_unordered(source_count)
+                .collect()
+                .await;
+
+            results
+                .into_iter()
+                .filter_map(Result::err)
+                .for_each(|e| tracing::warn!("error updating document metadata: {e}"));
+        } else {
+            // Slow path: no document record yet — ensure one exists per source, then save.
+            let source_client_pairs: Vec<_> = document
+                .sources
+                .iter()
+                .filter_map(|s| {
+                    self.clients
+                        .get(&s.client)
+                        .map(|c| (s.guid.clone(), c.clone()))
+                })
+                .collect();
+
+            let results: Vec<Result<_, FilesClientError>> = stream::iter(source_client_pairs)
+                .map(|(file_guid, client)| {
+                    let meta = meta.clone();
+                    async move {
+                        let api_doc = client.ensure_document_for_file(&file_guid).await?;
+                        client.update_document_metadata(&api_doc.guid, meta).await
+                    }
+                })
+                .buffer_unordered(source_count)
+                .collect()
+                .await;
+
+            results
+                .into_iter()
+                .filter_map(Result::err)
+                .for_each(|e| tracing::warn!("error ensuring/updating document metadata: {e}"));
+        }
 
         Ok(())
     }

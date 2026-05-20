@@ -157,17 +157,13 @@ impl DocumentDetails {
     }
 
     pub fn display_name(&self) -> String {
-        self.document
-            .user_meta
-            .title
-            .clone()
-            .unwrap_or_else(|| {
-                Path::new(&self.document.sources.iter().next().unwrap().path)
-                    .file_stem()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("Unknown")
-                    .to_string()
-            })
+        self.document.user_meta.title.clone().unwrap_or_else(|| {
+            Path::new(&self.document.sources.iter().next().unwrap().path)
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Unknown")
+                .to_string()
+        })
     }
 
     fn add_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
@@ -317,30 +313,22 @@ impl DocumentDetails {
         let section = section
             .add(
                 widget::settings::item::builder(fl!("document-details-user-meta-type"))
-                    .icon(
-                        widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE),
-                    )
+                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
                     .control(type_control),
             )
             .add(
                 widget::settings::item::builder(fl!("document-details-user-meta-title"))
-                    .icon(
-                        widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE),
-                    )
+                    .icon(widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE))
                     .control(title_control),
             )
             .add(
                 widget::settings::item::builder(fl!("document-details-user-meta-subtitle"))
-                    .icon(
-                        widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE),
-                    )
+                    .icon(widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE))
                     .control(subtitle_control),
             )
             .add(
                 widget::settings::item::builder(fl!("document-details-user-meta-authors"))
-                    .icon(
-                        widget::icon::from_name("system-users-symbolic").size(ICON_SIZE),
-                    )
+                    .icon(widget::icon::from_name("system-users-symbolic").size(ICON_SIZE))
                     .control(authors_control),
             )
             .add(
@@ -1024,13 +1012,11 @@ impl Page for DocumentDetails {
                 }
             },
             DocumentDetailsMessage::UserMetaTitleChanged(val) => {
-                self.user_meta_draft.title =
-                    if val.is_empty() { None } else { Some(val) };
+                self.user_meta_draft.title = if val.is_empty() { None } else { Some(val) };
                 Task::none()
             }
             DocumentDetailsMessage::UserMetaSubtitleChanged(val) => {
-                self.user_meta_draft.subtitle =
-                    if val.is_empty() { None } else { Some(val) };
+                self.user_meta_draft.subtitle = if val.is_empty() { None } else { Some(val) };
                 Task::none()
             }
             DocumentDetailsMessage::UserMetaDocTypeChanged(val) => {
@@ -1038,8 +1024,7 @@ impl Page for DocumentDetails {
                 Task::none()
             }
             DocumentDetailsMessage::UserMetaDescriptionChanged(val) => {
-                self.user_meta_draft.description =
-                    if val.is_empty() { None } else { Some(val) };
+                self.user_meta_draft.description = if val.is_empty() { None } else { Some(val) };
                 Task::none()
             }
             DocumentDetailsMessage::UserMetaAuthorsChanged(val) => {

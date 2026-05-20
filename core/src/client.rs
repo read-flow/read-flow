@@ -383,6 +383,18 @@ impl FilesClient {
         }
         Ok(response.json().await?)
     }
+
+    pub async fn ensure_document_for_file(&self, file_guid: &str) -> Result<ApiDocument, Error> {
+        let response = self
+            .client
+            .post(self.base_url.join(&format!("files/{file_guid}/document"))?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, self.get_auth_header())
+            .send()
+            .await?;
+        response.error_for_status_ref()?;
+        Ok(response.json().await?)
+    }
 }
 
 async fn fingerprint_of(filename: &Path) -> Result<String, Error> {
