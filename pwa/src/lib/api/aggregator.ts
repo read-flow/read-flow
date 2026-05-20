@@ -1,8 +1,15 @@
 import { db } from '$lib/db';
-import { ReadFlowClient, type RemoteFile, type RemoteReadingProgress } from './client';
+import {
+	ReadFlowClient,
+	type RemoteFile,
+	type RemoteReadingProgress,
+	type RemoteDocument,
+	type DocumentMeta,
+} from './client';
 import { mergeFiles, type AggregatedFile } from './merge';
 
 export type { AggregatedFile } from './merge';
+export type { RemoteDocument, DocumentMeta } from './client';
 
 async function getClients(): Promise<Array<{ id: number; client: ReadFlowClient }>> {
 	const sources = await db.sources.orderBy('order').toArray();
@@ -94,6 +101,39 @@ export async function saveReadingProgress(progress: RemoteReadingProgress): Prom
 			console.warn('Failed to save reading progress to a source:', result.reason);
 		}
 	}
+}
+
+/**
+ * Fetch document metadata (user-edited) from all sources and return a map
+ * of document GUID → DocumentMeta, preferring the first successful source.
+ */
+export async function fetchDocumentMetaMap(): Promise<Map<string, DocumentMeta>> {
+	const clients = await getClients();
+	const results = await Promise.allSettled(
+		clients.map(({ client }) => client.getDocuments()),
+	);
+
+	const map = new Map<string, DocumentMeta>();
+	for (const result of results) {
+		if (result.status !== 'fulfilled') continue;
+		for (const doc of result.value) {
+			if (!map.has(doc.guid)) {
+				map.set(doc.guid, doc.metadata);
+			}
+		}
+	}
+	return map;
+}
+
+/**
+ * Update document metadata on all sources that hold the document.
+ */
+export async function updateDocumentMetadata(
+	documentGuid: string,
+	meta: DocumentMeta,
+): Promise<void> {
+	const clients = await getClients();
+	await Promise.allSettled(clients.map(({ client }) => client.updateDocumentMetadata(documentGuid, meta)));
 }
 
 /**

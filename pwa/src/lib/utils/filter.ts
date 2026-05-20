@@ -1,11 +1,13 @@
 import Fuse from 'fuse.js';
 import type { AggregatedFile } from '$lib/api/merge';
+import type { DocumentMeta } from '$lib/api/client';
 
 export function filterDocuments(
 	all: AggregatedFile[],
 	allowed: Set<string>,
 	denied: Set<string>,
 	query: string,
+	metaMap?: Map<string, DocumentMeta>,
 ): AggregatedFile[] {
 	let results = all;
 
@@ -23,6 +25,20 @@ export function filterDocuments(
 					getFn: (doc) => {
 						const name = doc.path.split('/').pop() ?? doc.path;
 						return name.replace(/\.[^/.]+$/, '');
+					},
+				},
+				{
+					name: 'title',
+					getFn: (doc) => {
+						if (!metaMap || !doc.document_guid) return '';
+						return metaMap.get(doc.document_guid)?.title ?? '';
+					},
+				},
+				{
+					name: 'authors',
+					getFn: (doc) => {
+						if (!metaMap || !doc.document_guid) return '';
+						return metaMap.get(doc.document_guid)?.authors?.join(' ') ?? '';
 					},
 				},
 			],

@@ -1,9 +1,19 @@
 <script lang="ts">
 	import Icon from '$lib/components/Icon.svelte';
-	import { allDocuments, refreshDocuments, allTags } from '$lib/stores/documents';
-	import { addTagsToFile, removeTagsFromFile } from '$lib/api/aggregator';
+	import {
+		allDocuments,
+		documentMetaMap,
+		refreshDocuments,
+		allTags,
+	} from '$lib/stores/documents';
+	import { addTagsToFile, removeTagsFromFile, updateDocumentMetadata } from '$lib/api/aggregator';
 	import { get } from 'svelte/store';
 	import type { AggregatedFile } from '$lib/api/aggregator';
+	import type { DocumentMeta, DocumentType } from '$lib/api/client';
+
+	const DOC_TYPES: DocumentType[] = [
+		'Book', 'Article', 'ResearchPaper', 'Thesis', 'Letter', 'Magazine', 'Manual', 'Report',
+	];
 
 	interface Props {
 		fingerprint: string;
@@ -17,6 +27,54 @@
 	let newTag = $state('');
 	let saving = $state(false);
 	let tagError = $state('');
+
+	// ── User metadata editing ─────────────────────────────────────────────────
+	let editingMeta = $state(false);
+	let metaDraft = $state<DocumentMeta>({
+		document_type: null, title: null, subtitle: null, authors: null, description: null,
+	});
+	let authorsText = $state('');
+	let metaSaving = $state(false);
+	let metaError = $state('');
+
+	function startEditMeta() {
+		const current = doc?.document_guid ? $documentMetaMap.get(doc.document_guid) : undefined;
+		metaDraft = {
+			document_type: current?.document_type ?? null,
+			title: current?.title ?? null,
+			subtitle: current?.subtitle ?? null,
+			authors: current?.authors ?? null,
+			description: current?.description ?? null,
+		};
+		authorsText = metaDraft.authors?.join(', ') ?? '';
+		metaError = '';
+		editingMeta = true;
+	}
+
+	function cancelEditMeta() {
+		editingMeta = false;
+		metaError = '';
+	}
+
+	async function saveMeta() {
+		if (!doc?.document_guid || metaSaving) return;
+		metaSaving = true;
+		metaError = '';
+		const authors = authorsText.split(',').map((s) => s.trim()).filter(Boolean);
+		const payload: DocumentMeta = {
+			...metaDraft,
+			authors: authors.length ? authors : null,
+		};
+		try {
+			await updateDocumentMetadata(doc.document_guid, payload);
+			await refreshDocuments();
+			editingMeta = false;
+		} catch (err) {
+			metaError = err instanceof Error ? err.message : 'Failed to save metadata.';
+		} finally {
+			metaSaving = false;
+		}
+	}
 
 	$effect(() => {
 		// Re-runs whenever `fingerprint` changes, so switching rows updates the pane.
@@ -104,8 +162,9 @@
 				{#if loading}
 					<div class="h-5 w-40 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
 				{:else if doc}
+					{@const m = doc.document_guid ? $documentMetaMap.get(doc.document_guid) : undefined}
 					<h2 class="text-base font-semibold text-slate-900 dark:text-slate-100 break-words leading-snug">
-						{basename(doc.path)}
+						{m?.title ?? basename(doc.path)}
 					</h2>
 					<p class="text-xs text-slate-400 dark:text-slate-500 mt-0.5 break-all">{doc.path}</p>
 				{/if}
@@ -131,11 +190,13 @@
 			<p class="text-sm text-slate-500 dark:text-slate-400">Document not found.</p>
 		</div>
 	{:else}
+		{@const docMeta = doc.document_guid ? $documentMetaMap.get(doc.document_guid) : undefined}
+
 		{#if !onclose}
 			<!-- Standalone page heading (no close button) -->
 			<div>
 				<h1 class="text-lg font-semibold text-slate-900 dark:text-slate-100 break-words">
-					{basename(doc.path)}
+					{docMeta?.title ?? basename(doc.path)}
 				</h1>
 				<p class="text-sm text-slate-400 dark:text-slate-500 mt-1 break-all">{doc.path}</p>
 			</div>
@@ -170,6 +231,143 @@
 				<dd class="font-mono text-xs text-slate-500 dark:text-slate-400 break-all">{doc.fingerprint}</dd>
 			</div>
 		</dl>
+
+		<!-- User-editable metadata -->
+		{#if doc.document_guid}
+			<div>
+				<div class="flex items-center justify-between mb-2">
+					<h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Document Info</h2>
+					{#if editingMeta}
+						<div class="flex gap-2">
+							<button
+								onclick={saveMeta}
+								disabled={metaSaving}
+								class="text-xs px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors disabled:opacity-40"
+							>
+								{metaSaving ? 'Saving…' : 'Save'}
+							</button>
+							<button
+								onclick={cancelEditMeta}
+								disabled={metaSaving}
+								class="text-xs px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-40"
+							>
+								Cancel
+							</button>
+						</div>
+					{:else}
+						<button
+							onclick={startEditMeta}
+							class="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+							aria-label="Edit document info"
+						>
+							<Icon name="edit" class="w-3.5 h-3.5" />
+						</button>
+					{/if}
+				</div>
+
+				{#if editingMeta}
+					<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
+						<!-- Document type -->
+						<div class="flex items-center justify-between px-4 py-3">
+							<label for="meta-type-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Type</label>
+							<select
+								id="meta-type-{fingerprint}"
+								bind:value={metaDraft.document_type}
+								class="ml-3 flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 focus:outline-none"
+							>
+								<option value={null}>Not set</option>
+								{#each DOC_TYPES as t}
+									<option value={t}>{t}</option>
+								{/each}
+							</select>
+						</div>
+						<!-- Title -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-title-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Title</label>
+							<input
+								id="meta-title-{fingerprint}"
+								type="text"
+								bind:value={metaDraft.title}
+								placeholder={basename(doc.path)}
+								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none"
+							/>
+						</div>
+						<!-- Subtitle -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-subtitle-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Subtitle</label>
+							<input
+								id="meta-subtitle-{fingerprint}"
+								type="text"
+								bind:value={metaDraft.subtitle}
+								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none"
+							/>
+						</div>
+						<!-- Authors -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-authors-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Authors</label>
+							<input
+								id="meta-authors-{fingerprint}"
+								type="text"
+								bind:value={authorsText}
+								placeholder="Author 1, Author 2"
+								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none"
+							/>
+						</div>
+						<!-- Description -->
+						<div class="flex items-start px-4 py-3 gap-3">
+							<label for="meta-desc-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0 pt-0.5">Description</label>
+							<textarea
+								id="meta-desc-{fingerprint}"
+								bind:value={metaDraft.description}
+								rows="2"
+								class="flex-1 min-w-0 bg-transparent text-right text-slate-900 dark:text-slate-100 resize-none focus:outline-none"
+							></textarea>
+						</div>
+					</div>
+					{#if metaError}
+						<p class="mt-2 text-xs text-red-500 dark:text-red-400">{metaError}</p>
+					{/if}
+				{:else}
+					<dl class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
+						{#if docMeta?.document_type}
+							<div class="flex items-center justify-between px-4 py-3">
+								<dt class="text-slate-500 dark:text-slate-400">Type</dt>
+								<dd class="font-medium text-slate-900 dark:text-slate-100">{docMeta.document_type}</dd>
+							</div>
+						{/if}
+						{#if docMeta?.title}
+							<div class="flex items-center justify-between px-4 py-3">
+								<dt class="text-slate-500 dark:text-slate-400">Title</dt>
+								<dd class="font-medium text-slate-900 dark:text-slate-100 text-right break-words max-w-[60%]">{docMeta.title}</dd>
+							</div>
+						{/if}
+						{#if docMeta?.subtitle}
+							<div class="flex items-center justify-between px-4 py-3">
+								<dt class="text-slate-500 dark:text-slate-400">Subtitle</dt>
+								<dd class="font-medium text-slate-900 dark:text-slate-100 text-right break-words max-w-[60%]">{docMeta.subtitle}</dd>
+							</div>
+						{/if}
+						{#if docMeta?.authors?.length}
+							<div class="flex items-center justify-between px-4 py-3">
+								<dt class="text-slate-500 dark:text-slate-400">Authors</dt>
+								<dd class="font-medium text-slate-900 dark:text-slate-100 text-right">{docMeta.authors.join(', ')}</dd>
+							</div>
+						{/if}
+						{#if docMeta?.description}
+							<div class="flex items-start justify-between px-4 py-3 gap-4">
+								<dt class="text-slate-500 dark:text-slate-400 shrink-0">Description</dt>
+								<dd class="text-slate-900 dark:text-slate-100 text-right text-xs break-words">{docMeta.description}</dd>
+							</div>
+						{/if}
+						{#if !docMeta?.document_type && !docMeta?.title && !docMeta?.authors?.length}
+							<div class="px-4 py-3">
+								<p class="text-slate-400 dark:text-slate-500">No info set yet.</p>
+							</div>
+						{/if}
+					</dl>
+				{/if}
+			</div>
+		{/if}
 
 		<!-- Tags -->
 		<div>

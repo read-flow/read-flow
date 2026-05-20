@@ -5,6 +5,7 @@
 	import {
 		allDocuments,
 		filteredDocuments,
+		documentMetaMap,
 		isLoading,
 		loadError,
 		refreshDocuments,
@@ -227,6 +228,7 @@
 				<div style="padding-top: {paddingTop}px; padding-bottom: {paddingBottom}px">
 					<ul class="divide-y divide-slate-100 dark:divide-slate-700/50">
 						{#each visibleItems as doc (doc.fingerprint)}
+							{@const docMeta = doc.document_guid ? $documentMetaMap.get(doc.document_guid) : undefined}
 							<li
 								class="flex items-stretch transition-colors
 									{selectedFingerprint === doc.fingerprint ? 'bg-slate-100 dark:bg-slate-700/60' : ''}"
@@ -248,30 +250,40 @@
 									>
 										{doc.type_}
 									</span>
-
 									<div class="flex-1 min-w-0">
-										<p class="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{basename(doc.path)}</p>
-										<p class="text-xs text-slate-400 dark:text-slate-500 truncate mt-0.5">{doc.path}</p>
+										<!-- Primary: user title or filename -->
+										<p class="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
+											{docMeta?.title ?? basename(doc.path)}
+										</p>
+										<!-- Secondary: authors or full path -->
+										<p class="text-xs text-slate-400 dark:text-slate-500 truncate mt-0.5">
+											{docMeta?.authors?.length ? docMeta.authors.join(', ') : doc.path}
+										</p>
 
-										{#if doc.tags.length > 0}
-											<div class="hidden sm:flex flex-wrap gap-1 mt-1.5">
-												{#each doc.tags.slice(0, 4) as tag}
-													<span
-														class="inline-flex items-center px-1.5 py-0.5 rounded text-xs
-															{$allowedTags.has(tag)
-																? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-																: $deniedTags.has(tag)
-																	? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-																	: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}"
-													>
-														{tag}
-													</span>
-												{/each}
-												{#if doc.tags.length > 4}
-													<span class="text-xs text-slate-400 dark:text-slate-500">+{doc.tags.length - 4}</span>
-												{/if}
-											</div>
-										{/if}
+										<div class="hidden sm:flex flex-wrap items-center gap-1 mt-1.5">
+											<!-- Document type badge -->
+											{#if docMeta?.document_type}
+												<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+													{docMeta.document_type}
+												</span>
+											{/if}
+											<!-- Tags -->
+											{#each doc.tags.slice(0, 4) as tag}
+												<span
+													class="inline-flex items-center px-1.5 py-0.5 rounded text-xs
+														{$allowedTags.has(tag)
+															? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+															: $deniedTags.has(tag)
+																? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+																: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}"
+												>
+													{tag}
+												</span>
+											{/each}
+											{#if doc.tags.length > 4}
+												<span class="text-xs text-slate-400 dark:text-slate-500">+{doc.tags.length - 4}</span>
+											{/if}
+										</div>
 									</div>
 								</a>
 
