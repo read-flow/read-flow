@@ -18,13 +18,16 @@ use cosmic::widget::text;
 use read_flow_core::api::ReadingStatus;
 use read_flow_core::db::datasource::DbClient;
 use read_flow_core::db::models::ContentMetadata;
+use read_flow_core::db::models::DocumentType;
 use read_flow_core::scan::metadata;
 use read_flow_core::scan::metadata::ExtractedMetadata;
+use strum::IntoEnumIterator;
 
 use crate::ApplicationModule;
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::aggregator::DocumentSource;
+use crate::aggregator::UserMeta;
 use crate::client::ClientSelector;
 use crate::component::provided_state::ProvidedState;
 use crate::component::provided_state::ProvidedStateMessage;
@@ -49,6 +52,9 @@ pub struct DocumentDetails {
     pending_source_deletion: Option<DocumentSource>,
     format_metadata: Option<ExtractedMetadata>,
     format_metadata_loading: bool,
+    editing_user_meta: bool,
+    user_meta_draft: UserMeta,
+    user_meta_authors_text: String,
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +87,16 @@ pub enum DocumentDetailsMessage {
     LoadFormatMetadata,
     FormatMetadataLoaded(Result<ExtractedMetadata, String>),
 
+    EditUserMeta,
+    CancelUserMeta,
+    SaveUserMeta,
+    UserMetaSaved(Result<(), String>),
+    UserMetaTitleChanged(String),
+    UserMetaSubtitleChanged(String),
+    UserMetaDocTypeChanged(Option<DocumentType>),
+    UserMetaDescriptionChanged(String),
+    UserMetaAuthorsChanged(String),
+
     // Message intended for the parent module
     Out(DocumentDetailsOutput),
 }
@@ -109,6 +125,12 @@ impl DocumentDetails {
         );
 
         let (all_clients, init_all_clients) = ProvidedState::new(document_provider.clone());
+        let initial_user_meta = document.user_meta.clone();
+        let initial_authors_text = initial_user_meta
+            .authors
+            .as_deref()
+            .unwrap_or(&[])
+            .join(", ");
         let file_details = DocumentDetails {
             document,
             document_provider,
@@ -119,6 +141,9 @@ impl DocumentDetails {
             pending_source_deletion: None,
             format_metadata: None,
             format_metadata_loading: false,
+            editing_user_meta: false,
+            user_meta_draft: initial_user_meta,
+            user_meta_authors_text: initial_authors_text,
         };
 
         (
@@ -132,11 +157,17 @@ impl DocumentDetails {
     }
 
     pub fn display_name(&self) -> String {
-        Path::new(&self.document.sources.iter().next().unwrap().path)
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Unknown")
-            .to_string()
+        self.document
+            .user_meta
+            .title
+            .clone()
+            .unwrap_or_else(|| {
+                Path::new(&self.document.sources.iter().next().unwrap().path)
+                    .file_stem()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("Unknown")
+                    .to_string()
+            })
     }
 
     fn add_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
@@ -184,6 +215,143 @@ impl DocumentDetails {
         } else {
             format!("{:.1} {}", size, UNITS[unit_index])
         }
+    }
+
+    fn user_meta_section_view(&self) -> Element<'_, DocumentDetailsMessage> {
+        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+
+        let edit_button = if self.editing_user_meta {
+            Row::new()
+                .spacing(space_s)
+                .push(
+                    widget::button::standard(fl!("document-details-user-meta-save"))
+                        .on_press(DocumentDetailsMessage::SaveUserMeta),
+                )
+                .push(
+                    widget::button::standard(fl!("document-details-user-meta-cancel"))
+                        .on_press(DocumentDetailsMessage::CancelUserMeta),
+                )
+        } else {
+            Row::new().push(
+                widget::button::icon(widget::icon::from_name("edit-symbolic").size(ICON_SIZE))
+                    .on_press(DocumentDetailsMessage::EditUserMeta)
+                    .tooltip(fl!("document-details-user-meta-edit")),
+            )
+        };
+
+        let section = widget::settings::section().header(widget::settings::item_row(vec![
+            text::heading(fl!("document-details-user-meta-section")).into(),
+            widget::space::horizontal().into(),
+            edit_button.into(),
+        ]));
+
+        let meta = if self.editing_user_meta {
+            &self.user_meta_draft
+        } else {
+            &self.document.user_meta
+        };
+
+        let doc_type_options: Vec<DocumentType> = DocumentType::iter().collect();
+
+        let type_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
+            cosmic::iced::widget::pick_list(
+                doc_type_options,
+                meta.document_type,
+                |t: DocumentType| DocumentDetailsMessage::UserMetaDocTypeChanged(Some(t)),
+            )
+            .placeholder(fl!("document-details-user-meta-type-none"))
+            .into()
+        } else {
+            text(
+                meta.document_type
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| fl!("document-details-user-meta-type-none")),
+            )
+            .into()
+        };
+
+        let title_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
+            widget::text_input(
+                self.format_metadata
+                    .as_ref()
+                    .and_then(|m| m.title.as_deref())
+                    .unwrap_or(""),
+                meta.title.as_deref().unwrap_or(""),
+            )
+            .on_input(DocumentDetailsMessage::UserMetaTitleChanged)
+            .into()
+        } else {
+            text(meta.title.as_deref().unwrap_or("—")).into()
+        };
+
+        let subtitle_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
+            widget::text_input("", meta.subtitle.as_deref().unwrap_or(""))
+                .on_input(DocumentDetailsMessage::UserMetaSubtitleChanged)
+                .into()
+        } else {
+            text(meta.subtitle.as_deref().unwrap_or("—")).into()
+        };
+
+        let authors_display = meta
+            .authors
+            .as_deref()
+            .filter(|a| !a.is_empty())
+            .map(|a| a.join(", "))
+            .unwrap_or_else(|| "—".to_string());
+        let authors_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
+            widget::text_input("", &self.user_meta_authors_text)
+                .on_input(DocumentDetailsMessage::UserMetaAuthorsChanged)
+                .into()
+        } else {
+            text(authors_display).into()
+        };
+
+        let description_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
+            widget::text_input("", meta.description.as_deref().unwrap_or(""))
+                .on_input(DocumentDetailsMessage::UserMetaDescriptionChanged)
+                .into()
+        } else {
+            text(meta.description.as_deref().unwrap_or("—")).into()
+        };
+
+        let section = section
+            .add(
+                widget::settings::item::builder(fl!("document-details-user-meta-type"))
+                    .icon(
+                        widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE),
+                    )
+                    .control(type_control),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-user-meta-title"))
+                    .icon(
+                        widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE),
+                    )
+                    .control(title_control),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-user-meta-subtitle"))
+                    .icon(
+                        widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE),
+                    )
+                    .control(subtitle_control),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-user-meta-authors"))
+                    .icon(
+                        widget::icon::from_name("system-users-symbolic").size(ICON_SIZE),
+                    )
+                    .control(authors_control),
+            )
+            .add(
+                widget::settings::item::builder(fl!("document-details-user-meta-description"))
+                    .icon(
+                        widget::icon::from_name("accessories-text-editor-symbolic").size(ICON_SIZE),
+                    )
+                    .control(description_control),
+            );
+
+        section.into()
     }
 
     fn format_metadata_section_view(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
@@ -511,7 +679,7 @@ impl Page for DocumentDetails {
 
         // Main layout using settings view_column
         let mut sections: Vec<Element<'_, DocumentDetailsMessage>> =
-            vec![basic_info_section.into()];
+            vec![basic_info_section.into(), self.user_meta_section_view()];
         if let Some(meta_section) = self.format_metadata_section_view() {
             sections.push(meta_section);
         }
@@ -564,14 +732,15 @@ impl Page for DocumentDetails {
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
-        let filename_without_extension =
+        let header_title = self.document.user_meta.title.as_deref().unwrap_or_else(|| {
             Path::new(&self.document.sources.iter().next().unwrap().path)
                 .file_stem()
                 .and_then(|name| name.to_str())
-                .unwrap_or("Unknown");
+                .unwrap_or("Unknown")
+        });
 
         vec![
-            text::heading(filename_without_extension)
+            text::heading(header_title)
                 .wrapping(cosmic::iced::widget::text::Wrapping::None)
                 .into(),
         ]
@@ -804,6 +973,77 @@ impl Page for DocumentDetails {
                     Ok(meta) => self.format_metadata = Some(meta),
                     Err(err) => tracing::warn!("Failed to load format metadata: {err}"),
                 }
+                Task::none()
+            }
+            DocumentDetailsMessage::EditUserMeta => {
+                self.user_meta_draft = self.document.user_meta.clone();
+                self.user_meta_authors_text = self
+                    .user_meta_draft
+                    .authors
+                    .as_deref()
+                    .unwrap_or(&[])
+                    .join(", ");
+                self.editing_user_meta = true;
+                Task::none()
+            }
+            DocumentDetailsMessage::CancelUserMeta => {
+                self.editing_user_meta = false;
+                Task::none()
+            }
+            DocumentDetailsMessage::SaveUserMeta => {
+                // Parse authors from comma-separated text
+                let authors: Vec<String> = self
+                    .user_meta_authors_text
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .collect();
+                self.user_meta_draft.authors = if authors.is_empty() {
+                    None
+                } else {
+                    Some(authors)
+                };
+                let draft = self.user_meta_draft.clone();
+                let document = self.document.clone();
+                let document_provider = self.document_provider.clone();
+                self.editing_user_meta = false;
+                task::future(async move {
+                    let result = document_provider
+                        .update_document_metadata(&document, draft)
+                        .await
+                        .map_err(|e| format!("{e}"));
+                    DocumentDetailsMessage::UserMetaSaved(result)
+                })
+            }
+            DocumentDetailsMessage::UserMetaSaved(result) => match result {
+                Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),
+                Err(err) => {
+                    tracing::error!("Failed to save document metadata: {err}");
+                    Task::none()
+                }
+            },
+            DocumentDetailsMessage::UserMetaTitleChanged(val) => {
+                self.user_meta_draft.title =
+                    if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaSubtitleChanged(val) => {
+                self.user_meta_draft.subtitle =
+                    if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaDocTypeChanged(val) => {
+                self.user_meta_draft.document_type = val;
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaDescriptionChanged(val) => {
+                self.user_meta_draft.description =
+                    if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaAuthorsChanged(val) => {
+                self.user_meta_authors_text = val;
                 Task::none()
             }
         }

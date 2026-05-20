@@ -37,6 +37,7 @@ regex = { workspace = true, features = ["std", "unicode"] }
 rfd.workspace = true
 rust-embed.workspace = true
 serde = { workspace = true, features = ["derive"] }
+strum = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true

@@ -61,6 +61,18 @@ document-details-metadata-date = Date
 document-details-metadata-identifier = Identifier
 document-details-metadata-subject = Subject
 
+# User-edited document metadata
+document-details-user-meta-section = Document Info
+document-details-user-meta-edit = Edit document info
+document-details-user-meta-save = Save
+document-details-user-meta-cancel = Cancel
+document-details-user-meta-type = Type
+document-details-user-meta-type-none = Not set
+document-details-user-meta-title = Title
+document-details-user-meta-subtitle = Subtitle
+document-details-user-meta-authors = Authors
+document-details-user-meta-description = Description
+
 # Tag editor
 tag-editor-add = Add
 tag-editor-enter = Enter a new tag
