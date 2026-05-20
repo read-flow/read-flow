@@ -7,6 +7,43 @@ pub struct Document {
     pub guid: String,
 }
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    strum::EnumIter,
+    strum::Display,
+    strum::EnumString,
+)]
+#[serde(rename_all = "PascalCase")]
+#[strum(serialize_all = "PascalCase")]
+pub enum DocumentType {
+    Book,
+    Article,
+    ResearchPaper,
+    Thesis,
+    Letter,
+    Magazine,
+    Manual,
+    Report,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct DocumentUserMetadata {
+    pub document_id: i32,
+    pub document_type: Option<String>,
+    pub title: Option<String>,
+    pub subtitle: Option<String>,
+    pub authors: Option<String>,
+    pub description: Option<String>,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct File {
     pub id: i32,
@@ -48,7 +85,7 @@ impl ContentTag {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ContentMetadata {
     pub fingerprint: String,
     pub title: Option<String>,

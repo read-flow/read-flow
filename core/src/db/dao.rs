@@ -9,6 +9,7 @@ use sqlx::SqlitePool;
 use crate::db::models::ContentMetadata;
 use crate::db::models::ContentTag;
 use crate::db::models::Document;
+use crate::db::models::DocumentUserMetadata;
 use crate::db::models::File;
 use crate::db::models::NewFile;
 use crate::db::models::NewRemote;
@@ -658,6 +659,58 @@ pub async fn write_scanned_file(
     Ok((was_new, was_updated))
 }
 
+// ─── Document user-metadata queries ──────────────────────────────────────────
+
+pub async fn get_document_user_metadata(
+    conn: &mut SqliteConnection,
+    document_id: i32,
+) -> Result<Option<DocumentUserMetadata>, Error> {
+    sqlx::query_as::<_, DocumentUserMetadata>(
+        "SELECT document_id, document_type, title, subtitle, authors, description, updated_at \
+         FROM document_metadata WHERE document_id = ?",
+    )
+    .bind(document_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(Into::into)
+}
+
+pub async fn upsert_document_user_metadata(
+    conn: &mut SqliteConnection,
+    document_id: i32,
+    document_type: Option<&str>,
+    title: Option<&str>,
+    subtitle: Option<&str>,
+    authors: Option<&str>,
+    description: Option<&str>,
+) -> Result<DocumentUserMetadata, Error> {
+    sqlx::query(
+        "INSERT INTO document_metadata \
+             (document_id, document_type, title, subtitle, authors, description) \
+         VALUES (?, ?, ?, ?, ?, ?) \
+         ON CONFLICT(document_id) DO UPDATE SET \
+             document_type = excluded.document_type, \
+             title         = excluded.title, \
+             subtitle      = excluded.subtitle, \
+             authors       = excluded.authors, \
+             description   = excluded.description, \
+             updated_at    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
+    )
+    .bind(document_id)
+    .bind(document_type)
+    .bind(title)
+    .bind(subtitle)
+    .bind(authors)
+    .bind(description)
+    .execute(&mut *conn)
+    .await?;
+
+    let row = get_document_user_metadata(&mut *conn, document_id)
+        .await?
+        .expect("row must exist after upsert");
+    Ok(row)
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -761,5 +814,53 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(count.0, 1);
+    }
+
+    #[tokio::test]
+    async fn upsert_document_user_metadata_inserts_and_updates() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let doc = upsert_document(&mut conn, "doc-guid-1").await.unwrap();
+
+        let row = upsert_document_user_metadata(
+            &mut conn,
+            doc.id,
+            Some("Book"),
+            Some("My Title"),
+            None,
+            Some(r#"["Alice","Bob"]"#),
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(row.document_id, doc.id);
+        assert_eq!(row.title.as_deref(), Some("My Title"));
+        assert_eq!(row.document_type.as_deref(), Some("Book"));
+        assert_eq!(row.authors.as_deref(), Some(r#"["Alice","Bob"]"#));
+
+        // Second call must overwrite.
+        let updated = upsert_document_user_metadata(
+            &mut conn,
+            doc.id,
+            Some("Article"),
+            Some("Updated Title"),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(updated.document_type.as_deref(), Some("Article"));
+        assert_eq!(updated.title.as_deref(), Some("Updated Title"));
+    }
+
+    #[tokio::test]
+    async fn get_document_user_metadata_returns_none_when_absent() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let doc = upsert_document(&mut conn, "doc-guid-2").await.unwrap();
+        let result = get_document_user_metadata(&mut conn, doc.id).await.unwrap();
+        assert!(result.is_none());
     }
 }

@@ -31,11 +31,14 @@ use rocket_cors::Cors;
 use rocket_cors::CorsOptions;
 
 use crate::ApplicationModule;
+use crate::api::ApiDocument;
+use crate::api::DocumentMeta;
 use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
 use crate::api::Status;
 use crate::db::dao;
+use crate::db::models::ContentMetadata;
 use crate::settings;
 pub use crate::settings::ServerSettings;
 use crate::settings::Settings;
@@ -161,6 +164,10 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         delete_file,
         get_reading_progress,
         put_reading_progress,
+        get_documents,
+        get_document,
+        put_document_metadata,
+        get_document_extracted_metadata,
     ];
 
     rocket::custom(figment)
@@ -540,6 +547,168 @@ async fn put_reading_progress(
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     dao::upsert_reading_progress(&mut conn, progress.into_inner()).await?;
     Ok(())
+}
+
+// ─── Document routes ──────────────────────────────────────────────────────────
+
+#[get("/documents")]
+async fn get_documents(
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Json<Vec<ApiDocument>>> {
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let docs = build_api_documents(&mut conn).await?;
+    Ok(Json(docs))
+}
+
+#[get("/documents/<guid>")]
+async fn get_document(
+    guid: &str,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Option<Json<ApiDocument>>> {
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let doc = build_api_document_by_guid(&mut conn, guid).await?;
+    Ok(doc.map(Json))
+}
+
+#[put("/documents/<guid>/metadata", data = "<meta>")]
+async fn put_document_metadata(
+    guid: &str,
+    meta: Json<DocumentMeta>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Json<ApiDocument>> {
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+
+    let doc_row = sqlx::query_as::<_, crate::db::models::Document>(
+        "SELECT id, guid FROM documents WHERE guid = ?",
+    )
+    .bind(guid)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(dao::Error::from)?
+    .ok_or_else(|| Error::FileNotFound(guid.to_string()))?;
+
+    let meta = meta.into_inner();
+    let doc_type_str = meta.document_type_str();
+    let authors_json = meta.authors_json();
+    dao::upsert_document_user_metadata(
+        &mut conn,
+        doc_row.id,
+        doc_type_str.as_deref(),
+        meta.title.as_deref(),
+        meta.subtitle.as_deref(),
+        authors_json.as_deref(),
+        meta.description.as_deref(),
+    )
+    .await?;
+
+    let updated = build_api_document_by_guid(&mut conn, guid)
+        .await?
+        .expect("document must exist after upsert");
+    Ok(Json(updated))
+}
+
+#[get("/documents/<guid>/extracted-metadata")]
+async fn get_document_extracted_metadata(
+    guid: &str,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Option<Json<ContentMetadata>>> {
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+
+    // Find the first fingerprint belonging to this document.
+    let fingerprint: Option<String> = sqlx::query_scalar(
+        "SELECT f.fingerprint FROM files f
+         JOIN contents c ON f.fingerprint = c.fingerprint
+         JOIN documents d ON c.document_id = d.id
+         WHERE d.guid = ?
+         LIMIT 1",
+    )
+    .bind(guid)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(dao::Error::from)?;
+
+    let Some(fp) = fingerprint else {
+        return Ok(None);
+    };
+    let meta = dao::select_content_metadata(&mut conn, &fp).await?;
+    Ok(meta.map(Json))
+}
+
+// ─── Document helpers ─────────────────────────────────────────────────────────
+
+async fn build_api_documents(
+    conn: &mut sqlx::SqliteConnection,
+) -> Result<Vec<ApiDocument>> {
+    #[derive(sqlx::FromRow)]
+    struct DocRow {
+        id: i32,
+        guid: String,
+    }
+    let docs = sqlx::query_as::<_, DocRow>("SELECT id, guid FROM documents")
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(dao::Error::from)?;
+
+    let mut result = Vec::with_capacity(docs.len());
+    for row in docs {
+        result.push(load_api_document(conn, row.id, row.guid).await?);
+    }
+    Ok(result)
+}
+
+async fn build_api_document_by_guid(
+    conn: &mut sqlx::SqliteConnection,
+    guid: &str,
+) -> Result<Option<ApiDocument>> {
+    #[derive(sqlx::FromRow)]
+    struct DocRow {
+        id: i32,
+        guid: String,
+    }
+    let row = sqlx::query_as::<_, DocRow>("SELECT id, guid FROM documents WHERE guid = ?")
+        .bind(guid)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(dao::Error::from)?;
+    match row {
+        None => Ok(None),
+        Some(r) => Ok(Some(load_api_document(conn, r.id, r.guid).await?)),
+    }
+}
+
+async fn load_api_document(
+    conn: &mut sqlx::SqliteConnection,
+    document_id: i32,
+    guid: String,
+) -> Result<ApiDocument> {
+    let user_meta = dao::get_document_user_metadata(conn, document_id).await?;
+    let metadata = user_meta
+        .map(DocumentMeta::from_db)
+        .unwrap_or_default();
+
+    let file_guids: Vec<String> = sqlx::query_scalar(
+        "SELECT f.guid FROM files f
+         JOIN contents c ON f.fingerprint = c.fingerprint
+         WHERE c.document_id = ?",
+    )
+    .bind(document_id)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(dao::Error::from)?;
+
+    Ok(ApiDocument {
+        guid,
+        metadata,
+        file_guids,
+    })
 }
 
 fn extension_to_content_type(extension: &str) -> Result<ContentType> {

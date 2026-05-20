@@ -10,6 +10,7 @@ use serde::Serialize;
 use strum::EnumIter;
 
 use crate::db::models::ContentTag;
+use crate::db::models::DocumentUserMetadata;
 use crate::db::models::File as DbFile;
 pub use crate::db::models::ReadingProgress;
 
@@ -118,6 +119,65 @@ impl From<(DbFile, Vec<ContentTag>)> for File {
             document_guid,
         }
     }
+}
+
+pub use crate::db::models::DocumentType;
+
+/// User-edited document-level metadata (separate from auto-extracted `ContentMetadata`).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+pub struct DocumentMeta {
+    pub document_type: Option<DocumentType>,
+    pub title: Option<String>,
+    pub subtitle: Option<String>,
+    /// Ordered list of author names.
+    pub authors: Option<Vec<String>>,
+    pub description: Option<String>,
+}
+
+impl DocumentMeta {
+    /// Deserialise from a `DocumentUserMetadata` DB row, parsing the JSON authors field.
+    pub fn from_db(row: DocumentUserMetadata) -> Self {
+        let document_type = row
+            .document_type
+            .as_deref()
+            .and_then(|s| s.parse::<DocumentType>().ok());
+        let authors = row.authors.as_deref().and_then(|s| {
+            serde_json::from_str::<Vec<String>>(s)
+                .inspect_err(|e| tracing::warn!("failed to parse authors JSON: {e}"))
+                .ok()
+        });
+        Self {
+            document_type,
+            title: row.title,
+            subtitle: row.subtitle,
+            authors,
+            description: row.description,
+        }
+    }
+
+    pub fn document_type_str(&self) -> Option<String> {
+        self.document_type.map(|t| t.to_string())
+    }
+
+    /// Serialise authors to a JSON array string, or `None` when the list is empty/absent.
+    pub fn authors_json(&self) -> Option<String> {
+        self.authors.as_ref().and_then(|a| {
+            if a.is_empty() {
+                None
+            } else {
+                serde_json::to_string(a).ok()
+            }
+        })
+    }
+}
+
+/// Document as returned by the `/documents` API endpoints.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct ApiDocument {
+    pub guid: String,
+    pub metadata: DocumentMeta,
+    /// GUIDs of the `File`s that belong to this document.
+    pub file_guids: Vec<String>,
 }
 
 #[async_trait::async_trait]
