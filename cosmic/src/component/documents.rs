@@ -59,6 +59,7 @@ pub enum DocumentsOutput {
     OpenDocumentDetails(Document),
     BatchTagEditor(TagEditorOutput),
     OpenDocument(Document),
+    PickFormat(Document),
     SelectionChanged,
     NavigateToSettings,
     Scan,
@@ -413,12 +414,19 @@ impl DocumentsComponent {
 }
 
 fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, DocumentsMessage> {
+    let file_types = document.file_types();
     let icon_name = document.metadata.type_.get_file_type_icon();
 
     let (selected_icon_name, selected_icon_class) = if is_selected {
         ("checkbox-checked-symbolic", ButtonClass::Suggested)
     } else {
         ("checkbox-symbolic", ButtonClass::Icon)
+    };
+
+    let open_msg = if file_types.len() > 1 {
+        DocumentsMessage::Out(DocumentsOutput::PickFormat(document.clone()))
+    } else {
+        DocumentsMessage::Out(DocumentsOutput::OpenDocument(document.clone()))
     };
 
     vec![
@@ -445,9 +453,7 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
     .apply(widget::button::custom)
     .width(Length::Fill)
     .class(ButtonClass::ListItem)
-    .on_press(DocumentsMessage::Out(DocumentsOutput::OpenDocument(
-        document.clone(),
-    )))
+    .on_press(open_msg)
     .into()
 }
 
@@ -504,6 +510,14 @@ fn display_pills<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
     const MAX_TAGS: usize = 3;
 
     let mut row = Row::new().spacing(space_xxs).align_y(Vertical::Center);
+
+    // File type pills when multiple formats exist
+    let file_types = document.file_types();
+    if file_types.len() > 1 {
+        for t in &file_types {
+            row = row.push(pill(t.as_str().to_uppercase()));
+        }
+    }
 
     // Document type pill (if set)
     if let Some(doc_type) = &document.user_meta.document_type {

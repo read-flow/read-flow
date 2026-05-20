@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::collections::hash_map::Entry;
 use std::collections::hash_map::IntoValues;
 use std::fmt;
 use std::iter::repeat_n;
@@ -117,7 +116,7 @@ impl Aggregator {
                 .unwrap_or_default();
             local.into_iter().map(|d| (d.guid, d.metadata)).collect()
         };
-        for doc in documents.0.values_mut() {
+        for doc in documents.values_mut() {
             if let Some(ref guid) = doc.document_guid
                 && let Some(meta) = local_docs.get(guid)
             {
@@ -475,6 +474,8 @@ pub struct DocumentSource {
     pub guid: String,
     pub path: String,
     pub client: ClientSelector,
+    pub type_: DocumentType,
+    pub fingerprint: String,
 }
 
 #[derive(Clone)]
@@ -510,7 +511,7 @@ impl Document {
             metadata: DocumentMetadata {
                 type_: doc_type,
                 size: 0,
-                fingerprint,
+                fingerprint: fingerprint.clone(),
                 tags: Vec::new(),
                 status: ReadingStatus::Unread,
             },
@@ -518,6 +519,8 @@ impl Document {
                 guid: String::new(),
                 path: abs_path.to_string_lossy().into_owned(),
                 client: ClientSelector::Local,
+                type_: doc_type, // Copy
+                fingerprint,
             }]),
             document_guid: None,
             user_meta: UserMeta::default(),
@@ -549,14 +552,57 @@ impl Document {
             .map(|source| source.client.clone())
             .collect()
     }
+
+    /// Returns all distinct file types available across all sources.
+    pub fn file_types(&self) -> Vec<DocumentType> {
+        let mut types: Vec<DocumentType> = self
+            .sources
+            .iter()
+            .map(|s| s.type_)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        types.sort();
+        types
+    }
+
+    /// Returns a copy of this document restricted to sources of the given type.
+    /// The metadata fingerprint and type are updated to match the chosen format.
+    pub fn as_format(&self, type_: DocumentType) -> Option<Document> {
+        let sources: HashSet<_> = self
+            .sources
+            .iter()
+            .filter(|s| s.type_ == type_)
+            .cloned()
+            .collect();
+        if sources.is_empty() {
+            return None;
+        }
+        let first = sources.iter().next().unwrap();
+        Some(Document {
+            metadata: DocumentMetadata {
+                type_,
+                fingerprint: first.fingerprint.clone(),
+                size: self.metadata.size,
+                tags: self.metadata.tags.clone(),
+                status: self.metadata.status,
+            },
+            sources,
+            document_guid: self.document_guid.clone(),
+            user_meta: self.user_meta.clone(),
+        })
+    }
 }
 
 #[derive(Clone, Default)]
-pub struct Documents(HashMap<String, Document>);
+pub struct Documents {
+    by_fingerprint: HashMap<String, Document>,
+    guid_to_fingerprint: HashMap<String, String>,
+}
 
 impl fmt::Debug for Documents {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let documents_count = self.0.len();
+        let documents_count = self.by_fingerprint.len();
         if documents_count == 1 {
             write!(f, "{documents_count} document")
         } else {
@@ -567,37 +613,55 @@ impl fmt::Debug for Documents {
 
 impl Documents {
     pub fn push(&mut self, document: Document) {
-        match self.0.entry(document.metadata.fingerprint.clone()) {
-            Entry::Occupied(mut occupied_entry) => {
-                let existing = occupied_entry.get_mut();
-                existing.sources.extend(document.sources);
-                if existing.document_guid.is_none() {
-                    existing.document_guid = document.document_guid;
-                }
-            }
-            Entry::Vacant(vacant_entry) => {
-                vacant_entry.insert(document);
-            }
+        let fp = document.metadata.fingerprint.clone();
+
+        // Merge same fingerprint (same file on multiple remotes)
+        if let Some(existing) = self.by_fingerprint.get_mut(&fp) {
+            existing.sources.extend(document.sources);
+            return;
         }
+
+        // Merge same document_guid (different formats of the same book)
+        if let Some(ref guid) = document.document_guid {
+            if let Some(canonical_fp) = self.guid_to_fingerprint.get(guid).cloned() {
+                let existing = self.by_fingerprint.get_mut(&canonical_fp).unwrap();
+                existing.sources.extend(document.sources);
+                for tag in document.metadata.tags {
+                    if !existing.metadata.tags.contains(&tag) {
+                        existing.metadata.tags.push(tag);
+                    }
+                }
+                return;
+            }
+            self.guid_to_fingerprint.insert(guid.clone(), fp.clone());
+        }
+
+        self.by_fingerprint.insert(fp, document);
+    }
+
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Document> {
+        self.by_fingerprint.values_mut()
     }
 
     pub fn into_iter(self) -> IntoValues<String, Document> {
-        self.0.into_values()
+        self.by_fingerprint.into_values()
     }
 
     pub fn get(&self, fingerprint: &str) -> Option<&Document> {
-        self.0.get(fingerprint)
+        self.by_fingerprint.get(fingerprint)
     }
 }
 
 impl From<(ClientSelector, File)> for Document {
     fn from((client, file): (ClientSelector, File)) -> Self {
         let document_guid = file.document_guid.clone();
+        let type_: DocumentType = file.type_.parse().unwrap();
+        let fingerprint = file.fingerprint.clone();
         Document {
             metadata: DocumentMetadata {
-                type_: file.type_.parse().unwrap(), // safe because only supported types are stored in the database
+                type_,
                 size: file.size,
-                fingerprint: file.fingerprint,
+                fingerprint: fingerprint.clone(),
                 tags: file.tags,
                 status: file.status,
             },
@@ -605,6 +669,8 @@ impl From<(ClientSelector, File)> for Document {
                 guid: file.guid,
                 path: file.path,
                 client,
+                type_, // Copy
+                fingerprint,
             }]),
             document_guid,
             user_meta: UserMeta::default(),
@@ -635,9 +701,9 @@ impl From<SingleDocumentSource> for File {
         File {
             guid: source.guid,
             path: source.path,
-            type_: metadata.type_.as_str().to_string(),
+            type_: source.type_.as_str().to_string(),
             size: metadata.size,
-            fingerprint: metadata.fingerprint,
+            fingerprint: source.fingerprint,
             tags: metadata.tags,
             status: metadata.status,
             document_guid: None,

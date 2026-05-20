@@ -23,6 +23,7 @@
 	const OVERSCAN = 3;
 
 	let selectedFingerprint = $state<string | null>(null);
+	let formatPickDoc = $state<AggregatedFile | null>(null);
 	let listContainerEl: HTMLDivElement | undefined = $state();
 	let containerHeight = $state(600);
 	let scrollTop = $state(0);
@@ -94,6 +95,13 @@
 		if (doc.type_ === 'pdf')  return `/read/pdf/${doc.fingerprint}`;
 		if (doc.type_ === 'epub') return `/read/epub/${doc.fingerprint}`;
 		return `/documents/${doc.fingerprint}`;
+	}
+
+	function handleRowClick(doc: AggregatedFile, e: MouseEvent) {
+		if (doc.otherFormats.length > 0) {
+			e.preventDefault();
+			formatPickDoc = doc;
+		}
 	}
 
 	// ── Details button: inline sidebar on lg+, navigate on smaller screens ───
@@ -233,23 +241,37 @@
 								class="flex items-stretch transition-colors
 									{selectedFingerprint === doc.fingerprint ? 'bg-slate-100 dark:bg-slate-700/60' : ''}"
 							>
-								<!-- Primary action: open in reader -->
+								<!-- Primary action: open in reader (format picker for multi-format) -->
 								<a
 									href={readerHref(doc)}
+									onclick={(e) => handleRowClick(doc, e)}
 									class="flex items-start gap-3 px-4 py-3 md:px-6 flex-1 min-w-0 transition-colors
 										{selectedFingerprint !== doc.fingerprint ? 'hover:bg-slate-50 dark:hover:bg-slate-800/60' : ''}"
 								>
-									<!-- File type badge -->
-									<span
-										class="mt-0.5 shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
-											{doc.type_ === 'pdf'
-												? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-												: doc.type_ === 'epub'
-													? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-													: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}"
-									>
-										{doc.type_}
-									</span>
+									<!-- File type badge(s) -->
+									{#if doc.otherFormats.length > 0}
+										<div class="mt-0.5 shrink-0 flex gap-0.5">
+											{#each [doc, ...doc.otherFormats] as fmt}
+												<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
+													{fmt.type_ === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+													: fmt.type_ === 'epub' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+													: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}">
+													{fmt.type_}
+												</span>
+											{/each}
+										</div>
+									{:else}
+										<span
+											class="mt-0.5 shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
+												{doc.type_ === 'pdf'
+													? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+													: doc.type_ === 'epub'
+														? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+														: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}"
+										>
+											{doc.type_}
+										</span>
+									{/if}
 									<div class="flex-1 min-w-0">
 										<!-- Primary: user title or filename -->
 										<p class="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
@@ -311,6 +333,51 @@
 				</div>
 			{/if}
 		</div>
+
+		<!-- Format picker modal -->
+		{#if formatPickDoc}
+			{@const allFormats = [formatPickDoc, ...formatPickDoc.otherFormats]}
+			{@const pickerMeta = formatPickDoc.document_guid ? $documentMetaMap.get(formatPickDoc.document_guid) : undefined}
+			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+			<div
+				class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+				onclick={() => (formatPickDoc = null)}
+			>
+				<div
+					class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6 w-80 max-w-[90vw]"
+					onclick={(e) => e.stopPropagation()}
+				>
+					<h2 class="text-base font-semibold text-slate-900 dark:text-slate-100 mb-1">Choose format</h2>
+					<p class="text-sm text-slate-500 dark:text-slate-400 mb-4 truncate">
+						{pickerMeta?.title ?? formatPickDoc.path.split('/').pop()}
+					</p>
+					<div class="flex flex-col gap-2">
+						{#each allFormats as fmt}
+							<a
+								href={readerHref(fmt)}
+								onclick={() => (formatPickDoc = null)}
+								class="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600
+									hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+							>
+								<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
+									{fmt.type_ === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+									: fmt.type_ === 'epub' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+									: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}">
+									{fmt.type_}
+								</span>
+								<span class="text-sm text-slate-700 dark:text-slate-300">{fmt.path.split('/').pop()}</span>
+							</a>
+						{/each}
+					</div>
+					<button
+						onclick={() => (formatPickDoc = null)}
+						class="mt-4 w-full text-sm text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+					>
+						Cancel
+					</button>
+				</div>
+			</div>
+		{/if}
 
 		<!-- Right: details sidebar (lg+, shown when a document is selected) -->
 		{#if selectedFingerprint}

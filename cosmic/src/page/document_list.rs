@@ -26,6 +26,7 @@ use read_flow_core::api::ReadingStatus;
 use regex::Regex;
 
 use crate::aggregator::Document;
+use crate::aggregator::DocumentType;
 use crate::aggregator::Documents;
 use crate::app::ContextView;
 use crate::app::ReadFlow;
@@ -201,6 +202,7 @@ pub struct DocumentList {
     tag_filter: TagFilter<Arc<DocumentProvider>>, // Tag Filter component
     source_filter: Option<ClientSelector>, // Optional source filter
     available_sources: Vec<ClientSelector>, // Available sources for filtering
+    pending_format_pick: Option<Document>, // Document awaiting format selection
 }
 
 #[derive(Debug, Clone)]
@@ -233,6 +235,8 @@ pub enum DocumentListMessage {
     TagFilter(TagFilterMessage),
     DocumentsComponent(DocumentsMessage),
     SetAvailableSources(Vec<ClientSelector>),
+    PickDocumentFormat(DocumentType),
+    CancelFormatPick,
     Out(DocumentListOutput),
 }
 
@@ -330,6 +334,7 @@ impl DocumentList {
                 tag_filter,
                 source_filter: None,
                 available_sources: Default::default(),
+                pending_format_pick: None,
             },
             Task::batch(vec![
                 tag_filter_init.map(ActionExt::map_into),
@@ -597,6 +602,51 @@ fn filter_document(
 
 impl Page for DocumentList {
     type Message = DocumentListMessage;
+
+    fn dialog(&self) -> Option<Element<'_, DocumentListMessage>> {
+        use cosmic::cosmic_theme::Spacing;
+        use cosmic::iced::Length;
+        use cosmic::theme;
+
+        let Spacing { space_s, .. } = theme::active().cosmic().spacing;
+        let document = self.pending_format_pick.as_ref()?;
+
+        let title = document.user_meta.title.as_deref().unwrap_or_else(|| {
+            std::path::Path::new(&document.local_or_any_source().path)
+                .file_stem()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+        });
+
+        let format_buttons: Vec<Element<'_, DocumentListMessage>> = document
+            .file_types()
+            .into_iter()
+            .map(|t| {
+                cosmic::widget::button::standard(t.as_str().to_uppercase())
+                    .on_press(DocumentListMessage::PickDocumentFormat(t))
+                    .into()
+            })
+            .collect();
+
+        let controls = cosmic::widget::column::with_children(format_buttons)
+            .spacing(space_s)
+            .apply(cosmic::widget::container)
+            .class(theme::Container::Card)
+            .padding(space_s)
+            .width(Length::Fill);
+
+        Some(
+            cosmic::widget::dialog()
+                .title(fl!("document-list-pick-format-title"))
+                .body(title.to_string())
+                .control(controls)
+                .secondary_action(
+                    cosmic::widget::button::standard(fl!("document-list-pick-format-cancel"))
+                        .on_press(DocumentListMessage::CancelFormatPick),
+                )
+                .into(),
+        )
+    }
 
     fn view(&self) -> Element<'_, DocumentListMessage> {
         self.archive
@@ -976,6 +1026,10 @@ impl Page for DocumentList {
                     DocumentsOutput::OpenDocument(document) => task::message(
                         DocumentListMessage::Out(DocumentListOutput::OpenDocument(document)),
                     ),
+                    DocumentsOutput::PickFormat(document) => {
+                        self.pending_format_pick = Some(document);
+                        Task::none()
+                    }
                     DocumentsOutput::NavigateToSettings => task::message(DocumentListMessage::Out(
                         DocumentListOutput::NavigateToSettings,
                     )),
@@ -998,6 +1052,20 @@ impl Page for DocumentList {
                 } else {
                     Task::none()
                 }
+            }
+            DocumentListMessage::PickDocumentFormat(type_) => {
+                if let Some(doc) = self.pending_format_pick.take() {
+                    if let Some(formatted) = doc.as_format(type_) {
+                        return task::message(DocumentListMessage::Out(
+                            DocumentListOutput::OpenDocument(formatted),
+                        ));
+                    }
+                }
+                Task::none()
+            }
+            DocumentListMessage::CancelFormatPick => {
+                self.pending_format_pick = None;
+                Task::none()
             }
             DocumentListMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeFiles } from './merge';
+import { mergeFiles, groupByDocumentGuid } from './merge';
 import type { RemoteFile } from './client';
 
 function makeFile(overrides: Partial<RemoteFile> = {}): RemoteFile {
@@ -31,6 +31,7 @@ describe('mergeFiles', () => {
 		expect(result).toHaveLength(1);
 		expect(result[0].fingerprint).toBe('fp-1');
 		expect(result[0].sourceGuids).toEqual({ 1: 'guid-a' });
+		expect(result[0].otherFormats).toEqual([]);
 	});
 
 	it('keeps distinct files from one source separate', () => {
@@ -99,6 +100,11 @@ describe('mergeFiles', () => {
 		expect(fp3.sourceGuids).toEqual({ 2: 'c1' });
 	});
 
+	it('initialises otherFormats to empty array', () => {
+		const result = mergeFiles([{ sourceId: 1, files: [makeFile()] }]);
+		expect(result[0].otherFormats).toEqual([]);
+	});
+
 	it('preserves all original file fields on the merged entry', () => {
 		const file = makeFile({
 			guid: 'g1',
@@ -118,5 +124,45 @@ describe('mergeFiles', () => {
 		expect(r.size).toBe(4096);
 		expect(r.status).toBe('Reading');
 		expect(r.document_guid).toBe('doc-1');
+	});
+});
+
+describe('groupByDocumentGuid', () => {
+	it('returns ungrouped files unchanged when no document_guid', () => {
+		const files = mergeFiles([{ sourceId: 1, files: [makeFile({ fingerprint: 'fp-1', document_guid: null })] }]);
+		const result = groupByDocumentGuid(files);
+		expect(result).toHaveLength(1);
+		expect(result[0].otherFormats).toHaveLength(0);
+	});
+
+	it('collapses epub + pdf with same document_guid into one entry', () => {
+		const epub = makeFile({ guid: 'e1', fingerprint: 'fp-epub', type_: 'epub', document_guid: 'doc-1' });
+		const pdf  = makeFile({ guid: 'p1', fingerprint: 'fp-pdf',  type_: 'pdf',  document_guid: 'doc-1' });
+		const files = mergeFiles([{ sourceId: 1, files: [epub, pdf] }]);
+		const result = groupByDocumentGuid(files);
+		expect(result).toHaveLength(1);
+		expect(result[0].type_).toBe('epub');           // epub preferred over pdf
+		expect(result[0].otherFormats).toHaveLength(1);
+		expect(result[0].otherFormats[0].type_).toBe('pdf');
+	});
+
+	it('keeps documents with different document_guids separate', () => {
+		const a = makeFile({ guid: 'a', fingerprint: 'fp-a', document_guid: 'doc-a' });
+		const b = makeFile({ guid: 'b', fingerprint: 'fp-b', document_guid: 'doc-b' });
+		const files = mergeFiles([{ sourceId: 1, files: [a, b] }]);
+		const result = groupByDocumentGuid(files);
+		expect(result).toHaveLength(2);
+		expect(result.every((f) => f.otherFormats.length === 0)).toBe(true);
+	});
+
+	it('prefers epub > pdf > mobi ordering', () => {
+		const mobi = makeFile({ guid: 'm', fingerprint: 'fp-m', type_: 'mobi', document_guid: 'doc-1' });
+		const pdf  = makeFile({ guid: 'p', fingerprint: 'fp-p', type_: 'pdf',  document_guid: 'doc-1' });
+		const epub = makeFile({ guid: 'e', fingerprint: 'fp-e', type_: 'epub', document_guid: 'doc-1' });
+		const files = mergeFiles([{ sourceId: 1, files: [mobi, pdf, epub] }]);
+		const result = groupByDocumentGuid(files);
+		expect(result).toHaveLength(1);
+		expect(result[0].type_).toBe('epub');
+		expect(result[0].otherFormats.map((f) => f.type_)).toEqual(['pdf', 'mobi']);
 	});
 });

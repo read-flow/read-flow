@@ -6,7 +6,7 @@ import {
 	type RemoteDocument,
 	type DocumentMeta,
 } from './client';
-import { mergeFiles, type AggregatedFile } from './merge';
+import { mergeFiles, groupByDocumentGuid, type AggregatedFile } from './merge';
 
 export type { AggregatedFile } from './merge';
 export type { RemoteDocument, DocumentMeta } from './client';
@@ -30,7 +30,7 @@ export async function fetchAllFiles(): Promise<AggregatedFile[]> {
 		.filter((r): r is PromiseFulfilledResult<{ sourceId: number; files: RemoteFile[] }> => r.status === 'fulfilled')
 		.map((r) => r.value);
 
-	return mergeFiles(batches);
+	return groupByDocumentGuid(mergeFiles(batches));
 }
 
 export async function fetchAllTags(): Promise<string[]> {
