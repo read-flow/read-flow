@@ -215,165 +215,145 @@ impl DocumentDetails {
             edit_button.into(),
         ]));
 
-        let meta = if self.editing_user_meta {
+        let editing = self.editing_user_meta;
+        let meta = if editing {
             &self.user_meta_draft
         } else {
             &self.document.user_meta
         };
 
+        // In edit mode: always show a text_input.
+        // In view mode: show a text label only when the value is non-empty, else skip the row.
+        macro_rules! opt_field {
+            ($val:expr, $on_input:expr) => {{
+                let v: &str = $val.as_deref().unwrap_or("");
+                let el: Option<Element<'_, DocumentDetailsMessage>> = if editing {
+                    Some(widget::text_input("", v).on_input($on_input).into())
+                } else if v.is_empty() {
+                    None
+                } else {
+                    Some(text(v.to_owned()).into())
+                };
+                el
+            }};
+        }
+
+        // Document type: pick_list in edit mode, text label (or hidden) in view mode.
         let doc_type_options: Vec<DocumentType> = DocumentType::iter().collect();
-
-        let type_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
-            cosmic::iced::widget::pick_list(
-                doc_type_options,
-                meta.document_type,
-                |t: DocumentType| DocumentDetailsMessage::UserMetaDocTypeChanged(Some(t)),
+        let type_control: Option<Element<'_, DocumentDetailsMessage>> = if editing {
+            Some(
+                cosmic::iced::widget::pick_list(
+                    doc_type_options,
+                    meta.document_type,
+                    |t: DocumentType| DocumentDetailsMessage::UserMetaDocTypeChanged(Some(t)),
+                )
+                .placeholder(fl!("document-details-user-meta-type-none"))
+                .into(),
             )
-            .placeholder(fl!("document-details-user-meta-type-none"))
-            .into()
         } else {
-            text(
-                meta.document_type
-                    .map(|t| t.to_string())
-                    .unwrap_or_else(|| fl!("document-details-user-meta-type-none")),
-            )
-            .into()
+            meta.document_type
+                .map(|t| -> Element<'_, DocumentDetailsMessage> { text(t.to_string()).into() })
         };
 
-        let title_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
-            widget::text_input("", meta.title.as_deref().unwrap_or(""))
-                .on_input(DocumentDetailsMessage::UserMetaTitleChanged)
-                .into()
-        } else {
-            text(meta.title.as_deref().unwrap_or("—")).into()
-        };
-
-        let subtitle_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
-            widget::text_input("", meta.subtitle.as_deref().unwrap_or(""))
-                .on_input(DocumentDetailsMessage::UserMetaSubtitleChanged)
-                .into()
-        } else {
-            text(meta.subtitle.as_deref().unwrap_or("—")).into()
-        };
-
-        let authors_display = meta
+        // Authors: comma-separated display in view mode, free-text input in edit mode.
+        let authors_val = meta
             .authors
             .as_deref()
             .filter(|a| !a.is_empty())
             .map(|a| a.join(", "))
-            .unwrap_or_else(|| "—".to_string());
-        let authors_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
-            widget::text_input("", &self.user_meta_authors_text)
-                .on_input(DocumentDetailsMessage::UserMetaAuthorsChanged)
-                .into()
+            .unwrap_or_default();
+        let authors_control: Option<Element<'_, DocumentDetailsMessage>> = if editing {
+            Some(
+                widget::text_input("", &self.user_meta_authors_text)
+                    .on_input(DocumentDetailsMessage::UserMetaAuthorsChanged)
+                    .into(),
+            )
+        } else if authors_val.is_empty() {
+            None
         } else {
-            text(authors_display).into()
+            Some(text(authors_val).into())
         };
 
-        let description_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
-            widget::text_input("", meta.description.as_deref().unwrap_or(""))
-                .on_input(DocumentDetailsMessage::UserMetaDescriptionChanged)
-                .into()
-        } else {
-            text(meta.description.as_deref().unwrap_or("—")).into()
-        };
+        // Conditionally add each field row.
+        let mut section = section;
 
-        let language_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
-            widget::text_input("", meta.language.as_deref().unwrap_or(""))
-                .on_input(DocumentDetailsMessage::UserMetaLanguageChanged)
-                .into()
-        } else {
-            text(meta.language.as_deref().unwrap_or("—")).into()
-        };
+        macro_rules! add_row {
+            ($control:expr, $label:expr, $icon:expr) => {
+                if let Some(control) = $control {
+                    section = section.add(
+                        widget::settings::item::builder($label)
+                            .icon(widget::icon::from_name($icon).size(ICON_SIZE))
+                            .control(control),
+                    );
+                }
+            };
+        }
 
-        let publisher_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
-            widget::text_input("", meta.publisher.as_deref().unwrap_or(""))
-                .on_input(DocumentDetailsMessage::UserMetaPublisherChanged)
-                .into()
-        } else {
-            text(meta.publisher.as_deref().unwrap_or("—")).into()
-        };
-
-        let identifier_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
-            widget::text_input("", meta.identifier.as_deref().unwrap_or(""))
-                .on_input(DocumentDetailsMessage::UserMetaIdentifierChanged)
-                .into()
-        } else {
-            text(meta.identifier.as_deref().unwrap_or("—")).into()
-        };
-
-        let date_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
-            widget::text_input("", meta.date.as_deref().unwrap_or(""))
-                .on_input(DocumentDetailsMessage::UserMetaDateChanged)
-                .into()
-        } else {
-            text(meta.date.as_deref().unwrap_or("—")).into()
-        };
-
-        let subject_control: Element<'_, DocumentDetailsMessage> = if self.editing_user_meta {
-            widget::text_input("", meta.subject.as_deref().unwrap_or(""))
-                .on_input(DocumentDetailsMessage::UserMetaSubjectChanged)
-                .into()
-        } else {
-            text(meta.subject.as_deref().unwrap_or("—")).into()
-        };
-
-        let section = section
-            .add(
-                widget::settings::item::builder(fl!("document-details-user-meta-type"))
-                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
-                    .control(type_control),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-user-meta-title"))
-                    .icon(widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE))
-                    .control(title_control),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-user-meta-subtitle"))
-                    .icon(widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE))
-                    .control(subtitle_control),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-user-meta-authors"))
-                    .icon(widget::icon::from_name("system-users-symbolic").size(ICON_SIZE))
-                    .control(authors_control),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-user-meta-description"))
-                    .icon(
-                        widget::icon::from_name("accessories-text-editor-symbolic").size(ICON_SIZE),
-                    )
-                    .control(description_control),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-metadata-language"))
-                    .icon(
-                        widget::icon::from_name("preferences-desktop-locale-symbolic")
-                            .size(ICON_SIZE),
-                    )
-                    .control(language_control),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-metadata-publisher"))
-                    .icon(widget::icon::from_name("x-office-address-book-symbolic").size(ICON_SIZE))
-                    .control(publisher_control),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-metadata-identifier"))
-                    .icon(widget::icon::from_name("dialog-information-symbolic").size(ICON_SIZE))
-                    .control(identifier_control),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-metadata-date"))
-                    .icon(widget::icon::from_name("x-office-calendar-symbolic").size(ICON_SIZE))
-                    .control(date_control),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-metadata-subject"))
-                    .icon(widget::icon::from_name("edit-find-symbolic").size(ICON_SIZE))
-                    .control(subject_control),
-            );
+        add_row!(
+            type_control,
+            fl!("document-details-user-meta-type"),
+            "document-properties-symbolic"
+        );
+        add_row!(
+            opt_field!(meta.title, DocumentDetailsMessage::UserMetaTitleChanged),
+            fl!("document-details-user-meta-title"),
+            "text-x-generic-symbolic"
+        );
+        add_row!(
+            opt_field!(
+                meta.subtitle,
+                DocumentDetailsMessage::UserMetaSubtitleChanged
+            ),
+            fl!("document-details-user-meta-subtitle"),
+            "text-x-generic-symbolic"
+        );
+        add_row!(
+            authors_control,
+            fl!("document-details-user-meta-authors"),
+            "system-users-symbolic"
+        );
+        add_row!(
+            opt_field!(
+                meta.description,
+                DocumentDetailsMessage::UserMetaDescriptionChanged
+            ),
+            fl!("document-details-user-meta-description"),
+            "accessories-text-editor-symbolic"
+        );
+        add_row!(
+            opt_field!(
+                meta.language,
+                DocumentDetailsMessage::UserMetaLanguageChanged
+            ),
+            fl!("document-details-metadata-language"),
+            "preferences-desktop-locale-symbolic"
+        );
+        add_row!(
+            opt_field!(
+                meta.publisher,
+                DocumentDetailsMessage::UserMetaPublisherChanged
+            ),
+            fl!("document-details-metadata-publisher"),
+            "x-office-address-book-symbolic"
+        );
+        add_row!(
+            opt_field!(
+                meta.identifier,
+                DocumentDetailsMessage::UserMetaIdentifierChanged
+            ),
+            fl!("document-details-metadata-identifier"),
+            "dialog-information-symbolic"
+        );
+        add_row!(
+            opt_field!(meta.date, DocumentDetailsMessage::UserMetaDateChanged),
+            fl!("document-details-metadata-date"),
+            "x-office-calendar-symbolic"
+        );
+        add_row!(
+            opt_field!(meta.subject, DocumentDetailsMessage::UserMetaSubjectChanged),
+            fl!("document-details-metadata-subject"),
+            "edit-find-symbolic"
+        );
 
         section.into()
     }
