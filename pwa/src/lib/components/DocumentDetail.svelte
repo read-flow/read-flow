@@ -209,21 +209,35 @@
 			</div>
 		{/if}
 
-		{#if doc.type_ === 'epub' || doc.type_ === 'pdf'}
-			<a
-				href={readerHref(doc)}
-				class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors"
-			>
-				<Icon name="library" class="w-4 h-4" />
-				Open {doc.type_.toUpperCase()}
-			</a>
+		{@const allFormats = [doc, ...doc.otherFormats].filter((f) => f.type_ === 'epub' || f.type_ === 'pdf')}
+		{#if allFormats.length > 0}
+			<div class="flex flex-wrap gap-2">
+				{#each allFormats as fmt}
+					<a
+						href={readerHref(fmt)}
+						class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors"
+					>
+						<Icon name="library" class="w-4 h-4" />
+						Open {fmt.type_.toUpperCase()}
+					</a>
+				{/each}
+			</div>
 		{/if}
 
 		<!-- Metadata -->
 		<dl class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
 			<div class="flex items-center justify-between px-4 py-3">
-				<dt class="text-slate-500 dark:text-slate-400">Type</dt>
-				<dd class="font-medium text-slate-900 dark:text-slate-100 uppercase">{doc.type_}</dd>
+				<dt class="text-slate-500 dark:text-slate-400">Format</dt>
+				<dd class="flex gap-1 flex-wrap justify-end">
+					{#each [doc, ...doc.otherFormats] as fmt}
+						<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
+							{fmt.type_ === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+							: fmt.type_ === 'epub' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+							: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}">
+							{fmt.type_}
+						</span>
+					{/each}
+				</dd>
 			</div>
 			<div class="flex items-center justify-between px-4 py-3">
 				<dt class="text-slate-500 dark:text-slate-400">Size</dt>
