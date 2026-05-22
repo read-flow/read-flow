@@ -428,7 +428,6 @@ impl DocumentsComponent {
 }
 
 fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, DocumentsMessage> {
-    let file_types = document.file_types();
     let icon_name = document.metadata.type_.get_file_type_icon();
 
     let (selected_icon_name, selected_icon_class) = if is_selected {
@@ -437,7 +436,7 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
         ("checkbox-symbolic", ButtonClass::Icon)
     };
 
-    let open_msg = if file_types.len() > 1 {
+    let open_msg = if document.sources.len() > 1 {
         DocumentsMessage::Out(DocumentsOutput::PickFormat(document.clone()))
     } else {
         DocumentsMessage::Out(DocumentsOutput::OpenDocument(document.clone()))

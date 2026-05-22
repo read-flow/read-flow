@@ -565,6 +565,7 @@ pub struct DocumentSource {
     pub client: ClientSelector,
     pub type_: DocumentType,
     pub fingerprint: String,
+    pub size: i32,
 }
 
 #[derive(Clone)]
@@ -610,6 +611,7 @@ impl Document {
                 client: ClientSelector::Local,
                 type_: doc_type, // Copy
                 fingerprint,
+                size: 0,
             }]),
             document_guid: None,
             user_meta: UserMeta::default(),
@@ -657,6 +659,26 @@ impl Document {
 
     /// Returns a copy of this document restricted to sources of the given type.
     /// The metadata fingerprint and type are updated to match the chosen format.
+    /// Return a copy of this document restricted to the single source with the given `guid`.
+    pub fn with_source_guid(&self, guid: &str) -> Option<Document> {
+        let source = self.sources.iter().find(|s| s.guid == guid)?.clone();
+        let type_ = source.type_;
+        let fingerprint = source.fingerprint.clone();
+        let size = source.size;
+        Some(Document {
+            metadata: DocumentMetadata {
+                type_,
+                fingerprint,
+                size,
+                tags: self.metadata.tags.clone(),
+                status: self.metadata.status,
+            },
+            sources: HashSet::from([source]),
+            document_guid: self.document_guid.clone(),
+            user_meta: self.user_meta.clone(),
+        })
+    }
+
     pub fn as_format(&self, type_: DocumentType) -> Option<Document> {
         let sources: HashSet<_> = self
             .sources
@@ -760,6 +782,7 @@ impl From<(ClientSelector, File)> for Document {
                 client,
                 type_, // Copy
                 fingerprint,
+                size: file.size,
             }]),
             document_guid,
             user_meta: UserMeta::default(),
