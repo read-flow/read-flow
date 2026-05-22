@@ -10,6 +10,10 @@ use crate::content::block::TableCell;
 use crate::content::block::TextSpan;
 use crate::content::stylesheet::StyleSheet;
 
+type Blocks = Vec<ContentBlock>;
+type BlockPaths = Vec<Vec<u32>>;
+type PendingImages = Vec<(usize, PendingImage)>;
+
 /// An element on the parsing stack.
 pub(super) struct StackEntry {
     pub(super) tag: String,
@@ -175,9 +179,7 @@ impl ContentSink {
         }
     }
 
-    pub(super) fn into_blocks_and_pending(
-        self,
-    ) -> (Vec<ContentBlock>, Vec<Vec<u32>>, Vec<(usize, PendingImage)>) {
+    pub(super) fn into_blocks_and_pending(self) -> (Blocks, BlockPaths, PendingImages) {
         let mut state = self.state.into_inner();
         if let Some(mut root) = state.stack.pop() {
             root.flush_text();

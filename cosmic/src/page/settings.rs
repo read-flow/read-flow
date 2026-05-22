@@ -428,12 +428,12 @@ impl SettingsPage {
                 ),
             |section, doc_type| {
                 let enabled = self.settings.scan.extensions.contains(doc_type);
-                let doc_type_clone = doc_type.clone();
+                let doc_type_clone = *doc_type;
                 section.add(
                     widget::settings::item::builder(format!(".{}", doc_type.as_str()))
                         .description(doc_type.label())
                         .toggler(enabled, move |v| {
-                            SettingsMessage::ToggleDocumentType(doc_type_clone.clone(), v)
+                            SettingsMessage::ToggleDocumentType(doc_type_clone, v)
                         }),
                 )
             },

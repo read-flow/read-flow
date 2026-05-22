@@ -900,10 +900,10 @@ impl Page for DocumentDetails {
                 Task::none()
             }
             DocumentDetailsMessage::UserMetaAuthorChanged(idx, val) => {
-                if let Some(authors) = &mut self.user_meta_draft.authors {
-                    if let Some(author) = authors.get_mut(idx) {
-                        *author = val;
-                    }
+                if let Some(authors) = &mut self.user_meta_draft.authors
+                    && let Some(author) = authors.get_mut(idx)
+                {
+                    *author = val;
                 }
                 Task::none()
             }

@@ -90,7 +90,7 @@ pub enum Message {
     NavBarResizeEnd,
     UpdateConfig(Config),
     LaunchUrl(String),
-    Page(PageMessage),
+    Page(Box<PageMessage>),
     PageAdded(PageSelector),
     ActivatePage(PageSelector),
     ActivePageRemoved(PageSelector),
@@ -135,7 +135,7 @@ impl From<PageMessage> for Message {
     fn from(source: PageMessage) -> Self {
         match source {
             PageMessage::Out(output_message) => output_message.into(),
-            source => Message::Page(source),
+            source => Message::Page(Box::new(source)),
         }
     }
 }
@@ -244,9 +244,9 @@ impl cosmic::Application for ReadFlow {
             .iter()
             .filter_map(|path| Document::from_local_path(path))
             .map(|doc| {
-                cosmic::task::message(cosmic::action::app(Message::Page(
+                cosmic::task::message(cosmic::action::app(Message::Page(Box::new(
                     PageMessage::OpenDocument(doc),
-                )))
+                ))))
             })
             .collect();
 
@@ -462,7 +462,7 @@ impl cosmic::Application for ReadFlow {
             // Subscribe to document provider cache invalidation events
             self.pages
                 .document_provider
-                .invalidation_subscription(|| Message::Page(PageMessage::Refresh)),
+                .invalidation_subscription(|| Message::Page(Box::new(PageMessage::Refresh))),
             settings_invalidation_subscription(self.application_module.clone(), || {
                 Message::ExpireDocumentProvider
             }),
@@ -554,21 +554,23 @@ impl cosmic::Application for ReadFlow {
             // PageOutput messages may arrive directly from UI elements (e.g. nav tree
             // on_activate closures) wrapped in Message::Page rather than through a task.
             // Route them through the same App::update path as task-produced outputs.
-            Message::Page(PageMessage::Out(output)) => self.update(output.into()),
-            Message::Page(page_message) => self.pages.update(page_message).map(ActionExt::map_into),
+            Message::Page(msg) => match *msg {
+                PageMessage::Out(output) => self.update(output.into()),
+                page_message => self.pages.update(page_message).map(ActionExt::map_into),
+            },
             Message::ActivatePage(selector) => {
                 self.pages.activate(selector.clone());
                 let mut tasks = vec![self.update_title()];
                 match &selector {
                     PageSelector::Sources => {
-                        tasks.push(task::message(cosmic::Action::App(Message::Page(
+                        tasks.push(task::message(cosmic::Action::App(Message::Page(Box::new(
                             PageMessage::Sources(SourcesMessage::RefreshStatuses),
-                        ))));
+                        )))));
                     }
                     PageSelector::Documents => {
-                        tasks.push(task::message(cosmic::Action::App(Message::Page(
+                        tasks.push(task::message(cosmic::Action::App(Message::Page(Box::new(
                             PageMessage::Documents(DocumentListMessage::FocusSearchInput),
-                        ))));
+                        )))));
                     }
                     _ => {}
                 }
@@ -590,7 +592,7 @@ impl cosmic::Application for ReadFlow {
                 let document_provider = self.pages.document_provider.clone();
                 task::future(async move {
                     document_provider.set_expired().await;
-                    Message::Page(PageMessage::Refresh)
+                    Message::Page(Box::new(PageMessage::Refresh))
                 })
             }
             Message::CheckMissing => {
@@ -611,7 +613,7 @@ impl cosmic::Application for ReadFlow {
                             let document_provider = self.pages.document_provider.clone();
                             task::future(async move {
                                 document_provider.set_expired().await;
-                                Message::Page(PageMessage::Refresh)
+                                Message::Page(Box::new(PageMessage::Refresh))
                             })
                         }
                     }
@@ -676,7 +678,7 @@ impl cosmic::Application for ReadFlow {
                             let document_provider = self.pages.document_provider.clone();
                             task::future(async move {
                                 document_provider.set_expired().await;
-                                Message::Page(PageMessage::Refresh)
+                                Message::Page(Box::new(PageMessage::Refresh))
                             })
                         }
                     }
@@ -712,7 +714,8 @@ impl ReadFlow {
 
             if let Some(item) = self.pages.nav_tree(selector, is_active) {
                 // Page provides its own nav item (e.g. EPUB viewer with TOC).
-                let to_action = |msg: PageMessage| cosmic::action::app(Message::Page(msg));
+                let to_action =
+                    |msg: PageMessage| cosmic::action::app(Message::Page(Box::new(msg)));
                 tree = tree.push(item.map(&to_action));
             } else {
                 // Default: simple leaf that navigates via ActivatePage.

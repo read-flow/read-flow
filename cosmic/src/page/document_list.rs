@@ -269,39 +269,21 @@ impl DocumentList {
     /// Start background filtering task (called after debounce timeout)
     fn start_background_filtering(
         &self,
-        query: String,
-        search_mode: SearchMode,
-        status_filter: Option<ReadingStatus>,
-        source_filter: Option<ClientSelector>,
-        allow_tags: HashSet<String>,
-        deny_tags: HashSet<String>,
+        criteria: FilterCriteria,
         all_files: Vec<Document>,
     ) -> Task<Action<DocumentListMessage>> {
         task::future(async move {
-            // Compile regex once if in regex mode (not per-document)
-            let compiled_regex = if search_mode == SearchMode::Regex && !query.is_empty() {
-                Regex::new(&query).ok()
-            } else {
-                None
-            };
-
-            // Perform filtering in background after debounce timeout
-            // This runs only when user has paused typing for 250ms
+            let compiled_regex =
+                if criteria.search_mode == SearchMode::Regex && !criteria.query.is_empty() {
+                    Regex::new(&criteria.query).ok()
+                } else {
+                    None
+                };
             let filtered_files = all_files
                 .iter()
                 .enumerate()
                 .filter_map(|(index, file)| {
-                    filter_document(
-                        &query,
-                        search_mode,
-                        compiled_regex.as_ref(),
-                        status_filter,
-                        source_filter.as_ref(),
-                        &allow_tags,
-                        &deny_tags,
-                        &file,
-                    )
-                    .then_some(index)
+                    filter_document(&criteria, compiled_regex.as_ref(), &file).then_some(index)
                 })
                 .collect();
 
@@ -390,12 +372,14 @@ impl DocumentList {
         if self.archive.is_loaded() && !self.is_filtering {
             self.is_filtering = true;
             self.start_background_filtering(
-                self.search_query.clone(),
-                self.search_mode,
-                self.status_filter,
-                self.source_filter.clone(),
-                self.tag_filter.allow_tags.clone(),
-                self.tag_filter.deny_tags.clone(),
+                FilterCriteria {
+                    query: self.search_query.clone(),
+                    search_mode: self.search_mode,
+                    status_filter: self.status_filter,
+                    source_filter: self.source_filter.clone(),
+                    allow_tags: self.tag_filter.allow_tags.clone(),
+                    deny_tags: self.tag_filter.deny_tags.clone(),
+                },
                 self.archive.unfiltered().to_vec(),
             )
         } else {
@@ -504,16 +488,26 @@ fn fuzzy_match(query: &str, text: &str) -> bool {
     true
 }
 
-fn filter_document(
-    search_query: &str,
+struct FilterCriteria {
+    query: String,
     search_mode: SearchMode,
-    compiled_regex: Option<&Regex>,
     status_filter: Option<ReadingStatus>,
-    source_filter: Option<&ClientSelector>,
-    allow_tags: &HashSet<String>,
-    deny_tags: &HashSet<String>,
+    source_filter: Option<ClientSelector>,
+    allow_tags: HashSet<String>,
+    deny_tags: HashSet<String>,
+}
+
+fn filter_document(
+    criteria: &FilterCriteria,
+    compiled_regex: Option<&Regex>,
     document: &&Document,
 ) -> bool {
+    let search_query = criteria.query.as_str();
+    let search_mode = criteria.search_mode;
+    let status_filter = criteria.status_filter;
+    let source_filter = criteria.source_filter.as_ref();
+    let allow_tags = &criteria.allow_tags;
+    let deny_tags = &criteria.deny_tags;
     // Filter by search query
     let matches_search = if search_query.is_empty() {
         true
@@ -828,26 +822,22 @@ impl Page for DocumentList {
                 let mut documents: Vec<Document> = files.into_iter().collect();
                 // Sort documents
                 sort_documents(&mut documents, self.sort_subject, self.sort_direction);
-                let search_mode = self.search_mode;
+                let criteria = FilterCriteria {
+                    query: self.search_query.clone(),
+                    search_mode: self.search_mode,
+                    status_filter: self.status_filter,
+                    source_filter: self.source_filter.clone(),
+                    allow_tags: self.tag_filter.allow_tags.clone(),
+                    deny_tags: self.tag_filter.deny_tags.clone(),
+                };
                 let compiled_regex =
-                    if search_mode == SearchMode::Regex && !self.search_query.is_empty() {
-                        Regex::new(&self.search_query).ok()
+                    if criteria.search_mode == SearchMode::Regex && !criteria.query.is_empty() {
+                        Regex::new(&criteria.query).ok()
                     } else {
                         None
                     };
                 let mut files = Filtered::new(documents);
-                files.filter(|file| {
-                    filter_document(
-                        &self.search_query,
-                        search_mode,
-                        compiled_regex.as_ref(),
-                        self.status_filter,
-                        self.source_filter.as_ref(),
-                        &self.tag_filter.allow_tags,
-                        &self.tag_filter.deny_tags,
-                        &file,
-                    )
-                });
+                files.filter(|file| filter_document(&criteria, compiled_regex.as_ref(), &file));
 
                 let collection_size = files.filtered_len();
                 Task::batch([
@@ -921,12 +911,14 @@ impl Page for DocumentList {
                 {
                     self.is_filtering = true;
                     Task::batch(vec![self.start_background_filtering(
-                        query,
-                        self.search_mode,
-                        self.status_filter,
-                        self.source_filter.clone(),
-                        self.tag_filter.allow_tags.clone(),
-                        self.tag_filter.deny_tags.clone(),
+                        FilterCriteria {
+                            query,
+                            search_mode: self.search_mode,
+                            status_filter: self.status_filter,
+                            source_filter: self.source_filter.clone(),
+                            allow_tags: self.tag_filter.allow_tags.clone(),
+                            deny_tags: self.tag_filter.deny_tags.clone(),
+                        },
                         self.archive.unfiltered().to_vec(),
                     )])
                 } else {
@@ -1054,12 +1046,12 @@ impl Page for DocumentList {
                 }
             }
             DocumentListMessage::PickDocumentFormat(type_) => {
-                if let Some(doc) = self.pending_format_pick.take() {
-                    if let Some(formatted) = doc.as_format(type_) {
-                        return task::message(DocumentListMessage::Out(
-                            DocumentListOutput::OpenDocument(formatted),
-                        ));
-                    }
+                if let Some(doc) = self.pending_format_pick.take()
+                    && let Some(formatted) = doc.as_format(type_)
+                {
+                    return task::message(DocumentListMessage::Out(
+                        DocumentListOutput::OpenDocument(formatted),
+                    ));
                 }
                 Task::none()
             }
