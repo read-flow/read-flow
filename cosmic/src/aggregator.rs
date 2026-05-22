@@ -105,20 +105,37 @@ impl Aggregator {
                 acc
             });
 
-        // Fetch user-edited document metadata from the local source and merge by document_guid.
-        let local_docs: HashMap<String, DocumentMeta> = {
-            let local = self
-                .application_module
-                .db_client()
-                .await
-                .get_documents()
-                .await
-                .unwrap_or_default();
-            local.into_iter().map(|d| (d.guid, d.metadata)).collect()
+        // Fetch user-edited document metadata from all clients and merge by document_guid.
+        // Remote clients are processed first; local client last so it wins on conflict.
+        let ordered_clients: Vec<Client> = {
+            let (locals, mut remotes): (Vec<Client>, Vec<Client>) = self
+                .clients
+                .values()
+                .cloned()
+                .partition(|c| c.selector().is_local());
+            remotes.extend(locals);
+            remotes
         };
+        let client_count = ordered_clients.len();
+        let meta_results: Vec<Result<Vec<_>, FilesClientError>> = stream::iter(ordered_clients)
+            .map(|client| async move { client.get_documents().await })
+            .buffer_unordered(client_count)
+            .collect()
+            .await;
+        let all_meta: HashMap<String, DocumentMeta> = meta_results
+            .into_iter()
+            .filter_map(|result| {
+                if let Err(ref e) = result {
+                    tracing::warn!("ignoring error while retrieving document metadata: {e}");
+                }
+                result.ok()
+            })
+            .flatten()
+            .map(|d| (d.guid, d.metadata))
+            .collect();
         for doc in documents.values_mut() {
             if let Some(ref guid) = doc.document_guid
-                && let Some(meta) = local_docs.get(guid)
+                && let Some(meta) = all_meta.get(guid)
             {
                 doc.user_meta = meta.clone();
             }
