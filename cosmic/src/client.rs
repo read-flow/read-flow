@@ -220,6 +220,21 @@ impl Client {
         }
     }
 
+    pub async fn merge_documents(
+        &self,
+        winner_guid: &str,
+        loser_guids: &[String],
+    ) -> Result<(), FilesClientError> {
+        match self {
+            Client::Local(module) => Ok(module
+                .db_client()
+                .await
+                .merge_documents(winner_guid, loser_guids)
+                .await?),
+            Client::Remote(client) => Ok(client.merge_documents(winner_guid, loser_guids).await?),
+        }
+    }
+
     pub async fn ensure_document_for_file(
         &self,
         file_guid: &str,

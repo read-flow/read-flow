@@ -286,6 +286,24 @@ impl DocumentProvider {
         result
     }
 
+    /// Merge `losers` into `winner`, re-assigning all their file sources.
+    ///
+    /// Automatically invalidates the cache after the merge.
+    pub async fn merge_documents(
+        &self,
+        winner: &Document,
+        losers: &[Document],
+    ) -> Result<(), FilesClientError> {
+        let result = self
+            .aggregator
+            .read()
+            .await
+            .merge_documents(winner, losers)
+            .await;
+        self.set_expired().await;
+        result
+    }
+
     /// Open a document using the system's default application.
     ///
     /// Prefers local sources over remote sources.

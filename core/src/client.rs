@@ -363,6 +363,27 @@ impl FilesClient {
         Ok(response.json().await?)
     }
 
+    pub async fn merge_documents(
+        &self,
+        winner_guid: &str,
+        loser_guids: &[String],
+    ) -> Result<(), Error> {
+        let req = crate::api::MergeDocumentsRequest {
+            winner_guid: winner_guid.to_string(),
+            loser_guids: loser_guids.to_vec(),
+        };
+        let response = self
+            .client
+            .post(self.base_url.join("documents/merge")?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, self.get_auth_header())
+            .json(&req)
+            .send()
+            .await?;
+        response.error_for_status_ref()?;
+        Ok(())
+    }
+
     pub async fn ensure_document_for_file(&self, file_guid: &str) -> Result<ApiDocument, Error> {
         let response = self
             .client

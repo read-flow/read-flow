@@ -35,6 +35,7 @@ use crate::api::ApiDocument;
 use crate::api::DocumentMeta;
 use crate::api::File;
 use crate::api::FileDataSource;
+use crate::api::MergeDocumentsRequest;
 use crate::api::ReadingProgress;
 use crate::api::Status;
 use crate::db::dao;
@@ -166,6 +167,7 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         get_documents,
         get_document,
         put_document_metadata,
+        post_merge_documents,
         ensure_document_for_file,
     ];
 
@@ -621,6 +623,22 @@ async fn ensure_document_for_file(
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let doc = dao::ensure_document_for_file_guid(&mut conn, guid).await?;
+    Ok(Json(doc))
+}
+
+#[post("/documents/merge", data = "<req>")]
+async fn post_merge_documents(
+    req: Json<MergeDocumentsRequest>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Json<ApiDocument>> {
+    let pool = application_module.connection_pool().await;
+    let req = req.into_inner();
+    dao::merge_documents(&pool, &req.winner_guid, &req.loser_guids).await?;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let doc = dao::select_api_document_by_guid(&mut conn, &req.winner_guid)
+        .await?
+        .ok_or_else(|| Error::FileNotFound(req.winner_guid.clone()))?;
     Ok(Json(doc))
 }
 

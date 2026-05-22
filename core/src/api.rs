@@ -190,6 +190,13 @@ pub struct ApiDocument {
     pub file_guids: Vec<String>,
 }
 
+/// Request body for `POST /documents/merge`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeDocumentsRequest {
+    pub winner_guid: String,
+    pub loser_guids: Vec<String>,
+}
+
 #[async_trait::async_trait]
 pub trait FileDataSource {
     type Error: std::error::Error;

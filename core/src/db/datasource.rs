@@ -289,6 +289,14 @@ impl DbClient {
         let mut conn = self.connection_pool.acquire().await?;
         dao::ensure_document_for_file_guid(&mut conn, file_guid).await
     }
+
+    pub async fn merge_documents(
+        &self,
+        winner_guid: &str,
+        loser_guids: &[String],
+    ) -> Result<(), Error> {
+        dao::merge_documents(&self.connection_pool, winner_guid, loser_guids).await
+    }
 }
 
 /// Wraps a [`DbClient`] and filters out files/tags whose tags include any of

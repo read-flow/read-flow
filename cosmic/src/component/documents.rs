@@ -63,6 +63,7 @@ pub enum DocumentsOutput {
     SelectionChanged,
     NavigateToSettings,
     Scan,
+    MergeDocuments,
 }
 
 #[derive(Debug, Clone)]
@@ -188,30 +189,43 @@ impl DocumentsComponent {
             None
         };
 
+        let merge_button: Option<Element<'_, DocumentsMessage>> = if selected_count >= 2 {
+            Some(
+                widget::button::standard(fl!("document-list-merge"))
+                    .on_press(DocumentsMessage::Out(DocumentsOutput::MergeDocuments))
+                    .into(),
+            )
+        } else {
+            None
+        };
+
         let checkbox_label = if all_selected {
             fl!("document-list-deselect-all")
         } else {
             fl!("document-list-select-all")
         };
-        let select_all_row =
-            widget::settings::item_row(vec![])
-                .push(
-                    widget::checkbox(all_selected)
-                        .label(checkbox_label)
-                        .on_toggle(DocumentsMessage::ToggleAllSelected)
-                        .width(Length::FillPortion(1)),
-                )
-                .push(
-                    widget::text(fl!(
-                        "document-list-selection-count",
-                        selected = selected_count,
-                        total = filtered_count
-                    ))
-                    .width(Length::FillPortion(
-                        if tag_editor_view.is_some() { 1 } else { 5 },
-                    )),
-                )
-                .push_maybe(tag_editor_view);
+        let count_fill = match (tag_editor_view.is_some(), merge_button.is_some()) {
+            (true, _) => 1,
+            (false, false) => 5,
+            (false, true) => 4,
+        };
+        let select_all_row = widget::settings::item_row(vec![])
+            .push(
+                widget::checkbox(all_selected)
+                    .label(checkbox_label)
+                    .on_toggle(DocumentsMessage::ToggleAllSelected)
+                    .width(Length::FillPortion(1)),
+            )
+            .push(
+                widget::text(fl!(
+                    "document-list-selection-count",
+                    selected = selected_count,
+                    total = filtered_count
+                ))
+                .width(Length::FillPortion(count_fill)),
+            )
+            .push_maybe(merge_button)
+            .push_maybe(tag_editor_view);
 
         let files_section = files_section
             .add(select_all_row)

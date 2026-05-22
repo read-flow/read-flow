@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import DocumentDetail from '$lib/components/DocumentDetail.svelte';
+	import MergeDialog from '$lib/components/MergeDialog.svelte';
 	import {
 		allDocuments,
 		filteredDocuments,
@@ -24,6 +25,26 @@
 
 	let selectedFingerprint = $state<string | null>(null);
 	let formatPickDoc = $state<AggregatedFile | null>(null);
+	let selectMode = $state(false);
+	let selectedFingerprints = $state(new Set<string>());
+	let mergeDialogOpen = $state(false);
+
+	const selectedDocs = $derived(
+		$filteredDocuments.filter((d) => selectedFingerprints.has(d.fingerprint)),
+	);
+
+	function toggleSelect(fingerprint: string) {
+		selectedFingerprints = new Set(
+			selectedFingerprints.has(fingerprint)
+				? [...selectedFingerprints].filter((f) => f !== fingerprint)
+				: [...selectedFingerprints, fingerprint],
+		);
+	}
+
+	function exitSelectMode() {
+		selectMode = false;
+		selectedFingerprints = new Set();
+	}
 	let listContainerEl: HTMLDivElement | undefined = $state();
 	let containerHeight = $state(600);
 	let scrollTop = $state(0);
@@ -123,14 +144,31 @@
 	<div class="px-4 pt-5 pb-3 md:px-6 md:pt-6 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shrink-0">
 		<div class="flex items-center justify-between gap-3 mb-3">
 			<h1 class="text-xl font-semibold">Library</h1>
-			{#if !$isLoading}
-				<button
-					onclick={() => refreshDocuments()}
-					class="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors px-2 py-1 rounded"
-				>
-					Refresh
-				</button>
-			{/if}
+			<div class="flex items-center gap-1">
+				{#if selectMode}
+					<button
+						onclick={exitSelectMode}
+						class="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors px-2 py-1 rounded"
+					>
+						Done
+					</button>
+				{:else}
+					{#if !$isLoading}
+						<button
+							onclick={() => refreshDocuments()}
+							class="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors px-2 py-1 rounded"
+						>
+							Refresh
+						</button>
+					{/if}
+					<button
+						onclick={() => { selectMode = true; selectedFingerprints = new Set(); }}
+						class="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors px-2 py-1 rounded"
+					>
+						Select
+					</button>
+				{/if}
+			</div>
 		</div>
 
 		<!-- Search -->
@@ -239,8 +277,28 @@
 							{@const docMeta = doc.document_guid ? $documentMetaMap.get(doc.document_guid) : undefined}
 							<li
 								class="flex items-stretch transition-colors
-									{selectedFingerprint === doc.fingerprint ? 'bg-slate-100 dark:bg-slate-700/60' : ''}"
+									{selectMode
+										? selectedFingerprints.has(doc.fingerprint)
+											? 'bg-slate-100 dark:bg-slate-700/60'
+											: ''
+										: selectedFingerprint === doc.fingerprint
+											? 'bg-slate-100 dark:bg-slate-700/60'
+											: ''}"
 							>
+								{#if selectMode}
+									<button
+										onclick={() => toggleSelect(doc.fingerprint)}
+										class="flex items-center pl-4 pr-2"
+										aria-label={selectedFingerprints.has(doc.fingerprint) ? 'Deselect' : 'Select'}
+									>
+										<input
+											type="checkbox"
+											checked={selectedFingerprints.has(doc.fingerprint)}
+											readonly
+											class="w-4 h-4 accent-slate-900 dark:accent-slate-100 pointer-events-none"
+										/>
+									</button>
+								{/if}
 								<!-- Primary action: open in reader (format picker for multi-format) -->
 								<a
 									href={readerHref(doc)}
@@ -333,6 +391,38 @@
 				</div>
 			{/if}
 		</div>
+
+		<!-- Selection toolbar (shown in select mode) -->
+		{#if selectMode && selectedFingerprints.size > 0}
+			<div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3
+				bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900
+				px-4 py-2.5 rounded-full shadow-lg text-sm font-medium">
+				<span>{selectedFingerprints.size} selected</span>
+				{#if selectedFingerprints.size >= 2}
+					<button
+						onclick={() => (mergeDialogOpen = true)}
+						class="px-3 py-1 rounded-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+					>
+						Merge
+					</button>
+				{/if}
+				<button
+					onclick={() => (selectedFingerprints = new Set())}
+					class="text-slate-400 dark:text-slate-500 hover:text-white dark:hover:text-slate-900 transition-colors"
+					aria-label="Clear selection"
+				>
+					✕
+				</button>
+			</div>
+		{/if}
+
+		<!-- Merge dialog -->
+		{#if mergeDialogOpen}
+			<MergeDialog
+				candidates={selectedDocs}
+				onclose={() => { mergeDialogOpen = false; exitSelectMode(); }}
+			/>
+		{/if}
 
 		<!-- Format picker modal -->
 		{#if formatPickDoc}

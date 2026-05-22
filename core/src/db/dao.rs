@@ -830,6 +830,63 @@ pub async fn merge_document_metadata_from_document(
     merge_document_metadata_from_extracted(&mut *conn, canonical_id, &extracted).await
 }
 
+/// Merge `loser_guids` documents into `winner_guid`, then delete the losers.
+///
+/// For each loser:
+/// 1. Re-assigns all `contents` rows from the loser's `document_id` to the winner's.
+/// 2. Smart-merges the loser's metadata into the winner's (winner fields win on conflict).
+/// 3. Deletes the loser `documents` row (CASCADE removes its `document_metadata` row).
+///
+/// Unknown GUIDs are silently skipped.
+pub async fn merge_documents(
+    pool: &SqlitePool,
+    winner_guid: &str,
+    loser_guids: &[String],
+) -> Result<(), Error> {
+    let mut tx = pool.begin().await?;
+
+    let Some(winner_id) = sqlx::query_scalar::<_, i32>("SELECT id FROM documents WHERE guid = ?")
+        .bind(winner_guid)
+        .fetch_optional(&mut *tx)
+        .await?
+    else {
+        return Ok(());
+    };
+
+    for loser_guid in loser_guids {
+        if loser_guid == winner_guid {
+            continue;
+        }
+        let Some(loser_id) =
+            sqlx::query_scalar::<_, i32>("SELECT id FROM documents WHERE guid = ?")
+                .bind(loser_guid)
+                .fetch_optional(&mut *tx)
+                .await?
+        else {
+            continue;
+        };
+
+        // Merge metadata from loser into winner before deleting the loser.
+        merge_document_metadata_from_document(&mut *tx, winner_id, loser_id).await?;
+
+        // Reassign all contents from the loser to the winner.
+        sqlx::query("UPDATE contents SET document_id = ? WHERE document_id = ?")
+            .bind(winner_id)
+            .bind(loser_id)
+            .execute(&mut *tx)
+            .await?;
+
+        // Delete the loser document row (CASCADE removes its document_metadata row).
+        sqlx::query("DELETE FROM documents WHERE id = ?")
+            .bind(loser_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
 /// Get or create a `documents` row for the file identified by `file_guid`.
 ///
 /// Get or create a `documents` row for the content identified by `fingerprint`.
@@ -1050,6 +1107,93 @@ mod tests {
         assert_eq!(row.language.as_deref(), Some("en"));
         let authors: Vec<String> = serde_json::from_str(row.authors.as_deref().unwrap()).unwrap();
         assert_eq!(authors, vec!["Alice"]);
+    }
+
+    #[tokio::test]
+    async fn merge_documents_reassigns_contents_and_deletes_loser() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+
+        let winner = upsert_document(&mut conn, "winner-guid").await.unwrap();
+        let loser = upsert_document(&mut conn, "loser-guid").await.unwrap();
+
+        // Give the winner a content row.
+        upsert_content(&mut conn, "fp-a").await.unwrap();
+        sqlx::query("UPDATE contents SET document_id = ? WHERE fingerprint = ?")
+            .bind(winner.id)
+            .bind("fp-a")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+
+        // Give the loser a content row.
+        upsert_content(&mut conn, "fp-b").await.unwrap();
+        sqlx::query("UPDATE contents SET document_id = ? WHERE fingerprint = ?")
+            .bind(loser.id)
+            .bind("fp-b")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+
+        // Also give the loser some metadata that should be absorbed by the winner.
+        upsert_document_user_metadata(
+            &mut conn,
+            loser.id,
+            Some("Book"),
+            Some("Loser Title"),
+            None,
+            Some(r#"["Loser Author"]"#),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        drop(conn);
+
+        merge_documents(&pool, "winner-guid", &["loser-guid".to_string()])
+            .await
+            .unwrap();
+
+        let mut conn = pool.acquire().await.unwrap();
+
+        // fp-b must now belong to the winner.
+        let doc_id: Option<i32> =
+            sqlx::query_scalar("SELECT document_id FROM contents WHERE fingerprint = ?")
+                .bind("fp-b")
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
+        assert_eq!(doc_id, Some(winner.id));
+
+        // Loser document row must be gone.
+        let loser_exists: bool =
+            sqlx::query_scalar("SELECT COUNT(*) > 0 FROM documents WHERE guid = ?")
+                .bind("loser-guid")
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
+        assert!(!loser_exists);
+
+        // Winner's metadata must include the loser's title (winner had none).
+        let meta = get_document_user_metadata(&mut conn, winner.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(meta.title.as_deref(), Some("Loser Title"));
+    }
+
+    #[tokio::test]
+    async fn merge_documents_ignores_unknown_guids() {
+        let pool = test_pool().await;
+        // Should not panic or return an error.
+        merge_documents(&pool, "does-not-exist", &["also-missing".to_string()])
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

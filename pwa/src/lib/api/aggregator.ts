@@ -176,6 +176,49 @@ export async function updateDocumentMetadata(
 }
 
 /**
+ * Merge `losers` into `winner` on every source that holds any of them.
+ *
+ * For each source:
+ * - Resolves winner's document GUID (creating a document record if needed).
+ * - Resolves each loser's document GUID (creating if needed).
+ * - Calls POST /documents/merge on that source.
+ */
+export async function mergeDocuments(
+	winner: AggregatedFile,
+	losers: AggregatedFile[],
+): Promise<void> {
+	const sources = await db.sources.orderBy('order').toArray();
+	await Promise.allSettled(
+		sources.map(async (s) => {
+			if (s.id === undefined) return;
+			const sid = s.id as number;
+			const client = new ReadFlowClient(s);
+
+			let winnerGuid = winner.document_guid;
+			if (!winnerGuid) {
+				const fg = winner.sourceGuids[sid];
+				if (!fg) return;
+				winnerGuid = await ensureDocumentOnSource(client, fg);
+			}
+
+			const loserGuids: string[] = [];
+			for (const loser of losers) {
+				let loserGuid = loser.document_guid;
+				if (!loserGuid) {
+					const fg = loser.sourceGuids[sid];
+					if (fg) loserGuid = await ensureDocumentOnSource(client, fg);
+				}
+				if (loserGuid) loserGuids.push(loserGuid);
+			}
+
+			if (loserGuids.length > 0) {
+				await client.mergeDocuments(winnerGuid, loserGuids);
+			}
+		}),
+	);
+}
+
+/**
  * Download a file by trying each source that holds it in order.
  * `sourceGuids` comes from AggregatedFile.sourceGuids (sourceId → GUID).
  */

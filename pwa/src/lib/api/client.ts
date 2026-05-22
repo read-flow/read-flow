@@ -174,4 +174,11 @@ export class ReadFlowClient {
 		});
 	}
 
+	async mergeDocuments(winnerGuid: string, loserGuids: string[]): Promise<RemoteDocument> {
+		return this.request<RemoteDocument>('/documents/merge', {
+			method: 'POST',
+			body: JSON.stringify({ winner_guid: winnerGuid, loser_guids: loserGuids }),
+		});
+	}
+
 }

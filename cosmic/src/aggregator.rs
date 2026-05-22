@@ -211,6 +211,78 @@ impl Aggregator {
         Ok(())
     }
 
+    /// Merge `loser` documents into `winner`, re-assigning all their sources and metadata.
+    ///
+    /// Ensures every document has a `document_guid` first (creating one on the local client
+    /// if needed), then calls merge on the local client and best-effort on remote clients.
+    pub async fn merge_documents(
+        &self,
+        winner: &Document,
+        losers: &[Document],
+    ) -> Result<(), FilesClientError> {
+        let local_client = self
+            .clients
+            .get(&ClientSelector::Local)
+            .ok_or(FilesClientError::NoSourcesAvailable)?;
+
+        // Resolve winner guid, creating a document row if needed.
+        let winner_guid = match &winner.document_guid {
+            Some(guid) => guid.clone(),
+            None => {
+                let file_guid = winner
+                    .sources
+                    .iter()
+                    .next()
+                    .ok_or(FilesClientError::NoSourcesAvailable)?
+                    .guid
+                    .clone();
+                local_client
+                    .ensure_document_for_file(&file_guid)
+                    .await?
+                    .guid
+            }
+        };
+
+        // Resolve loser guids.
+        let mut loser_guids = Vec::with_capacity(losers.len());
+        for loser in losers {
+            let guid = match &loser.document_guid {
+                Some(guid) => guid.clone(),
+                None => {
+                    let file_guid = loser
+                        .sources
+                        .iter()
+                        .next()
+                        .ok_or(FilesClientError::NoSourcesAvailable)?
+                        .guid
+                        .clone();
+                    local_client
+                        .ensure_document_for_file(&file_guid)
+                        .await?
+                        .guid
+                }
+            };
+            loser_guids.push(guid);
+        }
+
+        // Merge on the local client (authoritative).
+        local_client
+            .merge_documents(&winner_guid, &loser_guids)
+            .await?;
+
+        // Best-effort merge on each remote client.
+        for (selector, client) in &self.clients {
+            if selector.is_local() {
+                continue;
+            }
+            if let Err(e) = client.merge_documents(&winner_guid, &loser_guids).await {
+                tracing::warn!("error merging documents on {selector}: {e}");
+            }
+        }
+
+        Ok(())
+    }
+
     fn iter_document(&self, document: Document) -> impl Iterator<Item = (Client, File)> {
         let files: Vec<_> = document.into();
 

@@ -187,6 +187,13 @@ impl SortDirection {
     }
 }
 
+/// State for the merge-documents dialog.
+struct MergeDialogState {
+    candidates: Vec<Document>,
+    /// Index into `candidates` for the chosen winner.
+    winner_index: Option<usize>,
+}
+
 pub struct DocumentList {
     pub(super) document_provider: Arc<DocumentProvider>,
     archive: DocumentsComponent,
@@ -203,6 +210,7 @@ pub struct DocumentList {
     source_filter: Option<ClientSelector>, // Optional source filter
     available_sources: Vec<ClientSelector>, // Available sources for filtering
     pending_format_pick: Option<Document>, // Document awaiting format selection
+    merge_dialog: Option<MergeDialogState>, // Merge dialog state
 }
 
 #[derive(Debug, Clone)]
@@ -237,6 +245,11 @@ pub enum DocumentListMessage {
     SetAvailableSources(Vec<ClientSelector>),
     PickDocumentFormat(DocumentType),
     CancelFormatPick,
+    OpenMergeDialog,
+    MergeWinnerSelected(usize),
+    ConfirmMerge,
+    CancelMerge,
+    MergeCompleted(Result<(), String>),
     Out(DocumentListOutput),
 }
 
@@ -317,6 +330,7 @@ impl DocumentList {
                 source_filter: None,
                 available_sources: Default::default(),
                 pending_format_pick: None,
+                merge_dialog: None,
             },
             Task::batch(vec![
                 tag_filter_init.map(ActionExt::map_into),
@@ -399,6 +413,66 @@ impl DocumentList {
         } else {
             Task::none()
         }
+    }
+}
+
+impl DocumentList {
+    fn view_merge_dialog(&self, dialog: &MergeDialogState) -> Element<'_, DocumentListMessage> {
+        use cosmic::cosmic_theme::Spacing;
+        use cosmic::theme;
+
+        let Spacing { space_s, .. } = theme::active().cosmic().spacing;
+
+        let candidate_rows: Vec<Element<'_, DocumentListMessage>> = dialog
+            .candidates
+            .iter()
+            .enumerate()
+            .map(|(idx, doc)| {
+                let label = doc
+                    .user_meta
+                    .title
+                    .as_deref()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| {
+                        std::path::Path::new(&doc.local_or_any_source().path)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("")
+                            .to_owned()
+                    });
+                widget::settings::item_row(vec![])
+                    .push(widget::radio(
+                        widget::text::body(label),
+                        idx,
+                        dialog.winner_index,
+                        DocumentListMessage::MergeWinnerSelected,
+                    ))
+                    .into()
+            })
+            .collect();
+
+        let controls = widget::column::with_children(candidate_rows)
+            .spacing(space_s)
+            .apply(widget::container)
+            .class(theme::Container::Card)
+            .padding(space_s)
+            .width(iced::Length::Fill);
+
+        let merge_btn = cosmic::widget::button::suggested(fl!("document-list-merge-confirm"))
+            .apply_maybe(dialog.winner_index.is_some().then_some(()), |btn, _| {
+                btn.on_press(DocumentListMessage::ConfirmMerge)
+            });
+
+        cosmic::widget::dialog()
+            .title(fl!("document-list-merge-title"))
+            .body(fl!("document-list-merge-body"))
+            .control(controls)
+            .primary_action(merge_btn)
+            .secondary_action(
+                cosmic::widget::button::standard(fl!("document-list-merge-cancel"))
+                    .on_press(DocumentListMessage::CancelMerge),
+            )
+            .into()
     }
 }
 
@@ -598,6 +672,10 @@ impl Page for DocumentList {
     type Message = DocumentListMessage;
 
     fn dialog(&self) -> Option<Element<'_, DocumentListMessage>> {
+        if let Some(dialog) = &self.merge_dialog {
+            return Some(self.view_merge_dialog(dialog));
+        }
+
         use cosmic::cosmic_theme::Spacing;
         use cosmic::iced::Length;
         use cosmic::theme;
@@ -1028,6 +1106,9 @@ impl Page for DocumentList {
                     DocumentsOutput::Scan => {
                         task::message(DocumentListMessage::Out(DocumentListOutput::Scan))
                     }
+                    DocumentsOutput::MergeDocuments => {
+                        task::message(DocumentListMessage::OpenMergeDialog)
+                    }
                 },
                 msg => self.archive.update(msg).map(ActionExt::map_into),
             },
@@ -1054,6 +1135,54 @@ impl Page for DocumentList {
                     ));
                 }
                 Task::none()
+            }
+            DocumentListMessage::OpenMergeDialog => {
+                let candidates = self.archive.get_selected_documents();
+                if candidates.len() >= 2 {
+                    self.merge_dialog = Some(MergeDialogState {
+                        candidates,
+                        winner_index: None,
+                    });
+                }
+                Task::none()
+            }
+            DocumentListMessage::MergeWinnerSelected(index) => {
+                if let Some(ref mut dialog) = self.merge_dialog {
+                    dialog.winner_index = Some(index);
+                }
+                Task::none()
+            }
+            DocumentListMessage::ConfirmMerge => {
+                let Some(dialog) = self.merge_dialog.take() else {
+                    return Task::none();
+                };
+                let Some(winner_idx) = dialog.winner_index else {
+                    return Task::none();
+                };
+                let Some(winner) = dialog.candidates.get(winner_idx).cloned() else {
+                    return Task::none();
+                };
+                let loser_fp = winner.metadata.fingerprint.clone();
+                let losers: Vec<Document> = dialog
+                    .candidates
+                    .into_iter()
+                    .filter(|d| d.metadata.fingerprint != loser_fp)
+                    .collect();
+                let provider = self.document_provider.clone();
+                task::future(async move {
+                    let result = provider.merge_documents(&winner, &losers).await;
+                    DocumentListMessage::MergeCompleted(result.map_err(|e| e.to_string()))
+                })
+            }
+            DocumentListMessage::CancelMerge => {
+                self.merge_dialog = None;
+                Task::none()
+            }
+            DocumentListMessage::MergeCompleted(result) => {
+                if let Err(ref e) = result {
+                    tracing::warn!("merge documents failed: {e}");
+                }
+                task::message(DocumentListMessage::LoadArchive)
             }
             DocumentListMessage::CancelFormatPick => {
                 self.pending_format_pick = None;
