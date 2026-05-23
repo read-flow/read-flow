@@ -41,9 +41,11 @@ use crate::component::tag_editor::TagEditorOutput;
 use crate::component::tag_filter::TagFilter;
 use crate::component::tag_filter::TagFilterMessage;
 use crate::component::tag_filter::TagFilterOutput;
+use crate::component::tag_pill_filter;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
+use crate::layout::layout;
 use crate::page::Page;
 use crate::state::filtered::Filtered;
 
@@ -787,13 +789,25 @@ impl Page for DocumentList {
     }
 
     fn view(&self) -> Element<'_, DocumentListMessage> {
-        self.archive
-            .view()
-            .map(Into::into)
-            .apply(widget::scrollable::vertical)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        let tag_bar = tag_pill_filter::view(
+            self.tag_filter.all_tags(),
+            &self.tag_filter.allow_tags,
+            &self.tag_filter.deny_tags,
+        )
+        .map(Into::into);
+
+        widget::column::with_children(vec![
+            layout(tag_bar),
+            self.archive
+                .view()
+                .map(Into::into)
+                .apply(widget::scrollable::vertical)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
+        ])
+        .height(Length::Fill)
+        .into()
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, DocumentListMessage>> {

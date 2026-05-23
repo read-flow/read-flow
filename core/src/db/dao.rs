@@ -867,7 +867,7 @@ pub async fn merge_documents(
         };
 
         // Merge metadata from loser into winner before deleting the loser.
-        merge_document_metadata_from_document(&mut *tx, winner_id, loser_id).await?;
+        merge_document_metadata_from_document(&mut tx, winner_id, loser_id).await?;
 
         // Reassign all contents from the loser to the winner.
         sqlx::query("UPDATE contents SET document_id = ? WHERE document_id = ?")
