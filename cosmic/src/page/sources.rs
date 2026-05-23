@@ -397,21 +397,10 @@ impl Page for SourcesPage {
                     )
                 };
                 section
-                    .add(widget::settings::item_row(vec![
-                        widget::space::horizontal()
-                            .width(Length::FillPortion(5))
-                            .into(),
-                        widget::button::icon(icon::from_name("list-add-symbolic").size(ICON_SIZE))
-                            .class(widget::button::ButtonClass::Suggested)
-                            .apply_if(!self.show_add_form, |b| {
-                                b.on_press(SourcesMessage::ShowAddForm)
-                            })
-                            .tooltip(fl!("sources-add-button"))
-                            .apply(widget::container)
-                            .width(Length::FillPortion(1))
-                            .align_x(Horizontal::Right)
-                            .into(),
-                    ]))
+                    .add(crate::component::section_helpers::section_add_button(
+                        fl!("sources-add-button"),
+                        (!self.show_add_form).then_some(SourcesMessage::ShowAddForm),
+                    ))
                     .into()
             }
         };
@@ -437,28 +426,15 @@ impl Page for SourcesPage {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
         if let Some(remote) = &self.pending_deletion {
-            return Some(
-                widget::dialog()
-                    .title(fl!("sources-delete-confirm-title"))
-                    .body(fl!("sources-delete-confirm-body"))
-                    .icon(icon::from_name("dialog-warning-symbolic").size(64))
-                    .control(
-                        widget::text::monotext(&remote.base_url)
-                            .apply(widget::container)
-                            .class(cosmic::theme::Container::Card)
-                            .padding(space_s)
-                            .width(Length::Fill),
-                    )
-                    .primary_action(
-                        widget::button::destructive(fl!("sources-delete-confirm-delete"))
-                            .on_press(SourcesMessage::ConfirmDeleteSource),
-                    )
-                    .secondary_action(
-                        widget::button::standard(fl!("sources-delete-confirm-cancel"))
-                            .on_press(SourcesMessage::CancelDeleteSource),
-                    )
-                    .into(),
-            );
+            return Some(crate::component::confirm_dialog::confirm_delete_dialog(
+                fl!("sources-delete-confirm-title"),
+                fl!("sources-delete-confirm-body"),
+                &remote.base_url,
+                fl!("sources-delete-confirm-delete"),
+                fl!("sources-delete-confirm-cancel"),
+                SourcesMessage::ConfirmDeleteSource,
+                SourcesMessage::CancelDeleteSource,
+            ));
         }
 
         if let Some(error) = &self.operation_error {

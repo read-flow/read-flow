@@ -448,19 +448,10 @@ impl SettingsPage {
                 widget::settings::section().title(fl!("settings-scan-directories-section")),
                 |section, (path, dir_settings)| section.add(view_directory(path, dir_settings)),
             )
-            .add(widget::settings::item_row(vec![
-                widget::space::horizontal()
-                    .width(Length::FillPortion(5))
-                    .into(),
-                widget::button::icon(icon::from_name("list-add-symbolic").size(ICON_SIZE))
-                    .class(widget::button::ButtonClass::Suggested)
-                    .on_press(SettingsMessage::AddDirectory)
-                    .tooltip(fl!("settings-add-directory"))
-                    .apply(widget::container)
-                    .width(Length::FillPortion(1))
-                    .align_x(Horizontal::Right)
-                    .into(),
-            ]));
+            .add(crate::component::section_helpers::section_add_button(
+                fl!("settings-add-directory"),
+                Some(SettingsMessage::AddDirectory),
+            ));
 
         let mut items: Vec<Element<'_, SettingsMessage>> = vec![
             widget::text::title2(fl!("settings-scan-section")).into(),
@@ -517,19 +508,10 @@ impl SettingsPage {
                     acc.add(self.view_authorized_user_input(user_id, entry))
                 },
             )
-            .add(widget::settings::item_row(vec![
-                widget::space::horizontal()
-                    .width(Length::FillPortion(5))
-                    .into(),
-                widget::button::icon(widget::icon::from_name("list-add-symbolic").size(ICON_SIZE))
-                    .class(widget::button::ButtonClass::Suggested)
-                    .on_press(SettingsMessage::AddAuthorizedUser)
-                    .tooltip(fl!("settings-server-add-authorized-user"))
-                    .apply(widget::container)
-                    .width(Length::FillPortion(1))
-                    .align_x(Horizontal::Right)
-                    .into(),
-            ]));
+            .add(crate::component::section_helpers::section_add_button(
+                fl!("settings-server-add-authorized-user"),
+                Some(SettingsMessage::AddAuthorizedUser),
+            ));
 
         let mut items: Vec<Element<'_, SettingsMessage>> = vec![
             widget::text::title2(fl!("settings-server-section")).into(),

@@ -623,35 +623,16 @@ impl Page for DocumentDetails {
     }
 
     fn dialog(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
         if let Some(source) = &self.pending_source_deletion {
-            return Some(
-                widget::dialog()
-                    .title(fl!("document-details-delete-source-confirm-title"))
-                    .body(fl!("document-details-delete-source-confirm-body"))
-                    .icon(widget::icon::from_name("dialog-warning-symbolic").size(64))
-                    .control(
-                        widget::text::monotext(&source.path)
-                            .apply(widget::container)
-                            .class(theme::Container::Card)
-                            .padding(space_s)
-                            .width(Length::Fill),
-                    )
-                    .primary_action(
-                        widget::button::destructive(fl!(
-                            "document-details-delete-source-confirm-delete"
-                        ))
-                        .on_press(DocumentDetailsMessage::ConfirmDeleteSource),
-                    )
-                    .secondary_action(
-                        widget::button::standard(fl!(
-                            "document-details-delete-source-confirm-cancel"
-                        ))
-                        .on_press(DocumentDetailsMessage::CancelDeleteSource),
-                    )
-                    .into(),
-            );
+            return Some(crate::component::confirm_dialog::confirm_delete_dialog(
+                fl!("document-details-delete-source-confirm-title"),
+                fl!("document-details-delete-source-confirm-body"),
+                &source.path,
+                fl!("document-details-delete-source-confirm-delete"),
+                fl!("document-details-delete-source-confirm-cancel"),
+                DocumentDetailsMessage::ConfirmDeleteSource,
+                DocumentDetailsMessage::CancelDeleteSource,
+            ));
         }
 
         if self.show_open_picker {
