@@ -428,8 +428,6 @@ impl DocumentsComponent {
 }
 
 fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, DocumentsMessage> {
-    let icon_name = document.metadata.type_.get_file_type_icon();
-
     let (selected_icon_name, selected_icon_class) = if is_selected {
         ("checkbox-checked-symbolic", ButtonClass::Suggested)
     } else {
@@ -446,10 +444,6 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
         widget::button::icon(widget::icon::from_name(selected_icon_name).size(ICON_SIZE))
             .class(selected_icon_class)
             .on_press(DocumentsMessage::ToggleDocumentSelected(document.clone()))
-            .into(),
-        widget::icon::from_name(icon_name)
-            .size(ICON_SIZE)
-            .icon()
             .into(),
         display_document_title(document),
         display_pills(document),
