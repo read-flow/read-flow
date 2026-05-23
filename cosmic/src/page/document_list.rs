@@ -21,7 +21,6 @@ use cosmic::iced::keyboard::Modifiers;
 use cosmic::iced::keyboard::key::Named;
 use cosmic::task;
 use cosmic::widget;
-use cosmic::widget::button::ButtonClass;
 use read_flow_core::Builder;
 use read_flow_core::api::ReadingStatus;
 use regex::Regex;
@@ -478,21 +477,6 @@ impl DocumentList {
     }
 }
 
-/// Sort documents based on the selected sort option
-fn source_size_label(bytes: i32) -> String {
-    const KB: i32 = 1024;
-    const MB: i32 = 1024 * KB;
-    if bytes == 0 {
-        String::new()
-    } else if bytes < KB {
-        format!("{bytes} B")
-    } else if bytes < MB {
-        format!("{:.1} KB", bytes as f32 / KB as f32)
-    } else {
-        format!("{:.1} MB", bytes as f32 / MB as f32)
-    }
-}
-
 fn shortcut_item(key: &str, description: String) -> Element<'_, DocumentListMessage> {
     widget::settings::item::builder(description)
         .control(widget::text::monotext(key))
@@ -692,13 +676,6 @@ impl Page for DocumentList {
             return Some(self.view_merge_dialog(dialog));
         }
 
-        use cosmic::cosmic_theme::Spacing;
-        use cosmic::iced::Length;
-        use cosmic::theme;
-
-        let Spacing {
-            space_s, space_xs, ..
-        } = theme::active().cosmic().spacing;
         let document = self.pending_format_pick.as_ref()?;
 
         let title = document.user_meta.title.clone().unwrap_or_else(|| {
@@ -712,80 +689,13 @@ impl Page for DocumentList {
         let mut sources: Vec<&crate::aggregator::DocumentSource> = document.sources_by_priority();
         sources.sort_by_key(|s| (s.type_, s.client.is_local()));
 
-        let source_buttons: Vec<Element<'_, DocumentListMessage>> = sources
-            .into_iter()
-            .map(|source| {
-                let filename = std::path::Path::new(&source.path)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or(&source.path)
-                    .to_owned();
-
-                let location = match &source.client {
-                    crate::client::ClientSelector::Local => {
-                        fl!("document-list-pick-source-local")
-                    }
-                    crate::client::ClientSelector::Remote(url) => {
-                        url.host_str().unwrap_or("Remote").to_owned()
-                    }
-                };
-
-                let size_label = source_size_label(source.size);
-
-                let type_badge = widget::text(source.type_.as_str().to_uppercase())
-                    .size(11)
-                    .apply(widget::container)
-                    .class(theme::Container::Card)
-                    .padding([2, 6]);
-
-                let location_badge = widget::text(location)
-                    .size(11)
-                    .apply(widget::container)
-                    .class(theme::Container::Card)
-                    .padding([2, 6]);
-
-                let header_row = widget::row::with_children(vec![
-                    type_badge.into(),
-                    location_badge.into(),
-                    widget::Space::new().width(Length::Fill).into(),
-                    widget::text(size_label).size(11).into(),
-                ])
-                .spacing(space_xs);
-
-                let content = widget::column::with_children(vec![
-                    header_row.into(),
-                    widget::text(filename).size(13).into(),
-                    widget::text(source.path.clone()).size(11).into(),
-                ])
-                .spacing(space_xs);
-
-                let guid = source.guid.clone();
-                widget::button::custom(content)
-                    .class(ButtonClass::ListItem)
-                    .width(Length::Fill)
-                    .on_press(DocumentListMessage::PickDocumentSource(guid))
-                    .into()
-            })
-            .collect();
-
-        let controls = cosmic::widget::column::with_children(source_buttons)
-            .spacing(space_s)
-            .apply(cosmic::widget::container)
-            .class(theme::Container::Card)
-            .padding(space_s)
-            .width(Length::Fill);
-
-        Some(
-            cosmic::widget::dialog()
-                .title(fl!("document-list-pick-source-title"))
-                .body(title)
-                .control(controls)
-                .secondary_action(
-                    cosmic::widget::button::standard(fl!("document-list-pick-format-cancel"))
-                        .on_press(DocumentListMessage::CancelFormatPick),
-                )
-                .into(),
-        )
+        Some(crate::component::source_picker::source_picker_dialog(
+            fl!("document-list-pick-source-title"),
+            Some(title),
+            sources,
+            DocumentListMessage::PickDocumentSource,
+            DocumentListMessage::CancelFormatPick,
+        ))
     }
 
     fn view(&self) -> Element<'_, DocumentListMessage> {

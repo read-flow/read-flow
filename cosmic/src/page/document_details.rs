@@ -45,6 +45,7 @@ pub struct DocumentDetails {
     tag_editor: TagEditor<Arc<DocumentProvider>>,
     editing_sources: bool,
     pending_source_deletion: Option<DocumentSource>,
+    show_open_picker: bool,
     editing_user_meta: bool,
     user_meta_draft: UserMeta,
 }
@@ -66,6 +67,8 @@ pub enum DocumentDetailsMessage {
     UpdateReadingStatus(ReadingStatus),
     ReadingStatusUpdated(Result<(), String>),
     OpenDocument,
+    PickOpenSource(String),
+    CancelOpenPicker,
     CopyPath(String),
     ToggleEditSources,
     RequestDeleteSource(DocumentSource),
@@ -130,6 +133,7 @@ impl DocumentDetails {
             tag_editor,
             editing_sources: false,
             pending_source_deletion: None,
+            show_open_picker: false,
             editing_user_meta: false,
             user_meta_draft: initial_user_meta,
         };
@@ -475,6 +479,16 @@ impl DocumentDetails {
                     .tooltip(fl!("document-details-copy-path")),
                 );
 
+            if matches!(source.client, ClientSelector::Local) {
+                source_row = source_row.push(
+                    widget::button::icon(
+                        widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
+                    )
+                    .on_press(DocumentDetailsMessage::PickOpenSource(source.guid.clone()))
+                    .tooltip(fl!("document-details-open-file")),
+                );
+            }
+
             // Show delete button in edit mode for sources where the client has multiple entries
             if self.editing_sources {
                 let client_source_count =
@@ -611,31 +625,53 @@ impl Page for DocumentDetails {
     fn dialog(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
-        let source = self.pending_source_deletion.as_ref()?;
-        Some(
-            widget::dialog()
-                .title(fl!("document-details-delete-source-confirm-title"))
-                .body(fl!("document-details-delete-source-confirm-body"))
-                .icon(widget::icon::from_name("dialog-warning-symbolic").size(64))
-                .control(
-                    widget::text::monotext(&source.path)
-                        .apply(widget::container)
-                        .class(theme::Container::Card)
-                        .padding(space_s)
-                        .width(Length::Fill),
-                )
-                .primary_action(
-                    widget::button::destructive(fl!(
-                        "document-details-delete-source-confirm-delete"
-                    ))
-                    .on_press(DocumentDetailsMessage::ConfirmDeleteSource),
-                )
-                .secondary_action(
-                    widget::button::standard(fl!("document-details-delete-source-confirm-cancel"))
+        if let Some(source) = &self.pending_source_deletion {
+            return Some(
+                widget::dialog()
+                    .title(fl!("document-details-delete-source-confirm-title"))
+                    .body(fl!("document-details-delete-source-confirm-body"))
+                    .icon(widget::icon::from_name("dialog-warning-symbolic").size(64))
+                    .control(
+                        widget::text::monotext(&source.path)
+                            .apply(widget::container)
+                            .class(theme::Container::Card)
+                            .padding(space_s)
+                            .width(Length::Fill),
+                    )
+                    .primary_action(
+                        widget::button::destructive(fl!(
+                            "document-details-delete-source-confirm-delete"
+                        ))
+                        .on_press(DocumentDetailsMessage::ConfirmDeleteSource),
+                    )
+                    .secondary_action(
+                        widget::button::standard(fl!(
+                            "document-details-delete-source-confirm-cancel"
+                        ))
                         .on_press(DocumentDetailsMessage::CancelDeleteSource),
-                )
-                .into(),
-        )
+                    )
+                    .into(),
+            );
+        }
+
+        if self.show_open_picker {
+            let local_sources: Vec<&DocumentSource> = self
+                .document
+                .sources
+                .iter()
+                .filter(|s| matches!(s.client, ClientSelector::Local))
+                .collect();
+
+            return Some(crate::component::source_picker::source_picker_dialog(
+                fl!("document-details-open-file"),
+                None,
+                local_sources,
+                DocumentDetailsMessage::PickOpenSource,
+                DocumentDetailsMessage::CancelOpenPicker,
+            ));
+        }
+
+        None
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
@@ -665,14 +701,21 @@ impl Page for DocumentDetails {
     }
 
     fn view_header_end(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
-        vec![
-            widget::button::icon(
-                widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
-            )
-            .on_press(DocumentDetailsMessage::OpenDocument)
-            .tooltip(fl!("document-details-open-file"))
-            .into(),
-        ]
+        let has_local = self
+            .document
+            .sources
+            .iter()
+            .any(|s| matches!(s.client, ClientSelector::Local));
+        let btn = widget::button::icon(
+            widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
+        )
+        .tooltip(fl!("document-details-open-file"));
+        let btn = if has_local {
+            btn.on_press(DocumentDetailsMessage::OpenDocument)
+        } else {
+            btn
+        };
+        vec![btn.into()]
     }
 
     fn update(&mut self, message: DocumentDetailsMessage) -> Task<Action<DocumentDetailsMessage>> {
@@ -723,9 +766,45 @@ impl Page for DocumentDetails {
                     }
                 }
             }
-            DocumentDetailsMessage::OpenDocument => task::message(DocumentDetailsMessage::Out(
-                DocumentDetailsOutput::OpenDocument(self.document.clone()),
-            )),
+            DocumentDetailsMessage::OpenDocument => {
+                let local_sources: Vec<_> = self
+                    .document
+                    .sources
+                    .iter()
+                    .filter(|s| matches!(s.client, ClientSelector::Local))
+                    .collect();
+                match local_sources.len() {
+                    0 => Task::none(),
+                    1 => {
+                        if let Some(single) = self.document.with_source_guid(&local_sources[0].guid)
+                        {
+                            task::message(DocumentDetailsMessage::Out(
+                                DocumentDetailsOutput::OpenDocument(single),
+                            ))
+                        } else {
+                            Task::none()
+                        }
+                    }
+                    _ => {
+                        self.show_open_picker = true;
+                        Task::none()
+                    }
+                }
+            }
+            DocumentDetailsMessage::PickOpenSource(guid) => {
+                self.show_open_picker = false;
+                if let Some(single) = self.document.with_source_guid(&guid) {
+                    task::message(DocumentDetailsMessage::Out(
+                        DocumentDetailsOutput::OpenDocument(single),
+                    ))
+                } else {
+                    Task::none()
+                }
+            }
+            DocumentDetailsMessage::CancelOpenPicker => {
+                self.show_open_picker = false;
+                Task::none()
+            }
             DocumentDetailsMessage::TagsAdded(result) => {
                 match result {
                     Ok(_tags) => {
