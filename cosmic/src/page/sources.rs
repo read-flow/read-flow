@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
 
 use cosmic::Action;
 use cosmic::Apply;
@@ -19,7 +17,6 @@ use cosmic::widget::settings;
 use provider::r#async::Provider;
 use read_flow_core::Builder;
 use read_flow_core::api::FileDataSource;
-use read_flow_core::api::Status;
 use read_flow_core::client::FilesClient;
 use read_flow_core::db;
 use read_flow_core::db::dao;
@@ -33,15 +30,14 @@ use crate::component::provided_state::ProvidedState;
 use crate::component::provided_state::ProvidedStateMessage;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
+use crate::forms::sources::add_source::AddSourceForm;
+use crate::forms::sources::add_source::AddSourceFormMessage;
+use crate::forms::sources::add_source::AddSourceFormOutput;
 use crate::iter::find_with_next;
 use crate::iter::find_with_previous;
 use crate::layout::layout;
 use crate::page::Page;
 use crate::state::LoadedState;
-
-pub type UrlVerificationState = LoadedState<Status>;
-
-const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone)]
 struct RemotesProvider(Arc<ApplicationModule>);
@@ -59,21 +55,9 @@ impl Provider<Vec<Remote>> for RemotesProvider {
 pub struct SourcesPage {
     application_module: Arc<ApplicationModule>,
     remotes_state: ProvidedState<RemotesProvider, Vec<Remote>>,
-    show_add_form: bool,
-    entered_url: String,
-    entered_url_id: widget::Id, // Unique ID for focus management
-    entered_user_id: String,
-    entered_user_id_id: widget::Id, // Unique ID for focus management
-    entered_passphrase: String,
-    entered_passphrase_id: widget::Id, // Unique ID for focus management
-    show_passphrase: bool,
-    url_verification_state: UrlVerificationState,
-    unavailable_acknowledged: bool,
+    add_source_form: Option<AddSourceForm>,
     operation_error: Option<String>,
     pending_deletion: Option<Remote>,
-    // Debouncing state
-    last_input_time: Instant,
-    // Per-source reachability status (remote id → reachable)
     source_statuses: HashMap<i32, LoadedState<bool>>,
 }
 
@@ -88,26 +72,8 @@ pub enum SourcesMessage {
     Remotes(ProvidedStateMessage<Vec<Remote>>),
 
     ShowAddForm,
-    CancelAddForm,
+    AddSourceForm(AddSourceFormMessage),
 
-    UpdateEnteredUrl(String),
-    UpdateEnteredUserId(String),
-    UpdateEnteredPassphrase(String),
-    DebounceVerify(widget::Id),
-    ToggleShowPassphrase,
-    ToggleUnavailableAcknowledged,
-    VerifyEnteredUrl {
-        url: Url,
-        user_id: String,
-        passphrase: String,
-        do_submit: bool,
-        widget: widget::Id,
-    },
-    SetUrlVerificationStateFailed(widget::Id, String),
-    SetUrlVerificationStateLoaded(widget::Id, Status),
-    ClearUrlEntries,
-
-    AddSource(String),
     SubmitSource(Url, String, String), // url, user_id, passphrase
     SubmittedSource(Url, String, String), // url, user_id, passphrase
     RequestDeleteSource(Remote),
@@ -136,19 +102,13 @@ impl From<ProvidedStateMessage<Vec<Remote>>> for SourcesMessage {
     }
 }
 
-impl SourcesPage {
-    fn start_debounce_verification(
-        &mut self,
-        widget_id: widget::Id,
-    ) -> Task<Action<SourcesMessage>> {
-        self.last_input_time = Instant::now();
-        // Start debounce task
-        task::future(async move {
-            tokio::time::sleep(DEBOUNCE_TIMEOUT).await;
-            SourcesMessage::DebounceVerify(widget_id)
-        })
+impl From<AddSourceFormMessage> for SourcesMessage {
+    fn from(value: AddSourceFormMessage) -> Self {
+        Self::AddSourceForm(value)
     }
+}
 
+impl SourcesPage {
     pub fn new(application_module: Arc<ApplicationModule>) -> (Self, Task<Action<SourcesMessage>>) {
         let (remotes_state, init_remotes_state) =
             ProvidedState::new(RemotesProvider(application_module.clone()));
@@ -156,19 +116,9 @@ impl SourcesPage {
             Self {
                 application_module,
                 remotes_state,
-                show_add_form: false,
-                entered_url: Default::default(),
-                entered_url_id: widget::Id::unique(),
-                entered_user_id: Default::default(),
-                entered_user_id_id: widget::Id::unique(),
-                entered_passphrase: Default::default(),
-                entered_passphrase_id: widget::Id::unique(),
-                show_passphrase: false,
-                url_verification_state: Default::default(),
-                unavailable_acknowledged: false,
+                add_source_form: None,
                 operation_error: None,
                 pending_deletion: None,
-                last_input_time: Instant::now(),
                 source_statuses: HashMap::new(),
             },
             task::batch([init_remotes_state.map(ActionExt::map_into)]),
@@ -228,135 +178,6 @@ impl SourcesPage {
             )
             .into()
     }
-
-    fn view_add_form(&self) -> Element<'_, SourcesMessage> {
-        let can_submit = !(self.entered_url.is_empty()
-            || self.entered_user_id.is_empty()
-            || self.entered_passphrase.is_empty()
-            || self.entered_url.parse::<Url>().is_err())
-            && (matches!(self.url_verification_state, LoadedState::Loaded(_))
-                || self.unavailable_acknowledged);
-
-        let fields_filled = !self.entered_url.is_empty()
-            && !self.entered_user_id.is_empty()
-            && !self.entered_passphrase.is_empty();
-        let unverified = matches!(
-            self.url_verification_state,
-            LoadedState::Failed(_) | LoadedState::New | LoadedState::Loading
-        );
-
-        settings::section()
-            .title(fl!("sources-add-section-title"))
-            .add(
-                widget::settings::item::builder(fl!("sources-url"))
-                    .icon(icon::from_name("network-server-symbolic").size(ICON_SIZE))
-                    .control(
-                        widget::settings::item_row(vec![
-                            widget::text_input(fl!("sources-url-placeholder"), &self.entered_url)
-                                .id(self.entered_url_id.clone())
-                                .on_input(SourcesMessage::UpdateEnteredUrl)
-                                .width(Length::Fill)
-                                .into(),
-                            match self.url_verification_state {
-                                LoadedState::New => icon::from_name("dialog-information-symbolic"),
-                                LoadedState::Loading => {
-                                    icon::from_name("emblem-synchronizing-symbolic")
-                                }
-                                LoadedState::Failed(_) => icon::from_name("dialog-error-symbolic"),
-                                LoadedState::Loaded(_) => icon::from_name("emblem-ok-symbolic"),
-                            }
-                            .size(ICON_SIZE)
-                            .into(),
-                        ])
-                        .width(Length::Fill),
-                    ),
-            )
-            .add(
-                widget::settings::item::builder(fl!("sources-user-id"))
-                    .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))
-                    .control(
-                        widget::text_input(
-                            fl!("sources-user-id-placeholder"),
-                            &self.entered_user_id,
-                        )
-                        .id(self.entered_user_id_id.clone())
-                        .on_input(SourcesMessage::UpdateEnteredUserId)
-                        .width(Length::Fill),
-                    ),
-            )
-            .add(
-                widget::settings::item::builder(fl!("sources-authorization-token"))
-                    .icon(widget::icon::from_name("dialog-password-symbolic").size(ICON_SIZE))
-                    .control(
-                        widget::secure_input(
-                            fl!("sources-authorization-token-placeholder"),
-                            &self.entered_passphrase,
-                            Some(SourcesMessage::ToggleShowPassphrase),
-                            !self.show_passphrase,
-                        )
-                        .id(self.entered_passphrase_id.clone())
-                        .on_input(SourcesMessage::UpdateEnteredPassphrase)
-                        .width(Length::Fill),
-                    ),
-            )
-            .add_maybe(
-                matches!(self.url_verification_state, LoadedState::Failed(_)).then(|| {
-                    let LoadedState::Failed(ref error) = self.url_verification_state else {
-                        unreachable!()
-                    };
-                    widget::settings::item::builder(error.as_str())
-                        .icon(icon::from_name("dialog-error-symbolic").size(ICON_SIZE))
-                        .control(widget::Space::new())
-                }),
-            )
-            .add_maybe((fields_filled && unverified).then(|| {
-                widget::settings::item::builder(fl!("sources-add-unavailable-warning"))
-                    .icon(icon::from_name("dialog-warning-symbolic").size(ICON_SIZE))
-                    .control(
-                        widget::checkbox(self.unavailable_acknowledged)
-                            .on_toggle(|_| SourcesMessage::ToggleUnavailableAcknowledged),
-                    )
-            }))
-            .add(widget::settings::item_row(vec![
-                widget::space::horizontal().width(Length::Fill).into(),
-                // Cancel button
-                widget::button::icon(icon::from_name("edit-clear-all-symbolic").size(ICON_SIZE))
-                    .on_press(SourcesMessage::CancelAddForm)
-                    .into(),
-                // Submit button
-                widget::button::icon(icon::from_name("list-add-symbolic").size(ICON_SIZE))
-                    .class(widget::button::ButtonClass::Suggested)
-                    .apply_if(can_submit, |b| {
-                        b.on_press(SourcesMessage::AddSource(self.entered_url.clone()))
-                    })
-                    .into(),
-            ]))
-            .into()
-    }
-
-    fn verify_entered_url(&mut self, widget: widget::Id) -> Task<Action<SourcesMessage>> {
-        self.url_verification_state = UrlVerificationState::New;
-        if self.entered_url.is_empty()
-            || self.entered_user_id.is_empty()
-            || self.entered_passphrase.is_empty()
-        {
-            widget::text_input::focus(widget.clone())
-        } else {
-            match self.entered_url.parse::<Url>() {
-                Ok(url) => task::message(SourcesMessage::VerifyEnteredUrl {
-                    url,
-                    user_id: self.entered_user_id.clone(),
-                    passphrase: self.entered_passphrase.clone(),
-                    do_submit: false,
-                    widget: widget.clone(),
-                }),
-                Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
-                    widget.clone(),
-                    fl!("sources-invalid-url"),
-                )),
-            }
-        }
-    }
 }
 
 impl Page for SourcesPage {
@@ -399,7 +220,9 @@ impl Page for SourcesPage {
                 section
                     .add(crate::component::section_helpers::section_add_button(
                         fl!("sources-add-button"),
-                        (!self.show_add_form).then_some(SourcesMessage::ShowAddForm),
+                        self.add_source_form
+                            .is_none()
+                            .then_some(SourcesMessage::ShowAddForm),
                     ))
                     .into()
             }
@@ -407,8 +230,8 @@ impl Page for SourcesPage {
 
         content.push(sources_section);
 
-        if self.show_add_form {
-            content.push(self.view_add_form());
+        if let Some(form) = &self.add_source_form {
+            content.push(form.view().map(SourcesMessage::AddSourceForm));
         }
 
         layout(settings::view_column(content))
@@ -464,18 +287,25 @@ impl Page for SourcesPage {
         tracing::debug!("received: {message:?}");
         match message {
             SourcesMessage::ShowAddForm => {
-                self.show_add_form = true;
-                widget::text_input::focus(self.entered_url_id.clone())
+                let (form, task) = AddSourceForm::new();
+                self.add_source_form = Some(form);
+                task.map(ActionExt::map_into)
             }
-            SourcesMessage::CancelAddForm => {
-                self.show_add_form = false;
-                self.entered_url.clear();
-                self.entered_user_id.clear();
-                self.entered_passphrase.clear();
-                self.url_verification_state = Default::default();
-                self.unavailable_acknowledged = false;
-                task::none()
-            }
+            SourcesMessage::AddSourceForm(msg) => match msg {
+                AddSourceFormMessage::Out(output) => match output {
+                    AddSourceFormOutput::Cancel => {
+                        self.add_source_form = None;
+                        task::none()
+                    }
+                    AddSourceFormOutput::Submit(url, user_id, passphrase) => {
+                        task::message(SourcesMessage::SubmitSource(url, user_id, passphrase))
+                    }
+                },
+                msg => match &mut self.add_source_form {
+                    Some(form) => form.update(msg).map(ActionExt::map_into),
+                    None => task::none(),
+                },
+            },
             SourcesMessage::Remotes(message) => {
                 let task = self.remotes_state.update(message).map(ActionExt::map_into);
                 if let LoadedState::Loaded(remotes) = &self.remotes_state.state {
@@ -489,81 +319,6 @@ impl Page for SourcesPage {
                     Task::batch(check_tasks)
                 } else {
                     task
-                }
-            }
-            SourcesMessage::UpdateEnteredUrl(url) => {
-                self.entered_url = url;
-                self.unavailable_acknowledged = false;
-                self.start_debounce_verification(self.entered_url_id.clone())
-            }
-            SourcesMessage::UpdateEnteredUserId(user_id) => {
-                self.entered_user_id = user_id;
-                self.unavailable_acknowledged = false;
-                self.start_debounce_verification(self.entered_user_id_id.clone())
-            }
-            SourcesMessage::UpdateEnteredPassphrase(passphrase) => {
-                self.entered_passphrase = passphrase;
-                self.unavailable_acknowledged = false;
-                self.start_debounce_verification(self.entered_passphrase_id.clone())
-            }
-            SourcesMessage::DebounceVerify(widget_id) => {
-                // Only verify if enough time has passed since last input
-                if self.last_input_time.elapsed() >= DEBOUNCE_TIMEOUT {
-                    self.verify_entered_url(widget_id)
-                } else {
-                    task::none()
-                }
-            }
-            SourcesMessage::SetUrlVerificationStateFailed(widget, error) => {
-                self.url_verification_state = UrlVerificationState::Failed(error);
-                widget::text_input::focus(widget)
-            }
-            SourcesMessage::VerifyEnteredUrl {
-                url,
-                user_id,
-                passphrase,
-                do_submit,
-                widget,
-            } => {
-                self.url_verification_state = UrlVerificationState::Loading;
-                let client =
-                    FilesClient::new(url.clone(), user_id.clone(), passphrase.clone(), false)
-                        .expect("valid url");
-                Task::batch(vec![
-                    widget::text_input::focus(widget.clone()),
-                    task::future(async move {
-                        match client.status().await {
-                            Ok(_status) if do_submit => {
-                                SourcesMessage::SubmitSource(url, user_id, passphrase)
-                            }
-                            Ok(status) => SourcesMessage::SetUrlVerificationStateLoaded(
-                                widget.clone(),
-                                status,
-                            ),
-                            Err(error) => SourcesMessage::SetUrlVerificationStateFailed(
-                                widget,
-                                format!("{error}"),
-                            ),
-                        }
-                    }),
-                ])
-            }
-            SourcesMessage::SetUrlVerificationStateLoaded(widget, status) => {
-                self.url_verification_state = UrlVerificationState::Loaded(status);
-                widget::text_input::focus(widget)
-            }
-            SourcesMessage::AddSource(url) => {
-                self.entered_url = url;
-                match self.entered_url.parse::<Url>() {
-                    Ok(url) => task::message(SourcesMessage::SubmitSource(
-                        url,
-                        self.entered_user_id.clone(),
-                        self.entered_passphrase.clone(),
-                    )),
-                    Err(_) => task::message(SourcesMessage::SetUrlVerificationStateFailed(
-                        self.entered_url_id.clone(),
-                        fl!("sources-invalid-url"),
-                    )),
                 }
             }
             SourcesMessage::SubmitSource(url, user_id, passphrase) => {
@@ -591,18 +346,14 @@ impl Page for SourcesPage {
                     }
                 })
             }
-            SourcesMessage::SubmittedSource(url, user_id, passphrase) => task::message(
-                SourcesMessage::Out(SourcesOutput::AddedSource(url, user_id, passphrase)),
-            )
-            .chain(task::message(SourcesMessage::ClearUrlEntries)),
-            SourcesMessage::ClearUrlEntries => {
-                self.show_add_form = false;
-                self.entered_url.clear();
-                self.entered_user_id.clear();
-                self.entered_passphrase.clear();
-                self.url_verification_state = Default::default();
-                self.unavailable_acknowledged = false;
-                task::message(SourcesMessage::Remotes(ProvidedStateMessage::Load))
+            SourcesMessage::SubmittedSource(url, user_id, passphrase) => {
+                self.add_source_form = None;
+                task::message(SourcesMessage::Out(SourcesOutput::AddedSource(
+                    url, user_id, passphrase,
+                )))
+                .chain(task::message(SourcesMessage::Remotes(
+                    ProvidedStateMessage::Load,
+                )))
             }
             SourcesMessage::RequestDeleteSource(remote) => {
                 self.pending_deletion = Some(remote);
@@ -633,10 +384,10 @@ impl Page for SourcesPage {
                 let remote = self
                     .remotes_state
                     .state
-                    .unwrap() // should be safe, because otherwise `DeleteSource` message cannot be generated.
+                    .unwrap()
                     .iter()
                     .find(|a| a.id == id)
-                    .unwrap(); // should be safe, because the source should exist.
+                    .unwrap();
 
                 task::message(SourcesMessage::Out(SourcesOutput::DeletedSource(
                     remote.base_url.parse().unwrap(),
@@ -718,14 +469,6 @@ impl Page for SourcesPage {
             SourcesMessage::SetSourceStatus(id, reachable) => {
                 self.source_statuses
                     .insert(id, LoadedState::Loaded(reachable));
-                task::none()
-            }
-            SourcesMessage::ToggleShowPassphrase => {
-                self.show_passphrase = !self.show_passphrase;
-                task::none()
-            }
-            SourcesMessage::ToggleUnavailableAcknowledged => {
-                self.unavailable_acknowledged = !self.unavailable_acknowledged;
                 task::none()
             }
             SourcesMessage::Out(_) => {
