@@ -457,12 +457,13 @@ impl SettingsPage {
             widget::text::title2(fl!("settings-scan-section")).into(),
             scan_section.into(),
             directories_section.into(),
-            file_types_section.into(),
         ];
 
         if let Some(form) = self.directory_settings_form.as_ref() {
             items.push(form.view().map(Into::into));
         }
+
+        items.push(file_types_section.into());
 
         items
     }
