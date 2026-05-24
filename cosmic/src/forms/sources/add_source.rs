@@ -15,6 +15,7 @@ use read_flow_core::Builder;
 use read_flow_core::api::FileDataSource;
 use read_flow_core::api::Status;
 use read_flow_core::client::FilesClient;
+use read_flow_core::db::models::Remote;
 use url::Url;
 
 use crate::ICON_SIZE;
@@ -26,6 +27,7 @@ type UrlVerificationState = LoadedState<Status>;
 const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(250);
 
 pub struct AddSourceForm {
+    original: Option<Remote>,
     entered_url: String,
     entered_url_id: widget::Id,
     entered_user_id: String,
@@ -61,7 +63,7 @@ pub enum AddSourceFormMessage {
 #[derive(Debug, Clone)]
 pub enum AddSourceFormOutput {
     Cancel,
-    Submit(Url, String, String), // url, user_id, passphrase
+    Submit(Option<Remote>, Url, String, String), // original (None=add, Some=edit), url, user_id, passphrase
 }
 
 impl From<AddSourceFormOutput> for AddSourceFormMessage {
@@ -71,22 +73,28 @@ impl From<AddSourceFormOutput> for AddSourceFormMessage {
 }
 
 impl AddSourceForm {
-    pub fn new() -> (Self, Task<Action<AddSourceFormMessage>>) {
+    pub fn new(original: Option<&Remote>) -> (Self, Task<Action<AddSourceFormMessage>>) {
         let entered_url_id = widget::Id::unique();
         let focus_task = widget::text_input::focus(entered_url_id.clone());
         let form = Self {
-            entered_url: String::new(),
+            original: original.cloned(),
+            entered_url: original.map(|r| r.base_url.clone()).unwrap_or_default(),
             entered_url_id,
-            entered_user_id: String::new(),
+            entered_user_id: original.map(|r| r.user_id.clone()).unwrap_or_default(),
             entered_user_id_id: widget::Id::unique(),
-            entered_passphrase: String::new(),
+            entered_passphrase: original.map(|r| r.passphrase.clone()).unwrap_or_default(),
             entered_passphrase_id: widget::Id::unique(),
             show_passphrase: false,
             url_verification_state: Default::default(),
-            unavailable_acknowledged: false,
+            // Allow immediate submit when editing a pre-filled form
+            unavailable_acknowledged: original.is_some(),
             last_input_time: Instant::now(),
         };
         (form, focus_task)
+    }
+
+    fn is_editing(&self) -> bool {
+        self.original.is_some()
     }
 
     fn start_debounce(&mut self, widget_id: widget::Id) -> Task<Action<AddSourceFormMessage>> {
@@ -136,8 +144,20 @@ impl AddSourceForm {
             LoadedState::Failed(_) | LoadedState::New | LoadedState::Loading
         );
 
+        let section_title = if self.is_editing() {
+            fl!("sources-edit-section-title")
+        } else {
+            fl!("sources-add-section-title")
+        };
+
+        let submit_icon = if self.is_editing() {
+            "edit-symbolic"
+        } else {
+            "list-add-symbolic"
+        };
+
         settings::section()
-            .title(fl!("sources-add-section-title"))
+            .title(section_title)
             .add(
                 widget::settings::item::builder(fl!("sources-url"))
                     .icon(icon::from_name("network-server-symbolic").size(ICON_SIZE))
@@ -213,7 +233,7 @@ impl AddSourceForm {
                 widget::button::icon(icon::from_name("edit-clear-all-symbolic").size(ICON_SIZE))
                     .on_press(AddSourceFormOutput::Cancel.into())
                     .into(),
-                widget::button::icon(icon::from_name("list-add-symbolic").size(ICON_SIZE))
+                widget::button::icon(icon::from_name(submit_icon).size(ICON_SIZE))
                     .class(widget::button::ButtonClass::Suggested)
                     .apply_if(can_submit, |b| {
                         b.on_press(AddSourceFormMessage::RequestSubmit)
@@ -291,6 +311,7 @@ impl AddSourceForm {
             }
             AddSourceFormMessage::RequestSubmit => match self.entered_url.parse::<Url>() {
                 Ok(url) => task::message(AddSourceFormMessage::Out(AddSourceFormOutput::Submit(
+                    self.original.clone(),
                     url,
                     self.entered_user_id.clone(),
                     self.entered_passphrase.clone(),

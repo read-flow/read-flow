@@ -63,7 +63,8 @@ pub struct SourcesPage {
 
 #[derive(Debug, Clone)]
 pub enum SourcesOutput {
-    AddedSource(Url, String, String), // url, user_id, passphrase
+    AddedSource(Url, String, String),       // url, user_id, passphrase
+    EditedSource(Url, Url, String, String), // old_url, new_url, user_id, passphrase
     DeletedSource(Url),
 }
 
@@ -72,10 +73,11 @@ pub enum SourcesMessage {
     Remotes(ProvidedStateMessage<Vec<Remote>>),
 
     ShowAddForm,
+    EditSource(Remote),
     AddSourceForm(AddSourceFormMessage),
 
-    SubmitSource(Url, String, String), // url, user_id, passphrase
-    SubmittedSource(Url, String, String), // url, user_id, passphrase
+    SubmitSource(Option<Remote>, Url, String, String), // original (None=add), url, user_id, passphrase
+    SubmittedSource(Option<Remote>, Url, String, String),
     RequestDeleteSource(Remote),
     ConfirmDeleteSource,
     CancelDeleteSource,
@@ -168,6 +170,10 @@ impl SourcesPage {
                         .apply_if(!is_last, |button| {
                             button.on_press(SourcesMessage::MoveSourceDown(source.clone()))
                         })
+                        .into(),
+                    widget::button::icon(icon::from_name("edit-symbolic").size(ICON_SIZE))
+                        .class(theme::Button::Icon)
+                        .on_press(SourcesMessage::EditSource(source.clone()))
                         .into(),
                     widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
                         .class(theme::Button::Destructive)
@@ -287,7 +293,12 @@ impl Page for SourcesPage {
         tracing::debug!("received: {message:?}");
         match message {
             SourcesMessage::ShowAddForm => {
-                let (form, task) = AddSourceForm::new();
+                let (form, task) = AddSourceForm::new(None);
+                self.add_source_form = Some(form);
+                task.map(ActionExt::map_into)
+            }
+            SourcesMessage::EditSource(remote) => {
+                let (form, task) = AddSourceForm::new(Some(&remote));
                 self.add_source_form = Some(form);
                 task.map(ActionExt::map_into)
             }
@@ -297,8 +308,10 @@ impl Page for SourcesPage {
                         self.add_source_form = None;
                         task::none()
                     }
-                    AddSourceFormOutput::Submit(url, user_id, passphrase) => {
-                        task::message(SourcesMessage::SubmitSource(url, user_id, passphrase))
+                    AddSourceFormOutput::Submit(original, url, user_id, passphrase) => {
+                        task::message(SourcesMessage::SubmitSource(
+                            original, url, user_id, passphrase,
+                        ))
                     }
                 },
                 msg => match &mut self.add_source_form {
@@ -321,39 +334,70 @@ impl Page for SourcesPage {
                     task
                 }
             }
-            SourcesMessage::SubmitSource(url, user_id, passphrase) => {
+            SourcesMessage::SubmitSource(original, url, user_id, passphrase) => {
                 let am = Arc::clone(&self.application_module);
-                let order = self.remotes_state.state.unwrap().len() + 1;
                 task::future(async move {
                     let connection_pool = am.connection_pool().await;
                     let mut conn = match connection_pool.acquire().await {
                         Ok(conn) => conn,
                         Err(e) => return SourcesMessage::SetOperationError(format!("{e}")),
                     };
-                    match dao::insert_remote(
-                        &mut conn,
-                        NewRemote {
-                            base_url: url.to_string(),
-                            order: order as i32,
-                            user_id: user_id.clone(),
-                            passphrase: passphrase.clone(),
-                        },
-                    )
-                    .await
-                    {
-                        Ok(_) => SourcesMessage::SubmittedSource(url, user_id, passphrase),
-                        Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
+                    match &original {
+                        None => {
+                            let order = match dao::select_all_remotes(&mut conn).await {
+                                Ok(remotes) => remotes.len() + 1,
+                                Err(e) => return SourcesMessage::SetOperationError(format!("{e}")),
+                            };
+                            match dao::insert_remote(
+                                &mut conn,
+                                NewRemote {
+                                    base_url: url.to_string(),
+                                    order: order as i32,
+                                    user_id: user_id.clone(),
+                                    passphrase: passphrase.clone(),
+                                },
+                            )
+                            .await
+                            {
+                                Ok(_) => SourcesMessage::SubmittedSource(
+                                    original, url, user_id, passphrase,
+                                ),
+                                Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
+                            }
+                        }
+                        Some(existing) => {
+                            match dao::update_remote(
+                                &mut conn,
+                                existing.id,
+                                url.as_str(),
+                                &user_id,
+                                &passphrase,
+                            )
+                            .await
+                            {
+                                Ok(()) => SourcesMessage::SubmittedSource(
+                                    original, url, user_id, passphrase,
+                                ),
+                                Err(error) => SourcesMessage::SetOperationError(format!("{error}")),
+                            }
+                        }
                     }
                 })
             }
-            SourcesMessage::SubmittedSource(url, user_id, passphrase) => {
+            SourcesMessage::SubmittedSource(original, url, user_id, passphrase) => {
                 self.add_source_form = None;
-                task::message(SourcesMessage::Out(SourcesOutput::AddedSource(
-                    url, user_id, passphrase,
-                )))
-                .chain(task::message(SourcesMessage::Remotes(
-                    ProvidedStateMessage::Load,
-                )))
+                let output = match original {
+                    None => SourcesOutput::AddedSource(url, user_id, passphrase),
+                    Some(old) => SourcesOutput::EditedSource(
+                        old.base_url.parse().unwrap(),
+                        url,
+                        user_id,
+                        passphrase,
+                    ),
+                };
+                task::message(SourcesMessage::Out(output)).chain(task::message(
+                    SourcesMessage::Remotes(ProvidedStateMessage::Load),
+                ))
             }
             SourcesMessage::RequestDeleteSource(remote) => {
                 self.pending_deletion = Some(remote);

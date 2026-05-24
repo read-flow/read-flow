@@ -481,6 +481,23 @@ pub async fn select_all_remotes(conn: &mut SqliteConnection) -> Result<Vec<Remot
     Ok(remotes)
 }
 
+pub async fn update_remote(
+    conn: &mut SqliteConnection,
+    id: i32,
+    base_url: &str,
+    user_id: &str,
+    passphrase: &str,
+) -> Result<(), Error> {
+    sqlx::query("UPDATE remotes SET base_url = ?, user_id = ?, passphrase = ? WHERE id = ?")
+        .bind(base_url)
+        .bind(user_id)
+        .bind(passphrase)
+        .bind(id)
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
 pub async fn delete_remote_by_id(pool: &SqlitePool, id: i32) -> Result<(), Error> {
     let mut tx = pool.begin().await?;
 

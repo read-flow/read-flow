@@ -121,7 +121,8 @@ pub enum PageOutput {
 pub enum PageMessage {
     Sources(SourcesMessage),
     OnlineLibrary(OnlineLibraryMessage),
-    AddRemote(Url, String, String), // url, user_id, passphrase
+    AddRemote(Url, String, String),       // url, user_id, passphrase
+    EditRemote(Url, Url, String, String), // old_url, new_url, user_id, passphrase
     DeleteRemote(Url),
     Documents(DocumentListMessage),
     DocumentDetails(Fingerprint, DocumentDetailsMessage),
@@ -491,6 +492,22 @@ impl Pages {
                     PageMessage::Noop
                 })
             }
+            PageMessage::EditRemote(old_url, new_url, user_id, passphrase) => {
+                let selector = ClientSelector::Remote(old_url);
+                let private_mode = self.settings.current_private_mode();
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    document_provider.remove_client(&selector).await;
+                    document_provider
+                        .add_client(
+                            FilesClient::new(new_url, user_id, passphrase, private_mode)
+                                .unwrap()
+                                .into(),
+                        )
+                        .await;
+                    PageMessage::Noop
+                })
+            }
             PageMessage::DeleteRemote(url) => {
                 let selector = ClientSelector::Remote(url.clone());
                 let document_provider = self.document_provider.clone();
@@ -821,6 +838,9 @@ fn map_sources_message(msg: SourcesMessage) -> PageMessage {
         SourcesMessage::Out(message) => match message {
             SourcesOutput::AddedSource(url, user_id, passphrase) => {
                 PageMessage::AddRemote(url, user_id, passphrase)
+            }
+            SourcesOutput::EditedSource(old_url, new_url, user_id, passphrase) => {
+                PageMessage::EditRemote(old_url, new_url, user_id, passphrase)
             }
             SourcesOutput::DeletedSource(url) => PageMessage::DeleteRemote(url),
         },

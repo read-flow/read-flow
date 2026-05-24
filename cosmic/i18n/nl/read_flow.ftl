@@ -134,6 +134,7 @@ pagination-prev = Vorige
 # Sources
 sources-add-button = Bron toevoegen
 sources-add-section-title = Nieuwe bron toevoegen
+sources-edit-section-title = Bron bewerken
 sources-add-unavailable-warning = Deze bron lijkt niet bereikbaar. U kunt deze toch toevoegen — de bron wordt als niet bereikbaar weergegeven totdat deze beschikbaar is.
 sources-authorization-token = Autorisatietoken
 sources-authorization-token-placeholder = Voer autorisatietoken in...

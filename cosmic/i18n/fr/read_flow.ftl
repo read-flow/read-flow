@@ -133,6 +133,7 @@ pagination-prev = Précédent
 # Sources
 sources-add-button = Ajouter la source
 sources-add-section-title = Ajouter une nouvelle source
+sources-edit-section-title = Modifier la source
 sources-add-unavailable-warning = Cette source semble inaccessible. Vous pouvez quand même l'ajouter — elle apparaîtra comme inaccessible jusqu'à ce qu'elle soit disponible.
 sources-authorization-token = Le jeton d'autorisation
 sources-authorization-token-placeholder = Entrer le jeton d'autorisation...

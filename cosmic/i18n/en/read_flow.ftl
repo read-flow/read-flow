@@ -136,6 +136,7 @@ pagination-prev = Previous
 # Sources
 sources-add-button = Add Source
 sources-add-section-title = Add New Source
+sources-edit-section-title = Edit Source
 sources-add-unavailable-warning = This source appears unavailable. You can still add it — it will appear as unreachable until it becomes accessible.
 sources-authorization-token = Authorization token
 sources-authorization-token-placeholder = Enter authorization token...
