@@ -793,10 +793,12 @@ impl Documents {
 
 impl From<Document> for Vec<(ClientSelector, File)> {
     fn from(document: Document) -> Self {
+        let document_guid = document.document_guid.clone();
         document
             .contents
             .into_iter()
             .flat_map(|content| {
+                let document_guid = document_guid.clone();
                 let type_str = content.type_.as_str().to_string();
                 let fingerprint = content.fingerprint;
                 let tags = content.tags;
@@ -812,7 +814,7 @@ impl From<Document> for Vec<(ClientSelector, File)> {
                         fingerprint: fingerprint.clone(),
                         tags: tags.clone(),
                         status,
-                        document_guid: None,
+                        document_guid: Some(document_guid.clone()),
                     };
                     (selector, file)
                 })
