@@ -28,7 +28,7 @@ SELECT
     c.document_id,
     cm.title,
     CASE WHEN cm.authors IS NOT NULL AND TRIM(cm.authors) != ''
-         THEN '["' || REPLACE(TRIM(cm.authors), '"', '\"') || '"]'
+         THEN json_array(TRIM(cm.authors))
          ELSE NULL
     END,
     cm.language,
