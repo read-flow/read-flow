@@ -294,9 +294,13 @@ impl Aggregator {
 
     fn iter_document(&self, document: Document) -> impl Iterator<Item = (Client, File)> {
         let files: Vec<(ClientSelector, File)> = document.into();
-        files
-            .into_iter()
-            .map(|(s, f)| (self.clients[&s].clone(), f))
+        files.into_iter().filter_map(|(s, f)| {
+            let client = self.clients.get(&s).cloned();
+            if client.is_none() {
+                tracing::warn!("no client for selector {s:?}, skipping file {}", f.guid);
+            }
+            client.map(|c| (c, f))
+        })
     }
 
     pub async fn update_document(&self, document: Document) -> Result<(), FilesClientError> {
