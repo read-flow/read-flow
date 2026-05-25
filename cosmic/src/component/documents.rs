@@ -467,24 +467,24 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
 fn display_document_title<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
     let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
-    let path: &Path = document.local_or_any_source().1.path.as_ref();
+    let path: Option<&Path> = document.local_or_any_source().map(|(_, s)| s.path.as_ref());
 
     let primary = document
         .user_meta
         .title
         .as_deref()
-        .unwrap_or_else(|| path.file_name().and_then(|n| n.to_str()).unwrap_or(""));
+        .unwrap_or_else(|| path.and_then(|p| p.file_name()?.to_str()).unwrap_or(""));
 
     let secondary: String = if let Some(authors) = document.user_meta.authors.as_deref() {
         if !authors.is_empty() {
             authors.join(", ")
         } else {
-            path.parent()
+            path.and_then(|p| p.parent())
                 .map(|p| p.display().to_string())
                 .unwrap_or_default()
         }
     } else {
-        path.parent()
+        path.and_then(|p| p.parent())
             .map(|p| p.display().to_string())
             .unwrap_or_default()
     };

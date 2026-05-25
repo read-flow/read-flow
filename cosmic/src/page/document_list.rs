@@ -435,9 +435,8 @@ impl DocumentList {
                     .as_deref()
                     .map(str::to_owned)
                     .unwrap_or_else(|| {
-                        std::path::Path::new(&doc.local_or_any_source().1.path)
-                            .file_name()
-                            .and_then(|n| n.to_str())
+                        doc.local_or_any_source()
+                            .and_then(|(_, s)| std::path::Path::new(&s.path).file_name()?.to_str())
                             .unwrap_or("")
                             .to_owned()
                     });
@@ -538,8 +537,11 @@ fn compare_documents(
 
 /// Get the filename from a document (uses local source if available, otherwise any source)
 fn get_filename(doc: &Document) -> &str {
-    let (_, source) = doc.local_or_any_source();
-    source.path.rsplit('/').next().unwrap_or(&source.path)
+    if let Some((_, source)) = doc.local_or_any_source() {
+        source.path.rsplit('/').next().unwrap_or(&source.path)
+    } else {
+        ""
+    }
 }
 
 /// Get the display title: user-edited title if set, otherwise the filename.
@@ -701,9 +703,9 @@ impl Page for DocumentList {
         let document = self.pending_format_pick.as_ref()?;
 
         let title = document.user_meta.title.clone().unwrap_or_else(|| {
-            std::path::Path::new(&document.local_or_any_source().1.path)
-                .file_stem()
-                .and_then(|n| n.to_str())
+            document
+                .local_or_any_source()
+                .and_then(|(_, s)| std::path::Path::new(&s.path).file_stem()?.to_str())
                 .unwrap_or("")
                 .to_owned()
         });

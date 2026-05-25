@@ -624,16 +624,16 @@ impl Document {
         })
     }
 
-    pub fn local_or_any_source(&self) -> (&DocumentContent, &DocumentSource) {
+    pub fn local_or_any_source(&self) -> Option<(&DocumentContent, &DocumentSource)> {
         for content in &self.contents {
             for source in &content.sources {
                 if source.client.is_local() {
-                    return (content, source);
+                    return Some((content, source));
                 }
             }
         }
-        let content = self.contents.first().unwrap();
-        (content, content.sources.first().unwrap())
+        let content = self.contents.first()?;
+        Some((content, content.sources.first()?))
     }
 
     /// Returns (content, source) pairs sorted local-first, then remote.
