@@ -788,7 +788,13 @@ pub async fn merge_document_metadata_from_extracted(
             let mut all_authors: Vec<String> = existing
                 .authors
                 .as_deref()
-                .and_then(|s| serde_json::from_str(s).ok())
+                .and_then(|s| {
+                    serde_json::from_str(s)
+                        .inspect_err(|e| {
+                            tracing::warn!("failed to parse existing authors JSON: {e}")
+                        })
+                        .ok()
+                })
                 .unwrap_or_default();
             for author in &meta.authors {
                 if !all_authors.contains(author) {
@@ -833,7 +839,11 @@ pub async fn merge_document_metadata_from_document(
     let src_authors: Vec<String> = src
         .authors
         .as_deref()
-        .and_then(|s| serde_json::from_str(s).ok())
+        .and_then(|s| {
+            serde_json::from_str(s)
+                .inspect_err(|e| tracing::warn!("failed to parse source authors JSON: {e}"))
+                .ok()
+        })
         .unwrap_or_default();
     let extracted = ExtractedMetadata {
         title: src.title,
