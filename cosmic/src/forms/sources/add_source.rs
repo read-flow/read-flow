@@ -63,7 +63,7 @@ pub enum AddSourceFormMessage {
 #[derive(Debug, Clone)]
 pub enum AddSourceFormOutput {
     Cancel,
-    Submit(Option<Remote>, Url, String, String), // original (None=add, Some=edit), url, user_id, passphrase
+    Submit(Option<Remote>, Box<Url>, String, String), // original (None=add, Some=edit), url, user_id, passphrase
 }
 
 impl From<AddSourceFormOutput> for AddSourceFormMessage {
@@ -312,7 +312,7 @@ impl AddSourceForm {
             AddSourceFormMessage::RequestSubmit => match self.entered_url.parse::<Url>() {
                 Ok(url) => task::message(AddSourceFormMessage::Out(AddSourceFormOutput::Submit(
                     self.original.clone(),
-                    url,
+                    Box::new(url),
                     self.entered_user_id.clone(),
                     self.entered_passphrase.clone(),
                 ))),

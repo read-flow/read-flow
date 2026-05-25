@@ -347,7 +347,7 @@ impl Aggregator {
                 })
             })
             .partition(|(_, _, is_local)| *is_local);
-        local.extend(remote.drain(..));
+        local.append(&mut remote);
 
         let mut last_error = None;
         for (content, source, _) in local {

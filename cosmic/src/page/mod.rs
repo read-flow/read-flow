@@ -855,13 +855,13 @@ fn map_online_library_message(msg: OnlineLibraryMessage) -> PageMessage {
 fn map_sources_message(msg: SourcesMessage) -> PageMessage {
     match msg {
         SourcesMessage::Out(message) => match message {
-            SourcesOutput::AddedSource(url, user_id, passphrase) => {
+            SourcesOutput::Added(url, user_id, passphrase) => {
                 PageMessage::AddRemote(url, user_id, passphrase)
             }
-            SourcesOutput::EditedSource(old_url, new_url, user_id, passphrase) => {
+            SourcesOutput::Edited(old_url, new_url, user_id, passphrase) => {
                 PageMessage::EditRemote(old_url, new_url, user_id, passphrase)
             }
-            SourcesOutput::DeletedSource(url) => PageMessage::DeleteRemote(url),
+            SourcesOutput::Deleted(url) => PageMessage::DeleteRemote(url),
         },
         msg => msg.into(),
     }

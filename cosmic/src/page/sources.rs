@@ -63,9 +63,9 @@ pub struct SourcesPage {
 
 #[derive(Debug, Clone)]
 pub enum SourcesOutput {
-    AddedSource(Url, String, String),       // url, user_id, passphrase
-    EditedSource(Url, Url, String, String), // old_url, new_url, user_id, passphrase
-    DeletedSource(Url),
+    Added(Url, String, String),       // url, user_id, passphrase
+    Edited(Url, Url, String, String), // old_url, new_url, user_id, passphrase
+    Deleted(Url),
 }
 
 #[derive(Debug, Clone)]
@@ -310,7 +310,7 @@ impl Page for SourcesPage {
                     }
                     AddSourceFormOutput::Submit(original, url, user_id, passphrase) => {
                         task::message(SourcesMessage::SubmitSource(
-                            original, url, user_id, passphrase,
+                            original, *url, user_id, passphrase,
                         ))
                     }
                 },
@@ -387,8 +387,8 @@ impl Page for SourcesPage {
             SourcesMessage::SubmittedSource(original, url, user_id, passphrase) => {
                 self.add_source_form = None;
                 let output = match original {
-                    None => SourcesOutput::AddedSource(url, user_id, passphrase),
-                    Some(old) => SourcesOutput::EditedSource(
+                    None => SourcesOutput::Added(url, user_id, passphrase),
+                    Some(old) => SourcesOutput::Edited(
                         old.base_url.parse().unwrap(),
                         url,
                         user_id,
@@ -433,7 +433,7 @@ impl Page for SourcesPage {
                     .find(|a| a.id == id)
                     .unwrap();
 
-                task::message(SourcesMessage::Out(SourcesOutput::DeletedSource(
+                task::message(SourcesMessage::Out(SourcesOutput::Deleted(
                     remote.base_url.parse().unwrap(),
                 )))
                 .chain(task::message(SourcesMessage::Remotes(
