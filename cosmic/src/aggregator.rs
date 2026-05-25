@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::hash_map::IntoValues;
 use std::fmt;
-use std::iter::repeat_n;
 use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::sync::Arc;
@@ -71,14 +70,12 @@ impl Aggregator {
     }
 
     pub async fn aggregate(&self) -> Result<Documents, FilesClientError> {
-        // Clone clients into a Vec to avoid lifetime issues with async closures
         let clients: Vec<(ClientSelector, Client)> = self
             .clients
             .iter()
             .map(|(s, c)| (s.clone(), c.clone()))
             .collect();
 
-        // Create a stream of futures that fetch files from each client in parallel
         let results: Vec<Result<(ClientSelector, Vec<File>), FilesClientError>> =
             stream::iter(clients)
                 .map(|(selector, client)| async move {
@@ -89,7 +86,6 @@ impl Aggregator {
                 .collect()
                 .await;
 
-        // Process results and aggregate documents
         let mut documents = results
             .into_iter()
             .filter_map(move |result| match result {
@@ -99,14 +95,17 @@ impl Aggregator {
                     None
                 }
             })
-            .flat_map(|(selector, files)| repeat_n(selector, files.len()).zip(files))
-            .fold(Documents::default(), |mut acc, item| {
-                acc.push(item.into());
+            .flat_map(|(selector, files)| files.into_iter().map(move |f| (selector.clone(), f)))
+            .fold(Documents::default(), |mut acc, (selector, file)| {
+                let guid = file
+                    .document_guid
+                    .clone()
+                    .unwrap_or_else(|| file.fingerprint.clone());
+                acc.push(guid, selector, file);
                 acc
             });
 
-        // Fetch user-edited document metadata from all clients and merge by document_guid.
-        // Remote clients are processed first; local client last so it wins on conflict.
+        // Fetch user-edited metadata from all clients; local client wins on conflict.
         let ordered_clients: Vec<Client> = {
             let (locals, mut remotes): (Vec<Client>, Vec<Client>) = self
                 .clients
@@ -134,9 +133,7 @@ impl Aggregator {
             .map(|d| (d.guid, d.metadata))
             .collect();
         for doc in documents.values_mut() {
-            if let Some(ref guid) = doc.document_guid
-                && let Some(meta) = all_meta.get(guid)
-            {
+            if let Some(meta) = all_meta.get(&doc.document_guid) {
                 doc.user_meta = meta.clone();
             }
         }
@@ -146,23 +143,32 @@ impl Aggregator {
 
     /// Update user-edited document metadata on all sources that hold the document.
     ///
-    /// If the document has no `document_guid` yet (single-file document that was never
-    /// auto-linked), this first calls `ensure_document_for_file` on each source to create
-    /// the `documents` row, then saves the metadata.
+    /// Documents with a synthetic guid (fingerprint used as guid) first call
+    /// `ensure_document_for_file` to create a real `documents` row, then save.
     pub async fn update_document_metadata(
         &self,
         document: &Document,
         meta: DocumentMeta,
     ) -> Result<(), FilesClientError> {
-        let source_count = document.sources.len().max(1);
+        let is_synthetic = document
+            .contents
+            .iter()
+            .any(|c| c.fingerprint == document.document_guid);
 
-        if let Some(ref guid) = document.document_guid {
-            // Fast path: document record already exists, same guid on all sources.
-            let clients: Vec<_> = document
-                .sources
+        if !is_synthetic {
+            // Fast path: real document record exists; call once per unique client.
+            let unique_selectors: HashSet<ClientSelector> = document
+                .contents
                 .iter()
-                .filter_map(|s| self.clients.get(&s.client).cloned())
+                .flat_map(|c| c.sources.iter())
+                .map(|s| s.client.clone())
                 .collect();
+            let clients: Vec<Client> = unique_selectors
+                .into_iter()
+                .filter_map(|sel| self.clients.get(&sel).cloned())
+                .collect();
+            let source_count = clients.len().max(1);
+            let guid = document.document_guid.clone();
 
             let results: Vec<Result<Option<_>, FilesClientError>> = stream::iter(clients)
                 .map(|client| {
@@ -179,16 +185,18 @@ impl Aggregator {
                 .filter_map(Result::err)
                 .for_each(|e| tracing::warn!("error updating document metadata: {e}"));
         } else {
-            // Slow path: no document record yet — ensure one exists per source, then save.
-            let source_client_pairs: Vec<_> = document
-                .sources
+            // Slow path: synthetic guid — ensure a real document row exists per source.
+            let source_client_pairs: Vec<(String, Client)> = document
+                .contents
                 .iter()
+                .flat_map(|c| c.sources.iter())
                 .filter_map(|s| {
                     self.clients
                         .get(&s.client)
                         .map(|c| (s.guid.clone(), c.clone()))
                 })
                 .collect();
+            let source_count = source_client_pairs.len().max(1);
 
             let results: Vec<Result<_, FilesClientError>> = stream::iter(source_client_pairs)
                 .map(|(file_guid, client)| {
@@ -212,9 +220,6 @@ impl Aggregator {
     }
 
     /// Merge `loser` documents into `winner`, re-assigning all their sources and metadata.
-    ///
-    /// Ensures every document has a `document_guid` first (creating one on the local client
-    /// if needed), then calls merge on the local client and best-effort on remote clients.
     pub async fn merge_documents(
         &self,
         winner: &Document,
@@ -225,13 +230,38 @@ impl Aggregator {
             .get(&ClientSelector::Local)
             .ok_or(FilesClientError::NoSourcesAvailable)?;
 
-        // Resolve winner guid, creating a document row if needed.
-        let winner_guid = match &winner.document_guid {
-            Some(guid) => guid.clone(),
-            None => {
-                let file_guid = winner
-                    .sources
+        let winner_guid = if winner
+            .contents
+            .iter()
+            .any(|c| c.fingerprint == winner.document_guid)
+        {
+            let file_guid = winner
+                .contents
+                .iter()
+                .flat_map(|c| c.sources.iter())
+                .next()
+                .ok_or(FilesClientError::NoSourcesAvailable)?
+                .guid
+                .clone();
+            local_client
+                .ensure_document_for_file(&file_guid)
+                .await?
+                .guid
+        } else {
+            winner.document_guid.clone()
+        };
+
+        let mut loser_guids = Vec::with_capacity(losers.len());
+        for loser in losers {
+            let guid = if loser
+                .contents
+                .iter()
+                .any(|c| c.fingerprint == loser.document_guid)
+            {
+                let file_guid = loser
+                    .contents
                     .iter()
+                    .flat_map(|c| c.sources.iter())
                     .next()
                     .ok_or(FilesClientError::NoSourcesAvailable)?
                     .guid
@@ -240,37 +270,16 @@ impl Aggregator {
                     .ensure_document_for_file(&file_guid)
                     .await?
                     .guid
-            }
-        };
-
-        // Resolve loser guids.
-        let mut loser_guids = Vec::with_capacity(losers.len());
-        for loser in losers {
-            let guid = match &loser.document_guid {
-                Some(guid) => guid.clone(),
-                None => {
-                    let file_guid = loser
-                        .sources
-                        .iter()
-                        .next()
-                        .ok_or(FilesClientError::NoSourcesAvailable)?
-                        .guid
-                        .clone();
-                    local_client
-                        .ensure_document_for_file(&file_guid)
-                        .await?
-                        .guid
-                }
+            } else {
+                loser.document_guid.clone()
             };
             loser_guids.push(guid);
         }
 
-        // Merge on the local client (authoritative).
         local_client
             .merge_documents(&winner_guid, &loser_guids)
             .await?;
 
-        // Best-effort merge on each remote client.
         for (selector, client) in &self.clients {
             if selector.is_local() {
                 continue;
@@ -284,22 +293,20 @@ impl Aggregator {
     }
 
     fn iter_document(&self, document: Document) -> impl Iterator<Item = (Client, File)> {
-        let files: Vec<_> = document.into();
-
+        let files: Vec<(ClientSelector, File)> = document.into();
         files
             .into_iter()
             .map(|(s, f)| (self.clients[&s].clone(), f))
     }
 
     pub async fn update_document(&self, document: Document) -> Result<(), FilesClientError> {
-        let number_of_sources = document.sources.len();
+        let number_of_sources: usize = document.contents.iter().map(|c| c.sources.len()).sum();
         let results: Vec<Result<(), FilesClientError>> = stream::iter(self.iter_document(document))
             .map(|(client, file)| async move { client.update_file(file).await })
-            .buffer_unordered(number_of_sources)
+            .buffer_unordered(number_of_sources.max(1))
             .collect()
             .await;
 
-        // Log all errors
         results
             .into_iter()
             .filter_map(Result::err)
@@ -309,25 +316,41 @@ impl Aggregator {
     }
 
     /// Open a document using xdg-open, trying clients in priority order.
-    ///
-    /// Tries local client first, then remote clients.
-    /// If opening from one client fails, the next client is tried.
     pub async fn xdg_open_file(&self, document: Document) -> Result<ExitStatus, FilesClientError> {
-        let sources = document.sources_by_priority();
+        let (mut local, mut remote): (Vec<_>, Vec<_>) = document
+            .contents
+            .into_iter()
+            .flat_map(|content| {
+                let DocumentContent {
+                    fingerprint,
+                    type_,
+                    size,
+                    tags,
+                    status,
+                    sources,
+                } = content;
+                sources.into_iter().map(move |source| {
+                    let is_local = source.client.is_local();
+                    let content = DocumentContent {
+                        fingerprint: fingerprint.clone(),
+                        type_,
+                        size,
+                        tags: tags.clone(),
+                        status,
+                        sources: vec![],
+                    };
+                    (content, source, is_local)
+                })
+            })
+            .partition(|(_, _, is_local)| *is_local);
+        local.extend(remote.drain(..));
 
-        let clients = sources.into_iter().filter_map(|source| {
-            self.client_for(&source.client)
-                .map(|client| (client, source))
-        });
-
-        // Try each source in order until one succeeds
         let mut last_error = None;
-        for (client, source) in clients {
-            let file = File::from(SingleDocumentSource(
-                source.clone(),
-                document.metadata.clone(),
-            ));
-            // Try to open file
+        for (content, source, _) in local {
+            let Some(client) = self.client_for(&source.client) else {
+                continue;
+            };
+            let file = content_source_to_file(content, source);
             match client.xdg_open_file(file).await {
                 Ok(status) => return Ok(status),
                 Err(e) => {
@@ -340,7 +363,6 @@ impl Aggregator {
             }
         }
 
-        // All clients failed, or no clients available
         Err(last_error.unwrap_or(FilesClientError::NoSourcesAvailable))
     }
 
@@ -349,17 +371,16 @@ impl Aggregator {
         document: Document,
         tags: &[String],
     ) -> Result<(), FilesClientError> {
-        let number_of_sources = document.sources.len();
+        let number_of_sources: usize = document.contents.iter().map(|c| c.sources.len()).sum();
         let results: Vec<Result<(), FilesClientError>> = stream::iter(self.iter_document(document))
             .map(|(client, file)| {
                 let tags = tags.to_vec();
                 async move { client.delete_file_tags(&file.guid, tags).await }
             })
-            .buffer_unordered(number_of_sources)
+            .buffer_unordered(number_of_sources.max(1))
             .collect()
             .await;
 
-        // Log all errors
         results
             .into_iter()
             .filter_map(Result::err)
@@ -373,18 +394,17 @@ impl Aggregator {
         document: Document,
         tags: &[String],
     ) -> Result<Vec<String>, FilesClientError> {
-        let number_of_sources = document.sources.len();
+        let number_of_sources: usize = document.contents.iter().map(|c| c.sources.len()).sum();
         let results: Vec<Result<Vec<String>, FilesClientError>> =
             stream::iter(self.iter_document(document))
                 .map(|(client, file)| {
                     let tags = tags.to_vec();
                     async move { client.add_file_tags(&file.guid, tags).await }
                 })
-                .buffer_unordered(number_of_sources)
+                .buffer_unordered(number_of_sources.max(1))
                 .collect()
                 .await;
 
-        // Process results and aggregate tags
         let retval = results
             .into_iter()
             .filter_map(move |result| match result {
@@ -399,31 +419,25 @@ impl Aggregator {
                 acc
             });
 
-        // Sort alphabetically for consistent ordering
         let mut tags: Vec<_> = retval.into_iter().collect();
         tags.sort();
         Ok(tags)
     }
 
     /// Delete a single source of a document.
-    ///
-    /// Finds the client for the source and calls `delete_file` on it.
     pub async fn delete_document_source(
         &self,
         source: DocumentSource,
-        metadata: DocumentMetadata,
+        content: DocumentContent,
     ) -> Result<(), FilesClientError> {
         let client = self
             .client_for(&source.client)
             .ok_or(FilesClientError::NoSourcesAvailable)?;
-        let file = File::from(SingleDocumentSource(source, metadata));
+        let file = content_source_to_file(content, source);
         client.delete_file(file).await
     }
 
     /// Send a document to a client that doesn't have it yet.
-    ///
-    /// Finds an existing source for the document (preferring local),
-    /// downloads the file if needed, then imports it to the target client.
     pub async fn send_document_to_client(
         &self,
         document: &Document,
@@ -433,17 +447,14 @@ impl Aggregator {
             .client_for(target)
             .ok_or(FilesClientError::NoSourcesAvailable)?;
 
-        // Find a source to get the file from (prefer local)
         let sources = document.sources_by_priority();
 
-        let local_source = sources.iter().find(|s| s.client.is_local());
+        let local_source = sources.iter().find(|(_, s)| s.client.is_local());
 
-        let local_path = if let Some(source) = local_source {
-            // File exists locally, use its path directly
+        let local_path = if let Some((_, source)) = local_source {
             PathBuf::from(&source.path)
         } else {
-            // Need to download from a remote source
-            let source = sources
+            let (_, source) = sources
                 .first()
                 .ok_or(FilesClientError::NoSourcesAvailable)?;
             let source_client = self
@@ -468,13 +479,11 @@ impl Aggregator {
                         .map_err(FilesClientError::Remote)?
                 }
                 Client::Local(_) => {
-                    // This shouldn't happen - we checked for local sources above
                     return Err(FilesClientError::NoSourcesAvailable);
                 }
             }
         };
 
-        // Import the file to the target client
         target_client.import_file(&local_path).await
     }
 
@@ -511,7 +520,6 @@ impl Aggregator {
     }
 
     /// Write reading progress to all sources in parallel.
-    /// Each source applies last-updated-wins independently.
     pub async fn upsert_reading_progress(
         &self,
         progress: ReadingProgress,
@@ -547,48 +555,48 @@ impl Provider<Documents> for Aggregator {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct DocumentMetadata {
-    pub type_: DocumentType,
-    pub size: i32,
-    pub fingerprint: String,
-    pub tags: Vec<String>,
-    pub status: ReadingStatus,
-}
-
 pub use read_flow_core::api::DocumentMeta as UserMeta;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentSource {
     pub guid: String,
     pub path: String,
     pub client: ClientSelector,
-    pub type_: DocumentType,
-    pub fingerprint: String,
     pub size: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct DocumentContent {
+    pub fingerprint: String,
+    pub type_: DocumentType,
+    pub size: i32,
+    pub tags: Vec<String>,
+    pub status: ReadingStatus,
+    pub sources: Vec<DocumentSource>,
 }
 
 #[derive(Clone)]
 pub struct Document {
-    pub metadata: DocumentMetadata,
-    pub sources: HashSet<DocumentSource>,
-    /// GUID from the `documents` table, linking multiple file formats of the same content.
-    pub document_guid: Option<String>,
-    /// User-edited document metadata (title, type, authors, etc.).
+    /// Primary identity — corresponds to a `documents.guid` row (or a synthetic
+    /// fingerprint-based id for files that have no document row yet).
+    pub document_guid: String,
     pub user_meta: UserMeta,
+    pub contents: Vec<DocumentContent>,
 }
 
 impl fmt::Debug for Document {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}:{}", self.metadata.type_, self.metadata.fingerprint)
+        let type_str = self
+            .contents
+            .first()
+            .map(|c| c.type_.as_str())
+            .unwrap_or("?");
+        write!(f, "{type_str}:{}", self.document_guid)
     }
 }
 
 impl Document {
     /// Build a minimal `Document` from a local file path for CLI-initiated opening.
-    /// The fingerprint is the canonicalized absolute path (guaranteed unique on a local fs).
-    /// For unknown extensions the type is `DocumentType::Other`, which routes to the
-    /// external viewer.
     pub fn from_local_path(path: &std::path::Path) -> Option<Self> {
         let abs_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         let fingerprint = abs_path.to_string_lossy().into_owned();
@@ -598,58 +606,66 @@ impl Document {
             .map(|e| e.parse::<DocumentType>().unwrap())
             .unwrap_or(DocumentType::Other);
         Some(Document {
-            metadata: DocumentMetadata {
+            document_guid: fingerprint.clone(), // synthetic
+            user_meta: UserMeta::default(),
+            contents: vec![DocumentContent {
+                fingerprint: fingerprint.clone(),
                 type_: doc_type,
                 size: 0,
-                fingerprint: fingerprint.clone(),
                 tags: Vec::new(),
                 status: ReadingStatus::Unread,
-            },
-            sources: HashSet::from([DocumentSource {
-                guid: String::new(),
-                path: abs_path.to_string_lossy().into_owned(),
-                client: ClientSelector::Local,
-                type_: doc_type, // Copy
-                fingerprint,
-                size: 0,
-            }]),
-            document_guid: None,
-            user_meta: UserMeta::default(),
+                sources: vec![DocumentSource {
+                    guid: String::new(),
+                    path: abs_path.to_string_lossy().into_owned(),
+                    client: ClientSelector::Local,
+                    size: 0,
+                }],
+            }],
         })
     }
 
-    pub fn local_or_any_source(&self) -> &DocumentSource {
-        self.sources
-            .iter()
-            .find(|source| source.client.is_local())
-            .or_else(|| self.sources.iter().next())
-            .unwrap()
+    pub fn local_or_any_source(&self) -> (&DocumentContent, &DocumentSource) {
+        for content in &self.contents {
+            for source in &content.sources {
+                if source.client.is_local() {
+                    return (content, source);
+                }
+            }
+        }
+        let content = self.contents.first().unwrap();
+        (content, content.sources.first().unwrap())
     }
 
-    /// Returns sources in priority order: local sources first, then remote sources.
-    pub fn sources_by_priority(&self) -> Vec<&DocumentSource> {
-        let (mut local, mut remote) = self
-            .sources
-            .iter()
-            .partition::<Vec<_>, _>(|s| s.client.is_local());
-
-        local.append(&mut remote);
+    /// Returns (content, source) pairs sorted local-first, then remote.
+    pub fn sources_by_priority(&self) -> Vec<(&DocumentContent, &DocumentSource)> {
+        let mut local = Vec::new();
+        let mut remote = Vec::new();
+        for content in &self.contents {
+            for source in &content.sources {
+                if source.client.is_local() {
+                    local.push((content, source));
+                } else {
+                    remote.push((content, source));
+                }
+            }
+        }
+        local.extend(remote);
         local
     }
 
     pub fn get_client_selectors(&self) -> HashSet<ClientSelector> {
-        self.sources
+        self.contents
             .iter()
-            .map(|source| source.client.clone())
+            .flat_map(|c| c.sources.iter())
+            .map(|s| s.client.clone())
             .collect()
     }
 
-    /// Returns all distinct file types available across all sources.
     pub fn file_types(&self) -> Vec<DocumentType> {
         let mut types: Vec<DocumentType> = self
-            .sources
+            .contents
             .iter()
-            .map(|s| s.type_)
+            .map(|c| c.type_)
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
@@ -657,63 +673,55 @@ impl Document {
         types
     }
 
-    /// Returns a copy of this document restricted to sources of the given type.
-    /// The metadata fingerprint and type are updated to match the chosen format.
     /// Return a copy of this document restricted to the single source with the given `guid`.
     pub fn with_source_guid(&self, guid: &str) -> Option<Document> {
-        let source = self.sources.iter().find(|s| s.guid == guid)?.clone();
-        let type_ = source.type_;
-        let fingerprint = source.fingerprint.clone();
-        let size = source.size;
-        Some(Document {
-            metadata: DocumentMetadata {
-                type_,
-                fingerprint,
-                size,
-                tags: self.metadata.tags.clone(),
-                status: self.metadata.status,
-            },
-            sources: HashSet::from([source]),
-            document_guid: self.document_guid.clone(),
-            user_meta: self.user_meta.clone(),
-        })
+        for content in &self.contents {
+            if let Some(source) = content.sources.iter().find(|s| s.guid == guid) {
+                return Some(Document {
+                    document_guid: self.document_guid.clone(),
+                    user_meta: self.user_meta.clone(),
+                    contents: vec![DocumentContent {
+                        fingerprint: content.fingerprint.clone(),
+                        type_: content.type_,
+                        size: content.size,
+                        tags: content.tags.clone(),
+                        status: content.status,
+                        sources: vec![source.clone()],
+                    }],
+                });
+            }
+        }
+        None
     }
 
     pub fn as_format(&self, type_: DocumentType) -> Option<Document> {
-        let sources: HashSet<_> = self
-            .sources
+        let matching: Vec<DocumentContent> = self
+            .contents
             .iter()
-            .filter(|s| s.type_ == type_)
+            .filter(|c| c.type_ == type_)
             .cloned()
             .collect();
-        if sources.is_empty() {
+        if matching.is_empty() {
             return None;
         }
-        let first = sources.iter().next().unwrap();
         Some(Document {
-            metadata: DocumentMetadata {
-                type_,
-                fingerprint: first.fingerprint.clone(),
-                size: self.metadata.size,
-                tags: self.metadata.tags.clone(),
-                status: self.metadata.status,
-            },
-            sources,
             document_guid: self.document_guid.clone(),
             user_meta: self.user_meta.clone(),
+            contents: matching,
         })
     }
 }
 
 #[derive(Clone, Default)]
 pub struct Documents {
-    by_fingerprint: HashMap<String, Document>,
-    guid_to_fingerprint: HashMap<String, String>,
+    by_document_guid: HashMap<String, Document>,
+    /// Secondary index: fingerprint → document_guid, for lookup by content fingerprint.
+    fingerprint_to_guid: HashMap<String, String>,
 }
 
 impl fmt::Debug for Documents {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let documents_count = self.by_fingerprint.len();
+        let documents_count = self.by_document_guid.len();
         if documents_count == 1 {
             write!(f, "{documents_count} document")
         } else {
@@ -723,102 +731,105 @@ impl fmt::Debug for Documents {
 }
 
 impl Documents {
-    pub fn push(&mut self, document: Document) {
-        let fp = document.metadata.fingerprint.clone();
+    pub fn push(&mut self, document_guid: String, selector: ClientSelector, file: File) {
+        let type_: DocumentType = file.type_.parse().unwrap();
+        let source = DocumentSource {
+            guid: file.guid,
+            path: file.path,
+            client: selector,
+            size: file.size,
+        };
 
-        // Merge same fingerprint (same file on multiple remotes)
-        if let Some(existing) = self.by_fingerprint.get_mut(&fp) {
-            existing.sources.extend(document.sources);
-            return;
-        }
-
-        // Merge same document_guid (different formats of the same book)
-        if let Some(ref guid) = document.document_guid {
-            if let Some(canonical_fp) = self.guid_to_fingerprint.get(guid).cloned() {
-                let existing = self.by_fingerprint.get_mut(&canonical_fp).unwrap();
-                existing.sources.extend(document.sources);
-                for tag in document.metadata.tags {
-                    if !existing.metadata.tags.contains(&tag) {
-                        existing.metadata.tags.push(tag);
-                    }
-                }
-                return;
+        if let Some(doc) = self.by_document_guid.get_mut(&document_guid) {
+            if let Some(content) = doc
+                .contents
+                .iter_mut()
+                .find(|c| c.fingerprint == file.fingerprint)
+            {
+                content.sources.push(source);
+            } else {
+                self.fingerprint_to_guid
+                    .insert(file.fingerprint.clone(), document_guid.clone());
+                doc.contents.push(DocumentContent {
+                    fingerprint: file.fingerprint,
+                    type_,
+                    size: file.size,
+                    tags: file.tags,
+                    status: file.status,
+                    sources: vec![source],
+                });
             }
-            self.guid_to_fingerprint.insert(guid.clone(), fp.clone());
+        } else {
+            self.fingerprint_to_guid
+                .insert(file.fingerprint.clone(), document_guid.clone());
+            let doc = Document {
+                document_guid: document_guid.clone(),
+                user_meta: UserMeta::default(),
+                contents: vec![DocumentContent {
+                    fingerprint: file.fingerprint,
+                    type_,
+                    size: file.size,
+                    tags: file.tags,
+                    status: file.status,
+                    sources: vec![source],
+                }],
+            };
+            self.by_document_guid.insert(document_guid, doc);
         }
-
-        self.by_fingerprint.insert(fp, document);
     }
 
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut Document> {
-        self.by_fingerprint.values_mut()
+        self.by_document_guid.values_mut()
     }
 
     pub fn into_iter(self) -> IntoValues<String, Document> {
-        self.by_fingerprint.into_values()
+        self.by_document_guid.into_values()
     }
 
-    pub fn get(&self, fingerprint: &str) -> Option<&Document> {
-        self.by_fingerprint.get(fingerprint)
-    }
-}
-
-impl From<(ClientSelector, File)> for Document {
-    fn from((client, file): (ClientSelector, File)) -> Self {
-        let document_guid = file.document_guid.clone();
-        let type_: DocumentType = file.type_.parse().unwrap();
-        let fingerprint = file.fingerprint.clone();
-        Document {
-            metadata: DocumentMetadata {
-                type_,
-                size: file.size,
-                fingerprint: fingerprint.clone(),
-                tags: file.tags,
-                status: file.status,
-            },
-            sources: HashSet::from_iter([DocumentSource {
-                guid: file.guid,
-                path: file.path,
-                client,
-                type_, // Copy
-                fingerprint,
-                size: file.size,
-            }]),
-            document_guid,
-            user_meta: UserMeta::default(),
-        }
+    pub fn get(&self, document_guid: &str) -> Option<&Document> {
+        self.by_document_guid.get(document_guid)
     }
 }
-
-struct SingleDocumentSource(DocumentSource, DocumentMetadata);
 
 impl From<Document> for Vec<(ClientSelector, File)> {
-    fn from(source: Document) -> Self {
-        let number_of_sources = source.sources.len();
-        source
-            .sources
+    fn from(document: Document) -> Self {
+        document
+            .contents
             .into_iter()
-            .zip(repeat_n(source.metadata, number_of_sources))
-            .map(|(source, metadata)| {
-                let selector = source.client.clone();
-                (selector, SingleDocumentSource(source, metadata).into())
+            .flat_map(|content| {
+                let type_str = content.type_.as_str().to_string();
+                let fingerprint = content.fingerprint;
+                let tags = content.tags;
+                let status = content.status;
+                let size = content.size;
+                content.sources.into_iter().map(move |source| {
+                    let selector = source.client.clone();
+                    let file = File {
+                        guid: source.guid,
+                        path: source.path,
+                        type_: type_str.clone(),
+                        size,
+                        fingerprint: fingerprint.clone(),
+                        tags: tags.clone(),
+                        status,
+                        document_guid: None,
+                    };
+                    (selector, file)
+                })
             })
             .collect()
     }
 }
 
-impl From<SingleDocumentSource> for File {
-    fn from(source: SingleDocumentSource) -> Self {
-        let SingleDocumentSource(source, metadata) = source;
-        File {
-            guid: source.guid,
-            path: source.path,
-            type_: source.type_.as_str().to_string(),
-            size: metadata.size,
-            fingerprint: source.fingerprint,
-            tags: metadata.tags,
-            status: metadata.status,
-            document_guid: None,
-        }
+fn content_source_to_file(content: DocumentContent, source: DocumentSource) -> File {
+    File {
+        guid: source.guid,
+        path: source.path,
+        type_: content.type_.as_str().to_string(),
+        size: content.size,
+        fingerprint: content.fingerprint,
+        tags: content.tags,
+        status: content.status,
+        document_guid: None,
     }
 }

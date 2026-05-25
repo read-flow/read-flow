@@ -113,7 +113,13 @@ impl DocumentDetails {
         document_provider: Arc<DocumentProvider>,
         _application_module: Arc<ApplicationModule>,
     ) -> (Self, Task<Action<DocumentDetailsMessage>>) {
-        let initial_tags = document.metadata.tags.clone();
+        let initial_tags: Vec<String> = document
+            .contents
+            .iter()
+            .flat_map(|c| c.tags.iter().cloned())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
 
         let (tag_editor, tag_editor_task) = TagEditor::new(
             document_provider.clone(),
@@ -149,7 +155,14 @@ impl DocumentDetails {
 
     pub fn display_name(&self) -> String {
         self.document.user_meta.title.clone().unwrap_or_else(|| {
-            Path::new(&self.document.sources.iter().next().unwrap().path)
+            let path = self
+                .document
+                .contents
+                .first()
+                .and_then(|c| c.sources.first())
+                .map(|s| s.path.as_str())
+                .unwrap_or("Unknown");
+            Path::new(path)
                 .file_stem()
                 .and_then(|name| name.to_str())
                 .unwrap_or("Unknown")
@@ -412,9 +425,14 @@ impl DocumentDetails {
                 edit_button.into(),
             ]));
 
-        // Sort sources to show local first, then remotes
-        let mut sources: Vec<_> = self.document.sources.iter().collect();
-        sources.sort_by(|a, b| match (&a.client, &b.client) {
+        // Collect (content, source) pairs and sort local first, then remotes
+        let mut sources: Vec<_> = self
+            .document
+            .contents
+            .iter()
+            .flat_map(|c| c.sources.iter().map(move |s| (c, s)))
+            .collect();
+        sources.sort_by(|(_, a), (_, b)| match (&a.client, &b.client) {
             (crate::client::ClientSelector::Local, crate::client::ClientSelector::Local) => {
                 a.path.cmp(&b.path)
             }
@@ -423,10 +441,10 @@ impl DocumentDetails {
             (
                 crate::client::ClientSelector::Remote(url_a),
                 crate::client::ClientSelector::Remote(url_b),
-            ) => url_a.cmp(url_b).then(a.path.cmp(&b.path)),
+            ) => url_a.as_str().cmp(url_b.as_str()).then(a.path.cmp(&b.path)),
         });
 
-        for source in &sources {
+        for (content, source) in &sources {
             let (icon_name, source_label) = match &source.client {
                 crate::client::ClientSelector::Local => {
                     ("computer-symbolic", fl!("document-details-source-local"))
@@ -461,7 +479,7 @@ impl DocumentDetails {
                                 )
                                 .push(
                                     widget::container(
-                                        text(source.type_.as_str().to_uppercase()).size(12),
+                                        text(content.type_.as_str().to_uppercase()).size(12),
                                     )
                                     .class(theme::Container::Card)
                                     .padding([2, 6]),
@@ -491,8 +509,10 @@ impl DocumentDetails {
 
             // Show delete button in edit mode for sources where the client has multiple entries
             if self.editing_sources {
-                let client_source_count =
-                    sources.iter().filter(|s| s.client == source.client).count();
+                let client_source_count = sources
+                    .iter()
+                    .filter(|(_, s)| s.client == source.client)
+                    .count();
                 if client_source_count > 1 {
                     source_row = source_row.push(
                         widget::button::icon(
@@ -511,7 +531,7 @@ impl DocumentDetails {
                 sources_section.add(widget::settings::item_row(vec![source_row.into()]));
         }
 
-        if self.document.sources.is_empty() {
+        if sources.is_empty() {
             sources_section = sources_section.add(widget::settings::item_row(vec![
                 text(fl!("document-details-no-sources")).into(),
             ]));
@@ -581,7 +601,7 @@ impl Page for DocumentDetails {
                             ReadingStatus::Reading,
                             ReadingStatus::Read,
                         ],
-                        Some(self.document.metadata.status),
+                        self.document.contents.first().map(|c| c.status),
                         DocumentDetailsMessage::UpdateReadingStatus,
                     )
                     .placeholder(fl!("document-details-select-status")),
@@ -636,11 +656,12 @@ impl Page for DocumentDetails {
         }
 
         if self.show_open_picker {
-            let local_sources: Vec<&DocumentSource> = self
+            let local_sources: Vec<_> = self
                 .document
-                .sources
+                .contents
                 .iter()
-                .filter(|s| matches!(s.client, ClientSelector::Local))
+                .flat_map(|c| c.sources.iter().map(move |s| (c, s)))
+                .filter(|(_, s)| matches!(s.client, ClientSelector::Local))
                 .collect();
 
             return Some(crate::component::source_picker::source_picker_dialog(
@@ -656,8 +677,15 @@ impl Page for DocumentDetails {
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
+        let first_path = self
+            .document
+            .contents
+            .first()
+            .and_then(|c| c.sources.first())
+            .map(|s| s.path.as_str())
+            .unwrap_or("Unknown");
         let header_title = self.document.user_meta.title.as_deref().unwrap_or_else(|| {
-            Path::new(&self.document.sources.iter().next().unwrap().path)
+            Path::new(first_path)
                 .file_stem()
                 .and_then(|name| name.to_str())
                 .unwrap_or("Unknown")
@@ -674,7 +702,7 @@ impl Page for DocumentDetails {
         vec![
             widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
                 .on_press(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
-                    self.document.metadata.fingerprint.clone(),
+                    self.document.document_guid.clone(),
                 )))
                 .tooltip(fl!("document-details-close"))
                 .into(),
@@ -684,8 +712,9 @@ impl Page for DocumentDetails {
     fn view_header_end(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
         let has_local = self
             .document
-            .sources
+            .contents
             .iter()
+            .flat_map(|c| c.sources.iter())
             .any(|s| matches!(s.client, ClientSelector::Local));
         let btn = widget::button::icon(
             widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
@@ -724,7 +753,9 @@ impl Page for DocumentDetails {
             }
             DocumentDetailsMessage::UpdateReadingStatus(status) => {
                 let mut updated_document = self.document.clone();
-                updated_document.metadata.status = status;
+                for content in &mut updated_document.contents {
+                    content.status = status;
+                }
                 let document_provider = self.document_provider.clone();
 
                 task::future(async move {
@@ -750,8 +781,9 @@ impl Page for DocumentDetails {
             DocumentDetailsMessage::OpenDocument => {
                 let local_sources: Vec<_> = self
                     .document
-                    .sources
+                    .contents
                     .iter()
+                    .flat_map(|c| c.sources.iter())
                     .filter(|s| matches!(s.client, ClientSelector::Local))
                     .collect();
                 match local_sources.len() {
@@ -811,12 +843,12 @@ impl Page for DocumentDetails {
                 task::none()
             }
             DocumentDetailsMessage::RefreshDocument => {
-                let fingerprint = self.document.metadata.fingerprint.clone();
+                let document_guid = self.document.document_guid.clone();
                 let document_provider = self.document_provider.clone();
 
                 task::future(async move {
                     let result = document_provider
-                        .get_document(&fingerprint)
+                        .get_document(&document_guid)
                         .await
                         .map_err(|err| format!("{err}"))
                         .and_then(|document| {
@@ -831,9 +863,16 @@ impl Page for DocumentDetails {
                 Ok(document) => {
                     self.document = document.clone();
                     // Update the tag editor with the new tags
+                    let new_tags: Vec<String> = document
+                        .contents
+                        .iter()
+                        .flat_map(|c| c.tags.iter().cloned())
+                        .collect::<std::collections::HashSet<_>>()
+                        .into_iter()
+                        .collect();
                     let set_tags_task = self
                         .tag_editor
-                        .update(TagEditorMessage::SetTags(document.metadata.tags.clone()))
+                        .update(TagEditorMessage::SetTags(new_tags))
                         .map(|action| action.map(DocumentDetailsMessage::TagEditor));
                     task::batch(vec![
                         set_tags_task,
@@ -890,15 +929,24 @@ impl Page for DocumentDetails {
                 Task::none()
             }
             DocumentDetailsMessage::DeleteSource(source) => {
-                let metadata = self.document.metadata.clone();
-                let document_provider = self.document_provider.clone();
-                task::future(async move {
-                    let result = document_provider
-                        .delete_document_source(source, metadata)
-                        .await
-                        .map_err(|err| format!("{err}"));
-                    DocumentDetailsMessage::SourceDeleted(result)
-                })
+                let content = self
+                    .document
+                    .contents
+                    .iter()
+                    .find(|c| c.sources.iter().any(|s| s.guid == source.guid))
+                    .cloned();
+                if let Some(content) = content {
+                    let document_provider = self.document_provider.clone();
+                    task::future(async move {
+                        let result = document_provider
+                            .delete_document_source(source, content)
+                            .await
+                            .map_err(|err| format!("{err}"));
+                        DocumentDetailsMessage::SourceDeleted(result)
+                    })
+                } else {
+                    Task::none()
+                }
             }
             DocumentDetailsMessage::SourceDeleted(result) => match result {
                 Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),

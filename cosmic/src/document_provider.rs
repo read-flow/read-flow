@@ -15,7 +15,7 @@ use tokio::sync::broadcast;
 
 use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
-use crate::aggregator::DocumentMetadata;
+use crate::aggregator::DocumentContent;
 use crate::aggregator::DocumentSource;
 use crate::aggregator::Documents;
 use crate::aggregator::UserMeta;
@@ -33,7 +33,7 @@ type TagsCache =
 fn extract_tags(documents: Documents) -> Vec<String> {
     let mut tags = documents
         .into_iter()
-        .flat_map(|document| document.metadata.tags)
+        .flat_map(|document| document.contents.into_iter().flat_map(|c| c.tags))
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -108,16 +108,16 @@ impl DocumentProvider {
         self.tags_cache.provide().await
     }
 
-    /// Get a single document by fingerprint.
+    /// Get a single document by document_guid.
     ///
     /// Uses the cached documents to efficiently look up a single document.
     pub async fn get_document(
         &self,
-        fingerprint: &str,
+        document_guid: &str,
     ) -> Result<Option<Document>, FilesClientError> {
         self.get_documents()
             .await
-            .map(|docs| docs.get(fingerprint).cloned())
+            .map(|docs| docs.get(document_guid).cloned())
     }
 
     /// Update a document across all sources.
@@ -274,13 +274,13 @@ impl DocumentProvider {
     pub async fn delete_document_source(
         &self,
         source: DocumentSource,
-        metadata: DocumentMetadata,
+        content: DocumentContent,
     ) -> Result<(), FilesClientError> {
         let result = self
             .aggregator
             .read()
             .await
-            .delete_document_source(source, metadata)
+            .delete_document_source(source, content)
             .await;
         self.set_expired().await;
         result

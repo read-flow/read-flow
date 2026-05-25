@@ -486,11 +486,17 @@ impl EpubViewer {
         document: Document,
         document_provider: Arc<DocumentProvider>,
     ) -> (Self, Task<Action<EpubViewerMessage>>) {
-        let fingerprint = document.metadata.fingerprint.clone();
+        let fingerprint = document
+            .contents
+            .first()
+            .map(|c| c.fingerprint.clone())
+            .unwrap_or_default();
 
         let sources = document.sources_by_priority();
-        let local_source = sources.iter().find(|s| s.client == ClientSelector::Local);
-        let file_path = local_source.map(|s| PathBuf::from(&s.path));
+        let local_source = sources
+            .iter()
+            .find(|(_, s)| s.client == ClientSelector::Local);
+        let file_path = local_source.map(|(_, s)| PathBuf::from(&s.path));
 
         let saved_prefs = load_epub_prefs();
 
@@ -595,7 +601,14 @@ impl EpubViewer {
         if !self.title.is_empty() {
             return self.title.clone();
         }
-        Path::new(&self.document.sources.iter().next().unwrap().path)
+        let path = self
+            .document
+            .contents
+            .first()
+            .and_then(|c| c.sources.first())
+            .map(|s| s.path.as_str())
+            .unwrap_or("EPUB");
+        Path::new(path)
             .file_stem()
             .and_then(|name| name.to_str())
             .unwrap_or("EPUB")

@@ -435,7 +435,7 @@ impl DocumentList {
                     .as_deref()
                     .map(str::to_owned)
                     .unwrap_or_else(|| {
-                        std::path::Path::new(&doc.local_or_any_source().path)
+                        std::path::Path::new(&doc.local_or_any_source().1.path)
                             .file_name()
                             .and_then(|n| n.to_str())
                             .unwrap_or("")
@@ -505,10 +505,28 @@ fn compare_documents(
         SortSubject::Title => get_display_title(a)
             .to_lowercase()
             .cmp(&get_display_title(b).to_lowercase()),
-        SortSubject::Size => a.metadata.size.cmp(&b.metadata.size),
-        SortSubject::Type => a.metadata.type_.as_str().cmp(b.metadata.type_.as_str()),
+        SortSubject::Size => {
+            let a_size = a.contents.first().map(|c| c.size).unwrap_or(0);
+            let b_size = b.contents.first().map(|c| c.size).unwrap_or(0);
+            a_size.cmp(&b_size)
+        }
+        SortSubject::Type => {
+            let a_type = a.contents.first().map(|c| c.type_.as_str()).unwrap_or("");
+            let b_type = b.contents.first().map(|c| c.type_.as_str()).unwrap_or("");
+            a_type.cmp(b_type)
+        }
         SortSubject::Status => {
-            status_order(&a.metadata.status).cmp(&status_order(&b.metadata.status))
+            let a_status = a
+                .contents
+                .first()
+                .map(|c| c.status)
+                .unwrap_or(ReadingStatus::Unread);
+            let b_status = b
+                .contents
+                .first()
+                .map(|c| c.status)
+                .unwrap_or(ReadingStatus::Unread);
+            status_order(&a_status).cmp(&status_order(&b_status))
         }
     };
 
@@ -520,7 +538,7 @@ fn compare_documents(
 
 /// Get the filename from a document (uses local source if available, otherwise any source)
 fn get_filename(doc: &Document) -> &str {
-    let source = doc.local_or_any_source();
+    let (_, source) = doc.local_or_any_source();
     source.path.rsplit('/').next().unwrap_or(&source.path)
 }
 
@@ -582,7 +600,13 @@ fn filter_document(
     let source_filter = criteria.source_filter.as_ref();
     let allow_tags = &criteria.allow_tags;
     let deny_tags = &criteria.deny_tags;
-    // Filter by search query
+
+    let all_tags: Vec<String> = document
+        .contents
+        .iter()
+        .flat_map(|c| c.tags.iter().cloned())
+        .collect();
+
     let matches_search = if search_query.is_empty() {
         true
     } else {
@@ -590,12 +614,13 @@ fn filter_document(
             SearchMode::Fuzzy => {
                 let query = search_query.to_lowercase();
                 let path_matches = document
-                    .sources
+                    .contents
                     .iter()
+                    .flat_map(|c| c.sources.iter())
                     .map(|source| source.path.to_lowercase())
                     .filter(|path| fuzzy_match(&query, path))
                     .count();
-                let tags_lower = document.metadata.tags.join(" ").to_lowercase();
+                let tags_lower = all_tags.join(" ").to_lowercase();
                 let title_lower = document
                     .user_meta
                     .title
@@ -617,10 +642,11 @@ fn filter_document(
             SearchMode::Regex => {
                 if let Some(re) = compiled_regex {
                     let path_matches = document
-                        .sources
+                        .contents
                         .iter()
+                        .flat_map(|c| c.sources.iter())
                         .any(|source| re.is_match(&source.path));
-                    let tags = document.metadata.tags.join(" ");
+                    let tags = all_tags.join(" ");
                     let title = document.user_meta.title.as_deref().unwrap_or("");
                     let authors = document
                         .user_meta
@@ -640,30 +666,26 @@ fn filter_document(
         }
     };
 
-    // Filter by reading status
-    let matches_status = status_filter.is_none_or(|status| document.metadata.status == status);
+    // Filter by reading status (match any content's status)
+    let matches_status =
+        status_filter.is_none_or(|status| document.contents.iter().any(|c| c.status == status));
 
     // Filter by source (document must exist on the selected source)
     let matches_source = source_filter.is_none_or(|source| {
         document
-            .sources
+            .contents
             .iter()
+            .flat_map(|c| c.sources.iter())
             .any(|doc_source| &doc_source.client == source)
     });
 
     // Filter by allowed tags (file must have ALL allowed tags)
-    let matches_allow_tags = allow_tags.is_empty()
-        || allow_tags
-            .iter()
-            .all(|tag| document.metadata.tags.contains(tag));
+    let matches_allow_tags =
+        allow_tags.is_empty() || allow_tags.iter().all(|tag| all_tags.contains(tag));
 
     // Filter by denied tags (file must have NONE of the denied tags)
-    let matches_deny_tags = deny_tags.is_empty()
-        || !document
-            .metadata
-            .tags
-            .iter()
-            .any(|tag| deny_tags.contains(tag));
+    let matches_deny_tags =
+        deny_tags.is_empty() || !all_tags.iter().any(|tag| deny_tags.contains(tag));
 
     matches_search && matches_status && matches_source && matches_allow_tags && matches_deny_tags
 }
@@ -679,15 +701,20 @@ impl Page for DocumentList {
         let document = self.pending_format_pick.as_ref()?;
 
         let title = document.user_meta.title.clone().unwrap_or_else(|| {
-            std::path::Path::new(&document.local_or_any_source().path)
+            std::path::Path::new(&document.local_or_any_source().1.path)
                 .file_stem()
                 .and_then(|n| n.to_str())
                 .unwrap_or("")
                 .to_owned()
         });
 
-        let mut sources: Vec<&crate::aggregator::DocumentSource> = document.sources_by_priority();
-        sources.sort_by_key(|s| (s.type_, s.client.is_local()));
+        let mut sources = document.sources_by_priority();
+        sources.sort_by(|(ac, as_), (bc, bs)| {
+            ac.type_
+                .as_str()
+                .cmp(bc.type_.as_str())
+                .then_with(|| as_.client.is_local().cmp(&bs.client.is_local()))
+        });
 
         Some(crate::component::source_picker::source_picker_dialog(
             fl!("document-list-pick-source-title"),
@@ -927,12 +954,9 @@ impl Page for DocumentList {
                 .set_document_state(DocumentState::Failed(error))
                 .map(ActionExt::map_into),
             DocumentListMessage::RefreshDocument(document) => {
-                let document_fingerprint = document.metadata.fingerprint.clone();
+                let document_guid = document.document_guid.clone();
                 self.archive
-                    .update_item(
-                        move |doc| doc.metadata.fingerprint == document_fingerprint,
-                        document,
-                    )
+                    .update_item(move |doc| doc.document_guid == document_guid, document)
                     .map(ActionExt::map_into)
             }
             DocumentListMessage::SearchChanged(query) => {
@@ -1152,11 +1176,11 @@ impl Page for DocumentList {
                 let Some(winner) = dialog.candidates.get(winner_idx).cloned() else {
                     return Task::none();
                 };
-                let loser_fp = winner.metadata.fingerprint.clone();
+                let winner_guid = winner.document_guid.clone();
                 let losers: Vec<Document> = dialog
                     .candidates
                     .into_iter()
-                    .filter(|d| d.metadata.fingerprint != loser_fp)
+                    .filter(|d| d.document_guid != winner_guid)
                     .collect();
                 let provider = self.document_provider.clone();
                 task::future(async move {

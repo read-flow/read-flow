@@ -251,12 +251,18 @@ impl MuPdfViewer {
         document: Document,
         document_provider: Arc<DocumentProvider>,
     ) -> (Self, Task<Action<MuPdfViewerMessage>>) {
-        let fingerprint = document.metadata.fingerprint.clone();
+        let fingerprint = document
+            .contents
+            .first()
+            .map(|c| c.fingerprint.clone())
+            .unwrap_or_default();
 
         // Resolve local file path from document sources
         let sources = document.sources_by_priority();
-        let local_source = sources.iter().find(|s| s.client == ClientSelector::Local);
-        let file_path = local_source.map(|s| PathBuf::from(&s.path));
+        let local_source = sources
+            .iter()
+            .find(|(_, s)| s.client == ClientSelector::Local);
+        let file_path = local_source.map(|(_, s)| PathBuf::from(&s.path));
 
         let zoom_names: Vec<String> = Zoom::all().iter().map(|z| z.to_string()).collect();
 
@@ -375,7 +381,14 @@ impl MuPdfViewer {
     }
 
     pub fn display_name(&self) -> String {
-        Path::new(&self.document.sources.iter().next().unwrap().path)
+        let path = self
+            .document
+            .contents
+            .first()
+            .and_then(|c| c.sources.first())
+            .map(|s| s.path.as_str())
+            .unwrap_or("PDF");
+        Path::new(path)
             .file_stem()
             .and_then(|name| name.to_str())
             .unwrap_or("PDF")
@@ -849,7 +862,14 @@ impl Page for MuPdfViewer {
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, MuPdfViewerMessage>> {
-        let path = Path::new(&self.document.sources.iter().next().unwrap().path);
+        let first_path = self
+            .document
+            .contents
+            .first()
+            .and_then(|c| c.sources.first())
+            .map(|s| s.path.as_str())
+            .unwrap_or("PDF");
+        let path = Path::new(first_path);
         let filename = path
             .file_stem()
             .and_then(|name| name.to_str())

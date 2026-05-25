@@ -11,6 +11,7 @@ use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::button::ButtonClass;
 
+use crate::aggregator::DocumentContent;
 use crate::aggregator::DocumentSource;
 use crate::client::ClientSelector;
 use crate::fl;
@@ -36,7 +37,7 @@ fn source_size_label(bytes: i32) -> String {
 pub fn source_picker_dialog<'a, Msg>(
     dialog_title: impl Into<String>,
     body: Option<String>,
-    sources: Vec<&'a DocumentSource>,
+    sources: Vec<(&'a DocumentContent, &'a DocumentSource)>,
     on_pick: impl Fn(String) -> Msg + 'a,
     on_cancel: Msg,
 ) -> Element<'a, Msg>
@@ -49,7 +50,7 @@ where
 
     let source_buttons: Vec<Element<'_, Msg>> = sources
         .into_iter()
-        .map(|source| {
+        .map(|(content, source)| {
             let source_path = Path::new(&source.path);
             let filename = source_path
                 .file_name()
@@ -62,7 +63,7 @@ where
                 ClientSelector::Remote(url) => url.host_str().unwrap_or("Remote").to_owned(),
             };
 
-            let type_icon = widget::icon::from_name(source.type_.get_file_type_icon())
+            let type_icon = widget::icon::from_name(content.type_.get_file_type_icon())
                 .size(32)
                 .icon();
 
@@ -75,7 +76,9 @@ where
             let header_row = widget::row::with_children(vec![
                 location_badge.into(),
                 widget::space::horizontal().into(),
-                widget::text(source_size_label(source.size)).size(11).into(),
+                widget::text(source_size_label(content.size))
+                    .size(11)
+                    .into(),
             ])
             .spacing(space_xs)
             .align_y(Vertical::Center);
@@ -88,12 +91,12 @@ where
             .spacing(space_xs)
             .width(Length::Fill);
 
-            let content = widget::row::with_children(vec![type_icon.into(), text_col.into()])
+            let row = widget::row::with_children(vec![type_icon.into(), text_col.into()])
                 .spacing(space_s)
                 .align_y(Vertical::Center);
 
             let guid = source.guid.clone();
-            widget::button::custom(content)
+            widget::button::custom(row)
                 .class(ButtonClass::ListItem)
                 .width(Length::Fill)
                 .on_press(on_pick(guid))

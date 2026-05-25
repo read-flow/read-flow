@@ -43,7 +43,7 @@ impl Provider<Vec<String>> for DocumentState {
                 let tags = documents
                     .unfiltered()
                     .iter()
-                    .flat_map(|doc| doc.metadata.tags.clone())
+                    .flat_map(|doc| doc.contents.iter().flat_map(|c| c.tags.iter().cloned()))
                     .collect::<HashSet<_>>();
 
                 Ok(tags.into_iter().collect::<Vec<_>>())
@@ -234,7 +234,7 @@ impl DocumentsComponent {
         let files_section = visible_files
             .into_iter()
             .fold(files_section, |section, file| {
-                let is_selected = self.selected_documents.contains(&file.metadata.fingerprint);
+                let is_selected = self.selected_documents.contains(&file.document_guid);
                 section.add(view_document(file, is_selected))
             })
             .add(self.pagination.view().map(Into::into));
@@ -296,11 +296,11 @@ impl DocumentsComponent {
                 self.pagination.update(message).map(ActionExt::map_into)
             }
             DocumentsMessage::ToggleDocumentSelected(document) => {
-                let fingerprint = document.metadata.fingerprint.clone();
-                if self.selected_documents.contains(&fingerprint) {
-                    self.selected_documents.remove(&fingerprint);
+                let guid = document.document_guid.clone();
+                if self.selected_documents.contains(&guid) {
+                    self.selected_documents.remove(&guid);
                 } else {
-                    self.selected_documents.insert(fingerprint);
+                    self.selected_documents.insert(guid);
                 }
                 self.notify_selection_changed()
             }
@@ -308,8 +308,7 @@ impl DocumentsComponent {
                 if all_selected {
                     if let DocumentState::Loaded(files) = &self.documents {
                         for file in files.filtered_items() {
-                            self.selected_documents
-                                .insert(file.metadata.fingerprint.clone());
+                            self.selected_documents.insert(file.document_guid.clone());
                         }
                     }
                 } else {
@@ -320,13 +319,13 @@ impl DocumentsComponent {
             DocumentsMessage::FilterSelectedDocuments => {
                 if let DocumentState::Loaded(files) = &self.documents {
                     let selected_document_count = self.selected_documents.len();
-                    let filtered_fingerprints = files
+                    let filtered_guids = files
                         .unfiltered()
                         .iter()
-                        .map(|doc| doc.metadata.fingerprint.clone())
+                        .map(|doc| doc.document_guid.clone())
                         .collect::<HashSet<_>>();
                     self.selected_documents
-                        .retain(|doc| filtered_fingerprints.contains(doc));
+                        .retain(|doc| filtered_guids.contains(doc));
                     if self.selected_documents.len() != selected_document_count {
                         self.notify_selection_changed()
                     } else {
@@ -376,7 +375,7 @@ impl DocumentsComponent {
             files
                 .unfiltered()
                 .iter()
-                .filter(|doc| self.selected_documents.contains(&doc.metadata.fingerprint))
+                .filter(|doc| self.selected_documents.contains(&doc.document_guid))
                 .cloned()
                 .collect()
         } else {
@@ -434,7 +433,8 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
         ("checkbox-symbolic", ButtonClass::Icon)
     };
 
-    let open_msg = if document.sources.len() > 1 {
+    let total_sources: usize = document.contents.iter().map(|c| c.sources.len()).sum();
+    let open_msg = if total_sources > 1 {
         DocumentsMessage::Out(DocumentsOutput::PickFormat(document.clone()))
     } else {
         DocumentsMessage::Out(DocumentsOutput::OpenDocument(document.clone()))
@@ -467,7 +467,7 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
 fn display_document_title<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
     let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
-    let path: &Path = document.local_or_any_source().path.as_ref();
+    let path: &Path = document.local_or_any_source().1.path.as_ref();
 
     let primary = document
         .user_meta
@@ -532,13 +532,21 @@ fn display_pills<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
     }
 
     // Tag pills (up to MAX_TAGS, then a count badge)
-    let tags = &document.metadata.tags;
-    let shown = tags.len().min(MAX_TAGS);
-    for tag in &tags[..shown] {
+    let all_tags: Vec<String> = {
+        let mut seen = HashSet::new();
+        document
+            .contents
+            .iter()
+            .flat_map(|c| c.tags.iter().cloned())
+            .filter(|t| seen.insert(t.clone()))
+            .collect()
+    };
+    let shown = all_tags.len().min(MAX_TAGS);
+    for tag in &all_tags[..shown] {
         row = row.push(pill(tag));
     }
-    if tags.len() > MAX_TAGS {
-        row = row.push(pill(format!("+{}", tags.len() - MAX_TAGS)));
+    if all_tags.len() > MAX_TAGS {
+        row = row.push(pill(format!("+{}", all_tags.len() - MAX_TAGS)));
     }
 
     row.into()
@@ -550,10 +558,9 @@ pub fn get_common_tags(selected_documents: &[Document]) -> Vec<String> {
         .iter()
         .map(|document| {
             document
-                .metadata
-                .tags
-                .clone()
-                .into_iter()
+                .contents
+                .iter()
+                .flat_map(|c| c.tags.iter().cloned())
                 .collect::<HashSet<String>>()
         })
         .reduce(|acc, document_tags| acc.intersection(&document_tags).cloned().collect())

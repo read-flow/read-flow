@@ -544,8 +544,12 @@ impl Pages {
                 task::message(PageMessage::Out(PageOutput::PageRemoved(selector)))
             }
             PageMessage::OpenDocumentDetails(document) => {
-                let fingerprint = document.metadata.fingerprint.clone();
-                let document_icon = document.metadata.type_.get_file_type_icon();
+                let fingerprint = document.document_guid.clone();
+                let document_icon = document
+                    .contents
+                    .first()
+                    .map(|c| c.type_.get_file_type_icon())
+                    .unwrap_or("text-x-generic-symbolic");
 
                 // Only create new document_details if it does not yet exist
                 if self.document_details.contains_key(&fingerprint) {
@@ -703,15 +707,22 @@ impl Pages {
                 self.deactivate_page(&selector);
                 task::message(PageMessage::Out(PageOutput::PageRemoved(selector)))
             }
-            PageMessage::OpenDocument(document) => match &document.metadata.type_ {
-                DocumentType::Epub => match self.epub_viewer_config {
-                    EpubViewerConfig::NativeEpub => self.open_epub_viewer(document),
-                    EpubViewerConfig::MuPdf => self.open_mupdf_viewer(document),
-                    EpubViewerConfig::ExternalViewer => self.open_in_external_viewer(document),
-                },
-                DocumentType::Other => self.open_in_external_viewer(document),
-                _ => self.open_mupdf_viewer(document),
-            },
+            PageMessage::OpenDocument(document) => {
+                let type_ = document
+                    .contents
+                    .first()
+                    .map(|c| c.type_)
+                    .unwrap_or(DocumentType::Other);
+                match type_ {
+                    DocumentType::Epub => match self.epub_viewer_config {
+                        EpubViewerConfig::NativeEpub => self.open_epub_viewer(document),
+                        EpubViewerConfig::MuPdf => self.open_mupdf_viewer(document),
+                        EpubViewerConfig::ExternalViewer => self.open_in_external_viewer(document),
+                    },
+                    DocumentType::Other => self.open_in_external_viewer(document),
+                    _ => self.open_mupdf_viewer(document),
+                }
+            }
             PageMessage::CloseEpubViewer(fingerprint, progress_json) => {
                 let selector = PageSelector::EpubViewer(fingerprint.clone());
                 let _ = self.epub_viewers.swap_remove(&fingerprint);
@@ -758,7 +769,11 @@ impl Pages {
     }
 
     fn open_mupdf_viewer(&mut self, document: Document) -> Task<Action<PageMessage>> {
-        let fingerprint = document.metadata.fingerprint.clone();
+        let fingerprint = document
+            .contents
+            .first()
+            .map(|c| c.fingerprint.clone())
+            .unwrap_or_default();
 
         if self.mu_pdf_viewers.contains_key(&fingerprint) {
             task::message(PageMessage::Out(PageOutput::TogglePage(
@@ -792,7 +807,11 @@ impl Pages {
     }
 
     fn open_epub_viewer(&mut self, document: Document) -> Task<Action<PageMessage>> {
-        let fingerprint = document.metadata.fingerprint.clone();
+        let fingerprint = document
+            .contents
+            .first()
+            .map(|c| c.fingerprint.clone())
+            .unwrap_or_default();
 
         if self.epub_viewers.contains_key(&fingerprint) {
             task::message(PageMessage::Out(PageOutput::TogglePage(
