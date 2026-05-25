@@ -428,12 +428,12 @@ impl SettingsPage {
                 ),
             |section, doc_type| {
                 let enabled = self.settings.scan.extensions.contains(doc_type);
-                let doc_type_clone = doc_type.clone();
+                let doc_type_clone = *doc_type;
                 section.add(
                     widget::settings::item::builder(format!(".{}", doc_type.as_str()))
                         .description(doc_type.label())
                         .toggler(enabled, move |v| {
-                            SettingsMessage::ToggleDocumentType(doc_type_clone.clone(), v)
+                            SettingsMessage::ToggleDocumentType(doc_type_clone, v)
                         }),
                 )
             },
@@ -448,30 +448,22 @@ impl SettingsPage {
                 widget::settings::section().title(fl!("settings-scan-directories-section")),
                 |section, (path, dir_settings)| section.add(view_directory(path, dir_settings)),
             )
-            .add(widget::settings::item_row(vec![
-                widget::space::horizontal()
-                    .width(Length::FillPortion(5))
-                    .into(),
-                widget::button::icon(icon::from_name("list-add-symbolic").size(ICON_SIZE))
-                    .class(widget::button::ButtonClass::Suggested)
-                    .on_press(SettingsMessage::AddDirectory)
-                    .tooltip(fl!("settings-add-directory"))
-                    .apply(widget::container)
-                    .width(Length::FillPortion(1))
-                    .align_x(Horizontal::Right)
-                    .into(),
-            ]));
+            .add(crate::component::section_helpers::section_add_button(
+                fl!("settings-add-directory"),
+                Some(SettingsMessage::AddDirectory),
+            ));
 
         let mut items: Vec<Element<'_, SettingsMessage>> = vec![
             widget::text::title2(fl!("settings-scan-section")).into(),
             scan_section.into(),
             directories_section.into(),
-            file_types_section.into(),
         ];
 
         if let Some(form) = self.directory_settings_form.as_ref() {
             items.push(form.view().map(Into::into));
         }
+
+        items.push(file_types_section.into());
 
         items
     }
@@ -517,19 +509,10 @@ impl SettingsPage {
                     acc.add(self.view_authorized_user_input(user_id, entry))
                 },
             )
-            .add(widget::settings::item_row(vec![
-                widget::space::horizontal()
-                    .width(Length::FillPortion(5))
-                    .into(),
-                widget::button::icon(widget::icon::from_name("list-add-symbolic").size(ICON_SIZE))
-                    .class(widget::button::ButtonClass::Suggested)
-                    .on_press(SettingsMessage::AddAuthorizedUser)
-                    .tooltip(fl!("settings-server-add-authorized-user"))
-                    .apply(widget::container)
-                    .width(Length::FillPortion(1))
-                    .align_x(Horizontal::Right)
-                    .into(),
-            ]));
+            .add(crate::component::section_helpers::section_add_button(
+                fl!("settings-server-add-authorized-user"),
+                Some(SettingsMessage::AddAuthorizedUser),
+            ));
 
         let mut items: Vec<Element<'_, SettingsMessage>> = vec![
             widget::text::title2(fl!("settings-server-section")).into(),

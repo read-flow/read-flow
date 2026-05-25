@@ -167,3 +167,13 @@ textarea {
 		font-size: 0.875rem;
 	}
 }
+
+/* Default foreground: pure black in light mode, pure white in dark mode.
+   Accent / tinted slate values are intentionally used only for secondary
+   text, borders, backgrounds, and interactive states — not body copy. */
+html {
+	color: #000000;
+}
+html.dark {
+	color: #ffffff;
+}

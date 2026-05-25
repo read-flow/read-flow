@@ -1,8 +1,14 @@
 import { writable, derived } from 'svelte/store';
-import { fetchAllFiles, type AggregatedFile } from '$lib/api/aggregator';
+import {
+	fetchAllFiles,
+	fetchDocumentMetaMap,
+	type AggregatedFile,
+	type DocumentMeta,
+} from '$lib/api/aggregator';
 import { filterDocuments } from '$lib/utils/filter';
 
 export const allDocuments = writable<AggregatedFile[]>([]);
+export const documentMetaMap = writable<Map<string, DocumentMeta>>(new Map());
 export const isLoading = writable(false);
 export const loadError = writable<string | null>(null);
 
@@ -14,8 +20,9 @@ export async function refreshDocuments(): Promise<void> {
 	isLoading.set(true);
 	loadError.set(null);
 	try {
-		const files = await fetchAllFiles();
+		const [files, metaMap] = await Promise.all([fetchAllFiles(), fetchDocumentMetaMap()]);
 		allDocuments.set(files);
+		documentMetaMap.set(metaMap);
 	} catch (err) {
 		loadError.set(err instanceof Error ? err.message : 'Failed to load documents.');
 	} finally {
@@ -24,8 +31,9 @@ export async function refreshDocuments(): Promise<void> {
 }
 
 export const filteredDocuments = derived(
-	[allDocuments, searchQuery, allowedTags, deniedTags],
-	([$all, $query, $allowed, $denied]) => filterDocuments($all, $allowed, $denied, $query),
+	[allDocuments, searchQuery, allowedTags, deniedTags, documentMetaMap],
+	([$all, $query, $allowed, $denied, $metaMap]) =>
+		filterDocuments($all, $allowed, $denied, $query, $metaMap),
 );
 
 export const allTags = derived(allDocuments, ($all) => {

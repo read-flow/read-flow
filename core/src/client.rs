@@ -16,6 +16,8 @@ use tokio::fs;
 use tokio::process::Command;
 
 use crate::Builder;
+use crate::api::ApiDocument;
+use crate::api::DocumentMeta;
 use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
@@ -322,6 +324,76 @@ impl FileDataSource for FilesClient {
         response.error_for_status_ref()?;
 
         Ok(())
+    }
+}
+
+impl FilesClient {
+    pub async fn get_documents(&self) -> Result<Vec<ApiDocument>, Error> {
+        self.get_json("documents").await
+    }
+
+    pub async fn get_document(&self, guid: &str) -> Result<Option<ApiDocument>, Error> {
+        let response = self
+            .client
+            .get(self.base_url.join(&format!("documents/{guid}"))?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, self.get_auth_header())
+            .send()
+            .await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        Ok(Some(response.json().await?))
+    }
+
+    pub async fn update_document_metadata(
+        &self,
+        guid: &str,
+        meta: DocumentMeta,
+    ) -> Result<ApiDocument, Error> {
+        let response = self
+            .client
+            .put(self.base_url.join(&format!("documents/{guid}/metadata"))?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, self.get_auth_header())
+            .json(&meta)
+            .send()
+            .await?;
+        response.error_for_status_ref()?;
+        Ok(response.json().await?)
+    }
+
+    pub async fn merge_documents(
+        &self,
+        winner_guid: &str,
+        loser_guids: &[String],
+    ) -> Result<(), Error> {
+        let req = crate::api::MergeDocumentsRequest {
+            winner_guid: winner_guid.to_string(),
+            loser_guids: loser_guids.to_vec(),
+        };
+        let response = self
+            .client
+            .post(self.base_url.join("documents/merge")?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, self.get_auth_header())
+            .json(&req)
+            .send()
+            .await?;
+        response.error_for_status_ref()?;
+        Ok(())
+    }
+
+    pub async fn ensure_document_for_file(&self, file_guid: &str) -> Result<ApiDocument, Error> {
+        let response = self
+            .client
+            .post(self.base_url.join(&format!("files/{file_guid}/document"))?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, self.get_auth_header())
+            .send()
+            .await?;
+        response.error_for_status_ref()?;
+        Ok(response.json().await?)
     }
 }
 

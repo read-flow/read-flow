@@ -2,9 +2,11 @@
 	import { onMount, onDestroy } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import DocumentDetail from '$lib/components/DocumentDetail.svelte';
+	import MergeDialog from '$lib/components/MergeDialog.svelte';
 	import {
 		allDocuments,
 		filteredDocuments,
+		documentMetaMap,
 		isLoading,
 		loadError,
 		refreshDocuments,
@@ -22,6 +24,27 @@
 	const OVERSCAN = 3;
 
 	let selectedFingerprint = $state<string | null>(null);
+	let formatPickDoc = $state<AggregatedFile | null>(null);
+	let selectMode = $state(false);
+	let selectedFingerprints = $state(new Set<string>());
+	let mergeDialogOpen = $state(false);
+
+	const selectedDocs = $derived(
+		$filteredDocuments.filter((d) => selectedFingerprints.has(d.fingerprint)),
+	);
+
+	function toggleSelect(fingerprint: string) {
+		selectedFingerprints = new Set(
+			selectedFingerprints.has(fingerprint)
+				? [...selectedFingerprints].filter((f) => f !== fingerprint)
+				: [...selectedFingerprints, fingerprint],
+		);
+	}
+
+	function exitSelectMode() {
+		selectMode = false;
+		selectedFingerprints = new Set();
+	}
 	let listContainerEl: HTMLDivElement | undefined = $state();
 	let containerHeight = $state(600);
 	let scrollTop = $state(0);
@@ -95,6 +118,13 @@
 		return `/documents/${doc.fingerprint}`;
 	}
 
+	function handleRowClick(doc: AggregatedFile, e: MouseEvent) {
+		if (doc.otherFormats.length > 0) {
+			e.preventDefault();
+			formatPickDoc = doc;
+		}
+	}
+
 	// ── Details button: inline sidebar on lg+, navigate on smaller screens ───
 	function handleDetailsClick(fingerprint: string, e: MouseEvent): void {
 		if (window.innerWidth >= 1024) {
@@ -113,15 +143,32 @@
 	<!-- ── Page header ──────────────────────────────────────────────────────── -->
 	<div class="px-4 pt-5 pb-3 md:px-6 md:pt-6 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shrink-0">
 		<div class="flex items-center justify-between gap-3 mb-3">
-			<h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Library</h1>
-			{#if !$isLoading}
-				<button
-					onclick={() => refreshDocuments()}
-					class="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors px-2 py-1 rounded"
-				>
-					Refresh
-				</button>
-			{/if}
+			<h1 class="text-xl font-semibold">Library</h1>
+			<div class="flex items-center gap-1">
+				{#if selectMode}
+					<button
+						onclick={exitSelectMode}
+						class="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors px-2 py-1 rounded"
+					>
+						Done
+					</button>
+				{:else}
+					{#if !$isLoading}
+						<button
+							onclick={() => refreshDocuments()}
+							class="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors px-2 py-1 rounded"
+						>
+							Refresh
+						</button>
+					{/if}
+					<button
+						onclick={() => { selectMode = true; selectedFingerprints = new Set(); }}
+						class="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors px-2 py-1 rounded"
+					>
+						Select
+					</button>
+				{/if}
+			</div>
 		</div>
 
 		<!-- Search -->
@@ -132,7 +179,7 @@
 				placeholder="Search documents…"
 				bind:value={$searchQuery}
 				class="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600
-					bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100
+					bg-slate-50 dark:bg-slate-700/50
 					focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-transparent
 					placeholder:text-slate-400 dark:placeholder:text-slate-500"
 			/>
@@ -227,53 +274,99 @@
 				<div style="padding-top: {paddingTop}px; padding-bottom: {paddingBottom}px">
 					<ul class="divide-y divide-slate-100 dark:divide-slate-700/50">
 						{#each visibleItems as doc (doc.fingerprint)}
+							{@const docMeta = doc.document_guid ? $documentMetaMap.get(doc.document_guid) : undefined}
 							<li
 								class="flex items-stretch transition-colors
-									{selectedFingerprint === doc.fingerprint ? 'bg-slate-100 dark:bg-slate-700/60' : ''}"
+									{selectMode
+										? selectedFingerprints.has(doc.fingerprint)
+											? 'bg-slate-100 dark:bg-slate-700/60'
+											: ''
+										: selectedFingerprint === doc.fingerprint
+											? 'bg-slate-100 dark:bg-slate-700/60'
+											: ''}"
 							>
-								<!-- Primary action: open in reader -->
+								{#if selectMode}
+									<button
+										onclick={() => toggleSelect(doc.fingerprint)}
+										class="flex items-center pl-4 pr-2"
+										aria-label={selectedFingerprints.has(doc.fingerprint) ? 'Deselect' : 'Select'}
+									>
+										<input
+											type="checkbox"
+											checked={selectedFingerprints.has(doc.fingerprint)}
+											readonly
+											class="w-4 h-4 accent-slate-900 dark:accent-slate-100 pointer-events-none"
+										/>
+									</button>
+								{/if}
+								<!-- Primary action: open in reader (format picker for multi-format) -->
 								<a
 									href={readerHref(doc)}
+									onclick={(e) => handleRowClick(doc, e)}
 									class="flex items-start gap-3 px-4 py-3 md:px-6 flex-1 min-w-0 transition-colors
 										{selectedFingerprint !== doc.fingerprint ? 'hover:bg-slate-50 dark:hover:bg-slate-800/60' : ''}"
 								>
-									<!-- File type badge -->
-									<span
-										class="mt-0.5 shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
-											{doc.type_ === 'pdf'
-												? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-												: doc.type_ === 'epub'
-													? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-													: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}"
-									>
-										{doc.type_}
-									</span>
-
+									<!-- File type badge(s) -->
+									{#if doc.otherFormats.length > 0}
+										<div class="mt-0.5 shrink-0 flex gap-0.5">
+											{#each [doc, ...doc.otherFormats] as fmt}
+												<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
+													{fmt.type_ === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+													: fmt.type_ === 'epub' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+													: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}">
+													{fmt.type_}
+												</span>
+											{/each}
+										</div>
+									{:else}
+										<span
+											class="mt-0.5 shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
+												{doc.type_ === 'pdf'
+													? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+													: doc.type_ === 'epub'
+														? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+														: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}"
+										>
+											{doc.type_}
+										</span>
+									{/if}
 									<div class="flex-1 min-w-0">
-										<p class="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{basename(doc.path)}</p>
-										<p class="text-xs text-slate-400 dark:text-slate-500 truncate mt-0.5">{doc.path}</p>
-
-										{#if doc.tags.length > 0}
-											<div class="hidden sm:flex flex-wrap gap-1 mt-1.5">
-												{#each doc.tags.slice(0, 4) as tag}
-													<span
-														class="inline-flex items-center px-1.5 py-0.5 rounded text-xs
-															{$allowedTags.has(tag)
-																? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-																: $deniedTags.has(tag)
-																	? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-																	: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}"
-													>
-														{tag}
-													</span>
-												{/each}
-												{#if doc.tags.length > 4}
-													<span class="text-xs text-slate-400 dark:text-slate-500">+{doc.tags.length - 4}</span>
-												{/if}
-											</div>
-										{/if}
+										<!-- Primary: user title or filename -->
+										<p class="text-sm font-medium truncate">
+											{docMeta?.title ?? basename(doc.path)}
+										</p>
+										<!-- Secondary: authors or full path -->
+										<p class="text-xs text-slate-400 dark:text-slate-500 truncate mt-0.5">
+											{docMeta?.authors?.length ? docMeta.authors.join(', ') : doc.path}
+										</p>
 									</div>
 								</a>
+
+								<!-- Pills: document type + tags (right-aligned, hidden on xs) -->
+								<div class="hidden sm:flex items-center gap-1 px-2 shrink-0">
+									{#if docMeta?.document_type}
+										<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+											{docMeta.document_type}
+										</span>
+									{/if}
+									{#each doc.tags.slice(0, 3) as tag}
+										<span
+											class="inline-flex items-center px-1.5 py-0.5 rounded text-xs
+												{$allowedTags.has(tag)
+													? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+													: $deniedTags.has(tag)
+														? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+														: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}"
+										>
+											{tag}
+										</span>
+									{/each}
+									{#if doc.tags.length > 3}
+										<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500">
+											+{doc.tags.length - 3}
+										</span>
+									{/if}
+								</div>
 
 								<!-- Secondary actions: size + details button -->
 								<div class="flex items-center gap-1.5 pr-3 md:pr-4 shrink-0">
@@ -298,6 +391,83 @@
 				</div>
 			{/if}
 		</div>
+
+		<!-- Selection toolbar (shown in select mode) -->
+		{#if selectMode && selectedFingerprints.size > 0}
+			<div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3
+				bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900
+				px-4 py-2.5 rounded-full shadow-lg text-sm font-medium">
+				<span>{selectedFingerprints.size} selected</span>
+				{#if selectedFingerprints.size >= 2}
+					<button
+						onclick={() => (mergeDialogOpen = true)}
+						class="px-3 py-1 rounded-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+					>
+						Merge
+					</button>
+				{/if}
+				<button
+					onclick={() => (selectedFingerprints = new Set())}
+					class="text-slate-400 dark:text-slate-500 hover:text-white dark:hover:text-slate-900 transition-colors"
+					aria-label="Clear selection"
+				>
+					✕
+				</button>
+			</div>
+		{/if}
+
+		<!-- Merge dialog -->
+		{#if mergeDialogOpen}
+			<MergeDialog
+				candidates={selectedDocs}
+				onclose={() => { mergeDialogOpen = false; exitSelectMode(); }}
+			/>
+		{/if}
+
+		<!-- Format picker modal -->
+		{#if formatPickDoc}
+			{@const allFormats = [formatPickDoc, ...formatPickDoc.otherFormats]}
+			{@const pickerMeta = formatPickDoc.document_guid ? $documentMetaMap.get(formatPickDoc.document_guid) : undefined}
+			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+			<div
+				class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+				onclick={() => (formatPickDoc = null)}
+			>
+				<div
+					class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6 w-80 max-w-[90vw]"
+					onclick={(e) => e.stopPropagation()}
+				>
+					<h2 class="text-base font-semibold mb-1">Choose format</h2>
+					<p class="text-sm text-slate-500 dark:text-slate-400 mb-4 truncate">
+						{pickerMeta?.title ?? formatPickDoc.path.split('/').pop()}
+					</p>
+					<div class="flex flex-col gap-2">
+						{#each allFormats as fmt}
+							<a
+								href={readerHref(fmt)}
+								onclick={() => (formatPickDoc = null)}
+								class="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600
+									hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+							>
+								<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
+									{fmt.type_ === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+									: fmt.type_ === 'epub' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+									: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}">
+									{fmt.type_}
+								</span>
+								<span class="text-sm text-slate-700 dark:text-slate-300">{fmt.path.split('/').pop()}</span>
+							</a>
+						{/each}
+					</div>
+					<button
+						onclick={() => (formatPickDoc = null)}
+						class="mt-4 w-full text-sm text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+					>
+						Cancel
+					</button>
+				</div>
+			</div>
+		{/if}
 
 		<!-- Right: details sidebar (lg+, shown when a document is selected) -->
 		{#if selectedFingerprint}

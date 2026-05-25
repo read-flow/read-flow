@@ -16,15 +16,14 @@ use cosmic::widget::Column;
 use cosmic::widget::Row;
 use cosmic::widget::text;
 use read_flow_core::api::ReadingStatus;
-use read_flow_core::db::datasource::DbClient;
-use read_flow_core::db::models::ContentMetadata;
-use read_flow_core::scan::metadata;
-use read_flow_core::scan::metadata::ExtractedMetadata;
+use read_flow_core::db::models::DocumentType;
+use strum::IntoEnumIterator;
 
 use crate::ApplicationModule;
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::aggregator::DocumentSource;
+use crate::aggregator::UserMeta;
 use crate::client::ClientSelector;
 use crate::component::provided_state::ProvidedState;
 use crate::component::provided_state::ProvidedStateMessage;
@@ -42,13 +41,13 @@ use crate::state::LoadedState;
 pub struct DocumentDetails {
     document: Document,
     document_provider: Arc<DocumentProvider>,
-    application_module: Arc<ApplicationModule>,
     all_clients: ProvidedState<Arc<DocumentProvider>, Vec<ClientSelector>>,
     tag_editor: TagEditor<Arc<DocumentProvider>>,
     editing_sources: bool,
     pending_source_deletion: Option<DocumentSource>,
-    format_metadata: Option<ExtractedMetadata>,
-    format_metadata_loading: bool,
+    show_open_picker: bool,
+    editing_user_meta: bool,
+    user_meta_draft: UserMeta,
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +67,8 @@ pub enum DocumentDetailsMessage {
     UpdateReadingStatus(ReadingStatus),
     ReadingStatusUpdated(Result<(), String>),
     OpenDocument,
+    PickOpenSource(String),
+    CancelOpenPicker,
     CopyPath(String),
     ToggleEditSources,
     RequestDeleteSource(DocumentSource),
@@ -78,8 +79,23 @@ pub enum DocumentDetailsMessage {
     AllClients(ProvidedStateMessage<Vec<ClientSelector>>),
     SendToClient(ClientSelector),
     SentToClient(Result<(), String>),
-    LoadFormatMetadata,
-    FormatMetadataLoaded(Result<ExtractedMetadata, String>),
+
+    EditUserMeta,
+    CancelUserMeta,
+    SaveUserMeta,
+    UserMetaSaved(Result<(), String>),
+    UserMetaTitleChanged(String),
+    UserMetaSubtitleChanged(String),
+    UserMetaDocTypeChanged(Option<DocumentType>),
+    UserMetaDescriptionChanged(String),
+    UserMetaAuthorChanged(usize, String),
+    UserMetaAuthorRemoved(usize),
+    UserMetaAuthorAdded,
+    UserMetaLanguageChanged(String),
+    UserMetaPublisherChanged(String),
+    UserMetaIdentifierChanged(String),
+    UserMetaDateChanged(String),
+    UserMetaSubjectChanged(String),
 
     // Message intended for the parent module
     Out(DocumentDetailsOutput),
@@ -95,9 +111,15 @@ impl DocumentDetails {
     pub fn new(
         document: Document,
         document_provider: Arc<DocumentProvider>,
-        application_module: Arc<ApplicationModule>,
+        _application_module: Arc<ApplicationModule>,
     ) -> (Self, Task<Action<DocumentDetailsMessage>>) {
-        let initial_tags = document.metadata.tags.clone();
+        let initial_tags: Vec<String> = document
+            .contents
+            .iter()
+            .flat_map(|c| c.tags.iter().cloned())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
 
         let (tag_editor, tag_editor_task) = TagEditor::new(
             document_provider.clone(),
@@ -109,16 +131,17 @@ impl DocumentDetails {
         );
 
         let (all_clients, init_all_clients) = ProvidedState::new(document_provider.clone());
+        let initial_user_meta = document.user_meta.clone();
         let file_details = DocumentDetails {
             document,
             document_provider,
-            application_module,
             all_clients,
             tag_editor,
             editing_sources: false,
             pending_source_deletion: None,
-            format_metadata: None,
-            format_metadata_loading: false,
+            show_open_picker: false,
+            editing_user_meta: false,
+            user_meta_draft: initial_user_meta,
         };
 
         (
@@ -126,17 +149,25 @@ impl DocumentDetails {
             task::batch([
                 tag_editor_task.map(|action| action.map(DocumentDetailsMessage::TagEditor)),
                 init_all_clients.map(ActionExt::map_into),
-                task::message(DocumentDetailsMessage::LoadFormatMetadata),
             ]),
         )
     }
 
     pub fn display_name(&self) -> String {
-        Path::new(&self.document.sources.iter().next().unwrap().path)
-            .file_stem()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Unknown")
-            .to_string()
+        self.document.user_meta.title.clone().unwrap_or_else(|| {
+            let path = self
+                .document
+                .contents
+                .first()
+                .and_then(|c| c.sources.first())
+                .map(|s| s.path.as_str())
+                .unwrap_or("Unknown");
+            Path::new(path)
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Unknown")
+                .to_string()
+        })
     }
 
     fn add_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
@@ -168,95 +199,201 @@ impl DocumentDetails {
 }
 
 impl DocumentDetails {
-    // Format file size in human-readable format
-    fn format_file_size(&self, size: i64) -> String {
-        const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-        let mut size = size as f64;
-        let mut unit_index = 0;
+    fn user_meta_section_view(&self) -> Element<'_, DocumentDetailsMessage> {
+        let cosmic_theme::Spacing {
+            space_xxs,
+            space_xs,
+            space_s,
+            ..
+        } = theme::active().cosmic().spacing;
 
-        while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-            size /= 1024.0;
-            unit_index += 1;
-        }
-
-        if unit_index == 0 {
-            format!("{} {}", size as i64, UNITS[unit_index])
+        let edit_button = if self.editing_user_meta {
+            Row::new()
+                .spacing(space_s)
+                .push(
+                    widget::button::standard(fl!("document-details-user-meta-save"))
+                        .on_press(DocumentDetailsMessage::SaveUserMeta),
+                )
+                .push(
+                    widget::button::standard(fl!("document-details-user-meta-cancel"))
+                        .on_press(DocumentDetailsMessage::CancelUserMeta),
+                )
         } else {
-            format!("{:.1} {}", size, UNITS[unit_index])
-        }
-    }
+            Row::new().push(
+                widget::button::icon(widget::icon::from_name("edit-symbolic").size(ICON_SIZE))
+                    .on_press(DocumentDetailsMessage::EditUserMeta)
+                    .tooltip(fl!("document-details-user-meta-edit")),
+            )
+        };
 
-    fn format_metadata_section_view(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
-        let meta = self.format_metadata.as_ref()?;
-        let mut section =
-            widget::settings::section().title(fl!("document-details-metadata-section"));
-        let mut has_items = false;
+        let section = widget::settings::section().header(widget::settings::item_row(vec![
+            text::heading(fl!("document-details-user-meta-section")).into(),
+            widget::space::horizontal().into(),
+            edit_button.into(),
+        ]));
 
-        if let Some(val) = &meta.title {
-            section = section.add(
-                widget::settings::item::builder(fl!("document-details-metadata-title"))
-                    .icon(widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE))
-                    .control(text(val)),
-            );
-            has_items = true;
-        }
-        if !meta.authors.is_empty() {
-            section = section.add(
-                widget::settings::item::builder(fl!("document-details-metadata-authors"))
-                    .icon(widget::icon::from_name("system-users-symbolic").size(ICON_SIZE))
-                    .control(text(meta.authors.join(", "))),
-            );
-            has_items = true;
-        }
-        if let Some(val) = &meta.publisher {
-            section = section.add(
-                widget::settings::item::builder(fl!("document-details-metadata-publisher"))
-                    .icon(widget::icon::from_name("x-office-address-book-symbolic").size(ICON_SIZE))
-                    .control(text(val)),
-            );
-            has_items = true;
-        }
-        if let Some(val) = &meta.language {
-            section = section.add(
-                widget::settings::item::builder(fl!("document-details-metadata-language"))
-                    .icon(
-                        widget::icon::from_name("preferences-desktop-locale-symbolic")
-                            .size(ICON_SIZE),
-                    )
-                    .control(text(val)),
-            );
-            has_items = true;
-        }
-        if let Some(val) = &meta.date {
-            section = section.add(
-                widget::settings::item::builder(fl!("document-details-metadata-date"))
-                    .icon(widget::icon::from_name("x-office-calendar-symbolic").size(ICON_SIZE))
-                    .control(text(val)),
-            );
-            has_items = true;
-        }
-        if let Some(val) = &meta.identifier {
-            section = section.add(
-                widget::settings::item::builder(fl!("document-details-metadata-identifier"))
-                    .icon(widget::icon::from_name("dialog-information-symbolic").size(ICON_SIZE))
-                    .control(text(val)),
-            );
-            has_items = true;
-        }
-        if let Some(val) = &meta.subject {
-            section = section.add(
-                widget::settings::item::builder(fl!("document-details-metadata-subject"))
-                    .icon(widget::icon::from_name("edit-find-symbolic").size(ICON_SIZE))
-                    .control(text(val)),
-            );
-            has_items = true;
-        }
-
-        if has_items {
-            Some(section.into())
+        let editing = self.editing_user_meta;
+        let meta = if editing {
+            &self.user_meta_draft
         } else {
-            None
+            &self.document.user_meta
+        };
+
+        // In edit mode: always show a text_input.
+        // In view mode: show a text label only when the value is non-empty, else skip the row.
+        macro_rules! opt_field {
+            ($val:expr, $on_input:expr) => {{
+                let v: &str = $val.as_deref().unwrap_or("");
+                let el: Option<Element<'_, DocumentDetailsMessage>> = if editing {
+                    Some(widget::text_input("", v).on_input($on_input).into())
+                } else if v.is_empty() {
+                    None
+                } else {
+                    Some(text(v.to_owned()).into())
+                };
+                el
+            }};
         }
+
+        // Document type: pick_list in edit mode, text label (or hidden) in view mode.
+        let doc_type_options: Vec<DocumentType> = DocumentType::iter().collect();
+        let type_control: Option<Element<'_, DocumentDetailsMessage>> = if editing {
+            Some(
+                cosmic::iced::widget::pick_list(
+                    doc_type_options,
+                    meta.document_type,
+                    |t: DocumentType| DocumentDetailsMessage::UserMetaDocTypeChanged(Some(t)),
+                )
+                .placeholder(fl!("document-details-user-meta-type-none"))
+                .into(),
+            )
+        } else {
+            meta.document_type
+                .map(|t| -> Element<'_, DocumentDetailsMessage> { text(t.to_string()).into() })
+        };
+
+        // Authors: comma-separated display in view mode, free-text input in edit mode.
+        let authors_control: Option<Element<'_, DocumentDetailsMessage>> = if editing {
+            let draft_authors = self.user_meta_draft.authors.as_deref().unwrap_or(&[]);
+            let mut col = Column::new().spacing(space_xs);
+            for (idx, author) in draft_authors.iter().enumerate() {
+                col = col.push(
+                    Row::new()
+                        .spacing(space_xs)
+                        .align_y(Vertical::Center)
+                        .push(
+                            widget::text_input("", author.as_str())
+                                .on_input(move |v| {
+                                    DocumentDetailsMessage::UserMetaAuthorChanged(idx, v)
+                                })
+                                .width(Length::Fill),
+                        )
+                        .push(
+                            widget::button::icon(
+                                widget::icon::from_name("list-remove-symbolic").size(ICON_SIZE),
+                            )
+                            .on_press(DocumentDetailsMessage::UserMetaAuthorRemoved(idx)),
+                        ),
+                );
+            }
+            col = col.push(
+                widget::button::standard(fl!("document-details-user-meta-authors-add"))
+                    .on_press(DocumentDetailsMessage::UserMetaAuthorAdded),
+            );
+            Some(col.into())
+        } else {
+            match meta.authors.as_deref().filter(|a| !a.is_empty()) {
+                None => None,
+                Some(authors) => {
+                    let items: Vec<Element<'_, DocumentDetailsMessage>> =
+                        authors.iter().map(|a| text(a.as_str()).into()).collect();
+                    Some(Column::new().spacing(space_xxs).extend(items).into())
+                }
+            }
+        };
+
+        // Conditionally add each field row.
+        let mut section = section;
+
+        macro_rules! add_row {
+            ($control:expr, $label:expr, $icon:expr) => {
+                if let Some(control) = $control {
+                    section = section.add(
+                        widget::settings::item::builder($label)
+                            .icon(widget::icon::from_name($icon).size(ICON_SIZE))
+                            .control(control),
+                    );
+                }
+            };
+        }
+
+        add_row!(
+            type_control,
+            fl!("document-details-user-meta-type"),
+            "document-properties-symbolic"
+        );
+        add_row!(
+            opt_field!(meta.title, DocumentDetailsMessage::UserMetaTitleChanged),
+            fl!("document-details-user-meta-title"),
+            "text-x-generic-symbolic"
+        );
+        add_row!(
+            opt_field!(
+                meta.subtitle,
+                DocumentDetailsMessage::UserMetaSubtitleChanged
+            ),
+            fl!("document-details-user-meta-subtitle"),
+            "text-x-generic-symbolic"
+        );
+        add_row!(
+            authors_control,
+            fl!("document-details-user-meta-authors"),
+            "system-users-symbolic"
+        );
+        add_row!(
+            opt_field!(
+                meta.description,
+                DocumentDetailsMessage::UserMetaDescriptionChanged
+            ),
+            fl!("document-details-user-meta-description"),
+            "accessories-text-editor-symbolic"
+        );
+        add_row!(
+            opt_field!(
+                meta.language,
+                DocumentDetailsMessage::UserMetaLanguageChanged
+            ),
+            fl!("document-details-metadata-language"),
+            "preferences-desktop-locale-symbolic"
+        );
+        add_row!(
+            opt_field!(
+                meta.publisher,
+                DocumentDetailsMessage::UserMetaPublisherChanged
+            ),
+            fl!("document-details-metadata-publisher"),
+            "x-office-address-book-symbolic"
+        );
+        add_row!(
+            opt_field!(
+                meta.identifier,
+                DocumentDetailsMessage::UserMetaIdentifierChanged
+            ),
+            fl!("document-details-metadata-identifier"),
+            "dialog-information-symbolic"
+        );
+        add_row!(
+            opt_field!(meta.date, DocumentDetailsMessage::UserMetaDateChanged),
+            fl!("document-details-metadata-date"),
+            "x-office-calendar-symbolic"
+        );
+        add_row!(
+            opt_field!(meta.subject, DocumentDetailsMessage::UserMetaSubjectChanged),
+            fl!("document-details-metadata-subject"),
+            "edit-find-symbolic"
+        );
+
+        section.into()
     }
 
     // Sources sections showing all locations where this document exists
@@ -288,9 +425,14 @@ impl DocumentDetails {
                 edit_button.into(),
             ]));
 
-        // Sort sources to show local first, then remotes
-        let mut sources: Vec<_> = self.document.sources.iter().collect();
-        sources.sort_by(|a, b| match (&a.client, &b.client) {
+        // Collect (content, source) pairs and sort local first, then remotes
+        let mut sources: Vec<_> = self
+            .document
+            .contents
+            .iter()
+            .flat_map(|c| c.sources.iter().map(move |s| (c, s)))
+            .collect();
+        sources.sort_by(|(_, a), (_, b)| match (&a.client, &b.client) {
             (crate::client::ClientSelector::Local, crate::client::ClientSelector::Local) => {
                 a.path.cmp(&b.path)
             }
@@ -299,10 +441,10 @@ impl DocumentDetails {
             (
                 crate::client::ClientSelector::Remote(url_a),
                 crate::client::ClientSelector::Remote(url_b),
-            ) => url_a.cmp(url_b).then(a.path.cmp(&b.path)),
+            ) => url_a.as_str().cmp(url_b.as_str()).then(a.path.cmp(&b.path)),
         });
 
-        for source in &sources {
+        for (content, source) in &sources {
             let (icon_name, source_label) = match &source.client {
                 crate::client::ClientSelector::Local => {
                     ("computer-symbolic", fl!("document-details-source-local"))
@@ -335,6 +477,13 @@ impl DocumentDetails {
                                         .class(theme::Container::Primary)
                                         .padding([2, 6]),
                                 )
+                                .push(
+                                    widget::container(
+                                        text(content.type_.as_str().to_uppercase()).size(12),
+                                    )
+                                    .class(theme::Container::Card)
+                                    .padding([2, 6]),
+                                )
                                 .push(text(filename).width(Length::Fill)),
                         )
                         .push(text(folder).size(12))
@@ -348,10 +497,22 @@ impl DocumentDetails {
                     .tooltip(fl!("document-details-copy-path")),
                 );
 
+            if matches!(source.client, ClientSelector::Local) {
+                source_row = source_row.push(
+                    widget::button::icon(
+                        widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
+                    )
+                    .on_press(DocumentDetailsMessage::PickOpenSource(source.guid.clone()))
+                    .tooltip(fl!("document-details-open-file")),
+                );
+            }
+
             // Show delete button in edit mode for sources where the client has multiple entries
             if self.editing_sources {
-                let client_source_count =
-                    sources.iter().filter(|s| s.client == source.client).count();
+                let client_source_count = sources
+                    .iter()
+                    .filter(|(_, s)| s.client == source.client)
+                    .count();
                 if client_source_count > 1 {
                     source_row = source_row.push(
                         widget::button::icon(
@@ -370,7 +531,7 @@ impl DocumentDetails {
                 sources_section.add(widget::settings::item_row(vec![source_row.into()]));
         }
 
-        if self.document.sources.is_empty() {
+        if sources.is_empty() {
             sources_section = sources_section.add(widget::settings::item_row(vec![
                 text(fl!("document-details-no-sources")).into(),
             ]));
@@ -430,70 +591,22 @@ impl Page for DocumentDetails {
     type Message = DocumentDetailsMessage;
 
     fn view(&self) -> Element<'_, DocumentDetailsMessage> {
-        // Extract filename and folder using std::path
-        let path = Path::new(&self.document.sources.iter().next().unwrap().path);
-
-        // Get filename without extension
-        let filename = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Unknown");
-
-        // Get the folder path
-        let folder = path
-            .parent()
-            .and_then(|parent| parent.to_str())
-            .unwrap_or("");
-
-        // Build settings sections
-        let basic_info_section = widget::settings::section()
-            .title(fl!("document-details-basic-info"))
-            .add(
-                widget::settings::item::builder(fl!("document-details-filename"))
-                    .icon(widget::icon::from_name("document-open-symbolic").size(ICON_SIZE))
-                    .control(text(filename)),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-folder"))
-                    .icon(widget::icon::from_name("folder-symbolic").size(ICON_SIZE))
-                    .control(text(folder)),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-type"))
-                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
-                    .control(text(self.document.metadata.type_.as_str())),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-size"))
-                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
-                    .control(text(
-                        self.format_file_size(self.document.metadata.size.into()),
-                    )),
-            )
-            .add(
-                widget::settings::item::builder(fl!("document-details-status"))
-                    .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
-                    .control(
-                        cosmic::iced::widget::pick_list(
-                            [
-                                ReadingStatus::Unread,
-                                ReadingStatus::Reading,
-                                ReadingStatus::Read,
-                            ],
-                            Some(self.document.metadata.status),
-                            DocumentDetailsMessage::UpdateReadingStatus,
-                        )
-                        .placeholder(fl!("document-details-select-status")),
-                    ),
-            );
-
-        let technical_section = widget::settings::section()
-            .title(fl!("document-details-technical"))
-            .add(
-                widget::settings::item::builder(fl!("document-details-fingerprint"))
-                    .icon(widget::icon::from_name("auth-fingerprint-symbolic").size(ICON_SIZE))
-                    .control(text(&self.document.metadata.fingerprint)),
-            );
+        let status_section = widget::settings::section().add(
+            widget::settings::item::builder(fl!("document-details-status"))
+                .icon(widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE))
+                .control(
+                    cosmic::iced::widget::pick_list(
+                        [
+                            ReadingStatus::Unread,
+                            ReadingStatus::Reading,
+                            ReadingStatus::Read,
+                        ],
+                        self.document.contents.first().map(|c| c.status),
+                        DocumentDetailsMessage::UpdateReadingStatus,
+                    )
+                    .placeholder(fl!("document-details-select-status")),
+                ),
+        );
 
         let tags_section = widget::settings::section()
             .title(fl!("document-details-tags"))
@@ -511,11 +624,7 @@ impl Page for DocumentDetails {
 
         // Main layout using settings view_column
         let mut sections: Vec<Element<'_, DocumentDetailsMessage>> =
-            vec![basic_info_section.into()];
-        if let Some(meta_section) = self.format_metadata_section_view() {
-            sections.push(meta_section);
-        }
-        sections.push(technical_section.into());
+            vec![status_section.into(), self.user_meta_section_view()];
         sections.push(tags_section.into());
         sections.extend(self.sources_view());
 
@@ -534,44 +643,56 @@ impl Page for DocumentDetails {
     }
 
     fn dialog(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
+        if let Some(source) = &self.pending_source_deletion {
+            return Some(crate::component::confirm_dialog::confirm_delete_dialog(
+                fl!("document-details-delete-source-confirm-title"),
+                fl!("document-details-delete-source-confirm-body"),
+                &source.path,
+                fl!("document-details-delete-source-confirm-delete"),
+                fl!("document-details-delete-source-confirm-cancel"),
+                DocumentDetailsMessage::ConfirmDeleteSource,
+                DocumentDetailsMessage::CancelDeleteSource,
+            ));
+        }
 
-        let source = self.pending_source_deletion.as_ref()?;
-        Some(
-            widget::dialog()
-                .title(fl!("document-details-delete-source-confirm-title"))
-                .body(fl!("document-details-delete-source-confirm-body"))
-                .icon(widget::icon::from_name("dialog-warning-symbolic").size(64))
-                .control(
-                    widget::text::monotext(&source.path)
-                        .apply(widget::container)
-                        .class(theme::Container::Card)
-                        .padding(space_s)
-                        .width(Length::Fill),
-                )
-                .primary_action(
-                    widget::button::destructive(fl!(
-                        "document-details-delete-source-confirm-delete"
-                    ))
-                    .on_press(DocumentDetailsMessage::ConfirmDeleteSource),
-                )
-                .secondary_action(
-                    widget::button::standard(fl!("document-details-delete-source-confirm-cancel"))
-                        .on_press(DocumentDetailsMessage::CancelDeleteSource),
-                )
-                .into(),
-        )
+        if self.show_open_picker {
+            let local_sources: Vec<_> = self
+                .document
+                .contents
+                .iter()
+                .flat_map(|c| c.sources.iter().map(move |s| (c, s)))
+                .filter(|(_, s)| matches!(s.client, ClientSelector::Local))
+                .collect();
+
+            return Some(crate::component::source_picker::source_picker_dialog(
+                fl!("document-details-open-file"),
+                None,
+                local_sources,
+                DocumentDetailsMessage::PickOpenSource,
+                DocumentDetailsMessage::CancelOpenPicker,
+            ));
+        }
+
+        None
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
-        let filename_without_extension =
-            Path::new(&self.document.sources.iter().next().unwrap().path)
+        let first_path = self
+            .document
+            .contents
+            .first()
+            .and_then(|c| c.sources.first())
+            .map(|s| s.path.as_str())
+            .unwrap_or("Unknown");
+        let header_title = self.document.user_meta.title.as_deref().unwrap_or_else(|| {
+            Path::new(first_path)
                 .file_stem()
                 .and_then(|name| name.to_str())
-                .unwrap_or("Unknown");
+                .unwrap_or("Unknown")
+        });
 
         vec![
-            text::heading(filename_without_extension)
+            text::heading(header_title)
                 .wrapping(cosmic::iced::widget::text::Wrapping::None)
                 .into(),
         ]
@@ -581,7 +702,7 @@ impl Page for DocumentDetails {
         vec![
             widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
                 .on_press(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
-                    self.document.metadata.fingerprint.clone(),
+                    self.document.document_guid.clone(),
                 )))
                 .tooltip(fl!("document-details-close"))
                 .into(),
@@ -589,14 +710,22 @@ impl Page for DocumentDetails {
     }
 
     fn view_header_end(&self) -> Vec<Element<'_, DocumentDetailsMessage>> {
-        vec![
-            widget::button::icon(
-                widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
-            )
-            .on_press(DocumentDetailsMessage::OpenDocument)
-            .tooltip(fl!("document-details-open-file"))
-            .into(),
-        ]
+        let has_local = self
+            .document
+            .contents
+            .iter()
+            .flat_map(|c| c.sources.iter())
+            .any(|s| matches!(s.client, ClientSelector::Local));
+        let btn = widget::button::icon(
+            widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
+        )
+        .tooltip(fl!("document-details-open-file"));
+        let btn = if has_local {
+            btn.on_press(DocumentDetailsMessage::OpenDocument)
+        } else {
+            btn
+        };
+        vec![btn.into()]
     }
 
     fn update(&mut self, message: DocumentDetailsMessage) -> Task<Action<DocumentDetailsMessage>> {
@@ -624,7 +753,9 @@ impl Page for DocumentDetails {
             }
             DocumentDetailsMessage::UpdateReadingStatus(status) => {
                 let mut updated_document = self.document.clone();
-                updated_document.metadata.status = status;
+                for content in &mut updated_document.contents {
+                    content.status = status;
+                }
                 let document_provider = self.document_provider.clone();
 
                 task::future(async move {
@@ -647,9 +778,46 @@ impl Page for DocumentDetails {
                     }
                 }
             }
-            DocumentDetailsMessage::OpenDocument => task::message(DocumentDetailsMessage::Out(
-                DocumentDetailsOutput::OpenDocument(self.document.clone()),
-            )),
+            DocumentDetailsMessage::OpenDocument => {
+                let local_sources: Vec<_> = self
+                    .document
+                    .contents
+                    .iter()
+                    .flat_map(|c| c.sources.iter())
+                    .filter(|s| matches!(s.client, ClientSelector::Local))
+                    .collect();
+                match local_sources.len() {
+                    0 => Task::none(),
+                    1 => {
+                        if let Some(single) = self.document.with_source_guid(&local_sources[0].guid)
+                        {
+                            task::message(DocumentDetailsMessage::Out(
+                                DocumentDetailsOutput::OpenDocument(single),
+                            ))
+                        } else {
+                            Task::none()
+                        }
+                    }
+                    _ => {
+                        self.show_open_picker = true;
+                        Task::none()
+                    }
+                }
+            }
+            DocumentDetailsMessage::PickOpenSource(guid) => {
+                self.show_open_picker = false;
+                if let Some(single) = self.document.with_source_guid(&guid) {
+                    task::message(DocumentDetailsMessage::Out(
+                        DocumentDetailsOutput::OpenDocument(single),
+                    ))
+                } else {
+                    Task::none()
+                }
+            }
+            DocumentDetailsMessage::CancelOpenPicker => {
+                self.show_open_picker = false;
+                Task::none()
+            }
             DocumentDetailsMessage::TagsAdded(result) => {
                 match result {
                     Ok(_tags) => {
@@ -675,12 +843,12 @@ impl Page for DocumentDetails {
                 task::none()
             }
             DocumentDetailsMessage::RefreshDocument => {
-                let fingerprint = self.document.metadata.fingerprint.clone();
+                let document_guid = self.document.document_guid.clone();
                 let document_provider = self.document_provider.clone();
 
                 task::future(async move {
                     let result = document_provider
-                        .get_document(&fingerprint)
+                        .get_document(&document_guid)
                         .await
                         .map_err(|err| format!("{err}"))
                         .and_then(|document| {
@@ -695,9 +863,16 @@ impl Page for DocumentDetails {
                 Ok(document) => {
                     self.document = document.clone();
                     // Update the tag editor with the new tags
+                    let new_tags: Vec<String> = document
+                        .contents
+                        .iter()
+                        .flat_map(|c| c.tags.iter().cloned())
+                        .collect::<std::collections::HashSet<_>>()
+                        .into_iter()
+                        .collect();
                     let set_tags_task = self
                         .tag_editor
-                        .update(TagEditorMessage::SetTags(document.metadata.tags.clone()))
+                        .update(TagEditorMessage::SetTags(new_tags))
                         .map(|action| action.map(DocumentDetailsMessage::TagEditor));
                     task::batch(vec![
                         set_tags_task,
@@ -754,15 +929,24 @@ impl Page for DocumentDetails {
                 Task::none()
             }
             DocumentDetailsMessage::DeleteSource(source) => {
-                let metadata = self.document.metadata.clone();
-                let document_provider = self.document_provider.clone();
-                task::future(async move {
-                    let result = document_provider
-                        .delete_document_source(source, metadata)
-                        .await
-                        .map_err(|err| format!("{err}"));
-                    DocumentDetailsMessage::SourceDeleted(result)
-                })
+                let content = self
+                    .document
+                    .contents
+                    .iter()
+                    .find(|c| c.sources.iter().any(|s| s.guid == source.guid))
+                    .cloned();
+                if let Some(content) = content {
+                    let document_provider = self.document_provider.clone();
+                    task::future(async move {
+                        let result = document_provider
+                            .delete_document_source(source, content)
+                            .await
+                            .map_err(|err| format!("{err}"));
+                        DocumentDetailsMessage::SourceDeleted(result)
+                    })
+                } else {
+                    Task::none()
+                }
             }
             DocumentDetailsMessage::SourceDeleted(result) => match result {
                 Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),
@@ -771,56 +955,104 @@ impl Page for DocumentDetails {
                     Task::none()
                 }
             },
-            DocumentDetailsMessage::LoadFormatMetadata => {
-                if self.format_metadata_loading {
-                    return Task::none();
-                }
-                self.format_metadata_loading = true;
-                let fingerprint = self.document.metadata.fingerprint.clone();
-                let type_ = self.document.metadata.type_.clone();
-                let path = self.document.sources.iter().next().unwrap().path.clone();
-                let application_module = self.application_module.clone();
-                Task::perform(
-                    async move {
-                        let pool = application_module.connection_pool().await;
-                        let db_client = DbClient::new(pool);
-                        if let Ok(Some(row)) = db_client.get_content_metadata(&fingerprint).await {
-                            return Ok(content_metadata_to_extracted(row));
-                        }
-                        let ext = type_.as_str().to_owned();
-                        tokio::task::spawn_blocking(move || {
-                            metadata::extract_metadata(std::path::Path::new(&path), &ext)
-                                .ok_or_else(|| "unsupported format".to_string())
-                        })
-                        .await
-                        .unwrap_or_else(|_| Err("task panicked".to_string()))
-                    },
-                    |r| cosmic::action::app(DocumentDetailsMessage::FormatMetadataLoaded(r)),
-                )
+            DocumentDetailsMessage::EditUserMeta => {
+                self.user_meta_draft = self.document.user_meta.clone();
+                self.editing_user_meta = true;
+                Task::none()
             }
-            DocumentDetailsMessage::FormatMetadataLoaded(result) => {
-                self.format_metadata_loading = false;
-                match result {
-                    Ok(meta) => self.format_metadata = Some(meta),
-                    Err(err) => tracing::warn!("Failed to load format metadata: {err}"),
+            DocumentDetailsMessage::CancelUserMeta => {
+                self.editing_user_meta = false;
+                Task::none()
+            }
+            DocumentDetailsMessage::SaveUserMeta => {
+                // Drop empty author entries before saving.
+                if let Some(authors) = &mut self.user_meta_draft.authors {
+                    authors.retain(|a| !a.trim().is_empty());
+                    if authors.is_empty() {
+                        self.user_meta_draft.authors = None;
+                    }
+                }
+                let draft = self.user_meta_draft.clone();
+                let document = self.document.clone();
+                let document_provider = self.document_provider.clone();
+                self.editing_user_meta = false;
+                task::future(async move {
+                    let result = document_provider
+                        .update_document_metadata(&document, draft)
+                        .await
+                        .map_err(|e| format!("{e}"));
+                    DocumentDetailsMessage::UserMetaSaved(result)
+                })
+            }
+            DocumentDetailsMessage::UserMetaSaved(result) => match result {
+                Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),
+                Err(err) => {
+                    tracing::error!("Failed to save document metadata: {err}");
+                    Task::none()
+                }
+            },
+            DocumentDetailsMessage::UserMetaTitleChanged(val) => {
+                self.user_meta_draft.title = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaSubtitleChanged(val) => {
+                self.user_meta_draft.subtitle = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaDocTypeChanged(val) => {
+                self.user_meta_draft.document_type = val;
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaDescriptionChanged(val) => {
+                self.user_meta_draft.description = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaAuthorChanged(idx, val) => {
+                if let Some(authors) = &mut self.user_meta_draft.authors
+                    && let Some(author) = authors.get_mut(idx)
+                {
+                    *author = val;
                 }
                 Task::none()
             }
+            DocumentDetailsMessage::UserMetaAuthorRemoved(idx) => {
+                if let Some(authors) = &mut self.user_meta_draft.authors {
+                    if idx < authors.len() {
+                        authors.remove(idx);
+                    }
+                    if authors.is_empty() {
+                        self.user_meta_draft.authors = None;
+                    }
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaAuthorAdded => {
+                self.user_meta_draft
+                    .authors
+                    .get_or_insert_with(Vec::new)
+                    .push(String::new());
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaLanguageChanged(val) => {
+                self.user_meta_draft.language = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaPublisherChanged(val) => {
+                self.user_meta_draft.publisher = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaIdentifierChanged(val) => {
+                self.user_meta_draft.identifier = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaDateChanged(val) => {
+                self.user_meta_draft.date = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
+            DocumentDetailsMessage::UserMetaSubjectChanged(val) => {
+                self.user_meta_draft.subject = if val.is_empty() { None } else { Some(val) };
+                Task::none()
+            }
         }
-    }
-}
-
-fn content_metadata_to_extracted(row: ContentMetadata) -> ExtractedMetadata {
-    ExtractedMetadata {
-        title: row.title,
-        authors: row
-            .authors
-            .map(|s| s.split(", ").map(str::to_owned).collect())
-            .unwrap_or_default(),
-        language: row.language,
-        publisher: row.publisher,
-        identifier: row.identifier,
-        date: row.date,
-        subject: row.subject,
     }
 }

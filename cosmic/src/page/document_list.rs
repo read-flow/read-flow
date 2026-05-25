@@ -40,9 +40,11 @@ use crate::component::tag_editor::TagEditorOutput;
 use crate::component::tag_filter::TagFilter;
 use crate::component::tag_filter::TagFilterMessage;
 use crate::component::tag_filter::TagFilterOutput;
+use crate::component::tag_pill_filter;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
+use crate::layout::layout;
 use crate::page::Page;
 use crate::state::filtered::Filtered;
 
@@ -79,6 +81,7 @@ fn load_document_list_prefs() -> (SortSubject, SortDirection, SearchMode) {
     };
     let sort_subject = if let Ok(s) = ctx.get::<String>(KEY_SORT_SUBJECT) {
         match s.as_str() {
+            "title" => SortSubject::Title,
             "size" => SortSubject::Size,
             "type" => SortSubject::Type,
             "status" => SortSubject::Status,
@@ -116,6 +119,7 @@ fn save_document_list_prefs(
     };
     let subject_str = match sort_subject {
         SortSubject::Filename => "filename",
+        SortSubject::Title => "title",
         SortSubject::Size => "size",
         SortSubject::Type => "type",
         SortSubject::Status => "status",
@@ -138,19 +142,27 @@ fn save_document_list_prefs(
 pub enum SortSubject {
     #[default]
     Filename,
+    Title,
     Size,
     Type,
     Status,
 }
 
 impl SortSubject {
-    pub const ALL: &'static [Self] = &[Self::Filename, Self::Size, Self::Type, Self::Status];
+    pub const ALL: &'static [Self] = &[
+        Self::Filename,
+        Self::Title,
+        Self::Size,
+        Self::Type,
+        Self::Status,
+    ];
 }
 
 impl fmt::Display for SortSubject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let label = match self {
             Self::Filename => fl!("document-list-sort-filename"),
+            Self::Title => fl!("document-list-sort-title"),
             Self::Size => fl!("document-list-sort-size"),
             Self::Type => fl!("document-list-sort-type"),
             Self::Status => fl!("document-list-sort-status"),
@@ -176,6 +188,13 @@ impl SortDirection {
     }
 }
 
+/// State for the merge-documents dialog.
+struct MergeDialogState {
+    candidates: Vec<Document>,
+    /// Index into `candidates` for the chosen winner.
+    winner_index: Option<usize>,
+}
+
 pub struct DocumentList {
     pub(super) document_provider: Arc<DocumentProvider>,
     archive: DocumentsComponent,
@@ -191,6 +210,8 @@ pub struct DocumentList {
     tag_filter: TagFilter<Arc<DocumentProvider>>, // Tag Filter component
     source_filter: Option<ClientSelector>, // Optional source filter
     available_sources: Vec<ClientSelector>, // Available sources for filtering
+    pending_format_pick: Option<Document>, // Document awaiting format selection
+    merge_dialog: Option<MergeDialogState>, // Merge dialog state
 }
 
 #[derive(Debug, Clone)]
@@ -223,6 +244,13 @@ pub enum DocumentListMessage {
     TagFilter(TagFilterMessage),
     DocumentsComponent(DocumentsMessage),
     SetAvailableSources(Vec<ClientSelector>),
+    PickDocumentSource(String),
+    CancelFormatPick,
+    OpenMergeDialog,
+    MergeWinnerSelected(usize),
+    ConfirmMerge,
+    CancelMerge,
+    MergeCompleted(Result<(), String>),
     Out(DocumentListOutput),
 }
 
@@ -255,39 +283,21 @@ impl DocumentList {
     /// Start background filtering task (called after debounce timeout)
     fn start_background_filtering(
         &self,
-        query: String,
-        search_mode: SearchMode,
-        status_filter: Option<ReadingStatus>,
-        source_filter: Option<ClientSelector>,
-        allow_tags: HashSet<String>,
-        deny_tags: HashSet<String>,
+        criteria: FilterCriteria,
         all_files: Vec<Document>,
     ) -> Task<Action<DocumentListMessage>> {
         task::future(async move {
-            // Compile regex once if in regex mode (not per-document)
-            let compiled_regex = if search_mode == SearchMode::Regex && !query.is_empty() {
-                Regex::new(&query).ok()
-            } else {
-                None
-            };
-
-            // Perform filtering in background after debounce timeout
-            // This runs only when user has paused typing for 250ms
+            let compiled_regex =
+                if criteria.search_mode == SearchMode::Regex && !criteria.query.is_empty() {
+                    Regex::new(&criteria.query).ok()
+                } else {
+                    None
+                };
             let filtered_files = all_files
                 .iter()
                 .enumerate()
                 .filter_map(|(index, file)| {
-                    filter_document(
-                        &query,
-                        search_mode,
-                        compiled_regex.as_ref(),
-                        status_filter,
-                        source_filter.as_ref(),
-                        &allow_tags,
-                        &deny_tags,
-                        &file,
-                    )
-                    .then_some(index)
+                    filter_document(&criteria, compiled_regex.as_ref(), &file).then_some(index)
                 })
                 .collect();
 
@@ -320,6 +330,8 @@ impl DocumentList {
                 tag_filter,
                 source_filter: None,
                 available_sources: Default::default(),
+                pending_format_pick: None,
+                merge_dialog: None,
             },
             Task::batch(vec![
                 tag_filter_init.map(ActionExt::map_into),
@@ -375,12 +387,14 @@ impl DocumentList {
         if self.archive.is_loaded() && !self.is_filtering {
             self.is_filtering = true;
             self.start_background_filtering(
-                self.search_query.clone(),
-                self.search_mode,
-                self.status_filter,
-                self.source_filter.clone(),
-                self.tag_filter.allow_tags.clone(),
-                self.tag_filter.deny_tags.clone(),
+                FilterCriteria {
+                    query: self.search_query.clone(),
+                    search_mode: self.search_mode,
+                    status_filter: self.status_filter,
+                    source_filter: self.source_filter.clone(),
+                    allow_tags: self.tag_filter.allow_tags.clone(),
+                    deny_tags: self.tag_filter.deny_tags.clone(),
+                },
                 self.archive.unfiltered().to_vec(),
             )
         } else {
@@ -403,7 +417,65 @@ impl DocumentList {
     }
 }
 
-/// Sort documents based on the selected sort option
+impl DocumentList {
+    fn view_merge_dialog(&self, dialog: &MergeDialogState) -> Element<'_, DocumentListMessage> {
+        use cosmic::cosmic_theme::Spacing;
+        use cosmic::theme;
+
+        let Spacing { space_s, .. } = theme::active().cosmic().spacing;
+
+        let candidate_rows: Vec<Element<'_, DocumentListMessage>> = dialog
+            .candidates
+            .iter()
+            .enumerate()
+            .map(|(idx, doc)| {
+                let label = doc
+                    .user_meta
+                    .title
+                    .as_deref()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| {
+                        doc.local_or_any_source()
+                            .and_then(|(_, s)| std::path::Path::new(&s.path).file_name()?.to_str())
+                            .unwrap_or("")
+                            .to_owned()
+                    });
+                widget::settings::item_row(vec![])
+                    .push(widget::radio(
+                        widget::text::body(label),
+                        idx,
+                        dialog.winner_index,
+                        DocumentListMessage::MergeWinnerSelected,
+                    ))
+                    .into()
+            })
+            .collect();
+
+        let controls = widget::column::with_children(candidate_rows)
+            .spacing(space_s)
+            .apply(widget::container)
+            .class(theme::Container::Card)
+            .padding(space_s)
+            .width(iced::Length::Fill);
+
+        let merge_btn = cosmic::widget::button::suggested(fl!("document-list-merge-confirm"))
+            .apply_maybe(dialog.winner_index.is_some().then_some(()), |btn, _| {
+                btn.on_press(DocumentListMessage::ConfirmMerge)
+            });
+
+        cosmic::widget::dialog()
+            .title(fl!("document-list-merge-title"))
+            .body(fl!("document-list-merge-body"))
+            .control(controls)
+            .primary_action(merge_btn)
+            .secondary_action(
+                cosmic::widget::button::standard(fl!("document-list-merge-cancel"))
+                    .on_press(DocumentListMessage::CancelMerge),
+            )
+            .into()
+    }
+}
+
 fn shortcut_item(key: &str, description: String) -> Element<'_, DocumentListMessage> {
     widget::settings::item::builder(description)
         .control(widget::text::monotext(key))
@@ -429,10 +501,31 @@ fn compare_documents(
         SortSubject::Filename => get_filename(a)
             .to_lowercase()
             .cmp(&get_filename(b).to_lowercase()),
-        SortSubject::Size => a.metadata.size.cmp(&b.metadata.size),
-        SortSubject::Type => a.metadata.type_.as_str().cmp(b.metadata.type_.as_str()),
+        SortSubject::Title => get_display_title(a)
+            .to_lowercase()
+            .cmp(&get_display_title(b).to_lowercase()),
+        SortSubject::Size => {
+            let a_size = a.contents.first().map(|c| c.size).unwrap_or(0);
+            let b_size = b.contents.first().map(|c| c.size).unwrap_or(0);
+            a_size.cmp(&b_size)
+        }
+        SortSubject::Type => {
+            let a_type = a.contents.first().map(|c| c.type_.as_str()).unwrap_or("");
+            let b_type = b.contents.first().map(|c| c.type_.as_str()).unwrap_or("");
+            a_type.cmp(b_type)
+        }
         SortSubject::Status => {
-            status_order(&a.metadata.status).cmp(&status_order(&b.metadata.status))
+            let a_status = a
+                .contents
+                .first()
+                .map(|c| c.status)
+                .unwrap_or(ReadingStatus::Unread);
+            let b_status = b
+                .contents
+                .first()
+                .map(|c| c.status)
+                .unwrap_or(ReadingStatus::Unread);
+            status_order(&a_status).cmp(&status_order(&b_status))
         }
     };
 
@@ -444,8 +537,19 @@ fn compare_documents(
 
 /// Get the filename from a document (uses local source if available, otherwise any source)
 fn get_filename(doc: &Document) -> &str {
-    let source = doc.local_or_any_source();
-    source.path.rsplit('/').next().unwrap_or(&source.path)
+    if let Some((_, source)) = doc.local_or_any_source() {
+        source.path.rsplit('/').next().unwrap_or(&source.path)
+    } else {
+        ""
+    }
+}
+
+/// Get the display title: user-edited title if set, otherwise the filename.
+fn get_display_title(doc: &Document) -> &str {
+    doc.user_meta
+        .title
+        .as_deref()
+        .unwrap_or_else(|| get_filename(doc))
 }
 
 /// Convert reading status to a sortable order (Unread=0, Reading=1, Read=2)
@@ -478,17 +582,33 @@ fn fuzzy_match(query: &str, text: &str) -> bool {
     true
 }
 
-fn filter_document(
-    search_query: &str,
+struct FilterCriteria {
+    query: String,
     search_mode: SearchMode,
-    compiled_regex: Option<&Regex>,
     status_filter: Option<ReadingStatus>,
-    source_filter: Option<&ClientSelector>,
-    allow_tags: &HashSet<String>,
-    deny_tags: &HashSet<String>,
+    source_filter: Option<ClientSelector>,
+    allow_tags: HashSet<String>,
+    deny_tags: HashSet<String>,
+}
+
+fn filter_document(
+    criteria: &FilterCriteria,
+    compiled_regex: Option<&Regex>,
     document: &&Document,
 ) -> bool {
-    // Filter by search query
+    let search_query = criteria.query.as_str();
+    let search_mode = criteria.search_mode;
+    let status_filter = criteria.status_filter;
+    let source_filter = criteria.source_filter.as_ref();
+    let allow_tags = &criteria.allow_tags;
+    let deny_tags = &criteria.deny_tags;
+
+    let all_tags: Vec<String> = document
+        .contents
+        .iter()
+        .flat_map(|c| c.tags.iter().cloned())
+        .collect();
+
     let matches_search = if search_query.is_empty() {
         true
     } else {
@@ -496,22 +616,50 @@ fn filter_document(
             SearchMode::Fuzzy => {
                 let query = search_query.to_lowercase();
                 let path_matches = document
-                    .sources
+                    .contents
                     .iter()
+                    .flat_map(|c| c.sources.iter())
                     .map(|source| source.path.to_lowercase())
                     .filter(|path| fuzzy_match(&query, path))
                     .count();
-                let tags_lower = document.metadata.tags.join(" ").to_lowercase();
-                path_matches > 0 || fuzzy_match(&query, &tags_lower)
+                let tags_lower = all_tags.join(" ").to_lowercase();
+                let title_lower = document
+                    .user_meta
+                    .title
+                    .as_deref()
+                    .unwrap_or("")
+                    .to_lowercase();
+                let authors_lower = document
+                    .user_meta
+                    .authors
+                    .as_deref()
+                    .unwrap_or(&[])
+                    .join(" ")
+                    .to_lowercase();
+                path_matches > 0
+                    || fuzzy_match(&query, &tags_lower)
+                    || fuzzy_match(&query, &title_lower)
+                    || fuzzy_match(&query, &authors_lower)
             }
             SearchMode::Regex => {
                 if let Some(re) = compiled_regex {
                     let path_matches = document
-                        .sources
+                        .contents
                         .iter()
+                        .flat_map(|c| c.sources.iter())
                         .any(|source| re.is_match(&source.path));
-                    let tags = document.metadata.tags.join(" ");
-                    path_matches || re.is_match(&tags)
+                    let tags = all_tags.join(" ");
+                    let title = document.user_meta.title.as_deref().unwrap_or("");
+                    let authors = document
+                        .user_meta
+                        .authors
+                        .as_deref()
+                        .unwrap_or(&[])
+                        .join(" ");
+                    path_matches
+                        || re.is_match(&tags)
+                        || re.is_match(title)
+                        || re.is_match(&authors)
                 } else {
                     // Invalid or empty regex: show all results
                     true
@@ -520,30 +668,26 @@ fn filter_document(
         }
     };
 
-    // Filter by reading status
-    let matches_status = status_filter.is_none_or(|status| document.metadata.status == status);
+    // Filter by reading status (match any content's status)
+    let matches_status =
+        status_filter.is_none_or(|status| document.contents.iter().any(|c| c.status == status));
 
     // Filter by source (document must exist on the selected source)
     let matches_source = source_filter.is_none_or(|source| {
         document
-            .sources
+            .contents
             .iter()
+            .flat_map(|c| c.sources.iter())
             .any(|doc_source| &doc_source.client == source)
     });
 
     // Filter by allowed tags (file must have ALL allowed tags)
-    let matches_allow_tags = allow_tags.is_empty()
-        || allow_tags
-            .iter()
-            .all(|tag| document.metadata.tags.contains(tag));
+    let matches_allow_tags =
+        allow_tags.is_empty() || allow_tags.iter().all(|tag| all_tags.contains(tag));
 
     // Filter by denied tags (file must have NONE of the denied tags)
-    let matches_deny_tags = deny_tags.is_empty()
-        || !document
-            .metadata
-            .tags
-            .iter()
-            .any(|tag| deny_tags.contains(tag));
+    let matches_deny_tags =
+        deny_tags.is_empty() || !all_tags.iter().any(|tag| deny_tags.contains(tag));
 
     matches_search && matches_status && matches_source && matches_allow_tags && matches_deny_tags
 }
@@ -551,14 +695,58 @@ fn filter_document(
 impl Page for DocumentList {
     type Message = DocumentListMessage;
 
+    fn dialog(&self) -> Option<Element<'_, DocumentListMessage>> {
+        if let Some(dialog) = &self.merge_dialog {
+            return Some(self.view_merge_dialog(dialog));
+        }
+
+        let document = self.pending_format_pick.as_ref()?;
+
+        let title = document.user_meta.title.clone().unwrap_or_else(|| {
+            document
+                .local_or_any_source()
+                .and_then(|(_, s)| std::path::Path::new(&s.path).file_stem()?.to_str())
+                .unwrap_or("")
+                .to_owned()
+        });
+
+        let mut sources = document.sources_by_priority();
+        sources.sort_by(|(ac, as_), (bc, bs)| {
+            ac.type_
+                .as_str()
+                .cmp(bc.type_.as_str())
+                .then_with(|| as_.client.is_local().cmp(&bs.client.is_local()))
+        });
+
+        Some(crate::component::source_picker::source_picker_dialog(
+            fl!("document-list-pick-source-title"),
+            Some(title),
+            sources,
+            DocumentListMessage::PickDocumentSource,
+            DocumentListMessage::CancelFormatPick,
+        ))
+    }
+
     fn view(&self) -> Element<'_, DocumentListMessage> {
-        self.archive
-            .view()
-            .map(Into::into)
-            .apply(widget::scrollable::vertical)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        let tag_bar = tag_pill_filter::view(
+            self.tag_filter.all_tags(),
+            &self.tag_filter.allow_tags,
+            &self.tag_filter.deny_tags,
+        )
+        .map(Into::into);
+
+        widget::column::with_children(vec![
+            layout(tag_bar),
+            self.archive
+                .view()
+                .map(Into::into)
+                .apply(widget::scrollable::vertical)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
+        ])
+        .height(Length::Fill)
+        .into()
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, DocumentListMessage>> {
@@ -731,26 +919,22 @@ impl Page for DocumentList {
                 let mut documents: Vec<Document> = files.into_iter().collect();
                 // Sort documents
                 sort_documents(&mut documents, self.sort_subject, self.sort_direction);
-                let search_mode = self.search_mode;
+                let criteria = FilterCriteria {
+                    query: self.search_query.clone(),
+                    search_mode: self.search_mode,
+                    status_filter: self.status_filter,
+                    source_filter: self.source_filter.clone(),
+                    allow_tags: self.tag_filter.allow_tags.clone(),
+                    deny_tags: self.tag_filter.deny_tags.clone(),
+                };
                 let compiled_regex =
-                    if search_mode == SearchMode::Regex && !self.search_query.is_empty() {
-                        Regex::new(&self.search_query).ok()
+                    if criteria.search_mode == SearchMode::Regex && !criteria.query.is_empty() {
+                        Regex::new(&criteria.query).ok()
                     } else {
                         None
                     };
                 let mut files = Filtered::new(documents);
-                files.filter(|file| {
-                    filter_document(
-                        &self.search_query,
-                        search_mode,
-                        compiled_regex.as_ref(),
-                        self.status_filter,
-                        self.source_filter.as_ref(),
-                        &self.tag_filter.allow_tags,
-                        &self.tag_filter.deny_tags,
-                        &file,
-                    )
-                });
+                files.filter(|file| filter_document(&criteria, compiled_regex.as_ref(), &file));
 
                 let collection_size = files.filtered_len();
                 Task::batch([
@@ -772,12 +956,9 @@ impl Page for DocumentList {
                 .set_document_state(DocumentState::Failed(error))
                 .map(ActionExt::map_into),
             DocumentListMessage::RefreshDocument(document) => {
-                let document_fingerprint = document.metadata.fingerprint.clone();
+                let document_guid = document.document_guid.clone();
                 self.archive
-                    .update_item(
-                        move |doc| doc.metadata.fingerprint == document_fingerprint,
-                        document,
-                    )
+                    .update_item(move |doc| doc.document_guid == document_guid, document)
                     .map(ActionExt::map_into)
             }
             DocumentListMessage::SearchChanged(query) => {
@@ -824,12 +1005,14 @@ impl Page for DocumentList {
                 {
                     self.is_filtering = true;
                     Task::batch(vec![self.start_background_filtering(
-                        query,
-                        self.search_mode,
-                        self.status_filter,
-                        self.source_filter.clone(),
-                        self.tag_filter.allow_tags.clone(),
-                        self.tag_filter.deny_tags.clone(),
+                        FilterCriteria {
+                            query,
+                            search_mode: self.search_mode,
+                            status_filter: self.status_filter,
+                            source_filter: self.source_filter.clone(),
+                            allow_tags: self.tag_filter.allow_tags.clone(),
+                            deny_tags: self.tag_filter.deny_tags.clone(),
+                        },
                         self.archive.unfiltered().to_vec(),
                     )])
                 } else {
@@ -929,11 +1112,18 @@ impl Page for DocumentList {
                     DocumentsOutput::OpenDocument(document) => task::message(
                         DocumentListMessage::Out(DocumentListOutput::OpenDocument(document)),
                     ),
+                    DocumentsOutput::PickFormat(document) => {
+                        self.pending_format_pick = Some(document);
+                        Task::none()
+                    }
                     DocumentsOutput::NavigateToSettings => task::message(DocumentListMessage::Out(
                         DocumentListOutput::NavigateToSettings,
                     )),
                     DocumentsOutput::Scan => {
                         task::message(DocumentListMessage::Out(DocumentListOutput::Scan))
+                    }
+                    DocumentsOutput::MergeDocuments => {
+                        task::message(DocumentListMessage::OpenMergeDialog)
                     }
                 },
                 msg => self.archive.update(msg).map(ActionExt::map_into),
@@ -951,6 +1141,68 @@ impl Page for DocumentList {
                 } else {
                     Task::none()
                 }
+            }
+            DocumentListMessage::PickDocumentSource(guid) => {
+                if let Some(doc) = self.pending_format_pick.take()
+                    && let Some(single) = doc.with_source_guid(&guid)
+                {
+                    return task::message(DocumentListMessage::Out(
+                        DocumentListOutput::OpenDocument(single),
+                    ));
+                }
+                Task::none()
+            }
+            DocumentListMessage::OpenMergeDialog => {
+                let candidates = self.archive.get_selected_documents();
+                if candidates.len() >= 2 {
+                    self.merge_dialog = Some(MergeDialogState {
+                        candidates,
+                        winner_index: None,
+                    });
+                }
+                Task::none()
+            }
+            DocumentListMessage::MergeWinnerSelected(index) => {
+                if let Some(ref mut dialog) = self.merge_dialog {
+                    dialog.winner_index = Some(index);
+                }
+                Task::none()
+            }
+            DocumentListMessage::ConfirmMerge => {
+                let Some(dialog) = self.merge_dialog.take() else {
+                    return Task::none();
+                };
+                let Some(winner_idx) = dialog.winner_index else {
+                    return Task::none();
+                };
+                let Some(winner) = dialog.candidates.get(winner_idx).cloned() else {
+                    return Task::none();
+                };
+                let winner_guid = winner.document_guid.clone();
+                let losers: Vec<Document> = dialog
+                    .candidates
+                    .into_iter()
+                    .filter(|d| d.document_guid != winner_guid)
+                    .collect();
+                let provider = self.document_provider.clone();
+                task::future(async move {
+                    let result = provider.merge_documents(&winner, &losers).await;
+                    DocumentListMessage::MergeCompleted(result.map_err(|e| e.to_string()))
+                })
+            }
+            DocumentListMessage::CancelMerge => {
+                self.merge_dialog = None;
+                Task::none()
+            }
+            DocumentListMessage::MergeCompleted(result) => {
+                if let Err(ref e) = result {
+                    tracing::warn!("merge documents failed: {e}");
+                }
+                task::message(DocumentListMessage::LoadArchive)
+            }
+            DocumentListMessage::CancelFormatPick => {
+                self.pending_format_pick = None;
+                Task::none()
             }
             DocumentListMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")

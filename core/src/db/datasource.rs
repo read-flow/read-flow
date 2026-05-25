@@ -11,11 +11,12 @@ use tokio::process::Command;
 use super::ConnectionPool;
 use super::dao;
 use super::dao::Error;
+use crate::api::ApiDocument;
+use crate::api::DocumentMeta;
 use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::ReadingProgress;
 use crate::api::Status;
-use crate::db::models::ContentMetadata;
 use crate::db::models::ContentTag;
 use crate::db::models::NewFile;
 
@@ -245,12 +246,56 @@ impl FileDataSource for DbClient {
 }
 
 impl DbClient {
-    pub async fn get_content_metadata(
-        &self,
-        fingerprint: &str,
-    ) -> Result<Option<ContentMetadata>, Error> {
+    pub async fn get_documents(&self) -> Result<Vec<ApiDocument>, Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::select_content_metadata(&mut conn, fingerprint).await
+        dao::select_all_api_documents(&mut conn).await
+    }
+
+    pub async fn get_document(&self, guid: &str) -> Result<Option<ApiDocument>, Error> {
+        let mut conn = self.connection_pool.acquire().await?;
+        dao::select_api_document_by_guid(&mut conn, guid).await
+    }
+
+    pub async fn update_document_metadata(
+        &self,
+        guid: &str,
+        meta: DocumentMeta,
+    ) -> Result<Option<ApiDocument>, Error> {
+        let mut conn = self.connection_pool.acquire().await?;
+        let Some(doc_row) = dao::select_document_by_guid(&mut conn, guid).await? else {
+            return Ok(None);
+        };
+        let doc_type_str = meta.document_type_str();
+        let authors_json = meta.authors_json();
+        dao::upsert_document_user_metadata(
+            &mut conn,
+            doc_row.id,
+            doc_type_str.as_deref(),
+            meta.title.as_deref(),
+            meta.subtitle.as_deref(),
+            authors_json.as_deref(),
+            meta.description.as_deref(),
+            meta.language.as_deref(),
+            meta.publisher.as_deref(),
+            meta.identifier.as_deref(),
+            meta.date.as_deref(),
+            meta.subject.as_deref(),
+        )
+        .await?;
+        dao::select_api_document_by_guid(&mut conn, guid).await
+    }
+
+    pub async fn ensure_document_for_file(&self, file_guid: &str) -> Result<ApiDocument, Error> {
+        let mut conn = self.connection_pool.acquire().await?;
+        dao::ensure_document_for_file_guid(&mut conn, file_guid).await
+    }
+
+    pub async fn merge_documents(
+        &self,
+        winner_guid: &str,
+        loser_guids: &[String],
+    ) -> Result<(), Error> {
+        dao::merge_documents(&self.connection_pool, winner_guid, loser_guids).await
     }
 }
 

@@ -1,5 +1,34 @@
 import type { Source } from '$lib/db';
 
+export type DocumentType =
+	| 'Book'
+	| 'Article'
+	| 'ResearchPaper'
+	| 'Thesis'
+	| 'Letter'
+	| 'Magazine'
+	| 'Manual'
+	| 'Report';
+
+export interface DocumentMeta {
+	document_type: DocumentType | null;
+	title: string | null;
+	subtitle: string | null;
+	authors: string[] | null;
+	description: string | null;
+	language: string | null;
+	publisher: string | null;
+	identifier: string | null;
+	date: string | null;
+	subject: string | null;
+}
+
+export interface RemoteDocument {
+	guid: string;
+	metadata: DocumentMeta;
+	file_guids: string[];
+}
+
 export interface RemoteFile {
 	guid: string;
 	path: string;
@@ -120,4 +149,36 @@ export class ReadFlowClient {
 		}
 		return response.blob();
 	}
+
+	async ensureDocumentForFile(fileGuid: string): Promise<RemoteDocument> {
+		return this.request<RemoteDocument>(`/files/${fileGuid}/document`, { method: 'POST' });
+	}
+
+	async getDocuments(): Promise<RemoteDocument[]> {
+		return this.request<RemoteDocument[]>('/documents');
+	}
+
+	async getDocument(guid: string): Promise<RemoteDocument | null> {
+		try {
+			return await this.request<RemoteDocument>(`/documents/${guid}`);
+		} catch (err) {
+			if (err instanceof Error && err.message.includes('HTTP 404')) return null;
+			throw err;
+		}
+	}
+
+	async updateDocumentMetadata(guid: string, meta: DocumentMeta): Promise<RemoteDocument> {
+		return this.request<RemoteDocument>(`/documents/${guid}/metadata`, {
+			method: 'PUT',
+			body: JSON.stringify(meta),
+		});
+	}
+
+	async mergeDocuments(winnerGuid: string, loserGuids: string[]): Promise<RemoteDocument> {
+		return this.request<RemoteDocument>('/documents/merge', {
+			method: 'POST',
+			body: JSON.stringify({ winner_guid: winnerGuid, loser_guids: loserGuids }),
+		});
+	}
+
 }

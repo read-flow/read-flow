@@ -20,7 +20,7 @@ use crate::settings::Settings;
 use crate::settings::SettingsError;
 
 /// A document file type supported by the MuPDF renderer, plus a catch-all `Other`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DocumentType {
     Pdf,

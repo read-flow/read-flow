@@ -43,7 +43,7 @@ impl Provider<Vec<String>> for DocumentState {
                 let tags = documents
                     .unfiltered()
                     .iter()
-                    .flat_map(|doc| doc.metadata.tags.clone())
+                    .flat_map(|doc| doc.contents.iter().flat_map(|c| c.tags.iter().cloned()))
                     .collect::<HashSet<_>>();
 
                 Ok(tags.into_iter().collect::<Vec<_>>())
@@ -59,9 +59,11 @@ pub enum DocumentsOutput {
     OpenDocumentDetails(Document),
     BatchTagEditor(TagEditorOutput),
     OpenDocument(Document),
+    PickFormat(Document),
     SelectionChanged,
     NavigateToSettings,
     Scan,
+    MergeDocuments,
 }
 
 #[derive(Debug, Clone)]
@@ -187,30 +189,43 @@ impl DocumentsComponent {
             None
         };
 
+        let merge_button: Option<Element<'_, DocumentsMessage>> = if selected_count >= 2 {
+            Some(
+                widget::button::standard(fl!("document-list-merge"))
+                    .on_press(DocumentsMessage::Out(DocumentsOutput::MergeDocuments))
+                    .into(),
+            )
+        } else {
+            None
+        };
+
         let checkbox_label = if all_selected {
             fl!("document-list-deselect-all")
         } else {
             fl!("document-list-select-all")
         };
-        let select_all_row =
-            widget::settings::item_row(vec![])
-                .push(
-                    widget::checkbox(all_selected)
-                        .label(checkbox_label)
-                        .on_toggle(DocumentsMessage::ToggleAllSelected)
-                        .width(Length::FillPortion(1)),
-                )
-                .push(
-                    widget::text(fl!(
-                        "document-list-selection-count",
-                        selected = selected_count,
-                        total = filtered_count
-                    ))
-                    .width(Length::FillPortion(
-                        if tag_editor_view.is_some() { 1 } else { 5 },
-                    )),
-                )
-                .push_maybe(tag_editor_view);
+        let count_fill = match (tag_editor_view.is_some(), merge_button.is_some()) {
+            (true, _) => 1,
+            (false, false) => 5,
+            (false, true) => 4,
+        };
+        let select_all_row = widget::settings::item_row(vec![])
+            .push(
+                widget::checkbox(all_selected)
+                    .label(checkbox_label)
+                    .on_toggle(DocumentsMessage::ToggleAllSelected)
+                    .width(Length::FillPortion(1)),
+            )
+            .push(
+                widget::text(fl!(
+                    "document-list-selection-count",
+                    selected = selected_count,
+                    total = filtered_count
+                ))
+                .width(Length::FillPortion(count_fill)),
+            )
+            .push_maybe(merge_button)
+            .push_maybe(tag_editor_view);
 
         let files_section = files_section
             .add(select_all_row)
@@ -219,7 +234,7 @@ impl DocumentsComponent {
         let files_section = visible_files
             .into_iter()
             .fold(files_section, |section, file| {
-                let is_selected = self.selected_documents.contains(&file.metadata.fingerprint);
+                let is_selected = self.selected_documents.contains(&file.document_guid);
                 section.add(view_document(file, is_selected))
             })
             .add(self.pagination.view().map(Into::into));
@@ -281,11 +296,11 @@ impl DocumentsComponent {
                 self.pagination.update(message).map(ActionExt::map_into)
             }
             DocumentsMessage::ToggleDocumentSelected(document) => {
-                let fingerprint = document.metadata.fingerprint.clone();
-                if self.selected_documents.contains(&fingerprint) {
-                    self.selected_documents.remove(&fingerprint);
+                let guid = document.document_guid.clone();
+                if self.selected_documents.contains(&guid) {
+                    self.selected_documents.remove(&guid);
                 } else {
-                    self.selected_documents.insert(fingerprint);
+                    self.selected_documents.insert(guid);
                 }
                 self.notify_selection_changed()
             }
@@ -293,8 +308,7 @@ impl DocumentsComponent {
                 if all_selected {
                     if let DocumentState::Loaded(files) = &self.documents {
                         for file in files.filtered_items() {
-                            self.selected_documents
-                                .insert(file.metadata.fingerprint.clone());
+                            self.selected_documents.insert(file.document_guid.clone());
                         }
                     }
                 } else {
@@ -305,13 +319,13 @@ impl DocumentsComponent {
             DocumentsMessage::FilterSelectedDocuments => {
                 if let DocumentState::Loaded(files) = &self.documents {
                     let selected_document_count = self.selected_documents.len();
-                    let filtered_fingerprints = files
+                    let filtered_guids = files
                         .unfiltered()
                         .iter()
-                        .map(|doc| doc.metadata.fingerprint.clone())
+                        .map(|doc| doc.document_guid.clone())
                         .collect::<HashSet<_>>();
                     self.selected_documents
-                        .retain(|doc| filtered_fingerprints.contains(doc));
+                        .retain(|doc| filtered_guids.contains(doc));
                     if self.selected_documents.len() != selected_document_count {
                         self.notify_selection_changed()
                     } else {
@@ -361,7 +375,7 @@ impl DocumentsComponent {
             files
                 .unfiltered()
                 .iter()
-                .filter(|doc| self.selected_documents.contains(&doc.metadata.fingerprint))
+                .filter(|doc| self.selected_documents.contains(&doc.document_guid))
                 .cloned()
                 .collect()
         } else {
@@ -413,25 +427,26 @@ impl DocumentsComponent {
 }
 
 fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, DocumentsMessage> {
-    let icon_name = document.metadata.type_.get_file_type_icon();
-
     let (selected_icon_name, selected_icon_class) = if is_selected {
         ("checkbox-checked-symbolic", ButtonClass::Suggested)
     } else {
         ("checkbox-symbolic", ButtonClass::Icon)
     };
 
-    // Create a button with icon and file path that fills the width
+    let total_sources: usize = document.contents.iter().map(|c| c.sources.len()).sum();
+    let open_msg = if total_sources > 1 {
+        DocumentsMessage::Out(DocumentsOutput::PickFormat(document.clone()))
+    } else {
+        DocumentsMessage::Out(DocumentsOutput::OpenDocument(document.clone()))
+    };
+
     vec![
         widget::button::icon(widget::icon::from_name(selected_icon_name).size(ICON_SIZE))
             .class(selected_icon_class)
             .on_press(DocumentsMessage::ToggleDocumentSelected(document.clone()))
             .into(),
-        widget::icon::from_name(icon_name)
-            .size(ICON_SIZE)
-            .icon()
-            .into(),
-        display_path(&document.local_or_any_source().path),
+        display_document_title(document),
+        display_pills(document),
         widget::button::icon(
             widget::icon::from_name("dialog-information-symbolic").size(ICON_SIZE),
         )
@@ -445,26 +460,96 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
     .apply(widget::button::custom)
     .width(Length::Fill)
     .class(ButtonClass::ListItem)
-    .on_press(DocumentsMessage::Out(DocumentsOutput::OpenDocument(
-        document.clone(),
-    )))
+    .on_press(open_msg)
     .into()
 }
 
-fn display_path<'a>(path: &'a str) -> Element<'a, DocumentsMessage> {
+fn display_document_title<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
     let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
 
-    let path: &Path = path.as_ref();
-    let directory = path.parent().unwrap().display().to_string();
-    let filename = path.file_name().unwrap();
+    let path: Option<&Path> = document.local_or_any_source().map(|(_, s)| s.path.as_ref());
+
+    let primary = document
+        .user_meta
+        .title
+        .as_deref()
+        .unwrap_or_else(|| path.and_then(|p| p.file_name()?.to_str()).unwrap_or(""));
+
+    let secondary: String = if let Some(authors) = document.user_meta.authors.as_deref() {
+        if !authors.is_empty() {
+            authors.join(", ")
+        } else {
+            path.and_then(|p| p.parent())
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()
+        }
+    } else {
+        path.and_then(|p| p.parent())
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
+    };
+
     cosmic::iced::widget::column![
-        widget::text(filename.display().to_string()),
-        widget::text(directory).size(11),
+        widget::text(primary.to_string()),
+        widget::text(secondary).size(11),
     ]
     .spacing(space_xxs)
     .apply(widget::container)
     .width(Length::Fill)
     .into()
+}
+
+fn pill<'a, Message: 'a>(label: impl ToString) -> Element<'a, Message> {
+    let cosmic_theme::Spacing {
+        space_xxs,
+        space_xs,
+        ..
+    } = theme::active().cosmic().spacing;
+    widget::text::caption(label.to_string())
+        .apply(widget::container)
+        .class(cosmic::theme::Container::Card)
+        .padding([space_xxs, space_xs])
+        .into()
+}
+
+fn display_pills<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
+    let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+    const MAX_TAGS: usize = 3;
+
+    let mut row = Row::new().spacing(space_xxs).align_y(Vertical::Center);
+
+    // File type pills when multiple formats exist
+    let file_types = document.file_types();
+    if file_types.len() > 1 {
+        for t in &file_types {
+            row = row.push(pill(t.as_str().to_uppercase()));
+        }
+    }
+
+    // Document type pill (if set)
+    if let Some(doc_type) = &document.user_meta.document_type {
+        row = row.push(pill(doc_type.to_string()));
+    }
+
+    // Tag pills (up to MAX_TAGS, then a count badge)
+    let all_tags: Vec<String> = {
+        let mut seen = HashSet::new();
+        document
+            .contents
+            .iter()
+            .flat_map(|c| c.tags.iter().cloned())
+            .filter(|t| seen.insert(t.clone()))
+            .collect()
+    };
+    let shown = all_tags.len().min(MAX_TAGS);
+    for tag in &all_tags[..shown] {
+        row = row.push(pill(tag));
+    }
+    if all_tags.len() > MAX_TAGS {
+        row = row.push(pill(format!("+{}", all_tags.len() - MAX_TAGS)));
+    }
+
+    row.into()
 }
 
 /// Get tags that are common to all selected documents
@@ -473,10 +558,9 @@ pub fn get_common_tags(selected_documents: &[Document]) -> Vec<String> {
         .iter()
         .map(|document| {
             document
-                .metadata
-                .tags
-                .clone()
-                .into_iter()
+                .contents
+                .iter()
+                .flat_map(|c| c.tags.iter().cloned())
                 .collect::<HashSet<String>>()
         })
         .reduce(|acc, document_tags| acc.intersection(&document_tags).cloned().collect())

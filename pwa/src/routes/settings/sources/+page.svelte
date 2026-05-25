@@ -61,7 +61,7 @@
 	</a>
 
 	<div class="flex items-center justify-between mb-6">
-		<h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Sources</h1>
+		<h1 class="text-xl font-semibold">Sources</h1>
 		<button
 			onclick={() => { showForm = !showForm; submitError = null; }}
 			class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors"
@@ -77,7 +77,7 @@
 			onsubmit={handleSubmit}
 			class="mb-6 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 space-y-3"
 		>
-			<h2 class="text-sm font-medium text-slate-900 dark:text-slate-100">New source</h2>
+			<h2 class="text-sm font-medium">New source</h2>
 
 			<div class="space-y-3">
 				<div>
@@ -89,7 +89,7 @@
 						placeholder="My home server"
 						required
 						class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
-							bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100
+							bg-slate-50 dark:bg-slate-700/50
 							focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-transparent
 							placeholder:text-slate-300 dark:placeholder:text-slate-500"
 					/>
@@ -104,7 +104,7 @@
 						placeholder="http://192.168.1.10:8000"
 						required
 						class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
-							bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100
+							bg-slate-50 dark:bg-slate-700/50
 							focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-transparent
 							placeholder:text-slate-300 dark:placeholder:text-slate-500"
 					/>
@@ -121,7 +121,7 @@
 							required
 							autocomplete="username"
 							class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
-								bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100
+								bg-slate-50 dark:bg-slate-700/50
 								focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-transparent
 								placeholder:text-slate-300 dark:placeholder:text-slate-500"
 						/>
@@ -135,7 +135,7 @@
 							required
 							autocomplete="current-password"
 							class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
-								bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100
+								bg-slate-50 dark:bg-slate-700/50
 								focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-transparent"
 						/>
 					</div>
@@ -199,7 +199,7 @@
 
 					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-1.5">
-							<p class="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{source.name}</p>
+							<p class="text-sm font-medium truncate">{source.name}</p>
 							<button
 								onclick={() => togglePrivateMode(source.id!)}
 								title={source.privateMode ? 'Private mode on — click to disable' : 'Private mode off — click to enable'}

@@ -20,7 +20,8 @@
 		| 'monitor'
 		| 'minus'
 		| 'maximize'
-		| 'minimize';
+		| 'minimize'
+		| 'edit';
 </script>
 
 <script lang="ts">
@@ -138,5 +139,8 @@
 		<polyline points="20 10 14 10 14 4" />
 		<line x1="10" y1="14" x2="3" y2="21" />
 		<line x1="21" y1="3" x2="14" y2="10" />
+	{:else if name === 'edit'}
+		<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+		<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
 	{/if}
 </svg>
