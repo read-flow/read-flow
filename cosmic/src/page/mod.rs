@@ -130,9 +130,9 @@ pub enum PageMessage {
     CloseDocumentDetails(Fingerprint),
     EpubViewer(Fingerprint, EpubViewerMessage),
     OpenDocument(Document),
-    CloseEpubViewer(Fingerprint, Option<String>),
+    CloseEpubViewer(Fingerprint, Option<(String, f64)>),
     MuPdfViewer(Fingerprint, MuPdfViewerMessage),
-    CloseMuPdfViewer(Fingerprint, Option<usize>),
+    CloseMuPdfViewer(Fingerprint, Option<(usize, usize)>),
     ImageViewer(u64, ImageViewerMessage),
     OpenImageViewer(ViewerImage),
     CloseImageViewer(u64),
@@ -639,7 +639,7 @@ impl Pages {
                     action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
                 })
             }
-            PageMessage::CloseMuPdfViewer(fingerprint, page) => {
+            PageMessage::CloseMuPdfViewer(fingerprint, page_info) => {
                 let selector = PageSelector::MuPdfViewer(fingerprint.clone());
                 let _ = self.mu_pdf_viewers.swap_remove(&fingerprint);
                 self.deactivate_page(&selector);
@@ -648,19 +648,27 @@ impl Pages {
                     selector,
                 )))];
 
-                if let Some(page) = page {
+                if let Some((page, total)) = page_info {
                     let document_provider = self.document_provider.clone();
                     let fp = fingerprint;
                     tasks.push(task::future(async move {
                         let now = iso8601_now();
-                        let progress = read_flow_core::api::ReadingProgress {
+                        let percentage = if total > 0 {
+                            (page as f64 + 1.0) / total as f64
+                        } else {
+                            0.0
+                        };
+                        let state = read_flow_core::api::ReadingState {
                             fingerprint: fp,
-                            progress: format!("{{\"page\":{page}}}"),
-                            last_updated: now,
+                            status: 0,
+                            position: format!("{{\"page\":{page}}}"),
+                            percentage,
+                            last_updated: now.clone(),
+                            status_updated_at: "1970-01-01T00:00:00Z".to_string(),
                         };
                         let aggregator = document_provider.aggregator.read().await;
-                        if let Err(e) = aggregator.upsert_reading_progress(progress).await {
-                            tracing::warn!("failed to save reading progress: {e}");
+                        if let Err(e) = aggregator.upsert_reading_state(state).await {
+                            tracing::warn!("failed to save reading state: {e}");
                         }
                         PageMessage::Noop
                     }));
@@ -723,7 +731,7 @@ impl Pages {
                     _ => self.open_mupdf_viewer(document),
                 }
             }
-            PageMessage::CloseEpubViewer(fingerprint, progress_json) => {
+            PageMessage::CloseEpubViewer(fingerprint, progress_info) => {
                 let selector = PageSelector::EpubViewer(fingerprint.clone());
                 let _ = self.epub_viewers.swap_remove(&fingerprint);
                 self.deactivate_page(&selector);
@@ -732,19 +740,22 @@ impl Pages {
                     selector,
                 )))];
 
-                if let Some(progress_json) = progress_json {
+                if let Some((position_json, percentage)) = progress_info {
                     let document_provider = self.document_provider.clone();
                     let fp = fingerprint;
                     tasks.push(task::future(async move {
                         let now = iso8601_now();
-                        let progress = read_flow_core::api::ReadingProgress {
+                        let state = read_flow_core::api::ReadingState {
                             fingerprint: fp,
-                            progress: progress_json,
+                            status: 0,
+                            position: position_json,
+                            percentage,
                             last_updated: now,
+                            status_updated_at: "1970-01-01T00:00:00Z".to_string(),
                         };
                         let aggregator = document_provider.aggregator.read().await;
-                        if let Err(e) = aggregator.upsert_reading_progress(progress).await {
-                            tracing::warn!("failed to save reading progress: {e}");
+                        if let Err(e) = aggregator.upsert_reading_state(state).await {
+                            tracing::warn!("failed to save reading state: {e}");
                         }
                         PageMessage::Noop
                     }));
@@ -902,8 +913,8 @@ fn map_document_details_message(
 fn map_mu_pdf_viewer_message(fingerprint: Fingerprint, msg: MuPdfViewerMessage) -> PageMessage {
     match msg {
         MuPdfViewerMessage::Out(message) => match message {
-            MuPdfViewerOutput::Close(fingerprint, page) => {
-                PageMessage::CloseMuPdfViewer(fingerprint, page)
+            MuPdfViewerOutput::Close(fingerprint, page_info) => {
+                PageMessage::CloseMuPdfViewer(fingerprint, page_info)
             }
         },
         msg => PageMessage::MuPdfViewer(fingerprint, msg),
@@ -913,8 +924,8 @@ fn map_mu_pdf_viewer_message(fingerprint: Fingerprint, msg: MuPdfViewerMessage) 
 fn map_epub_viewer_message(fingerprint: Fingerprint, msg: EpubViewerMessage) -> PageMessage {
     match msg {
         EpubViewerMessage::Out(message) => match message {
-            EpubViewerOutput::Close(fingerprint, page) => {
-                PageMessage::CloseEpubViewer(fingerprint, page)
+            EpubViewerOutput::Close(fingerprint, progress_info) => {
+                PageMessage::CloseEpubViewer(fingerprint, progress_info)
             }
             EpubViewerOutput::OpenImageViewer(image) => PageMessage::OpenImageViewer(image),
             EpubViewerOutput::Activate => PageMessage::Out(PageOutput::TogglePage(

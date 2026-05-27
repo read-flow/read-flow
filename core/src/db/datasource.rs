@@ -15,7 +15,8 @@ use crate::api::ApiDocument;
 use crate::api::DocumentMeta;
 use crate::api::File;
 use crate::api::FileDataSource;
-use crate::api::ReadingProgress;
+use crate::api::ReadingState;
+use crate::api::ReadingStatus;
 use crate::api::Status;
 use crate::db::models::ContentTag;
 use crate::db::models::NewFile;
@@ -109,9 +110,6 @@ impl FileDataSource for DbClient {
         };
         dao::update_file(&mut tx, &updated).await?;
 
-        // Update content status.
-        dao::update_content_status(&mut tx, &file.fingerprint, file.status.into()).await?;
-
         // Sync content tags: delete removed, upsert added.
         let existing_tags =
             dao::select_content_tags_by_fingerprint(&mut tx, &file.fingerprint).await?;
@@ -189,17 +187,26 @@ impl FileDataSource for DbClient {
         Ok(())
     }
 
-    async fn get_reading_progress(
+    async fn get_reading_state(
         &self,
         fingerprint: &str,
-    ) -> Result<Option<ReadingProgress>, Self::Error> {
+    ) -> Result<Option<ReadingState>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::get_reading_progress(&mut conn, fingerprint).await
+        dao::get_reading_state(&mut conn, fingerprint).await
     }
 
-    async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error> {
+    async fn upsert_reading_state(&self, state: ReadingState) -> Result<ReadingState, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::upsert_reading_progress(&mut conn, progress).await
+        dao::upsert_reading_state(&mut conn, state).await
+    }
+
+    async fn update_reading_status(
+        &self,
+        fingerprint: &str,
+        status: ReadingStatus,
+    ) -> Result<(), Self::Error> {
+        let mut conn = self.connection_pool.acquire().await?;
+        dao::update_reading_status_only(&mut conn, fingerprint, status.into()).await
     }
 
     async fn import_file(&self, path: &Path) -> Result<File, Self::Error> {
@@ -378,15 +385,23 @@ impl FileDataSource for FilteredDbClient {
         self.inner.import_file(path).await
     }
 
-    async fn get_reading_progress(
+    async fn get_reading_state(
         &self,
         fingerprint: &str,
-    ) -> Result<Option<ReadingProgress>, Self::Error> {
-        self.inner.get_reading_progress(fingerprint).await
+    ) -> Result<Option<ReadingState>, Self::Error> {
+        self.inner.get_reading_state(fingerprint).await
     }
 
-    async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error> {
-        self.inner.upsert_reading_progress(progress).await
+    async fn upsert_reading_state(&self, state: ReadingState) -> Result<ReadingState, Self::Error> {
+        self.inner.upsert_reading_state(state).await
+    }
+
+    async fn update_reading_status(
+        &self,
+        fingerprint: &str,
+        status: ReadingStatus,
+    ) -> Result<(), Self::Error> {
+        self.inner.update_reading_status(fingerprint, status).await
     }
 }
 

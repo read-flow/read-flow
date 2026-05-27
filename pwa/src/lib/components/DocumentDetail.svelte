@@ -6,7 +6,7 @@
 		refreshDocuments,
 		allTags,
 	} from '$lib/stores/documents';
-	import { addTagsToFile, removeTagsFromFile, updateDocumentMetadata } from '$lib/api/aggregator';
+	import { addTagsToFile, removeTagsFromFile, updateDocumentMetadata, updateReadingStatus } from '$lib/api/aggregator';
 	import { get } from 'svelte/store';
 	import type { AggregatedFile } from '$lib/api/aggregator';
 	import type { DocumentMeta, DocumentType } from '$lib/api/client';
@@ -27,6 +27,7 @@
 	let newTag = $state('');
 	let saving = $state(false);
 	let tagError = $state('');
+	let statusUpdating = $state(false);
 
 	// ── User metadata editing ─────────────────────────────────────────────────
 	let editingMeta = $state(false);
@@ -101,6 +102,19 @@
 			}
 		})();
 	});
+
+	async function changeStatus(newStatus: 'Unread' | 'Reading' | 'Read'): Promise<void> {
+		if (!doc || statusUpdating) return;
+		statusUpdating = true;
+		try {
+			await updateReadingStatus(doc.sourceGuids, doc.fingerprint, newStatus);
+			await refreshDocuments();
+		} catch (err) {
+			console.error('Failed to update reading status:', err);
+		} finally {
+			statusUpdating = false;
+		}
+	}
 
 	function formatSize(bytes: number): string {
 		if (bytes < 1024) return `${bytes} B`;
@@ -227,12 +241,20 @@
 		<!-- Reading status -->
 		<div class="flex items-center justify-between">
 			<span class="text-sm text-slate-500 dark:text-slate-400">Reading status</span>
-			<span class="text-sm font-medium
-				{doc.status === 'Read' ? 'text-green-600 dark:text-green-400'
-				: doc.status === 'Reading' ? 'text-blue-600 dark:text-blue-400'
-				: 'text-slate-500 dark:text-slate-400'}">
-				{doc.status}
-			</span>
+			<select
+				value={doc.status}
+				disabled={statusUpdating}
+				onchange={(e) => void changeStatus((e.currentTarget as HTMLSelectElement).value as 'Unread' | 'Reading' | 'Read')}
+				class="text-sm font-medium rounded px-2 py-0.5 border border-slate-200 dark:border-slate-600
+					bg-white dark:bg-slate-800 cursor-pointer disabled:opacity-50
+					{doc.status === 'Read' ? 'text-green-600 dark:text-green-400'
+					: doc.status === 'Reading' ? 'text-blue-600 dark:text-blue-400'
+					: 'text-slate-500 dark:text-slate-400'}"
+			>
+				<option value="Unread">Unread</option>
+				<option value="Reading">Reading</option>
+				<option value="Read">Read</option>
+			</select>
 		</div>
 
 		<!-- Files -->

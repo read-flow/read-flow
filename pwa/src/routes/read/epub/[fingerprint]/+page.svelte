@@ -5,7 +5,7 @@
 	import type { Rendition, Location } from 'epubjs';
 	import Icon from '$lib/components/Icon.svelte';
 	import { allDocuments, refreshDocuments } from '$lib/stores/documents';
-	import { downloadFileFromSources, fetchReadingProgress, saveReadingProgress } from '$lib/api/aggregator';
+	import { downloadFileFromSources, fetchReadingState, saveReadingState } from '$lib/api/aggregator';
 	import { loadSources } from '$lib/stores/sources';
 	import { theme } from '$lib/stores/theme';
 	import { db } from '$lib/db';
@@ -101,10 +101,13 @@
 			const now = new Date().toISOString();
 			const fp = fingerprint;
 			try {
-				await saveReadingProgress({
+				await saveReadingState({
 					fingerprint: fp,
-					progress: JSON.stringify({ cfi, percentage: pct }),
+					status: 0,
+					position: JSON.stringify({ cfi }),
+					percentage: pct,
 					last_updated: now,
+					status_updated_at: '1970-01-01T00:00:00Z',
 				});
 			} catch (e) {
 				console.warn('Failed to save EPUB progress:', e);
@@ -251,9 +254,9 @@
 			// Restore saved CFI position, or start from the beginning
 			let startTarget: string | undefined;
 			try {
-				const saved = await fetchReadingProgress(fingerprint);
-				if (saved?.progress) {
-					const parsed = JSON.parse(saved.progress) as { cfi?: string };
+				const saved = await fetchReadingState(fingerprint);
+				if (saved?.position) {
+					const parsed = JSON.parse(saved.position) as { cfi?: string };
 					if (typeof parsed.cfi === 'string') startTarget = parsed.cfi;
 				}
 			} catch {

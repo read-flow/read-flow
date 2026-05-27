@@ -12,7 +12,7 @@ use provider::r#async::Provider;
 use read_flow_core::api::DocumentMeta;
 use read_flow_core::api::File;
 use read_flow_core::api::FileDataSource;
-use read_flow_core::api::ReadingProgress;
+use read_flow_core::api::ReadingState;
 use read_flow_core::api::ReadingStatus;
 pub use read_flow_core::scan::DocumentType;
 
@@ -491,18 +491,18 @@ impl Aggregator {
         target_client.import_file(&local_path).await
     }
 
-    /// Get reading progress for a document, picking the most recently updated
-    /// progress across all sources.
-    pub async fn get_reading_progress(
+    /// Get reading state for a document, picking the most recently updated
+    /// state across all sources.
+    pub async fn get_reading_state(
         &self,
         fingerprint: &str,
-    ) -> Result<Option<ReadingProgress>, FilesClientError> {
+    ) -> Result<Option<ReadingState>, FilesClientError> {
         let clients: Vec<Client> = self.clients.values().cloned().collect();
 
-        let results: Vec<Result<Option<ReadingProgress>, FilesClientError>> = stream::iter(clients)
+        let results: Vec<Result<Option<ReadingState>, FilesClientError>> = stream::iter(clients)
             .map(|client| {
                 let fp = fingerprint.to_string();
-                async move { client.get_reading_progress(&fp).await }
+                async move { client.get_reading_state(&fp).await }
             })
             .buffer_unordered(self.clients.len())
             .collect()
@@ -511,10 +511,10 @@ impl Aggregator {
         let best = results
             .into_iter()
             .filter_map(|result| match result {
-                Ok(Some(progress)) => Some(progress),
+                Ok(Some(state)) => Some(state),
                 Ok(None) => None,
                 Err(error) => {
-                    tracing::warn!("ignoring error while retrieving reading progress: {error}");
+                    tracing::warn!("ignoring error while retrieving reading state: {error}");
                     None
                 }
             })
@@ -523,18 +523,51 @@ impl Aggregator {
         Ok(best)
     }
 
-    /// Write reading progress to all sources in parallel.
-    pub async fn upsert_reading_progress(
+    /// Write reading state to all sources in parallel. Returns the resulting
+    /// state from the first successful source (which may have auto-transitioned status).
+    pub async fn upsert_reading_state(
         &self,
-        progress: ReadingProgress,
+        state: ReadingState,
+    ) -> Result<ReadingState, FilesClientError> {
+        let clients: Vec<Client> = self.clients.values().cloned().collect();
+        let num_clients = clients.len();
+
+        let mut results: Vec<Result<ReadingState, FilesClientError>> = stream::iter(clients)
+            .map(|client| {
+                let state = state.clone();
+                async move { client.upsert_reading_state(state).await }
+            })
+            .buffer_unordered(num_clients)
+            .collect()
+            .await;
+
+        let first_ok = results.iter().position(|r| r.is_ok());
+        results
+            .iter()
+            .filter_map(|r| r.as_ref().err())
+            .for_each(|error| {
+                tracing::warn!("ignoring error during `upsert_reading_state`: {error}")
+            });
+
+        match first_ok {
+            Some(i) => Ok(results.remove(i).unwrap()),
+            None => Err(results.remove(0).unwrap_err()),
+        }
+    }
+
+    /// Manually override reading status on all sources in parallel.
+    pub async fn update_reading_status(
+        &self,
+        fingerprint: &str,
+        status: ReadingStatus,
     ) -> Result<(), FilesClientError> {
         let clients: Vec<Client> = self.clients.values().cloned().collect();
         let num_clients = clients.len();
 
         let results: Vec<Result<(), FilesClientError>> = stream::iter(clients)
             .map(|client| {
-                let progress = progress.clone();
-                async move { client.upsert_reading_progress(progress).await }
+                let fp = fingerprint.to_string();
+                async move { client.update_reading_status(&fp, status).await }
             })
             .buffer_unordered(num_clients)
             .collect()
@@ -544,7 +577,7 @@ impl Aggregator {
             .into_iter()
             .filter_map(Result::err)
             .for_each(|error| {
-                tracing::warn!("ignoring error during `upsert_reading_progress`: {error}")
+                tracing::warn!("ignoring error during `update_reading_status`: {error}")
             });
 
         Ok(())

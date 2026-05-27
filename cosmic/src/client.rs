@@ -7,7 +7,8 @@ use read_flow_core::api::ApiDocument;
 use read_flow_core::api::DocumentMeta;
 use read_flow_core::api::File;
 use read_flow_core::api::FileDataSource;
-use read_flow_core::api::ReadingProgress;
+use read_flow_core::api::ReadingState;
+use read_flow_core::api::ReadingStatus;
 use read_flow_core::api::Status;
 use read_flow_core::client;
 use read_flow_core::client::FilesClient;
@@ -178,15 +179,23 @@ impl FileDataSource for Client {
         delegate!(self, import_file, path)
     }
 
-    async fn get_reading_progress(
+    async fn get_reading_state(
         &self,
         fingerprint: &str,
-    ) -> Result<Option<ReadingProgress>, Self::Error> {
-        delegate!(self, get_reading_progress, fingerprint)
+    ) -> Result<Option<ReadingState>, Self::Error> {
+        delegate!(self, get_reading_state, fingerprint)
     }
 
-    async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error> {
-        delegate!(self, upsert_reading_progress, progress)
+    async fn upsert_reading_state(&self, state: ReadingState) -> Result<ReadingState, Self::Error> {
+        delegate!(self, upsert_reading_state, state)
+    }
+
+    async fn update_reading_status(
+        &self,
+        fingerprint: &str,
+        status: ReadingStatus,
+    ) -> Result<(), Self::Error> {
+        delegate!(self, update_reading_status, fingerprint, status)
     }
 }
 

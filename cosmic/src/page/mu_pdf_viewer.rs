@@ -173,7 +173,8 @@ fn display_list_to_image_tinted(
 
 #[derive(Clone, Debug)]
 pub enum MuPdfViewerOutput {
-    Close(Fingerprint, Option<usize>),
+    /// (fingerprint, page, total_pages) — None when pages not yet loaded.
+    Close(Fingerprint, Option<(usize, usize)>),
 }
 
 #[derive(Clone, Debug)]
@@ -300,11 +301,11 @@ impl MuPdfViewer {
         tasks.push(Task::perform(
             async move {
                 let aggregator = document_provider.aggregator.read().await;
-                match aggregator.get_reading_progress(&fp).await {
-                    Ok(Some(progress)) => parse_page_from_progress(&progress.progress),
+                match aggregator.get_reading_state(&fp).await {
+                    Ok(Some(state)) => parse_page_from_progress(&state.position),
                     Ok(None) => None,
                     Err(e) => {
-                        tracing::warn!("failed to load reading progress: {e}");
+                        tracing::warn!("failed to load reading state: {e}");
                         None
                     }
                 }
@@ -891,7 +892,7 @@ impl Page for MuPdfViewer {
                     if self.pages.is_empty() {
                         None
                     } else {
-                        Some(self.active_page)
+                        Some((self.active_page, self.pages.len()))
                     },
                 )))
                 .tooltip(fl!("pdf-viewer-back"))

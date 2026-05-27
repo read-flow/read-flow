@@ -40,10 +40,13 @@ export interface RemoteFile {
 	document_guid: string | null;
 }
 
-export interface RemoteReadingProgress {
+export interface RemoteReadingState {
 	fingerprint: string;
-	progress: string;
+	status: number;
+	position: string;
+	percentage: number;
 	last_updated: string;
+	status_updated_at: string;
 }
 
 export interface ServerStatus {
@@ -123,19 +126,26 @@ export class ReadFlowClient {
 		});
 	}
 
-	async getReadingProgress(fingerprint: string): Promise<RemoteReadingProgress | null> {
+	async getReadingState(fingerprint: string): Promise<RemoteReadingState | null> {
 		try {
-			return await this.request<RemoteReadingProgress>(`/reading-progress/${fingerprint}`);
+			return await this.request<RemoteReadingState>(`/reading-state/${fingerprint}`);
 		} catch (err) {
 			if (err instanceof Error && err.message.includes('HTTP 404')) return null;
 			throw err;
 		}
 	}
 
-	async upsertReadingProgress(progress: RemoteReadingProgress): Promise<void> {
-		await this.requestVoid('/reading-progress', {
+	async upsertReadingState(state: RemoteReadingState): Promise<RemoteReadingState> {
+		return this.request<RemoteReadingState>('/reading-state', {
 			method: 'PUT',
-			body: JSON.stringify(progress),
+			body: JSON.stringify(state),
+		});
+	}
+
+	async updateReadingStatus(fingerprint: string, status: number): Promise<void> {
+		await this.requestVoid(`/reading-state/${fingerprint}/status`, {
+			method: 'PUT',
+			body: JSON.stringify({ status }),
 		});
 	}
 

@@ -752,18 +752,22 @@ impl Page for DocumentDetails {
                 }
             }
             DocumentDetailsMessage::UpdateReadingStatus(status) => {
-                let mut updated_document = self.document.clone();
-                for content in &mut updated_document.contents {
-                    content.status = status;
-                }
+                let fingerprints: Vec<String> = self
+                    .document
+                    .contents
+                    .iter()
+                    .map(|c| c.fingerprint.clone())
+                    .collect();
                 let document_provider = self.document_provider.clone();
 
                 task::future(async move {
-                    let result = document_provider
-                        .update_document(updated_document)
-                        .await
-                        .map_err(|err| format!("{err}"));
-                    DocumentDetailsMessage::ReadingStatusUpdated(result)
+                    let mut last_err = None;
+                    for fp in fingerprints {
+                        if let Err(e) = document_provider.update_reading_status(&fp, status).await {
+                            last_err = Some(format!("{e}"));
+                        }
+                    }
+                    DocumentDetailsMessage::ReadingStatusUpdated(last_err.map_or(Ok(()), Err))
                 })
             }
             DocumentDetailsMessage::ReadingStatusUpdated(result) => {

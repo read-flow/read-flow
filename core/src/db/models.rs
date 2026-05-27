@@ -75,7 +75,6 @@ pub struct NewFile {
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct Content {
     pub fingerprint: String,
-    pub status: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
@@ -106,9 +105,12 @@ pub struct NewRemote {
     pub user_id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
-pub struct ReadingProgress {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ReadingState {
     pub fingerprint: String,
-    pub progress: String,
+    pub status: i32,
+    pub position: String,
+    pub percentage: f64,
     pub last_updated: String,
+    pub status_updated_at: String,
 }

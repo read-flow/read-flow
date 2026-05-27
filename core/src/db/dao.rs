@@ -14,7 +14,7 @@ use crate::db::models::DocumentUserMetadata;
 use crate::db::models::File;
 use crate::db::models::NewFile;
 use crate::db::models::NewRemote;
-use crate::db::models::ReadingProgress;
+use crate::db::models::ReadingState;
 use crate::db::models::Remote;
 use crate::scan::metadata::ExtractedMetadata;
 
@@ -43,11 +43,14 @@ impl From<io::Error> for Error {
 // ─── File queries ─────────────────────────────────────────────────────────────
 
 /// Shared JOIN fragment used by all file SELECT queries.
+/// Status is derived from reading_state (defaults to 0/Unread when no row exists).
 const FILE_SELECT: &str = r#"
-    SELECT f.id, f.guid, f.path, f.type, f.size, f.fingerprint, c.status,
+    SELECT f.id, f.guid, f.path, f.type, f.size, f.fingerprint,
+           COALESCE(rs.status, 0) AS status,
            d.guid AS document_guid
     FROM files f
     JOIN contents c ON f.fingerprint = c.fingerprint
+    LEFT JOIN reading_state rs ON c.fingerprint = rs.fingerprint
     LEFT JOIN documents d ON c.document_id = d.id"#;
 
 pub async fn insert_file(conn: &mut SqliteConnection, file: NewFile) -> Result<File, Error> {
@@ -198,20 +201,7 @@ pub async fn delete_file_record(pool: &SqlitePool, id: i32) -> Result<(), Error>
 // ─── Content queries ──────────────────────────────────────────────────────────
 
 pub async fn upsert_content(conn: &mut SqliteConnection, fingerprint: &str) -> Result<(), Error> {
-    sqlx::query("INSERT OR IGNORE INTO contents (fingerprint, status) VALUES (?, 0)")
-        .bind(fingerprint)
-        .execute(&mut *conn)
-        .await?;
-    Ok(())
-}
-
-pub async fn update_content_status(
-    conn: &mut SqliteConnection,
-    fingerprint: &str,
-    status: i32,
-) -> Result<(), Error> {
-    sqlx::query("UPDATE contents SET status = ? WHERE fingerprint = ?")
-        .bind(status)
+    sqlx::query("INSERT OR IGNORE INTO contents (fingerprint) VALUES (?)")
         .bind(fingerprint)
         .execute(&mut *conn)
         .await?;
@@ -561,36 +551,91 @@ pub async fn swap_order_of_remotes(pool: &SqlitePool, a: &Remote, b: &Remote) ->
     Ok(())
 }
 
-// ─── Reading progress queries ─────────────────────────────────────────────────
+// ─── Reading state queries ────────────────────────────────────────────────────
 
-pub async fn get_reading_progress(
+pub async fn get_reading_state(
     conn: &mut SqliteConnection,
     fingerprint: &str,
-) -> Result<Option<ReadingProgress>, Error> {
-    let result = sqlx::query_as::<_, ReadingProgress>(
-        "SELECT fingerprint, progress, last_updated FROM reading_progress WHERE fingerprint = ?",
+) -> Result<Option<ReadingState>, Error> {
+    sqlx::query_as::<_, ReadingState>(
+        "SELECT fingerprint, status, position, percentage, last_updated, status_updated_at \
+         FROM reading_state WHERE fingerprint = ?",
     )
     .bind(fingerprint)
     .fetch_optional(&mut *conn)
-    .await?;
-    Ok(result)
+    .await
+    .map_err(Into::into)
 }
 
-pub async fn upsert_reading_progress(
+/// Upsert reading state with server-side auto-transitions:
+/// - Unread (0) + percentage > 0.01  → Reading (1)
+/// - Reading (1) + percentage ≥ 0.99 → Read (2)
+/// - Read (2): no auto-downgrade
+///
+/// Returns the resulting state (after any transitions).
+pub async fn upsert_reading_state(
     conn: &mut SqliteConnection,
-    progress: ReadingProgress,
+    state: ReadingState,
+) -> Result<ReadingState, Error> {
+    // For the INSERT (new row) path, compute initial status from percentage.
+    let initial_status: i32 = if state.percentage > 0.01 { 1 } else { 0 };
+    let initial_status_updated_at = if initial_status > 0 {
+        state.last_updated.clone()
+    } else {
+        state.status_updated_at.clone()
+    };
+
+    sqlx::query(
+        r#"INSERT INTO reading_state
+               (fingerprint, status, position, percentage, last_updated, status_updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(fingerprint) DO UPDATE
+           SET position          = excluded.position,
+               percentage        = excluded.percentage,
+               last_updated      = excluded.last_updated,
+               status            = CASE
+                   WHEN reading_state.status = 0 AND excluded.percentage > 0.01  THEN 1
+                   WHEN reading_state.status = 1 AND excluded.percentage >= 0.99 THEN 2
+                   ELSE reading_state.status
+               END,
+               status_updated_at = CASE
+                   WHEN (reading_state.status = 0 AND excluded.percentage > 0.01)
+                     OR (reading_state.status = 1 AND excluded.percentage >= 0.99)
+                     THEN excluded.last_updated
+                   ELSE reading_state.status_updated_at
+               END
+           WHERE excluded.last_updated > reading_state.last_updated"#,
+    )
+    .bind(&state.fingerprint)
+    .bind(initial_status)
+    .bind(&state.position)
+    .bind(state.percentage)
+    .bind(&state.last_updated)
+    .bind(&initial_status_updated_at)
+    .execute(&mut *conn)
+    .await?;
+
+    get_reading_state(conn, &state.fingerprint)
+        .await?
+        .ok_or_else(|| Error::Sqlx(Arc::new(sqlx::Error::RowNotFound)))
+}
+
+/// Manually override the reading status. Bypasses auto-transition rules.
+/// Creates a reading_state row if none exists.
+pub async fn update_reading_status_only(
+    conn: &mut SqliteConnection,
+    fingerprint: &str,
+    status: i32,
 ) -> Result<(), Error> {
     sqlx::query(
-        r#"INSERT INTO reading_progress (fingerprint, progress, last_updated)
-           VALUES (?, ?, ?)
+        r#"INSERT INTO reading_state (fingerprint, status, status_updated_at, last_updated)
+           VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
            ON CONFLICT(fingerprint) DO UPDATE
-           SET progress = excluded.progress,
-               last_updated = excluded.last_updated
-           WHERE excluded.last_updated > reading_progress.last_updated"#,
+           SET status            = excluded.status,
+               status_updated_at = excluded.status_updated_at"#,
     )
-    .bind(&progress.fingerprint)
-    .bind(&progress.progress)
-    .bind(&progress.last_updated)
+    .bind(fingerprint)
+    .bind(status)
     .execute(&mut *conn)
     .await?;
     Ok(())

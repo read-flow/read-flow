@@ -342,8 +342,8 @@ impl From<EpubDocument> for CloneableEpubDocument {
 
 #[derive(Debug, Clone)]
 pub enum EpubViewerOutput {
-    /// Carries the fingerprint and the opaque progress JSON to persist, if any.
-    Close(Fingerprint, Option<String>),
+    /// Carries the fingerprint and (position_json, percentage) to persist, if any.
+    Close(Fingerprint, Option<(String, f64)>),
     /// Open the image viewer page for the given image.
     OpenImageViewer(ViewerImage),
     /// Request the App to navigate to (activate) this viewer's page.
@@ -571,11 +571,11 @@ impl EpubViewer {
         tasks.push(Task::perform(
             async move {
                 let aggregator = document_provider.aggregator.read().await;
-                match aggregator.get_reading_progress(&fp).await {
-                    Ok(Some(progress)) => parse_reading_progress(&progress.progress),
+                match aggregator.get_reading_state(&fp).await {
+                    Ok(Some(state)) => parse_reading_progress(&state.position),
                     Ok(None) => ReadingPosition::default(),
                     Err(e) => {
-                        tracing::warn!("failed to load reading progress: {e}");
+                        tracing::warn!("failed to load reading state: {e}");
                         ReadingPosition::default()
                     }
                 }
@@ -2011,11 +2011,21 @@ fn block_index_for_path(chapter: &EpubChapter, target: &[u32]) -> usize {
 }
 
 /// Serialize reading progress as a JSON object containing an EPUB CFI.
-fn serialize_progress(chapters: &[EpubChapter], chapter_idx: usize, first_block: usize) -> String {
+fn serialize_progress(
+    chapters: &[EpubChapter],
+    chapter_idx: usize,
+    first_block: usize,
+) -> (String, f64) {
     let cfi = cfi_for_block(chapters, chapter_idx, first_block)
         .unwrap_or_else(|| format!("epubcfi(/6/{}!:0)", (chapter_idx as u32 + 1) * 2));
-    // Percentage omitted — it is display-only and not used for restoration.
-    format!("{{\"cfi\":\"{cfi}\"}}")
+    let position = format!("{{\"cfi\":\"{cfi}\"}}");
+    let total = chapters.len();
+    let percentage = if total > 0 {
+        (chapter_idx as f64 + 1.0) / total as f64
+    } else {
+        0.0
+    };
+    (position, percentage)
 }
 
 /// Parsed reading position from a CFI-based progress JSON string.

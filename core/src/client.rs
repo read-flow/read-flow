@@ -20,7 +20,8 @@ use crate::api::ApiDocument;
 use crate::api::DocumentMeta;
 use crate::api::File;
 use crate::api::FileDataSource;
-use crate::api::ReadingProgress;
+use crate::api::ReadingState;
+use crate::api::ReadingStatus;
 use crate::api::Status;
 use crate::extension_of;
 use crate::to_unique_file;
@@ -288,15 +289,12 @@ impl FileDataSource for FilesClient {
         self.upload_file(path).await
     }
 
-    async fn get_reading_progress(
-        &self,
-        fingerprint: &str,
-    ) -> Result<Option<ReadingProgress>, Error> {
+    async fn get_reading_state(&self, fingerprint: &str) -> Result<Option<ReadingState>, Error> {
         let response = self
             .client
             .get(
                 self.base_url
-                    .join(&format!("reading-progress/{fingerprint}"))?,
+                    .join(&format!("reading-state/{fingerprint}"))?,
             )
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
             .header(header::AUTHORIZATION, self.get_auth_header())
@@ -311,18 +309,42 @@ impl FileDataSource for FilesClient {
         Ok(Some(result))
     }
 
-    async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Error> {
+    async fn upsert_reading_state(&self, state: ReadingState) -> Result<ReadingState, Error> {
         let response = self
             .client
-            .put(self.base_url.join("reading-progress")?)
+            .put(self.base_url.join("reading-state")?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
             .header(header::AUTHORIZATION, self.get_auth_header())
-            .json(&progress)
+            .json(&state)
             .send()
             .await?;
 
         response.error_for_status_ref()?;
+        Ok(response.json().await?)
+    }
 
+    async fn update_reading_status(
+        &self,
+        fingerprint: &str,
+        status: ReadingStatus,
+    ) -> Result<(), Error> {
+        #[derive(serde::Serialize)]
+        struct Req {
+            status: ReadingStatus,
+        }
+        let response = self
+            .client
+            .put(
+                self.base_url
+                    .join(&format!("reading-state/{fingerprint}/status"))?,
+            )
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .header(header::AUTHORIZATION, self.get_auth_header())
+            .json(&Req { status })
+            .send()
+            .await?;
+
+        response.error_for_status_ref()?;
         Ok(())
     }
 }

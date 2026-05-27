@@ -10,10 +10,13 @@ export interface Source {
 	privateMode?: boolean;
 }
 
-export interface ReadingProgress {
+export interface ReadingState {
 	fingerprint: string;
-	progress: string;
+	status: 'Unread' | 'Reading' | 'Read';
+	position: string;
+	percentage: number;
 	lastUpdated: string;
+	statusUpdatedAt: string;
 }
 
 export interface Preference {
@@ -23,7 +26,7 @@ export interface Preference {
 
 const db = new Dexie('ReadFlowDB') as Dexie & {
 	sources: EntityTable<Source, 'id'>;
-	readingProgress: EntityTable<ReadingProgress, 'fingerprint'>;
+	readingState: EntityTable<ReadingState, 'fingerprint'>;
 	preferences: EntityTable<Preference, 'key'>;
 };
 
@@ -46,6 +49,28 @@ db.version(2)
 			.modify((source) => {
 				source.privateMode = false;
 			});
+	});
+
+db.version(3)
+	.stores({
+		sources: '++id, order',
+		readingProgress: null,
+		readingState: 'fingerprint',
+		preferences: 'key',
+	})
+	.upgrade(async (tx) => {
+		const old = await tx.table('readingProgress').toArray();
+		const migrated: ReadingState[] = old.map((row) => ({
+			fingerprint: row.fingerprint,
+			status: 'Unread' as const,
+			position: row.progress ?? '{}',
+			percentage: 0,
+			lastUpdated: row.lastUpdated ?? '1970-01-01T00:00:00Z',
+			statusUpdatedAt: '1970-01-01T00:00:00Z',
+		}));
+		if (migrated.length > 0) {
+			await tx.table('readingState').bulkAdd(migrated);
+		}
 	});
 
 export { db };

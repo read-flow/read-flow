@@ -36,7 +36,8 @@ use crate::api::DocumentMeta;
 use crate::api::File;
 use crate::api::FileDataSource;
 use crate::api::MergeDocumentsRequest;
-use crate::api::ReadingProgress;
+use crate::api::ReadingState;
+use crate::api::ReadingStatus;
 use crate::api::Status;
 use crate::db::dao;
 use crate::settings;
@@ -162,8 +163,9 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         download_file,
         upload_file,
         delete_file,
-        get_reading_progress,
-        put_reading_progress,
+        get_reading_state,
+        put_reading_state,
+        put_reading_status,
         get_documents,
         get_document,
         put_document_metadata,
@@ -526,27 +528,45 @@ async fn upload_file(
     Ok(Json((result, vec![]).into()))
 }
 
-#[get("/reading-progress/<fingerprint>")]
-async fn get_reading_progress(
+#[get("/reading-state/<fingerprint>")]
+async fn get_reading_state(
     fingerprint: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
-) -> Result<Option<Json<ReadingProgress>>> {
+) -> Result<Option<Json<ReadingState>>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let progress = dao::get_reading_progress(&mut conn, fingerprint).await?;
-    Ok(progress.map(Json))
+    let state = dao::get_reading_state(&mut conn, fingerprint).await?;
+    Ok(state.map(Json))
 }
 
-#[put("/reading-progress", data = "<progress>")]
-async fn put_reading_progress(
-    progress: Json<ReadingProgress>,
+#[put("/reading-state", data = "<state>")]
+async fn put_reading_state(
+    state: Json<ReadingState>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Json<ReadingState>> {
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let result = dao::upsert_reading_state(&mut conn, state.into_inner()).await?;
+    Ok(Json(result))
+}
+
+#[derive(serde::Deserialize)]
+struct ReadingStatusRequest {
+    status: ReadingStatus,
+}
+
+#[put("/reading-state/<fingerprint>/status", data = "<req>")]
+async fn put_reading_status(
+    fingerprint: &str,
+    req: Json<ReadingStatusRequest>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
 ) -> Result<()> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    dao::upsert_reading_progress(&mut conn, progress.into_inner()).await?;
+    dao::update_reading_status_only(&mut conn, fingerprint, req.into_inner().status.into()).await?;
     Ok(())
 }
 

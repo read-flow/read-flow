@@ -6,8 +6,8 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import { allDocuments, refreshDocuments } from '$lib/stores/documents';
 	import {
-		fetchReadingProgress,
-		saveReadingProgress,
+		fetchReadingState,
+		saveReadingState,
 		downloadFileFromSources,
 	} from '$lib/api/aggregator';
 	import { loadSources } from '$lib/stores/sources';
@@ -112,15 +112,23 @@
 	// ── Progress ──────────────────────────────────────────────────────────────
 	function scheduleProgressSave(): void {
 		if (progressTimer) clearTimeout(progressTimer);
-		progressTimer = setTimeout(() => void saveProgress(), PROGRESS_DEBOUNCE_MS);
+		if (totalPages > 0 && currentPage === totalPages) {
+			void saveProgress();
+		} else {
+			progressTimer = setTimeout(() => void saveProgress(), PROGRESS_DEBOUNCE_MS);
+		}
 	}
 
 	async function saveProgress(): Promise<void> {
-		if (!doc || currentPage < 1) return;
-		await saveReadingProgress({
+		if (!doc || currentPage < 1 || totalPages < 1) return;
+		const percentage = currentPage / totalPages;
+		await saveReadingState({
 			fingerprint: doc.fingerprint,
-			progress: JSON.stringify({ page: currentPage }),
+			status: 0,
+			position: JSON.stringify({ page: currentPage }),
+			percentage,
 			last_updated: new Date().toISOString(),
+			status_updated_at: '1970-01-01T00:00:00Z',
 		});
 	}
 
@@ -240,19 +248,19 @@
 			return;
 		}
 
-		// Fetch saved reading progress
+		// Fetch saved reading state
 		let startPage = 1;
 		try {
-			const saved = await fetchReadingProgress(fingerprint);
-			if (saved?.progress) {
-				const parsed: unknown = JSON.parse(saved.progress);
+			const saved = await fetchReadingState(fingerprint);
+			if (saved?.position) {
+				const parsed: unknown = JSON.parse(saved.position);
 				if (parsed && typeof parsed === 'object' && 'page' in parsed) {
 					const p = (parsed as { page: unknown }).page;
 					if (typeof p === 'number' && Number.isInteger(p) && p >= 1) startPage = p;
 				}
 			}
 		} catch {
-			// No saved progress or invalid format — start from page 1
+			// No saved state or invalid format — start from page 1
 		}
 
 		// Download and load the PDF

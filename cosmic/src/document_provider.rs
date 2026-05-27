@@ -10,6 +10,7 @@ use provider::r#async::Invalidated;
 use provider::r#async::Observable;
 use provider::r#async::ObservableCache;
 use provider::r#async::Provider;
+use read_flow_core::api::ReadingStatus;
 use tokio::sync::RwLock;
 use tokio::sync::broadcast;
 
@@ -123,6 +124,18 @@ impl DocumentProvider {
     /// Update a document across all sources.
     ///
     /// Automatically invalidates the cache after the update.
+    pub async fn update_reading_status(
+        &self,
+        fingerprint: &str,
+        status: ReadingStatus,
+    ) -> Result<(), FilesClientError> {
+        self.aggregator
+            .read()
+            .await
+            .update_reading_status(fingerprint, status)
+            .await
+    }
+
     pub async fn update_document(&self, document: Document) -> Result<(), FilesClientError> {
         let result = self.aggregator.read().await.update_document(document).await;
         self.set_expired().await;

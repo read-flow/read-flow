@@ -12,7 +12,7 @@ use strum::EnumIter;
 use crate::db::models::ContentTag;
 use crate::db::models::DocumentUserMetadata;
 use crate::db::models::File as DbFile;
-pub use crate::db::models::ReadingProgress;
+pub use crate::db::models::ReadingState;
 pub use crate::scan::metadata::ExtractedMetadata;
 
 #[derive(
@@ -239,10 +239,21 @@ pub trait FileDataSource {
     /// For remote data sources, this uploads the file to the server.
     async fn import_file(&self, path: &Path) -> Result<File, Self::Error>;
 
-    async fn get_reading_progress(
+    /// Get the current reading state for a content fingerprint.
+    async fn get_reading_state(
         &self,
         fingerprint: &str,
-    ) -> Result<Option<ReadingProgress>, Self::Error>;
+    ) -> Result<Option<ReadingState>, Self::Error>;
 
-    async fn upsert_reading_progress(&self, progress: ReadingProgress) -> Result<(), Self::Error>;
+    /// Upsert reading state (position + percentage). The server auto-transitions
+    /// status (Unread→Reading, Reading→Read) based on percentage.
+    /// Returns the resulting state after transitions.
+    async fn upsert_reading_state(&self, state: ReadingState) -> Result<ReadingState, Self::Error>;
+
+    /// Explicitly set reading status (manual override — bypasses auto-transition rules).
+    async fn update_reading_status(
+        &self,
+        fingerprint: &str,
+        status: ReadingStatus,
+    ) -> Result<(), Self::Error>;
 }

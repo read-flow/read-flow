@@ -2,14 +2,14 @@ import { db } from '$lib/db';
 import {
 	ReadFlowClient,
 	type RemoteFile,
-	type RemoteReadingProgress,
+	type RemoteReadingState,
 	type RemoteDocument,
 	type DocumentMeta,
 } from './client';
 import { mergeFiles, groupByDocumentGuid, type AggregatedFile } from './merge';
 
 export type { AggregatedFile } from './merge';
-export type { RemoteDocument, DocumentMeta } from './client';
+export type { RemoteDocument, DocumentMeta, RemoteReadingState } from './client';
 
 async function getClients(): Promise<Array<{ id: number; client: ReadFlowClient }>> {
 	const sources = await db.sources.orderBy('order').toArray();
@@ -61,17 +61,30 @@ export async function removeTagsFromFile(sourceGuids: Record<number, string>, ta
 	);
 }
 
-export async function fetchReadingProgress(fingerprint: string): Promise<RemoteReadingProgress | null> {
-	// Check local IndexedDB first — instant and works offline
-	const local = await db.readingProgress.get(fingerprint);
+const STATUS_LABELS = ['Unread', 'Reading', 'Read'] as const;
+type StatusLabel = (typeof STATUS_LABELS)[number];
+
+function statusLabel(n: number): StatusLabel {
+	return STATUS_LABELS[Math.min(Math.max(n, 0), 2)];
+}
+
+export async function fetchReadingState(fingerprint: string): Promise<RemoteReadingState | null> {
+	const local = await db.readingState.get(fingerprint);
 
 	const clients = await getClients();
 	const results = await Promise.allSettled(
-		clients.map(({ client }) => client.getReadingProgress(fingerprint)),
+		clients.map(({ client }) => client.getReadingState(fingerprint)),
 	);
 
-	let newest: RemoteReadingProgress | null = local
-		? { fingerprint: local.fingerprint, progress: local.progress, last_updated: local.lastUpdated }
+	let newest: RemoteReadingState | null = local
+		? {
+				fingerprint: local.fingerprint,
+				status: STATUS_LABELS.indexOf(local.status),
+				position: local.position,
+				percentage: local.percentage,
+				last_updated: local.lastUpdated,
+				status_updated_at: local.statusUpdatedAt,
+			}
 		: null;
 
 	for (const result of results) {
@@ -83,24 +96,55 @@ export async function fetchReadingProgress(fingerprint: string): Promise<RemoteR
 	return newest;
 }
 
-export async function saveReadingProgress(progress: RemoteReadingProgress): Promise<void> {
-	// Write to local DB immediately — survives offline and is instant
-	await db.readingProgress.put({
-		fingerprint: progress.fingerprint,
-		progress: progress.progress,
-		lastUpdated: progress.last_updated,
+export async function saveReadingState(state: RemoteReadingState): Promise<RemoteReadingState> {
+	await db.readingState.put({
+		fingerprint: state.fingerprint,
+		status: statusLabel(state.status),
+		position: state.position,
+		percentage: state.percentage,
+		lastUpdated: state.last_updated,
+		statusUpdatedAt: state.status_updated_at,
 	});
 
-	// Fan out to remote sources; failures don't block the reader
 	const clients = await getClients();
+	let resultState = state;
 	const results = await Promise.allSettled(
-		clients.map(({ client }) => client.upsertReadingProgress(progress)),
+		clients.map(({ client }) => client.upsertReadingState(state)),
 	);
 	for (const result of results) {
-		if (result.status === 'rejected') {
-			console.warn('Failed to save reading progress to a source:', result.reason);
+		if (result.status === 'fulfilled') {
+			resultState = result.value;
+			await db.readingState.put({
+				fingerprint: resultState.fingerprint,
+				status: statusLabel(resultState.status),
+				position: resultState.position,
+				percentage: resultState.percentage,
+				lastUpdated: resultState.last_updated,
+				statusUpdatedAt: resultState.status_updated_at,
+			});
+			break;
 		}
+		console.warn('Failed to save reading state to a source:', result.reason);
 	}
+	return resultState;
+}
+
+export async function updateReadingStatus(
+	sourceGuids: Record<number, string>,
+	fingerprint: string,
+	status: StatusLabel,
+): Promise<void> {
+	const statusNum = STATUS_LABELS.indexOf(status);
+	const sources = await db.sources.orderBy('order').toArray();
+	await db.readingState
+		.where('fingerprint')
+		.equals(fingerprint)
+		.modify({ status, statusUpdatedAt: new Date().toISOString() });
+	await Promise.allSettled(
+		sources
+			.filter((s) => s.id !== undefined && sourceGuids[s.id as number] !== undefined)
+			.map((s) => new ReadFlowClient(s).updateReadingStatus(fingerprint, statusNum)),
+	);
 }
 
 /**
