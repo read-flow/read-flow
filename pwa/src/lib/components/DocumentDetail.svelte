@@ -536,7 +536,7 @@
 						placeholder="Add a tag…"
 						class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
 							bg-slate-50 dark:bg-slate-700/50 text-sm
-							focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-transparent
+							focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-transparent
 							placeholder:text-slate-400 dark:placeholder:text-slate-500 disabled:opacity-50"
 					/>
 					<datalist id="tag-suggestions-{fingerprint}">

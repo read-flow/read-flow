@@ -18,9 +18,16 @@ export type ColorScheme = LightScheme | DarkScheme;
 export type Theme = ColorScheme;
 
 export interface CustomColors {
-	bg: string;
-	surface: string;
-	accent: string;
+	bg: string;       // page background
+	surface: string;  // card/panel background
+	accent: string;   // interactive highlight (buttons, focus rings, active states)
+	text: string;     // primary body text color
+}
+
+export interface NamedTheme {
+	id: string;
+	name: string;
+	colors: CustomColors;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────
@@ -29,8 +36,12 @@ const MODE_KEY          = 'read-flow-mode';
 const LIGHT_KEY         = 'read-flow-light-scheme';
 const DARK_KEY          = 'read-flow-dark-scheme';
 const CUSTOM_COLORS_KEY = 'read-flow-custom-colors';
+const NAMED_THEMES_KEY  = 'read-flow-named-themes';
 
-const DEFAULT_CUSTOM_COLORS: CustomColors = { bg: '#1e293b', surface: '#334155', accent: '#e2e8f0' };
+const DEFAULT_CUSTOM_DARK: CustomColors  = { bg: '#1e293b', surface: '#334155', accent: '#3b82f6', text: '#e2e8f0' };
+const DEFAULT_CUSTOM_LIGHT: CustomColors = { bg: '#f8fafc', surface: '#ffffff', accent: '#3b82f6', text: '#0f172a' };
+// Default shown in the editor before the user picks light vs dark
+const DEFAULT_CUSTOM_COLORS: CustomColors = DEFAULT_CUSTOM_DARK;
 
 const DARK_SCHEMES = new Set<string>([
 	'slate-dark', 'nord-dark',
@@ -58,6 +69,7 @@ export const mode        = writable<Mode>('system');
 export const lightScheme = writable<LightScheme>('slate-light');
 export const darkScheme  = writable<DarkScheme>('slate-dark');
 export const customColors = writable<CustomColors>(DEFAULT_CUSTOM_COLORS);
+export const namedThemes  = writable<NamedTheme[]>([]);
 
 /**
  * The colour scheme currently applied to the page.
@@ -111,34 +123,40 @@ export function isCustomDark(c: CustomColors): boolean {
 
 // ── Custom CSS variable application ───────────────────────────────────────
 
-function applyCustomVars({ bg, surface, accent }: CustomColors, dark: boolean): void {
+function applyCustomVars({ bg, surface, accent, text }: CustomColors, dark: boolean): void {
 	if (!browser) return;
 	const set = (name: string, val: string) =>
 		document.documentElement.style.setProperty(name, val);
 	if (dark) {
 		set('--color-slate-900', bg);
 		set('--color-slate-800', surface);
-		set('--color-slate-700', lerpColors(surface, accent, 0.12));
-		set('--color-slate-600', lerpColors(surface, accent, 0.25));
-		set('--color-slate-500', lerpColors(surface, accent, 0.40));
-		set('--color-slate-400', lerpColors(surface, accent, 0.55));
-		set('--color-slate-300', lerpColors(surface, accent, 0.68));
-		set('--color-slate-200', lerpColors(surface, accent, 0.80));
-		set('--color-slate-100', accent);
-		set('--color-slate-50',  lerpColors(accent, '#ffffff', 0.25));
-		set('--color-white',     lerpColors(accent, '#ffffff', 0.12));
+		set('--color-slate-700', lerpColors(surface, text, 0.15));
+		set('--color-slate-600', lerpColors(surface, text, 0.30));
+		set('--color-slate-500', lerpColors(surface, text, 0.45));
+		set('--color-slate-400', lerpColors(surface, text, 0.60));
+		set('--color-slate-300', lerpColors(surface, text, 0.75));
+		set('--color-slate-200', lerpColors(surface, text, 0.87));
+		set('--color-slate-100', text);
+		set('--color-slate-50',  lerpColors(text, '#ffffff', 0.25));
+		set('--color-white',     lerpColors(text, '#ffffff', 0.12));
+		set('--rf-bg',     bg);
+		set('--rf-text',   text);
+		set('--rf-accent', accent);
 	} else {
 		set('--color-slate-50',  bg);
 		set('--color-white',     surface);
-		set('--color-slate-100', lerpColors(bg, accent, 0.08));
-		set('--color-slate-200', lerpColors(bg, accent, 0.18));
-		set('--color-slate-300', lerpColors(bg, accent, 0.30));
-		set('--color-slate-400', lerpColors(bg, accent, 0.45));
-		set('--color-slate-500', lerpColors(bg, accent, 0.58));
-		set('--color-slate-600', lerpColors(bg, accent, 0.70));
-		set('--color-slate-700', lerpColors(bg, accent, 0.82));
-		set('--color-slate-800', lerpColors(bg, accent, 0.90));
-		set('--color-slate-900', accent);
+		set('--color-slate-100', lerpColors(bg, text, 0.08));
+		set('--color-slate-200', lerpColors(bg, text, 0.18));
+		set('--color-slate-300', lerpColors(bg, text, 0.30));
+		set('--color-slate-400', lerpColors(bg, text, 0.45));
+		set('--color-slate-500', lerpColors(bg, text, 0.58));
+		set('--color-slate-600', lerpColors(bg, text, 0.70));
+		set('--color-slate-700', lerpColors(bg, text, 0.82));
+		set('--color-slate-800', lerpColors(bg, text, 0.90));
+		set('--color-slate-900', text);
+		set('--rf-bg',     surface);
+		set('--rf-text',   text);
+		set('--rf-accent', accent);
 	}
 }
 
@@ -148,6 +166,7 @@ function clearCustomVars(): void {
 		'--color-white', '--color-slate-50', '--color-slate-100', '--color-slate-200',
 		'--color-slate-300', '--color-slate-400', '--color-slate-500', '--color-slate-600',
 		'--color-slate-700', '--color-slate-800', '--color-slate-900',
+		'--rf-bg', '--rf-text', '--rf-accent',
 	].forEach(v => document.documentElement.style.removeProperty(v));
 }
 
@@ -196,12 +215,80 @@ function migrate(): void {
 	}
 }
 
+/** Migrate old 3-field CustomColors (where accent was text) to 4-field format. */
+function migrateCustomColors(raw: unknown): CustomColors {
+	const c = raw as Record<string, string>;
+	if (c.text) return c as unknown as CustomColors;
+	// Old format: accent was the text color; pick a sensible default accent.
+	const isDark = relativeLuminance(c.bg ?? '#1e293b') < 0.5;
+	return {
+		bg:      c.bg      ?? (isDark ? DEFAULT_CUSTOM_DARK.bg      : DEFAULT_CUSTOM_LIGHT.bg),
+		surface: c.surface ?? (isDark ? DEFAULT_CUSTOM_DARK.surface  : DEFAULT_CUSTOM_LIGHT.surface),
+		accent:  isDark ? DEFAULT_CUSTOM_DARK.accent : DEFAULT_CUSTOM_LIGHT.accent,
+		text:    c.accent  ?? (isDark ? DEFAULT_CUSTOM_DARK.text     : DEFAULT_CUSTOM_LIGHT.text),
+	};
+}
+
+// ── Named theme CRUD ───────────────────────────────────────────────────────
+
+function persistNamedThemes(themes: NamedTheme[]): void {
+	if (!browser) return;
+	localStorage.setItem(NAMED_THEMES_KEY, JSON.stringify(themes));
+	namedThemes.set(themes);
+}
+
+export function loadNamedThemes(): void {
+	if (!browser) return;
+	try {
+		const raw = localStorage.getItem(NAMED_THEMES_KEY);
+		if (raw) namedThemes.set(JSON.parse(raw) as NamedTheme[]);
+	} catch { /* ignore */ }
+}
+
+export function saveNamedTheme(name: string, colors: CustomColors): void {
+	const themes = get(namedThemes);
+	const existing = themes.findIndex(t => t.name === name);
+	const entry: NamedTheme = {
+		id: existing >= 0 ? themes[existing].id : crypto.randomUUID(),
+		name,
+		colors,
+	};
+	persistNamedThemes(existing >= 0
+		? themes.map((t, i) => i === existing ? entry : t)
+		: [...themes, entry]);
+}
+
+export function deleteNamedTheme(id: string): void {
+	persistNamedThemes(get(namedThemes).filter(t => t.id !== id));
+}
+
+export function exportThemes(): void {
+	if (!browser) return;
+	const json = JSON.stringify(get(namedThemes), null, 2);
+	const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = 'read-flow-themes.json';
+	a.click();
+	URL.revokeObjectURL(url);
+}
+
+export function importThemes(json: string): void {
+	try {
+		const imported = JSON.parse(json) as NamedTheme[];
+		const current = get(namedThemes);
+		const existingIds = new Set(current.map(t => t.id));
+		persistNamedThemes([...current, ...imported.filter(t => !existingIds.has(t.id))]);
+	} catch { /* ignore */ }
+}
+
 // ── Public API ─────────────────────────────────────────────────────────────
 
 export function initTheme(): () => void {
 	if (!browser) return () => {};
 
 	migrate();
+	loadNamedThemes();
 
 	const savedMode  = (localStorage.getItem(MODE_KEY)  as Mode        | null) ?? 'system';
 	const savedLight = (localStorage.getItem(LIGHT_KEY) as LightScheme | null) ?? 'slate-light';
@@ -210,7 +297,9 @@ export function initTheme(): () => void {
 	// Restore custom colors before subscribing so applyScheme can read them
 	const storedCustom = localStorage.getItem(CUSTOM_COLORS_KEY);
 	if (storedCustom) {
-		try { customColors.set(JSON.parse(storedCustom) as CustomColors); } catch { /* ignore */ }
+		try {
+			customColors.set(migrateCustomColors(JSON.parse(storedCustom)));
+		} catch { /* ignore */ }
 	}
 
 	_prefersDark.set(window.matchMedia('(prefers-color-scheme: dark)').matches);

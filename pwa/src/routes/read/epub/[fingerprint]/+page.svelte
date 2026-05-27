@@ -69,20 +69,19 @@
 	}
 
 	// ── Reading theme ─────────────────────────────────────────────────────────
-	// Read the active scheme's colours from the computed CSS variables so the
-	// epub.js iframe always matches whichever colour scheme is currently active.
+	// Read semantic --rf-* variables so EPUB theming works correctly for all
+	// colour schemes, including custom themes where accent ≠ text colour.
 	function applyEpubTheme(dark: boolean): void {
 		if (!rendition) return;
-		const cs = getComputedStyle(document.documentElement);
-		const bg   = cs.getPropertyValue(dark ? '--color-slate-900' : '--color-white').trim()
-		             || (dark ? '#1e293b' : '#ffffff');
-		const text = cs.getPropertyValue(dark ? '--color-slate-100' : '--color-slate-900').trim()
-		             || (dark ? '#f1f5f9' : '#0f172a');
+		const cs     = getComputedStyle(document.documentElement);
+		const bg     = cs.getPropertyValue('--rf-bg').trim()     || (dark ? '#1e293b' : '#ffffff');
+		const text   = cs.getPropertyValue('--rf-text').trim()   || (dark ? '#f1f5f9' : '#0f172a');
+		const accent = cs.getPropertyValue('--rf-accent').trim() || (dark ? '#60a5fa' : '#3b82f6');
 		const name = dark ? 'dark' : 'light';
 		rendition.themes.register(name, {
 			html: { background: bg, color: text },
 			body: { background: `${bg} !important`, color: `${text} !important` },
-			...(dark ? { a: { color: '#93c5fd !important' } } : {}),
+			a:    { color: `${accent} !important` },
 		});
 		rendition.themes.select(name);
 	}

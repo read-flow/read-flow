@@ -49,7 +49,7 @@
 				// Apply custom CSS variables inline so custom themes have no FOUC
 				if (scheme === 'custom-dark' || scheme === 'custom-light') {
 					var _cc = JSON.parse(localStorage.getItem('read-flow-custom-colors') || 'null');
-					if (_cc && _cc.bg && _cc.surface && _cc.accent) {
+					if (_cc && _cc.bg && _cc.surface) {
 						// Mirror of lerpColors/applyCustomVars in theme.ts — keep weights in sync.
 				var _lerp = function(h1, h2, t) {
 							var n1 = parseInt(h1.slice(1), 16), n2 = parseInt(h2.slice(1), 16);
@@ -60,31 +60,39 @@
 							return '#'+c(r)+c(g)+c(b);
 						};
 						var _s = document.documentElement.style;
-						var bg = _cc.bg, sf = _cc.surface, ac = _cc.accent;
+						var bg = _cc.bg, sf = _cc.surface, ac = _cc.accent || '#3b82f6';
+						// text: new 4-field format; fall back to old accent if missing
+						var tx = _cc.text || _cc.accent || (scheme === 'custom-dark' ? '#e2e8f0' : '#0f172a');
 						if (scheme === 'custom-dark') {
 							_s.setProperty('--color-slate-900', bg);
 							_s.setProperty('--color-slate-800', sf);
-							_s.setProperty('--color-slate-700', _lerp(sf, ac, 0.12));
-							_s.setProperty('--color-slate-600', _lerp(sf, ac, 0.25));
-							_s.setProperty('--color-slate-500', _lerp(sf, ac, 0.40));
-							_s.setProperty('--color-slate-400', _lerp(sf, ac, 0.55));
-							_s.setProperty('--color-slate-300', _lerp(sf, ac, 0.68));
-							_s.setProperty('--color-slate-200', _lerp(sf, ac, 0.80));
-							_s.setProperty('--color-slate-100', ac);
-							_s.setProperty('--color-slate-50',  _lerp(ac, '#ffffff', 0.25));
-							_s.setProperty('--color-white',     _lerp(ac, '#ffffff', 0.12));
+							_s.setProperty('--color-slate-700', _lerp(sf, tx, 0.15));
+							_s.setProperty('--color-slate-600', _lerp(sf, tx, 0.30));
+							_s.setProperty('--color-slate-500', _lerp(sf, tx, 0.45));
+							_s.setProperty('--color-slate-400', _lerp(sf, tx, 0.60));
+							_s.setProperty('--color-slate-300', _lerp(sf, tx, 0.75));
+							_s.setProperty('--color-slate-200', _lerp(sf, tx, 0.87));
+							_s.setProperty('--color-slate-100', tx);
+							_s.setProperty('--color-slate-50',  _lerp(tx, '#ffffff', 0.25));
+							_s.setProperty('--color-white',     _lerp(tx, '#ffffff', 0.12));
+							_s.setProperty('--rf-bg',     bg);
+							_s.setProperty('--rf-text',   tx);
+							_s.setProperty('--rf-accent', ac);
 						} else {
 							_s.setProperty('--color-slate-50',  bg);
 							_s.setProperty('--color-white',     sf);
-							_s.setProperty('--color-slate-100', _lerp(bg, ac, 0.08));
-							_s.setProperty('--color-slate-200', _lerp(bg, ac, 0.18));
-							_s.setProperty('--color-slate-300', _lerp(bg, ac, 0.30));
-							_s.setProperty('--color-slate-400', _lerp(bg, ac, 0.45));
-							_s.setProperty('--color-slate-500', _lerp(bg, ac, 0.58));
-							_s.setProperty('--color-slate-600', _lerp(bg, ac, 0.70));
-							_s.setProperty('--color-slate-700', _lerp(bg, ac, 0.82));
-							_s.setProperty('--color-slate-800', _lerp(bg, ac, 0.90));
-							_s.setProperty('--color-slate-900', ac);
+							_s.setProperty('--color-slate-100', _lerp(bg, tx, 0.08));
+							_s.setProperty('--color-slate-200', _lerp(bg, tx, 0.18));
+							_s.setProperty('--color-slate-300', _lerp(bg, tx, 0.30));
+							_s.setProperty('--color-slate-400', _lerp(bg, tx, 0.45));
+							_s.setProperty('--color-slate-500', _lerp(bg, tx, 0.58));
+							_s.setProperty('--color-slate-600', _lerp(bg, tx, 0.70));
+							_s.setProperty('--color-slate-700', _lerp(bg, tx, 0.82));
+							_s.setProperty('--color-slate-800', _lerp(bg, tx, 0.90));
+							_s.setProperty('--color-slate-900', tx);
+							_s.setProperty('--rf-bg',     sf);
+							_s.setProperty('--rf-text',   tx);
+							_s.setProperty('--rf-accent', ac);
 						}
 					}
 				}

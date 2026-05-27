@@ -144,20 +144,20 @@ describe('relativeLuminance', () => {
 
 describe('isCustomDark', () => {
 	it('returns true for a dark background', () => {
-		const dark: CustomColors = { bg: '#1e293b', surface: '#334155', accent: '#e2e8f0' };
+		const dark: CustomColors = { bg: '#1e293b', surface: '#334155', accent: '#3b82f6', text: '#e2e8f0' };
 		expect(isCustomDark(dark)).toBe(true);
 	});
 
 	it('returns false for a light background', () => {
-		const light: CustomColors = { bg: '#f8fafc', surface: '#ffffff', accent: '#0f172a' };
+		const light: CustomColors = { bg: '#f8fafc', surface: '#ffffff', accent: '#3b82f6', text: '#0f172a' };
 		expect(isCustomDark(light)).toBe(false);
 	});
 
 	it('returns false for a pure white background', () => {
-		expect(isCustomDark({ bg: '#ffffff', surface: '#f0f0f0', accent: '#333333' })).toBe(false);
+		expect(isCustomDark({ bg: '#ffffff', surface: '#f0f0f0', accent: '#3b82f6', text: '#333333' })).toBe(false);
 	});
 
 	it('returns true for a pure black background', () => {
-		expect(isCustomDark({ bg: '#000000', surface: '#111111', accent: '#eeeeee' })).toBe(true);
+		expect(isCustomDark({ bg: '#000000', surface: '#111111', accent: '#3b82f6', text: '#eeeeee' })).toBe(true);
 	});
 });

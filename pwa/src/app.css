@@ -16,6 +16,12 @@
 	*/
 	--color-white: #fff;
 	--color-black: #000;
+
+	/*
+		Accent color — driven by --rf-accent so it tracks the active colour scheme.
+		Enables bg-accent, text-accent, ring-accent, border-accent, etc.
+	*/
+	--color-accent: var(--rf-accent);
 }
 
 /*
@@ -149,6 +155,72 @@
 	--color-slate-100:  #c8cdd6; /* primary text (dark)                */
 	--color-slate-50:   #d7dae0; /* brighter                           */
 	--color-white:      #eceff4; /* whitest                            */
+}
+
+/*
+	Semantic reader variables — used by the EPUB/PDF viewers so they are
+	independent of which Tailwind slate slot carries which meaning.
+
+	--rf-bg     : page/iframe background colour
+	--rf-text   : primary body text colour
+	--rf-accent : interactive highlight (links, buttons, focus rings)
+
+	Every scheme (predefined + custom) must set all three.
+	Custom schemes set them in JS via applyCustomVars in theme.ts.
+*/
+
+/* Slate Light (default, no data-scheme) */
+:root {
+	--rf-bg:     #ffffff;
+	--rf-text:   #0f172a;
+	--rf-accent: #3b82f6;
+}
+/* Slate Dark (.dark, no data-scheme) */
+:root.dark {
+	--rf-bg:     #0f172a;
+	--rf-text:   #f1f5f9;
+	--rf-accent: #60a5fa;
+}
+
+:root[data-scheme="nord-light"] {
+	--rf-bg:     #eceff4;
+	--rf-text:   #2e3440;
+	--rf-accent: #5e81ac;
+}
+:root[data-scheme="nord-dark"] {
+	--rf-bg:     #2e3440;
+	--rf-text:   #d8dee9;
+	--rf-accent: #88c0d0;
+}
+:root[data-scheme="catppuccin-latte"] {
+	--rf-bg:     #eff1f5;
+	--rf-text:   #4c4f69;
+	--rf-accent: #1e66f5;
+}
+:root[data-scheme="catppuccin-frappe"] {
+	--rf-bg:     #303446;
+	--rf-text:   #b5bfe2;
+	--rf-accent: #8caaee;
+}
+:root[data-scheme="catppuccin-macchiato"] {
+	--rf-bg:     #24273a;
+	--rf-text:   #b8c0e0;
+	--rf-accent: #8aadf4;
+}
+:root[data-scheme="catppuccin-mocha"] {
+	--rf-bg:     #1e1e2e;
+	--rf-text:   #bac2de;
+	--rf-accent: #89b4fa;
+}
+:root[data-scheme="one-light"] {
+	--rf-bg:     #fafafa;
+	--rf-text:   #383a42;
+	--rf-accent: #4078f2;
+}
+:root[data-scheme="one-dark"] {
+	--rf-bg:     #21252b;
+	--rf-text:   #c8cdd6;
+	--rf-accent: #61afef;
 }
 
 /* ── Global baseline ─────────────────────────────────────────────────────── */

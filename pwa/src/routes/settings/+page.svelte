@@ -1,8 +1,9 @@
 <script lang="ts">
 	import Icon from '$lib/components/Icon.svelte';
 	import {
-		mode, lightScheme, darkScheme, customColors,
+		mode, lightScheme, darkScheme, customColors, namedThemes,
 		setMode, setLightScheme, setDarkScheme, setCustomColors,
+		saveNamedTheme, deleteNamedTheme, exportThemes, importThemes,
 		isCustomDark, modeIcon, modeLabel,
 		type Mode, type LightScheme, type DarkScheme, type CustomColors,
 	} from '$lib/stores/theme';
@@ -44,8 +45,35 @@
 	// Which section (light/dark) the custom card belongs to — tracks draft colors
 	const customIsDark = $derived(isCustomDark(draft));
 
+	const COLOR_FIELDS: { key: keyof CustomColors; label: string }[] = [
+		{ key: 'bg',      label: 'Background' },
+		{ key: 'surface', label: 'Container'  },
+		{ key: 'text',    label: 'Text'       },
+		{ key: 'accent',  label: 'Accent'     },
+	];
+
 	function applyCustomTheme() {
 		setCustomColors(draft);
+	}
+
+	// ── Named theme management ──────────────────────────────────────────────
+
+	let saveNameInput = $state('');
+	let showSaveInput = $state(false);
+
+	function handleSave() {
+		const name = saveNameInput.trim();
+		if (!name) return;
+		saveNamedTheme(name, draft);
+		saveNameInput = '';
+		showSaveInput = false;
+	}
+
+	function handleImport(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		file.text().then(importThemes);
+		(e.target as HTMLInputElement).value = '';
 	}
 </script>
 
@@ -147,7 +175,7 @@
 								: 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/40'}"
 					>
 						<div class="flex gap-1 items-center">
-							{#each [draft.bg, draft.surface, draft.accent] as color}
+							{#each [draft.bg, draft.surface, draft.text] as color}
 								<span
 									class="block w-4 h-4 rounded-full border border-black/10 dark:border-white/10 shrink-0"
 									style="background:{color}"
@@ -211,7 +239,7 @@
 								: 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/40'}"
 					>
 						<div class="flex gap-1 items-center">
-							{#each [draft.bg, draft.surface, draft.accent] as color}
+							{#each [draft.bg, draft.surface, draft.text] as color}
 								<span
 									class="block w-4 h-4 rounded-full border border-black/10 dark:border-white/10 shrink-0"
 									style="background:{color}"
@@ -235,17 +263,13 @@
 				Custom theme colors
 			</p>
 			<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 space-y-4">
-				<div class="grid grid-cols-3 gap-3">
-					{#each [
-						{ key: 'bg',      label: 'Background' },
-						{ key: 'surface', label: 'Container'  },
-						{ key: 'accent',  label: 'Accent'     },
-					] as field}
+				<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+					{#each COLOR_FIELDS as field}
 						<label class="flex flex-col items-center gap-2">
 							<span class="text-xs font-medium text-slate-600 dark:text-slate-400">{field.label}</span>
 							<input
 								type="color"
-								value={draft[field.key as keyof CustomColors]}
+								value={draft[field.key]}
 								oninput={(e) => {
 									draft = { ...draft, [field.key]: (e.target as HTMLInputElement).value };
 								}}
@@ -253,7 +277,7 @@
 							/>
 							<input
 								type="text"
-								value={draft[field.key as keyof CustomColors]}
+								value={draft[field.key]}
 								oninput={(e) => {
 									const raw = (e.target as HTMLInputElement).value.trim();
 									const val = raw.startsWith('#') ? raw : '#' + raw;
@@ -265,7 +289,7 @@
 								maxlength={7}
 								class="w-full px-2 py-1 text-xs font-mono text-center rounded-md border border-slate-200 dark:border-slate-600
 									bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300
-									focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-transparent"
+									focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-transparent"
 							/>
 						</label>
 					{/each}
@@ -273,7 +297,7 @@
 
 				<div class="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-700/50">
 					<div class="flex items-center gap-2">
-						{#each [draft.bg, draft.surface, draft.accent] as color}
+						{#each [draft.bg, draft.surface, draft.text, draft.accent] as color}
 							<span
 								class="block w-8 h-8 rounded-lg border border-black/10 dark:border-white/10 shrink-0"
 								style="background:{color}"
@@ -297,6 +321,99 @@
 						<Icon name="check" class="w-3 h-3" />
 						Custom theme is active
 					</p>
+				{/if}
+			</div>
+		</div>
+
+		<!-- Named themes -->
+		<div>
+			<div class="flex items-center justify-between mb-3">
+				<p class="text-xs font-medium text-slate-500 dark:text-slate-400">Saved themes</p>
+				<div class="flex items-center gap-2">
+					<label class="px-2.5 py-1.5 rounded-lg text-xs font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 cursor-pointer transition-colors">
+						Import
+						<input type="file" accept=".json" class="sr-only" onchange={handleImport} />
+					</label>
+					{#if $namedThemes.length > 0}
+						<button
+							onclick={exportThemes}
+							class="px-2.5 py-1.5 rounded-lg text-xs font-medium border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
+						>
+							Export all
+						</button>
+					{/if}
+				</div>
+			</div>
+
+			{#if $namedThemes.length > 0}
+				<div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr))">
+					{#each $namedThemes as t (t.id)}
+						<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 flex flex-col gap-2">
+							<div class="flex items-center gap-1.5">
+								{#each [t.colors.bg, t.colors.surface, t.colors.text, t.colors.accent] as color}
+									<span
+										class="block w-4 h-4 rounded-full border border-black/10 dark:border-white/10 shrink-0"
+										style="background:{color}"
+									></span>
+								{/each}
+							</div>
+							<p class="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">{t.name}</p>
+							<div class="flex gap-1.5 mt-auto pt-1">
+								<button
+									onclick={() => { draft = { ...t.colors }; setCustomColors(t.colors); }}
+									class="flex-1 py-1 rounded-md text-xs font-medium bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-white transition-colors"
+								>
+									Apply
+								</button>
+								<button
+									onclick={() => deleteNamedTheme(t.id)}
+									class="p-1 rounded-md text-xs border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-300 dark:hover:border-red-700 transition-colors"
+									aria-label="Delete {t.name}"
+								>
+									<Icon name="trash" class="w-3.5 h-3.5" />
+								</button>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{:else}
+				<p class="text-xs text-slate-400 dark:text-slate-500">No saved themes yet.</p>
+			{/if}
+
+			<!-- Save current draft as named theme -->
+			<div class="mt-3">
+				{#if showSaveInput}
+					<div class="flex gap-2">
+						<input
+							type="text"
+							bind:value={saveNameInput}
+							placeholder="Theme name"
+							onkeydown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') showSaveInput = false; }}
+							class="flex-1 px-3 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-700
+								bg-slate-50 dark:bg-slate-700/50 text-slate-800 dark:text-slate-200
+								focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-transparent"
+						/>
+						<button
+							onclick={handleSave}
+							class="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-700 dark:hover:bg-white transition-colors"
+						>
+							Save
+						</button>
+						<button
+							onclick={() => showSaveInput = false}
+							class="px-3 py-1.5 rounded-lg text-sm border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300 transition-colors"
+						>
+							Cancel
+						</button>
+					</div>
+				{:else}
+					<button
+						onclick={() => { saveNameInput = ''; showSaveInput = true; }}
+						class="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors flex items-center gap-1"
+					>
+						<Icon name="plus" class="w-3.5 h-3.5" />
+						Save current as named theme
+					</button>
 				{/if}
 			</div>
 		</div>

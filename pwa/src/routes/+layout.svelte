@@ -68,7 +68,7 @@
 				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
 					{collapsed ? 'justify-center' : 'gap-3'}
 					{isActive('/')
-						? 'bg-slate-100 dark:bg-slate-700 font-medium'
+						? 'bg-accent/10 text-accent font-medium'
 						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white'}"
 			>
 				<Icon name="library" class="w-4 h-4 shrink-0" />
@@ -81,7 +81,7 @@
 				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
 					{collapsed ? 'justify-center' : 'gap-3'}
 					{isActive('/settings') && !isActive('/settings/sources')
-						? 'bg-slate-100 dark:bg-slate-700 font-medium'
+						? 'bg-accent/10 text-accent font-medium'
 						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white'}"
 			>
 				<Icon name="settings" class="w-4 h-4 shrink-0" />
@@ -95,7 +95,7 @@
 						href="/settings/sources"
 						class="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors
 							{isActive('/settings/sources')
-								? 'bg-slate-100 dark:bg-slate-700 font-medium'
+								? 'bg-accent/10 text-accent font-medium'
 								: 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-200'}"
 					>
 						<Icon name="server" class="w-3.5 h-3.5 shrink-0" />
@@ -178,7 +178,7 @@
 			<a
 				href={link.href}
 				class="flex-1 flex flex-col items-center gap-1 pt-2 pb-2 text-xs font-medium transition-colors min-h-[44px]
-					{isActive(link.href) ? '' : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}"
+					{isActive(link.href) ? 'text-accent' : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}"
 			>
 				<Icon name={link.icon} class="w-5 h-5" />
 				<span>{link.label}</span>
