@@ -13,6 +13,7 @@ function makeDoc(overrides: Partial<AggregatedFile> = {}): AggregatedFile {
 		status: 'Unread',
 		document_guid: null,
 		sourceGuids: { 1: 'g1' },
+		otherFormats: [],
 		...overrides,
 	};
 }

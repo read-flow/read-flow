@@ -7,6 +7,19 @@ import {
 } from '$lib/api/aggregator';
 import { filterDocuments } from '$lib/utils/filter';
 
+/**
+ * Find an AggregatedFile by fingerprint, searching both top-level entries and
+ * their otherFormats. Necessary because groupByDocumentGuid only keeps one
+ * format as the primary entry; all others live in otherFormats.
+ */
+export function findByFingerprint(docs: AggregatedFile[], fingerprint: string): AggregatedFile | null {
+	return (
+		docs.find((d) => d.fingerprint === fingerprint) ??
+		docs.flatMap((d) => d.otherFormats).find((d) => d.fingerprint === fingerprint) ??
+		null
+	);
+}
+
 export const allDocuments = writable<AggregatedFile[]>([]);
 export const documentMetaMap = writable<Map<string, DocumentMeta>>(new Map());
 export const isLoading = writable(false);

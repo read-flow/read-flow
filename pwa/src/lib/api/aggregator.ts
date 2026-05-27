@@ -5,11 +5,12 @@ import {
 	type RemoteReadingState,
 	type RemoteDocument,
 	type DocumentMeta,
+	type ReadingStatus,
 } from './client';
 import { mergeFiles, groupByDocumentGuid, type AggregatedFile } from './merge';
 
 export type { AggregatedFile } from './merge';
-export type { RemoteDocument, DocumentMeta, RemoteReadingState } from './client';
+export type { RemoteDocument, DocumentMeta, RemoteReadingState, ReadingStatus } from './client';
 
 async function getClients(): Promise<Array<{ id: number; client: ReadFlowClient }>> {
 	const sources = await db.sources.orderBy('order').toArray();
@@ -61,10 +62,9 @@ export async function removeTagsFromFile(sourceGuids: Record<number, string>, ta
 	);
 }
 
-const STATUS_LABELS = ['Unread', 'Reading', 'Read'] as const;
-type StatusLabel = (typeof STATUS_LABELS)[number];
+const STATUS_LABELS: ReadingStatus[] = ['Unread', 'Reading', 'Read'];
 
-function statusLabel(n: number): StatusLabel {
+function statusLabel(n: number): ReadingStatus {
 	return STATUS_LABELS[Math.min(Math.max(n, 0), 2)];
 }
 
@@ -132,7 +132,7 @@ export async function saveReadingState(state: RemoteReadingState): Promise<Remot
 export async function updateReadingStatus(
 	sourceGuids: Record<number, string>,
 	fingerprint: string,
-	status: StatusLabel,
+	status: ReadingStatus,
 ): Promise<void> {
 	const statusNum = STATUS_LABELS.indexOf(status);
 	const sources = await db.sources.orderBy('order').toArray();

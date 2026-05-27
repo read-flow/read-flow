@@ -1,5 +1,8 @@
 import type { Source } from '$lib/db';
 
+/** String-form reading status as returned by GET /files. */
+export type ReadingStatus = 'Unread' | 'Reading' | 'Read';
+
 export type DocumentType =
 	| 'Book'
 	| 'Article'
@@ -30,19 +33,25 @@ export interface RemoteDocument {
 }
 
 export interface RemoteFile {
+	/** Per-server UUID for this file. Use fingerprint for cross-server identity. */
 	guid: string;
 	path: string;
 	type_: string;
 	size: number;
+	/** Content hash — stable across servers and renames. Used as routing key. */
 	fingerprint: string;
 	tags: string[];
-	status: 'Unread' | 'Reading' | 'Read';
+	/** Populated from the unified reading_state table via JOIN on GET /files. */
+	status: ReadingStatus;
+	/** UUID of the Document this file belongs to, null if ungrouped. */
 	document_guid: string | null;
 }
 
 export interface RemoteReadingState {
 	fingerprint: string;
+	/** Integer encoding: 0 = Unread, 1 = Reading, 2 = Read. */
 	status: number;
+	/** JSON blob — format is reader-specific (e.g. {"cfi":"..."} for EPUB). */
 	position: string;
 	percentage: number;
 	last_updated: string;

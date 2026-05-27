@@ -5,11 +5,12 @@
 		documentMetaMap,
 		refreshDocuments,
 		allTags,
+		findByFingerprint,
 	} from '$lib/stores/documents';
 	import { addTagsToFile, removeTagsFromFile, updateDocumentMetadata, updateReadingStatus } from '$lib/api/aggregator';
 	import { get } from 'svelte/store';
 	import type { AggregatedFile } from '$lib/api/aggregator';
-	import type { DocumentMeta, DocumentType } from '$lib/api/client';
+	import type { DocumentMeta, DocumentType, ReadingStatus } from '$lib/api/client';
 
 	const DOC_TYPES: DocumentType[] = [
 		'Book', 'Article', 'ResearchPaper', 'Thesis', 'Letter', 'Magazine', 'Manual', 'Report',
@@ -97,13 +98,13 @@
 			docs = get(allDocuments);
 			// Guard against a later click overtaking this async lookup
 			if (fp === fingerprint) {
-				doc = docs.find((d) => d.fingerprint === fp) ?? null;
+				doc = findByFingerprint(docs, fp);
 				loading = false;
 			}
 		})();
 	});
 
-	async function changeStatus(newStatus: 'Unread' | 'Reading' | 'Read'): Promise<void> {
+	async function changeStatus(newStatus: ReadingStatus): Promise<void> {
 		if (!doc || statusUpdating) return;
 		statusUpdating = true;
 		try {
@@ -143,7 +144,7 @@
 		} catch {
 			tagError = `Failed to remove tag "${tag}".`;
 			const docs = get(allDocuments);
-			doc = docs.find((d) => d.fingerprint === fingerprint) ?? doc;
+			doc = findByFingerprint(docs, fingerprint) ?? doc;
 		} finally {
 			saving = false;
 		}
@@ -164,11 +165,11 @@
 			await addTagsToFile(doc.sourceGuids, [tag]);
 			await refreshDocuments();
 			const docs = get(allDocuments);
-			doc = docs.find((d) => d.fingerprint === fingerprint) ?? doc;
+			doc = findByFingerprint(docs, fingerprint) ?? doc;
 		} catch {
 			tagError = `Failed to add tag "${tag}".`;
 			const docs = get(allDocuments);
-			doc = docs.find((d) => d.fingerprint === fingerprint) ?? doc;
+			doc = findByFingerprint(docs, fingerprint) ?? doc;
 		} finally {
 			saving = false;
 		}

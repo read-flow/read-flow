@@ -122,42 +122,59 @@ describe('ReadFlowClient — addTags / deleteTags', () => {
 	});
 });
 
-describe('ReadFlowClient — getReadingProgress', () => {
+describe('ReadFlowClient — getReadingState', () => {
 	beforeEach(() => vi.unstubAllGlobals());
 
-	it('returns the progress object on success', async () => {
-		const progress = { fingerprint: 'fp-1', progress: 'epubcfi(/6/4)', last_updated: '2024-01-01T00:00:00Z' };
-		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockOk(progress)));
+	const state = { fingerprint: 'fp-1', status: 1, position: '{"cfi":"epubcfi(/6/4)"}', percentage: 0.42, last_updated: '2024-01-01T00:00:00Z', status_updated_at: '2024-01-01T00:00:00Z' };
+
+	it('returns the state object on success', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockOk(state)));
 		const client = new ReadFlowClient(makeSource());
-		expect(await client.getReadingProgress('fp-1')).toEqual(progress);
+		expect(await client.getReadingState('fp-1')).toEqual(state);
 	});
 
 	it('returns null on a 404 response', async () => {
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockError(404, 'Not Found')));
 		const client = new ReadFlowClient(makeSource());
-		expect(await client.getReadingProgress('fp-missing')).toBeNull();
+		expect(await client.getReadingState('fp-missing')).toBeNull();
 	});
 
 	it('re-throws non-404 errors', async () => {
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockError(503, 'Service Unavailable')));
 		const client = new ReadFlowClient(makeSource());
-		await expect(client.getReadingProgress('fp-1')).rejects.toThrow('HTTP 503');
+		await expect(client.getReadingState('fp-1')).rejects.toThrow('HTTP 503');
 	});
 });
 
-describe('ReadFlowClient — upsertReadingProgress', () => {
+describe('ReadFlowClient — upsertReadingState', () => {
 	beforeEach(() => vi.unstubAllGlobals());
 
-	it('PUTs progress to /reading-progress', async () => {
+	it('PUTs state to /reading-state and returns updated state', async () => {
+		const state = { fingerprint: 'fp-1', status: 1, position: '{}', percentage: 0.5, last_updated: '2024-01-01T00:00:00Z', status_updated_at: '2024-01-01T00:00:00Z' };
+		const fetchSpy = vi.fn().mockResolvedValue(mockOk(state));
+		vi.stubGlobal('fetch', fetchSpy);
+		const client = new ReadFlowClient(makeSource());
+		const result = await client.upsertReadingState(state);
+		const [url, options] = fetchSpy.mock.calls[0];
+		expect(url).toBe('http://localhost:8000/reading-state');
+		expect(options.method).toBe('PUT');
+		expect(JSON.parse(options.body)).toEqual(state);
+		expect(result).toEqual(state);
+	});
+});
+
+describe('ReadFlowClient — updateReadingStatus', () => {
+	beforeEach(() => vi.unstubAllGlobals());
+
+	it('PUTs status to /reading-state/:fp/status', async () => {
 		const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200 } as Response);
 		vi.stubGlobal('fetch', fetchSpy);
 		const client = new ReadFlowClient(makeSource());
-		const progress = { fingerprint: 'fp-1', progress: 'epubcfi(/6/4)', last_updated: '2024-01-01T00:00:00Z' };
-		await client.upsertReadingProgress(progress);
+		await client.updateReadingStatus('fp-1', 2);
 		const [url, options] = fetchSpy.mock.calls[0];
-		expect(url).toBe('http://localhost:8000/reading-progress');
+		expect(url).toBe('http://localhost:8000/reading-state/fp-1/status');
 		expect(options.method).toBe('PUT');
-		expect(JSON.parse(options.body)).toEqual(progress);
+		expect(JSON.parse(options.body)).toEqual({ status: 2 });
 	});
 });
 

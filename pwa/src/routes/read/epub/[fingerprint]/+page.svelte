@@ -4,7 +4,7 @@
 	import ePub from 'epubjs';
 	import type { Rendition, Location } from 'epubjs';
 	import Icon from '$lib/components/Icon.svelte';
-	import { allDocuments, refreshDocuments } from '$lib/stores/documents';
+	import { allDocuments, refreshDocuments, findByFingerprint } from '$lib/stores/documents';
 	import { downloadFileFromSources, fetchReadingState, saveReadingState } from '$lib/api/aggregator';
 	import { loadSources } from '$lib/stores/sources';
 	import { theme } from '$lib/stores/theme';
@@ -190,10 +190,7 @@
 		let docs = get(allDocuments);
 		if (docs.length === 0) await refreshDocuments();
 		docs = get(allDocuments);
-		doc =
-			docs.find((d) => d.fingerprint === fingerprint) ??
-			docs.flatMap((d) => d.otherFormats).find((d) => d.fingerprint === fingerprint) ??
-			null;
+		doc = findByFingerprint(docs, fingerprint);
 
 		if (!doc) {
 			loadError =

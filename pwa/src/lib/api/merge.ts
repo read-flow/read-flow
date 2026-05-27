@@ -1,7 +1,10 @@
 import type { RemoteFile } from './client';
 
 export interface AggregatedFile extends RemoteFile {
-	/** GUIDs keyed by source id — the same file can exist on multiple sources. */
+	/**
+	 * Maps Dexie source id → per-server file GUID for this file.
+	 * Used to route tag and download operations to the right source.
+	 */
 	sourceGuids: Record<number, string>;
 	/** Other formats of the same document (epub, pdf, mobi variants). Empty for single-format docs. */
 	otherFormats: AggregatedFile[];

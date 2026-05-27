@@ -4,8 +4,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
 	sourcesToArray: vi.fn(),
-	readingProgressGet: vi.fn(),
-	readingProgressPut: vi.fn(),
+	readingStateGet: vi.fn(),
+	readingStatePut: vi.fn(),
+	readingStateWhere: vi.fn(),
 	MockReadFlowClient: vi.fn(),
 }));
 
@@ -14,9 +15,10 @@ vi.mock('$lib/db', () => ({
 		sources: {
 			orderBy: () => ({ toArray: mocks.sourcesToArray }),
 		},
-		readingProgress: {
-			get: mocks.readingProgressGet,
-			put: mocks.readingProgressPut,
+		readingState: {
+			get: mocks.readingStateGet,
+			put: mocks.readingStatePut,
+			where: () => ({ equals: () => ({ modify: mocks.readingStateWhere }) }),
 		},
 	},
 }));
@@ -30,12 +32,12 @@ import {
 	fetchAllTags,
 	addTagsToFile,
 	removeTagsFromFile,
-	fetchReadingProgress,
-	saveReadingProgress,
+	fetchReadingState,
+	saveReadingState,
 	downloadFileFromSources,
 } from './aggregator';
 import type { Source } from '$lib/db';
-import type { RemoteFile, RemoteReadingProgress } from './client';
+import type { RemoteFile, RemoteReadingState } from './client';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 
@@ -198,129 +200,115 @@ describe('removeTagsFromFile', () => {
 	});
 });
 
-// ── fetchReadingProgress ───────────────────────────────────────────────────────
+// ── fetchReadingState ──────────────────────────────────────────────────────────
 
-describe('fetchReadingProgress', () => {
+function makeRemoteState(overrides: Partial<RemoteReadingState> = {}): RemoteReadingState {
+	return {
+		fingerprint: 'fp-1',
+		status: 0,
+		position: '{}',
+		percentage: 0,
+		last_updated: '2024-01-01T00:00:00Z',
+		status_updated_at: '1970-01-01T00:00:00Z',
+		...overrides,
+	};
+}
+
+describe('fetchReadingState', () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it('returns null when there is no local record and no sources', async () => {
-		mocks.readingProgressGet.mockResolvedValue(undefined);
+		mocks.readingStateGet.mockResolvedValue(undefined);
 		mocks.sourcesToArray.mockResolvedValue([]);
-		expect(await fetchReadingProgress('fp-1')).toBeNull();
+		expect(await fetchReadingState('fp-1')).toBeNull();
 	});
 
 	it('returns the local record when no remote sources are configured', async () => {
-		mocks.readingProgressGet.mockResolvedValue({
-			fingerprint: 'fp-1',
-			progress: '{"page":3}',
-			lastUpdated: '2024-01-01T00:00:00Z',
+		mocks.readingStateGet.mockResolvedValue({
+			fingerprint: 'fp-1', status: 'Reading', position: '{"cfi":"x"}',
+			percentage: 0.3, lastUpdated: '2024-01-01T00:00:00Z', statusUpdatedAt: '2024-01-01T00:00:00Z',
 		});
 		mocks.sourcesToArray.mockResolvedValue([]);
-		const result = await fetchReadingProgress('fp-1');
-		expect(result?.progress).toBe('{"page":3}');
+		const result = await fetchReadingState('fp-1');
+		expect(result?.percentage).toBe(0.3);
 	});
 
 	it('returns the remote record when it is newer than the local one', async () => {
-		mocks.readingProgressGet.mockResolvedValue({
-			fingerprint: 'fp-1',
-			progress: '{"page":1}',
-			lastUpdated: '2024-01-01T00:00:00Z',
+		mocks.readingStateGet.mockResolvedValue({
+			fingerprint: 'fp-1', status: 'Unread', position: '{}',
+			percentage: 0, lastUpdated: '2024-01-01T00:00:00Z', statusUpdatedAt: '1970-01-01T00:00:00Z',
 		});
 		mocks.sourcesToArray.mockResolvedValue([makeSource(1)]);
-		const remote: RemoteReadingProgress = {
-			fingerprint: 'fp-1',
-			progress: '{"page":5}',
-			last_updated: '2024-06-01T00:00:00Z',
-		};
+		const remote = makeRemoteState({ percentage: 0.9, last_updated: '2024-06-01T00:00:00Z' });
 		mocks.MockReadFlowClient.mockImplementation(() => ({
-			getReadingProgress: vi.fn().mockResolvedValue(remote),
+			getReadingState: vi.fn().mockResolvedValue(remote),
 		}));
-		const result = await fetchReadingProgress('fp-1');
-		expect(result?.progress).toBe('{"page":5}');
+		const result = await fetchReadingState('fp-1');
+		expect(result?.percentage).toBe(0.9);
 	});
 
 	it('keeps the local record when it is newer than the remote one', async () => {
-		mocks.readingProgressGet.mockResolvedValue({
-			fingerprint: 'fp-1',
-			progress: '{"page":10}',
-			lastUpdated: '2024-12-01T00:00:00Z',
+		mocks.readingStateGet.mockResolvedValue({
+			fingerprint: 'fp-1', status: 'Reading', position: '{}',
+			percentage: 0.8, lastUpdated: '2024-12-01T00:00:00Z', statusUpdatedAt: '2024-01-01T00:00:00Z',
 		});
 		mocks.sourcesToArray.mockResolvedValue([makeSource(1)]);
 		mocks.MockReadFlowClient.mockImplementation(() => ({
-			getReadingProgress: vi.fn().mockResolvedValue({
-				fingerprint: 'fp-1',
-				progress: '{"page":3}',
-				last_updated: '2024-01-01T00:00:00Z',
-			}),
+			getReadingState: vi.fn().mockResolvedValue(makeRemoteState({ percentage: 0.1, last_updated: '2024-01-01T00:00:00Z' })),
 		}));
-		const result = await fetchReadingProgress('fp-1');
-		expect(result?.progress).toBe('{"page":10}');
+		const result = await fetchReadingState('fp-1');
+		expect(result?.percentage).toBe(0.8);
 	});
 
 	it('returns remote record when no local record exists', async () => {
-		mocks.readingProgressGet.mockResolvedValue(undefined);
+		mocks.readingStateGet.mockResolvedValue(undefined);
 		mocks.sourcesToArray.mockResolvedValue([makeSource(1)]);
-		const remote: RemoteReadingProgress = {
-			fingerprint: 'fp-1',
-			progress: '{"page":2}',
-			last_updated: '2024-03-01T00:00:00Z',
-		};
+		const remote = makeRemoteState({ percentage: 0.5, last_updated: '2024-03-01T00:00:00Z' });
 		mocks.MockReadFlowClient.mockImplementation(() => ({
-			getReadingProgress: vi.fn().mockResolvedValue(remote),
+			getReadingState: vi.fn().mockResolvedValue(remote),
 		}));
-		const result = await fetchReadingProgress('fp-1');
-		expect(result?.progress).toBe('{"page":2}');
+		const result = await fetchReadingState('fp-1');
+		expect(result?.percentage).toBe(0.5);
 	});
 });
 
-// ── saveReadingProgress ────────────────────────────────────────────────────────
+// ── saveReadingState ───────────────────────────────────────────────────────────
 
-describe('saveReadingProgress', () => {
+describe('saveReadingState', () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it('writes to local DB immediately', async () => {
-		mocks.readingProgressPut.mockResolvedValue(undefined);
+		mocks.readingStatePut.mockResolvedValue(undefined);
 		mocks.sourcesToArray.mockResolvedValue([]);
-		const progress: RemoteReadingProgress = {
-			fingerprint: 'fp-1',
-			progress: '{"page":2}',
-			last_updated: '2024-01-01T00:00:00Z',
-		};
-		await saveReadingProgress(progress);
-		expect(mocks.readingProgressPut).toHaveBeenCalledWith({
-			fingerprint: 'fp-1',
-			progress: '{"page":2}',
-			lastUpdated: '2024-01-01T00:00:00Z',
-		});
+		const state = makeRemoteState({ percentage: 0.2 });
+		await saveReadingState(state);
+		expect(mocks.readingStatePut).toHaveBeenCalledWith(
+			expect.objectContaining({ fingerprint: 'fp-1', percentage: 0.2 }),
+		);
 	});
 
-	it('fans out to all remote sources', async () => {
-		mocks.readingProgressPut.mockResolvedValue(undefined);
-		const upsert1 = vi.fn().mockResolvedValue(undefined);
-		const upsert2 = vi.fn().mockResolvedValue(undefined);
+	it('fans out to all remote sources and returns the server result', async () => {
+		mocks.readingStatePut.mockResolvedValue(undefined);
+		const serverResult = makeRemoteState({ status: 1, percentage: 0.5 });
+		const upsert1 = vi.fn().mockResolvedValue(serverResult);
+		const upsert2 = vi.fn().mockResolvedValue(serverResult);
 		mocks.sourcesToArray.mockResolvedValue([makeSource(1), makeSource(2)]);
 		mocks.MockReadFlowClient
-			.mockImplementationOnce(() => ({ upsertReadingProgress: upsert1 }))
-			.mockImplementationOnce(() => ({ upsertReadingProgress: upsert2 }));
-		const progress: RemoteReadingProgress = {
-			fingerprint: 'fp-1',
-			progress: '{"page":2}',
-			last_updated: '2024-01-01T00:00:00Z',
-		};
-		await saveReadingProgress(progress);
-		expect(upsert1).toHaveBeenCalledWith(progress);
-		expect(upsert2).toHaveBeenCalledWith(progress);
+			.mockImplementationOnce(() => ({ upsertReadingState: upsert1 }))
+			.mockImplementationOnce(() => ({ upsertReadingState: upsert2 }));
+		const state = makeRemoteState();
+		const result = await saveReadingState(state);
+		expect(upsert1).toHaveBeenCalledWith(state);
+		expect(result.status).toBe(1);
 	});
 
 	it('does not throw when a remote source fails to save', async () => {
-		mocks.readingProgressPut.mockResolvedValue(undefined);
+		mocks.readingStatePut.mockResolvedValue(undefined);
 		mocks.sourcesToArray.mockResolvedValue([makeSource(1)]);
 		mocks.MockReadFlowClient.mockImplementation(() => ({
-			upsertReadingProgress: vi.fn().mockRejectedValue(new Error('server down')),
+			upsertReadingState: vi.fn().mockRejectedValue(new Error('server down')),
 		}));
-		await expect(
-			saveReadingProgress({ fingerprint: 'fp-1', progress: '{}', last_updated: '2024-01-01T00:00:00Z' }),
-		).resolves.toBeUndefined();
+		await expect(saveReadingState(makeRemoteState())).resolves.toBeDefined();
 	});
 });
 

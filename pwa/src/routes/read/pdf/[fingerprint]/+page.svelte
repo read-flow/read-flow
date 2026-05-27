@@ -4,7 +4,7 @@
 	import * as pdfjsLib from 'pdfjs-dist';
 	import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 	import Icon from '$lib/components/Icon.svelte';
-	import { allDocuments, refreshDocuments } from '$lib/stores/documents';
+	import { allDocuments, refreshDocuments, findByFingerprint } from '$lib/stores/documents';
 	import {
 		fetchReadingState,
 		saveReadingState,
@@ -237,10 +237,7 @@
 		let docs = get(allDocuments);
 		if (docs.length === 0) await refreshDocuments();
 		docs = get(allDocuments);
-		doc =
-			docs.find((d) => d.fingerprint === fingerprint) ??
-			docs.flatMap((d) => d.otherFormats).find((d) => d.fingerprint === fingerprint) ??
-			null;
+		doc = findByFingerprint(docs, fingerprint);
 
 		if (!doc) {
 			loadError = 'Document not found. Make sure at least one source is configured and the library has loaded.';
