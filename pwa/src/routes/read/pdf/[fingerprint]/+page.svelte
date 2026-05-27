@@ -229,7 +229,10 @@
 		let docs = get(allDocuments);
 		if (docs.length === 0) await refreshDocuments();
 		docs = get(allDocuments);
-		doc = docs.find((d) => d.fingerprint === fingerprint) ?? null;
+		doc =
+			docs.find((d) => d.fingerprint === fingerprint) ??
+			docs.flatMap((d) => d.otherFormats).find((d) => d.fingerprint === fingerprint) ??
+			null;
 
 		if (!doc) {
 			loadError = 'Document not found. Make sure at least one source is configured and the library has loaded.';
