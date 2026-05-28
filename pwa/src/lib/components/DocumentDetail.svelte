@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from '$lib/components/Icon.svelte';
+	import CoverImage from '$lib/components/CoverImage.svelte';
 	import {
 		allDocuments,
 		documentMetaMap,
@@ -222,6 +223,16 @@
 				</h1>
 				<p class="text-sm text-slate-400 dark:text-slate-500 mt-1 break-all">{doc.path}</p>
 			</div>
+		{/if}
+
+		<!-- Cover image -->
+		{#if doc.has_cover}
+			<CoverImage
+				sourceGuids={doc.sourceGuids}
+				hasCover={true}
+				alt={docMeta?.title ?? basename(doc.path)}
+				class="w-full max-w-[200px] h-[280px] rounded-lg shadow mx-auto"
+			/>
 		{/if}
 
 		{@const allFormats = [doc, ...doc.otherFormats].filter((f) => f.type_ === 'epub' || f.type_ === 'pdf')}

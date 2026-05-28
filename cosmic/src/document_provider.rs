@@ -67,6 +67,29 @@ impl DocumentProvider {
         self.documents_cache.provide().await
     }
 
+    /// Load cover JPEG bytes for the given fingerprints from the local DB.
+    /// Returns a map of fingerprint → JPEG bytes for covers that exist.
+    pub async fn load_covers(
+        &self,
+        fingerprints: Vec<String>,
+    ) -> std::collections::HashMap<String, Vec<u8>> {
+        // Get the ApplicationModule Arc first (releases the read lock before any await).
+        let app_module = self.aggregator.read().await.get_application_module();
+        let pool = app_module.connection_pool().await;
+        let mut result = std::collections::HashMap::new();
+        let Ok(mut conn) = pool.acquire().await else {
+            return result;
+        };
+        for fingerprint in &fingerprints {
+            if let Ok(Some((data, _))) =
+                read_flow_core::db::dao::get_cover(&mut conn, fingerprint).await
+            {
+                result.insert(fingerprint.clone(), data);
+            }
+        }
+        result
+    }
+
     /// Subscribe to cache invalidation notifications.
     ///
     /// Returns a receiver that will receive notifications whenever the cache is invalidated.

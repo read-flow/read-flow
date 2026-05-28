@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -8,6 +9,7 @@ use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
+use cosmic::iced::ContentFit;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Vertical;
 use cosmic::task;
@@ -99,6 +101,7 @@ pub struct DocumentsComponent {
     pagination: Pagination,
     selected_documents: HashSet<String>,
     batch_tag_editor: TagEditor<DocumentState>, // Tag editor for batch operations
+    covers: HashMap<String, widget::image::Handle>,
 }
 
 impl DocumentsComponent {
@@ -120,9 +123,14 @@ impl DocumentsComponent {
                 pagination: Default::default(),
                 selected_documents: Default::default(),
                 batch_tag_editor,
+                covers: HashMap::new(),
             },
             init_batch_tag_editor.map(ActionExt::map_into),
         )
+    }
+
+    pub fn set_covers(&mut self, covers: HashMap<String, widget::image::Handle>) {
+        self.covers = covers;
     }
 
     pub fn view(&self) -> Element<'_, DocumentsMessage> {
@@ -235,7 +243,11 @@ impl DocumentsComponent {
             .into_iter()
             .fold(files_section, |section, file| {
                 let is_selected = self.selected_documents.contains(&file.document_guid);
-                section.add(view_document(file, is_selected))
+                let cover = file
+                    .contents
+                    .first()
+                    .and_then(|c| self.covers.get(&c.fingerprint));
+                section.add(view_document(file, is_selected, cover))
             })
             .add(self.pagination.view().map(Into::into));
 
@@ -426,7 +438,11 @@ impl DocumentsComponent {
     }
 }
 
-fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, DocumentsMessage> {
+fn view_document<'a>(
+    document: &'a Document,
+    is_selected: bool,
+    cover: Option<&'a widget::image::Handle>,
+) -> Element<'a, DocumentsMessage> {
     let (selected_icon_name, selected_icon_class) = if is_selected {
         ("checkbox-checked-symbolic", ButtonClass::Suggested)
     } else {
@@ -440,11 +456,24 @@ fn view_document<'a>(document: &'a Document, is_selected: bool) -> Element<'a, D
         DocumentsMessage::Out(DocumentsOutput::OpenDocument(document.clone()))
     };
 
+    let cover_widget: Element<'a, DocumentsMessage> = match cover {
+        Some(handle) => widget::image(handle.clone())
+            .width(Length::Fixed(32.0))
+            .height(Length::Fixed(48.0))
+            .content_fit(ContentFit::Contain)
+            .into(),
+        None => widget::Space::new()
+            .width(Length::Fixed(32.0))
+            .height(Length::Fixed(48.0))
+            .into(),
+    };
+
     vec![
         widget::button::icon(widget::icon::from_name(selected_icon_name).size(ICON_SIZE))
             .class(selected_icon_class)
             .on_press(DocumentsMessage::ToggleDocumentSelected(document.clone()))
             .into(),
+        cover_widget,
         display_document_title(document),
         display_pills(document),
         widget::button::icon(

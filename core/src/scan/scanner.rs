@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use super::ScanSettings;
+use super::cover;
 use super::metadata;
 use super::pipeline::ScanProgress;
 use super::pipeline::ScannedFile;
@@ -408,58 +409,66 @@ async fn flush_batch(
         return;
     }
 
-    // Extract metadata and store in document_metadata for new/updated files.
-    // Each file gets a document record (created on demand) and its metadata is
-    // smart-merged so that re-scanning extends the authors list rather than
-    // overwriting it.
+    // For each new/updated file: extract metadata + cover, then persist both.
     for (fingerprint, path, extension) in needs_metadata {
-        let path_clone = path.clone();
-        let ext_clone = extension.clone();
-        let extracted = tokio::task::spawn_blocking(move || {
-            metadata::extract_metadata(&path_clone, &ext_clone)
-        })
-        .await
-        .unwrap_or(None);
+        let path_meta = path.clone();
+        let path_cover = path.clone();
+        let ext_meta = extension.clone();
+        let ext_cover = extension.clone();
 
-        let Some(meta) = extracted.filter(|m| !m.is_empty()) else {
-            continue;
-        };
+        let (meta_result, cover_result) = tokio::join!(
+            tokio::task::spawn_blocking(move || metadata::extract_metadata(&path_meta, &ext_meta)),
+            tokio::task::spawn_blocking(move || cover::extract_cover(&path_cover, &ext_cover)),
+        );
+        let meta = meta_result.unwrap_or(None);
+        let cover = cover_result.unwrap_or(None);
 
         match pool.acquire().await {
             Ok(mut conn) => {
-                match dao::ensure_document_for_fingerprint(&mut conn, &fingerprint).await {
-                    Ok(api_doc) => {
-                        // Resolve document_id from the returned guid.
-                        let doc_id_result =
-                            sqlx::query_scalar::<_, i32>("SELECT id FROM documents WHERE guid = ?")
-                                .bind(&api_doc.guid)
-                                .fetch_one(&mut *conn)
-                                .await;
-                        match doc_id_result {
-                            Ok(doc_id) => {
-                                if let Err(e) = dao::merge_document_metadata_from_extracted(
-                                    &mut conn, doc_id, &meta,
-                                )
-                                .await
-                                {
+                // Persist cover if extracted.
+                if let Some(cover_bytes) = cover
+                    && let Err(e) =
+                        dao::upsert_cover(&mut conn, &fingerprint, &cover_bytes, "image/jpeg").await
+                {
+                    tracing::warn!("failed to store cover for {fingerprint}: {e}");
+                }
+
+                // Persist metadata if present.
+                if let Some(meta) = meta.filter(|m| !m.is_empty()) {
+                    match dao::ensure_document_for_fingerprint(&mut conn, &fingerprint).await {
+                        Ok(api_doc) => {
+                            let doc_id_result = sqlx::query_scalar::<_, i32>(
+                                "SELECT id FROM documents WHERE guid = ?",
+                            )
+                            .bind(&api_doc.guid)
+                            .fetch_one(&mut *conn)
+                            .await;
+                            match doc_id_result {
+                                Ok(doc_id) => {
+                                    if let Err(e) = dao::merge_document_metadata_from_extracted(
+                                        &mut conn, doc_id, &meta,
+                                    )
+                                    .await
+                                    {
+                                        tracing::warn!(
+                                            "failed to merge metadata for {fingerprint}: {e}"
+                                        );
+                                    }
+                                }
+                                Err(e) => {
                                     tracing::warn!(
-                                        "failed to merge metadata for {fingerprint}: {e}"
-                                    );
+                                        "failed to resolve document id for {fingerprint}: {e}"
+                                    )
                                 }
                             }
-                            Err(e) => {
-                                tracing::warn!(
-                                    "failed to resolve document id for {fingerprint}: {e}"
-                                )
-                            }
                         }
-                    }
-                    Err(e) => {
-                        tracing::warn!("failed to ensure document for {fingerprint}: {e}")
+                        Err(e) => {
+                            tracing::warn!("failed to ensure document for {fingerprint}: {e}")
+                        }
                     }
                 }
             }
-            Err(e) => tracing::warn!("failed to acquire connection for metadata: {e}"),
+            Err(e) => tracing::warn!("failed to acquire connection for {fingerprint}: {e}"),
         }
     }
 }

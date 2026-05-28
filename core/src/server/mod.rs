@@ -161,6 +161,7 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         get_files,
         get_files_tags,
         download_file,
+        get_file_cover,
         upload_file,
         delete_file,
         get_reading_state,
@@ -227,11 +228,15 @@ async fn get_files(
             .or_default()
             .push(tag);
     }
+    let cover_fps = dao::select_fingerprints_with_covers(&mut conn).await?;
     let files = db_files
         .into_iter()
         .map(|file| {
             let tags = tags_by_fp.remove(&file.fingerprint).unwrap_or_default();
-            (file, tags).into()
+            let has_cover = cover_fps.contains(&file.fingerprint);
+            let mut api_file: File = (file, tags).into();
+            api_file.has_cover = has_cover;
+            api_file
         })
         .collect();
     Ok(Json(files))
@@ -302,7 +307,10 @@ async fn get_file(
     {
         return Ok(None);
     }
-    Ok(Some(Json((file, tags).into())))
+    let has_cover = dao::cover_exists(&mut conn, &file.fingerprint).await?;
+    let mut api_file: File = (file, tags).into();
+    api_file.has_cover = has_cover;
+    Ok(Some(Json(api_file)))
 }
 
 #[get("/files/<guid>/tags")]
@@ -454,6 +462,42 @@ async fn download_file(
                 .map(|file| (content_type, file)))
         }
     }
+}
+
+#[get("/files/<guid>/cover")]
+async fn get_file_cover(
+    guid: &str,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+    private_mode: PrivateModeHeader,
+) -> Result<Option<(ContentType, Vec<u8>)>> {
+    let settings = application_module.settings().await;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+        return Ok(None);
+    };
+    if private_mode.0 {
+        if !user.has_role("owner") {
+            return Err(Error::Forbidden(
+                "private mode access requires owner role".into(),
+            ));
+        }
+    } else {
+        let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
+            .await?
+            .iter()
+            .map(|t| t.tag.clone())
+            .collect::<Vec<_>>();
+        if settings.ui.contains_hidden_tag(&tags) {
+            return Ok(None);
+        }
+    }
+    let Some((data, mime)) = dao::get_cover(&mut conn, &file.fingerprint).await? else {
+        return Ok(None);
+    };
+    let content_type = mime.parse::<ContentType>().unwrap_or(ContentType::JPEG);
+    Ok(Some((content_type, data)))
 }
 
 #[delete("/files/<guid>")]

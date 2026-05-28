@@ -45,6 +45,8 @@ export interface RemoteFile {
 	status: ReadingStatus;
 	/** UUID of the Document this file belongs to, null if ungrouped. */
 	document_guid: string | null;
+	/** True when a cover image is stored server-side for this file. */
+	has_cover?: boolean;
 }
 
 export interface RemoteReadingState {
@@ -156,6 +158,15 @@ export class ReadFlowClient {
 			method: 'PUT',
 			body: JSON.stringify({ status }),
 		});
+	}
+
+	async downloadCover(guid: string): Promise<Blob | null> {
+		const response = await fetch(`${this.baseUrl}/files/${guid}/cover`, {
+			headers: this.headers(),
+		});
+		if (response.status === 404) return null;
+		if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+		return response.blob();
 	}
 
 	async downloadFile(guid: string, fileName: string): Promise<Blob> {

@@ -252,6 +252,7 @@ pub enum DocumentListMessage {
     CancelMerge,
     MergeCompleted(Result<(), String>),
     Out(DocumentListOutput),
+    CoversLoaded(std::collections::HashMap<String, Vec<u8>>),
 }
 
 impl From<TagFilterMessage> for DocumentListMessage {
@@ -914,6 +915,15 @@ impl Page for DocumentList {
                     ))),
                 ])
             }
+            DocumentListMessage::CoversLoaded(cover_bytes_map) => {
+                let handles: std::collections::HashMap<String, widget::image::Handle> =
+                    cover_bytes_map
+                        .into_iter()
+                        .map(|(fp, bytes)| (fp, widget::image::Handle::from_bytes(bytes)))
+                        .collect();
+                self.archive.set_covers(handles);
+                Task::none()
+            }
             DocumentListMessage::Loaded(files) => {
                 // For initial load, use synchronous filtering and sorting since it's typically fast
                 let mut documents: Vec<Document> = files.into_iter().collect();
@@ -937,6 +947,20 @@ impl Page for DocumentList {
                 files.filter(|file| filter_document(&criteria, compiled_regex.as_ref(), &file));
 
                 let collection_size = files.filtered_len();
+
+                // Collect all fingerprints to load covers for
+                let fingerprints: Vec<String> = files
+                    .unfiltered()
+                    .iter()
+                    .filter_map(|doc| doc.contents.first())
+                    .map(|c| c.fingerprint.clone())
+                    .collect();
+                let document_provider = self.document_provider.clone();
+                let load_covers_task = task::future(async move {
+                    let cover_bytes = document_provider.load_covers(fingerprints).await;
+                    DocumentListMessage::CoversLoaded(cover_bytes)
+                });
+
                 Task::batch([
                     self.archive
                         .set_document_state(DocumentState::Loaded(files))
@@ -949,6 +973,7 @@ impl Page for DocumentList {
                     task::message(DocumentListMessage::DocumentsComponent(
                         DocumentsMessage::FilterSelectedDocuments,
                     )),
+                    load_covers_task,
                 ])
             }
             DocumentListMessage::LoadingFailed(error) => self

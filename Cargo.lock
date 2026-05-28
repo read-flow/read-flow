@@ -5354,6 +5354,7 @@ dependencies = [
  "expanduser",
  "figment",
  "futures",
+ "image",
  "indexmap",
  "itertools 0.14.0",
  "mime 0.3.17",

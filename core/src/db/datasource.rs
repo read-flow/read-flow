@@ -53,6 +53,7 @@ impl FileDataSource for DbClient {
         let mut conn = self.connection_pool.acquire().await?;
         let files = dao::select_all_files(&mut conn).await?;
         let all_tags = dao::select_all_content_tags(&mut conn).await?;
+        let cover_fps = dao::select_fingerprints_with_covers(&mut conn).await?;
 
         let mut tags_by_fp: HashMap<String, Vec<ContentTag>> = HashMap::new();
         for tag in all_tags {
@@ -66,7 +67,10 @@ impl FileDataSource for DbClient {
             .into_iter()
             .map(|file| {
                 let tags = tags_by_fp.remove(&file.fingerprint).unwrap_or_default();
-                (file, tags).into()
+                let has_cover = cover_fps.contains(&file.fingerprint);
+                let mut api_file: File = (file, tags).into();
+                api_file.has_cover = has_cover;
+                api_file
             })
             .collect())
     }
@@ -82,7 +86,10 @@ impl FileDataSource for DbClient {
             return Ok(None);
         };
         let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
-        Ok(Some((file, tags).into()))
+        let has_cover = dao::cover_exists(&mut conn, &file.fingerprint).await?;
+        let mut api_file: File = (file, tags).into();
+        api_file.has_cover = has_cover;
+        Ok(Some(api_file))
     }
 
     async fn update_file(&self, file: File) -> Result<(), Self::Error> {

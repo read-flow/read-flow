@@ -27,6 +27,10 @@ pub struct Package {
     pub nav_href: Option<String>,
     /// Resolved zip path to the EPUB2 NCX document, if present.
     pub ncx_href: Option<String>,
+    /// Resolved zip path to the cover image, if present.
+    /// EPUB3: manifest item with `properties="cover-image"`.
+    /// EPUB2: manifest item referenced by `<meta name="cover" content="item-id">`.
+    pub cover_href: Option<String>,
 }
 
 impl Package {
@@ -42,6 +46,8 @@ impl Package {
         let mut current_tag: Option<String> = None;
         // `toc` attribute on `<spine>` references the NCX item id (EPUB2)
         let mut ncx_idref: Option<String> = None;
+        // EPUB2 `<meta name="cover" content="item-id">` cover manifest id
+        let mut cover_meta_id: Option<String> = None;
 
         loop {
             match reader.read_event_into(&mut buf)? {
@@ -79,6 +85,11 @@ impl Package {
                         b"item" => {
                             if let Some(item) = parse_manifest_item(e, opf_base)? {
                                 manifest.insert(item.id.clone(), item);
+                            }
+                        }
+                        b"meta" if in_metadata => {
+                            if let Some(id) = parse_cover_meta(e)? {
+                                cover_meta_id = Some(id);
                             }
                         }
                         b"spine" => {
@@ -142,6 +153,17 @@ impl Package {
             .and_then(|id| manifest.get(id))
             .map(|item| item.href.clone());
 
+        // Resolve cover href: EPUB3 cover-image property, or EPUB2 meta[name=cover]
+        let cover_href = manifest
+            .values()
+            .find(|item| {
+                item.properties
+                    .as_deref()
+                    .is_some_and(|p| p.split_whitespace().any(|w| w == "cover-image"))
+            })
+            .or_else(|| cover_meta_id.as_deref().and_then(|id| manifest.get(id)))
+            .map(|item| item.href.clone());
+
         let spine = spine_refs
             .into_iter()
             .enumerate()
@@ -162,6 +184,7 @@ impl Package {
             spine,
             nav_href,
             ncx_href,
+            cover_href,
         })
     }
 }
@@ -210,6 +233,25 @@ fn parse_manifest_item(
         })),
         _ => Ok(None),
     }
+}
+
+/// Extract the manifest item id from an EPUB2 `<meta name="cover" content="item-id">` element.
+fn parse_cover_meta(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<String>> {
+    let mut name = None;
+    let mut content = None;
+    for attr in e.attributes() {
+        let attr =
+            attr.map_err(|e| EpubError::InvalidPackage(format!("bad meta attribute: {e}")))?;
+        match attr.key.as_ref() {
+            b"name" => name = Some(String::from_utf8_lossy(&attr.value).into_owned()),
+            b"content" => content = Some(String::from_utf8_lossy(&attr.value).into_owned()),
+            _ => {}
+        }
+    }
+    Ok(match (name.as_deref(), content) {
+        (Some("cover"), Some(id)) => Some(id),
+        _ => None,
+    })
 }
 
 /// Extract the `toc` attribute from a `<spine>` element (EPUB2 NCX reference).

@@ -263,6 +263,28 @@ export async function mergeDocuments(
 }
 
 /**
+ * Fetch the cover image for a file from the first source that has it.
+ * Returns an object URL (caller must call URL.revokeObjectURL when done), or null.
+ */
+export async function fetchCoverFromSources(
+	sourceGuids: Record<number, string>,
+): Promise<string | null> {
+	const sources = await db.sources.orderBy('order').toArray();
+	for (const source of sources) {
+		if (source.id === undefined) continue;
+		const guid = sourceGuids[source.id];
+		if (!guid) continue;
+		try {
+			const blob = await new ReadFlowClient(source).downloadCover(guid);
+			if (blob) return URL.createObjectURL(blob);
+		} catch {
+			// try next source
+		}
+	}
+	return null;
+}
+
+/**
  * Download a file by trying each source that holds it in order.
  * `sourceGuids` comes from AggregatedFile.sourceGuids (sourceId → GUID).
  */

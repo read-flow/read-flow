@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import CoverImage from '$lib/components/CoverImage.svelte';
 	import DocumentDetail from '$lib/components/DocumentDetail.svelte';
 	import MergeDialog from '$lib/components/MergeDialog.svelte';
 	import {
@@ -20,7 +21,7 @@
 	import type { AggregatedFile } from '$lib/api/aggregator';
 
 	// ── Virtual list ──────────────────────────────────────────────────────────
-	const ITEM_HEIGHT = 72; // estimated row height in px
+	const ITEM_HEIGHT = 76; // estimated row height in px
 	const OVERSCAN = 3;
 
 	let selectedFingerprint = $state<string | null>(null);
@@ -306,6 +307,13 @@
 									class="flex items-start gap-3 px-4 py-3 md:px-6 flex-1 min-w-0 transition-colors
 										{selectedFingerprint !== doc.fingerprint ? 'hover:bg-slate-50 dark:hover:bg-slate-800/60' : ''}"
 								>
+									<!-- Cover thumbnail -->
+									<CoverImage
+										sourceGuids={doc.sourceGuids}
+										hasCover={doc.has_cover ?? false}
+										alt=""
+										class="shrink-0 w-8 h-12 rounded"
+									/>
 									<!-- File type badge(s) -->
 									{#if doc.otherFormats.length > 0}
 										<div class="mt-0.5 shrink-0 flex gap-0.5">

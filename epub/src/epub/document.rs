@@ -23,6 +23,7 @@ pub struct EpubDocument {
     metadata: DocumentMetadata,
     spine: Vec<SpineItem>,
     nav: Vec<NavEntry>,
+    cover_href: Option<String>,
     archive: RwLock<ZipArchive<BufReader<File>>>,
 }
 
@@ -58,6 +59,8 @@ impl EpubDocument {
             .clone()
             .unwrap_or_else(|| container.rootfile_path.clone());
 
+        let cover_href = package.cover_href.clone();
+
         // Build nav entries from the Navigation Document (EPUB3) or NCX (EPUB2).
         // EPUB3 nav takes priority; fall back to NCX if nav is absent.
         let nav_entries = read_nav_entries(&mut archive, &package);
@@ -89,12 +92,23 @@ impl EpubDocument {
             metadata: package.metadata,
             spine,
             nav: nav_entries,
+            cover_href,
             archive: RwLock::new(archive),
         })
     }
 
     pub fn nav(&self) -> &[NavEntry] {
         &self.nav
+    }
+
+    /// Return the raw bytes of the cover image, if the EPUB declares one.
+    pub fn cover_bytes(&self) -> Option<Vec<u8>> {
+        let href = self.cover_href.as_deref()?;
+        let mut archive = self.archive.write().unwrap();
+        let mut file = archive.by_name(href).ok()?;
+        let mut buf = Vec::new();
+        std::io::Read::read_to_end(&mut file, &mut buf).ok()?;
+        Some(buf)
     }
 }
 

@@ -27,6 +27,10 @@ pub struct Aggregator {
 }
 
 impl Aggregator {
+    pub fn get_application_module(&self) -> Arc<ApplicationModule> {
+        self.application_module.clone()
+    }
+
     pub fn new(clients: Vec<Client>, application_module: Arc<ApplicationModule>) -> Self {
         Self {
             clients: clients
@@ -852,6 +856,7 @@ impl From<Document> for Vec<(ClientSelector, File)> {
                         tags: tags.clone(),
                         status,
                         document_guid: Some(document_guid.clone()),
+                        has_cover: false,
                     };
                     (selector, file)
                 })
@@ -870,5 +875,6 @@ fn content_source_to_file(content: DocumentContent, source: DocumentSource) -> F
         tags: content.tags,
         status: content.status,
         document_guid: None,
+        has_cover: false,
     }
 }

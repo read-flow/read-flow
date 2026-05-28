@@ -48,6 +48,7 @@ pub struct DocumentDetails {
     show_open_picker: bool,
     editing_user_meta: bool,
     user_meta_draft: UserMeta,
+    cover: Option<cosmic::widget::image::Handle>,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +98,7 @@ pub enum DocumentDetailsMessage {
     UserMetaDateChanged(String),
     UserMetaSubjectChanged(String),
 
+    CoverLoaded(Option<cosmic::widget::image::Handle>),
     // Message intended for the parent module
     Out(DocumentDetailsOutput),
 }
@@ -111,7 +113,7 @@ impl DocumentDetails {
     pub fn new(
         document: Document,
         document_provider: Arc<DocumentProvider>,
-        _application_module: Arc<ApplicationModule>,
+        application_module: Arc<ApplicationModule>,
     ) -> (Self, Task<Action<DocumentDetailsMessage>>) {
         let initial_tags: Vec<String> = document
             .contents
@@ -132,6 +134,28 @@ impl DocumentDetails {
 
         let (all_clients, init_all_clients) = ProvidedState::new(document_provider.clone());
         let initial_user_meta = document.user_meta.clone();
+
+        // Spawn cover loading from DB
+        let fingerprint = document
+            .contents
+            .first()
+            .map(|c| c.fingerprint.clone())
+            .unwrap_or_default();
+        let cover_task = task::future(async move {
+            let pool = application_module.connection_pool().await;
+            let Ok(mut conn) = pool.acquire().await else {
+                return DocumentDetailsMessage::CoverLoaded(None);
+            };
+            let Ok(Some((data, _))) =
+                read_flow_core::db::dao::get_cover(&mut conn, &fingerprint).await
+            else {
+                return DocumentDetailsMessage::CoverLoaded(None);
+            };
+            DocumentDetailsMessage::CoverLoaded(Some(cosmic::widget::image::Handle::from_bytes(
+                data,
+            )))
+        });
+
         let file_details = DocumentDetails {
             document,
             document_provider,
@@ -142,6 +166,7 @@ impl DocumentDetails {
             show_open_picker: false,
             editing_user_meta: false,
             user_meta_draft: initial_user_meta,
+            cover: None,
         };
 
         (
@@ -149,6 +174,7 @@ impl DocumentDetails {
             task::batch([
                 tag_editor_task.map(|action| action.map(DocumentDetailsMessage::TagEditor)),
                 init_all_clients.map(ActionExt::map_into),
+                cover_task,
             ]),
         )
     }
@@ -622,9 +648,20 @@ impl Page for DocumentDetails {
                     .into(),
             ]));
 
-        // Main layout using settings view_column
-        let mut sections: Vec<Element<'_, DocumentDetailsMessage>> =
-            vec![status_section.into(), self.user_meta_section_view()];
+        // Cover image section (shown when a cover is available)
+        let mut sections: Vec<Element<'_, DocumentDetailsMessage>> = Vec::new();
+        if let Some(handle) = &self.cover {
+            let cover_widget = widget::image(handle.clone())
+                .width(cosmic::iced::Length::Fixed(200.0))
+                .height(cosmic::iced::Length::Fixed(280.0))
+                .content_fit(cosmic::iced::ContentFit::Contain);
+            sections.push(
+                widget::container(cover_widget)
+                    .center_x(cosmic::iced::Length::Fill)
+                    .into(),
+            );
+        }
+        sections.extend([status_section.into(), self.user_meta_section_view()]);
         sections.push(tags_section.into());
         sections.extend(self.sources_view());
 
@@ -731,6 +768,10 @@ impl Page for DocumentDetails {
     fn update(&mut self, message: DocumentDetailsMessage) -> Task<Action<DocumentDetailsMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
+            DocumentDetailsMessage::CoverLoaded(handle) => {
+                self.cover = handle;
+                Task::none()
+            }
             DocumentDetailsMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
             }

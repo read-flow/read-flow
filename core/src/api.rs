@@ -94,6 +94,10 @@ pub struct File {
     /// `#[serde(default)]` lets remote clients that predate this field deserialise cleanly.
     #[serde(default)]
     pub document_guid: Option<String>,
+    /// Whether a cover image is stored for this file.
+    /// `#[serde(default)]` for backward compat with older clients.
+    #[serde(default)]
+    pub has_cover: bool,
 }
 
 impl From<(DbFile, Vec<ContentTag>)> for File {
@@ -118,6 +122,7 @@ impl From<(DbFile, Vec<ContentTag>)> for File {
             tags,
             status: status.into(),
             document_guid,
+            has_cover: false,
         }
     }
 }

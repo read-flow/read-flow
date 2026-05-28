@@ -48,6 +48,7 @@ uuid.workspace = true
 quick-xml = { workspace = true }
 
 epub.path = "../epub"
+image = { workspace = true, features = ["jpeg", "png"] }
 mupdf.workspace = true
 provider.path = "../provider"
 
