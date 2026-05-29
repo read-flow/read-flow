@@ -160,6 +160,15 @@ export class ReadFlowClient {
 		});
 	}
 
+	async downloadDocumentCover(documentGuid: string): Promise<Blob | null> {
+		const response = await fetch(`${this.baseUrl}/documents/${documentGuid}/cover`, {
+			headers: this.headers(),
+		});
+		if (response.status === 404) return null;
+		if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+		return response.blob();
+	}
+
 	async downloadCover(guid: string): Promise<Blob | null> {
 		const response = await fetch(`${this.baseUrl}/files/${guid}/cover`, {
 			headers: this.headers(),

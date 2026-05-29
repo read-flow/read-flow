@@ -263,6 +263,30 @@ export async function mergeDocuments(
 }
 
 /**
+ * Fetch the selected document cover from the first source that has it.
+ * Uses GET /documents/<guid>/cover which returns the user-selected cover,
+ * falling back to the first available content cover server-side.
+ * Returns an object URL (caller must call URL.revokeObjectURL when done), or null.
+ */
+export async function fetchDocumentCoverFromSources(
+	documentGuid: string,
+	sourceGuids: Record<number, string>,
+): Promise<string | null> {
+	const sources = await db.sources.orderBy('order').toArray();
+	for (const source of sources) {
+		if (source.id === undefined) continue;
+		if (!sourceGuids[source.id]) continue;
+		try {
+			const blob = await new ReadFlowClient(source).downloadDocumentCover(documentGuid);
+			if (blob) return URL.createObjectURL(blob);
+		} catch {
+			// try next source
+		}
+	}
+	return null;
+}
+
+/**
  * Fetch the cover image for a file from the first source that has it.
  * Returns an object URL (caller must call URL.revokeObjectURL when done), or null.
  */

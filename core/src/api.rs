@@ -143,6 +143,10 @@ pub struct DocumentMeta {
     pub identifier: Option<String>,
     pub date: Option<String>,
     pub subject: Option<String>,
+    /// Fingerprint of the content whose cover image is used as this document's thumbnail.
+    /// `None` means "use the first available cover".
+    #[serde(default)]
+    pub selected_cover_fingerprint: Option<String>,
 }
 
 impl DocumentMeta {
@@ -167,6 +171,7 @@ impl DocumentMeta {
             identifier: row.identifier,
             date: row.date,
             subject: row.subject,
+            selected_cover_fingerprint: row.selected_cover_fingerprint,
         }
     }
 

@@ -310,6 +310,7 @@
 									<!-- Cover thumbnail -->
 									<CoverImage
 										sourceGuids={doc.sourceGuids}
+										documentGuid={doc.document_guid ?? undefined}
 										hasCover={doc.has_cover ?? false}
 										alt=""
 										class="shrink-0 w-8 h-12 rounded"

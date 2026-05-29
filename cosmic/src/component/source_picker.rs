@@ -38,7 +38,7 @@ pub fn source_picker_dialog<'a, Msg>(
     dialog_title: impl Into<String>,
     body: Option<String>,
     sources: Vec<(&'a DocumentContent, &'a DocumentSource)>,
-    cover: Option<cosmic::widget::image::Handle>,
+    covers: std::collections::HashMap<String, cosmic::widget::image::Handle>,
     on_pick: impl Fn(String) -> Msg + 'a,
     on_cancel: Msg,
 ) -> Element<'a, Msg>
@@ -64,17 +64,19 @@ where
                 ClientSelector::Remote(url) => url.host_str().unwrap_or("Remote").to_owned(),
             };
 
-            let left_widget: Element<'_, Msg> = match &cover {
-                Some(handle) => cosmic::widget::image(handle.clone())
-                    .width(cosmic::iced::Length::Fixed(32.0))
-                    .height(cosmic::iced::Length::Fixed(48.0))
-                    .content_fit(cosmic::iced::ContentFit::Contain)
-                    .into(),
-                None => widget::icon::from_name(content.type_.get_file_type_icon())
-                    .size(32)
-                    .icon()
-                    .into(),
-            };
+            let left_widget: Element<'_, Msg> =
+                if let Some(handle) = covers.get(&content.fingerprint) {
+                    cosmic::widget::image(handle.clone())
+                        .width(cosmic::iced::Length::Fixed(32.0))
+                        .height(cosmic::iced::Length::Fixed(48.0))
+                        .content_fit(cosmic::iced::ContentFit::Contain)
+                        .into()
+                } else {
+                    widget::icon::from_name(content.type_.get_file_type_icon())
+                        .size(32)
+                        .icon()
+                        .into()
+                };
 
             let location_badge = widget::text(location)
                 .size(11)

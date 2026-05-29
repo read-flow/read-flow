@@ -715,7 +715,8 @@ pub async fn get_document_user_metadata(
 ) -> Result<Option<DocumentUserMetadata>, Error> {
     sqlx::query_as::<_, DocumentUserMetadata>(
         "SELECT document_id, document_type, title, subtitle, authors, description, \
-                language, publisher, identifier, date, subject, updated_at \
+                language, publisher, identifier, date, subject, updated_at, \
+                selected_cover_fingerprint \
          FROM document_metadata WHERE document_id = ?",
     )
     .bind(document_id)
@@ -738,24 +739,26 @@ pub async fn upsert_document_user_metadata(
     identifier: Option<&str>,
     date: Option<&str>,
     subject: Option<&str>,
+    selected_cover_fingerprint: Option<&str>,
 ) -> Result<DocumentUserMetadata, Error> {
     sqlx::query(
         "INSERT INTO document_metadata \
              (document_id, document_type, title, subtitle, authors, description, \
-              language, publisher, identifier, date, subject) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+              language, publisher, identifier, date, subject, selected_cover_fingerprint) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
          ON CONFLICT(document_id) DO UPDATE SET \
-             document_type = excluded.document_type, \
-             title         = excluded.title, \
-             subtitle      = excluded.subtitle, \
-             authors       = excluded.authors, \
-             description   = excluded.description, \
-             language      = excluded.language, \
-             publisher     = excluded.publisher, \
-             identifier    = excluded.identifier, \
-             date          = excluded.date, \
-             subject       = excluded.subject, \
-             updated_at    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
+             document_type                = excluded.document_type, \
+             title                        = excluded.title, \
+             subtitle                     = excluded.subtitle, \
+             authors                      = excluded.authors, \
+             description                  = excluded.description, \
+             language                     = excluded.language, \
+             publisher                    = excluded.publisher, \
+             identifier                   = excluded.identifier, \
+             date                         = excluded.date, \
+             subject                      = excluded.subject, \
+             selected_cover_fingerprint   = excluded.selected_cover_fingerprint, \
+             updated_at                   = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
     )
     .bind(document_id)
     .bind(document_type)
@@ -768,6 +771,7 @@ pub async fn upsert_document_user_metadata(
     .bind(identifier)
     .bind(date)
     .bind(subject)
+    .bind(selected_cover_fingerprint)
     .execute(&mut *conn)
     .await?;
 
@@ -899,7 +903,22 @@ pub async fn merge_document_metadata_from_document(
         date: src.date,
         subject: src.subject,
     };
-    merge_document_metadata_from_extracted(&mut *conn, canonical_id, &extracted).await
+    merge_document_metadata_from_extracted(&mut *conn, canonical_id, &extracted).await?;
+
+    // Propagate selected_cover_fingerprint from loser to winner only when the
+    // winner has none yet (same keep-existing rule as other scalar fields).
+    if let Some(fp) = src.selected_cover_fingerprint {
+        sqlx::query(
+            "UPDATE document_metadata \
+             SET selected_cover_fingerprint = ? \
+             WHERE document_id = ? AND selected_cover_fingerprint IS NULL",
+        )
+        .bind(fp)
+        .bind(canonical_id)
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
 }
 
 /// Merge `loser_guids` documents into `winner_guid`, then delete the losers.
@@ -1076,6 +1095,41 @@ async fn load_api_document(
     })
 }
 
+/// Return the cover image for a document: use `selected_cover_fingerprint` when set,
+/// otherwise fall back to the first content that has a cover.
+pub async fn get_document_selected_cover(
+    conn: &mut SqliteConnection,
+    document_id: i32,
+) -> Result<Option<(Vec<u8>, String)>, Error> {
+    // Try the user-selected cover first.
+    let selected = sqlx::query_as::<_, (Vec<u8>, String)>(
+        "SELECT c.data, c.mime \
+         FROM document_metadata dm \
+         JOIN covers c ON c.fingerprint = dm.selected_cover_fingerprint \
+         WHERE dm.document_id = ?",
+    )
+    .bind(document_id)
+    .fetch_optional(&mut *conn)
+    .await?;
+
+    if selected.is_some() {
+        return Ok(selected);
+    }
+
+    // Fall back to the first content that has a stored cover.
+    sqlx::query_as::<_, (Vec<u8>, String)>(
+        "SELECT c.data, c.mime \
+         FROM contents ct \
+         JOIN covers c ON c.fingerprint = ct.fingerprint \
+         WHERE ct.document_id = ? \
+         LIMIT 1",
+    )
+    .bind(document_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(Into::into)
+}
+
 // ─── Cover queries ────────────────────────────────────────────────────────────
 
 /// Return the set of all fingerprints that have a stored cover image.
@@ -1164,6 +1218,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -1180,6 +1235,7 @@ mod tests {
             doc.id,
             Some("Article"),
             Some("Updated Title"),
+            None,
             None,
             None,
             None,
@@ -1267,6 +1323,7 @@ mod tests {
             Some("Loser Title"),
             None,
             Some(r#"["Loser Author"]"#),
+            None,
             None,
             None,
             None,

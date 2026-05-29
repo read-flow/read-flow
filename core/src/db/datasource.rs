@@ -294,6 +294,7 @@ impl DbClient {
             meta.identifier.as_deref(),
             meta.date.as_deref(),
             meta.subject.as_deref(),
+            meta.selected_cover_fingerprint.as_deref(),
         )
         .await?;
         dao::select_api_document_by_guid(&mut conn, guid).await

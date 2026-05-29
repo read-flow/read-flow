@@ -47,6 +47,7 @@ pub struct DocumentUserMetadata {
     pub date: Option<String>,
     pub subject: Option<String>,
     pub updated_at: String,
+    pub selected_cover_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]

@@ -248,9 +248,15 @@ impl DocumentsComponent {
             .fold(files_section, |section, file| {
                 let is_selected = self.selected_documents.contains(&file.document_guid);
                 let cover = file
-                    .contents
-                    .first()
-                    .and_then(|c| self.covers.get(&c.fingerprint));
+                    .user_meta
+                    .selected_cover_fingerprint
+                    .as_ref()
+                    .and_then(|fp| self.covers.get(fp))
+                    .or_else(|| {
+                        file.contents
+                            .first()
+                            .and_then(|c| self.covers.get(&c.fingerprint))
+                    });
                 section.add(view_document(file, is_selected, cover))
             })
             .add(self.pagination.view().map(Into::into));

@@ -1,16 +1,24 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { fetchCoverFromSources } from '$lib/api/aggregator';
+	import { fetchCoverFromSources, fetchDocumentCoverFromSources } from '$lib/api/aggregator';
 	import Icon from '$lib/components/Icon.svelte';
 
 	interface Props {
 		sourceGuids: Record<number, string>;
 		hasCover: boolean;
+		/** When provided, fetches the document's selected cover via GET /documents/<guid>/cover. */
+		documentGuid?: string;
 		alt?: string;
 		class?: string;
 	}
 
-	let { sourceGuids, hasCover, alt = 'Cover', class: className = '' }: Props = $props();
+	let {
+		sourceGuids,
+		hasCover,
+		documentGuid,
+		alt = 'Cover',
+		class: className = '',
+	}: Props = $props();
 
 	let objectUrl = $state<string | null>(null);
 	let loading = $state(false);
@@ -38,7 +46,9 @@
 	async function loadCover(): Promise<void> {
 		loading = true;
 		try {
-			objectUrl = await fetchCoverFromSources(sourceGuids);
+			objectUrl = documentGuid
+				? await fetchDocumentCoverFromSources(documentGuid, sourceGuids)
+				: await fetchCoverFromSources(sourceGuids);
 		} finally {
 			loading = false;
 		}

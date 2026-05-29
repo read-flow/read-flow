@@ -719,17 +719,23 @@ impl Page for DocumentList {
                 .then_with(|| as_.client.is_local().cmp(&bs.client.is_local()))
         });
 
-        let cover = document
+        // Collect per-content covers for this document so each row shows its own thumbnail.
+        let doc_covers: std::collections::HashMap<String, widget::image::Handle> = document
             .contents
-            .first()
-            .and_then(|c| self.archive.covers().get(&c.fingerprint))
-            .cloned();
+            .iter()
+            .filter_map(|c| {
+                self.archive
+                    .covers()
+                    .get(&c.fingerprint)
+                    .map(|h| (c.fingerprint.clone(), h.clone()))
+            })
+            .collect();
 
         Some(crate::component::source_picker::source_picker_dialog(
             fl!("document-list-pick-source-title"),
             Some(title),
             sources,
-            cover,
+            doc_covers,
             DocumentListMessage::PickDocumentSource,
             DocumentListMessage::CancelFormatPick,
         ))
@@ -955,12 +961,11 @@ impl Page for DocumentList {
 
                 let collection_size = files.filtered_len();
 
-                // Collect all fingerprints to load covers for
+                // Collect ALL fingerprints across all contents so per-content covers are loaded.
                 let fingerprints: Vec<String> = files
                     .unfiltered()
                     .iter()
-                    .filter_map(|doc| doc.contents.first())
-                    .map(|c| c.fingerprint.clone())
+                    .flat_map(|doc| doc.contents.iter().map(|c| c.fingerprint.clone()))
                     .collect();
                 let document_provider = self.document_provider.clone();
                 let load_covers_task = task::future(async move {

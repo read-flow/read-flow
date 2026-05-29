@@ -169,6 +169,7 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         put_reading_status,
         get_documents,
         get_document,
+        get_document_cover,
         put_document_metadata,
         post_merge_documents,
         ensure_document_for_file,
@@ -639,6 +640,24 @@ async fn get_document(
     Ok(doc.map(Json))
 }
 
+#[get("/documents/<guid>/cover")]
+async fn get_document_cover(
+    guid: &str,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Option<(ContentType, Vec<u8>)>> {
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let Some(doc) = dao::select_document_by_guid(&mut conn, guid).await? else {
+        return Ok(None);
+    };
+    let Some((data, mime)) = dao::get_document_selected_cover(&mut conn, doc.id).await? else {
+        return Ok(None);
+    };
+    let content_type = mime.parse::<ContentType>().unwrap_or(ContentType::JPEG);
+    Ok(Some((content_type, data)))
+}
+
 #[put("/documents/<guid>/metadata", data = "<meta>")]
 async fn put_document_metadata(
     guid: &str,
@@ -669,6 +688,7 @@ async fn put_document_metadata(
         meta.identifier.as_deref(),
         meta.date.as_deref(),
         meta.subject.as_deref(),
+        meta.selected_cover_fingerprint.as_deref(),
     )
     .await?;
 

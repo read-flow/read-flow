@@ -48,7 +48,8 @@ pub struct DocumentDetails {
     show_open_picker: bool,
     editing_user_meta: bool,
     user_meta_draft: UserMeta,
-    cover: Option<cosmic::widget::image::Handle>,
+    /// Covers keyed by content fingerprint (all contents loaded on open).
+    covers: std::collections::HashMap<String, cosmic::widget::image::Handle>,
 }
 
 #[derive(Debug, Clone)]
@@ -98,7 +99,9 @@ pub enum DocumentDetailsMessage {
     UserMetaDateChanged(String),
     UserMetaSubjectChanged(String),
 
-    CoverLoaded(Option<cosmic::widget::image::Handle>),
+    CoversLoaded(std::collections::HashMap<String, cosmic::widget::image::Handle>),
+    SelectCover(String),
+    CoverSelected(Result<(), String>),
     // Message intended for the parent module
     Out(DocumentDetailsOutput),
 }
@@ -135,25 +138,26 @@ impl DocumentDetails {
         let (all_clients, init_all_clients) = ProvidedState::new(document_provider.clone());
         let initial_user_meta = document.user_meta.clone();
 
-        // Spawn cover loading from DB
-        let fingerprint = document
+        // Load covers for ALL contents so the selection grid can show each one.
+        let fingerprints: Vec<String> = document
             .contents
-            .first()
+            .iter()
             .map(|c| c.fingerprint.clone())
-            .unwrap_or_default();
+            .collect();
         let cover_task = task::future(async move {
             let pool = application_module.connection_pool().await;
             let Ok(mut conn) = pool.acquire().await else {
-                return DocumentDetailsMessage::CoverLoaded(None);
+                return DocumentDetailsMessage::CoversLoaded(std::collections::HashMap::new());
             };
-            let Ok(Some((data, _))) =
-                read_flow_core::db::dao::get_cover(&mut conn, &fingerprint).await
-            else {
-                return DocumentDetailsMessage::CoverLoaded(None);
-            };
-            DocumentDetailsMessage::CoverLoaded(Some(cosmic::widget::image::Handle::from_bytes(
-                data,
-            )))
+            let mut map = std::collections::HashMap::new();
+            for fp in fingerprints {
+                if let Ok(Some((data, _))) =
+                    read_flow_core::db::dao::get_cover(&mut conn, &fp).await
+                {
+                    map.insert(fp, cosmic::widget::image::Handle::from_bytes(data));
+                }
+            }
+            DocumentDetailsMessage::CoversLoaded(map)
         });
 
         let file_details = DocumentDetails {
@@ -166,7 +170,7 @@ impl DocumentDetails {
             show_open_picker: false,
             editing_user_meta: false,
             user_meta_draft: initial_user_meta,
-            cover: None,
+            covers: std::collections::HashMap::new(),
         };
 
         (
@@ -648,18 +652,56 @@ impl Page for DocumentDetails {
                     .into(),
             ]));
 
-        // Cover image section (shown when a cover is available)
+        // Cover selection grid — shows one thumbnail per content that has a cover.
+        // The currently selected cover is highlighted; clicking another selects it.
         let mut sections: Vec<Element<'_, DocumentDetailsMessage>> = Vec::new();
-        if let Some(handle) = &self.cover {
-            let cover_widget = widget::image(handle.clone())
-                .width(cosmic::iced::Length::Fixed(200.0))
-                .height(cosmic::iced::Length::Fixed(280.0))
-                .content_fit(cosmic::iced::ContentFit::Contain);
-            sections.push(
-                widget::container(cover_widget)
-                    .center_x(cosmic::iced::Length::Fill)
-                    .into(),
-            );
+        if !self.covers.is_empty() {
+            let selected_fp = self
+                .document
+                .user_meta
+                .selected_cover_fingerprint
+                .as_deref();
+            let cover_buttons: Vec<Element<'_, DocumentDetailsMessage>> = self
+                .document
+                .contents
+                .iter()
+                .filter_map(|content| {
+                    let handle = self.covers.get(&content.fingerprint)?;
+                    let is_selected = selected_fp == Some(content.fingerprint.as_str())
+                        || (selected_fp.is_none()
+                            && self
+                                .document
+                                .contents
+                                .first()
+                                .is_some_and(|c| c.fingerprint == content.fingerprint));
+                    let img = widget::image(handle.clone())
+                        .width(cosmic::iced::Length::Fixed(80.0))
+                        .height(cosmic::iced::Length::Fixed(120.0))
+                        .content_fit(cosmic::iced::ContentFit::Contain);
+                    let fp = content.fingerprint.clone();
+                    let type_label = widget::text(content.type_.as_str()).size(11);
+                    let mut btn = widget::button::custom(
+                        widget::column::with_children(vec![img.into(), type_label.into()])
+                            .align_x(cosmic::iced::alignment::Horizontal::Center),
+                    )
+                    .width(cosmic::iced::Length::Fixed(88.0));
+                    if is_selected {
+                        btn = btn.class(cosmic::widget::button::ButtonClass::Suggested);
+                    } else {
+                        btn = btn.on_press(DocumentDetailsMessage::SelectCover(fp));
+                    }
+                    Some(btn.into())
+                })
+                .collect();
+            if !cover_buttons.is_empty() {
+                let cover_row = widget::Row::with_children(cover_buttons).spacing(8);
+                sections.push(
+                    widget::container(cover_row)
+                        .center_x(cosmic::iced::Length::Fill)
+                        .padding(8)
+                        .into(),
+                );
+            }
         }
         sections.extend([status_section.into(), self.user_meta_section_view()]);
         sections.push(tags_section.into());
@@ -701,11 +743,22 @@ impl Page for DocumentDetails {
                 .filter(|(_, s)| matches!(s.client, ClientSelector::Local))
                 .collect();
 
+            // Build per-content cover map for the picker so each format shows its own thumbnail.
+            let picker_covers: std::collections::HashMap<String, cosmic::widget::image::Handle> =
+                local_sources
+                    .iter()
+                    .filter_map(|(c, _)| {
+                        self.covers
+                            .get(&c.fingerprint)
+                            .map(|h| (c.fingerprint.clone(), h.clone()))
+                    })
+                    .collect();
+
             return Some(crate::component::source_picker::source_picker_dialog(
                 fl!("document-details-open-file"),
                 None,
                 local_sources,
-                self.cover.clone(),
+                picker_covers,
                 DocumentDetailsMessage::PickOpenSource,
                 DocumentDetailsMessage::CancelOpenPicker,
             ));
@@ -769,8 +822,28 @@ impl Page for DocumentDetails {
     fn update(&mut self, message: DocumentDetailsMessage) -> Task<Action<DocumentDetailsMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
-            DocumentDetailsMessage::CoverLoaded(handle) => {
-                self.cover = handle;
+            DocumentDetailsMessage::CoversLoaded(map) => {
+                self.covers = map;
+                Task::none()
+            }
+            DocumentDetailsMessage::SelectCover(fingerprint) => {
+                self.document.user_meta.selected_cover_fingerprint = Some(fingerprint.clone());
+                self.user_meta_draft.selected_cover_fingerprint = Some(fingerprint);
+                let draft = self.user_meta_draft.clone();
+                let document = self.document.clone();
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    let result = document_provider
+                        .update_document_metadata(&document, draft)
+                        .await
+                        .map_err(|e| format!("{e}"));
+                    DocumentDetailsMessage::CoverSelected(result)
+                })
+            }
+            DocumentDetailsMessage::CoverSelected(result) => {
+                if let Err(e) = result {
+                    tracing::warn!("failed to save cover selection: {e}");
+                }
                 Task::none()
             }
             DocumentDetailsMessage::Out(_) => {
