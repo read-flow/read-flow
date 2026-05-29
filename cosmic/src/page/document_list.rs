@@ -719,10 +719,17 @@ impl Page for DocumentList {
                 .then_with(|| as_.client.is_local().cmp(&bs.client.is_local()))
         });
 
+        let cover = document
+            .contents
+            .first()
+            .and_then(|c| self.archive.covers().get(&c.fingerprint))
+            .cloned();
+
         Some(crate::component::source_picker::source_picker_dialog(
             fl!("document-list-pick-source-title"),
             Some(title),
             sources,
+            cover,
             DocumentListMessage::PickDocumentSource,
             DocumentListMessage::CancelFormatPick,
         ))

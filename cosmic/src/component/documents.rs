@@ -133,6 +133,10 @@ impl DocumentsComponent {
         self.covers = covers;
     }
 
+    pub fn covers(&self) -> &HashMap<String, widget::image::Handle> {
+        &self.covers
+    }
+
     pub fn view(&self) -> Element<'_, DocumentsMessage> {
         match &self.documents {
             DocumentState::New | DocumentState::Loading => {

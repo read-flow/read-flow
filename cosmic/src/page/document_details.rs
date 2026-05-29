@@ -705,6 +705,7 @@ impl Page for DocumentDetails {
                 fl!("document-details-open-file"),
                 None,
                 local_sources,
+                self.cover.clone(),
                 DocumentDetailsMessage::PickOpenSource,
                 DocumentDetailsMessage::CancelOpenPicker,
             ));
