@@ -905,6 +905,7 @@ fn map_document_details_message(
                 PageMessage::Documents(DocumentListMessage::RefreshDocument(document))
             }
             DocumentDetailsOutput::OpenDocument(document) => PageMessage::OpenDocument(document),
+            DocumentDetailsOutput::OpenImageViewer(image) => PageMessage::OpenImageViewer(image),
         },
         msg => PageMessage::DocumentDetails(fingerprint, msg),
     }

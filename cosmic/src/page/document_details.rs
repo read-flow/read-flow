@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -40,6 +41,7 @@ use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::layout::layout;
 use crate::page::Page;
+use crate::page::image_viewer::ViewerImage;
 use crate::state::LoadedState;
 
 pub struct DocumentDetails {
@@ -53,7 +55,7 @@ pub struct DocumentDetails {
     editing_user_meta: bool,
     user_meta_draft: UserMeta,
     /// Covers keyed by content fingerprint (all contents loaded on open).
-    covers: std::collections::HashMap<String, cosmic::widget::image::Handle>,
+    covers: std::collections::HashMap<String, (cosmic::widget::image::Handle, Vec<u8>)>,
     description_content: text_editor::Content,
 }
 
@@ -62,6 +64,7 @@ pub enum DocumentDetailsOutput {
     Close(String), // Fingerprint
     RefreshDocument(Document),
     OpenDocument(Document),
+    OpenImageViewer(ViewerImage),
 }
 
 #[derive(Debug, Clone)]
@@ -104,7 +107,8 @@ pub enum DocumentDetailsMessage {
     UserMetaDateChanged(String),
     UserMetaSubjectChanged(String),
 
-    CoversLoaded(std::collections::HashMap<String, cosmic::widget::image::Handle>),
+    CoversLoaded(std::collections::HashMap<String, (cosmic::widget::image::Handle, Vec<u8>)>),
+    OpenCover(String),
     SelectCover(String),
     CoverSelected(Result<(), String>),
     // Message intended for the parent module
@@ -159,7 +163,8 @@ impl DocumentDetails {
                 if let Ok(Some((data, _))) =
                     read_flow_core::db::dao::get_cover(&mut conn, &fp).await
                 {
-                    map.insert(fp, cosmic::widget::image::Handle::from_bytes(data));
+                    let handle = cosmic::widget::image::Handle::from_bytes(data.clone());
+                    map.insert(fp, (handle, data));
                 }
             }
             DocumentDetailsMessage::CoversLoaded(map)
@@ -213,18 +218,18 @@ impl DocumentDetails {
 
         let meta = &self.document.user_meta;
 
-        let cover_handle = meta
+        let cover = meta
             .selected_cover_fingerprint
             .as_ref()
             .or_else(|| self.document.contents.first().map(|c| &c.fingerprint))
-            .and_then(|fp| self.covers.get(fp));
+            .and_then(|fp| self.covers.get(fp).map(|(h, _)| (h, fp.clone())));
 
         let has_text = meta.title.is_some()
             || meta.subtitle.is_some()
             || meta.authors.as_deref().is_some_and(|a| !a.is_empty())
             || meta.description.is_some();
 
-        if cover_handle.is_none() && !has_text {
+        if cover.is_none() && !has_text {
             return None;
         }
 
@@ -247,12 +252,15 @@ impl DocumentDetails {
 
         let mut hero_row = Row::new().spacing(space_m).align_y(Vertical::Top);
 
-        if let Some(handle) = cover_handle {
+        if let Some((handle, fp)) = cover {
+            let img = widget::image(handle.clone())
+                .width(Length::Fixed(200.0))
+                .height(Length::Fixed(300.0))
+                .content_fit(ContentFit::Contain);
             hero_row = hero_row.push(
-                widget::image(handle.clone())
-                    .width(Length::Fixed(200.0))
-                    .height(Length::Fixed(300.0))
-                    .content_fit(ContentFit::Contain),
+                widget::button::custom(img)
+                    .on_press(DocumentDetailsMessage::OpenCover(fp.clone()))
+                    .padding(0),
             );
         }
 
@@ -779,7 +787,7 @@ impl Page for DocumentDetails {
                     .filter_map(|(c, _)| {
                         self.covers
                             .get(&c.fingerprint)
-                            .map(|h| (c.fingerprint.clone(), h.clone()))
+                            .map(|(h, _)| (c.fingerprint.clone(), h.clone()))
                     })
                     .collect();
 
@@ -862,7 +870,7 @@ impl Page for DocumentDetails {
                 .contents
                 .iter()
                 .filter_map(|content| {
-                    let handle = self.covers.get(&content.fingerprint)?;
+                    let (handle, _) = self.covers.get(&content.fingerprint)?;
                     let is_selected = selected_fp == Some(content.fingerprint.as_str())
                         || (selected_fp.is_none()
                             && self
@@ -907,6 +915,25 @@ impl Page for DocumentDetails {
         match message {
             DocumentDetailsMessage::CoversLoaded(map) => {
                 self.covers = map;
+                Task::none()
+            }
+            DocumentDetailsMessage::OpenCover(fingerprint) => {
+                if let Some((handle, bytes)) = self.covers.get(&fingerprint) {
+                    let (natural_width, natural_height) =
+                        image::ImageReader::new(Cursor::new(bytes.as_slice()))
+                            .with_guessed_format()
+                            .ok()
+                            .and_then(|r| r.into_dimensions().ok())
+                            .unwrap_or((0, 0));
+                    let viewer_image = ViewerImage::Raster {
+                        handle: handle.clone(),
+                        natural_width,
+                        natural_height,
+                    };
+                    return task::message(DocumentDetailsMessage::Out(
+                        DocumentDetailsOutput::OpenImageViewer(viewer_image),
+                    ));
+                }
                 Task::none()
             }
             DocumentDetailsMessage::SelectCover(fingerprint) => {
