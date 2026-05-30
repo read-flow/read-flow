@@ -5,7 +5,6 @@ CREATE TABLE documents (
 
 CREATE TABLE contents (
     fingerprint TEXT    NOT NULL PRIMARY KEY,
-    status      INTEGER NOT NULL DEFAULT 0,
     document_id INTEGER REFERENCES documents (id) ON DELETE SET NULL
 );
 
@@ -39,23 +38,35 @@ CREATE TABLE remotes (
 CREATE UNIQUE INDEX uq_remote_base_url ON remotes (base_url);
 CREATE UNIQUE INDEX uq_remote_order    ON remotes ("order");
 
-CREATE TABLE reading_progress (
-    fingerprint  TEXT NOT NULL PRIMARY KEY,
-    progress     TEXT NOT NULL DEFAULT '{}',
-    last_updated TEXT NOT NULL DEFAULT '1970-01-01T00:00:00Z'
+CREATE TABLE reading_state (
+    fingerprint       TEXT NOT NULL PRIMARY KEY
+                          REFERENCES contents (fingerprint) ON DELETE CASCADE,
+    status            INTEGER NOT NULL DEFAULT 0,
+    position          TEXT NOT NULL DEFAULT '{}',
+    percentage        REAL NOT NULL DEFAULT 0.0,
+    last_updated      TEXT NOT NULL DEFAULT '1970-01-01T00:00:00Z',
+    status_updated_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00Z'
 );
 
 CREATE TABLE document_metadata (
-    document_id   INTEGER PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
-    document_type TEXT,
-    title         TEXT,
-    subtitle      TEXT,
-    authors       TEXT,
-    description   TEXT,
-    updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
-    language      TEXT,
-    publisher     TEXT,
-    identifier    TEXT,
-    date          TEXT,
-    subject       TEXT
+    document_id                INTEGER PRIMARY KEY REFERENCES documents (id) ON DELETE CASCADE,
+    document_type              TEXT,
+    title                      TEXT,
+    subtitle                   TEXT,
+    authors                    TEXT,
+    description                TEXT,
+    updated_at                 TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    language                   TEXT,
+    publisher                  TEXT,
+    identifier                 TEXT,
+    date                       TEXT,
+    subject                    TEXT,
+    selected_cover_fingerprint TEXT REFERENCES contents (fingerprint) ON DELETE SET NULL
+);
+
+CREATE TABLE covers (
+    fingerprint TEXT PRIMARY KEY
+        REFERENCES contents (fingerprint) ON DELETE CASCADE,
+    data        BLOB NOT NULL,
+    mime        TEXT NOT NULL DEFAULT 'image/webp'
 );
