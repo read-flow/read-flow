@@ -11,10 +11,7 @@ use futures::StreamExt;
 use reqwest::Client;
 use reqwest::Url;
 use reqwest::header;
-use sha2::Digest;
-use sha2::Sha256;
 use tokio::fs;
-use tokio::io::AsyncReadExt;
 
 use crate::Builder;
 use crate::api::ApiDocument;
@@ -260,7 +257,12 @@ impl FileDataSource for FilesClient {
         let file_path = PathBuf::from(file.path);
         let mut filename = tempdir.join(PathBuf::from(file_path.file_name().unwrap()));
 
-        if !filename.exists() || fingerprint_of(&filename).await? != file.fingerprint {
+        if !filename.exists()
+            || crate::sha256_of_file(&filename)
+                .await
+                .map_err(|e| Error::IO(Arc::new(e)))?
+                != file.fingerprint
+        {
             filename = self.download_file(&file.guid, &filename).await?;
         }
 
@@ -414,22 +416,4 @@ impl FilesClient {
         response.error_for_status_ref()?;
         Ok(response.json().await?)
     }
-}
-
-async fn fingerprint_of(filename: &Path) -> Result<String, Error> {
-    let mut file = tokio::fs::File::open(filename).await?;
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 65536];
-    loop {
-        let n = file.read(&mut buf).await?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hasher
-        .finalize()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect())
 }

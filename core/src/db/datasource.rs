@@ -2,10 +2,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use sha2::Digest;
-use sha2::Sha256;
-use tokio::io::AsyncReadExt;
-
 use super::ConnectionPool;
 use super::dao;
 use super::dao::Error;
@@ -214,7 +210,7 @@ impl FileDataSource for DbClient {
     }
 
     async fn import_file(&self, path: &Path) -> Result<File, Self::Error> {
-        let fingerprint = compute_sha256(path)
+        let fingerprint = crate::sha256_of_file(path)
             .await
             .map_err(|e| Error::IO(Arc::new(e)))?;
 
@@ -408,22 +404,4 @@ impl FileDataSource for FilteredDbClient {
     ) -> Result<(), Self::Error> {
         self.inner.update_reading_status(fingerprint, status).await
     }
-}
-
-async fn compute_sha256(path: &Path) -> Result<String, std::io::Error> {
-    let mut file = tokio::fs::File::open(path).await?;
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 64 * 1024];
-    loop {
-        let n = file.read(&mut buf).await?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hasher
-        .finalize()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect())
 }

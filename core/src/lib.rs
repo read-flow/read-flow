@@ -11,6 +11,7 @@ pub mod tag;
 use std::fmt;
 use std::fs;
 use std::hash::Hash;
+use std::io;
 use std::ops::Deref;
 use std::path::Component;
 use std::path::Path;
@@ -37,6 +38,9 @@ use serde::Deserialize;
 use serde::Serialize;
 use settings::Settings;
 use settings::SettingsError;
+use sha2::Digest;
+use sha2::Sha256;
+use tokio::io::AsyncReadExt;
 use tokio::sync::broadcast;
 
 type SettingsCache<P> = ObservableCache<P, fn(Settings) -> Settings, Settings, Settings>;
@@ -438,6 +442,25 @@ impl fmt::Display for ExpandedPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", &self.0.display())
     }
+}
+
+/// Compute the SHA-256 hex digest of a file's contents.
+pub async fn sha256_of_file(path: &Path) -> Result<String, io::Error> {
+    let mut file = tokio::fs::File::open(path).await?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 65536];
+    loop {
+        let n = file.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect())
 }
 
 pub fn force_create(path: &PathBuf) -> fs::File {
