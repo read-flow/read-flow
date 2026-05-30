@@ -498,7 +498,7 @@ fn view_document<'a>(
     .apply(widget::settings::item_row)
     .apply(widget::button::custom)
     .width(Length::Fill)
-    .class(ButtonClass::ListItem)
+    .class(ButtonClass::ListItem(theme::active().cosmic().radius_s()))
     .on_press(open_msg)
     .into()
 }

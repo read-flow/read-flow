@@ -30,7 +30,7 @@ futures.workspace = true
 indexmap = { workspace = true, features = ["serde"] }
 itertools.workspace = true
 mime.workspace = true
-pbkdf2 = { workspace = true, features = ["simple"] }
+pbkdf2 = { workspace = true, features = ["phc", "rand_core"] }
 rand_core = { workspace = true, features = ["getrandom"] }
 rustc-hash.workspace = true
 reqwest = { workspace = true, features = ["json", "stream", "multipart", "default-tls", "system-proxy"] }
@@ -54,6 +54,7 @@ provider.path = "../provider"
 
 rocket = { workspace = true, optional = true, features = ["http2", "json"] }
 rocket_cors = { workspace = true, optional = true }
+password-hash = "0.6.1"
 
 [dev-dependencies]
 assert4rs.workspace = true

@@ -13,12 +13,12 @@ anyhow = "1.0.102"
 assert4rs = "0.2.1"
 async-trait = "0.1.89"
 base64 = "0.22.1"
-clap = "4.6.0"
+clap = "4.6.1"
 cosmic-golden = { git = "https://github.com/peterpaul/cosmic-golden-test.git", tag = "0.4.0" }
 cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git" }
 derive_more = "2.1.1"
 sha2 = "0.11"
-sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "macros"] }
+sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio", "macros"] }
 expanduser = "1.2.2"
 figment = { version = "0.10.19", default-features = false }
 futures = { version = "0.3.32", default-features = false, features = ["std", "async-await"] }
@@ -31,15 +31,15 @@ indexmap = "2.14.0"
 itertools = "0.14.0"
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git" }
 mime = "0.3.17"
-mupdf = "0.6"
-open = "5.3.3"
-pbkdf2 = "0.12.2"
-quick-xml = "0.39.2"
+mupdf = "0.7.0"
+open = "5.3.5"
+pbkdf2 = "0.13.0"
+quick-xml = "0.40.1"
 rand = { version = "0.10.1", default-features = false }
 rustc-hash = "2"
 rand_core = "0.6"
 regex = { version = "1.12.3", default-features = false }
-reqwest = { version = "0.13.2", default-features = false }
+reqwest = { version = "0.13.4", default-features = false }
 rfd = "0.17.2"
 rocket = "0.5.1"
 rocket_cors = "0.6.0"
@@ -47,10 +47,10 @@ rstest = "0.26.1"
 rust-embed = "8.11.0"
 serde = "1.0.228"
 serde_json = "1"
-serde_with = "3.18.0"
+serde_with = "3.20.0"
 strum = "0.28"
 thiserror = "2.0.18"
-tokio = "1.51.1"
+tokio = "1.52.3"
 toml = "1.1.2"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false }
@@ -58,7 +58,7 @@ trait-variant = "0.1.2"
 url = "2.5.8"
 uuid = { version = "1", features = ["v4"] }
 tempfile = "3"
-zip = { version = "8.5.1", default-features = false }
+zip = { version = "8.6.0", default-features = false }
 
 [profile.release]
 # lto = true

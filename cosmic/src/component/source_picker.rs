@@ -108,7 +108,7 @@ where
 
             let guid = source.guid.clone();
             widget::button::custom(row)
-                .class(ButtonClass::ListItem)
+                .class(ButtonClass::ListItem(theme::active().cosmic().radius_s()))
                 .width(Length::Fill)
                 .on_press(on_pick(guid))
                 .into()

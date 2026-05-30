@@ -7,14 +7,13 @@ use figment::Figment;
 use figment::providers::Format;
 use figment::providers::Toml;
 use indexmap::IndexMap;
-use pbkdf2::Params;
+use pbkdf2::PasswordHasher;
+use pbkdf2::PasswordVerifier;
 use pbkdf2::Pbkdf2;
 use pbkdf2::password_hash::Error as PbkdfError;
-use pbkdf2::password_hash::PasswordHash;
-use pbkdf2::password_hash::PasswordHasher;
-use pbkdf2::password_hash::PasswordVerifier;
-use pbkdf2::password_hash::SaltString;
-use pbkdf2::password_hash::rand_core::OsRng;
+use pbkdf2::phc::PasswordHash;
+use rand_core::OsRng;
+use rand_core::RngCore;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -96,15 +95,10 @@ impl TryFrom<String> for HashedPassword {
     type Error = PbkdfError;
 
     fn try_from(password: String) -> Result<Self, Self::Error> {
-        let salt = SaltString::generate(&mut OsRng);
-
-        let params = Params {
-            rounds: 100000,
-            ..Params::default()
-        };
-        // Hash password to PHC string ($pbkdf2-sha256$...)
-        let password_hash = Pbkdf2
-            .hash_password_customized(password.as_bytes(), None, None, params, &salt)?
+        let mut salt = [0u8; 16];
+        OsRng.fill_bytes(&mut salt);
+        let password_hash = Pbkdf2::default()
+            .hash_password_with_salt(password.as_bytes(), &salt)?
             .to_string();
         Ok(Self(password_hash))
     }
@@ -112,9 +106,8 @@ impl TryFrom<String> for HashedPassword {
 
 impl HashedPassword {
     pub fn verify(&self, password: &str) -> Result<(), PbkdfError> {
-        // Verify password against PHC string
-        let parsed_hash = PasswordHash::new(&self.0)?;
-        Pbkdf2.verify_password(password.as_bytes(), &parsed_hash)
+        let parsed_hash = PasswordHash::new(&self.0).map_err(PbkdfError::from)?;
+        Pbkdf2::default().verify_password(password.as_bytes(), &parsed_hash)
     }
 }
 

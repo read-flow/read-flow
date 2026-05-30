@@ -1,4 +1,5 @@
 use quick_xml::Reader;
+use quick_xml::XmlVersion;
 use quick_xml::events::Event;
 
 use crate::content::base_dir;
@@ -172,7 +173,7 @@ fn extract_nav_links(
                 }
             }
             Ok(Event::Text(ref e)) if in_anchor => {
-                if let Ok(t) = e.xml_content() {
+                if let Ok(t) = e.xml_content(XmlVersion::Explicit1_1) {
                     current_text.push_str(&t);
                 }
             }
@@ -276,7 +277,7 @@ pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> Vec<NavEntry> {
                 }
             }
             Ok(Event::Text(ref e)) if in_navlabel_text => {
-                if let Ok(t) = e.xml_content() {
+                if let Ok(t) = e.xml_content(XmlVersion::Explicit1_1) {
                     pending_label.push_str(&t);
                 }
             }

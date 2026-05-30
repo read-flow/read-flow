@@ -104,7 +104,7 @@ pub async fn select_all_files(conn: &mut SqliteConnection) -> Result<Vec<File>, 
 }
 
 pub async fn select_all_files_order_by_id(conn: &mut SqliteConnection) -> Result<Vec<File>, Error> {
-    sqlx::query_as::<_, File>(&format!("{FILE_SELECT} ORDER BY f.id"))
+    sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(format!("{FILE_SELECT} ORDER BY f.id")))
         .fetch_all(&mut *conn)
         .await
         .map_err(Into::into)
@@ -113,44 +113,52 @@ pub async fn select_all_files_order_by_id(conn: &mut SqliteConnection) -> Result
 pub async fn select_all_files_order_by_type(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<File>, Error> {
-    sqlx::query_as::<_, File>(&format!("{FILE_SELECT} ORDER BY f.type"))
-        .fetch_all(&mut *conn)
-        .await
-        .map_err(Into::into)
+    sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(format!(
+        "{FILE_SELECT} ORDER BY f.type"
+    )))
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn select_all_files_order_by_path(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<File>, Error> {
-    sqlx::query_as::<_, File>(&format!("{FILE_SELECT} ORDER BY f.path"))
-        .fetch_all(&mut *conn)
-        .await
-        .map_err(Into::into)
+    sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(format!(
+        "{FILE_SELECT} ORDER BY f.path"
+    )))
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn select_all_files_order_by_size(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<File>, Error> {
-    sqlx::query_as::<_, File>(&format!("{FILE_SELECT} ORDER BY f.size"))
-        .fetch_all(&mut *conn)
-        .await
-        .map_err(Into::into)
+    sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(format!(
+        "{FILE_SELECT} ORDER BY f.size"
+    )))
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn select_all_files_order_by_fingerprint(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<File>, Error> {
-    sqlx::query_as::<_, File>(&format!("{FILE_SELECT} ORDER BY f.fingerprint"))
-        .fetch_all(&mut *conn)
-        .await
-        .map_err(Into::into)
+    sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(format!(
+        "{FILE_SELECT} ORDER BY f.fingerprint"
+    )))
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn select_file_by_id(
     conn: &mut SqliteConnection,
     id: i32,
 ) -> Result<Option<File>, Error> {
-    sqlx::query_as::<_, File>(&format!("{FILE_SELECT} WHERE f.id = ?"))
+    sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(format!("{FILE_SELECT} WHERE f.id = ?")))
         .bind(id)
         .fetch_optional(&mut *conn)
         .await
@@ -161,33 +169,39 @@ pub async fn select_file_by_guid(
     conn: &mut SqliteConnection,
     guid: &str,
 ) -> Result<Option<File>, Error> {
-    sqlx::query_as::<_, File>(&format!("{FILE_SELECT} WHERE f.guid = ?"))
-        .bind(guid)
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(Into::into)
+    sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(format!(
+        "{FILE_SELECT} WHERE f.guid = ?"
+    )))
+    .bind(guid)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn select_file_by_path(
     conn: &mut SqliteConnection,
     path: &str,
 ) -> Result<Option<File>, Error> {
-    sqlx::query_as::<_, File>(&format!("{FILE_SELECT} WHERE f.path = ?"))
-        .bind(path)
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(Into::into)
+    sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(format!(
+        "{FILE_SELECT} WHERE f.path = ?"
+    )))
+    .bind(path)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn select_all_files_by_path_like(
     conn: &mut SqliteConnection,
     path: &str,
 ) -> Result<Vec<File>, Error> {
-    sqlx::query_as::<_, File>(&format!("{FILE_SELECT} WHERE f.path LIKE ?"))
-        .bind(path)
-        .fetch_all(&mut *conn)
-        .await
-        .map_err(Into::into)
+    sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(format!(
+        "{FILE_SELECT} WHERE f.path LIKE ?"
+    )))
+    .bind(path)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(Into::into)
 }
 
 pub async fn delete_file_record(pool: &SqlitePool, id: i32) -> Result<(), Error> {
@@ -289,7 +303,7 @@ pub async fn select_all_files_excluding_tags(
             AND ct.tag IN ({placeholders})
         )"
     );
-    let mut q = sqlx::query_as::<_, File>(&query);
+    let mut q = sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(query));
     for tag in excluded {
         q = q.bind(tag);
     }
@@ -307,7 +321,7 @@ pub async fn select_all_distinct_tags_excluding(
     let query = format!(
         "SELECT DISTINCT tag FROM content_tags WHERE tag NOT IN ({placeholders}) ORDER BY tag"
     );
-    let mut q = sqlx::query_scalar::<_, String>(&query);
+    let mut q = sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(query));
     for tag in excluded {
         q = q.bind(tag);
     }

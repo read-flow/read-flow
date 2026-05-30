@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use futures::StreamExt;
 use quick_xml::Reader;
+use quick_xml::XmlVersion;
 use quick_xml::events::Event;
 use reqwest::Client;
 use serde::Deserialize;
@@ -371,7 +372,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
 
             Ok(Event::Text(ref e)) => {
                 if collecting.is_some()
-                    && let Ok(t) = e.xml_content()
+                    && let Ok(t) = e.xml_content(XmlVersion::Explicit1_1)
                 {
                     cur_text.push_str(&t);
                 }
