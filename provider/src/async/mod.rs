@@ -309,4 +309,69 @@ mod tests {
         assert_eq!(provider.provide().await.unwrap().value, 2);
         assert_eq!(provider.provide().await.unwrap().value, 2);
     }
+
+    #[tokio::test]
+    async fn test_and_then_transforms_value() {
+        let provider = Value::from(6u8).and_then(|x: u8| -> Result<u8, Infallible> { Ok(x * 7) });
+        assert_eq!(provider.provide().await.unwrap(), 42u8);
+    }
+
+    #[tokio::test]
+    async fn test_and_then_doubles_via_map_then_and_then() {
+        // Chain map (infallible) then and_then (fallible) to verify composition
+        let provider = Arc::new(Counter::default())
+            .map(|x: u8| x * 2)
+            .and_then(|x: u8| -> Result<u8, Infallible> { Ok(x + 1) });
+        assert_eq!(provider.provide().await.unwrap(), 3); // (1*2)+1
+        assert_eq!(provider.provide().await.unwrap(), 5); // (2*2)+1
+    }
+
+    #[tokio::test]
+    async fn test_observable_cache_caches_value() {
+        let provider = Counter::default().observable_cache();
+        assert_eq!(provider.provide().await.unwrap(), 1);
+        assert_eq!(provider.provide().await.unwrap(), 1); // cached, no second call
+    }
+
+    #[tokio::test]
+    async fn test_observable_cache_notifies_on_invalidation() {
+        let provider = Arc::new(Counter::default().observable_cache());
+        let mut rx = provider.subscribe();
+        provider.set_expired().await;
+        let msg = rx.try_recv().expect("should receive Invalidated");
+        assert_eq!(msg, Invalidated);
+    }
+
+    #[tokio::test]
+    async fn test_observable_cache_refetches_after_invalidation() {
+        let provider = Counter::default().observable_cache();
+        assert_eq!(provider.provide().await.unwrap(), 1);
+        provider.set_expired().await;
+        assert_eq!(provider.provide().await.unwrap(), 2); // new value after invalidation
+    }
+
+    #[tokio::test]
+    async fn test_observable_cache_is_expired_after_invalidation() {
+        let provider = Counter::default().observable_cache();
+        provider.provide().await.unwrap(); // populate cache
+        assert!(!provider.is_expired().await);
+        provider.set_expired().await;
+        assert!(provider.is_expired().await);
+    }
+
+    #[tokio::test]
+    async fn test_observable_cache_with_transform() {
+        let provider = Counter::default().observable_cache_with_transform(|x: u8| x * 10);
+        assert_eq!(provider.provide().await.unwrap(), 10);
+        assert_eq!(provider.provide().await.unwrap(), 10); // cached
+        provider.set_expired().await;
+        assert_eq!(provider.provide().await.unwrap(), 20); // re-fetched and transformed
+    }
+
+    #[tokio::test]
+    async fn test_arc_provider_delegates() {
+        let provider = Arc::new(Counter::default());
+        assert_eq!(provider.provide().await.unwrap(), 1);
+        assert_eq!(provider.provide().await.unwrap(), 2);
+    }
 }

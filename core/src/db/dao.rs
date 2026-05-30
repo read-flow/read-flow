@@ -1441,4 +1441,609 @@ mod tests {
         assert!(authors.contains(&"Bob".to_string()));
         assert_eq!(authors.len(), 2); // "Alice" not duplicated
     }
+
+    // ── File CRUD ─────────────────────────────────────────────────────────────
+
+    async fn make_file(conn: &mut SqliteConnection, path: &str, fingerprint: &str) -> File {
+        upsert_content(conn, fingerprint).await.unwrap();
+        write_scanned_file(conn, path, "epub", 1000, fingerprint, &[])
+            .await
+            .unwrap();
+        select_file_by_path(conn, path).await.unwrap().unwrap()
+    }
+
+    #[tokio::test]
+    async fn insert_file_round_trips() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let file = make_file(&mut conn, "/books/a.epub", "fp-rt1").await;
+        assert_eq!(file.path, "/books/a.epub");
+        assert_eq!(file.fingerprint, "fp-rt1");
+        assert_eq!(file.type_, "epub");
+    }
+
+    #[tokio::test]
+    async fn upsert_file_is_idempotent() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-idem").await.unwrap();
+        let make = || NewFile {
+            guid: "guid-idem".into(),
+            path: "/books/idem.epub".into(),
+            type_: "epub".into(),
+            size: 42,
+            fingerprint: "fp-idem".into(),
+        };
+        upsert_file(&mut conn, make()).await.unwrap();
+        upsert_file(&mut conn, make()).await.unwrap(); // must not error
+
+        let all = select_all_files(&mut conn).await.unwrap();
+        assert_eq!(all.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn select_file_by_id_and_guid_return_same_row() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let file = make_file(&mut conn, "/books/b.epub", "fp-sel").await;
+        let by_id = select_file_by_id(&mut conn, file.id)
+            .await
+            .unwrap()
+            .unwrap();
+        let by_guid = select_file_by_guid(&mut conn, &file.guid)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(by_id, by_guid);
+    }
+
+    #[tokio::test]
+    async fn delete_file_record_removes_row() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let file = make_file(&mut conn, "/books/del.epub", "fp-del").await;
+        drop(conn);
+        delete_file_record(&pool, file.id).await.unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        assert!(
+            select_file_by_id(&mut conn, file.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    // ── write_scanned_file ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn write_scanned_file_new_file_returns_true_false() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let (was_new, was_updated) = write_scanned_file(
+            &mut conn,
+            "/a.epub",
+            "epub",
+            100,
+            "fp-wsf1",
+            &["fiction".into()],
+        )
+        .await
+        .unwrap();
+        assert!(was_new);
+        assert!(!was_updated);
+        let tags = select_content_tags_by_fingerprint(&mut conn, "fp-wsf1")
+            .await
+            .unwrap();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].tag, "fiction");
+    }
+
+    #[tokio::test]
+    async fn write_scanned_file_unchanged_returns_false_false() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        write_scanned_file(&mut conn, "/b.epub", "epub", 200, "fp-wsf2", &[])
+            .await
+            .unwrap();
+        let (was_new, was_updated) =
+            write_scanned_file(&mut conn, "/b.epub", "epub", 200, "fp-wsf2", &[])
+                .await
+                .unwrap();
+        assert!(!was_new);
+        assert!(!was_updated);
+    }
+
+    #[tokio::test]
+    async fn write_scanned_file_changed_fingerprint_returns_false_true() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        write_scanned_file(&mut conn, "/c.epub", "epub", 300, "fp-wsf3a", &[])
+            .await
+            .unwrap();
+        let (was_new, was_updated) =
+            write_scanned_file(&mut conn, "/c.epub", "epub", 300, "fp-wsf3b", &[])
+                .await
+                .unwrap();
+        assert!(!was_new);
+        assert!(was_updated);
+        let file = select_file_by_path(&mut conn, "/c.epub")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(file.fingerprint, "fp-wsf3b");
+    }
+
+    // ── Content tags ──────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn upsert_content_tag_deduplicates() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-tag1").await.unwrap();
+        let tag = ContentTag::new("fp-tag1".into(), "sci-fi".into());
+        upsert_content_tag(&mut conn, tag.clone()).await.unwrap();
+        upsert_content_tag(&mut conn, tag).await.unwrap(); // idempotent
+        let tags = select_content_tags_by_fingerprint(&mut conn, "fp-tag1")
+            .await
+            .unwrap();
+        assert_eq!(tags.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn delete_content_tags_removes_specific_tags() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-dtag").await.unwrap();
+        upsert_many_content_tags(
+            &mut conn,
+            vec![
+                ContentTag::new("fp-dtag".into(), "a".into()),
+                ContentTag::new("fp-dtag".into(), "b".into()),
+                ContentTag::new("fp-dtag".into(), "c".into()),
+            ],
+        )
+        .await
+        .unwrap();
+        delete_content_tags(&mut conn, "fp-dtag", vec!["a".into(), "c".into()])
+            .await
+            .unwrap();
+        let remaining = select_content_tags_by_fingerprint(&mut conn, "fp-dtag")
+            .await
+            .unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].tag, "b");
+    }
+
+    #[tokio::test]
+    async fn select_all_distinct_tags_returns_sorted_unique() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-dt1").await.unwrap();
+        upsert_content(&mut conn, "fp-dt2").await.unwrap();
+        upsert_many_content_tags(
+            &mut conn,
+            vec![
+                ContentTag::new("fp-dt1".into(), "z".into()),
+                ContentTag::new("fp-dt1".into(), "a".into()),
+                ContentTag::new("fp-dt2".into(), "a".into()), // duplicate tag, different fingerprint
+            ],
+        )
+        .await
+        .unwrap();
+        let tags = select_all_distinct_tags(&mut conn).await.unwrap();
+        assert_eq!(tags, vec!["a", "z"]);
+    }
+
+    #[tokio::test]
+    async fn select_all_distinct_tags_excluding_filters() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-dte").await.unwrap();
+        upsert_many_content_tags(
+            &mut conn,
+            vec![
+                ContentTag::new("fp-dte".into(), "fiction".into()),
+                ContentTag::new("fp-dte".into(), "romance".into()),
+                ContentTag::new("fp-dte".into(), "sci-fi".into()),
+            ],
+        )
+        .await
+        .unwrap();
+        let tags = select_all_distinct_tags_excluding(&mut conn, &["romance".into()])
+            .await
+            .unwrap();
+        assert!(!tags.contains(&"romance".to_string()));
+        assert!(tags.contains(&"fiction".to_string()));
+        assert!(tags.contains(&"sci-fi".to_string()));
+    }
+
+    #[tokio::test]
+    async fn select_files_excluding_tags_filters_correctly() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        write_scanned_file(
+            &mut conn,
+            "/keep.epub",
+            "epub",
+            1,
+            "fp-keep",
+            &["allowed".into()],
+        )
+        .await
+        .unwrap();
+        write_scanned_file(
+            &mut conn,
+            "/skip.epub",
+            "epub",
+            2,
+            "fp-skip",
+            &["excluded".into()],
+        )
+        .await
+        .unwrap();
+        let files = select_all_files_excluding_tags(&mut conn, &["excluded".into()])
+            .await
+            .unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "/keep.epub");
+    }
+
+    // ── Reading state ─────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn get_reading_state_returns_none_when_absent() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let result = get_reading_state(&mut conn, "no-such-fp").await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn upsert_reading_state_auto_transitions_unread_to_reading() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-rs1").await.unwrap();
+        let state = ReadingState {
+            fingerprint: "fp-rs1".into(),
+            status: 0,
+            position: String::new(),
+            percentage: 0.5,
+            last_updated: "2024-01-01T12:00:00Z".into(),
+            status_updated_at: "2024-01-01T12:00:00Z".into(),
+        };
+        let result = upsert_reading_state(&mut conn, state).await.unwrap();
+        assert_eq!(result.status, 1); // auto-promoted to Reading
+    }
+
+    #[tokio::test]
+    async fn upsert_reading_state_auto_transitions_reading_to_read() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-rs2").await.unwrap();
+        // First: create as Reading
+        let state = ReadingState {
+            fingerprint: "fp-rs2".into(),
+            status: 0,
+            position: String::new(),
+            percentage: 0.5,
+            last_updated: "2024-01-01T10:00:00Z".into(),
+            status_updated_at: "2024-01-01T10:00:00Z".into(),
+        };
+        upsert_reading_state(&mut conn, state).await.unwrap();
+        // Second: advance to 99% → should become Read
+        let state2 = ReadingState {
+            fingerprint: "fp-rs2".into(),
+            status: 0,
+            position: String::new(),
+            percentage: 0.99,
+            last_updated: "2024-01-01T11:00:00Z".into(),
+            status_updated_at: "2024-01-01T11:00:00Z".into(),
+        };
+        let result = upsert_reading_state(&mut conn, state2).await.unwrap();
+        assert_eq!(result.status, 2);
+    }
+
+    #[tokio::test]
+    async fn upsert_reading_state_stale_timestamp_not_applied() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-rs3").await.unwrap();
+        let fresh = ReadingState {
+            fingerprint: "fp-rs3".into(),
+            status: 0,
+            position: String::new(),
+            percentage: 0.5,
+            last_updated: "2024-06-01T12:00:00Z".into(),
+            status_updated_at: "2024-06-01T12:00:00Z".into(),
+        };
+        upsert_reading_state(&mut conn, fresh).await.unwrap();
+        // Stale update (older timestamp) — must not overwrite
+        let stale = ReadingState {
+            fingerprint: "fp-rs3".into(),
+            status: 0,
+            position: "chapter-1".into(),
+            percentage: 0.0,
+            last_updated: "2024-01-01T00:00:00Z".into(),
+            status_updated_at: "2024-01-01T00:00:00Z".into(),
+        };
+        upsert_reading_state(&mut conn, stale).await.unwrap();
+        let result = get_reading_state(&mut conn, "fp-rs3")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.status, 1); // original Reading status preserved
+        assert_eq!(result.percentage, 0.5); // original percentage preserved
+    }
+
+    #[tokio::test]
+    async fn update_reading_status_only_bypasses_transitions() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-rs4").await.unwrap();
+        // Mark as Read directly (status=2), even with 0% progress
+        update_reading_status_only(&mut conn, "fp-rs4", 2)
+            .await
+            .unwrap();
+        let result = get_reading_state(&mut conn, "fp-rs4")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.status, 2);
+    }
+
+    // ── Remotes ───────────────────────────────────────────────────────────────
+
+    fn new_remote(order: i32, suffix: &str) -> NewRemote {
+        NewRemote {
+            base_url: format!("https://example.com/{suffix}"),
+            order,
+            passphrase: "secret".into(),
+            user_id: format!("user-{suffix}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn insert_and_select_remote() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let remote = insert_remote(&mut conn, new_remote(0, "a")).await.unwrap();
+        assert_eq!(remote.base_url, "https://example.com/a");
+        assert_eq!(remote.order, 0);
+        let all = select_all_remotes(&mut conn).await.unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, remote.id);
+    }
+
+    #[tokio::test]
+    async fn update_remote_changes_fields() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let remote = insert_remote(&mut conn, new_remote(0, "b")).await.unwrap();
+        update_remote(
+            &mut conn,
+            remote.id,
+            "https://new.example.com",
+            "new-user",
+            "new-pass",
+        )
+        .await
+        .unwrap();
+        let all = select_all_remotes(&mut conn).await.unwrap();
+        assert_eq!(all[0].base_url, "https://new.example.com");
+        assert_eq!(all[0].user_id, "new-user");
+        assert_eq!(all[0].passphrase, "new-pass");
+    }
+
+    #[tokio::test]
+    async fn delete_remote_reorders_remaining() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let r0 = insert_remote(&mut conn, new_remote(0, "r0")).await.unwrap();
+        let r1 = insert_remote(&mut conn, new_remote(1, "r1")).await.unwrap();
+        let _r2 = insert_remote(&mut conn, new_remote(2, "r2")).await.unwrap();
+        drop(conn);
+        delete_remote_by_id(&pool, r1.id).await.unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        let remaining = select_all_remotes(&mut conn).await.unwrap();
+        assert_eq!(remaining.len(), 2);
+        // Orders must be compact 0,1 with no gaps
+        let orders: Vec<i32> = remaining.iter().map(|r| r.order).collect();
+        assert_eq!(orders, vec![0, 1]);
+        // r0 should still be first
+        assert_eq!(remaining[0].id, r0.id);
+    }
+
+    #[tokio::test]
+    async fn swap_order_of_remotes_swaps_positions() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let r0 = insert_remote(&mut conn, new_remote(0, "s0")).await.unwrap();
+        let r1 = insert_remote(&mut conn, new_remote(1, "s1")).await.unwrap();
+        drop(conn);
+        swap_order_of_remotes(&pool, &r0, &r1).await.unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        let all = select_all_remotes(&mut conn).await.unwrap();
+        // After swap, r1's original url now appears first
+        assert_eq!(all[0].base_url, r1.base_url);
+        assert_eq!(all[1].base_url, r0.base_url);
+    }
+
+    // ── Covers ────────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn cover_round_trip() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-cov1").await.unwrap();
+        upsert_cover(&mut conn, "fp-cov1", b"image-data", "image/webp")
+            .await
+            .unwrap();
+        let result = get_cover(&mut conn, "fp-cov1").await.unwrap().unwrap();
+        assert_eq!(result.0, b"image-data");
+        assert_eq!(result.1, "image/webp");
+    }
+
+    #[tokio::test]
+    async fn cover_upsert_overwrites_existing() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-cov2").await.unwrap();
+        upsert_cover(&mut conn, "fp-cov2", b"old-data", "image/jpeg")
+            .await
+            .unwrap();
+        upsert_cover(&mut conn, "fp-cov2", b"new-data", "image/webp")
+            .await
+            .unwrap();
+        let result = get_cover(&mut conn, "fp-cov2").await.unwrap().unwrap();
+        assert_eq!(result.0, b"new-data");
+        assert_eq!(result.1, "image/webp");
+    }
+
+    #[tokio::test]
+    async fn cover_exists_returns_correct_bool() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-cov3").await.unwrap();
+        assert!(!cover_exists(&mut conn, "fp-cov3").await.unwrap());
+        upsert_cover(&mut conn, "fp-cov3", b"data", "image/webp")
+            .await
+            .unwrap();
+        assert!(cover_exists(&mut conn, "fp-cov3").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn select_fingerprints_with_covers_returns_set() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-cov4").await.unwrap();
+        upsert_content(&mut conn, "fp-cov5").await.unwrap();
+        upsert_cover(&mut conn, "fp-cov4", b"d", "image/webp")
+            .await
+            .unwrap();
+        let fps = select_fingerprints_with_covers(&mut conn).await.unwrap();
+        assert!(fps.contains("fp-cov4"));
+        assert!(!fps.contains("fp-cov5"));
+    }
+
+    // ── ensure_document_for_fingerprint ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn ensure_document_for_fingerprint_creates_doc_when_absent() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-edf1").await.unwrap();
+        let doc = ensure_document_for_fingerprint(&mut conn, "fp-edf1")
+            .await
+            .unwrap();
+        assert!(!doc.guid.is_empty());
+        // A second call must return the same document guid
+        let doc2 = ensure_document_for_fingerprint(&mut conn, "fp-edf1")
+            .await
+            .unwrap();
+        assert_eq!(doc.guid, doc2.guid);
+    }
+
+    #[tokio::test]
+    async fn ensure_document_for_fingerprint_returns_existing_doc() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        upsert_content(&mut conn, "fp-edf2").await.unwrap();
+        let existing_doc = upsert_document(&mut conn, "preset-doc-guid").await.unwrap();
+        sqlx::query("UPDATE contents SET document_id = ? WHERE fingerprint = ?")
+            .bind(existing_doc.id)
+            .bind("fp-edf2")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        let api_doc = ensure_document_for_fingerprint(&mut conn, "fp-edf2")
+            .await
+            .unwrap();
+        assert_eq!(api_doc.guid, "preset-doc-guid");
+    }
+
+    // ── auto_link_documents ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn auto_link_documents_links_same_stem_different_fingerprints() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        // Two formats of the same book: /books/mybook.epub and /books/mybook.pdf
+        write_scanned_file(&mut conn, "/books/mybook.epub", "epub", 1, "fp-link1", &[])
+            .await
+            .unwrap();
+        write_scanned_file(&mut conn, "/books/mybook.pdf", "pdf", 2, "fp-link2", &[])
+            .await
+            .unwrap();
+        drop(conn);
+        auto_link_documents(&pool).await.unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        let f1 = select_file_by_path(&mut conn, "/books/mybook.epub")
+            .await
+            .unwrap()
+            .unwrap();
+        let f2 = select_file_by_path(&mut conn, "/books/mybook.pdf")
+            .await
+            .unwrap()
+            .unwrap();
+        // Both files should now belong to the same document
+        assert!(f1.document_guid.is_some());
+        assert_eq!(f1.document_guid, f2.document_guid);
+    }
+
+    #[tokio::test]
+    async fn auto_link_documents_does_not_link_different_stems() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        write_scanned_file(&mut conn, "/books/alpha.epub", "epub", 1, "fp-ns1", &[])
+            .await
+            .unwrap();
+        write_scanned_file(&mut conn, "/books/beta.epub", "epub", 2, "fp-ns2", &[])
+            .await
+            .unwrap();
+        drop(conn);
+        auto_link_documents(&pool).await.unwrap();
+        let mut conn = pool.acquire().await.unwrap();
+        let f1 = select_file_by_path(&mut conn, "/books/alpha.epub")
+            .await
+            .unwrap()
+            .unwrap();
+        let f2 = select_file_by_path(&mut conn, "/books/beta.epub")
+            .await
+            .unwrap()
+            .unwrap();
+        // Different stems — must remain unlinked (document_guid = None)
+        assert!(f1.document_guid.is_none());
+        assert!(f2.document_guid.is_none());
+    }
+
+    #[tokio::test]
+    async fn auto_link_documents_already_linked_is_no_op() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        write_scanned_file(&mut conn, "/books/same.epub", "epub", 1, "fp-al1", &[])
+            .await
+            .unwrap();
+        write_scanned_file(&mut conn, "/books/same.pdf", "pdf", 2, "fp-al2", &[])
+            .await
+            .unwrap();
+        drop(conn);
+        auto_link_documents(&pool).await.unwrap();
+        auto_link_documents(&pool).await.unwrap(); // second run must be a no-op
+        let mut conn = pool.acquire().await.unwrap();
+        let f1 = select_file_by_path(&mut conn, "/books/same.epub")
+            .await
+            .unwrap()
+            .unwrap();
+        let f2 = select_file_by_path(&mut conn, "/books/same.pdf")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(f1.document_guid, f2.document_guid);
+        // Count documents — must still be exactly 1
+        let doc_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM documents")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+        assert_eq!(doc_count, 1);
+    }
 }
