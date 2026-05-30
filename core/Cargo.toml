@@ -50,6 +50,7 @@ quick-xml = { workspace = true }
 epub.path = "../epub"
 image = { workspace = true, features = ["jpeg", "png"] }
 mupdf.workspace = true
+webp.workspace = true
 provider.path = "../provider"
 
 rocket = { workspace = true, optional = true, features = ["http2", "json"] }

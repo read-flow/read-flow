@@ -428,7 +428,7 @@ async fn flush_batch(
                 // Persist cover if extracted.
                 if let Some(cover_bytes) = cover
                     && let Err(e) =
-                        dao::upsert_cover(&mut conn, &fingerprint, &cover_bytes, "image/jpeg").await
+                        dao::upsert_cover(&mut conn, &fingerprint, &cover_bytes, "image/webp").await
                 {
                     tracing::warn!("failed to store cover for {fingerprint}: {e}");
                 }

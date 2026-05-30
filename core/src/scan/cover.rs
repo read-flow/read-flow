@@ -1,8 +1,7 @@
-use std::io::Cursor;
 use std::path::Path;
 
 /// Extract a cover image from a document file.
-/// Returns JPEG bytes sized to fit within 200×300 px, or `None` if unavailable.
+/// Returns WebP bytes (lossy, quality 82) sized to fit within 800×800 px, or `None` if unavailable.
 pub fn extract_cover(path: &Path, extension: &str) -> Option<Vec<u8>> {
     match extension {
         "epub" => extract_epub_cover(path).or_else(|| extract_mupdf_cover(path)),
@@ -14,7 +13,7 @@ pub fn extract_cover(path: &Path, extension: &str) -> Option<Vec<u8>> {
 fn extract_epub_cover(path: &Path) -> Option<Vec<u8>> {
     let doc = epub::EpubDocument::open(path).ok()?;
     let raw = doc.cover_bytes()?;
-    decode_resize_jpeg(&raw)
+    decode_resize_webp(&raw)
 }
 
 fn extract_mupdf_cover(path: &Path) -> Option<Vec<u8>> {
@@ -26,7 +25,7 @@ fn extract_mupdf_cover(path: &Path) -> Option<Vec<u8>> {
     if w <= 0.0 || h <= 0.0 {
         return None;
     }
-    let scale = f32::min(300.0 / w, 400.0 / h).max(0.01);
+    let scale = f32::min(800.0 / w, 800.0 / h).max(0.01);
     let matrix = mupdf::Matrix::new_scale(scale, scale);
     let display_list = page.to_display_list(false).ok()?;
     let pixmap = display_list
@@ -37,7 +36,7 @@ fn extract_mupdf_cover(path: &Path) -> Option<Vec<u8>> {
     let samples = pixmap.samples().to_vec();
     let img = image::RgbImage::from_raw(pw, ph, samples)?;
     let trimmed = trim_whitespace(image::DynamicImage::from(img));
-    encode_jpeg(trimmed)
+    encode_webp(trimmed)
 }
 
 fn trim_whitespace(img: image::DynamicImage) -> image::DynamicImage {
@@ -67,16 +66,19 @@ fn trim_whitespace(img: image::DynamicImage) -> image::DynamicImage {
     img.crop_imm(left, top, right - left + 1, bottom - top + 1)
 }
 
-fn decode_resize_jpeg(raw: &[u8]) -> Option<Vec<u8>> {
+fn decode_resize_webp(raw: &[u8]) -> Option<Vec<u8>> {
     let img = image::load_from_memory(raw).ok()?;
     let trimmed = trim_whitespace(img);
-    let resized = trimmed.thumbnail(200, 300);
-    encode_jpeg(resized)
+    let resized = trimmed.thumbnail(800, 800);
+    encode_webp(resized)
 }
 
-fn encode_jpeg(img: image::DynamicImage) -> Option<Vec<u8>> {
-    let mut out = Vec::new();
-    img.write_to(&mut Cursor::new(&mut out), image::ImageFormat::Jpeg)
-        .ok()?;
-    Some(out)
+fn encode_webp(img: image::DynamicImage) -> Option<Vec<u8>> {
+    let rgb = img.to_rgb8();
+    let (w, h) = rgb.dimensions();
+    Some(
+        webp::Encoder::from_rgb(rgb.as_raw(), w, h)
+            .encode(82.0)
+            .to_vec(),
+    )
 }

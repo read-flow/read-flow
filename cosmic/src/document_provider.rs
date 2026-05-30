@@ -67,8 +67,8 @@ impl DocumentProvider {
         self.documents_cache.provide().await
     }
 
-    /// Load cover JPEG bytes for the given fingerprints from the local DB.
-    /// Returns a map of fingerprint → JPEG bytes for covers that exist.
+    /// Load cover bytes for the given fingerprints from the local DB.
+    /// Returns a map of fingerprint → cover bytes for covers that exist.
     pub async fn load_covers(
         &self,
         fingerprints: Vec<String>,
