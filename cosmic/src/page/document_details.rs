@@ -17,6 +17,7 @@ use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Row;
 use cosmic::widget::text;
+use cosmic::widget::text_editor;
 use read_flow_core::api::ReadingStatus;
 use read_flow_core::db::models::DocumentType;
 use strum::IntoEnumIterator;
@@ -53,6 +54,7 @@ pub struct DocumentDetails {
     user_meta_draft: UserMeta,
     /// Covers keyed by content fingerprint (all contents loaded on open).
     covers: std::collections::HashMap<String, cosmic::widget::image::Handle>,
+    description_content: text_editor::Content,
 }
 
 #[derive(Debug, Clone)]
@@ -92,7 +94,7 @@ pub enum DocumentDetailsMessage {
     UserMetaTitleChanged(String),
     UserMetaSubtitleChanged(String),
     UserMetaDocTypeChanged(Option<DocumentType>),
-    UserMetaDescriptionChanged(String),
+    DescriptionAction(text_editor::Action),
     UserMetaAuthorChanged(usize, String),
     UserMetaAuthorRemoved(usize),
     UserMetaAuthorAdded,
@@ -174,6 +176,7 @@ impl DocumentDetails {
             editing_user_meta: false,
             user_meta_draft: initial_user_meta,
             covers: std::collections::HashMap::new(),
+            description_content: text_editor::Content::new(),
         };
 
         (
@@ -228,18 +231,18 @@ impl DocumentDetails {
         let mut text_col = Column::new().spacing(space_xs);
 
         if let Some(title) = meta.title.as_deref() {
-            text_col = text_col.push(text::heading(title).wrapping(Wrapping::Word));
+            text_col = text_col.push(text::title1(title).wrapping(Wrapping::Word));
         }
         if let Some(subtitle) = meta.subtitle.as_deref() {
-            text_col = text_col.push(widget::text(subtitle).size(16));
+            text_col = text_col.push(text::title4(subtitle));
         }
         if let Some(authors) = meta.authors.as_deref().filter(|a| !a.is_empty()) {
-            text_col = text_col.push(widget::text(authors.join(", ")).size(14));
+            text_col = text_col.push(text::heading(authors.join(", ")));
         }
         if let Some(desc) = meta.description.as_deref() {
             text_col = text_col
                 .push(widget::divider::horizontal::light())
-                .push(widget::text(desc).wrapping(Wrapping::Word));
+                .push(text::body(desc).wrapping(Wrapping::Word));
         }
 
         let mut hero_row = Row::new().spacing(space_m).align_y(Vertical::Top);
@@ -446,14 +449,19 @@ impl DocumentDetails {
             fl!("document-details-user-meta-authors"),
             "system-users-symbolic"
         );
-        add_row!(
-            editing_only_field!(
-                meta.description,
-                DocumentDetailsMessage::UserMetaDescriptionChanged
-            ),
-            fl!("document-details-user-meta-description"),
-            "accessories-text-editor-symbolic"
-        );
+        if editing {
+            section = section.add(
+                widget::settings::item::builder(fl!("document-details-user-meta-description"))
+                    .icon(
+                        widget::icon::from_name("accessories-text-editor-symbolic").size(ICON_SIZE),
+                    )
+                    .control(
+                        widget::text_editor(&self.description_content)
+                            .on_action(DocumentDetailsMessage::DescriptionAction)
+                            .height(Length::Fixed(120.0)),
+                    ),
+            );
+        }
         add_row!(
             opt_field!(
                 meta.language,
@@ -1151,6 +1159,9 @@ impl Page for DocumentDetails {
             },
             DocumentDetailsMessage::EditUserMeta => {
                 self.user_meta_draft = self.document.user_meta.clone();
+                self.description_content = text_editor::Content::with_text(
+                    self.user_meta_draft.description.as_deref().unwrap_or(""),
+                );
                 self.editing_user_meta = true;
                 Task::none()
             }
@@ -1197,8 +1208,15 @@ impl Page for DocumentDetails {
                 self.user_meta_draft.document_type = val;
                 Task::none()
             }
-            DocumentDetailsMessage::UserMetaDescriptionChanged(val) => {
-                self.user_meta_draft.description = if val.is_empty() { None } else { Some(val) };
+            DocumentDetailsMessage::DescriptionAction(action) => {
+                self.description_content.perform(action);
+                let text = self.description_content.text();
+                let trimmed = text.trim_end_matches('\n');
+                self.user_meta_draft.description = if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                };
                 Task::none()
             }
             DocumentDetailsMessage::UserMetaAuthorChanged(idx, val) => {
