@@ -65,6 +65,8 @@ pub struct ReadFlow {
     nav_bar_width: f32,
     /// True while the user is dragging the sidebar resize handle.
     nav_bar_resizing: bool,
+    /// Whether the nav sidebar is open in condensed mode (independent of normal visibility).
+    nav_bar_condensed_open: bool,
     /// Key bindings for the application's menu bar.
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     // Configuration data that persists between application runs.
@@ -228,6 +230,7 @@ impl cosmic::Application for ReadFlow {
             nav_bar_visible: true,
             nav_bar_width: 280.0,
             nav_bar_resizing: false,
+            nav_bar_condensed_open: false,
             key_binds: HashMap::new(),
             config,
             application_module,
@@ -263,7 +266,13 @@ impl cosmic::Application for ReadFlow {
 
     /// Elements to pack at the start of the header bar.
     fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
-        let navbar_icon = if self.nav_bar_visible {
+        let navbar_icon = if self.core().is_condensed() {
+            if self.nav_bar_condensed_open {
+                "navbar-open-symbolic"
+            } else {
+                "navbar-closed-symbolic"
+            }
+        } else if self.nav_bar_visible {
             "navbar-open-symbolic"
         } else {
             "navbar-closed-symbolic"
@@ -357,21 +366,24 @@ impl cosmic::Application for ReadFlow {
     }
 
     fn nav_bar(&self) -> Option<cosmic::Element<'_, cosmic::Action<Self::Message>>> {
-        if !self.nav_bar_visible {
-            return None;
-        }
-
-        let tree = self.build_nav_tree().view();
-
         if self.core().is_condensed() {
+            if !self.nav_bar_condensed_open {
+                return None;
+            }
+            let tree = self.build_nav_tree().view();
             return Some(
                 tree.apply(widget::container)
-                    .width(cosmic::iced::Length::Shrink)
+                    .width(cosmic::iced::Length::Fill)
                     .height(cosmic::iced::Length::Fill)
                     .into(),
             );
         }
 
+        if !self.nav_bar_visible {
+            return None;
+        }
+
+        let tree = self.build_nav_tree().view();
         let sidebar = tree
             .apply(widget::container)
             .width(cosmic::iced::Length::Fixed(self.nav_bar_width))
@@ -504,7 +516,11 @@ impl cosmic::Application for ReadFlow {
         tracing::debug!("received: {message:?}");
         match message {
             Message::ToggleNavBar => {
-                self.nav_bar_visible = !self.nav_bar_visible;
+                if self.core().is_condensed() {
+                    self.nav_bar_condensed_open = !self.nav_bar_condensed_open;
+                } else {
+                    self.nav_bar_visible = !self.nav_bar_visible;
+                }
                 Task::none()
             }
             Message::NavBarResizeStart => {
@@ -554,10 +570,16 @@ impl cosmic::Application for ReadFlow {
             // PageOutput messages may arrive directly from UI elements (e.g. nav tree
             // on_activate closures) wrapped in Message::Page rather than through a task.
             // Route them through the same App::update path as task-produced outputs.
-            Message::Page(msg) => match *msg {
-                PageMessage::Out(output) => self.update(output.into()),
-                page_message => self.pages.update(page_message).map(ActionExt::map_into),
-            },
+            Message::Page(msg) => {
+                let task = match *msg {
+                    PageMessage::Out(output) => self.update(output.into()),
+                    page_message => self.pages.update(page_message).map(ActionExt::map_into),
+                };
+                if self.core().is_condensed() {
+                    self.nav_bar_condensed_open = false;
+                }
+                task
+            }
             Message::ActivatePage(selector) => {
                 self.pages.activate(selector.clone());
                 let mut tasks = vec![self.update_title()];
