@@ -6,9 +6,11 @@ use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
+use cosmic::iced::ContentFit;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
+use cosmic::iced::widget::text::Wrapping;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
@@ -24,6 +26,7 @@ use crate::ICON_SIZE;
 use crate::aggregator::Document;
 use crate::aggregator::DocumentSource;
 use crate::aggregator::UserMeta;
+use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::component::provided_state::ProvidedState;
 use crate::component::provided_state::ProvidedStateMessage;
@@ -200,6 +203,66 @@ impl DocumentDetails {
         })
     }
 
+    fn hero_section(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
+        let cosmic_theme::Spacing {
+            space_xs, space_m, ..
+        } = theme::active().cosmic().spacing;
+
+        let meta = &self.document.user_meta;
+
+        let cover_handle = meta
+            .selected_cover_fingerprint
+            .as_ref()
+            .or_else(|| self.document.contents.first().map(|c| &c.fingerprint))
+            .and_then(|fp| self.covers.get(fp));
+
+        let has_text = meta.title.is_some()
+            || meta.subtitle.is_some()
+            || meta.authors.as_deref().is_some_and(|a| !a.is_empty())
+            || meta.description.is_some();
+
+        if cover_handle.is_none() && !has_text {
+            return None;
+        }
+
+        let mut text_col = Column::new().spacing(space_xs);
+
+        if let Some(title) = meta.title.as_deref() {
+            text_col = text_col.push(text::heading(title).wrapping(Wrapping::Word));
+        }
+        if let Some(subtitle) = meta.subtitle.as_deref() {
+            text_col = text_col.push(widget::text(subtitle).size(16));
+        }
+        if let Some(authors) = meta.authors.as_deref().filter(|a| !a.is_empty()) {
+            text_col = text_col.push(widget::text(authors.join(", ")).size(14));
+        }
+        if let Some(desc) = meta.description.as_deref() {
+            text_col = text_col
+                .push(widget::divider::horizontal::light())
+                .push(widget::text(desc).wrapping(Wrapping::Word));
+        }
+
+        let mut hero_row = Row::new().spacing(space_m).align_y(Vertical::Top);
+
+        if let Some(handle) = cover_handle {
+            hero_row = hero_row.push(
+                widget::image(handle.clone())
+                    .width(Length::Fixed(200.0))
+                    .height(Length::Fixed(300.0))
+                    .content_fit(ContentFit::Contain),
+            );
+        }
+
+        hero_row = hero_row.push(text_col.width(Length::Fill));
+
+        Some(
+            widget::container(hero_row)
+                .padding(space_m)
+                .width(Length::Fill)
+                .into(),
+        )
+    }
+
     fn add_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
         let document = self.document.clone();
         let document_provider = self.document_provider.clone();
@@ -231,10 +294,7 @@ impl DocumentDetails {
 impl DocumentDetails {
     fn user_meta_section_view(&self) -> Element<'_, DocumentDetailsMessage> {
         let cosmic_theme::Spacing {
-            space_xxs,
-            space_xs,
-            space_s,
-            ..
+            space_xs, space_s, ..
         } = theme::active().cosmic().spacing;
 
         let edit_button = if self.editing_user_meta {
@@ -285,6 +345,19 @@ impl DocumentDetails {
             }};
         }
 
+        // In edit mode: show a text_input. In view mode: hidden (shown in the hero section instead).
+        macro_rules! editing_only_field {
+            ($val:expr, $on_input:expr) => {{
+                let v: &str = $val.as_deref().unwrap_or("");
+                let el: Option<Element<'_, DocumentDetailsMessage>> = if editing {
+                    Some(widget::text_input("", v).on_input($on_input).into())
+                } else {
+                    None
+                };
+                el
+            }};
+        }
+
         // Document type: pick_list in edit mode, text label (or hidden) in view mode.
         let doc_type_options: Vec<DocumentType> = DocumentType::iter().collect();
         let type_control: Option<Element<'_, DocumentDetailsMessage>> = if editing {
@@ -302,7 +375,7 @@ impl DocumentDetails {
                 .map(|t| -> Element<'_, DocumentDetailsMessage> { text(t.to_string()).into() })
         };
 
-        // Authors: comma-separated display in view mode, free-text input in edit mode.
+        // Authors: free-text inputs in edit mode; hidden in view mode (shown in hero section).
         let authors_control: Option<Element<'_, DocumentDetailsMessage>> = if editing {
             let draft_authors = self.user_meta_draft.authors.as_deref().unwrap_or(&[]);
             let mut col = Column::new().spacing(space_xs);
@@ -332,14 +405,7 @@ impl DocumentDetails {
             );
             Some(col.into())
         } else {
-            match meta.authors.as_deref().filter(|a| !a.is_empty()) {
-                None => None,
-                Some(authors) => {
-                    let items: Vec<Element<'_, DocumentDetailsMessage>> =
-                        authors.iter().map(|a| text(a.as_str()).into()).collect();
-                    Some(Column::new().spacing(space_xxs).extend(items).into())
-                }
-            }
+            None
         };
 
         // Conditionally add each field row.
@@ -363,12 +429,12 @@ impl DocumentDetails {
             "document-properties-symbolic"
         );
         add_row!(
-            opt_field!(meta.title, DocumentDetailsMessage::UserMetaTitleChanged),
+            editing_only_field!(meta.title, DocumentDetailsMessage::UserMetaTitleChanged),
             fl!("document-details-user-meta-title"),
             "text-x-generic-symbolic"
         );
         add_row!(
-            opt_field!(
+            editing_only_field!(
                 meta.subtitle,
                 DocumentDetailsMessage::UserMetaSubtitleChanged
             ),
@@ -381,7 +447,7 @@ impl DocumentDetails {
             "system-users-symbolic"
         );
         add_row!(
-            opt_field!(
+            editing_only_field!(
                 meta.description,
                 DocumentDetailsMessage::UserMetaDescriptionChanged
             ),
@@ -652,56 +718,11 @@ impl Page for DocumentDetails {
                     .into(),
             ]));
 
-        // Cover selection grid — shows one thumbnail per content that has a cover.
-        // The currently selected cover is highlighted; clicking another selects it.
         let mut sections: Vec<Element<'_, DocumentDetailsMessage>> = Vec::new();
-        if !self.covers.is_empty() {
-            let selected_fp = self
-                .document
-                .user_meta
-                .selected_cover_fingerprint
-                .as_deref();
-            let cover_buttons: Vec<Element<'_, DocumentDetailsMessage>> = self
-                .document
-                .contents
-                .iter()
-                .filter_map(|content| {
-                    let handle = self.covers.get(&content.fingerprint)?;
-                    let is_selected = selected_fp == Some(content.fingerprint.as_str())
-                        || (selected_fp.is_none()
-                            && self
-                                .document
-                                .contents
-                                .first()
-                                .is_some_and(|c| c.fingerprint == content.fingerprint));
-                    let img = widget::image(handle.clone())
-                        .width(cosmic::iced::Length::Fixed(80.0))
-                        .height(cosmic::iced::Length::Fixed(120.0))
-                        .content_fit(cosmic::iced::ContentFit::Contain);
-                    let fp = content.fingerprint.clone();
-                    let type_label = widget::text(content.type_.as_str()).size(11);
-                    let mut btn = widget::button::custom(
-                        widget::column::with_children(vec![img.into(), type_label.into()])
-                            .align_x(cosmic::iced::alignment::Horizontal::Center),
-                    )
-                    .width(cosmic::iced::Length::Fixed(88.0));
-                    if is_selected {
-                        btn = btn.class(cosmic::widget::button::ButtonClass::Suggested);
-                    } else {
-                        btn = btn.on_press(DocumentDetailsMessage::SelectCover(fp));
-                    }
-                    Some(btn.into())
-                })
-                .collect();
-            if !cover_buttons.is_empty() {
-                let cover_row = widget::Row::with_children(cover_buttons).spacing(8);
-                sections.push(
-                    widget::container(cover_row)
-                        .center_x(cosmic::iced::Length::Fill)
-                        .padding(8)
-                        .into(),
-                );
-            }
+        if !self.editing_user_meta
+            && let Some(hero) = self.hero_section()
+        {
+            sections.push(hero);
         }
         sections.extend([status_section.into(), self.user_meta_section_view()]);
         sections.push(tags_section.into());
@@ -817,6 +838,60 @@ impl Page for DocumentDetails {
             btn
         };
         vec![btn.into()]
+    }
+
+    fn view_context(&self) -> ContextView<'_, DocumentDetailsMessage> {
+        let content: Element<'_, DocumentDetailsMessage> = if self.covers.is_empty() {
+            widget::text(fl!("document-details-no-covers")).into()
+        } else {
+            let selected_fp = self
+                .document
+                .user_meta
+                .selected_cover_fingerprint
+                .as_deref();
+            let cover_buttons: Vec<Element<'_, DocumentDetailsMessage>> = self
+                .document
+                .contents
+                .iter()
+                .filter_map(|content| {
+                    let handle = self.covers.get(&content.fingerprint)?;
+                    let is_selected = selected_fp == Some(content.fingerprint.as_str())
+                        || (selected_fp.is_none()
+                            && self
+                                .document
+                                .contents
+                                .first()
+                                .is_some_and(|c| c.fingerprint == content.fingerprint));
+                    let img = widget::image(handle.clone())
+                        .width(Length::Fixed(80.0))
+                        .height(Length::Fixed(120.0))
+                        .content_fit(ContentFit::Contain);
+                    let fp = content.fingerprint.clone();
+                    let type_label = widget::text(content.type_.as_str()).size(11);
+                    let mut btn = widget::button::custom(
+                        widget::column::with_children(vec![img.into(), type_label.into()])
+                            .align_x(Horizontal::Center),
+                    )
+                    .width(Length::Fixed(88.0));
+                    if is_selected {
+                        btn = btn.class(cosmic::widget::button::ButtonClass::Suggested);
+                    } else {
+                        btn = btn.on_press(DocumentDetailsMessage::SelectCover(fp));
+                    }
+                    Some(btn.into())
+                })
+                .collect();
+            let cover_row = widget::Row::with_children(cover_buttons).spacing(8);
+            widget::container(cover_row)
+                .center_x(Length::Fill)
+                .padding(8)
+                .into()
+        };
+
+        ContextView {
+            title: fl!("document-details-select-cover"),
+            content,
+        }
     }
 
     fn update(&mut self, message: DocumentDetailsMessage) -> Task<Action<DocumentDetailsMessage>> {
