@@ -117,13 +117,16 @@ pub struct ClientSettings {
     pub download_folder: ExpandedPath,
 }
 
+fn default_download_dir() -> PathBuf {
+    directories::UserDirs::new()
+        .and_then(|u| u.download_dir().map(|p| p.to_path_buf()))
+        .unwrap_or_else(std::env::temp_dir)
+}
+
 impl Default for ClientSettings {
     fn default() -> Self {
         Self {
-            download_folder: expanduser::expanduser("~/Downloads")
-                .unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
-                .try_into()
-                .unwrap(),
+            download_folder: default_download_dir().try_into().unwrap(),
         }
     }
 }
@@ -183,7 +186,7 @@ pub struct ServerSettings {
 impl Default for ServerSettings {
     fn default() -> Self {
         Self {
-            download_folder: Path::new("/tmp").to_path_buf().try_into().unwrap(),
+            download_folder: std::env::temp_dir().try_into().unwrap(),
             authorized_users: Default::default(),
         }
     }
@@ -212,8 +215,9 @@ pub fn config_path() -> PathBuf {
             .canonicalize()
             .expect("should work for valid file")
     } else {
-        expanduser::expanduser("~/.config/read-flow/read-flow.toml")
-            .expect("could not expand user home")
+        directories::ProjectDirs::from("", "", "read-flow")
+            .map(|d| d.config_dir().join("read-flow.toml"))
+            .unwrap_or_else(|| PathBuf::from("read-flow.toml"))
     }
 }
 

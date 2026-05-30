@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::process::ExitStatus;
 use std::sync::Arc;
 
 use sha2::Digest;
 use sha2::Sha256;
 use tokio::io::AsyncReadExt;
-use tokio::process::Command;
 
 use super::ConnectionPool;
 use super::dao;
@@ -177,9 +175,8 @@ impl FileDataSource for DbClient {
         dao::delete_content_tags(&mut conn, &file.fingerprint, tags).await
     }
 
-    async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error> {
-        let status = Command::new("xdg-open").arg(file.path).status().await?;
-        Ok(status)
+    async fn open_file(&self, file: File) -> Result<(), Self::Error> {
+        open::that_detached(&file.path).map_err(|e| Error::IO(Arc::new(e)))
     }
 
     async fn delete_file(&self, file: File) -> Result<(), Self::Error> {
@@ -381,8 +378,8 @@ impl FileDataSource for FilteredDbClient {
         self.inner.update_file(file).await
     }
 
-    async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error> {
-        self.inner.xdg_open_file(file).await
+    async fn open_file(&self, file: File) -> Result<(), Self::Error> {
+        self.inner.open_file(file).await
     }
 
     async fn delete_file(&self, file: File) -> Result<(), Self::Error> {

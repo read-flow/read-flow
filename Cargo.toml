@@ -14,6 +14,7 @@ assert4rs = "0.2.1"
 async-trait = "0.1.89"
 base64 = "0.22.1"
 clap = "4.6.1"
+directories = "5"
 cosmic-golden = { git = "https://github.com/peterpaul/cosmic-golden-test.git", tag = "0.4.0" }
 cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git" }
 derive_more = "2.1.1"

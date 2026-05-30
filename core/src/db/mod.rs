@@ -32,9 +32,11 @@ impl DbSettings {
 
 impl Default for DbSettings {
     fn default() -> Self {
+        let path = directories::ProjectDirs::from("", "", "read-flow")
+            .map(|d| d.data_dir().join("database.db"))
+            .unwrap_or_else(|| std::path::PathBuf::from("database.db"));
         Self {
-            url: ExpandedPath::from_str("~/.local/share/read-flow/database.db")
-                .expect("should work"),
+            url: ExpandedPath::from_str(&path.to_string_lossy()).expect("valid path"),
         }
     }
 }

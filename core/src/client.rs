@@ -4,7 +4,6 @@ use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
-use std::process::ExitStatus;
 use std::sync::Arc;
 
 use base64::Engine;
@@ -12,8 +11,10 @@ use futures::StreamExt;
 use reqwest::Client;
 use reqwest::Url;
 use reqwest::header;
+use sha2::Digest;
+use sha2::Sha256;
 use tokio::fs;
-use tokio::process::Command;
+use tokio::io::AsyncReadExt;
 
 use crate::Builder;
 use crate::api::ApiDocument;
@@ -249,7 +250,7 @@ impl FileDataSource for FilesClient {
         Ok(())
     }
 
-    async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Error> {
+    async fn open_file(&self, file: File) -> Result<(), Error> {
         let tempdir = env::temp_dir().join("read-flow");
 
         if !tempdir.exists() {
@@ -263,11 +264,7 @@ impl FileDataSource for FilesClient {
             filename = self.download_file(&file.guid, &filename).await?;
         }
 
-        // Note that xdg-open will exit while the application is still running, so
-        // we cannot delete `filename` after this line.
-        let status = Command::new("xdg-open").arg(&filename).status().await?;
-
-        Ok(status)
+        open::that_detached(&filename).map_err(|e| Error::IO(Arc::new(e)))
     }
 
     async fn delete_file(&self, file: File) -> Result<(), Error> {
@@ -420,8 +417,19 @@ impl FilesClient {
 }
 
 async fn fingerprint_of(filename: &Path) -> Result<String, Error> {
-    let output = Command::new("sha256sum").arg(filename).output().await?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let fingerprint = stdout.split(' ').next().expect("expected fingerprint");
-    Ok(fingerprint.to_string())
+    let mut file = tokio::fs::File::open(filename).await?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 65536];
+    loop {
+        let n = file.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect())
 }

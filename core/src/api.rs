@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
-use std::process::ExitStatus;
 use std::result::Result;
 use std::str::FromStr;
 
@@ -238,7 +237,7 @@ pub trait FileDataSource {
 
     async fn update_file(&self, file: File) -> Result<(), Self::Error>;
 
-    async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error>;
+    async fn open_file(&self, file: File) -> Result<(), Self::Error>;
 
     /// Delete a file both from the database and the filesystem.
     async fn delete_file(&self, file: File) -> Result<(), Self::Error>;

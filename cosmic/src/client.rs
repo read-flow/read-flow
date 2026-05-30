@@ -1,6 +1,5 @@
 use std::fmt;
 use std::path::Path;
-use std::process::ExitStatus;
 use std::sync::Arc;
 
 use read_flow_core::api::ApiDocument;
@@ -167,8 +166,8 @@ impl FileDataSource for Client {
         delegate!(self, update_file, file)
     }
 
-    async fn xdg_open_file(&self, file: File) -> Result<ExitStatus, Self::Error> {
-        delegate!(self, xdg_open_file, file)
+    async fn open_file(&self, file: File) -> Result<(), Self::Error> {
+        delegate!(self, open_file, file)
     }
 
     async fn delete_file(&self, file: File) -> Result<(), Self::Error> {

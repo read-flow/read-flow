@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::convert::Infallible;
-use std::process::ExitStatus;
 use std::sync::Arc;
 
 use cosmic::iced::Subscription;
@@ -343,8 +342,8 @@ impl DocumentProvider {
     /// Open a document using the system's default application.
     ///
     /// Prefers local sources over remote sources.
-    pub async fn open_document(&self, document: Document) -> Result<ExitStatus, FilesClientError> {
-        self.aggregator.read().await.xdg_open_file(document).await
+    pub async fn open_document(&self, document: Document) -> Result<(), FilesClientError> {
+        self.aggregator.read().await.open_file(document).await
     }
 
     /// Get the list of client selectors.

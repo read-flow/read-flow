@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use std::collections::hash_map::IntoValues;
 use std::fmt;
 use std::path::PathBuf;
-use std::process::ExitStatus;
 use std::sync::Arc;
 
 use futures_util::stream;
@@ -324,7 +323,7 @@ impl Aggregator {
     }
 
     /// Open a document using xdg-open, trying clients in priority order.
-    pub async fn xdg_open_file(&self, document: Document) -> Result<ExitStatus, FilesClientError> {
+    pub async fn open_file(&self, document: Document) -> Result<(), FilesClientError> {
         let (mut local, mut remote): (Vec<_>, Vec<_>) = document
             .contents
             .into_iter()
@@ -359,8 +358,8 @@ impl Aggregator {
                 continue;
             };
             let file = content_source_to_file(content, source);
-            match client.xdg_open_file(file).await {
-                Ok(status) => return Ok(status),
+            match client.open_file(file).await {
+                Ok(()) => return Ok(()),
                 Err(e) => {
                     tracing::warn!(
                         "Failed to open file from source `{}`: {e}",
