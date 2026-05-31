@@ -2,11 +2,11 @@ use iced::Element;
 use iced::widget::button;
 use iced::widget::column;
 use iced::widget::row;
-use iced::widget::rule;
 use iced::widget::text;
 use read_flow_core::settings::ServerSettings;
 
 use crate::app::Message;
+use crate::widgets::settings_section::settings_section;
 use crate::widgets::user_editor::UserForm;
 use crate::widgets::user_editor::view_user_form;
 
@@ -14,25 +14,25 @@ pub fn view_server<'a>(
     server: &'a ServerSettings,
     user_form: Option<&'a UserForm>,
 ) -> Element<'a, Message> {
-    let folder_row = row![
-        text("Download folder:").width(140),
-        text(server.download_folder.to_string()).width(iced::Fill),
-        button(text("Browse\u{2026}"))
-            .style(button::secondary)
-            .on_press(Message::PickServerFolder),
-    ]
-    .spacing(8)
-    .align_y(iced::Alignment::Center);
-
-    let users_section = view_users_section(server, user_form);
-
     column![
         text("Server").size(20),
         text("Settings for the read-flow server component.").size(13),
-        rule::horizontal(1),
-        folder_row,
-        rule::horizontal(1),
-        users_section,
+        settings_section(
+            None,
+            vec![
+                row![
+                    text("Download folder:").width(140),
+                    text(server.download_folder.to_string()).width(iced::Fill),
+                    button(text("Browse\u{2026}"))
+                        .style(button::secondary)
+                        .on_press(Message::PickServerFolder),
+                ]
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .into()
+            ],
+        ),
+        view_users_section(server, user_form),
     ]
     .spacing(12)
     .padding(20)
@@ -109,10 +109,5 @@ fn view_users_section<'a>(
             .into(),
     );
 
-    column![
-        text("Authorized users:").size(14),
-        column(user_rows).spacing(6),
-    ]
-    .spacing(6)
-    .into()
+    settings_section(Some("Authorized users"), user_rows)
 }

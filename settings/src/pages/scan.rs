@@ -3,7 +3,6 @@ use iced::widget::button;
 use iced::widget::checkbox;
 use iced::widget::column;
 use iced::widget::row;
-use iced::widget::rule;
 use iced::widget::text;
 use iced::widget::text_input;
 use iced::widget::toggler;
@@ -15,6 +14,7 @@ use crate::widgets::auto_tags::AutoTagForm;
 use crate::widgets::auto_tags::view_auto_tag_form;
 use crate::widgets::dir_editor::DirForm;
 use crate::widgets::dir_editor::view_dir_form;
+use crate::widgets::settings_section::settings_section;
 
 pub fn view_scan<'a>(
     scan: &'a ScanSettings,
@@ -22,65 +22,59 @@ pub fn view_scan<'a>(
     auto_tag_form: Option<&'a AutoTagForm>,
     concurrency_input: &'a str,
 ) -> Element<'a, Message> {
-    let dry_run = toggler(scan.dry_run)
-        .label("Dry run (scan without writing to database)")
-        .on_toggle(Message::ToggleDryRun);
-
-    let concurrency_row = row![
-        text("Concurrency:").width(130),
-        text_input("16", concurrency_input)
-            .on_input(Message::ConcurrencyChanged)
-            .width(80),
-        text("parallel workers"),
-    ]
-    .spacing(8)
-    .align_y(iced::Alignment::Center);
-
-    let all_enabled = DocumentType::all()
-        .iter()
-        .all(|dt| scan.extensions.contains(dt));
-    let all_toggle = checkbox(all_enabled)
-        .label("Select all")
-        .on_toggle(Message::ToggleAllExtensions);
-
-    let ext_checkboxes: Vec<Element<'a, Message>> = DocumentType::all()
-        .iter()
-        .map(|dt| {
-            let enabled = scan.extensions.contains(dt);
-            let dt_clone = dt.clone();
-            checkbox(enabled)
-                .label(dt.label())
-                .on_toggle(move |b| Message::ToggleExtension(dt_clone.clone(), b))
-                .into()
-        })
-        .collect();
-
-    let extensions_section = column![
-        text("File types:").size(14),
-        all_toggle,
-        column(ext_checkboxes).spacing(4),
-    ]
-    .spacing(6);
-
-    let dirs_section = view_directories_section(scan, dir_form);
-    let auto_tags_section = view_auto_tags_section(scan, auto_tag_form);
-
     column![
         text("Scan").size(20),
         text("Configure how the file system scan works.").size(13),
-        rule::horizontal(1),
-        dry_run,
-        concurrency_row,
-        rule::horizontal(1),
-        extensions_section,
-        rule::horizontal(1),
-        dirs_section,
-        rule::horizontal(1),
-        auto_tags_section,
+        settings_section(
+            None,
+            vec![
+                toggler(scan.dry_run)
+                    .label("Dry run (scan without writing to database)")
+                    .on_toggle(Message::ToggleDryRun)
+                    .into(),
+                row![
+                    text("Concurrency:").width(130),
+                    text_input("16", concurrency_input)
+                        .on_input(Message::ConcurrencyChanged)
+                        .width(80),
+                    text("parallel workers"),
+                ]
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .into(),
+            ],
+        ),
+        view_extensions_section(scan),
+        view_directories_section(scan, dir_form),
+        view_auto_tags_section(scan, auto_tag_form),
     ]
     .spacing(12)
     .padding(20)
     .into()
+}
+
+fn view_extensions_section(scan: &ScanSettings) -> Element<'_, Message> {
+    let all_enabled = DocumentType::all()
+        .iter()
+        .all(|dt| scan.extensions.contains(dt));
+
+    let mut items: Vec<Element<'_, Message>> = vec![
+        checkbox(all_enabled)
+            .label("Select all")
+            .on_toggle(Message::ToggleAllExtensions)
+            .into(),
+    ];
+
+    items.extend(DocumentType::all().iter().map(|dt| {
+        let enabled = scan.extensions.contains(dt);
+        let dt_clone = dt.clone();
+        checkbox(enabled)
+            .label(dt.label())
+            .on_toggle(move |b| Message::ToggleExtension(dt_clone.clone(), b))
+            .into()
+    }));
+
+    settings_section(Some("File types"), items)
 }
 
 fn view_directories_section<'a>(
@@ -89,7 +83,7 @@ fn view_directories_section<'a>(
 ) -> Element<'a, Message> {
     let adding = dir_form.map(|f| f.original_key.is_none()).unwrap_or(false);
 
-    let mut dir_rows: Vec<Element<'a, Message>> = scan
+    let mut items: Vec<Element<'a, Message>> = scan
         .directories
         .iter()
         .flat_map(|(path, settings)| {
@@ -137,7 +131,7 @@ fn view_directories_section<'a>(
         .collect();
 
     if adding {
-        dir_rows.push(view_dir_form(
+        items.push(view_dir_form(
             dir_form.unwrap(),
             Message::DirForm,
             Message::DirBrowse,
@@ -146,19 +140,14 @@ fn view_directories_section<'a>(
         ));
     }
 
-    dir_rows.push(
+    items.push(
         button(text("+ Add Directory"))
             .style(button::secondary)
             .on_press(Message::DirAddStart)
             .into(),
     );
 
-    column![
-        text("Scan directories:").size(14),
-        column(dir_rows).spacing(6)
-    ]
-    .spacing(6)
-    .into()
+    settings_section(Some("Scan directories"), items)
 }
 
 fn view_auto_tags_section<'a>(
@@ -169,7 +158,7 @@ fn view_auto_tags_section<'a>(
         .map(|f| f.original_key.is_none())
         .unwrap_or(false);
 
-    let mut rows: Vec<Element<'a, Message>> = scan
+    let mut items: Vec<Element<'a, Message>> = scan
         .auto_tags
         .iter()
         .flat_map(|(pattern, tags)| {
@@ -212,7 +201,7 @@ fn view_auto_tags_section<'a>(
         .collect();
 
     if adding {
-        rows.push(view_auto_tag_form(
+        items.push(view_auto_tag_form(
             auto_tag_form.unwrap(),
             Message::AutoTagForm,
             Message::AutoTagSave,
@@ -220,14 +209,12 @@ fn view_auto_tags_section<'a>(
         ));
     }
 
-    rows.push(
+    items.push(
         button(text("+ Add Auto-tag Rule"))
             .style(button::secondary)
             .on_press(Message::AutoTagAddStart)
             .into(),
     );
 
-    column![text("Auto-tag rules:").size(14), column(rows).spacing(6)]
-        .spacing(6)
-        .into()
+    settings_section(Some("Auto-tag rules"), items)
 }

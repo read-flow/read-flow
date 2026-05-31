@@ -3,13 +3,13 @@ use iced::widget::button;
 use iced::widget::checkbox;
 use iced::widget::column;
 use iced::widget::row;
-use iced::widget::rule;
 use iced::widget::text;
 use iced::widget::text_input;
 use read_flow_core::online_library::OnlineCatalog;
 use read_flow_core::settings::OnlineLibrarySettings;
 
 use crate::app::Message;
+use crate::widgets::settings_section::settings_section;
 
 #[derive(Debug, Clone)]
 pub struct CatalogForm {
@@ -58,7 +58,7 @@ pub fn view_online_library<'a>(
     lib: &'a OnlineLibrarySettings,
     catalog_form: Option<&'a CatalogForm>,
 ) -> Element<'a, Message> {
-    let mut rows: Vec<Element<'a, Message>> = lib
+    let mut catalog_rows: Vec<Element<'a, Message>> = lib
         .catalogs
         .iter()
         .enumerate()
@@ -96,23 +96,20 @@ pub fn view_online_library<'a>(
         .map(|f| f.original_index.is_none())
         .unwrap_or(false);
     if adding {
-        rows.push(view_catalog_form(catalog_form.unwrap()));
+        catalog_rows.push(view_catalog_form(catalog_form.unwrap()));
     }
 
-    rows.push(
+    catalog_rows.push(
         button(text("+ Add Catalog"))
             .style(button::secondary)
             .on_press(Message::CatalogAddStart)
             .into(),
     );
 
-    let list = column(rows).spacing(6);
-
     column![
         text("Online Library").size(20),
         text("OPDS catalog feeds for searching and downloading books.").size(13),
-        rule::horizontal(1),
-        list,
+        settings_section(Some("Catalogs"), catalog_rows),
     ]
     .spacing(12)
     .padding(20)
@@ -154,6 +151,6 @@ fn view_catalog_form(form: &CatalogForm) -> Element<'_, Message> {
 
     column![name_row, url_row, enabled_row, buttons]
         .spacing(8)
-        .padding([8, 16])
+        .padding([8, 4])
         .into()
 }
