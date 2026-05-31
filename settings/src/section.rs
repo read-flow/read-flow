@@ -1,6 +1,7 @@
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Section {
     #[default]
+    Overview,
     Database,
     Client,
     Scan,
@@ -10,6 +11,7 @@ pub enum Section {
 }
 
 impl Section {
+    /// All non-overview sections shown as cards on the overview page.
     pub fn all() -> &'static [Section] {
         use Section::*;
         &[Database, Client, Scan, Server, Ui, OnlineLibrary]
@@ -18,12 +20,26 @@ impl Section {
     pub fn label(&self) -> &'static str {
         use Section::*;
         match self {
+            Overview => "Settings",
             Database => "Database",
             Client => "Client",
             Scan => "Scan",
             Server => "Server",
             Ui => "UI",
             OnlineLibrary => "Online Library",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        use Section::*;
+        match self {
+            Overview => "",
+            Database => "Database file location",
+            Client => "Download folder for remote files",
+            Scan => "File types, directories, and auto-tag rules",
+            Server => "Server download folder and authorized users",
+            Ui => "Private mode and private tags",
+            OnlineLibrary => "OPDS catalog feeds",
         }
     }
 }
@@ -35,6 +51,11 @@ mod tests {
     #[test]
     fn all_returns_six_sections() {
         assert_eq!(Section::all().len(), 6);
+    }
+
+    #[test]
+    fn all_does_not_contain_overview() {
+        assert!(!Section::all().contains(&Section::Overview));
     }
 
     #[test]
@@ -53,6 +74,13 @@ mod tests {
     fn labels_non_empty() {
         for s in Section::all() {
             assert!(!s.label().is_empty());
+        }
+    }
+
+    #[test]
+    fn descriptions_non_empty() {
+        for s in Section::all() {
+            assert!(!s.description().is_empty());
         }
     }
 }

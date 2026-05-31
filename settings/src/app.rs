@@ -486,42 +486,29 @@ impl App {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let sidebar = column(
-            Section::all()
-                .iter()
-                .map(|s| {
-                    let active = s == &self.section;
-                    let btn = button(text(s.label()).width(Length::Fill))
-                        .width(Length::Fill)
-                        .on_press(Message::SectionChanged(s.clone()));
-                    let btn = if active {
-                        btn.style(button::primary)
-                    } else {
-                        btn.style(button::secondary)
-                    };
-                    btn.into()
-                })
-                .collect::<Vec<_>>(),
-        )
-        .spacing(4)
-        .padding(8)
-        .width(180);
-
-        let content = match &self.section {
-            Section::Database => database::view_database(&self.settings.database),
-            Section::Client => client::view_client(&self.settings.client),
-            Section::Scan => scan::view_scan(
+        let content: Element<'_, Message> = match &self.section {
+            Section::Overview => self.view_overview(),
+            Section::Database => {
+                self.view_subsection(database::view_database(&self.settings.database))
+            }
+            Section::Client => self.view_subsection(client::view_client(&self.settings.client)),
+            Section::Scan => self.view_subsection(scan::view_scan(
                 &self.settings.scan,
                 self.dir_form.as_ref(),
                 self.auto_tag_form.as_ref(),
                 &self.concurrency_input,
-            ),
-            Section::Server => server::view_server(&self.settings.server, self.user_form.as_ref()),
-            Section::Ui => ui::view_ui(&self.settings.ui, &self.private_tag_input),
-            Section::OnlineLibrary => online_library::view_online_library(
+            )),
+            Section::Server => self.view_subsection(server::view_server(
+                &self.settings.server,
+                self.user_form.as_ref(),
+            )),
+            Section::Ui => {
+                self.view_subsection(ui::view_ui(&self.settings.ui, &self.private_tag_input))
+            }
+            Section::OnlineLibrary => self.view_subsection(online_library::view_online_library(
                 &self.settings.online_library,
                 self.catalog_form.as_ref(),
-            ),
+            )),
         };
 
         let status_text = self.save_state.status_text();
@@ -535,23 +522,76 @@ impl App {
         };
 
         let bottom_bar = container(
-            row![save_btn, text(status_text).width(Length::Fill),]
+            row![save_btn, text(status_text).width(Length::Fill)]
                 .spacing(10)
                 .align_y(iced::Alignment::Center)
                 .padding(8),
         )
         .width(Length::Fill);
 
-        let right_panel = column![
+        column![
             scrollable(content).height(Length::Fill),
             rule::horizontal(1),
             bottom_bar,
         ]
-        .width(Length::Fill);
+        .height(Length::Fill)
+        .into()
+    }
 
-        row![sidebar, rule::vertical(1), right_panel]
-            .height(Length::Fill)
-            .into()
+    fn view_overview(&self) -> Element<'_, Message> {
+        let cards: Vec<Element<'_, Message>> = Section::all()
+            .iter()
+            .map(|s| {
+                button(
+                    row![
+                        column![text(s.label()).size(15), text(s.description()).size(12),]
+                            .width(Length::Fill),
+                        text("\u{203a}").size(22),
+                    ]
+                    .align_y(iced::Alignment::Center)
+                    .padding([4, 0]),
+                )
+                .style(|theme: &iced::Theme, status| {
+                    use iced::Border;
+                    use iced::border::Radius;
+                    let palette = theme.extended_palette();
+                    let bg = match status {
+                        button::Status::Hovered | button::Status::Pressed => {
+                            palette.background.strong.color
+                        }
+                        _ => palette.background.weak.color,
+                    };
+                    button::Style {
+                        background: Some(bg.into()),
+                        text_color: palette.background.weak.text,
+                        border: Border {
+                            radius: Radius::from(8.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                })
+                .width(Length::Fill)
+                .on_press(Message::SectionChanged(s.clone()))
+                .into()
+            })
+            .collect();
+
+        column![
+            text("Settings").size(24).width(Length::Fill),
+            column(cards).spacing(8),
+        ]
+        .spacing(16)
+        .padding(20)
+        .into()
+    }
+
+    fn view_subsection<'a>(&'a self, content: Element<'a, Message>) -> Element<'a, Message> {
+        let back = button(text("\u{2039} Back"))
+            .style(button::text)
+            .on_press(Message::SectionChanged(Section::Overview));
+
+        column![back, content].into()
     }
 }
 
