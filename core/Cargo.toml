@@ -23,7 +23,6 @@ directories.workspace = true
 open.workspace = true
 sha2.workspace = true
 sqlx = { workspace = true, features = ["migrate"] }
-expanduser.workspace = true
 # build libsqlite3 as part of the build process
 # uncomment this line if you run into setup issues
 # libsqlite3-sys = { workspace = true, features = ["bundled"] }

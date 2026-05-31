@@ -20,7 +20,6 @@ cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git" }
 derive_more = "2.1.1"
 sha2 = "0.11"
 sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio", "macros"] }
-expanduser = "1.2.2"
 figment = { version = "0.10.19", default-features = false }
 futures = { version = "0.3.32", default-features = false, features = ["std", "async-await"] }
 futures-util = "0.3.32"

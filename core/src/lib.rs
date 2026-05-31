@@ -24,7 +24,6 @@ use db::ConnectionPool;
 use db::dao;
 use db::datasource::DbClient;
 use db::datasource::FilteredDbClient;
-use expanduser::expanduser;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use provider::r#async::HasSetExpired;
@@ -402,11 +401,23 @@ impl ExpandedPath {
     }
 }
 
+fn expand_tilde(s: &str) -> Result<PathBuf, std::io::Error> {
+    if s == "~" || s.starts_with("~/") || s.starts_with("~\\") {
+        let home = directories::UserDirs::new()
+            .map(|u| u.home_dir().to_path_buf())
+            .ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::NotFound, "home directory not found")
+            })?;
+        Ok(home.join(&s[if s == "~" { 1 } else { 2 }..]))
+    } else {
+        Ok(PathBuf::from(s))
+    }
+}
+
 impl FromStr for ExpandedPath {
     type Err = std::io::Error;
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let expanded = expanduser(value)?;
-        Ok(ExpandedPath(expanded))
+        Ok(ExpandedPath(expand_tilde(value)?))
     }
 }
 
@@ -414,8 +425,7 @@ impl TryFrom<PathBuf> for ExpandedPath {
     type Error = std::io::Error;
 
     fn try_from(value: PathBuf) -> Result<Self, Self::Error> {
-        let expanded = expanduser(value.display().to_string())?;
-        Ok(ExpandedPath(expanded))
+        Ok(ExpandedPath(expand_tilde(&value.display().to_string())?))
     }
 }
 
