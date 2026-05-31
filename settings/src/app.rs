@@ -522,20 +522,28 @@ impl App {
         };
 
         let bottom_bar = container(
-            row![save_btn, text(status_text).width(Length::Fill)]
-                .spacing(10)
-                .align_y(iced::Alignment::Center)
-                .padding(8),
+            container(
+                row![save_btn, text(status_text).width(Length::Fill)]
+                    .spacing(10)
+                    .align_y(iced::Alignment::Center)
+                    .padding(8),
+            )
+            .max_width(800),
         )
+        .center_x(Length::Fill)
         .width(Length::Fill);
 
-        column![
-            scrollable(content).height(Length::Fill),
-            rule::horizontal(1),
-            bottom_bar,
-        ]
-        .height(Length::Fill)
-        .into()
+        let centered_content = container(
+            container(scrollable(content))
+                .max_width(800)
+                .height(Length::Fill),
+        )
+        .center_x(Length::Fill)
+        .height(Length::Fill);
+
+        column![centered_content, rule::horizontal(1), bottom_bar,]
+            .height(Length::Fill)
+            .into()
     }
 
     fn view_overview(&self) -> Element<'_, Message> {
