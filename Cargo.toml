@@ -4,6 +4,7 @@ members = [
     "cosmic",
     "epub",
     "provider",
+    "settings",
     "widgets",
 ]
 resolver = "3"
