@@ -486,8 +486,40 @@ pub fn force_create_all_parents(path: &Path) {
 #[cfg(test)]
 mod tests {
     use indexmap::IndexMap;
+    use rstest::rstest;
 
     use super::*;
+
+    fn home() -> PathBuf {
+        directories::UserDirs::new()
+            .unwrap()
+            .home_dir()
+            .to_path_buf()
+    }
+
+    #[test]
+    fn expand_tilde_alone_returns_home() {
+        assert_eq!(expand_tilde("~").unwrap(), home());
+    }
+
+    #[test]
+    fn expand_tilde_slash_subdir_returns_home_joined() {
+        assert_eq!(expand_tilde("~/docs").unwrap(), home().join("docs"));
+    }
+
+    #[test]
+    fn expand_tilde_backslash_subdir_returns_home_joined() {
+        assert_eq!(expand_tilde("~\\docs").unwrap(), home().join("docs"));
+    }
+
+    #[rstest]
+    #[case("/absolute/path")]
+    #[case("relative/path")]
+    #[case("~alice/docs")]
+    #[case("notilde")]
+    fn expand_tilde_non_tilde_paths_returned_as_is(#[case] input: &str) {
+        assert_eq!(expand_tilde(input).unwrap(), PathBuf::from(input));
+    }
 
     #[test]
     fn test_buckets() {
