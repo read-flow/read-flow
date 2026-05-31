@@ -1,4 +1,5 @@
 use iced::Element;
+use iced::Length;
 use iced::widget::button;
 use iced::widget::checkbox;
 use iced::widget::column;
@@ -9,6 +10,7 @@ use read_flow_core::online_library::OnlineCatalog;
 use read_flow_core::settings::OnlineLibrarySettings;
 
 use crate::app::Message;
+use crate::widgets::settings_section::form_card;
 use crate::widgets::settings_section::settings_section;
 
 #[derive(Debug, Clone)]
@@ -121,19 +123,21 @@ fn view_catalog_form(form: &CatalogForm) -> Element<'_, Message> {
         text("Name:").width(100),
         text_input("Catalog name", &form.name)
             .on_input(|s| Message::CatalogForm(CatalogFormMessage::NameChanged(s)))
-            .width(250),
+            .width(Length::Fill),
     ]
     .spacing(8)
-    .align_y(iced::Alignment::Center);
+    .align_y(iced::Alignment::Center)
+    .width(Length::Fill);
 
     let url_row = row![
         text("Search URL:").width(100),
         text_input("OPDS search URL with {searchTerms}", &form.search_url)
             .on_input(|s| Message::CatalogForm(CatalogFormMessage::SearchUrlChanged(s)))
-            .width(350),
+            .width(Length::Fill),
     ]
     .spacing(8)
-    .align_y(iced::Alignment::Center);
+    .align_y(iced::Alignment::Center)
+    .width(Length::Fill);
 
     let enabled_row = checkbox(form.enabled)
         .label("Enabled")
@@ -149,8 +153,7 @@ fn view_catalog_form(form: &CatalogForm) -> Element<'_, Message> {
     ]
     .spacing(8);
 
-    column![name_row, url_row, enabled_row, buttons]
-        .spacing(8)
-        .padding([8, 4])
-        .into()
+    let inner = column![name_row, url_row, enabled_row, buttons].spacing(8);
+
+    form_card(inner)
 }

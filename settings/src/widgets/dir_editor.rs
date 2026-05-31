@@ -1,4 +1,5 @@
 use iced::Element;
+use iced::Length;
 use iced::widget::button;
 use iced::widget::checkbox;
 use iced::widget::column;
@@ -9,6 +10,7 @@ use iced::widget::text_input;
 use read_flow_core::ExpandedPath;
 use read_flow_core::scan::DirectorySettings;
 
+use super::settings_section::form_card;
 use super::tag_chips::tag_chips;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,15 +92,16 @@ pub fn view_dir_form<'a, Msg: Clone + 'a>(
                 let wrap = wrap.clone();
                 move |s| wrap(DirFormMessage::PathChanged(s))
             })
-            .width(300),
+            .width(Length::Fill),
         button(text("Browse\u{2026}"))
             .style(button::secondary)
             .on_press(on_browse),
     ]
-    .spacing(6);
+    .spacing(8)
+    .width(Length::Fill);
 
     let action_row = row![
-        text("Action:"),
+        text("Action:").width(80),
         radio("Scan", DirAction::Scan, Some(form.action), {
             let wrap = wrap.clone();
             move |a| wrap(DirFormMessage::ActionChanged(a))
@@ -151,10 +154,9 @@ pub fn view_dir_form<'a, Msg: Clone + 'a>(
     ]
     .spacing(8);
 
-    column![path_row, action_row, inherit_row, tags_section, buttons]
-        .spacing(8)
-        .padding(12)
-        .into()
+    let inner = column![path_row, action_row, inherit_row, tags_section, buttons].spacing(8);
+
+    form_card(inner)
 }
 
 #[cfg(test)]

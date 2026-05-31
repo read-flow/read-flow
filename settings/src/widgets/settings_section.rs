@@ -3,6 +3,28 @@ use iced::Element;
 use iced::Length;
 use iced::Theme;
 use iced::border::Radius;
+
+/// Wrap inline form content in a visually distinct card.
+/// Uses `background.base` (window bg) to appear recessed inside
+/// the `background.weak` section card that surrounds it.
+pub fn form_card<'a, Msg: 'a>(content: impl Into<Element<'a, Msg>>) -> Element<'a, Msg> {
+    container(content)
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            container::Style {
+                background: Some(palette.background.base.color.into()),
+                text_color: Some(palette.background.base.text),
+                border: Border {
+                    radius: Radius::from(6.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        })
+        .padding([12, 16])
+        .width(Length::Fill)
+        .into()
+}
 use iced::widget::column;
 use iced::widget::container;
 use iced::widget::rule;

@@ -1,10 +1,12 @@
 use iced::Element;
+use iced::Length;
 use iced::widget::button;
 use iced::widget::column;
 use iced::widget::row;
 use iced::widget::text;
 use iced::widget::text_input;
 
+use super::settings_section::form_card;
 use super::tag_chips::tag_chips;
 
 #[derive(Debug, Clone)]
@@ -51,16 +53,17 @@ pub fn view_auto_tag_form<'a, Msg: Clone + 'a>(
 ) -> Element<'a, Msg> {
     let pattern_row: Element<'a, Msg> = if form.original_key.is_none() {
         row![
-            text("Pattern:").width(70),
+            text("Pattern:").width(80),
             text_input("file pattern or regex\u{2026}", &form.pattern)
                 .on_input({
                     let wrap = wrap.clone();
                     move |s| wrap(AutoTagFormMessage::PatternChanged(s))
                 })
-                .width(250),
+                .width(Length::Fill),
         ]
         .spacing(8)
         .align_y(iced::Alignment::Center)
+        .width(Length::Fill)
         .into()
     } else {
         text(format!("Pattern: {}", form.pattern)).into()
@@ -94,10 +97,9 @@ pub fn view_auto_tag_form<'a, Msg: Clone + 'a>(
     ]
     .spacing(8);
 
-    column![pattern_row, tags_section, buttons]
-        .spacing(8)
-        .padding(12)
-        .into()
+    let inner = column![pattern_row, tags_section, buttons].spacing(8);
+
+    form_card(inner)
 }
 
 #[cfg(test)]

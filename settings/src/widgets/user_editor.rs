@@ -1,4 +1,5 @@
 use iced::Element;
+use iced::Length;
 use iced::widget::button;
 use iced::widget::checkbox;
 use iced::widget::column;
@@ -7,6 +8,8 @@ use iced::widget::text;
 use iced::widget::text_input;
 use read_flow_core::settings::HashedPassword;
 use read_flow_core::settings::UserEntry;
+
+use super::settings_section::form_card;
 
 #[derive(Debug, Clone)]
 pub struct UserForm {
@@ -35,8 +38,6 @@ impl UserForm {
         }
     }
 
-    /// Build a `UserEntry` from this form.
-    /// If `new_password` is non-empty, hash it; otherwise keep existing entry's password.
     pub fn to_user_entry(&self, existing: Option<&UserEntry>) -> Result<UserEntry, String> {
         let password = if !self.new_password.is_empty() {
             HashedPassword::try_from(self.new_password.clone())
@@ -73,16 +74,17 @@ pub fn view_user_form<'a, Msg: Clone + 'a>(
 ) -> Element<'a, Msg> {
     let id_row: Element<'a, Msg> = if form.original_id.is_none() {
         row![
-            text("User ID:").width(90),
+            text("User ID:").width(100),
             text_input("username", &form.user_id)
                 .on_input({
                     let wrap = wrap.clone();
                     move |s| wrap(UserFormMessage::UserIdChanged(s))
                 })
-                .width(200),
+                .width(Length::Fill),
         ]
         .spacing(8)
         .align_y(iced::Alignment::Center)
+        .width(Length::Fill)
         .into()
     } else {
         text(format!(
@@ -93,17 +95,18 @@ pub fn view_user_form<'a, Msg: Clone + 'a>(
     };
 
     let password_row = row![
-        text("Password:").width(90),
+        text("Password:").width(100),
         text_input("Enter new password\u{2026}", &form.new_password)
             .on_input({
                 let wrap = wrap.clone();
                 move |s| wrap(UserFormMessage::PasswordChanged(s))
             })
             .secure(true)
-            .width(200),
+            .width(Length::Fill),
     ]
     .spacing(8)
-    .align_y(iced::Alignment::Center);
+    .align_y(iced::Alignment::Center)
+    .width(Length::Fill);
 
     let owner_row = checkbox(form.owner_role).label("Owner role").on_toggle({
         let wrap = wrap.clone();
@@ -120,10 +123,9 @@ pub fn view_user_form<'a, Msg: Clone + 'a>(
     ]
     .spacing(8);
 
-    column![id_row, password_row, owner_row, buttons]
-        .spacing(8)
-        .padding(12)
-        .into()
+    let inner = column![id_row, password_row, owner_row, buttons].spacing(8);
+
+    form_card(inner)
 }
 
 #[cfg(test)]
