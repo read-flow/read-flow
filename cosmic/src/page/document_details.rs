@@ -621,22 +621,16 @@ impl DocumentDetails {
 
             // Show delete button in edit mode for sources where the client has multiple entries
             if self.editing_sources {
-                let client_source_count = sources
-                    .iter()
-                    .filter(|(_, s)| s.client == source.client)
-                    .count();
-                if client_source_count > 1 {
-                    source_row = source_row.push(
-                        widget::button::icon(
-                            widget::icon::from_name("list-remove-symbolic").size(ICON_SIZE),
-                        )
-                        .class(theme::Button::Destructive)
-                        .on_press(DocumentDetailsMessage::RequestDeleteSource(
-                            (*source).clone(),
-                        ))
-                        .tooltip(fl!("document-details-delete-source")),
-                    );
-                }
+                source_row = source_row.push(
+                    widget::button::icon(
+                        widget::icon::from_name("list-remove-symbolic").size(ICON_SIZE),
+                    )
+                    .class(theme::Button::Destructive)
+                    .on_press(DocumentDetailsMessage::RequestDeleteSource(
+                        (*source).clone(),
+                    ))
+                    .tooltip(fl!("document-details-delete-source")),
+                );
             }
 
             sources_section =
