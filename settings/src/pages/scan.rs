@@ -67,10 +67,10 @@ fn view_extensions_section(scan: &ScanSettings) -> Element<'_, Message> {
 
     items.extend(DocumentType::all().iter().map(|dt| {
         let enabled = scan.extensions.contains(dt);
-        let dt_clone = dt.clone();
+        let dt_clone = *dt;
         checkbox(enabled)
             .label(dt.label())
-            .on_toggle(move |b| Message::ToggleExtension(dt_clone.clone(), b))
+            .on_toggle(move |b| Message::ToggleExtension(dt_clone, b))
             .into()
     }));
 

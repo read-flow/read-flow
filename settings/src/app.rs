@@ -246,16 +246,16 @@ impl App {
                 Task::none()
             }
             Message::DirSave => {
-                if let Some(form) = self.dir_form.take() {
-                    if let Ok(key) = form.path.parse::<ExpandedPath>() {
-                        if let Some(old_key) = &form.original_key {
-                            self.settings.scan.directories.remove(old_key);
-                        }
-                        self.settings
-                            .scan
-                            .directories
-                            .insert(key, form.to_directory_settings());
+                if let Some(form) = self.dir_form.take()
+                    && let Ok(key) = form.path.parse::<ExpandedPath>()
+                {
+                    if let Some(old_key) = &form.original_key {
+                        self.settings.scan.directories.remove(old_key);
                     }
+                    self.settings
+                        .scan
+                        .directories
+                        .insert(key, form.to_directory_settings());
                 }
                 Task::none()
             }
@@ -297,16 +297,16 @@ impl App {
                 Task::none()
             }
             Message::AutoTagSave => {
-                if let Some(form) = self.auto_tag_form.take() {
-                    if !form.pattern.is_empty() {
-                        if let Some(old_key) = &form.original_key {
-                            self.settings.scan.auto_tags.remove(old_key);
-                        }
-                        self.settings
-                            .scan
-                            .auto_tags
-                            .insert(form.pattern.clone(), form.tags.clone());
+                if let Some(form) = self.auto_tag_form.take()
+                    && !form.pattern.is_empty()
+                {
+                    if let Some(old_key) = &form.original_key {
+                        self.settings.scan.auto_tags.remove(old_key);
                     }
+                    self.settings
+                        .scan
+                        .auto_tags
+                        .insert(form.pattern.clone(), form.tags.clone());
                 }
                 Task::none()
             }
