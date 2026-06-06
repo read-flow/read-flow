@@ -81,6 +81,14 @@ export interface CheckMissingResponse {
 	purged: boolean;
 }
 
+export interface ScanDirectoryEntry {
+	path: string;
+	action: 'Scan' | 'Ignore';
+	/** Present (possibly empty) for Scan entries. */
+	tags?: string[];
+	inherit: boolean;
+}
+
 export class ReadFlowClient {
 	private baseUrl: string;
 	private authHeader: string;
@@ -276,5 +284,26 @@ export class ReadFlowClient {
 		return this.request<CheckMissingResponse>(`/maintenance/check-missing?purge=${purge}`, {
 			method: 'POST',
 		});
+	}
+
+	// @feature: admin.scan_directories
+	async getScanDirectories(): Promise<ScanDirectoryEntry[]> {
+		return this.request<ScanDirectoryEntry[]>('/scan-directories');
+	}
+
+	// @feature: admin.scan_directories
+	async putScanDirectory(entry: ScanDirectoryEntry): Promise<ScanDirectoryEntry[]> {
+		return this.request<ScanDirectoryEntry[]>('/scan-directories', {
+			method: 'PUT',
+			body: JSON.stringify(entry),
+		});
+	}
+
+	// @feature: admin.scan_directories
+	async deleteScanDirectory(path: string): Promise<ScanDirectoryEntry[]> {
+		return this.request<ScanDirectoryEntry[]>(
+			`/scan-directories?path=${encodeURIComponent(path)}`,
+			{ method: 'DELETE' },
+		);
 	}
 }

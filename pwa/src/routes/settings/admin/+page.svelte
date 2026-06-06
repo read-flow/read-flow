@@ -2,7 +2,12 @@
 	import { onMount } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { sources, loadSources } from '$lib/stores/sources';
-	import { ReadFlowClient, type ScanSummary, type CheckMissingResponse } from '$lib/api/client';
+	import {
+		ReadFlowClient,
+		type ScanSummary,
+		type CheckMissingResponse,
+		type ScanDirectoryEntry,
+	} from '$lib/api/client';
 
 	let selectedId = $state<number | null>(null);
 
@@ -49,6 +54,72 @@
 			missingError = err instanceof Error ? err.message : 'Check failed.';
 		} finally {
 			checking = false;
+		}
+	}
+
+	// ── Scan directories ───────────────────────────────────────────────────────
+	let scanDirs = $state<ScanDirectoryEntry[]>([]);
+	let dirsError = $state('');
+	let dirsBusy = $state(false);
+
+	// New-entry form
+	let newPath = $state('');
+	let newAction = $state<'Scan' | 'Ignore'>('Scan');
+	let newTags = $state('');
+	let newInherit = $state(false);
+
+	$effect(() => {
+		// Reload directories whenever the selected server changes.
+		const id = selectedId;
+		void id;
+		scanDirs = [];
+		dirsError = '';
+		if (!client) return;
+		const c = client;
+		void (async () => {
+			try {
+				scanDirs = await c.getScanDirectories();
+			} catch (err) {
+				dirsError = err instanceof Error ? err.message : 'Failed to load directories.';
+			}
+		})();
+	});
+
+	async function addDir() {
+		if (!client || dirsBusy || !newPath.trim()) return;
+		dirsBusy = true;
+		dirsError = '';
+		const entry: ScanDirectoryEntry = {
+			path: newPath.trim(),
+			action: newAction,
+			inherit: newInherit,
+			...(newAction === 'Scan'
+				? { tags: newTags.split(',').map((t) => t.trim()).filter(Boolean) }
+				: {}),
+		};
+		try {
+			scanDirs = await client.putScanDirectory(entry);
+			newPath = '';
+			newTags = '';
+			newInherit = false;
+			newAction = 'Scan';
+		} catch (err) {
+			dirsError = err instanceof Error ? err.message : 'Failed to save directory.';
+		} finally {
+			dirsBusy = false;
+		}
+	}
+
+	async function removeDir(path: string) {
+		if (!client || dirsBusy) return;
+		dirsBusy = true;
+		dirsError = '';
+		try {
+			scanDirs = await client.deleteScanDirectory(path);
+		} catch (err) {
+			dirsError = err instanceof Error ? err.message : 'Failed to remove directory.';
+		} finally {
+			dirsBusy = false;
 		}
 	}
 </script>
@@ -155,6 +226,84 @@
 					{#if missingError}<p class="mt-2 text-xs text-red-500 dark:text-red-400">{missingError}</p>{/if}
 				</div>
 			</div>
+		</section>
+
+		<!-- Scan directories -->
+		<section class="mb-8">
+			<h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Scan directories</h2>
+			<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50">
+				{#if scanDirs.length === 0}
+					<p class="px-4 py-3 text-sm text-slate-400 dark:text-slate-500">No directories configured.</p>
+				{:else}
+					{#each scanDirs as dir}
+						<div class="flex items-center gap-3 px-4 py-3">
+							<div class="flex-1 min-w-0">
+								<p class="text-sm font-mono truncate" title={dir.path}>{dir.path}</p>
+								<div class="flex items-center gap-2 mt-0.5">
+									<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium
+										{dir.action === 'Scan'
+											? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+											: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}">
+										{dir.action}
+									</span>
+									{#if dir.inherit}<span class="text-xs text-slate-400 dark:text-slate-500">inherit</span>{/if}
+									{#each dir.tags ?? [] as tag}
+										<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400">{tag}</span>
+									{/each}
+								</div>
+							</div>
+							<button
+								onclick={() => removeDir(dir.path)}
+								disabled={dirsBusy}
+								aria-label="Remove directory"
+								class="shrink-0 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-40"
+							>
+								<Icon name="trash" class="w-4 h-4" />
+							</button>
+						</div>
+					{/each}
+				{/if}
+
+				<!-- Add form -->
+				<div class="px-4 py-3 space-y-2">
+					<input
+						type="text"
+						bind:value={newPath}
+						placeholder="/absolute/path"
+						class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/50"
+					/>
+					<div class="flex flex-wrap items-center gap-2">
+						<select
+							bind:value={newAction}
+							class="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+						>
+							<option value="Scan">Scan</option>
+							<option value="Ignore">Ignore</option>
+						</select>
+						{#if newAction === 'Scan'}
+							<input
+								type="text"
+								bind:value={newTags}
+								placeholder="tags (comma-separated)"
+								class="flex-1 min-w-[8rem] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+							/>
+						{/if}
+						<label class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+							<input type="checkbox" bind:checked={newInherit} class="accent-slate-900 dark:accent-slate-100" />
+							inherit
+						</label>
+						<button
+							onclick={addDir}
+							disabled={dirsBusy || !newPath.trim()}
+							class="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors disabled:opacity-40"
+						>
+							<Icon name="plus" class="w-4 h-4" />
+							Add
+						</button>
+					</div>
+				</div>
+			</div>
+			{#if dirsError}<p class="mt-2 text-xs text-red-500 dark:text-red-400">{dirsError}</p>{/if}
 		</section>
 	{/if}
 </div>
