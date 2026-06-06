@@ -16,12 +16,22 @@
 		allowedTags,
 		deniedTags,
 		allTags,
+		statusFilter,
+		sourceFilter,
+		sortSubject,
+		sortDirection,
 	} from '$lib/stores/documents';
 	import { sources, loadSources } from '$lib/stores/sources';
+	import { addTagsToFile, removeTagsFromFile } from '$lib/api/aggregator';
 	import { get } from 'svelte/store';
 	import type { AggregatedFile } from '$lib/api/aggregator';
+	import type { ReadingStatus } from '$lib/api/client';
+	import type { SortSubject } from '$lib/utils/filter';
 
 	// ── Virtual list ──────────────────────────────────────────────────────────
+	// @feature: documents.pagination
+	// Windowed rendering: only the visible slice of the (filtered) list is in the
+	// DOM, so arbitrarily large collections stay responsive without paging.
 	const ITEM_HEIGHT = 76; // estimated row height in px
 	const OVERSCAN = 3;
 
@@ -30,6 +40,14 @@
 	let selectMode = $state(false);
 	let selectedFingerprints = $state(new Set<string>());
 	let mergeDialogOpen = $state(false);
+
+	// Batch tagging on the current selection.
+	let batchTag = $state('');
+	let batchBusy = $state(false);
+
+	const SORT_LABELS: Record<SortSubject, string> = {
+		filename: 'Filename', title: 'Title', size: 'Size', type: 'Type', status: 'Status',
+	};
 
 	const selectedDocs = $derived(
 		$filteredDocuments.filter((d) => selectedFingerprints.has(d.fingerprint)),
@@ -46,6 +64,27 @@
 	function exitSelectMode() {
 		selectMode = false;
 		selectedFingerprints = new Set();
+		batchTag = '';
+	}
+
+	// @feature: documents.batch_tag
+	async function applyBatchTag(mode: 'add' | 'remove') {
+		const tag = batchTag.trim();
+		if (!tag || batchBusy || selectedDocs.length === 0) return;
+		batchBusy = true;
+		try {
+			await Promise.allSettled(
+				selectedDocs.map((d) =>
+					mode === 'add'
+						? addTagsToFile(d.sourceGuids, [tag])
+						: removeTagsFromFile(d.sourceGuids, [tag]),
+				),
+			);
+			batchTag = '';
+			await refreshDocuments();
+		} finally {
+			batchBusy = false;
+		}
 	}
 	let listContainerEl: HTMLDivElement | undefined = $state();
 	let containerHeight = $state(600);
@@ -215,8 +254,58 @@
 			</div>
 		{/if}
 
+		<!-- Filters & sort -->
+		{#if $sources.length > 0}
+			<div class="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+				<select
+					bind:value={$statusFilter}
+					class="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/50"
+					aria-label="Filter by reading status"
+				>
+					<option value={null}>All statuses</option>
+					<option value="Unread">Unread</option>
+					<option value="Reading">Reading</option>
+					<option value="Read">Read</option>
+				</select>
+
+				{#if $sources.length > 1}
+					<select
+						bind:value={$sourceFilter}
+						class="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/50"
+						aria-label="Filter by source"
+					>
+						<option value={null}>All sources</option>
+						{#each $sources as s}
+							<option value={s.id}>{s.name}</option>
+						{/each}
+					</select>
+				{/if}
+
+				<div class="flex items-center gap-1 ml-auto">
+					<span class="text-slate-400 dark:text-slate-500">Sort</span>
+					<select
+						bind:value={$sortSubject}
+						class="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/50"
+						aria-label="Sort by"
+					>
+						{#each Object.entries(SORT_LABELS) as [val, label]}
+							<option value={val}>{label}</option>
+						{/each}
+					</select>
+					<button
+						onclick={() => sortDirection.set($sortDirection === 'asc' ? 'desc' : 'asc')}
+						class="p-1 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+						aria-label="Toggle sort direction"
+						title={$sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+					>
+						<Icon name={$sortDirection === 'asc' ? 'chevron-up' : 'chevron-down'} class="w-4 h-4" />
+					</button>
+				</div>
+			</div>
+		{/if}
+
 		<!-- Result count -->
-		{#if ($allowedTags.size > 0 || $deniedTags.size > 0 || $searchQuery.trim().length > 0) && !$isLoading && $sources.length > 0}
+		{#if ($allowedTags.size > 0 || $deniedTags.size > 0 || $searchQuery.trim().length > 0 || $statusFilter || $sourceFilter != null) && !$isLoading && $sources.length > 0}
 			<p class="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
 				{$filteredDocuments.length} of {$allDocuments.length} documents
 			</p>
@@ -262,9 +351,9 @@
 				<div class="flex flex-col items-center gap-3 py-20 px-6 text-center">
 					<Icon name="search" class="w-8 h-8 text-slate-300 dark:text-slate-600" />
 					<p class="text-sm text-slate-500 dark:text-slate-400">No documents match your search or filters.</p>
-					{#if $allowedTags.size > 0 || $deniedTags.size > 0 || $searchQuery.trim().length > 0}
+					{#if $allowedTags.size > 0 || $deniedTags.size > 0 || $searchQuery.trim().length > 0 || $statusFilter || $sourceFilter != null}
 						<button
-							onclick={() => { $searchQuery = ''; clearTagFilters(); }}
+							onclick={() => { $searchQuery = ''; clearTagFilters(); statusFilter.set(null); sourceFilter.set(null); }}
 							class="text-sm text-slate-500 dark:text-slate-400 underline underline-offset-2 hover:text-slate-700 dark:hover:text-slate-300"
 						>
 							Clear all filters
@@ -404,10 +493,35 @@
 
 		<!-- Selection toolbar (shown in select mode) -->
 		{#if selectMode && selectedFingerprints.size > 0}
-			<div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3
+			<div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-2
 				bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900
-				px-4 py-2.5 rounded-full shadow-lg text-sm font-medium">
-				<span>{selectedFingerprints.size} selected</span>
+				px-4 py-2.5 rounded-2xl shadow-lg text-sm font-medium max-w-[92vw]">
+				<span class="shrink-0">{selectedFingerprints.size} selected</span>
+
+				<!-- Batch tagging -->
+				<input
+					type="text"
+					bind:value={batchTag}
+					onkeydown={(e) => e.key === 'Enter' && applyBatchTag('add')}
+					disabled={batchBusy}
+					placeholder="tag…"
+					class="w-24 px-2 py-1 rounded-lg text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none disabled:opacity-50"
+				/>
+				<button
+					onclick={() => applyBatchTag('add')}
+					disabled={batchBusy || !batchTag.trim()}
+					class="px-3 py-1 rounded-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-40"
+				>
+					Add tag
+				</button>
+				<button
+					onclick={() => applyBatchTag('remove')}
+					disabled={batchBusy || !batchTag.trim()}
+					class="px-3 py-1 rounded-full bg-white/10 dark:bg-slate-900/10 text-white dark:text-slate-900 text-xs font-medium hover:bg-white/20 dark:hover:bg-slate-900/20 transition-colors disabled:opacity-40"
+				>
+					Remove
+				</button>
+
 				{#if selectedFingerprints.size >= 2}
 					<button
 						onclick={() => (mergeDialogOpen = true)}
@@ -418,7 +532,7 @@
 				{/if}
 				<button
 					onclick={() => (selectedFingerprints = new Set())}
-					class="text-slate-400 dark:text-slate-500 hover:text-white dark:hover:text-slate-900 transition-colors"
+					class="shrink-0 text-slate-400 dark:text-slate-500 hover:text-white dark:hover:text-slate-900 transition-colors"
 					aria-label="Clear selection"
 				>
 					✕

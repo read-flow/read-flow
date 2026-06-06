@@ -9,13 +9,13 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `documents.list` | ✅ | ✅ | ✅ | Browse all documents in the library |
 | `documents.search` | ✅ | ✅ |  | Keyword search across documents |
 | `documents.filter_by_tag` | ✅ | ✅ |  | Filter the list by allowed/denied tags |
-| `documents.filter_by_status` | ✅ | 🟡 |  | Filter the list by reading status |
-| `documents.filter_by_source` | ✅ | 🟡 |  | Filter the list by source (local / remote) |
-| `documents.sort` | ✅ | 🟡 |  | Sort the list (title/filename/size/type/status, asc/desc) |
-| `documents.pagination` | ✅ | 🟡 |  | Paginate large document collections |
+| `documents.filter_by_status` | ✅ | ✅ |  | Filter the list by reading status |
+| `documents.filter_by_source` | ✅ | ✅ |  | Filter the list by source (local / remote) |
+| `documents.sort` | ✅ | ✅ |  | Sort the list (title/filename/size/type/status, asc/desc) |
+| `documents.pagination` | ✅ | ✅ |  | Paginate large document collections |
 | `documents.format_picker` | ✅ | ✅ |  | Pick a format when a document has multiple versions |
 | `documents.merge` | ✅ | ✅ | ✅ | Merge duplicate documents into one |
-| `documents.batch_tag` | ✅ | 🟡 |  | Add/remove tags on a multi-document selection |
+| `documents.batch_tag` | ✅ | ✅ |  | Add/remove tags on a multi-document selection |
 | `documents.detail_view` | ✅ | ✅ | ✅ | View a single document's details |
 | `documents.edit_metadata` | ✅ | ✅ | ✅ | Edit document metadata (title, authors, description, …) |
 | `documents.cover_display` | ✅ | ✅ | ✅ | Display a document's cover image |

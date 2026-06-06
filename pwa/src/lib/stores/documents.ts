@@ -5,7 +5,8 @@ import {
 	type AggregatedFile,
 	type DocumentMeta,
 } from '$lib/api/aggregator';
-import { filterDocuments } from '$lib/utils/filter';
+import { filterDocuments, type SortSubject, type SortDirection } from '$lib/utils/filter';
+import type { ReadingStatus } from '$lib/api/client';
 
 /**
  * Find an AggregatedFile by fingerprint, searching both top-level entries and
@@ -30,6 +31,13 @@ export const searchQuery = writable('');
 // @feature: documents.filter_by_tag
 export const allowedTags = writable<Set<string>>(new Set());
 export const deniedTags = writable<Set<string>>(new Set());
+// @feature: documents.filter_by_status
+export const statusFilter = writable<ReadingStatus | null>(null);
+// @feature: documents.filter_by_source
+export const sourceFilter = writable<number | null>(null);
+// @feature: documents.sort
+export const sortSubject = writable<SortSubject>('filename');
+export const sortDirection = writable<SortDirection>('asc');
 
 export async function refreshDocuments(): Promise<void> {
 	isLoading.set(true);
@@ -46,9 +54,24 @@ export async function refreshDocuments(): Promise<void> {
 }
 
 export const filteredDocuments = derived(
-	[allDocuments, searchQuery, allowedTags, deniedTags, documentMetaMap],
-	([$all, $query, $allowed, $denied, $metaMap]) =>
-		filterDocuments($all, $allowed, $denied, $query, $metaMap),
+	[
+		allDocuments,
+		searchQuery,
+		allowedTags,
+		deniedTags,
+		documentMetaMap,
+		statusFilter,
+		sourceFilter,
+		sortSubject,
+		sortDirection,
+	],
+	([$all, $query, $allowed, $denied, $metaMap, $status, $source, $sortSubject, $sortDirection]) =>
+		filterDocuments($all, $allowed, $denied, $query, $metaMap, {
+			status: $status,
+			sourceId: $source,
+			sortSubject: $sortSubject,
+			sortDirection: $sortDirection,
+		}),
 );
 
 export const allTags = derived(allDocuments, ($all) => {

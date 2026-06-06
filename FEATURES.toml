@@ -41,25 +41,21 @@ surfaces = ["cosmic", "pwa"]
 id = "documents.filter_by_status"
 description = "Filter the list by reading status"
 surfaces = ["cosmic", "pwa"]
-gaps = ["pwa"]
 
 [[feature]]
 id = "documents.filter_by_source"
 description = "Filter the list by source (local / remote)"
 surfaces = ["cosmic", "pwa"]
-gaps = ["pwa"]
 
 [[feature]]
 id = "documents.sort"
 description = "Sort the list (title/filename/size/type/status, asc/desc)"
 surfaces = ["cosmic", "pwa"]
-gaps = ["pwa"]
 
 [[feature]]
 id = "documents.pagination"
 description = "Paginate large document collections"
 surfaces = ["cosmic", "pwa"]
-gaps = ["pwa"]
 
 [[feature]]
 id = "documents.format_picker"
@@ -75,7 +71,6 @@ surfaces = ["cosmic", "pwa", "rest"]
 id = "documents.batch_tag"
 description = "Add/remove tags on a multi-document selection"
 surfaces = ["cosmic", "pwa"]
-gaps = ["pwa"]
 
 # ── Document detail / metadata ─────────────────────────────────────────────
 
