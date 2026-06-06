@@ -179,19 +179,8 @@
 
 <div class="px-4 py-5 md:px-5 space-y-5">
 	{#if onclose}
-		<!-- Sidebar close button -->
-		<div class="flex items-start justify-between gap-2">
-			<div class="min-w-0">
-				{#if loading}
-					<div class="h-5 w-40 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
-				{:else if doc}
-					{@const m = doc.document_guid ? $documentMetaMap.get(doc.document_guid) : undefined}
-					<h2 class="text-base font-semibold break-words leading-snug">
-						{m?.title ?? basename(doc.path)}
-					</h2>
-					<p class="text-xs text-slate-400 dark:text-slate-500 mt-0.5 break-all">{doc.path}</p>
-				{/if}
-			</div>
+		<!-- Sidebar close button (title lives in the hero below) -->
+		<div class="flex justify-end">
 			<button
 				onclick={onclose}
 				class="shrink-0 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
@@ -215,39 +204,34 @@
 	{:else}
 		{@const docMeta = doc.document_guid ? $documentMetaMap.get(doc.document_guid) : undefined}
 
-		{#if !onclose}
-			<!-- Standalone page heading (no close button) -->
-			<div>
-				<h1 class="text-lg font-semibold break-words">
-					{docMeta?.title ?? basename(doc.path)}
-				</h1>
-				<p class="text-sm text-slate-400 dark:text-slate-500 mt-1 break-all">{doc.path}</p>
-			</div>
-		{/if}
-
-		<!-- Document cover (user-selected or first available) -->
-		{#if doc.has_cover}
-			<CoverImage
-				sourceGuids={doc.sourceGuids}
-				documentGuid={doc.document_guid ?? undefined}
-				hasCover={true}
-				alt={docMeta?.title ?? basename(doc.path)}
-				class="w-full max-w-[200px] h-[280px] rounded-lg shadow mx-auto"
-			/>
-		{/if}
-
-		{@const allFormats = [doc, ...doc.otherFormats].filter((f) => f.type_ === 'epub' || f.type_ === 'pdf')}
-		{#if allFormats.length > 0}
-			<div class="flex flex-wrap gap-2">
-				{#each allFormats as fmt}
-					<a
-						href={readerHref(fmt)}
-						class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors"
-					>
-						<Icon name="library" class="w-4 h-4" />
-						Open {fmt.type_.toUpperCase()}
-					</a>
-				{/each}
+		<!-- Hero: cover alongside title / subtitle / authors / description.
+		     Stacks vertically when narrow, side-by-side when wide. -->
+		{#if !editingMeta}
+			<div class="flex flex-col sm:flex-row gap-5">
+				{#if doc.has_cover}
+					<CoverImage
+						sourceGuids={doc.sourceGuids}
+						documentGuid={doc.document_guid ?? undefined}
+						hasCover={true}
+						alt={docMeta?.title ?? basename(doc.path)}
+						class="w-full max-w-[160px] sm:w-40 sm:shrink-0 h-[240px] rounded-lg shadow mx-auto sm:mx-0"
+					/>
+				{/if}
+				<div class="min-w-0 flex-1 space-y-2">
+					<h1 class="text-xl font-semibold break-words leading-tight">
+						{docMeta?.title ?? basename(doc.path)}
+					</h1>
+					{#if docMeta?.subtitle}
+						<p class="text-base text-slate-500 dark:text-slate-400 break-words">{docMeta.subtitle}</p>
+					{/if}
+					{#if docMeta?.authors?.length}
+						<p class="text-sm font-medium text-slate-600 dark:text-slate-300">{docMeta.authors.join(', ')}</p>
+					{/if}
+					{#if docMeta?.description}
+						<hr class="border-slate-200 dark:border-slate-700" />
+						<p class="text-sm text-slate-600 dark:text-slate-400 break-words whitespace-pre-line">{docMeta.description}</p>
+					{/if}
+				</div>
 			</div>
 		{/if}
 
@@ -270,9 +254,9 @@
 			</select>
 		</div>
 
-		<!-- Files -->
+		<!-- Formats -->
 		<div>
-			<h2 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Files</h2>
+			<h2 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Formats</h2>
 			<ul class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
 				{#each [doc, ...doc.otherFormats] as fmt}
 					<li class="flex items-center gap-3 px-4 py-3">
@@ -283,18 +267,31 @@
 							alt=""
 							class="shrink-0 w-8 h-12 rounded"
 						/>
-						<span class="flex-1 min-w-0 text-slate-700 dark:text-slate-300 truncate" title={fmt.path}>
-							{basename(fmt.path)}
-						</span>
-						<span class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
-							{fmt.type_ === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-							: fmt.type_ === 'epub' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-							: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}">
-							{fmt.type_}
-						</span>
-						<span class="shrink-0 text-xs text-slate-400 dark:text-slate-500 tabular-nums">
-							{formatSize(fmt.size)}
-						</span>
+						<div class="flex-1 min-w-0">
+							<p class="text-slate-700 dark:text-slate-300 truncate" title={fmt.path}>
+								{basename(fmt.path)}
+							</p>
+							<div class="flex items-center gap-2 mt-0.5">
+								<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
+									{fmt.type_ === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+									: fmt.type_ === 'epub' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+									: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}">
+									{fmt.type_}
+								</span>
+								<span class="text-xs text-slate-400 dark:text-slate-500 tabular-nums">
+									{formatSize(fmt.size)}
+								</span>
+							</div>
+						</div>
+						{#if fmt.type_ === 'epub' || fmt.type_ === 'pdf'}
+							<a
+								href={readerHref(fmt)}
+								class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors"
+							>
+								<Icon name="library" class="w-3.5 h-3.5" />
+								Open {fmt.type_.toUpperCase()}
+							</a>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -453,34 +450,6 @@
 								<dd class="font-medium">{docMeta.document_type}</dd>
 							</div>
 						{/if}
-						{#if docMeta?.title}
-							<div class="flex items-center justify-between px-4 py-3">
-								<dt class="text-slate-500 dark:text-slate-400">Title</dt>
-								<dd class="font-medium text-right break-words max-w-[60%]">{docMeta.title}</dd>
-							</div>
-						{/if}
-						{#if docMeta?.subtitle}
-							<div class="flex items-center justify-between px-4 py-3">
-								<dt class="text-slate-500 dark:text-slate-400">Subtitle</dt>
-								<dd class="font-medium text-right break-words max-w-[60%]">{docMeta.subtitle}</dd>
-							</div>
-						{/if}
-						{#if docMeta?.authors?.length}
-							<div class="flex items-start justify-between px-4 py-3 gap-4">
-								<dt class="text-slate-500 dark:text-slate-400 shrink-0">Authors</dt>
-								<dd class="flex flex-col items-end gap-0.5">
-									{#each docMeta.authors as author}
-										<span class="font-medium text-right">{author}</span>
-									{/each}
-								</dd>
-							</div>
-						{/if}
-						{#if docMeta?.description}
-							<div class="flex items-start justify-between px-4 py-3 gap-4">
-								<dt class="text-slate-500 dark:text-slate-400 shrink-0">Description</dt>
-								<dd class="text-right text-xs break-words">{docMeta.description}</dd>
-							</div>
-						{/if}
 						{#if docMeta?.language}
 							<div class="flex items-center justify-between px-4 py-3">
 								<dt class="text-slate-500 dark:text-slate-400">Language</dt>
@@ -511,7 +480,7 @@
 								<dd class="font-medium text-right break-words max-w-[60%]">{docMeta.subject}</dd>
 							</div>
 						{/if}
-						{#if !docMeta?.document_type && !docMeta?.title && !docMeta?.authors?.length}
+						{#if !docMeta?.document_type && !docMeta?.language && !docMeta?.publisher && !docMeta?.identifier && !docMeta?.date && !docMeta?.subject}
 							<div class="px-4 py-3">
 								<p class="text-slate-400 dark:text-slate-500">No info set yet.</p>
 							</div>

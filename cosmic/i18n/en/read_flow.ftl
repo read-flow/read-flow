@@ -71,7 +71,7 @@ document-details-download-to-local = Download to Local
 document-details-edit-sources = Edit sources
 document-details-send-to-missing = Send to
 document-details-source-local = Local
-document-details-sources = Sources
+document-details-sources = Formats
 document-details-upload-to = Upload to { $host }
 
 # Document list

@@ -69,7 +69,7 @@ document-details-download-to-local = Downloaden naar lokaal
 document-details-edit-sources = Bronnen bewerken
 document-details-send-to-missing = Verzenden naar
 document-details-source-local = Lokaal
-document-details-sources = Bronnen
+document-details-sources = Formaten
 document-details-upload-to = Uploaden naar { $host }
 
 # Document list
