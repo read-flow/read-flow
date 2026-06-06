@@ -68,6 +68,19 @@ export interface ServerStatus {
 	nested_checks: ServerStatus[];
 }
 
+// ── Admin (server management) ───────────────────────────────────────────────
+
+export interface ScanSummary {
+	discovered: number;
+	processed: number;
+	errors: number;
+}
+
+export interface CheckMissingResponse {
+	missing: string[];
+	purged: boolean;
+}
+
 export class ReadFlowClient {
 	private baseUrl: string;
 	private authHeader: string;
@@ -253,4 +266,15 @@ export class ReadFlowClient {
 		});
 	}
 
+	// @feature: admin.scan
+	async scan(): Promise<ScanSummary> {
+		return this.request<ScanSummary>('/scan', { method: 'POST' });
+	}
+
+	// @feature: admin.check_missing
+	async checkMissing(purge = false): Promise<CheckMissingResponse> {
+		return this.request<CheckMissingResponse>(`/maintenance/check-missing?purge=${purge}`, {
+			method: 'POST',
+		});
+	}
 }

@@ -101,6 +101,22 @@
 			</div>
 			<Icon name="chevron-down" class="w-4 h-4 text-slate-300 dark:text-slate-600 -rotate-90 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors" />
 		</a>
+
+		<a
+			href="/settings/admin"
+			class="flex items-center justify-between px-4 py-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+		>
+			<div class="flex items-center gap-3">
+				<div class="w-9 h-9 rounded-lg bg-slate-100 dark:bg-slate-700 flex items-center justify-center">
+					<Icon name="settings" class="w-5 h-5 text-slate-600 dark:text-slate-400" />
+				</div>
+				<div>
+					<p class="text-sm font-medium">Server admin</p>
+					<p class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Scan, settings, users (owner only)</p>
+				</div>
+			</div>
+			<Icon name="chevron-down" class="w-4 h-4 text-slate-300 dark:text-slate-600 -rotate-90 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors" />
+		</a>
 	</nav>
 
 	<!-- Appearance -->

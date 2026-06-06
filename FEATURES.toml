@@ -173,13 +173,11 @@ surfaces = ["cosmic", "pwa", "rest"]
 id = "admin.scan"
 description = "Trigger a library scan and observe progress"
 surfaces = ["cosmic", "pwa", "rest"]
-gaps = ["pwa"]
 
 [[feature]]
 id = "admin.check_missing"
 description = "Check for and purge missing files"
 surfaces = ["cosmic", "pwa", "rest"]
-gaps = ["pwa"]
 
 [[feature]]
 id = "admin.scan_directories"
