@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
 	import { fetchCoverFromSources, fetchDocumentCoverFromSources } from '$lib/api/aggregator';
 	import Icon from '$lib/components/Icon.svelte';
 
@@ -24,39 +23,48 @@
 	let loading = $state(false);
 	let element: HTMLDivElement | undefined = $state();
 
-	let observer: IntersectionObserver | null = null;
-
 	$effect(() => {
+		// Depend on the cover's identity so switching documents (which reuses
+		// this component instance) clears the stale thumbnail and reloads.
+		const coverKey = documentGuid ?? Object.values(sourceGuids).join(',');
+		void coverKey;
+
+		// Clear the previous document's image (the cleanup of the prior run
+		// revokes its URL). Done before the guard so a new file without a cover
+		// doesn't keep showing the old thumbnail.
+		objectUrl = null;
+
 		if (!hasCover || !element) return;
 
-		observer = new IntersectionObserver(
+		// Holds the URL fetched for *this* effect run, so cleanup revokes the
+		// right one without re-triggering the effect by reading reactive state.
+		let currentUrl: string | null = null;
+
+		const observer = new IntersectionObserver(
 			(entries) => {
-				if (entries[0]?.isIntersecting) {
-					observer?.disconnect();
-					loadCover();
-				}
+				if (!entries[0]?.isIntersecting) return;
+				observer.disconnect();
+				void (async () => {
+					loading = true;
+					try {
+						const url = documentGuid
+							? await fetchDocumentCoverFromSources(documentGuid, sourceGuids)
+							: await fetchCoverFromSources(sourceGuids);
+						currentUrl = url;
+						objectUrl = url;
+					} finally {
+						loading = false;
+					}
+				})();
 			},
 			{ rootMargin: '200px' },
 		);
 		observer.observe(element);
 
-		return () => observer?.disconnect();
-	});
-
-	async function loadCover(): Promise<void> {
-		loading = true;
-		try {
-			objectUrl = documentGuid
-				? await fetchDocumentCoverFromSources(documentGuid, sourceGuids)
-				: await fetchCoverFromSources(sourceGuids);
-		} finally {
-			loading = false;
-		}
-	}
-
-	onDestroy(() => {
-		observer?.disconnect();
-		if (objectUrl) URL.revokeObjectURL(objectUrl);
+		return () => {
+			observer.disconnect();
+			if (currentUrl) URL.revokeObjectURL(currentUrl);
+		};
 	});
 </script>
 
