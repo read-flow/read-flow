@@ -514,6 +514,7 @@ impl DocumentDetails {
             space_xxs,
             space_xs,
             space_s,
+            space_m,
             ..
         } = theme::active().cosmic().spacing;
 
@@ -537,110 +538,138 @@ impl DocumentDetails {
                 edit_button.into(),
             ]));
 
-        // Collect (content, source) pairs and sort local first, then remotes
-        let mut sources: Vec<_> = self
-            .document
-            .contents
-            .iter()
-            .flat_map(|c| c.sources.iter().map(move |s| (c, s)))
-            .collect();
-        sources.sort_by(|(_, a), (_, b)| match (&a.client, &b.client) {
-            (crate::client::ClientSelector::Local, crate::client::ClientSelector::Local) => {
-                a.path.cmp(&b.path)
-            }
-            (crate::client::ClientSelector::Local, _) => std::cmp::Ordering::Less,
-            (_, crate::client::ClientSelector::Local) => std::cmp::Ordering::Greater,
-            (
-                crate::client::ClientSelector::Remote(url_a),
-                crate::client::ClientSelector::Remote(url_b),
-            ) => url_a.as_str().cmp(url_b.as_str()).then(a.path.cmp(&b.path)),
-        });
+        let all_sources_empty = self.document.contents.iter().all(|c| c.sources.is_empty());
 
-        for (content, source) in &sources {
-            let (icon_name, source_label) = match &source.client {
-                crate::client::ClientSelector::Local => {
-                    ("computer-symbolic", fl!("document-details-source-local"))
-                }
-                crate::client::ClientSelector::Remote(url) => (
-                    "network-server-symbolic",
-                    url.host_str().unwrap_or("Remote").to_string(),
-                ),
-            };
-
-            let source_path = Path::new(&source.path);
-            let folder = source_path.parent().and_then(|p| p.to_str()).unwrap_or("");
-            let filename = source_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(&source.path);
-
-            let mut source_row = Row::new()
-                .spacing(space_s)
-                .align_y(Vertical::Center)
-                .push(widget::icon::from_name(icon_name).size(ICON_SIZE).icon())
-                .push(
-                    Column::new()
-                        .spacing(space_xxs)
-                        .push(
-                            Row::new()
-                                .spacing(space_xs)
-                                .push(
-                                    widget::container(text(source_label).size(12))
-                                        .class(theme::Container::Primary)
-                                        .padding([2, 6]),
-                                )
-                                .push(
-                                    widget::container(
-                                        text(content.type_.as_str().to_uppercase()).size(12),
-                                    )
-                                    .class(theme::Container::Card)
-                                    .padding([2, 6]),
-                                )
-                                .push(text(filename).width(Length::Fill)),
-                        )
-                        .push(text(folder).size(12))
-                        .width(Length::Fill),
-                )
-                .push(
-                    widget::button::icon(
-                        widget::icon::from_name("edit-copy-symbolic").size(ICON_SIZE),
-                    )
-                    .on_press(DocumentDetailsMessage::CopyPath(source.path.clone()))
-                    .tooltip(fl!("document-details-copy-path")),
-                );
-
-            if matches!(source.client, ClientSelector::Local) {
-                source_row = source_row.push(
-                    widget::button::icon(
-                        widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
-                    )
-                    .on_press(DocumentDetailsMessage::PickOpenSource(source.guid.clone()))
-                    .tooltip(fl!("document-details-open-file")),
-                );
-            }
-
-            // Show delete button in edit mode for sources where the client has multiple entries
-            if self.editing_sources {
-                source_row = source_row.push(
-                    widget::button::icon(
-                        widget::icon::from_name("list-remove-symbolic").size(ICON_SIZE),
-                    )
-                    .class(theme::Button::Destructive)
-                    .on_press(DocumentDetailsMessage::RequestDeleteSource(
-                        (*source).clone(),
-                    ))
-                    .tooltip(fl!("document-details-delete-source")),
-                );
-            }
-
-            sources_section =
-                sources_section.add(widget::settings::item_row(vec![source_row.into()]));
-        }
-
-        if sources.is_empty() {
+        if all_sources_empty {
             sources_section = sources_section.add(widget::settings::item_row(vec![
                 text(fl!("document-details-no-sources")).into(),
             ]));
+        } else {
+            for content in &self.document.contents {
+                if content.sources.is_empty() {
+                    continue;
+                }
+
+                // Group header: type badge + short fingerprint + formatted size
+                let fp_short: String = content.fingerprint.chars().take(8).collect();
+                let size_label = if content.size <= 0 {
+                    String::new()
+                } else if content.size < 1024 {
+                    format!("{} B", content.size)
+                } else if content.size < 1_048_576 {
+                    format!("{:.1} KB", content.size as f64 / 1024.0)
+                } else {
+                    format!("{:.1} MB", content.size as f64 / 1_048_576.0)
+                };
+
+                let mut group_header_row = Row::new()
+                    .spacing(space_xs)
+                    .align_y(Vertical::Center)
+                    .push(
+                        widget::container(text(content.type_.as_str().to_uppercase()).size(12))
+                            .class(theme::Container::Card)
+                            .padding([2, 6]),
+                    )
+                    .push(text(fp_short).size(12));
+
+                if !size_label.is_empty() {
+                    group_header_row = group_header_row
+                        .push(widget::space::horizontal())
+                        .push(text(size_label).size(12));
+                }
+
+                sources_section =
+                    sources_section.add(widget::settings::item_row(vec![group_header_row.into()]));
+
+                // Sort sources within this content group: local first, then remote by URL+path
+                let mut sorted_sources: Vec<_> = content.sources.iter().collect();
+                sorted_sources.sort_by(|a, b| match (&a.client, &b.client) {
+                    (
+                        crate::client::ClientSelector::Local,
+                        crate::client::ClientSelector::Local,
+                    ) => a.path.cmp(&b.path),
+                    (crate::client::ClientSelector::Local, _) => std::cmp::Ordering::Less,
+                    (_, crate::client::ClientSelector::Local) => std::cmp::Ordering::Greater,
+                    (
+                        crate::client::ClientSelector::Remote(url_a),
+                        crate::client::ClientSelector::Remote(url_b),
+                    ) => url_a.as_str().cmp(url_b.as_str()).then(a.path.cmp(&b.path)),
+                });
+
+                for source in &sorted_sources {
+                    let (icon_name, source_label) = match &source.client {
+                        crate::client::ClientSelector::Local => {
+                            ("computer-symbolic", fl!("document-details-source-local"))
+                        }
+                        crate::client::ClientSelector::Remote(url) => (
+                            "network-server-symbolic",
+                            url.host_str().unwrap_or("Remote").to_string(),
+                        ),
+                    };
+
+                    let source_path = Path::new(&source.path);
+                    let folder = source_path.parent().and_then(|p| p.to_str()).unwrap_or("");
+                    let filename = source_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&source.path);
+
+                    let mut source_row = Row::new()
+                        .spacing(space_s)
+                        .align_y(Vertical::Center)
+                        .push(widget::Space::new().width(space_m))
+                        .push(widget::icon::from_name(icon_name).size(ICON_SIZE).icon())
+                        .push(
+                            Column::new()
+                                .spacing(space_xxs)
+                                .push(
+                                    Row::new()
+                                        .spacing(space_xs)
+                                        .push(
+                                            widget::container(text(source_label).size(12))
+                                                .class(theme::Container::Primary)
+                                                .padding([2, 6]),
+                                        )
+                                        .push(text(filename).width(Length::Fill)),
+                                )
+                                .push(text(folder).size(12))
+                                .width(Length::Fill),
+                        )
+                        .push(
+                            widget::button::icon(
+                                widget::icon::from_name("edit-copy-symbolic").size(ICON_SIZE),
+                            )
+                            .on_press(DocumentDetailsMessage::CopyPath(source.path.clone()))
+                            .tooltip(fl!("document-details-copy-path")),
+                        );
+
+                    if matches!(source.client, ClientSelector::Local) {
+                        source_row = source_row.push(
+                            widget::button::icon(
+                                widget::icon::from_name("document-viewer-symbolic").size(ICON_SIZE),
+                            )
+                            .on_press(DocumentDetailsMessage::PickOpenSource(source.guid.clone()))
+                            .tooltip(fl!("document-details-open-file")),
+                        );
+                    }
+
+                    if self.editing_sources {
+                        source_row = source_row.push(
+                            widget::button::icon(
+                                widget::icon::from_name("list-remove-symbolic").size(ICON_SIZE),
+                            )
+                            .class(theme::Button::Destructive)
+                            .on_press(DocumentDetailsMessage::RequestDeleteSource(
+                                (*source).clone(),
+                            ))
+                            .tooltip(fl!("document-details-delete-source")),
+                        );
+                    }
+
+                    sources_section =
+                        sources_section.add(widget::settings::item_row(vec![source_row.into()]));
+                }
+            }
         }
 
         sections.push(sources_section.into());
