@@ -213,13 +213,18 @@ description = "Download and import a book from an OPDS catalog"
 surfaces = ["cosmic", "pwa", "rest"]
 gaps = ["pwa", "rest"]
 
-# ── Theme (bidirectional — PWA → COSMIC) ───────────────────────────────────
+# ── Theme ───────────────────────────────────────────────────────────────────
+# PWA-only by design: browsers don't theme web apps, so the PWA ships its own
+# editor (CSS-variable schemes + custom colors). COSMIC apps inherit the
+# desktop theme — libcosmic has no per-app theme override (the Application
+# trait exposes no `theme()`; theming is driven by cosmic-config), and COSMIC
+# Settings already provides a full global theme editor for every cosmic app.
+# So this is platform-provided on the desktop, not a parity gap.
 
 [[feature]]
 id = "theme.editor"
 description = "Customizable theme editor (modes, schemes, custom colors)"
-surfaces = ["cosmic", "pwa"]
-gaps = ["cosmic"]
+surfaces = ["pwa"]
 
 [[feature]]
 id = "app.epub_viewer_choice"
