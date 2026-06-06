@@ -36,7 +36,7 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `admin.scan` | ✅ | 🟡 | ✅ | Trigger a library scan and observe progress |
 | `admin.check_missing` | ✅ | 🟡 | ✅ | Check for and purge missing files |
 | `admin.scan_directories` | ✅ | 🟡 | ✅ | Configure scan directories (CRUD) |
-| `admin.authorized_users` | ✅ | 🟡 | 🟡 | Manage authorized server users (CRUD) |
+| `admin.authorized_users` | ✅ | 🟡 | ✅ | Manage authorized server users (CRUD) |
 | `admin.server_settings` | ✅ | 🟡 | ✅ | Server settings (db path, file types, dry-run, private) |
 | `online_library.search` | ✅ | 🟡 | 🟡 | Search OPDS catalogs |
 | `online_library.download_import` | ✅ | 🟡 | 🟡 | Download and import a book from an OPDS catalog |

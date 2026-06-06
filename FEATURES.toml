@@ -191,7 +191,7 @@ gaps = ["pwa"]
 id = "admin.authorized_users"
 description = "Manage authorized server users (CRUD)"
 surfaces = ["cosmic", "pwa", "rest"]
-gaps = ["pwa", "rest"]
+gaps = ["pwa"]
 
 [[feature]]
 id = "admin.server_settings"

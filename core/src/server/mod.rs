@@ -46,9 +46,11 @@ use crate::scan::DirectorySettings;
 use crate::scan::DocumentType;
 use crate::scan::ScanSummary;
 use crate::settings;
+use crate::settings::HashedPassword;
 pub use crate::settings::ServerSettings;
 use crate::settings::Settings;
 use crate::settings::SettingsError;
+use crate::settings::UserEntry;
 use crate::to_unique_file;
 
 #[derive(Debug, thiserror::Error, Responder)]
@@ -198,6 +200,10 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         delete_scan_directory,
         get_settings,
         put_settings,
+        get_users,
+        post_user,
+        put_user,
+        delete_user,
     ];
 
     rocket::custom(figment)
@@ -915,6 +921,161 @@ async fn put_settings(
         .await?;
     let settings = application_module.settings().await;
     Ok(Json(server_settings_dto(&settings)))
+}
+
+/// A user as exposed over the API. The password hash is NEVER included.
+#[derive(serde::Serialize)]
+struct UserDto {
+    user_id: String,
+    roles: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct CreateUserRequest {
+    user_id: String,
+    password: String,
+    #[serde(default)]
+    roles: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct UpdateUserRequest {
+    /// When omitted/empty the existing password is kept.
+    #[serde(default)]
+    password: Option<String>,
+    #[serde(default)]
+    roles: Vec<String>,
+}
+
+fn make_user_entry(password: HashedPassword, roles: Vec<String>) -> UserEntry {
+    if roles.is_empty() {
+        UserEntry::Simple(password)
+    } else {
+        UserEntry::Extended { password, roles }
+    }
+}
+
+fn list_users(settings: &Settings) -> Vec<UserDto> {
+    settings
+        .server
+        .authorized_users
+        .iter()
+        .map(|(user_id, entry)| UserDto {
+            user_id: user_id.clone(),
+            roles: entry.roles().to_vec(),
+        })
+        .collect()
+}
+
+fn hash_password(plain: &str) -> Result<HashedPassword> {
+    HashedPassword::try_from(plain.to_string())
+        .map_err(|e| Error::Settings(format!("could not hash password: {e}")))
+}
+
+#[get("/users")]
+/// @feature: admin.authorized_users
+async fn get_users(
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<UserDto>>> {
+    require_owner(&user)?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_users(&settings)))
+}
+
+#[post("/users", data = "<req>")]
+/// @feature: admin.authorized_users
+async fn post_user(
+    req: Json<CreateUserRequest>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<UserDto>>> {
+    require_owner(&user)?;
+    let CreateUserRequest {
+        user_id,
+        password,
+        roles,
+    } = req.into_inner();
+    if user_id.is_empty() {
+        return Err(Error::BadRequest("user_id must not be empty".into()));
+    }
+    if application_module
+        .settings()
+        .await
+        .server
+        .authorized_users
+        .contains_key(&user_id)
+    {
+        return Err(Error::BadRequest(format!("user {user_id} already exists")));
+    }
+    let entry = make_user_entry(hash_password(&password)?, roles);
+    application_module
+        .update_settings(move |s| {
+            s.server.authorized_users.insert(user_id, entry);
+        })
+        .await?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_users(&settings)))
+}
+
+#[put("/users/<user_id>", data = "<req>")]
+/// @feature: admin.authorized_users
+async fn put_user(
+    user_id: &str,
+    req: Json<UpdateUserRequest>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<UserDto>>> {
+    require_owner(&user)?;
+    let UpdateUserRequest { password, roles } = req.into_inner();
+
+    let existing = application_module
+        .settings()
+        .await
+        .server
+        .authorized_users
+        .get(user_id)
+        .cloned();
+    let Some(existing) = existing else {
+        return Err(Error::FileNotFound(format!("user {user_id}")));
+    };
+
+    let password_hash = match password {
+        Some(p) if !p.is_empty() => hash_password(&p)?,
+        _ => existing.password().clone(),
+    };
+    let entry = make_user_entry(password_hash, roles);
+    let id = user_id.to_string();
+    application_module
+        .update_settings(move |s| {
+            s.server.authorized_users.insert(id, entry);
+        })
+        .await?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_users(&settings)))
+}
+
+#[delete("/users/<user_id>")]
+/// @feature: admin.authorized_users
+async fn delete_user(
+    user_id: &str,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<UserDto>>> {
+    require_owner(&user)?;
+    if user_id == user.user_id {
+        return Err(Error::BadRequest(
+            "you cannot delete the user you are authenticated as".into(),
+        ));
+    }
+    let id = user_id.to_string();
+    application_module
+        .update_settings(move |s| {
+            s.server.authorized_users.shift_remove(&id);
+        })
+        .await?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_users(&settings)))
 }
 
 #[post("/documents/merge", data = "<req>")]
