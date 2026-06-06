@@ -152,6 +152,20 @@ where
         self.settings.provide().await.unwrap()
     }
 
+    /// Mutate the settings in memory, persist them to the configuration file,
+    /// and invalidate the settings cache so subsequent reads observe the change.
+    /// Used by the admin REST endpoints (scan directories, users, server settings).
+    pub async fn update_settings<F>(&self, mutate: F) -> Result<(), SettingsError>
+    where
+        F: FnOnce(&mut Settings),
+    {
+        let mut settings = self.settings().await;
+        mutate(&mut settings);
+        settings.save(self.config_path())?;
+        self.settings.set_expired().await;
+        Ok(())
+    }
+
     pub async fn connection_pool(&self) -> ConnectionPool {
         self.connection_pool.provide().await.unwrap()
     }

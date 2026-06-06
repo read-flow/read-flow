@@ -35,7 +35,7 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `remotes.private_mode` | ✅ | ✅ | ✅ | Private mode (owner-only private tags) |
 | `admin.scan` | ✅ | 🟡 | ✅ | Trigger a library scan and observe progress |
 | `admin.check_missing` | ✅ | 🟡 | ✅ | Check for and purge missing files |
-| `admin.scan_directories` | ✅ | 🟡 | 🟡 | Configure scan directories (CRUD) |
+| `admin.scan_directories` | ✅ | 🟡 | ✅ | Configure scan directories (CRUD) |
 | `admin.authorized_users` | ✅ | 🟡 | 🟡 | Manage authorized server users (CRUD) |
 | `admin.server_settings` | ✅ | 🟡 | 🟡 | Server settings (db path, file types, dry-run, private) |
 | `online_library.search` | ✅ | 🟡 | 🟡 | Search OPDS catalogs |

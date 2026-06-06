@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use authn::AuthorizedUser;
 use authn::PrivateModeHeader;
@@ -31,6 +32,7 @@ use rocket_cors::Cors;
 use rocket_cors::CorsOptions;
 
 use crate::ApplicationModule;
+use crate::ExpandedPath;
 use crate::api::ApiDocument;
 use crate::api::DocumentMeta;
 use crate::api::File;
@@ -40,6 +42,7 @@ use crate::api::ReadingState;
 use crate::api::ReadingStatus;
 use crate::api::Status;
 use crate::db::dao;
+use crate::scan::DirectorySettings;
 use crate::scan::ScanSummary;
 use crate::settings;
 pub use crate::settings::ServerSettings;
@@ -75,6 +78,19 @@ enum Error {
     #[error("private mode access requires owner role")]
     #[response(status = 403)]
     Forbidden(String),
+    #[error("bad request: {0}")]
+    #[response(status = 400)]
+    BadRequest(String),
+    #[error("settings error: {0}")]
+    #[response(status = 500)]
+    Settings(String),
+}
+
+impl From<SettingsError> for Error {
+    fn from(error: SettingsError) -> Self {
+        tracing::error!("settings error: {error}");
+        Error::Settings(error.to_string())
+    }
 }
 
 impl From<dao::Error> for Error {
@@ -176,6 +192,9 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         ensure_document_for_file,
         post_scan,
         post_check_missing,
+        get_scan_directories,
+        put_scan_directory,
+        delete_scan_directory,
     ];
 
     rocket::custom(figment)
@@ -766,6 +785,75 @@ async fn post_check_missing(
         missing,
         purged: purge,
     }))
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ScanDirectoryEntry {
+    path: String,
+    #[serde(flatten)]
+    settings: DirectorySettings,
+}
+
+fn list_scan_directories(settings: &Settings) -> Vec<ScanDirectoryEntry> {
+    settings
+        .scan
+        .directories
+        .iter()
+        .map(|(path, settings)| ScanDirectoryEntry {
+            path: path.display().to_string(),
+            settings: settings.clone(),
+        })
+        .collect()
+}
+
+#[get("/scan-directories")]
+/// @feature: admin.scan_directories
+async fn get_scan_directories(
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<ScanDirectoryEntry>>> {
+    require_owner(&user)?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_scan_directories(&settings)))
+}
+
+#[put("/scan-directories", data = "<entry>")]
+/// @feature: admin.scan_directories
+async fn put_scan_directory(
+    entry: Json<ScanDirectoryEntry>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<ScanDirectoryEntry>>> {
+    require_owner(&user)?;
+    let ScanDirectoryEntry { path, settings } = entry.into_inner();
+    let path = ExpandedPath::from_str(&path)
+        .map_err(|e| Error::BadRequest(format!("invalid path: {e}")))?;
+    application_module
+        .update_settings(move |s| {
+            s.scan.directories.insert(path, settings);
+        })
+        .await?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_scan_directories(&settings)))
+}
+
+#[delete("/scan-directories?<path>")]
+/// @feature: admin.scan_directories
+async fn delete_scan_directory(
+    path: String,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<ScanDirectoryEntry>>> {
+    require_owner(&user)?;
+    let parsed = ExpandedPath::from_str(&path)
+        .map_err(|e| Error::BadRequest(format!("invalid path: {e}")))?;
+    application_module
+        .update_settings(move |s| {
+            s.scan.directories.remove(&parsed);
+        })
+        .await?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_scan_directories(&settings)))
 }
 
 #[post("/documents/merge", data = "<req>")]
