@@ -7,6 +7,7 @@
 		type ScanSummary,
 		type CheckMissingResponse,
 		type ScanDirectoryEntry,
+		type ServerSettingsDto,
 	} from '$lib/api/client';
 
 	let selectedId = $state<number | null>(null);
@@ -120,6 +121,57 @@
 			dirsError = err instanceof Error ? err.message : 'Failed to remove directory.';
 		} finally {
 			dirsBusy = false;
+		}
+	}
+
+	// ── Server settings ────────────────────────────────────────────────────────
+	let settings = $state<ServerSettingsDto | null>(null);
+	let extCsv = $state('');
+	let tagsCsv = $state('');
+	let settingsError = $state('');
+	let settingsSaving = $state(false);
+
+	$effect(() => {
+		const id = selectedId;
+		void id;
+		settings = null;
+		settingsError = '';
+		if (!client) return;
+		const c = client;
+		void (async () => {
+			try {
+				const dto = await c.getSettings();
+				settings = dto;
+				extCsv = dto.extensions.join(', ');
+				tagsCsv = dto.private_tags.join(', ');
+			} catch (err) {
+				settingsError = err instanceof Error ? err.message : 'Failed to load settings.';
+			}
+		})();
+	});
+
+	function csv(s: string): string[] {
+		return s.split(',').map((t) => t.trim()).filter(Boolean);
+	}
+
+	async function saveSettings() {
+		if (!client || !settings || settingsSaving) return;
+		settingsSaving = true;
+		settingsError = '';
+		const dto: ServerSettingsDto = {
+			...settings,
+			extensions: csv(extCsv),
+			private_tags: csv(tagsCsv),
+		};
+		try {
+			const saved = await client.putSettings(dto);
+			settings = saved;
+			extCsv = saved.extensions.join(', ');
+			tagsCsv = saved.private_tags.join(', ');
+		} catch (err) {
+			settingsError = err instanceof Error ? err.message : 'Failed to save settings.';
+		} finally {
+			settingsSaving = false;
 		}
 	}
 </script>
@@ -304,6 +356,54 @@
 				</div>
 			</div>
 			{#if dirsError}<p class="mt-2 text-xs text-red-500 dark:text-red-400">{dirsError}</p>{/if}
+		</section>
+
+		<!-- Server settings -->
+		<section class="mb-8">
+			<h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Settings</h2>
+			{#if settings}
+				<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
+					<div class="flex items-center justify-between px-4 py-3 gap-3">
+						<span class="text-slate-500 dark:text-slate-400 shrink-0">Database</span>
+						<span class="font-mono text-xs text-slate-400 dark:text-slate-500 truncate" title={settings.database_url}>{settings.database_url}</span>
+					</div>
+					<div class="flex items-center px-4 py-3 gap-3">
+						<label for="ext" class="text-slate-500 dark:text-slate-400 shrink-0">Extensions</label>
+						<input id="ext" type="text" bind:value={extCsv} placeholder="pdf, epub"
+							class="flex-1 min-w-0 bg-transparent text-right focus:outline-none" />
+					</div>
+					<div class="flex items-center justify-between px-4 py-3 gap-3">
+						<label for="conc" class="text-slate-500 dark:text-slate-400 shrink-0">Concurrency</label>
+						<input id="conc" type="number" min="1" bind:value={settings.concurrency}
+							class="w-20 bg-transparent text-right focus:outline-none" />
+					</div>
+					<div class="flex items-center justify-between px-4 py-3">
+						<label for="dry" class="text-slate-500 dark:text-slate-400">Dry run</label>
+						<input id="dry" type="checkbox" bind:checked={settings.dry_run} class="accent-slate-900 dark:accent-slate-100" />
+					</div>
+					<div class="flex items-center justify-between px-4 py-3">
+						<label for="pm" class="text-slate-500 dark:text-slate-400">Private mode</label>
+						<input id="pm" type="checkbox" bind:checked={settings.private_mode} class="accent-slate-900 dark:accent-slate-100" />
+					</div>
+					<div class="flex items-center px-4 py-3 gap-3">
+						<label for="ptags" class="text-slate-500 dark:text-slate-400 shrink-0">Private tags</label>
+						<input id="ptags" type="text" bind:value={tagsCsv} placeholder="private"
+							class="flex-1 min-w-0 bg-transparent text-right focus:outline-none" />
+					</div>
+				</div>
+				<div class="mt-3 flex justify-end">
+					<button
+						onclick={saveSettings}
+						disabled={settingsSaving}
+						class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors disabled:opacity-40"
+					>
+						{settingsSaving ? 'Saving…' : 'Save settings'}
+					</button>
+				</div>
+			{:else if !settingsError}
+				<p class="text-sm text-slate-400 dark:text-slate-500">Loading…</p>
+			{/if}
+			{#if settingsError}<p class="mt-2 text-xs text-red-500 dark:text-red-400">{settingsError}</p>{/if}
 		</section>
 	{/if}
 </div>

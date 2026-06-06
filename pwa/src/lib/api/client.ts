@@ -89,6 +89,16 @@ export interface ScanDirectoryEntry {
 	inherit: boolean;
 }
 
+export interface ServerSettingsDto {
+	/** Read-only: returned for display, ignored on PUT. */
+	database_url: string;
+	extensions: string[];
+	dry_run: boolean;
+	concurrency: number;
+	private_mode: boolean;
+	private_tags: string[];
+}
+
 export class ReadFlowClient {
 	private baseUrl: string;
 	private authHeader: string;
@@ -305,5 +315,18 @@ export class ReadFlowClient {
 			`/scan-directories?path=${encodeURIComponent(path)}`,
 			{ method: 'DELETE' },
 		);
+	}
+
+	// @feature: admin.server_settings
+	async getSettings(): Promise<ServerSettingsDto> {
+		return this.request<ServerSettingsDto>('/settings');
+	}
+
+	// @feature: admin.server_settings
+	async putSettings(dto: ServerSettingsDto): Promise<ServerSettingsDto> {
+		return this.request<ServerSettingsDto>('/settings', {
+			method: 'PUT',
+			body: JSON.stringify(dto),
+		});
 	}
 }
