@@ -19,9 +19,9 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `documents.detail_view` | ✅ | ✅ | ✅ | View a single document's details |
 | `documents.edit_metadata` | ✅ | ✅ | ✅ | Edit document metadata (title, authors, description, …) |
 | `documents.cover_display` | ✅ | ✅ | ✅ | Display a document's cover image |
-| `documents.select_cover` | ✅ | 🟡 | ✅ | Choose which content's cover represents the document |
-| `sources.delete` | ✅ | 🟡 | ✅ | Delete a single source/file of a document |
-| `sources.send_to_client` | ✅ | 🟡 | ✅ | Send a document to another client (download-to-local / upload) |
+| `documents.select_cover` | ✅ | ✅ | ✅ | Choose which content's cover represents the document |
+| `sources.delete` | ✅ | ✅ | ✅ | Delete a single source/file of a document |
+| `sources.send_to_client` | ✅ | ✅ | ✅ | Send a document to another client (download-to-local / upload) |
 | `tags.list` | ✅ | ✅ | ✅ | List all tags in the library |
 | `tags.add` | ✅ | ✅ | ✅ | Add tags to a document |
 | `tags.remove` | ✅ | ✅ | ✅ | Remove tags from a document |

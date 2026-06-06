@@ -10,10 +10,24 @@
 		allTags,
 		findByFingerprint,
 	} from '$lib/stores/documents';
-	import { addTagsToFile, removeTagsFromFile, updateDocumentMetadata, updateReadingStatus } from '$lib/api/aggregator';
+	import {
+		addTagsToFile,
+		removeTagsFromFile,
+		updateDocumentMetadata,
+		updateReadingStatus,
+		deleteFileFromSources,
+		sendFileToSource,
+	} from '$lib/api/aggregator';
+	import { sources } from '$lib/stores/sources';
 	import { get } from 'svelte/store';
 	import type { AggregatedFile } from '$lib/api/aggregator';
 	import type { DocumentMeta, DocumentType, ReadingStatus } from '$lib/api/client';
+
+	const EMPTY_META: DocumentMeta = {
+		document_type: null, title: null, subtitle: null, authors: null, description: null,
+		language: null, publisher: null, identifier: null, date: null, subject: null,
+		selected_cover_fingerprint: null,
+	};
 
 	const DOC_TYPES: DocumentType[] = [
 		'Book', 'Article', 'ResearchPaper', 'Thesis', 'Letter', 'Magazine', 'Manual', 'Report',
@@ -35,10 +49,7 @@
 
 	// ── User metadata editing ─────────────────────────────────────────────────
 	let editingMeta = $state(false);
-	let metaDraft = $state<DocumentMeta>({
-		document_type: null, title: null, subtitle: null, authors: null, description: null,
-		language: null, publisher: null, identifier: null, date: null, subject: null,
-	});
+	let metaDraft = $state<DocumentMeta>({ ...EMPTY_META });
 	let authorsList = $state<string[]>([]);
 	let metaSaving = $state(false);
 	let metaError = $state('');
@@ -56,6 +67,7 @@
 			identifier: current?.identifier ?? null,
 			date: current?.date ?? null,
 			subject: current?.subject ?? null,
+			selected_cover_fingerprint: current?.selected_cover_fingerprint ?? null,
 		};
 		authorsList = [...(metaDraft.authors ?? [])];
 		metaError = '';
@@ -177,6 +189,80 @@
 			saving = false;
 		}
 	}
+
+	// ── Formats: cover selection, delete, send-to-source ───────────────────────
+	let manageFormats = $state(false);
+	let pendingDeleteFp = $state<string | null>(null);
+	let formatBusy = $state(false);
+	let formatError = $state('');
+
+	/** All formats (primary + others) as a flat array. */
+	const formats = $derived(doc ? [doc, ...doc.otherFormats] : []);
+	/** Currently selected cover fingerprint (explicit, else the primary format). */
+	const selectedCoverFp = $derived(
+		(doc?.document_guid ? $documentMetaMap.get(doc.document_guid)?.selected_cover_fingerprint : null) ??
+			doc?.fingerprint ??
+			null,
+	);
+
+	// @feature: documents.select_cover
+	async function selectCover(fp: string): Promise<void> {
+		if (!doc || formatBusy) return;
+		formatBusy = true;
+		formatError = '';
+		const current = doc.document_guid ? $documentMetaMap.get(doc.document_guid) : undefined;
+		const payload: DocumentMeta = { ...EMPTY_META, ...current, selected_cover_fingerprint: fp };
+		try {
+			await updateDocumentMetadata(doc.document_guid, payload, doc.sourceGuids);
+			await refreshDocuments();
+		} catch (err) {
+			formatError = err instanceof Error ? err.message : 'Failed to set cover.';
+		} finally {
+			formatBusy = false;
+		}
+	}
+
+	async function deleteFormat(fmt: AggregatedFile): Promise<void> {
+		if (formatBusy) return;
+		formatBusy = true;
+		formatError = '';
+		const wasViewedFormat = fmt.fingerprint === fingerprint;
+		try {
+			await deleteFileFromSources(fmt.sourceGuids);
+			pendingDeleteFp = null;
+			await refreshDocuments();
+			// If the format we were viewing is gone, close the pane (or clear doc).
+			if (wasViewedFormat) {
+				onclose?.();
+			} else {
+				doc = findByFingerprint(get(allDocuments), fingerprint) ?? doc;
+			}
+		} catch (err) {
+			formatError = err instanceof Error ? err.message : 'Failed to delete format.';
+		} finally {
+			formatBusy = false;
+		}
+	}
+
+	/** Configured sources that do NOT already hold this format. */
+	function missingSources(fmt: AggregatedFile) {
+		return $sources.filter((s) => s.id !== undefined && fmt.sourceGuids[s.id] === undefined);
+	}
+
+	async function sendFormat(fmt: AggregatedFile, targetSourceId: number): Promise<void> {
+		if (formatBusy) return;
+		formatBusy = true;
+		formatError = '';
+		try {
+			await sendFileToSource(fmt.sourceGuids, basename(fmt.path), targetSourceId);
+			await refreshDocuments();
+			doc = findByFingerprint(get(allDocuments), fingerprint) ?? doc;
+		} catch (err) {
+			formatError = err instanceof Error ? err.message : 'Failed to send file.';
+		} finally {
+			formatBusy = false;
+		}
+	}
 </script>
 
 <div class="px-4 py-5 md:px-5 space-y-5">
@@ -237,6 +323,37 @@
 			</div>
 		{/if}
 
+		<!-- Cover selection (only when more than one format has a cover) -->
+		{#if !editingMeta}
+			{@const coverFormats = formats.filter((f) => f.has_cover)}
+			{#if coverFormats.length >= 2}
+				<div>
+					<h2 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Cover</h2>
+					<div class="flex flex-wrap gap-3">
+						{#each coverFormats as fmt}
+							<button
+								onclick={() => selectCover(fmt.fingerprint)}
+								disabled={formatBusy}
+								class="flex flex-col items-center gap-1 rounded-lg p-1 transition-colors disabled:opacity-50
+									{selectedCoverFp === fmt.fingerprint
+										? 'ring-2 ring-accent bg-slate-50 dark:bg-slate-700/50'
+										: 'hover:bg-slate-50 dark:hover:bg-slate-700/50'}"
+								aria-label="Use {fmt.type_} cover"
+							>
+								<CoverImage
+									sourceGuids={fmt.sourceGuids}
+									hasCover={true}
+									alt=""
+									class="w-16 h-24 rounded"
+								/>
+								<span class="text-xs uppercase text-slate-500 dark:text-slate-400">{fmt.type_}</span>
+							</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		{/if}
+
 		<!-- Reading status -->
 		<div class="flex items-center justify-between">
 			<span class="text-sm text-slate-500 dark:text-slate-400">Reading status</span>
@@ -258,45 +375,109 @@
 
 		<!-- Formats -->
 		<div>
-			<h2 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Formats</h2>
+			<div class="flex items-center justify-between mb-2">
+				<h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Formats</h2>
+				<button
+					onclick={() => { manageFormats = !manageFormats; pendingDeleteFp = null; formatError = ''; }}
+					class="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+				>
+					{manageFormats ? 'Done' : 'Manage'}
+				</button>
+			</div>
 			<ul class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
-				{#each [doc, ...doc.otherFormats] as fmt}
-					<li class="flex items-center gap-3 px-4 py-3">
-						<!-- Per-file cover thumbnail (file's own cover, not document-selected) -->
-						<CoverImage
-							sourceGuids={fmt.sourceGuids}
-							hasCover={fmt.has_cover ?? false}
-							alt=""
-							class="shrink-0 w-8 h-12 rounded"
-						/>
-						<div class="flex-1 min-w-0">
-							<p class="text-slate-700 dark:text-slate-300 truncate" title={fmt.path}>
-								{basename(fmt.path)}
-							</p>
-							<div class="flex items-center gap-2 mt-0.5">
-								<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
-									{fmt.type_ === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-									: fmt.type_ === 'epub' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-									: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}">
-									{fmt.type_}
-								</span>
-								<span class="text-xs text-slate-400 dark:text-slate-500 tabular-nums">
-									{formatSize(fmt.size)}
-								</span>
+				{#each formats as fmt}
+					<li class="px-4 py-3">
+						<div class="flex items-center gap-3">
+							<!-- Per-file cover thumbnail (file's own cover, not document-selected) -->
+							<CoverImage
+								sourceGuids={fmt.sourceGuids}
+								hasCover={fmt.has_cover ?? false}
+								alt=""
+								class="shrink-0 w-8 h-12 rounded"
+							/>
+							<div class="flex-1 min-w-0">
+								<p class="text-slate-700 dark:text-slate-300 truncate" title={fmt.path}>
+									{basename(fmt.path)}
+								</p>
+								<div class="flex items-center gap-2 mt-0.5">
+									<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
+										{fmt.type_ === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+										: fmt.type_ === 'epub' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+										: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}">
+										{fmt.type_}
+									</span>
+									<span class="text-xs text-slate-400 dark:text-slate-500 tabular-nums">
+										{formatSize(fmt.size)}
+									</span>
+								</div>
 							</div>
+							{#if manageFormats}
+								<button
+									onclick={() => { pendingDeleteFp = fmt.fingerprint; formatError = ''; }}
+									disabled={formatBusy}
+									aria-label="Delete this format"
+									class="shrink-0 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-40"
+								>
+									<Icon name="trash" class="w-4 h-4" />
+								</button>
+							{:else if fmt.type_ === 'epub' || fmt.type_ === 'pdf'}
+								<a
+									href={readerHref(fmt)}
+									class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors"
+								>
+									<Icon name="library" class="w-3.5 h-3.5" />
+									Open {fmt.type_.toUpperCase()}
+								</a>
+							{/if}
 						</div>
-						{#if fmt.type_ === 'epub' || fmt.type_ === 'pdf'}
-							<a
-								href={readerHref(fmt)}
-								class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors"
-							>
-								<Icon name="library" class="w-3.5 h-3.5" />
-								Open {fmt.type_.toUpperCase()}
-							</a>
+
+						<!-- Delete confirmation -->
+						{#if pendingDeleteFp === fmt.fingerprint}
+							<div class="mt-2 flex items-center justify-between gap-2 pl-11">
+								<span class="text-xs text-red-500 dark:text-red-400">Delete this format from all sources?</span>
+								<div class="flex gap-2 shrink-0">
+									<button
+										onclick={() => deleteFormat(fmt)}
+										disabled={formatBusy}
+										class="text-xs px-2.5 py-1 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition-colors disabled:opacity-40"
+									>
+										{formatBusy ? 'Deleting…' : 'Delete'}
+									</button>
+									<button
+										onclick={() => (pendingDeleteFp = null)}
+										disabled={formatBusy}
+										class="text-xs px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-40"
+									>
+										Cancel
+									</button>
+								</div>
+							</div>
+						{/if}
+
+						<!-- Send to other sources -->
+						{#if manageFormats}
+							{@const missing = missingSources(fmt)}
+							{#if missing.length > 0}
+								<div class="mt-2 flex flex-wrap items-center gap-2 pl-11">
+									<span class="text-xs text-slate-400 dark:text-slate-500">Send to:</span>
+									{#each missing as s}
+										<button
+											onclick={() => sendFormat(fmt, s.id as number)}
+											disabled={formatBusy}
+											class="text-xs px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-40"
+										>
+											{s.name}
+										</button>
+									{/each}
+								</div>
+							{/if}
 						{/if}
 					</li>
 				{/each}
 			</ul>
+			{#if formatError}
+				<p class="mt-2 text-xs text-red-500 dark:text-red-400">{formatError}</p>
+			{/if}
 		</div>
 
 		<!-- User-editable metadata -->

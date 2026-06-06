@@ -24,6 +24,8 @@ export interface DocumentMeta {
 	identifier: string | null;
 	date: string | null;
 	subject: string | null;
+	/** Fingerprint of the content whose cover represents the document. */
+	selected_cover_fingerprint: string | null;
 }
 
 export interface RemoteDocument {
@@ -184,6 +186,29 @@ export class ReadFlowClient {
 		if (response.status === 404) return null;
 		if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
 		return response.blob();
+	}
+
+	// @feature: sources.delete
+	async deleteFile(guid: string): Promise<void> {
+		await this.requestVoid(`/files/${guid}`, { method: 'DELETE' });
+	}
+
+	// @feature: sources.send_to_client
+	async uploadFile(blob: Blob, fileName: string): Promise<RemoteFile> {
+		const form = new FormData();
+		form.append('file', blob, fileName);
+		// Multipart: let the browser set Content-Type (with boundary); only send auth.
+		const headers: Record<string, string> = { Authorization: this.authHeader };
+		if (this.privateMode) headers['X-Private-Mode'] = 'true';
+		const response = await fetch(`${this.baseUrl}/files`, {
+			method: 'POST',
+			headers,
+			body: form,
+		});
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status} ${response.statusText} — ${this.baseUrl}/files`);
+		}
+		return response.json() as Promise<RemoteFile>;
 	}
 
 	async downloadFile(guid: string, fileName: string): Promise<Blob> {

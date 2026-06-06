@@ -263,6 +263,39 @@ export async function mergeDocuments(
 }
 
 /**
+ * Delete a file (one format/content) from every source that holds it.
+ * `sourceGuids` maps source id → file GUID (from AggregatedFile.sourceGuids).
+ */
+// @feature: sources.delete
+export async function deleteFileFromSources(
+	sourceGuids: Record<number, string>,
+): Promise<void> {
+	const sources = await db.sources.orderBy('order').toArray();
+	await Promise.allSettled(
+		sources
+			.filter((s) => s.id !== undefined && sourceGuids[s.id as number] !== undefined)
+			.map((s) => new ReadFlowClient(s).deleteFile(sourceGuids[s.id as number])),
+	);
+}
+
+/**
+ * Send a file to another source: download it from a source that holds it, then
+ * upload it to `targetSourceId`. Used to replicate a document to a server that
+ * does not have it yet.
+ */
+// @feature: sources.send_to_client
+export async function sendFileToSource(
+	sourceGuids: Record<number, string>,
+	fileName: string,
+	targetSourceId: number,
+): Promise<void> {
+	const blob = await downloadFileFromSources(sourceGuids, fileName);
+	const target = await db.sources.get(targetSourceId);
+	if (!target) throw new Error('Target source not found');
+	await new ReadFlowClient(target).uploadFile(blob, fileName);
+}
+
+/**
  * Fetch the selected document cover from the first source that has it.
  * Uses GET /documents/<guid>/cover which returns the user-selected cover,
  * falling back to the first available content cover server-side.

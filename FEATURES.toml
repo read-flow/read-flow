@@ -98,7 +98,6 @@ surfaces = ["cosmic", "pwa", "rest"]
 id = "documents.select_cover"
 description = "Choose which content's cover represents the document"
 surfaces = ["cosmic", "pwa", "rest"]
-gaps = ["pwa"]
 
 # ── Per-document sources ───────────────────────────────────────────────────
 
@@ -106,13 +105,11 @@ gaps = ["pwa"]
 id = "sources.delete"
 description = "Delete a single source/file of a document"
 surfaces = ["cosmic", "pwa", "rest"]
-gaps = ["pwa"]
 
 [[feature]]
 id = "sources.send_to_client"
 description = "Send a document to another client (download-to-local / upload)"
 surfaces = ["cosmic", "pwa", "rest"]
-gaps = ["pwa"]
 
 # ── Tags ───────────────────────────────────────────────────────────────────
 
