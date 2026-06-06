@@ -43,6 +43,7 @@ use crate::api::ReadingStatus;
 use crate::api::Status;
 use crate::db::dao;
 use crate::scan::DirectorySettings;
+use crate::scan::DocumentType;
 use crate::scan::ScanSummary;
 use crate::settings;
 pub use crate::settings::ServerSettings;
@@ -195,6 +196,8 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         get_scan_directories,
         put_scan_directory,
         delete_scan_directory,
+        get_settings,
+        put_settings,
     ];
 
     rocket::custom(figment)
@@ -854,6 +857,64 @@ async fn delete_scan_directory(
         .await?;
     let settings = application_module.settings().await;
     Ok(Json(list_scan_directories(&settings)))
+}
+
+/// Editable server settings. `database_url` is informational/read-only — it is
+/// returned for display but ignored on PUT (changing the DB at runtime would
+/// require rebuilding the connection pool).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ServerSettingsDto {
+    #[serde(default)]
+    database_url: String,
+    extensions: Vec<DocumentType>,
+    dry_run: bool,
+    concurrency: usize,
+    private_mode: bool,
+    private_tags: Vec<String>,
+}
+
+fn server_settings_dto(settings: &Settings) -> ServerSettingsDto {
+    ServerSettingsDto {
+        database_url: settings.database.url().display().to_string(),
+        extensions: settings.scan.extensions.clone(),
+        dry_run: settings.scan.dry_run,
+        concurrency: settings.scan.concurrency,
+        private_mode: settings.ui.private_mode(),
+        private_tags: settings.ui.private_tags().to_vec(),
+    }
+}
+
+#[get("/settings")]
+/// @feature: admin.server_settings
+async fn get_settings(
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<ServerSettingsDto>> {
+    require_owner(&user)?;
+    let settings = application_module.settings().await;
+    Ok(Json(server_settings_dto(&settings)))
+}
+
+#[put("/settings", data = "<dto>")]
+/// @feature: admin.server_settings
+async fn put_settings(
+    dto: Json<ServerSettingsDto>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<ServerSettingsDto>> {
+    require_owner(&user)?;
+    let dto = dto.into_inner();
+    application_module
+        .update_settings(move |s| {
+            s.scan.extensions = dto.extensions;
+            s.scan.dry_run = dto.dry_run;
+            s.scan.concurrency = dto.concurrency;
+            s.ui.set_private_mode(dto.private_mode);
+            s.ui.set_private_tags(dto.private_tags);
+        })
+        .await?;
+    let settings = application_module.settings().await;
+    Ok(Json(server_settings_dto(&settings)))
 }
 
 #[post("/documents/merge", data = "<req>")]

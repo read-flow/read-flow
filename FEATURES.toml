@@ -197,7 +197,7 @@ gaps = ["pwa", "rest"]
 id = "admin.server_settings"
 description = "Server settings (db path, file types, dry-run, private)"
 surfaces = ["cosmic", "pwa", "rest"]
-gaps = ["pwa", "rest"]
+gaps = ["pwa"]
 
 # ── Online library (OPDS — needs REST extension) ───────────────────────────
 
