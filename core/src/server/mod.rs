@@ -40,6 +40,7 @@ use crate::api::ReadingState;
 use crate::api::ReadingStatus;
 use crate::api::Status;
 use crate::db::dao;
+use crate::scan::ScanSummary;
 use crate::settings;
 pub use crate::settings::ServerSettings;
 use crate::settings::Settings;
@@ -173,6 +174,8 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         put_document_metadata,
         post_merge_documents,
         ensure_document_for_file,
+        post_scan,
+        post_check_missing,
     ];
 
     rocket::custom(figment)
@@ -721,6 +724,48 @@ async fn ensure_document_for_file(
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let doc = dao::ensure_document_for_file_guid(&mut conn, guid).await?;
     Ok(Json(doc))
+}
+
+/// Admin endpoints require the `owner` role regardless of private mode.
+fn require_owner(user: &AuthorizedUser) -> Result<()> {
+    if user.has_role("owner") {
+        Ok(())
+    } else {
+        Err(Error::Forbidden("admin actions require owner role".into()))
+    }
+}
+
+#[post("/scan")]
+/// @feature: admin.scan
+async fn post_scan(
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<ScanSummary>> {
+    require_owner(&user)?;
+    let summary = application_module.scan_configured().await?;
+    Ok(Json(summary))
+}
+
+#[derive(serde::Serialize)]
+struct CheckMissingResponse {
+    missing: Vec<String>,
+    purged: bool,
+}
+
+#[post("/maintenance/check-missing?<purge>")]
+/// @feature: admin.check_missing
+async fn post_check_missing(
+    purge: Option<bool>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<CheckMissingResponse>> {
+    require_owner(&user)?;
+    let purge = purge.unwrap_or(false);
+    let missing = application_module.check_missing(purge).await;
+    Ok(Json(CheckMissingResponse {
+        missing,
+        purged: purge,
+    }))
 }
 
 #[post("/documents/merge", data = "<req>")]
