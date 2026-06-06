@@ -225,27 +225,35 @@ pub enum DocumentListOutput {
 #[derive(Debug, Clone)]
 pub enum DocumentListMessage {
     LoadArchive,
+    /// @feature: documents.list
     Loaded(Documents),
     LoadingFailed(String),
     RefreshDocument(Document),
+    /// @feature: documents.search
     SearchChanged(String),
     SearchModeChanged(SearchMode),
     ClearSearch,
     FilteringComplete(Vec<usize>),
     FocusSearchInput,
     DebounceTimeout(u32, String), // (counter, query) - triggers filtering after delay
+    /// @feature: documents.sort
     SortSubjectChanged(SortSubject),
     ToggleSortDirection,
     Key(Modifiers, Key),
+    /// @feature: documents.filter_by_status
     StatusFilterChanged(Option<ReadingStatus>),
     ClearStatusFilter,
+    /// @feature: documents.filter_by_source
     SourceFilterChanged(Option<ClientSelector>),
     ClearSourceFilter,
+    /// @feature: documents.filter_by_tag
     TagFilter(TagFilterMessage),
     DocumentsComponent(DocumentsMessage),
     SetAvailableSources(Vec<ClientSelector>),
+    /// @feature: documents.format_picker
     PickDocumentSource(String),
     CancelFormatPick,
+    /// @feature: documents.merge
     OpenMergeDialog,
     MergeWinnerSelected(usize),
     ConfirmMerge,

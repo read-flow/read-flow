@@ -29,6 +29,7 @@ pub enum CheckMissingMessage {
     Out(CheckMissingOutput),
 }
 
+/// @feature: admin.check_missing
 pub struct CheckMissingComponent {
     files: Option<Vec<String>>,
     application_module: Arc<ApplicationModule>,

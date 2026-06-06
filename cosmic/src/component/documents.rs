@@ -96,6 +96,7 @@ impl From<TagEditorMessage> for DocumentsMessage {
     }
 }
 
+/// @feature: documents.batch_tag
 pub struct DocumentsComponent {
     documents: DocumentState,
     pagination: Pagination,

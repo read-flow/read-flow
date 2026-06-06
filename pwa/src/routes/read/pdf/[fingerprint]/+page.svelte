@@ -1,4 +1,5 @@
 <script lang="ts">
+	// @feature: reading.pdf_viewer
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import * as pdfjsLib from 'pdfjs-dist';

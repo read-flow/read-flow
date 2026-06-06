@@ -24,6 +24,7 @@ pub enum ScanProgressMessage {
     Out(ScanProgressOutput),
 }
 
+/// @feature: admin.scan
 pub struct ScanComponent {
     discovered: u64,
     processed: u64,

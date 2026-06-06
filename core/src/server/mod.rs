@@ -186,6 +186,7 @@ pub async fn main(config_path: PathBuf) -> Result<Rocket<Ignite>, Box<rocket::Er
 }
 
 #[get("/status")]
+/// @feature: remotes.status
 async fn status(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
@@ -258,6 +259,7 @@ async fn update_file(
 }
 
 #[get("/files/tags")]
+/// @feature: tags.list
 async fn get_files_tags(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
@@ -343,6 +345,7 @@ async fn get_file_tags(
 }
 
 #[post("/files/<guid>/tags", data = "<tags>")]
+/// @feature: tags.add
 async fn post_file_tags(
     guid: &str,
     tags: Json<Vec<String>>,
@@ -380,6 +383,7 @@ async fn post_file_tags(
 }
 
 #[delete("/files/<guid>/tags", data = "<tags>")]
+/// @feature: tags.remove
 async fn delete_file_tags(
     guid: &str,
     tags: Json<Vec<String>>,
@@ -502,6 +506,7 @@ async fn get_file_cover(
 }
 
 #[delete("/files/<guid>")]
+/// @feature: sources.delete
 async fn delete_file(
     guid: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
@@ -530,6 +535,7 @@ async fn delete_file(
 }
 
 #[post("/files", data = "<file>")]
+/// @feature: sources.send_to_client
 async fn upload_file(
     mut file: Form<TempFile<'_>>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
@@ -586,6 +592,7 @@ async fn get_reading_state(
 }
 
 #[put("/reading-state", data = "<state>")]
+/// @feature: reading.progress
 async fn put_reading_state(
     state: Json<ReadingState>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
@@ -603,6 +610,7 @@ struct ReadingStatusRequest {
 }
 
 #[put("/reading-state/<fingerprint>/status", data = "<req>")]
+/// @feature: reading.status
 async fn put_reading_status(
     fingerprint: &str,
     req: Json<ReadingStatusRequest>,
@@ -618,6 +626,7 @@ async fn put_reading_status(
 // ─── Document routes ──────────────────────────────────────────────────────────
 
 #[get("/documents")]
+/// @feature: documents.list
 async fn get_documents(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
@@ -629,6 +638,7 @@ async fn get_documents(
 }
 
 #[get("/documents/<guid>")]
+/// @feature: documents.detail_view
 async fn get_document(
     guid: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
@@ -641,6 +651,7 @@ async fn get_document(
 }
 
 #[get("/documents/<guid>/cover")]
+/// @feature: documents.cover_display
 async fn get_document_cover(
     guid: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
@@ -659,6 +670,8 @@ async fn get_document_cover(
 }
 
 #[put("/documents/<guid>/metadata", data = "<meta>")]
+/// @feature: documents.edit_metadata
+/// @feature: documents.select_cover
 async fn put_document_metadata(
     guid: &str,
     meta: Json<DocumentMeta>,
@@ -711,6 +724,7 @@ async fn ensure_document_for_file(
 }
 
 #[post("/documents/merge", data = "<req>")]
+/// @feature: documents.merge
 async fn post_merge_documents(
     req: Json<MergeDocumentsRequest>,
     application_module: &State<ApplicationModule<SettingsProvider>>,

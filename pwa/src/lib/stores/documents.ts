@@ -25,7 +25,9 @@ export const documentMetaMap = writable<Map<string, DocumentMeta>>(new Map());
 export const isLoading = writable(false);
 export const loadError = writable<string | null>(null);
 
+// @feature: documents.search
 export const searchQuery = writable('');
+// @feature: documents.filter_by_tag
 export const allowedTags = writable<Set<string>>(new Set());
 export const deniedTags = writable<Set<string>>(new Set());
 

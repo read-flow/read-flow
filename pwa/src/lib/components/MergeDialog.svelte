@@ -1,4 +1,5 @@
 <script lang="ts">
+	// @feature: documents.merge
 	import { mergeDocuments } from '$lib/api/aggregator';
 	import { refreshDocuments } from '$lib/stores/documents';
 	import type { AggregatedFile } from '$lib/api/aggregator';

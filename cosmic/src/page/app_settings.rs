@@ -23,6 +23,7 @@ use crate::fl;
 use crate::layout::layout;
 use crate::page::Page;
 
+/// @feature: app.epub_viewer_choice
 pub struct AppSettingsPage {
     config: Config,
 }

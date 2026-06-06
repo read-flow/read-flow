@@ -52,6 +52,7 @@ impl Provider<Vec<Remote>> for RemotesProvider {
     }
 }
 
+/// @feature: remotes.manage
 pub struct SourcesPage {
     application_module: Arc<ApplicationModule>,
     remotes_state: ProvidedState<RemotesProvider, Vec<Remote>>,
@@ -69,6 +70,7 @@ pub enum SourcesOutput {
 }
 
 #[derive(Debug, Clone)]
+/// @feature: remotes.status
 pub enum SourcesMessage {
     Remotes(ProvidedStateMessage<Vec<Remote>>),
 

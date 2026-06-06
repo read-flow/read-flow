@@ -351,6 +351,7 @@ pub enum EpubViewerOutput {
 }
 
 #[derive(Debug, Clone)]
+/// @feature: reading.progress
 pub enum EpubViewerMessage {
     EpubLoaded(String, Vec<EpubChapter>, Option<CloneableEpubDocument>),
     /// Carries restored reading position from saved progress.
@@ -408,6 +409,7 @@ pub enum EpubViewerMessage {
 
 // --- EpubViewer page ---
 
+/// @feature: reading.epub_viewer
 pub struct EpubViewer {
     fingerprint: Fingerprint,
     document: Document,

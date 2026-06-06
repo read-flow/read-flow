@@ -83,6 +83,7 @@ export class ReadFlowClient {
 			Authorization: this.authHeader,
 			'Content-Type': 'application/json',
 		};
+		// @feature: remotes.private_mode
 		if (this.privateMode) {
 			base['X-Private-Mode'] = 'true';
 		}
@@ -111,18 +112,22 @@ export class ReadFlowClient {
 		}
 	}
 
+	// @feature: remotes.status
 	async status(): Promise<ServerStatus> {
 		return this.request<ServerStatus>('/status');
 	}
 
+	// @feature: documents.list
 	async getFiles(): Promise<RemoteFile[]> {
 		return this.request<RemoteFile[]>('/files');
 	}
 
+	// @feature: tags.list
 	async getAllTags(): Promise<string[]> {
 		return this.request<string[]>('/files/tags');
 	}
 
+	// @feature: tags.add
 	async addTags(guid: string, tags: string[]): Promise<string[]> {
 		return this.request<string[]>(`/files/${guid}/tags`, {
 			method: 'POST',
@@ -130,6 +135,7 @@ export class ReadFlowClient {
 		});
 	}
 
+	// @feature: tags.remove
 	async deleteTags(guid: string, tags: string[]): Promise<string[]> {
 		return this.request<string[]>(`/files/${guid}/tags`, {
 			method: 'DELETE',
@@ -146,6 +152,7 @@ export class ReadFlowClient {
 		}
 	}
 
+	// @feature: reading.progress
 	async upsertReadingState(state: RemoteReadingState): Promise<RemoteReadingState> {
 		return this.request<RemoteReadingState>('/reading-state', {
 			method: 'PUT',
@@ -153,6 +160,7 @@ export class ReadFlowClient {
 		});
 	}
 
+	// @feature: reading.status
 	async updateReadingStatus(fingerprint: string, status: number): Promise<void> {
 		await this.requestVoid(`/reading-state/${fingerprint}/status`, {
 			method: 'PUT',

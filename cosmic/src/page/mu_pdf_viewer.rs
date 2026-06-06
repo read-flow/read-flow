@@ -217,6 +217,7 @@ pub enum MuPdfViewerMessage {
 
 // --- MuPdfViewer page ---
 
+/// @feature: reading.pdf_viewer
 pub struct MuPdfViewer {
     fingerprint: Fingerprint,
     document: Document,

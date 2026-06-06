@@ -68,6 +68,7 @@ const _prefersDark = writable(false);
 export const mode        = writable<Mode>('system');
 export const lightScheme = writable<LightScheme>('slate-light');
 export const darkScheme  = writable<DarkScheme>('slate-dark');
+// @feature: theme.editor
 export const customColors = writable<CustomColors>(DEFAULT_CUSTOM_COLORS);
 export const namedThemes  = writable<NamedTheme[]>([]);
 

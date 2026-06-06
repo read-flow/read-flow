@@ -1,4 +1,6 @@
 <script lang="ts">
+	// @feature: documents.detail_view
+	// @feature: documents.edit_metadata
 	import Icon from '$lib/components/Icon.svelte';
 	import CoverImage from '$lib/components/CoverImage.svelte';
 	import {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	// @feature: documents.format_picker
 	import { onMount, onDestroy } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import CoverImage from '$lib/components/CoverImage.svelte';
