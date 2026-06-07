@@ -47,6 +47,14 @@ build-release *args: (build-debug '--release' args)
 # Compiles release profile with vendored dependencies
 build-vendored *args: vendor-extract (build-release '--frozen --offline' args)
 
+# Runs workspace tests
+test *args:
+    cargo nextest run {{args}}
+
+# Runs the cucumber-rs BDD harness (BDD_DRIVER=rest|cosmic, default rest)
+bdd driver='rest':
+    BDD_DRIVER={{driver}} cargo nextest run -p read-flow bdd
+
 # Runs a clippy check
 check *args:
     cargo clippy --all-features {{args}} -- -W clippy::pedantic
@@ -127,3 +135,7 @@ pwa-test:
 # Runs PWA tests in watch mode
 pwa-test-watch:
     cd pwa && npm run test:watch
+
+# Runs PWA end-to-end BDD scenarios (Playwright, builds first)
+pwa-test-e2e:
+    cd pwa && npm run test:e2e
