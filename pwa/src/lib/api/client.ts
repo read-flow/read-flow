@@ -99,6 +99,12 @@ export interface ServerSettingsDto {
 	private_tags: string[];
 }
 
+/** A user as exposed by the API — never includes the password hash. */
+export interface UserDto {
+	user_id: string;
+	roles: string[];
+}
+
 export class ReadFlowClient {
 	private baseUrl: string;
 	private authHeader: string;
@@ -328,5 +334,31 @@ export class ReadFlowClient {
 			method: 'PUT',
 			body: JSON.stringify(dto),
 		});
+	}
+
+	// @feature: admin.authorized_users
+	async getUsers(): Promise<UserDto[]> {
+		return this.request<UserDto[]>('/users');
+	}
+
+	// @feature: admin.authorized_users
+	async createUser(userId: string, password: string, roles: string[]): Promise<UserDto[]> {
+		return this.request<UserDto[]>('/users', {
+			method: 'POST',
+			body: JSON.stringify({ user_id: userId, password, roles }),
+		});
+	}
+
+	// @feature: admin.authorized_users
+	async updateUser(userId: string, roles: string[], password?: string): Promise<UserDto[]> {
+		return this.request<UserDto[]>(`/users/${encodeURIComponent(userId)}`, {
+			method: 'PUT',
+			body: JSON.stringify({ roles, ...(password ? { password } : {}) }),
+		});
+	}
+
+	// @feature: admin.authorized_users
+	async deleteUser(userId: string): Promise<UserDto[]> {
+		return this.request<UserDto[]>(`/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
 	}
 }

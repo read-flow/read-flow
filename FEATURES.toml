@@ -188,7 +188,6 @@ surfaces = ["cosmic", "pwa", "rest"]
 id = "admin.authorized_users"
 description = "Manage authorized server users (CRUD)"
 surfaces = ["cosmic", "pwa", "rest"]
-gaps = ["pwa"]
 
 [[feature]]
 id = "admin.server_settings"

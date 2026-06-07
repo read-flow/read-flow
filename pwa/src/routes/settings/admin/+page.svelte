@@ -8,6 +8,7 @@
 		type CheckMissingResponse,
 		type ScanDirectoryEntry,
 		type ServerSettingsDto,
+		type UserDto,
 	} from '$lib/api/client';
 
 	let selectedId = $state<number | null>(null);
@@ -172,6 +173,99 @@
 			settingsError = err instanceof Error ? err.message : 'Failed to save settings.';
 		} finally {
 			settingsSaving = false;
+		}
+	}
+
+	// ── Authorized users ───────────────────────────────────────────────────────
+	let users = $state<UserDto[]>([]);
+	let usersError = $state('');
+	let usersBusy = $state(false);
+	let pwDrafts = $state<Record<string, string>>({});
+
+	// New-user form
+	let newUserId = $state('');
+	let newUserPw = $state('');
+	let newUserOwner = $state(false);
+
+	$effect(() => {
+		const id = selectedId;
+		void id;
+		users = [];
+		usersError = '';
+		pwDrafts = {};
+		if (!client) return;
+		const c = client;
+		void (async () => {
+			try {
+				users = await c.getUsers();
+			} catch (err) {
+				usersError = err instanceof Error ? err.message : 'Failed to load users.';
+			}
+		})();
+	});
+
+	function isOwner(u: UserDto): boolean {
+		return u.roles.includes('owner');
+	}
+
+	async function addUser() {
+		if (!client || usersBusy || !newUserId.trim() || !newUserPw) return;
+		usersBusy = true;
+		usersError = '';
+		try {
+			users = await client.createUser(
+				newUserId.trim(),
+				newUserPw,
+				newUserOwner ? ['owner'] : [],
+			);
+			newUserId = '';
+			newUserPw = '';
+			newUserOwner = false;
+		} catch (err) {
+			usersError = err instanceof Error ? err.message : 'Failed to create user.';
+		} finally {
+			usersBusy = false;
+		}
+	}
+
+	async function toggleOwner(u: UserDto) {
+		if (!client || usersBusy) return;
+		usersBusy = true;
+		usersError = '';
+		try {
+			users = await client.updateUser(u.user_id, isOwner(u) ? [] : ['owner']);
+		} catch (err) {
+			usersError = err instanceof Error ? err.message : 'Failed to update user.';
+		} finally {
+			usersBusy = false;
+		}
+	}
+
+	async function resetPassword(u: UserDto) {
+		const pw = pwDrafts[u.user_id]?.trim();
+		if (!client || usersBusy || !pw) return;
+		usersBusy = true;
+		usersError = '';
+		try {
+			users = await client.updateUser(u.user_id, u.roles, pw);
+			pwDrafts = { ...pwDrafts, [u.user_id]: '' };
+		} catch (err) {
+			usersError = err instanceof Error ? err.message : 'Failed to set password.';
+		} finally {
+			usersBusy = false;
+		}
+	}
+
+	async function removeUser(u: UserDto) {
+		if (!client || usersBusy) return;
+		usersBusy = true;
+		usersError = '';
+		try {
+			users = await client.deleteUser(u.user_id);
+		} catch (err) {
+			usersError = err instanceof Error ? err.message : 'Failed to delete user.';
+		} finally {
+			usersBusy = false;
 		}
 	}
 </script>
@@ -404,6 +498,89 @@
 				<p class="text-sm text-slate-400 dark:text-slate-500">Loading…</p>
 			{/if}
 			{#if settingsError}<p class="mt-2 text-xs text-red-500 dark:text-red-400">{settingsError}</p>{/if}
+		</section>
+
+		<!-- Authorized users -->
+		<section class="mb-8">
+			<h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Authorized users</h2>
+			<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50">
+				{#if users.length === 0}
+					<p class="px-4 py-3 text-sm text-slate-400 dark:text-slate-500">No users.</p>
+				{:else}
+					{#each users as u}
+						<div class="px-4 py-3 space-y-2">
+							<div class="flex items-center gap-3">
+								<div class="flex-1 min-w-0">
+									<p class="text-sm font-medium truncate">{u.user_id}</p>
+								</div>
+								<label class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+									<input
+										type="checkbox"
+										checked={isOwner(u)}
+										disabled={usersBusy}
+										onchange={() => toggleOwner(u)}
+										class="accent-slate-900 dark:accent-slate-100"
+									/>
+									owner
+								</label>
+								<button
+									onclick={() => removeUser(u)}
+									disabled={usersBusy}
+									aria-label="Delete user"
+									class="shrink-0 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-40"
+								>
+									<Icon name="trash" class="w-4 h-4" />
+								</button>
+							</div>
+							<div class="flex items-center gap-2">
+								<input
+									type="password"
+									placeholder="new password"
+									value={pwDrafts[u.user_id] ?? ''}
+									oninput={(e) => (pwDrafts = { ...pwDrafts, [u.user_id]: (e.currentTarget as HTMLInputElement).value })}
+									class="flex-1 min-w-0 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+								/>
+								<button
+									onclick={() => resetPassword(u)}
+									disabled={usersBusy || !(pwDrafts[u.user_id] ?? '').trim()}
+									class="shrink-0 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-40"
+								>
+									Set
+								</button>
+							</div>
+						</div>
+					{/each}
+				{/if}
+
+				<!-- New user -->
+				<div class="px-4 py-3 flex flex-wrap items-center gap-2">
+					<input
+						type="text"
+						bind:value={newUserId}
+						placeholder="user id"
+						class="flex-1 min-w-[6rem] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+					/>
+					<input
+						type="password"
+						bind:value={newUserPw}
+						placeholder="password"
+						class="flex-1 min-w-[6rem] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+					/>
+					<label class="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+						<input type="checkbox" bind:checked={newUserOwner} class="accent-slate-900 dark:accent-slate-100" />
+						owner
+					</label>
+					<button
+						onclick={addUser}
+						disabled={usersBusy || !newUserId.trim() || !newUserPw}
+						class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors disabled:opacity-40"
+					>
+						<Icon name="plus" class="w-4 h-4" />
+						Add
+					</button>
+				</div>
+			</div>
+			{#if usersError}<p class="mt-2 text-xs text-red-500 dark:text-red-400">{usersError}</p>{/if}
 		</section>
 	{/if}
 </div>
