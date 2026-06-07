@@ -42,6 +42,11 @@ use crate::api::ReadingState;
 use crate::api::ReadingStatus;
 use crate::api::Status;
 use crate::db::dao;
+use crate::online_library::DownloadFormat;
+use crate::online_library::OnlineBook;
+use crate::online_library::OnlineCatalog;
+use crate::online_library::OpdsClient;
+use crate::online_library::download_book;
 use crate::scan::DirectorySettings;
 use crate::scan::DocumentType;
 use crate::scan::ScanSummary;
@@ -204,6 +209,8 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         post_user,
         put_user,
         delete_user,
+        search_online_library,
+        import_online_book,
     ];
 
     rocket::custom(figment)
@@ -1093,6 +1100,74 @@ async fn post_merge_documents(
         .await?
         .ok_or_else(|| Error::FileNotFound(req.winner_guid.clone()))?;
     Ok(Json(doc))
+}
+
+#[derive(serde::Serialize)]
+struct OnlineLibrarySearchResponse {
+    books: Vec<OnlineBook>,
+    catalogs: Vec<OnlineCatalog>,
+}
+
+#[get("/online-library/search?<q>")]
+/// @feature: online_library.search
+async fn search_online_library(
+    q: String,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Json<OnlineLibrarySearchResponse>> {
+    let settings = application_module.settings().await;
+    let catalogs: Vec<OnlineCatalog> = settings
+        .online_library
+        .catalogs
+        .iter()
+        .filter(|catalog| catalog.enabled)
+        .cloned()
+        .collect();
+
+    let searches = catalogs.iter().cloned().map(|catalog| {
+        let q = q.clone();
+        async move {
+            let catalog_name = catalog.name.clone();
+            let client = OpdsClient::new(catalog);
+            match client.search_with_next(&q).await {
+                Ok((books, _next_url)) => books,
+                Err(e) => {
+                    tracing::warn!("OPDS search of {catalog_name} failed: {e}");
+                    vec![]
+                }
+            }
+        }
+    });
+    let books = futures::future::join_all(searches).await.concat();
+
+    Ok(Json(OnlineLibrarySearchResponse { books, catalogs }))
+}
+
+#[derive(serde::Deserialize)]
+struct ImportOnlineBookRequest {
+    title: String,
+    format: DownloadFormat,
+}
+
+#[post("/online-library/import", data = "<req>")]
+/// @feature: online_library.download_import
+async fn import_online_book(
+    req: Json<ImportOnlineBookRequest>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Json<File>> {
+    let req = req.into_inner();
+    let download_folder = application_module.settings().await.server.download_folder;
+    let path = download_book(&req.format, &req.title, &download_folder)
+        .await
+        .map_err(|e| Error::Scan(e.to_string()))?;
+    application_module.scan(path.clone()).await?;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let result = dao::select_file_by_path(&mut conn, &path.display().to_string())
+        .await?
+        .ok_or_else(|| Error::FileNotFound(path.display().to_string()))?;
+    Ok(Json((result, vec![]).into()))
 }
 
 fn extension_to_content_type(extension: &str) -> Result<ContentType> {

@@ -18,7 +18,7 @@ const USER_AGENT: &str = "read-flow/0.1 (+https://github.com/peterpaul/read-flow
 
 // ─── Domain Types ────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DownloadFormat {
     pub mime_type: String,
     pub href: String,
@@ -39,7 +39,7 @@ impl DownloadFormat {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct OnlineBook {
     pub id: String,
     pub title: String,
