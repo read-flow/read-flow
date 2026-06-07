@@ -72,6 +72,39 @@ impl Driver {
             }
         }
     }
+
+    // -- remotes_manage --
+    // No REST surface — `remotes.manage` is client-side bookkeeping in both
+    // apps (COSMIC's local DAO, the PWA's IndexedDB), so these only need to
+    // support `pwa`/`cosmic` and a scenario carrying just those tags never
+    // reaches the `Rest` branch (see `bdd::mod`'s tag-driven filter).
+
+    pub async fn register_remote(&mut self, user: &str, passphrase: &str) {
+        match self {
+            Self::Rest(_) => panic!(
+                "`remotes.manage` has no REST surface — run with BDD_DRIVER=pwa or BDD_DRIVER=cosmic"
+            ),
+            Self::Cosmic(driver) => driver.register_remote(user, passphrase).await,
+        }
+    }
+
+    pub async fn remove_registered_remote(&mut self) {
+        match self {
+            Self::Rest(_) => panic!(
+                "`remotes.manage` has no REST surface — run with BDD_DRIVER=pwa or BDD_DRIVER=cosmic"
+            ),
+            Self::Cosmic(driver) => driver.remove_registered_remote().await,
+        }
+    }
+
+    pub async fn remote_count(&self) -> usize {
+        match self {
+            Self::Rest(_) => panic!(
+                "`remotes.manage` has no REST surface — run with BDD_DRIVER=pwa or BDD_DRIVER=cosmic"
+            ),
+            Self::Cosmic(driver) => driver.remote_count().await,
+        }
+    }
 }
 
 fn env_name() -> &'static str {

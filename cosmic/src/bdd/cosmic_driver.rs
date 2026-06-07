@@ -43,6 +43,9 @@ pub struct CosmicDriver {
     server: TestServer,
     /// Kept alive for the lifetime of the driver — the temp DB lives here.
     _temp_dir: tempfile::TempDir,
+    /// Set by `register_remote` (`remotes_manage`), consumed by
+    /// `remove_registered_remote`.
+    registered_remote: Option<Remote>,
 }
 
 impl CosmicDriver {
@@ -73,6 +76,7 @@ impl CosmicDriver {
             sources_page,
             server,
             _temp_dir: temp_dir,
+            registered_remote: None,
         }
     }
 
@@ -116,6 +120,42 @@ impl CosmicDriver {
                 _ => None,
             })
             .expect("CheckSourceStatus did not yield a matching SetSourceStatus")
+    }
+
+    /// `remotes_manage`'s "register a remote source" — same DAO-direct bypass
+    /// as `insert_remote`, keeping the inserted row around for a later
+    /// `remove_registered_remote`.
+    pub async fn register_remote(&mut self, user_id: &str, passphrase: &str) {
+        let base_url = self.base_url().to_string();
+        let remote = self.insert_remote(&base_url, user_id, passphrase).await;
+        self.registered_remote = Some(remote);
+    }
+
+    /// Removes the row `register_remote` inserted, directly via the DAO —
+    /// driving the UI's delete-confirmation dialog headlessly would mean
+    /// re-implementing iced's runtime loop for `RequestDeleteSource` →
+    /// `ConfirmDeleteSource` → `DeleteSource` → `DeletedSource`'s chained
+    /// `Task`s. The observable this scenario cares about (does the list
+    /// reflect the removal?) is verified via `remote_count`, same as the DAO
+    /// the real `DeleteSource` handler calls.
+    pub async fn remove_registered_remote(&mut self) {
+        let remote = self
+            .registered_remote
+            .take()
+            .expect("no remote was registered to remove");
+        let pool = self.application_module.connection_pool().await;
+        dao::delete_remote_by_id(&pool, remote.id)
+            .await
+            .expect("delete remote");
+    }
+
+    pub async fn remote_count(&self) -> usize {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        dao::select_all_remotes(&mut conn)
+            .await
+            .expect("list remotes")
+            .len()
     }
 }
 
