@@ -7,6 +7,8 @@ pub mod scan;
 pub mod server;
 pub mod settings;
 pub mod tag;
+#[cfg(feature = "test-support")]
+pub mod test_support;
 
 use std::fmt;
 use std::fs;

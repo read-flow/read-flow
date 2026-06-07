@@ -2,6 +2,8 @@
 
 mod aggregator;
 mod app;
+#[cfg(test)]
+mod bdd;
 mod client;
 mod component;
 mod config;

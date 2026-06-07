@@ -13,6 +13,10 @@ maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 default = ["server"]
 server = ["dep:rocket", "dep:rocket_cors"]
 online_tests = []
+# Exposes `test_support`: helpers for booting a real `read-flow-cli serve`
+# process for BDD/integration tests outside this crate (e.g. `cosmic`'s
+# cucumber-rs harness).
+test-support = ["server"]
 
 [dependencies]
 anyhow.workspace = true

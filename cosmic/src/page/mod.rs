@@ -66,7 +66,7 @@ use crate::page::mu_pdf_viewer::MuPdfViewerOutput;
 use crate::page::settings::SettingsMessage;
 use crate::page::settings::SettingsPage;
 use crate::page::sources::SourcesOutput;
-use crate::page::sources::SourcesPage;
+pub use crate::page::sources::SourcesPage;
 use crate::subscription::SubscriberState;
 
 type Fingerprint = String;

@@ -18,6 +18,7 @@ clap = "4.6.1"
 directories = "5"
 cosmic-golden = { git = "https://github.com/peterpaul/cosmic-golden-test.git", tag = "0.4.0" }
 cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git" }
+cucumber = "0.21"
 derive_more = "2.1.1"
 sha2 = "0.11"
 sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio", "macros"] }
