@@ -200,13 +200,11 @@ surfaces = ["cosmic", "pwa", "rest"]
 id = "online_library.search"
 description = "Search OPDS catalogs"
 surfaces = ["cosmic", "pwa", "rest"]
-gaps = ["pwa"]
 
 [[feature]]
 id = "online_library.download_import"
 description = "Download and import a book from an OPDS catalog"
 surfaces = ["cosmic", "pwa", "rest"]
-gaps = ["pwa"]
 
 # ── Theme ───────────────────────────────────────────────────────────────────
 # PWA-only by design: browsers don't theme web apps, so the PWA ships its own

@@ -105,6 +105,36 @@ export interface UserDto {
 	roles: string[];
 }
 
+// ── Online library (OPDS) ───────────────────────────────────────────────────
+
+export interface DownloadFormat {
+	mime_type: string;
+	href: string;
+	label: string;
+}
+
+export interface OnlineBook {
+	id: string;
+	title: string;
+	authors: string[];
+	summary: string | null;
+	cover_url: string | null;
+	formats: DownloadFormat[];
+	catalog_name: string;
+}
+
+export interface OnlineCatalog {
+	name: string;
+	/** OPDS search URL; may contain a `{searchTerms}` template placeholder. */
+	search_url: string;
+	enabled: boolean;
+}
+
+export interface OnlineLibrarySearchResponse {
+	books: OnlineBook[];
+	catalogs: OnlineCatalog[];
+}
+
 export class ReadFlowClient {
 	private baseUrl: string;
 	private authHeader: string;
@@ -360,5 +390,20 @@ export class ReadFlowClient {
 	// @feature: admin.authorized_users
 	async deleteUser(userId: string): Promise<UserDto[]> {
 		return this.request<UserDto[]>(`/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+	}
+
+	// @feature: online_library.search
+	async searchOnlineLibrary(query: string): Promise<OnlineLibrarySearchResponse> {
+		return this.request<OnlineLibrarySearchResponse>(
+			`/online-library/search?q=${encodeURIComponent(query)}`,
+		);
+	}
+
+	// @feature: online_library.download_import
+	async importOnlineBook(title: string, format: DownloadFormat): Promise<RemoteFile> {
+		return this.request<RemoteFile>('/online-library/import', {
+			method: 'POST',
+			body: JSON.stringify({ title, format }),
+		});
 	}
 }
