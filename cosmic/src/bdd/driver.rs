@@ -105,6 +105,26 @@ impl Driver {
             Self::Cosmic(driver) => driver.remote_count().await,
         }
     }
+
+    // -- admin_server_settings --
+    // REST and COSMIC manage their own booted backend's settings directly —
+    // "viewing" needs no navigation, so there's no dispatcher for that step
+    // (see `steps/admin_server_settings.rs`). The PWA leg registers the
+    // backend as a remote source first and lives entirely in `pwa/e2e/steps`.
+
+    pub async fn enable_dry_run_and_save(&mut self) {
+        match self {
+            Self::Rest(driver) => driver.enable_dry_run_and_save().await,
+            Self::Cosmic(driver) => driver.enable_dry_run_and_save().await,
+        }
+    }
+
+    pub async fn dry_run_is_enabled(&self) -> bool {
+        match self {
+            Self::Rest(driver) => driver.dry_run_is_enabled().await,
+            Self::Cosmic(driver) => driver.dry_run_is_enabled().await,
+        }
+    }
 }
 
 fn env_name() -> &'static str {

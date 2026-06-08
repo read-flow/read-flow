@@ -42,4 +42,46 @@ impl RestDriver {
         self.status_with(&self.server.user, &self.server.password)
             .await
     }
+
+    /// Owner-only `/settings` GET/PUT, manipulated as raw JSON — no need to
+    /// duplicate the server's private `ServerSettingsDto` shape for one field.
+    async fn get_settings(&self) -> serde_json::Value {
+        self.client
+            .get(format!("{}/settings", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /settings")
+            .json()
+            .await
+            .expect("parse settings JSON")
+    }
+
+    async fn put_settings(&self, dto: serde_json::Value) {
+        let response = self
+            .client
+            .put(format!("{}/settings", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&dto)
+            .send()
+            .await
+            .expect("PUT /settings");
+        assert!(
+            response.status().is_success(),
+            "PUT /settings failed: {}",
+            response.status()
+        );
+    }
+
+    pub async fn enable_dry_run_and_save(&self) {
+        let mut dto = self.get_settings().await;
+        dto["dry_run"] = serde_json::Value::Bool(true);
+        self.put_settings(dto).await;
+    }
+
+    pub async fn dry_run_is_enabled(&self) -> bool {
+        self.get_settings().await["dry_run"]
+            .as_bool()
+            .expect("dry_run is a bool")
+    }
 }

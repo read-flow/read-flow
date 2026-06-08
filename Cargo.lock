@@ -6086,6 +6086,7 @@ dependencies = [
  "rstest",
  "rust-embed",
  "serde",
+ "serde_json",
  "strum",
  "tempfile",
  "thiserror 2.0.18",

@@ -90,5 +90,6 @@ cucumber.workspace = true
 read-flow-core = { path = "../core", features = ["server", "test-support"] }
 reqwest = { workspace = true, features = ["json"] }
 rstest.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 zip.workspace = true

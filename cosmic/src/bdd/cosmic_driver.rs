@@ -23,19 +23,25 @@ use futures::StreamExt;
 use read_flow_core::db::dao;
 use read_flow_core::db::models::NewRemote;
 use read_flow_core::db::models::Remote;
+use read_flow_core::settings::Settings;
 use read_flow_core::test_support::TestServer;
 
 use crate::AppSettings;
 use crate::ApplicationModule;
 use crate::Cli;
+use crate::aggregator::Aggregator;
 use crate::bdd::rest_driver;
+use crate::document_provider::DocumentProvider;
 use crate::page::Page;
+use crate::page::SettingsMessage;
+use crate::page::SettingsPage;
 use crate::page::SourcesMessage;
 use crate::page::SourcesPage;
 
 pub struct CosmicDriver {
     application_module: Arc<ApplicationModule>,
     sources_page: SourcesPage,
+    settings_page: SettingsPage,
     /// A real, network-reachable backend for `Remote`s to point at —
     /// `CheckSourceStatus` makes an actual HTTP call, so there must be
     /// something on the other end (mirrors what `RestDriver` boots, and what
@@ -71,9 +77,21 @@ impl CosmicDriver {
         let (sources_page, init_task) = SourcesPage::new(application_module.clone());
         drain(init_task).await;
 
+        // Mirrors `Pages::new`'s construction (see `page/mod.rs`) — `SettingsPage`
+        // needs a `DocumentProvider` for its private-tags `TagEditor`, built the
+        // same way: an `Aggregator` over just the local client.
+        let document_provider = Arc::new(DocumentProvider::new(Aggregator::new(
+            vec![application_module.clone().into()],
+            application_module.clone(),
+        )));
+        let (settings_page, init_settings_task) =
+            SettingsPage::new(application_module.clone(), document_provider);
+        drain(init_settings_task).await;
+
         Self {
             application_module,
             sources_page,
+            settings_page,
             server,
             _temp_dir: temp_dir,
             registered_remote: None,
@@ -156,6 +174,35 @@ impl CosmicDriver {
             .await
             .expect("list remotes")
             .len()
+    }
+
+    /// Drives `ToggleDryRun` then `Save` to completion — the same two-message
+    /// path the real Server settings UI takes (toggle the switch, press Save).
+    /// `drain` only follows single-hop chains (see its doc comment), but
+    /// `Save`'s `task::future` resolving to `SaveComplete` is exactly that.
+    pub async fn enable_dry_run_and_save(&mut self) {
+        drain(
+            self.settings_page
+                .update(SettingsMessage::ToggleDryRun(true)),
+        )
+        .await;
+        let messages = drain(self.settings_page.update(SettingsMessage::Save)).await;
+        assert!(
+            messages
+                .iter()
+                .any(|message| matches!(message, SettingsMessage::SaveComplete)),
+            "Save did not complete"
+        );
+    }
+
+    /// Re-reads the persisted config from disk — the same observable the REST
+    /// `GET /settings` and the PWA's re-fetch verify, just at COSMIC's own
+    /// storage boundary (its `read-flow.toml`, not a remote's REST endpoint).
+    pub async fn dry_run_is_enabled(&self) -> bool {
+        Settings::extract_from(self.application_module.config_path())
+            .expect("read persisted settings")
+            .scan
+            .dry_run
     }
 }
 
