@@ -5,6 +5,8 @@
 
 use read_flow_core::test_support::TestServer;
 
+use crate::bdd::fixtures::sample_epub_path;
+
 pub const USER: &str = "alice";
 pub const PASSWORD: &str = "correct-horse";
 
@@ -156,5 +158,60 @@ impl RestDriver {
             .await
             .expect("parse users JSON");
         entries.iter().any(|entry| entry["user_id"] == user_id)
+    }
+
+    /// Uploads the shared `sample.epub` fixture via `POST /files` (multipart,
+    /// field name `file` — confirmed against the PWA's `client.ts` upload),
+    /// then tags the resulting document via `POST /files/<guid>/tags`. The
+    /// only seeding path available out-of-process: `TestServer` exposes HTTP
+    /// only, no DB pool (see `tags_list.feature`'s doc comment).
+    pub async fn seed_tagged_document(&self, tag: &str) -> String {
+        let bytes = std::fs::read(sample_epub_path()).expect("read fixture epub");
+        let part = reqwest::multipart::Part::bytes(bytes)
+            .file_name("sample.epub")
+            .mime_str("application/epub+zip")
+            .expect("mime");
+        let form = reqwest::multipart::Form::new().part("file", part);
+        let file: serde_json::Value = self
+            .client
+            .post(format!("{}/files", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .multipart(form)
+            .send()
+            .await
+            .expect("POST /files")
+            .json()
+            .await
+            .expect("parse uploaded file JSON");
+        let guid = file["guid"].as_str().expect("guid field").to_string();
+
+        let response = self
+            .client
+            .post(format!("{}/files/{}/tags", self.server.base_url, guid))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!([tag]))
+            .send()
+            .await
+            .expect("POST /files/<guid>/tags");
+        assert!(
+            response.status().is_success(),
+            "POST /files/{guid}/tags failed: {}",
+            response.status()
+        );
+        guid
+    }
+
+    pub async fn tag_is_listed(&self, tag: &str) -> bool {
+        let tags: Vec<String> = self
+            .client
+            .get(format!("{}/files/tags", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /files/tags")
+            .json()
+            .await
+            .expect("parse tags JSON");
+        tags.iter().any(|t| t == tag)
     }
 }

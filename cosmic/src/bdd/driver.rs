@@ -163,6 +163,25 @@ impl Driver {
             Self::Cosmic(driver) => driver.user_is_listed(user_id).await,
         }
     }
+
+    // -- tags_list --
+    // First scenario needing a seeded document — both drivers upload/scan the
+    // shared `features/fixtures/sample.epub` and tag it; see each driver's
+    // `seed_tagged_document` and the feature's doc comment.
+
+    pub async fn seed_tagged_document(&self, tag: &str) -> String {
+        match self {
+            Self::Rest(driver) => driver.seed_tagged_document(tag).await,
+            Self::Cosmic(driver) => driver.seed_tagged_document(tag).await,
+        }
+    }
+
+    pub async fn tag_is_listed(&self, tag: &str) -> bool {
+        match self {
+            Self::Rest(driver) => driver.tag_is_listed(tag).await,
+            Self::Cosmic(driver) => driver.tag_is_listed(tag).await,
+        }
+    }
 }
 
 fn env_name() -> &'static str {

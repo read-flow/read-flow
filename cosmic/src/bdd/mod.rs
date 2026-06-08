@@ -18,6 +18,7 @@
 
 mod cosmic_driver;
 mod driver;
+mod fixtures;
 mod rest_driver;
 mod steps;
 mod world;

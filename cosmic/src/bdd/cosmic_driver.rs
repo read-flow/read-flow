@@ -23,6 +23,7 @@ use cosmic::iced::runtime::task::into_stream;
 use futures::StreamExt;
 use read_flow_core::ExpandedPath;
 use read_flow_core::db::dao;
+use read_flow_core::db::models::ContentTag;
 use read_flow_core::db::models::NewRemote;
 use read_flow_core::db::models::Remote;
 use read_flow_core::scan::DirectorySettings;
@@ -35,6 +36,7 @@ use crate::AppSettings;
 use crate::ApplicationModule;
 use crate::Cli;
 use crate::aggregator::Aggregator;
+use crate::bdd::fixtures;
 use crate::bdd::rest_driver;
 use crate::document_provider::DocumentProvider;
 use crate::page::Page;
@@ -263,6 +265,47 @@ impl CosmicDriver {
             .server
             .authorized_users
             .contains_key(user_id)
+    }
+
+    /// Copies the shared `sample.epub` fixture into a fresh temp dir and
+    /// scans it via `application_module.scan` (awaited to completion — see
+    /// `tags_list.feature`'s doc comment for why a real EPUB is required for
+    /// the scan to create a `Document`/`File`/`Content` row triple), then
+    /// upserts a `content_tags` row directly — the in-process equivalent of
+    /// `RestDriver::seed_tagged_document`'s `POST /files` + `POST .../tags`.
+    pub async fn seed_tagged_document(&self, tag: &str) -> String {
+        let scan_dir = tempfile::tempdir().expect("temp scan dir");
+        let dest = scan_dir.path().join("sample.epub");
+        std::fs::copy(fixtures::sample_epub_path(), &dest).expect("copy fixture epub");
+
+        self.application_module
+            .scan(&dest)
+            .await
+            .expect("scan fixture epub");
+
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        let file = dao::select_file_by_path(&mut conn, &dest.to_string_lossy())
+            .await
+            .expect("select file by path")
+            .expect("scanned file is in the DB");
+        dao::upsert_content_tag(
+            &mut conn,
+            ContentTag::new(file.fingerprint.clone(), tag.to_string()),
+        )
+        .await
+        .expect("upsert content tag");
+        file.guid
+    }
+
+    pub async fn tag_is_listed(&self, tag: &str) -> bool {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        dao::select_all_distinct_tags(&mut conn)
+            .await
+            .expect("select distinct tags")
+            .iter()
+            .any(|t| t == tag)
     }
 }
 
