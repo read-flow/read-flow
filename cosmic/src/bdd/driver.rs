@@ -125,6 +125,25 @@ impl Driver {
             Self::Cosmic(driver) => driver.dry_run_is_enabled().await,
         }
     }
+
+    // -- admin_scan_directories --
+    // Same "REST/Cosmic manage their own config directly, no navigation"
+    // mapping as `admin_server_settings` — see that section's comment and the
+    // feature's doc comment. The PWA leg lives in `pwa/e2e/steps`.
+
+    pub async fn add_scan_directory(&mut self, path: &str) {
+        match self {
+            Self::Rest(driver) => driver.add_scan_directory(path).await,
+            Self::Cosmic(driver) => driver.add_scan_directory(path).await,
+        }
+    }
+
+    pub async fn scan_directory_is_listed(&self, path: &str) -> bool {
+        match self {
+            Self::Rest(driver) => driver.scan_directory_is_listed(path).await,
+            Self::Cosmic(driver) => driver.scan_directory_is_listed(path).await,
+        }
+    }
 }
 
 fn env_name() -> &'static str {

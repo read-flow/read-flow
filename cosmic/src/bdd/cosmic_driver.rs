@@ -13,6 +13,7 @@
 //! REST/Playwright drivers validate, just at COSMIC's logic boundary.
 
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use cosmic::Action;
@@ -20,9 +21,11 @@ use cosmic::Task;
 use cosmic::iced::runtime::Action as RuntimeAction;
 use cosmic::iced::runtime::task::into_stream;
 use futures::StreamExt;
+use read_flow_core::ExpandedPath;
 use read_flow_core::db::dao;
 use read_flow_core::db::models::NewRemote;
 use read_flow_core::db::models::Remote;
+use read_flow_core::scan::DirectorySettings;
 use read_flow_core::settings::Settings;
 use read_flow_core::test_support::TestServer;
 
@@ -203,6 +206,37 @@ impl CosmicDriver {
             .expect("read persisted settings")
             .scan
             .dry_run
+    }
+
+    /// `AddDirectory`'s real path spawns a `DirectorySettingsForm` and only
+    /// inserts on `SaveDirectory` once the editor confirms — driving that
+    /// headlessly would mean reproducing the form's own multi-hop lifecycle
+    /// for no extra coverage. Same DAO-direct bypass as `insert_remote`:
+    /// `update_settings` is exactly what `SaveDirectory` + `Save` end up
+    /// calling, just without the in-between editor state.
+    pub async fn add_scan_directory(&self, path: &str) {
+        let expanded = ExpandedPath::from_str(path).expect("valid path");
+        self.application_module
+            .update_settings(move |settings| {
+                settings.scan.directories.insert(
+                    expanded,
+                    DirectorySettings::Scan {
+                        tags: Vec::new(),
+                        inherit: false,
+                    },
+                );
+            })
+            .await
+            .expect("update settings");
+    }
+
+    pub async fn scan_directory_is_listed(&self, path: &str) -> bool {
+        let expanded = ExpandedPath::from_str(path).expect("valid path");
+        Settings::extract_from(self.application_module.config_path())
+            .expect("read persisted settings")
+            .scan
+            .directories
+            .contains_key(&expanded)
     }
 }
 

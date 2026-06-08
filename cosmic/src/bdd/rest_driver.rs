@@ -84,4 +84,41 @@ impl RestDriver {
             .as_bool()
             .expect("dry_run is a bool")
     }
+
+    /// `PUT /scan-directories` with a flattened `ScanDirectoryEntry` — raw
+    /// JSON, same rationale as `get_settings`/`put_settings`.
+    pub async fn add_scan_directory(&self, path: &str) {
+        let response = self
+            .client
+            .put(format!("{}/scan-directories", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!({
+                "path": path,
+                "action": "Scan",
+                "tags": [],
+                "inherit": false,
+            }))
+            .send()
+            .await
+            .expect("PUT /scan-directories");
+        assert!(
+            response.status().is_success(),
+            "PUT /scan-directories failed: {}",
+            response.status()
+        );
+    }
+
+    pub async fn scan_directory_is_listed(&self, path: &str) -> bool {
+        let entries: Vec<serde_json::Value> = self
+            .client
+            .get(format!("{}/scan-directories", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /scan-directories")
+            .json()
+            .await
+            .expect("parse scan-directories JSON");
+        entries.iter().any(|entry| entry["path"] == path)
+    }
 }
