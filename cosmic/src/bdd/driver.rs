@@ -182,6 +182,24 @@ impl Driver {
             Self::Cosmic(driver) => driver.tag_is_listed(tag).await,
         }
     }
+
+    // -- documents_list --
+    // Reuses `seed_document` (untagged — `seed_tagged_document` minus the
+    // tagging step), shared with `tags_list`.
+
+    pub async fn seed_document(&self) -> String {
+        match self {
+            Self::Rest(driver) => driver.seed_document().await,
+            Self::Cosmic(driver) => driver.seed_document().await,
+        }
+    }
+
+    pub async fn document_is_listed(&self, title: &str) -> bool {
+        match self {
+            Self::Rest(driver) => driver.document_is_listed(title).await,
+            Self::Cosmic(driver) => driver.document_is_listed(title).await,
+        }
+    }
 }
 
 fn env_name() -> &'static str {

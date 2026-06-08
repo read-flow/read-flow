@@ -270,10 +270,10 @@ impl CosmicDriver {
     /// Copies the shared `sample.epub` fixture into a fresh temp dir and
     /// scans it via `application_module.scan` (awaited to completion — see
     /// `tags_list.feature`'s doc comment for why a real EPUB is required for
-    /// the scan to create a `Document`/`File`/`Content` row triple), then
-    /// upserts a `content_tags` row directly — the in-process equivalent of
-    /// `RestDriver::seed_tagged_document`'s `POST /files` + `POST .../tags`.
-    pub async fn seed_tagged_document(&self, tag: &str) -> String {
+    /// the scan to create a `Document`/`File`/`Content` row triple), returning
+    /// the resulting `File` row — the in-process equivalent of what
+    /// `RestDriver::seed_document`'s `POST /files` hands back.
+    async fn scan_fixture(&self) -> read_flow_core::db::models::File {
         let scan_dir = tempfile::tempdir().expect("temp scan dir");
         let dest = scan_dir.path().join("sample.epub");
         std::fs::copy(fixtures::sample_epub_path(), &dest).expect("copy fixture epub");
@@ -285,10 +285,23 @@ impl CosmicDriver {
 
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");
-        let file = dao::select_file_by_path(&mut conn, &dest.to_string_lossy())
+        dao::select_file_by_path(&mut conn, &dest.to_string_lossy())
             .await
             .expect("select file by path")
-            .expect("scanned file is in the DB");
+            .expect("scanned file is in the DB")
+    }
+
+    pub async fn seed_document(&self) -> String {
+        self.scan_fixture().await.guid
+    }
+
+    /// `scan_fixture` plus a DAO-direct `content_tags` upsert — the
+    /// in-process equivalent of `RestDriver::seed_tagged_document`'s
+    /// `POST /files` + `POST .../tags`.
+    pub async fn seed_tagged_document(&self, tag: &str) -> String {
+        let file = self.scan_fixture().await;
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
         dao::upsert_content_tag(
             &mut conn,
             ContentTag::new(file.fingerprint.clone(), tag.to_string()),
@@ -296,6 +309,16 @@ impl CosmicDriver {
         .await
         .expect("upsert content tag");
         file.guid
+    }
+
+    pub async fn document_is_listed(&self, title: &str) -> bool {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        dao::select_all_api_documents(&mut conn)
+            .await
+            .expect("list documents")
+            .iter()
+            .any(|doc| doc.metadata.title.as_deref() == Some(title))
     }
 
     pub async fn tag_is_listed(&self, tag: &str) -> bool {

@@ -162,10 +162,10 @@ impl RestDriver {
 
     /// Uploads the shared `sample.epub` fixture via `POST /files` (multipart,
     /// field name `file` — confirmed against the PWA's `client.ts` upload),
-    /// then tags the resulting document via `POST /files/<guid>/tags`. The
-    /// only seeding path available out-of-process: `TestServer` exposes HTTP
-    /// only, no DB pool (see `tags_list.feature`'s doc comment).
-    pub async fn seed_tagged_document(&self, tag: &str) -> String {
+    /// returning the resulting file's guid. The only seeding path available
+    /// out-of-process: `TestServer` exposes HTTP only, no DB pool (see
+    /// `tags_list.feature`'s doc comment).
+    pub async fn seed_document(&self) -> String {
         let bytes = std::fs::read(sample_epub_path()).expect("read fixture epub");
         let part = reqwest::multipart::Part::bytes(bytes)
             .file_name("sample.epub")
@@ -183,8 +183,12 @@ impl RestDriver {
             .json()
             .await
             .expect("parse uploaded file JSON");
-        let guid = file["guid"].as_str().expect("guid field").to_string();
+        file["guid"].as_str().expect("guid field").to_string()
+    }
 
+    /// `seed_document` plus tagging it via `POST /files/<guid>/tags`.
+    pub async fn seed_tagged_document(&self, tag: &str) -> String {
+        let guid = self.seed_document().await;
         let response = self
             .client
             .post(format!("{}/files/{}/tags", self.server.base_url, guid))
@@ -199,6 +203,24 @@ impl RestDriver {
             response.status()
         );
         guid
+    }
+
+    /// `GET /documents` — the same listing the PWA's library page and
+    /// COSMIC's `DocumentListPage` aggregate over.
+    pub async fn document_is_listed(&self, title: &str) -> bool {
+        let documents: Vec<serde_json::Value> = self
+            .client
+            .get(format!("{}/documents", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /documents")
+            .json()
+            .await
+            .expect("parse documents JSON");
+        documents
+            .iter()
+            .any(|doc| doc["metadata"]["title"] == title)
     }
 
     pub async fn tag_is_listed(&self, tag: &str) -> bool {
