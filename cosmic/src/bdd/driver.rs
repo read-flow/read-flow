@@ -144,6 +144,25 @@ impl Driver {
             Self::Cosmic(driver) => driver.scan_directory_is_listed(path).await,
         }
     }
+
+    // -- admin_authorized_users --
+    // Same "REST/Cosmic manage their own config directly, no navigation"
+    // mapping as `admin_scan_directories` — see that section's comment and the
+    // feature's doc comment. The PWA leg lives in `pwa/e2e/steps`.
+
+    pub async fn add_user(&mut self, user_id: &str, password: &str) {
+        match self {
+            Self::Rest(driver) => driver.add_user(user_id, password).await,
+            Self::Cosmic(driver) => driver.add_user(user_id, password).await,
+        }
+    }
+
+    pub async fn user_is_listed(&self, user_id: &str) -> bool {
+        match self {
+            Self::Rest(driver) => driver.user_is_listed(user_id).await,
+            Self::Cosmic(driver) => driver.user_is_listed(user_id).await,
+        }
+    }
 }
 
 fn env_name() -> &'static str {

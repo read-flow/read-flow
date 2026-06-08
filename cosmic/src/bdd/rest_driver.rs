@@ -121,4 +121,40 @@ impl RestDriver {
             .expect("parse scan-directories JSON");
         entries.iter().any(|entry| entry["path"] == path)
     }
+
+    /// `POST /users` with a `CreateUserRequest`-shaped body — raw JSON, same
+    /// rationale as `add_scan_directory` (the DTO is a private server type).
+    pub async fn add_user(&self, user_id: &str, password: &str) {
+        let response = self
+            .client
+            .post(format!("{}/users", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!({
+                "user_id": user_id,
+                "password": password,
+                "roles": [],
+            }))
+            .send()
+            .await
+            .expect("POST /users");
+        assert!(
+            response.status().is_success(),
+            "POST /users failed: {}",
+            response.status()
+        );
+    }
+
+    pub async fn user_is_listed(&self, user_id: &str) -> bool {
+        let entries: Vec<serde_json::Value> = self
+            .client
+            .get(format!("{}/users", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /users")
+            .json()
+            .await
+            .expect("parse users JSON");
+        entries.iter().any(|entry| entry["user_id"] == user_id)
+    }
 }

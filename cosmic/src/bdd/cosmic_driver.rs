@@ -26,7 +26,9 @@ use read_flow_core::db::dao;
 use read_flow_core::db::models::NewRemote;
 use read_flow_core::db::models::Remote;
 use read_flow_core::scan::DirectorySettings;
+use read_flow_core::settings::HashedPassword;
 use read_flow_core::settings::Settings;
+use read_flow_core::settings::UserEntry;
 use read_flow_core::test_support::TestServer;
 
 use crate::AppSettings;
@@ -237,6 +239,30 @@ impl CosmicDriver {
             .scan
             .directories
             .contains_key(&expanded)
+    }
+
+    /// `AddAuthorizedUser`'s real path spawns an `AuthorizedUserForm` — same
+    /// multi-hop-form bypass as `add_scan_directory`. `update_settings` is
+    /// exactly what the form's `Submit` handler ends up calling.
+    pub async fn add_user(&self, user_id: &str, password: &str) {
+        let entry = UserEntry::Simple(
+            HashedPassword::try_from(password.to_string()).expect("hash password"),
+        );
+        let id = user_id.to_string();
+        self.application_module
+            .update_settings(move |settings| {
+                settings.server.authorized_users.insert(id, entry);
+            })
+            .await
+            .expect("update settings");
+    }
+
+    pub async fn user_is_listed(&self, user_id: &str) -> bool {
+        Settings::extract_from(self.application_module.config_path())
+            .expect("read persisted settings")
+            .server
+            .authorized_users
+            .contains_key(user_id)
     }
 }
 
