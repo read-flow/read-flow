@@ -50,6 +50,7 @@ pub struct CosmicDriver {
     application_module: Arc<ApplicationModule>,
     sources_page: SourcesPage,
     settings_page: SettingsPage,
+    document_provider: Arc<DocumentProvider>,
     /// A real, network-reachable backend for `Remote`s to point at —
     /// `CheckSourceStatus` makes an actual HTTP call, so there must be
     /// something on the other end (mirrors what `RestDriver` boots, and what
@@ -93,13 +94,14 @@ impl CosmicDriver {
             application_module.clone(),
         )));
         let (settings_page, init_settings_task) =
-            SettingsPage::new(application_module.clone(), document_provider);
+            SettingsPage::new(application_module.clone(), document_provider.clone());
         drain(init_settings_task).await;
 
         Self {
             application_module,
             sources_page,
             settings_page,
+            document_provider,
             server,
             _temp_dir: temp_dir,
             registered_remote: None,
@@ -546,6 +548,57 @@ impl CosmicDriver {
             .expect("select distinct tags")
             .iter()
             .any(|t| t == tag)
+    }
+
+    // -- documents.search --
+
+    /// Returns true if the document with `title` appears when filtering by `query`.
+    pub async fn search_returns_document(&self, query: &str, title: &str) -> bool {
+        let docs = self
+            .document_provider
+            .get_documents()
+            .await
+            .expect("get documents");
+        let q = query.to_lowercase();
+        docs.into_iter().any(|doc| {
+            let doc_title = doc.user_meta.title.as_deref().unwrap_or("").to_lowercase();
+            doc_title.contains(&q) && doc.user_meta.title.as_deref() == Some(title)
+        })
+    }
+
+    // -- documents.filter_by_status --
+
+    /// Returns true if the document with `title` has reading status `status_str`.
+    pub async fn filter_by_status_returns_document(&self, status_str: &str, title: &str) -> bool {
+        let status: ReadingStatus = status_str.parse().expect("valid reading status");
+        let docs = self
+            .document_provider
+            .get_documents()
+            .await
+            .expect("get documents");
+        docs.into_iter().any(|doc| {
+            doc.user_meta.title.as_deref() == Some(title)
+                && doc.contents.iter().any(|c| c.status == status)
+        })
+    }
+
+    // -- documents.filter_by_tag --
+
+    /// Returns true if the document with `title` carries `tag`.
+    pub async fn filter_by_tag_returns_document(&self, tag: &str, title: &str) -> bool {
+        let docs = self
+            .document_provider
+            .get_documents()
+            .await
+            .expect("get documents");
+        docs.into_iter().any(|doc| {
+            doc.user_meta.title.as_deref() == Some(title)
+                && doc
+                    .contents
+                    .iter()
+                    .flat_map(|c| c.tags.iter())
+                    .any(|t| t == tag)
+        })
     }
 }
 

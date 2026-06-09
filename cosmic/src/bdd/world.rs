@@ -23,6 +23,12 @@ pub struct BddWorld {
     pub _scan_processed: Option<u64>,
     /// Result of the most recent check-missing operation.
     pub _check_missing_result: Option<Vec<String>>,
+    /// Search query set by a `When I search for …` step.
+    pub search_query: Option<String>,
+    /// Status filter set by a `When I filter by reading status …` step.
+    pub status_filter: Option<String>,
+    /// Tag filter set by a `When I filter by tag …` step.
+    pub tag_filter: Option<String>,
 }
 
 impl BddWorld {
@@ -36,6 +42,9 @@ impl BddWorld {
             _scan_dir: None,
             _scan_processed: None,
             _check_missing_result: None,
+            search_query: None,
+            status_filter: None,
+            tag_filter: None,
         })
     }
 }

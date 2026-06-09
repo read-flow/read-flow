@@ -342,6 +342,40 @@ impl Driver {
             Self::Cosmic(driver) => driver.set_document_title(doc_api_guid, title).await,
         }
     }
+
+    // -- documents.search / filter_by_status / filter_by_tag --
+    // Client-side filtering — no REST surface.
+
+    pub async fn search_returns_document(&self, query: &str, title: &str) -> bool {
+        match self {
+            Self::Rest(_) => panic!(
+                "`documents.search` has no REST surface — run with BDD_DRIVER=cosmic or BDD_DRIVER=pwa"
+            ),
+            Self::Cosmic(driver) => driver.search_returns_document(query, title).await,
+        }
+    }
+
+    pub async fn filter_by_status_returns_document(&self, status: &str, title: &str) -> bool {
+        match self {
+            Self::Rest(_) => panic!(
+                "`documents.filter_by_status` has no REST surface — run with BDD_DRIVER=cosmic or BDD_DRIVER=pwa"
+            ),
+            Self::Cosmic(driver) => {
+                driver
+                    .filter_by_status_returns_document(status, title)
+                    .await
+            }
+        }
+    }
+
+    pub async fn filter_by_tag_returns_document(&self, tag: &str, title: &str) -> bool {
+        match self {
+            Self::Rest(_) => panic!(
+                "`documents.filter_by_tag` has no REST surface — run with BDD_DRIVER=cosmic or BDD_DRIVER=pwa"
+            ),
+            Self::Cosmic(driver) => driver.filter_by_tag_returns_document(tag, title).await,
+        }
+    }
 }
 
 fn env_name() -> &'static str {
