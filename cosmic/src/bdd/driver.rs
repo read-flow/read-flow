@@ -169,8 +169,8 @@ impl Driver {
     // shared `features/fixtures/sample.epub` and tag it; see each driver's
     // `seed_tagged_document` and the feature's doc comment.
 
-    /// Returns `(file_guid, doc_api_guid)`.
-    pub async fn seed_tagged_document(&self, tag: &str) -> (String, String) {
+    /// Returns `(file_guid, doc_api_guid, fingerprint)`.
+    pub async fn seed_tagged_document(&self, tag: &str) -> (String, String, String) {
         match self {
             Self::Rest(driver) => driver.seed_tagged_document(tag).await,
             Self::Cosmic(driver) => driver.seed_tagged_document(tag).await,
@@ -227,8 +227,8 @@ impl Driver {
     // Reuses `seed_document` (untagged — `seed_tagged_document` minus the
     // tagging step), shared with `tags_list`.
 
-    /// Returns `(file_guid, doc_api_guid)`.
-    pub async fn seed_document(&self) -> (String, String) {
+    /// Returns `(file_guid, doc_api_guid, fingerprint)`.
+    pub async fn seed_document(&self) -> (String, String, String) {
         match self {
             Self::Rest(driver) => driver.seed_document().await,
             Self::Cosmic(driver) => driver.seed_document().await,
@@ -259,6 +259,71 @@ impl Driver {
         match self {
             Self::Rest(driver) => driver.scan_configured().await,
             Self::Cosmic(driver) => driver.scan_configured().await,
+        }
+    }
+
+    // -- remotes.private_mode --
+
+    pub async fn enable_private_mode(&mut self) {
+        match self {
+            Self::Rest(driver) => driver.enable_private_mode().await,
+            Self::Cosmic(driver) => driver.enable_private_mode().await,
+        }
+    }
+
+    pub async fn private_mode_is_enabled(&self) -> bool {
+        match self {
+            Self::Rest(driver) => driver.private_mode_is_enabled().await,
+            Self::Cosmic(driver) => driver.private_mode_is_enabled().await,
+        }
+    }
+
+    // -- admin.check_missing --
+
+    pub async fn check_missing(&self) -> Vec<String> {
+        match self {
+            Self::Rest(driver) => driver.check_missing().await,
+            Self::Cosmic(driver) => driver.check_missing().await,
+        }
+    }
+
+    // -- sources.delete --
+
+    pub async fn delete_document(&mut self, guid: &str) {
+        match self {
+            Self::Rest(driver) => driver.delete_document(guid).await,
+            Self::Cosmic(driver) => driver.delete_document(guid).await,
+        }
+    }
+
+    pub async fn file_is_listed(&self, guid: &str) -> bool {
+        match self {
+            Self::Rest(driver) => driver.file_is_listed(guid).await,
+            Self::Cosmic(driver) => driver.file_is_listed(guid).await,
+        }
+    }
+
+    // -- reading.progress --
+
+    pub async fn set_reading_progress(&self, fingerprint: &str, position: &str, percentage: f64) {
+        match self {
+            Self::Rest(driver) => {
+                driver
+                    .set_reading_progress(fingerprint, position, percentage)
+                    .await
+            }
+            Self::Cosmic(driver) => {
+                driver
+                    .set_reading_progress(fingerprint, position, percentage)
+                    .await
+            }
+        }
+    }
+
+    pub async fn get_reading_progress(&self, fingerprint: &str) -> (String, f64) {
+        match self {
+            Self::Rest(driver) => driver.get_reading_progress(fingerprint).await,
+            Self::Cosmic(driver) => driver.get_reading_progress(fingerprint).await,
         }
     }
 

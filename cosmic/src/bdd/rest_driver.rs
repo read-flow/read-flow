@@ -165,8 +165,8 @@ impl RestDriver {
     /// returning the resulting file's guid. The only seeding path available
     /// out-of-process: `TestServer` exposes HTTP only, no DB pool (see
     /// `tags_list.feature`'s doc comment).
-    /// Returns `(file_guid, doc_api_guid)`.
-    pub async fn seed_document(&self) -> (String, String) {
+    /// Returns `(file_guid, doc_api_guid, fingerprint)`.
+    pub async fn seed_document(&self) -> (String, String, String) {
         let bytes = std::fs::read(sample_epub_path()).expect("read fixture epub");
         let part = reqwest::multipart::Part::bytes(bytes)
             .file_name("sample.epub")
@@ -189,7 +189,11 @@ impl RestDriver {
             .as_str()
             .expect("document_guid field")
             .to_string();
-        (file_guid, doc_api_guid)
+        let fingerprint = file["fingerprint"]
+            .as_str()
+            .expect("fingerprint field")
+            .to_string();
+        (file_guid, doc_api_guid, fingerprint)
     }
 
     pub async fn add_tag_to_document(&self, guid: &str, tag: &str) {
@@ -284,9 +288,9 @@ impl RestDriver {
         file["status"].as_str().expect("status field").to_string()
     }
 
-    /// `seed_document` plus tagging it. Returns `(file_guid, doc_api_guid)`.
-    pub async fn seed_tagged_document(&self, tag: &str) -> (String, String) {
-        let (guid, doc_guid) = self.seed_document().await;
+    /// `seed_document` plus tagging it. Returns `(file_guid, doc_api_guid, fingerprint)`.
+    pub async fn seed_tagged_document(&self, tag: &str) -> (String, String, String) {
+        let (guid, doc_guid, fingerprint) = self.seed_document().await;
         let response = self
             .client
             .post(format!("{}/files/{}/tags", self.server.base_url, guid))
@@ -300,7 +304,7 @@ impl RestDriver {
             "POST /files/{guid}/tags failed: {}",
             response.status()
         );
-        (guid, doc_guid)
+        (guid, doc_guid, fingerprint)
     }
 
     pub async fn prepare_scan_dir(&self) -> tempfile::TempDir {
@@ -373,6 +377,111 @@ impl RestDriver {
             "PUT /documents/{doc_api_guid}/metadata failed: {}",
             response.status()
         );
+    }
+
+    pub async fn enable_private_mode(&self) {
+        let mut dto = self.get_settings().await;
+        dto["private_mode"] = serde_json::Value::Bool(true);
+        self.put_settings(dto).await;
+    }
+
+    pub async fn private_mode_is_enabled(&self) -> bool {
+        self.get_settings().await["private_mode"]
+            .as_bool()
+            .expect("private_mode is a bool")
+    }
+
+    pub async fn check_missing(&self) -> Vec<String> {
+        let resp: serde_json::Value = self
+            .client
+            .post(format!(
+                "{}/maintenance/check-missing",
+                self.server.base_url
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("POST /maintenance/check-missing")
+            .json()
+            .await
+            .expect("parse check-missing JSON");
+        resp["missing"]
+            .as_array()
+            .expect("missing array")
+            .iter()
+            .map(|v| v.as_str().expect("path string").to_string())
+            .collect()
+    }
+
+    pub async fn delete_document(&self, guid: &str) {
+        let response = self
+            .client
+            .delete(format!("{}/files/{}", self.server.base_url, guid))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("DELETE /files/<guid>");
+        assert!(
+            response.status().is_success(),
+            "DELETE /files/{guid} failed: {}",
+            response.status()
+        );
+    }
+
+    pub async fn file_is_listed(&self, guid: &str) -> bool {
+        let files: Vec<serde_json::Value> = self
+            .client
+            .get(format!("{}/files", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /files")
+            .json()
+            .await
+            .expect("parse files JSON");
+        files.iter().any(|f| f["guid"] == guid)
+    }
+
+    pub async fn set_reading_progress(&self, fingerprint: &str, position: &str, percentage: f64) {
+        let response = self
+            .client
+            .put(format!("{}/reading-state", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!({
+                "fingerprint": fingerprint,
+                "status": 1,
+                "position": position,
+                "percentage": percentage,
+                "last_updated": "",
+                "status_updated_at": "",
+            }))
+            .send()
+            .await
+            .expect("PUT /reading-state");
+        assert!(
+            response.status().is_success(),
+            "PUT /reading-state failed: {}",
+            response.status()
+        );
+    }
+
+    pub async fn get_reading_progress(&self, fingerprint: &str) -> (String, f64) {
+        let state: serde_json::Value = self
+            .client
+            .get(format!(
+                "{}/reading-state/{}",
+                self.server.base_url, fingerprint
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /reading-state/<fp>")
+            .json()
+            .await
+            .expect("parse reading-state JSON");
+        let position = state["position"].as_str().expect("position").to_string();
+        let percentage = state["percentage"].as_f64().expect("percentage");
+        (position, percentage)
     }
 
     /// `GET /documents` — the same listing the PWA's library page and

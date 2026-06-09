@@ -7,8 +7,9 @@ use crate::bdd::world::BddWorld;
 
 #[given("a document has been added to the library")]
 async fn seed_document(world: &mut BddWorld) {
-    let (file_guid, doc_api_guid) = world.driver.seed_document().await;
+    let (file_guid, doc_api_guid, fingerprint) = world.driver.seed_document().await;
     world.current_document_guid = Some(file_guid);
+    world.current_document_fingerprint = Some(fingerprint);
     world.current_document_api_guid = Some(doc_api_guid);
 }
 

@@ -357,18 +357,19 @@ impl CosmicDriver {
     }
 
     /// Returns `(file_guid, doc_api_guid)`.
-    pub async fn seed_document(&self) -> (String, String) {
+    /// Returns `(file_guid, doc_api_guid, fingerprint)`.
+    pub async fn seed_document(&self) -> (String, String, String) {
         let file = self.scan_fixture().await;
         let doc_api_guid = file
             .document_guid
             .clone()
             .expect("scanned fixture must produce a document");
-        (file.guid, doc_api_guid)
+        (file.guid, doc_api_guid, file.fingerprint)
     }
 
     /// `scan_fixture` plus a DAO-direct `content_tags` upsert. Returns
-    /// `(file_guid, doc_api_guid)`.
-    pub async fn seed_tagged_document(&self, tag: &str) -> (String, String) {
+    /// `(file_guid, doc_api_guid, fingerprint)`.
+    pub async fn seed_tagged_document(&self, tag: &str) -> (String, String, String) {
         let file = self.scan_fixture().await;
         let doc_api_guid = file
             .document_guid
@@ -382,7 +383,7 @@ impl CosmicDriver {
         )
         .await
         .expect("upsert content tag");
-        (file.guid, doc_api_guid)
+        (file.guid, doc_api_guid, file.fingerprint)
     }
 
     pub async fn prepare_scan_dir(&self) -> tempfile::TempDir {
@@ -450,6 +451,81 @@ impl CosmicDriver {
         )
         .await
         .expect("upsert document metadata");
+    }
+
+    pub async fn enable_private_mode(&mut self) {
+        drain(
+            self.settings_page
+                .update(SettingsMessage::TogglePrivateMode(true)),
+        )
+        .await;
+        let messages = drain(self.settings_page.update(SettingsMessage::Save)).await;
+        assert!(
+            messages
+                .iter()
+                .any(|m| matches!(m, SettingsMessage::SaveComplete)),
+            "Save did not complete"
+        );
+    }
+
+    pub async fn private_mode_is_enabled(&self) -> bool {
+        Settings::extract_from(self.application_module.config_path())
+            .expect("read persisted settings")
+            .ui
+            .private_mode()
+    }
+
+    pub async fn check_missing(&self) -> Vec<String> {
+        self.application_module.check_missing(false).await
+    }
+
+    pub async fn delete_document(&self, guid: &str) {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        let file = dao::select_file_by_guid(&mut conn, guid)
+            .await
+            .expect("select file by guid")
+            .expect("file not found");
+        dao::delete_file_record(&pool, file.id)
+            .await
+            .expect("delete file record");
+    }
+
+    pub async fn file_is_listed(&self, guid: &str) -> bool {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        dao::select_file_by_guid(&mut conn, guid)
+            .await
+            .expect("select file by guid")
+            .is_some()
+    }
+
+    pub async fn set_reading_progress(&self, fingerprint: &str, position: &str, percentage: f64) {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        dao::upsert_reading_state(
+            &mut conn,
+            read_flow_core::db::models::ReadingState {
+                fingerprint: fingerprint.to_string(),
+                status: 1,
+                position: position.to_string(),
+                percentage,
+                last_updated: String::new(),
+                status_updated_at: String::new(),
+            },
+        )
+        .await
+        .expect("upsert reading state");
+    }
+
+    pub async fn get_reading_progress(&self, fingerprint: &str) -> (String, f64) {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        let state = dao::get_reading_state(&mut conn, fingerprint)
+            .await
+            .expect("get reading state")
+            .expect("reading state not found");
+        (state.position, state.percentage)
     }
 
     pub async fn document_is_listed(&self, title: &str) -> bool {

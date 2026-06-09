@@ -12,6 +12,8 @@ pub struct BddWorld {
     pub last_check: Option<bool>,
     /// File GUID of the most recently seeded document.
     pub current_document_guid: Option<String>,
+    /// Fingerprint of the most recently seeded document.
+    pub current_document_fingerprint: Option<String>,
     /// Document-record GUID of the most recently seeded document.
     pub current_document_api_guid: Option<String>,
     /// Temp directory created by an `admin.scan` seed step — kept here so
@@ -19,6 +21,8 @@ pub struct BddWorld {
     pub _scan_dir: Option<tempfile::TempDir>,
     /// Document count returned by the most recent scan trigger.
     pub _scan_processed: Option<u64>,
+    /// Result of the most recent check-missing operation.
+    pub _check_missing_result: Option<Vec<String>>,
 }
 
 impl BddWorld {
@@ -27,9 +31,11 @@ impl BddWorld {
             driver: Driver::new().await,
             last_check: None,
             current_document_guid: None,
+            current_document_fingerprint: None,
             current_document_api_guid: None,
             _scan_dir: None,
             _scan_processed: None,
+            _check_missing_result: None,
         })
     }
 }
