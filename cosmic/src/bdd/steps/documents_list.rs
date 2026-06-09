@@ -7,8 +7,9 @@ use crate::bdd::world::BddWorld;
 
 #[given("a document has been added to the library")]
 async fn seed_document(world: &mut BddWorld) {
-    let guid = world.driver.seed_document().await;
-    world.current_document_guid = Some(guid);
+    let (file_guid, doc_api_guid) = world.driver.seed_document().await;
+    world.current_document_guid = Some(file_guid);
+    world.current_document_api_guid = Some(doc_api_guid);
 }
 
 #[then(regex = "^\"([^\"]+)\" appears in the library's list of documents$")]

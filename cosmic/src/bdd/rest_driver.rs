@@ -165,7 +165,8 @@ impl RestDriver {
     /// returning the resulting file's guid. The only seeding path available
     /// out-of-process: `TestServer` exposes HTTP only, no DB pool (see
     /// `tags_list.feature`'s doc comment).
-    pub async fn seed_document(&self) -> String {
+    /// Returns `(file_guid, doc_api_guid)`.
+    pub async fn seed_document(&self) -> (String, String) {
         let bytes = std::fs::read(sample_epub_path()).expect("read fixture epub");
         let part = reqwest::multipart::Part::bytes(bytes)
             .file_name("sample.epub")
@@ -183,7 +184,12 @@ impl RestDriver {
             .json()
             .await
             .expect("parse uploaded file JSON");
-        file["guid"].as_str().expect("guid field").to_string()
+        let file_guid = file["guid"].as_str().expect("guid field").to_string();
+        let doc_api_guid = file["document_guid"]
+            .as_str()
+            .expect("document_guid field")
+            .to_string();
+        (file_guid, doc_api_guid)
     }
 
     pub async fn add_tag_to_document(&self, guid: &str, tag: &str) {
@@ -278,9 +284,9 @@ impl RestDriver {
         file["status"].as_str().expect("status field").to_string()
     }
 
-    /// `seed_document` plus tagging it via `POST /files/<guid>/tags`.
-    pub async fn seed_tagged_document(&self, tag: &str) -> String {
-        let guid = self.seed_document().await;
+    /// `seed_document` plus tagging it. Returns `(file_guid, doc_api_guid)`.
+    pub async fn seed_tagged_document(&self, tag: &str) -> (String, String) {
+        let (guid, doc_guid) = self.seed_document().await;
         let response = self
             .client
             .post(format!("{}/files/{}/tags", self.server.base_url, guid))
@@ -294,7 +300,79 @@ impl RestDriver {
             "POST /files/{guid}/tags failed: {}",
             response.status()
         );
-        guid
+        (guid, doc_guid)
+    }
+
+    pub async fn prepare_scan_dir(&self) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("temp scan dir");
+        std::fs::copy(sample_epub_path(), dir.path().join("sample.epub")).expect("copy fixture");
+        self.add_scan_directory(&dir.path().to_string_lossy()).await;
+        dir
+    }
+
+    pub async fn scan_configured(&self) -> u64 {
+        let summary: serde_json::Value = self
+            .client
+            .post(format!("{}/scan", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("POST /scan")
+            .json()
+            .await
+            .expect("parse scan summary JSON");
+        summary["processed"].as_u64().expect("processed field")
+    }
+
+    pub async fn get_document_title(&self, doc_api_guid: &str) -> String {
+        let doc: serde_json::Value = self
+            .client
+            .get(format!(
+                "{}/documents/{}",
+                self.server.base_url, doc_api_guid
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /documents/<guid>")
+            .json()
+            .await
+            .expect("parse document JSON");
+        doc["metadata"]["title"]
+            .as_str()
+            .expect("title field")
+            .to_string()
+    }
+
+    pub async fn set_document_title(&self, doc_api_guid: &str, title: &str) {
+        let response = self
+            .client
+            .put(format!(
+                "{}/documents/{}/metadata",
+                self.server.base_url, doc_api_guid
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!({
+                "title": title,
+                "document_type": null,
+                "subtitle": null,
+                "authors": null,
+                "description": null,
+                "language": null,
+                "publisher": null,
+                "identifier": null,
+                "date": null,
+                "subject": null,
+                "selected_cover_fingerprint": null,
+            }))
+            .send()
+            .await
+            .expect("PUT /documents/<guid>/metadata");
+        assert!(
+            response.status().is_success(),
+            "PUT /documents/{doc_api_guid}/metadata failed: {}",
+            response.status()
+        );
     }
 
     /// `GET /documents` — the same listing the PWA's library page and

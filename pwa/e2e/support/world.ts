@@ -17,6 +17,8 @@ export class BddWorld extends CucumberWorld {
 	currentDocumentGuid?: string;
 	/** Fingerprint of the most recently seeded document — set by seed steps. */
 	currentDocumentFingerprint?: string;
+	/** Document-record GUID of the most recently seeded document — set by seed steps. */
+	currentDocumentApiGuid?: string;
 
 	get baseUrl(): string {
 		return this.fixtures.preview.baseUrl;

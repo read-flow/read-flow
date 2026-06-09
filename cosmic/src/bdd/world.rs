@@ -10,9 +10,15 @@ pub struct BddWorld {
     pub driver: Driver,
     /// Set by a `When` step, asserted on by a later `Then` step.
     pub last_check: Option<bool>,
-    /// GUID of the most recently seeded document — set by seed steps,
-    /// consumed by `When`/`Then` steps that operate on a specific document.
+    /// File GUID of the most recently seeded document.
     pub current_document_guid: Option<String>,
+    /// Document-record GUID of the most recently seeded document.
+    pub current_document_api_guid: Option<String>,
+    /// Temp directory created by an `admin.scan` seed step — kept here so
+    /// it outlives the step and is cleaned up when the scenario ends.
+    pub _scan_dir: Option<tempfile::TempDir>,
+    /// Document count returned by the most recent scan trigger.
+    pub _scan_processed: Option<u64>,
 }
 
 impl BddWorld {
@@ -21,6 +27,9 @@ impl BddWorld {
             driver: Driver::new().await,
             last_check: None,
             current_document_guid: None,
+            current_document_api_guid: None,
+            _scan_dir: None,
+            _scan_processed: None,
         })
     }
 }

@@ -169,7 +169,8 @@ impl Driver {
     // shared `features/fixtures/sample.epub` and tag it; see each driver's
     // `seed_tagged_document` and the feature's doc comment.
 
-    pub async fn seed_tagged_document(&self, tag: &str) -> String {
+    /// Returns `(file_guid, doc_api_guid)`.
+    pub async fn seed_tagged_document(&self, tag: &str) -> (String, String) {
         match self {
             Self::Rest(driver) => driver.seed_tagged_document(tag).await,
             Self::Cosmic(driver) => driver.seed_tagged_document(tag).await,
@@ -226,7 +227,8 @@ impl Driver {
     // Reuses `seed_document` (untagged — `seed_tagged_document` minus the
     // tagging step), shared with `tags_list`.
 
-    pub async fn seed_document(&self) -> String {
+    /// Returns `(file_guid, doc_api_guid)`.
+    pub async fn seed_document(&self) -> (String, String) {
         match self {
             Self::Rest(driver) => driver.seed_document().await,
             Self::Cosmic(driver) => driver.seed_document().await,
@@ -237,6 +239,42 @@ impl Driver {
         match self {
             Self::Rest(driver) => driver.document_is_listed(title).await,
             Self::Cosmic(driver) => driver.document_is_listed(title).await,
+        }
+    }
+
+    // -- admin.scan --
+
+    /// Creates a temp dir with the fixture EPUB, configures it as a scan
+    /// directory, and returns the `TempDir` handle (keep alive in world).
+    pub async fn prepare_scan_dir(&self) -> tempfile::TempDir {
+        match self {
+            Self::Rest(driver) => driver.prepare_scan_dir().await,
+            Self::Cosmic(driver) => driver.prepare_scan_dir().await,
+        }
+    }
+
+    /// Triggers a full scan of all configured directories. Returns the number
+    /// of documents processed (to be asserted in `Then` steps).
+    pub async fn scan_configured(&self) -> u64 {
+        match self {
+            Self::Rest(driver) => driver.scan_configured().await,
+            Self::Cosmic(driver) => driver.scan_configured().await,
+        }
+    }
+
+    // -- documents.detail_view / documents.edit_metadata --
+
+    pub async fn get_document_title(&self, doc_api_guid: &str) -> String {
+        match self {
+            Self::Rest(driver) => driver.get_document_title(doc_api_guid).await,
+            Self::Cosmic(driver) => driver.get_document_title(doc_api_guid).await,
+        }
+    }
+
+    pub async fn set_document_title(&self, doc_api_guid: &str, title: &str) {
+        match self {
+            Self::Rest(driver) => driver.set_document_title(doc_api_guid, title).await,
+            Self::Cosmic(driver) => driver.set_document_title(doc_api_guid, title).await,
         }
     }
 }

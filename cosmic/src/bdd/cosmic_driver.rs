@@ -356,15 +356,24 @@ impl CosmicDriver {
         ReadingStatus::from(file.status).to_string()
     }
 
-    pub async fn seed_document(&self) -> String {
-        self.scan_fixture().await.guid
+    /// Returns `(file_guid, doc_api_guid)`.
+    pub async fn seed_document(&self) -> (String, String) {
+        let file = self.scan_fixture().await;
+        let doc_api_guid = file
+            .document_guid
+            .clone()
+            .expect("scanned fixture must produce a document");
+        (file.guid, doc_api_guid)
     }
 
-    /// `scan_fixture` plus a DAO-direct `content_tags` upsert — the
-    /// in-process equivalent of `RestDriver::seed_tagged_document`'s
-    /// `POST /files` + `POST .../tags`.
-    pub async fn seed_tagged_document(&self, tag: &str) -> String {
+    /// `scan_fixture` plus a DAO-direct `content_tags` upsert. Returns
+    /// `(file_guid, doc_api_guid)`.
+    pub async fn seed_tagged_document(&self, tag: &str) -> (String, String) {
         let file = self.scan_fixture().await;
+        let doc_api_guid = file
+            .document_guid
+            .clone()
+            .expect("scanned fixture must produce a document");
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");
         dao::upsert_content_tag(
@@ -373,7 +382,74 @@ impl CosmicDriver {
         )
         .await
         .expect("upsert content tag");
-        file.guid
+        (file.guid, doc_api_guid)
+    }
+
+    pub async fn prepare_scan_dir(&self) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("temp scan dir");
+        let dest = dir.path().join("sample.epub");
+        std::fs::copy(fixtures::sample_epub_path(), &dest).expect("copy fixture");
+        let expanded = read_flow_core::ExpandedPath::from_str(&dir.path().to_string_lossy())
+            .expect("valid path");
+        self.application_module
+            .update_settings(move |settings| {
+                settings.scan.directories.insert(
+                    expanded,
+                    read_flow_core::scan::DirectorySettings::Scan {
+                        tags: Vec::new(),
+                        inherit: false,
+                    },
+                );
+            })
+            .await
+            .expect("update settings");
+        dir
+    }
+
+    pub async fn scan_configured(&self) -> u64 {
+        self.application_module
+            .scan_configured()
+            .await
+            .expect("scan_configured")
+            .processed
+    }
+
+    pub async fn get_document_title(&self, doc_api_guid: &str) -> String {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        dao::select_api_document_by_guid(&mut conn, doc_api_guid)
+            .await
+            .expect("select document by guid")
+            .expect("document not found")
+            .metadata
+            .title
+            .expect("document has no title")
+    }
+
+    pub async fn set_document_title(&self, doc_api_guid: &str, title: &str) {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        let doc = dao::select_document_by_guid(&mut conn, doc_api_guid)
+            .await
+            .expect("select document")
+            .expect("document not found");
+        dao::upsert_document_user_metadata(
+            &mut conn,
+            doc.id,
+            None,
+            Some(title),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("upsert document metadata");
     }
 
     pub async fn document_is_listed(&self, title: &str) -> bool {

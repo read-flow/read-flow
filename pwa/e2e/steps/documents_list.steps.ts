@@ -66,9 +66,10 @@ Given('a document has been added to the library', async function (this: BddWorld
 		body: form,
 	});
 	expect(uploadResponse.ok, `POST /files failed: ${uploadResponse.status}`).toBe(true);
-	const file = (await uploadResponse.json()) as { guid: string; fingerprint: string };
+	const file = (await uploadResponse.json()) as { guid: string; fingerprint: string; document_guid?: string };
 	this.currentDocumentGuid = file.guid;
 	this.currentDocumentFingerprint = file.fingerprint;
+	this.currentDocumentApiGuid = file.document_guid;
 });
 
 Then('{string} appears in the library\'s list of documents', async function (this: BddWorld, title: string) {
