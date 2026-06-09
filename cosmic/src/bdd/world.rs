@@ -29,6 +29,8 @@ pub struct BddWorld {
     pub status_filter: Option<String>,
     /// Tag filter set by a `When I filter by tag …` step.
     pub tag_filter: Option<String>,
+    /// Sort direction set by sort steps (true = ascending).
+    pub sort_ascending: bool,
 }
 
 impl BddWorld {
@@ -45,6 +47,7 @@ impl BddWorld {
             search_query: None,
             status_filter: None,
             tag_filter: None,
+            sort_ascending: true,
         })
     }
 }

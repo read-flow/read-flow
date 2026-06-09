@@ -6,6 +6,7 @@
 use read_flow_core::test_support::TestServer;
 
 use crate::bdd::fixtures::sample_epub_path;
+use crate::bdd::fixtures::sample2_epub_path;
 
 pub const USER: &str = "alice";
 pub const PASSWORD: &str = "correct-horse";
@@ -181,6 +182,37 @@ impl RestDriver {
             .send()
             .await
             .expect("POST /files")
+            .json()
+            .await
+            .expect("parse uploaded file JSON");
+        let file_guid = file["guid"].as_str().expect("guid field").to_string();
+        let doc_api_guid = file["document_guid"]
+            .as_str()
+            .expect("document_guid field")
+            .to_string();
+        let fingerprint = file["fingerprint"]
+            .as_str()
+            .expect("fingerprint field")
+            .to_string();
+        (file_guid, doc_api_guid, fingerprint)
+    }
+
+    /// Seeds the second fixture ("Zeta Test Book"). Returns `(file_guid, doc_api_guid, fingerprint)`.
+    pub async fn seed_second_document(&self) -> (String, String, String) {
+        let bytes = std::fs::read(sample2_epub_path()).expect("read fixture sample2.epub");
+        let part = reqwest::multipart::Part::bytes(bytes)
+            .file_name("sample2.epub")
+            .mime_str("application/epub+zip")
+            .expect("mime");
+        let form = reqwest::multipart::Form::new().part("file", part);
+        let file: serde_json::Value = self
+            .client
+            .post(format!("{}/files", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .multipart(form)
+            .send()
+            .await
+            .expect("POST /files (sample2)")
             .json()
             .await
             .expect("parse uploaded file JSON");

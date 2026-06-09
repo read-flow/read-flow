@@ -10,3 +10,9 @@
 pub fn sample_epub_path() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features/fixtures/sample.epub")
 }
+
+/// A second EPUB fixture with title "Zeta Test Book" — used by scenarios that
+/// need two distinct documents (e.g. `documents.sort`, `documents.merge`).
+pub fn sample2_epub_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features/fixtures/sample2.epub")
+}

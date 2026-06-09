@@ -235,6 +235,14 @@ impl Driver {
         }
     }
 
+    /// Seeds the second fixture ("Zeta Test Book"). Returns `(file_guid, doc_api_guid, fingerprint)`.
+    pub async fn seed_second_document(&self) -> (String, String, String) {
+        match self {
+            Self::Rest(driver) => driver.seed_second_document().await,
+            Self::Cosmic(driver) => driver.seed_second_document().await,
+        }
+    }
+
     pub async fn document_is_listed(&self, title: &str) -> bool {
         match self {
             Self::Rest(driver) => driver.document_is_listed(title).await,
@@ -374,6 +382,17 @@ impl Driver {
                 "`documents.filter_by_tag` has no REST surface — run with BDD_DRIVER=cosmic or BDD_DRIVER=pwa"
             ),
             Self::Cosmic(driver) => driver.filter_by_tag_returns_document(tag, title).await,
+        }
+    }
+
+    // -- documents.sort --
+
+    pub async fn sorted_document_titles_ascending(&self) -> Vec<String> {
+        match self {
+            Self::Rest(_) => panic!(
+                "`documents.sort` has no REST surface — run with BDD_DRIVER=cosmic or BDD_DRIVER=pwa"
+            ),
+            Self::Cosmic(driver) => driver.sorted_document_titles_ascending().await,
         }
     }
 

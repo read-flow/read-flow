@@ -277,9 +277,23 @@ impl CosmicDriver {
     /// the resulting `File` row — the in-process equivalent of what
     /// `RestDriver::seed_document`'s `POST /files` hands back.
     async fn scan_fixture(&self) -> read_flow_core::db::models::File {
+        self.scan_fixture_path(fixtures::sample_epub_path(), "sample.epub")
+            .await
+    }
+
+    async fn scan_fixture2(&self) -> read_flow_core::db::models::File {
+        self.scan_fixture_path(fixtures::sample2_epub_path(), "sample2.epub")
+            .await
+    }
+
+    async fn scan_fixture_path(
+        &self,
+        src: std::path::PathBuf,
+        filename: &str,
+    ) -> read_flow_core::db::models::File {
         let scan_dir = tempfile::tempdir().expect("temp scan dir");
-        let dest = scan_dir.path().join("sample.epub");
-        std::fs::copy(fixtures::sample_epub_path(), &dest).expect("copy fixture epub");
+        let dest = scan_dir.path().join(filename);
+        std::fs::copy(src, &dest).expect("copy fixture epub");
 
         self.application_module
             .scan(&dest)
@@ -366,6 +380,16 @@ impl CosmicDriver {
             .document_guid
             .clone()
             .expect("scanned fixture must produce a document");
+        (file.guid, doc_api_guid, file.fingerprint)
+    }
+
+    /// Seeds the second fixture ("Zeta Test Book"). Returns `(file_guid, doc_api_guid, fingerprint)`.
+    pub async fn seed_second_document(&self) -> (String, String, String) {
+        let file = self.scan_fixture2().await;
+        let doc_api_guid = file
+            .document_guid
+            .clone()
+            .expect("scanned fixture2 must produce a document");
         (file.guid, doc_api_guid, file.fingerprint)
     }
 
@@ -599,6 +623,23 @@ impl CosmicDriver {
                     .flat_map(|c| c.tags.iter())
                     .any(|t| t == tag)
         })
+    }
+
+    // -- documents.sort --
+
+    /// Returns document titles sorted by title ascending.
+    pub async fn sorted_document_titles_ascending(&self) -> Vec<String> {
+        let docs = self
+            .document_provider
+            .get_documents()
+            .await
+            .expect("get documents");
+        let mut titles: Vec<String> = docs
+            .into_iter()
+            .filter_map(|d| d.user_meta.title.clone())
+            .collect();
+        titles.sort();
+        titles
     }
 
     // -- documents.batch_tag --
