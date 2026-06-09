@@ -1,12 +1,12 @@
-import { Given, Then, When } from '@cucumber/cucumber';
+import { After, Given, Then, When } from '@cucumber/cucumber';
 import { expect } from '@playwright/test';
 import type { BddWorld } from '../support/world';
 
 const SOURCE_NAME = 'Home Server';
 
 // Both the connectivity check (on add) and `getSettings()` verify a PBKDF2
-// hash (600k iterations) server-side — noticeably slower than the default 5s
-// web-first-assertion timeout (see `remotes_status`'s `STATUS_CHECK_TIMEOUT`).
+// hash server-side — noticeably slower than the default 5s web-first-assertion
+// timeout (see `remotes_status`'s `STATUS_CHECK_TIMEOUT`).
 const SLOW_AUTH_TIMEOUT = 15_000;
 
 // The PWA's admin UI manages a *remote* instance's settings through a
@@ -39,4 +39,17 @@ When('I enable dry-run mode and save', async function (this: BddWorld) {
 Then('dry-run mode is reported as enabled', async function (this: BddWorld) {
 	await this.page.reload();
 	await expect(this.page.getByLabel('Dry run')).toBeChecked({ timeout: SLOW_AUTH_TIMEOUT });
+});
+
+// Reset dry-run after this scenario so subsequent scenarios on the shared server aren't affected.
+After({ tags: '@admin_server_settings' }, async function (this: BddWorld) {
+	const { baseUrl, user, password } = this.fixtures.backend;
+	const auth = `Basic ${Buffer.from(`${user}:${password}`).toString('base64')}`;
+	const getResp = await fetch(`${baseUrl}/settings`, { headers: { Authorization: auth } });
+	const settings = (await getResp.json()) as Record<string, unknown>;
+	await fetch(`${baseUrl}/settings`, {
+		method: 'PUT',
+		headers: { Authorization: auth, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ ...settings, dry_run: false }),
+	});
 });

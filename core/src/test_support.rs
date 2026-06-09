@@ -41,7 +41,8 @@ impl TestServer {
         let dir = std::env::temp_dir().join(format!("read-flow-bdd-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create temp dir for test server");
 
-        let hash = HashedPassword::try_from(password.to_string()).expect("hash test password");
+        let hash = HashedPassword::with_rounds(password, pbkdf2::Params::MIN_ROUNDS)
+            .expect("hash test password");
         let config_path = dir.join("read-flow.toml");
         std::fs::write(
             &config_path,

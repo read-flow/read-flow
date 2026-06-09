@@ -138,4 +138,5 @@ pwa-test-watch:
 
 # Runs PWA end-to-end BDD scenarios (Playwright, builds first)
 pwa-test-e2e:
+    cargo build -p read-flow-core --bin read-flow-cli
     cd pwa && npm run test:e2e

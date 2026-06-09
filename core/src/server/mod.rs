@@ -613,7 +613,9 @@ async fn upload_file(
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let result = dao::select_file_by_path(&mut conn, &target_file.display().to_string())
         .await?
-        .unwrap();
+        .ok_or_else(|| {
+            Error::Scan("file not recorded after scan; server may be in dry-run mode".to_string())
+        })?;
     Ok(Json((result, vec![]).into()))
 }
 

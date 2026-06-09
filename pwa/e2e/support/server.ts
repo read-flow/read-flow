@@ -9,14 +9,15 @@ import { join } from 'node:path';
  * spec, one canonical fixture identity, across every runner.
  *
  * Fixed PHC hash for the password "correct-horse", generated once via
- * `HashedPassword::try_from` (see core/src/settings.rs). PBKDF2 verification
- * only depends on the password matching the embedded salt+hash, so a stable
- * hash for a stable test password is safe to commit and reuse across runs.
+ * `HashedPassword::with_rounds("correct-horse", Params::MIN_ROUNDS)` (1000
+ * rounds — fast for tests). PBKDF2 verification only depends on the password
+ * matching the embedded salt+hash, so a stable hash for a stable test
+ * password is safe to commit and reuse across runs.
  */
 const BDD_USER = 'alice';
 const BDD_PASSWORD = 'correct-horse';
 const BDD_PASSWORD_HASH =
-	'$pbkdf2-sha256$i=600000,l=32$e2bgBhpSCo7uRnLvFGIxIA$IcyLAJ3+r0ty4wSwAcJfeAFsuh3+KIys67NtIe29478';
+	'$pbkdf2-sha256$i=1000,l=32$weEfAaEiLNy+ZsD/cKJU4Q$SwGeEOtgjBrNPzjcQW48C9VmCnEIQ+iBh020TMarMs0';
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');
 const READ_FLOW_CLI = join(REPO_ROOT, 'target', 'debug', 'read-flow-cli');

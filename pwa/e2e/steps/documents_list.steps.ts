@@ -25,10 +25,9 @@ function basicAuthHeader(user: string, password: string): string {
 
 const SOURCE_NAME = 'Home Server';
 
-// Adding a source verifies connectivity (a PBKDF2 hash check, 600k
-// iterations) server-side — see `remotes_status`'s `STATUS_CHECK_TIMEOUT` /
-// `admin_*`/`tags_list` steps' `SLOW_AUTH_TIMEOUT` for the same noticeably-
-// slower-than-the-default-5s pattern.
+// Adding a source verifies connectivity (a PBKDF2 hash check) server-side —
+// see `remotes_status`'s `STATUS_CHECK_TIMEOUT` / `admin_*`/`tags_list`
+// steps' `SLOW_AUTH_TIMEOUT` for the same noticeably-slower-than-the-default-5s pattern.
 const SLOW_AUTH_TIMEOUT = 15_000;
 
 // The PWA only knows about documents served by *registered* remote sources —
