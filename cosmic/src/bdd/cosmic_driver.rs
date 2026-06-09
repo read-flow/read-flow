@@ -600,6 +600,25 @@ impl CosmicDriver {
                     .any(|t| t == tag)
         })
     }
+
+    // -- documents.batch_tag --
+
+    /// Batch-adds `tag` to the document identified by `doc_api_guid`.
+    pub async fn batch_add_tag(&self, doc_api_guid: &str, tag: &str) {
+        let docs = self
+            .document_provider
+            .get_documents()
+            .await
+            .expect("get documents");
+        let doc = docs
+            .into_iter()
+            .find(|d| d.document_guid == doc_api_guid)
+            .unwrap_or_else(|| panic!("document {doc_api_guid} not found"));
+        self.document_provider
+            .batch_add_document_tags(vec![doc], &[tag.to_string()])
+            .await
+            .expect("batch add tags");
+    }
 }
 
 /// Polls a `Task` to completion, collecting the application messages it

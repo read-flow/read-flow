@@ -376,6 +376,17 @@ impl Driver {
             Self::Cosmic(driver) => driver.filter_by_tag_returns_document(tag, title).await,
         }
     }
+
+    // -- documents.batch_tag --
+
+    pub async fn batch_add_tag(&self, doc_api_guid: &str, tag: &str) {
+        match self {
+            Self::Rest(_) => panic!(
+                "`documents.batch_tag` has no REST surface — run with BDD_DRIVER=cosmic or BDD_DRIVER=pwa"
+            ),
+            Self::Cosmic(driver) => driver.batch_add_tag(doc_api_guid, tag).await,
+        }
+    }
 }
 
 fn env_name() -> &'static str {

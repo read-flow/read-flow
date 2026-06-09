@@ -3,6 +3,7 @@ mod admin_check_missing;
 mod admin_scan;
 mod admin_scan_directories;
 mod admin_server_settings;
+mod documents_batch_tag;
 mod documents_detail_view;
 mod documents_edit_metadata;
 mod documents_filter_by_status;
