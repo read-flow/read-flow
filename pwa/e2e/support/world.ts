@@ -13,6 +13,10 @@ export class BddWorld extends CucumberWorld {
 	fixtures!: SharedFixtures;
 	context!: BrowserContext;
 	page!: Page;
+	/** GUID of the most recently seeded document — set by seed steps. */
+	currentDocumentGuid?: string;
+	/** Fingerprint of the most recently seeded document — set by seed steps. */
+	currentDocumentFingerprint?: string;
 
 	get baseUrl(): string {
 		return this.fixtures.preview.baseUrl;

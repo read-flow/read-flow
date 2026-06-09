@@ -22,6 +22,7 @@ use cosmic::iced::runtime::Action as RuntimeAction;
 use cosmic::iced::runtime::task::into_stream;
 use futures::StreamExt;
 use read_flow_core::ExpandedPath;
+use read_flow_core::api::ReadingStatus;
 use read_flow_core::db::dao;
 use read_flow_core::db::models::ContentTag;
 use read_flow_core::db::models::NewRemote;
@@ -289,6 +290,70 @@ impl CosmicDriver {
             .await
             .expect("select file by path")
             .expect("scanned file is in the DB")
+    }
+
+    pub async fn add_tag_to_document(&self, guid: &str, tag: &str) {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        let file = dao::select_file_by_guid(&mut conn, guid)
+            .await
+            .expect("select file by guid")
+            .unwrap_or_else(|| panic!("file {guid} not found"));
+        dao::upsert_content_tag(
+            &mut conn,
+            ContentTag::new(file.fingerprint.clone(), tag.to_string()),
+        )
+        .await
+        .expect("upsert content tag");
+    }
+
+    pub async fn remove_tag_from_document(&self, guid: &str, tag: &str) {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        let file = dao::select_file_by_guid(&mut conn, guid)
+            .await
+            .expect("select file by guid")
+            .unwrap_or_else(|| panic!("file {guid} not found"));
+        dao::delete_content_tags(&mut conn, &file.fingerprint, vec![tag.to_string()])
+            .await
+            .expect("delete content tag");
+    }
+
+    pub async fn document_has_tag(&self, guid: &str, tag: &str) -> bool {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        let file = dao::select_file_by_guid(&mut conn, guid)
+            .await
+            .expect("select file by guid")
+            .unwrap_or_else(|| panic!("file {guid} not found"));
+        dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
+            .await
+            .expect("select content tags")
+            .iter()
+            .any(|t| t.tag == tag)
+    }
+
+    pub async fn set_reading_status(&self, guid: &str, status: &str) {
+        let status: ReadingStatus = status.parse().expect("valid reading status");
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        let file = dao::select_file_by_guid(&mut conn, guid)
+            .await
+            .expect("select file by guid")
+            .unwrap_or_else(|| panic!("file {guid} not found"));
+        dao::update_reading_status_only(&mut conn, &file.fingerprint, status.into())
+            .await
+            .expect("update reading status");
+    }
+
+    pub async fn get_reading_status(&self, guid: &str) -> String {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        let file = dao::select_file_by_guid(&mut conn, guid)
+            .await
+            .expect("select file by guid")
+            .unwrap_or_else(|| panic!("file {guid} not found"));
+        ReadingStatus::from(file.status).to_string()
     }
 
     pub async fn seed_document(&self) -> String {

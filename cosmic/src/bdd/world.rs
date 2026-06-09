@@ -10,6 +10,9 @@ pub struct BddWorld {
     pub driver: Driver,
     /// Set by a `When` step, asserted on by a later `Then` step.
     pub last_check: Option<bool>,
+    /// GUID of the most recently seeded document — set by seed steps,
+    /// consumed by `When`/`Then` steps that operate on a specific document.
+    pub current_document_guid: Option<String>,
 }
 
 impl BddWorld {
@@ -17,6 +20,7 @@ impl BddWorld {
         Ok(Self {
             driver: Driver::new().await,
             last_check: None,
+            current_document_guid: None,
         })
     }
 }

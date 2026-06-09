@@ -186,6 +186,98 @@ impl RestDriver {
         file["guid"].as_str().expect("guid field").to_string()
     }
 
+    pub async fn add_tag_to_document(&self, guid: &str, tag: &str) {
+        let response = self
+            .client
+            .post(format!("{}/files/{}/tags", self.server.base_url, guid))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!([tag]))
+            .send()
+            .await
+            .expect("POST /files/<guid>/tags");
+        assert!(
+            response.status().is_success(),
+            "POST /files/{guid}/tags failed: {}",
+            response.status()
+        );
+    }
+
+    pub async fn remove_tag_from_document(&self, guid: &str, tag: &str) {
+        let response = self
+            .client
+            .delete(format!("{}/files/{}/tags", self.server.base_url, guid))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!([tag]))
+            .send()
+            .await
+            .expect("DELETE /files/<guid>/tags");
+        assert!(
+            response.status().is_success(),
+            "DELETE /files/{guid}/tags failed: {}",
+            response.status()
+        );
+    }
+
+    pub async fn document_has_tag(&self, guid: &str, tag: &str) -> bool {
+        let tags: Vec<String> = self
+            .client
+            .get(format!("{}/files/{}/tags", self.server.base_url, guid))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /files/<guid>/tags")
+            .json()
+            .await
+            .expect("parse tags JSON");
+        tags.iter().any(|t| t == tag)
+    }
+
+    /// Gets a file's fingerprint via `GET /files/<guid>`, then sets reading
+    /// status via `PUT /reading-state/<fingerprint>/status`.
+    pub async fn set_reading_status(&self, guid: &str, status: &str) {
+        let file: serde_json::Value = self
+            .client
+            .get(format!("{}/files/{}", self.server.base_url, guid))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /files/<guid>")
+            .json()
+            .await
+            .expect("parse file JSON");
+        let fingerprint = file["fingerprint"].as_str().expect("fingerprint field");
+        let response = self
+            .client
+            .put(format!(
+                "{}/reading-state/{}/status",
+                self.server.base_url, fingerprint
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!({ "status": status }))
+            .send()
+            .await
+            .expect("PUT /reading-state/<fp>/status");
+        assert!(
+            response.status().is_success(),
+            "PUT /reading-state/{fingerprint}/status failed: {}",
+            response.status()
+        );
+    }
+
+    pub async fn get_reading_status(&self, guid: &str) -> String {
+        let file: serde_json::Value = self
+            .client
+            .get(format!("{}/files/{}", self.server.base_url, guid))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /files/<guid>")
+            .json()
+            .await
+            .expect("parse file JSON");
+        file["status"].as_str().expect("status field").to_string()
+    }
+
     /// `seed_document` plus tagging it via `POST /files/<guid>/tags`.
     pub async fn seed_tagged_document(&self, tag: &str) -> String {
         let guid = self.seed_document().await;

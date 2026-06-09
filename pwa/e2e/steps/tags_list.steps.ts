@@ -66,7 +66,9 @@ Given('a document tagged {string} has been added to the library', async function
 		body: form,
 	});
 	expect(uploadResponse.ok, `POST /files failed: ${uploadResponse.status}`).toBe(true);
-	const file = await uploadResponse.json();
+	const file = (await uploadResponse.json()) as { guid: string; fingerprint: string };
+	this.currentDocumentGuid = file.guid;
+	this.currentDocumentFingerprint = file.fingerprint;
 
 	const tagsResponse = await fetch(`${baseUrl}/files/${file.guid}/tags`, {
 		method: 'POST',

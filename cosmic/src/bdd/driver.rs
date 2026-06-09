@@ -183,6 +183,45 @@ impl Driver {
         }
     }
 
+    // -- tags_add --
+
+    pub async fn add_tag_to_document(&self, guid: &str, tag: &str) {
+        match self {
+            Self::Rest(driver) => driver.add_tag_to_document(guid, tag).await,
+            Self::Cosmic(driver) => driver.add_tag_to_document(guid, tag).await,
+        }
+    }
+
+    pub async fn remove_tag_from_document(&self, guid: &str, tag: &str) {
+        match self {
+            Self::Rest(driver) => driver.remove_tag_from_document(guid, tag).await,
+            Self::Cosmic(driver) => driver.remove_tag_from_document(guid, tag).await,
+        }
+    }
+
+    pub async fn document_has_tag(&self, guid: &str, tag: &str) -> bool {
+        match self {
+            Self::Rest(driver) => driver.document_has_tag(guid, tag).await,
+            Self::Cosmic(driver) => driver.document_has_tag(guid, tag).await,
+        }
+    }
+
+    // -- reading_status --
+
+    pub async fn set_reading_status(&self, guid: &str, status: &str) {
+        match self {
+            Self::Rest(driver) => driver.set_reading_status(guid, status).await,
+            Self::Cosmic(driver) => driver.set_reading_status(guid, status).await,
+        }
+    }
+
+    pub async fn get_reading_status(&self, guid: &str) -> String {
+        match self {
+            Self::Rest(driver) => driver.get_reading_status(guid).await,
+            Self::Cosmic(driver) => driver.get_reading_status(guid).await,
+        }
+    }
+
     // -- documents_list --
     // Reuses `seed_document` (untagged — `seed_tagged_document` minus the
     // tagging step), shared with `tags_list`.

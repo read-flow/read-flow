@@ -8,7 +8,8 @@ use crate::bdd::world::BddWorld;
 
 #[given(regex = "^a document tagged \"([^\"]+)\" has been added to the library$")]
 async fn seed_tagged_document(world: &mut BddWorld, tag: String) {
-    world.driver.seed_tagged_document(&tag).await;
+    let guid = world.driver.seed_tagged_document(&tag).await;
+    world.current_document_guid = Some(guid);
 }
 
 #[then(regex = "^\"([^\"]+)\" appears in the library's list of tags$")]
