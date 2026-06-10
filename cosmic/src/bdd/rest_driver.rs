@@ -653,6 +653,129 @@ impl RestDriver {
         (file_guid, doc_api_guid, fingerprint)
     }
 
+    // -- online_library.search --
+
+    /// Returns `true` if `GET /online-library/search?q=` responds with 200.
+    pub async fn online_library_search_responds(&self, query: &str) -> bool {
+        let encoded_q: String = query
+            .chars()
+            .flat_map(|c| {
+                if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '~') {
+                    vec![c]
+                } else {
+                    format!("%{:02X}", c as u32).chars().collect()
+                }
+            })
+            .collect();
+        self.client
+            .get(format!(
+                "{}/online-library/search?q={}",
+                self.server.base_url, encoded_q
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+    }
+
+    // -- online_library.download_import --
+
+    /// Serves `sample.epub` from a local one-shot HTTP server and posts it to
+    /// `POST /online-library/import`. Returns `true` if the server accepted it.
+    pub async fn online_library_import_responds(&self) -> bool {
+        let url = super::fixtures::serve_epub_once().await;
+        self.client
+            .post(format!("{}/online-library/import", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!({
+                "title": "BDD Sample Book",
+                "format": {
+                    "mime_type": "application/epub+zip",
+                    "href": url,
+                    "label": "EPUB"
+                }
+            }))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+    }
+
+    // -- sources.send_to_client --
+
+    /// Simulates "send document to a client server" by uploading the sample fixture
+    /// via `FilesClient::import_file` — the same call path `Aggregator::send_document_to_client`
+    /// uses. Returns `true` if the upload succeeds.
+    pub async fn send_document_to_server(&self) -> bool {
+        use read_flow_core::api::FileDataSource;
+        use read_flow_core::client::FilesClient;
+        let base_url: url::Url = self.server.base_url.parse().expect("valid server URL");
+        let client = FilesClient::new(
+            base_url,
+            self.server.user.clone(),
+            self.server.password.clone(),
+            false,
+        )
+        .expect("build FilesClient");
+        client
+            .import_file(&super::fixtures::sample_epub_path())
+            .await
+            .is_ok()
+    }
+
+    // -- documents.select_cover --
+
+    /// Sets the selected cover fingerprint via `PUT /documents/{guid}/metadata`.
+    pub async fn set_document_cover_fingerprint(&self, doc_api_guid: &str, fingerprint: &str) {
+        let response = self
+            .client
+            .put(format!(
+                "{}/documents/{}/metadata",
+                self.server.base_url, doc_api_guid
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!({ "selected_cover_fingerprint": fingerprint }))
+            .send()
+            .await
+            .expect("PUT /documents/<guid>/metadata");
+        assert!(
+            response.status().is_success(),
+            "PUT /documents/{doc_api_guid}/metadata failed: {}",
+            response.status()
+        );
+    }
+
+    // -- documents.format_picker --
+
+    /// Seeds an EPUB and a PDF via `POST /files`, merges them, returns the winner document GUID.
+    pub async fn seed_merged_multiformat_document(&self) -> String {
+        let (_, epub_doc_guid, _) = self.seed_document().await;
+        let (_, pdf_doc_guid, _) = self.seed_pdf_document().await;
+        self.merge_documents(&epub_doc_guid, &pdf_doc_guid).await;
+        epub_doc_guid
+    }
+
+    /// Returns `true` if `GET /documents` shows the document with `doc_api_guid` owning
+    /// more than one file (i.e., was merged from multiple-format files).
+    pub async fn document_has_multiple_formats(&self, doc_api_guid: &str) -> bool {
+        let files: Vec<serde_json::Value> = self
+            .client
+            .get(format!("{}/files", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /files")
+            .json()
+            .await
+            .expect("parse files JSON");
+        files
+            .iter()
+            .filter(|f| f["document_guid"].as_str() == Some(doc_api_guid))
+            .count()
+            > 1
+    }
+
     /// `GET /documents/<guid>/cover` — returns `true` when the server
     /// responds with 200 (cover image present).
     pub async fn document_has_cover(&self, doc_api_guid: &str) -> bool {

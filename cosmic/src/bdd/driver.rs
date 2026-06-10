@@ -385,6 +385,92 @@ impl Driver {
         }
     }
 
+    // -- online_library.search --
+
+    pub async fn online_library_search_responds(&self, query: &str) -> bool {
+        match self {
+            Self::Rest(driver) => driver.online_library_search_responds(query).await,
+            Self::Cosmic(driver) => driver.online_library_search_responds(query).await,
+        }
+    }
+
+    // -- online_library.download_import --
+
+    pub async fn online_library_import_responds(&self) -> bool {
+        match self {
+            Self::Rest(driver) => driver.online_library_import_responds().await,
+            Self::Cosmic(driver) => driver.online_library_import_responds().await,
+        }
+    }
+
+    // -- sources.send_to_client --
+
+    pub async fn send_document_to_server(&self) -> bool {
+        match self {
+            Self::Rest(driver) => driver.send_document_to_server().await,
+            Self::Cosmic(driver) => driver.send_document_to_server().await,
+        }
+    }
+
+    // -- documents.select_cover --
+
+    pub async fn set_document_cover_fingerprint(&self, doc_api_guid: &str, fingerprint: &str) {
+        match self {
+            Self::Rest(driver) => {
+                driver
+                    .set_document_cover_fingerprint(doc_api_guid, fingerprint)
+                    .await
+            }
+            Self::Cosmic(driver) => {
+                driver
+                    .set_document_cover_fingerprint(doc_api_guid, fingerprint)
+                    .await
+            }
+        }
+    }
+
+    // -- documents.format_picker --
+
+    pub async fn seed_merged_multiformat_document(&self) -> String {
+        match self {
+            Self::Rest(driver) => driver.seed_merged_multiformat_document().await,
+            Self::Cosmic(driver) => driver.seed_merged_multiformat_document().await,
+        }
+    }
+
+    pub async fn document_has_multiple_formats(&self, doc_api_guid: &str) -> bool {
+        match self {
+            Self::Rest(driver) => driver.document_has_multiple_formats(doc_api_guid).await,
+            Self::Cosmic(driver) => driver.document_has_multiple_formats(doc_api_guid).await,
+        }
+    }
+
+    // -- documents.pagination --
+
+    pub async fn document_on_first_page(&self, title: &str) -> bool {
+        match self {
+            Self::Rest(_) => panic!(
+                "`documents.pagination` has no REST surface — run with BDD_DRIVER=cosmic or BDD_DRIVER=pwa"
+            ),
+            Self::Cosmic(driver) => driver.document_on_first_page(title).await,
+        }
+    }
+
+    // -- documents.filter_by_source --
+
+    pub async fn filter_by_source_returns_document(&self, source_name: &str, title: &str) -> bool {
+        match self {
+            Self::Rest(_) => panic!(
+                "`documents.filter_by_source` has no REST surface — run with BDD_DRIVER=cosmic or BDD_DRIVER=pwa"
+            ),
+            Self::Cosmic(driver) => {
+                driver
+                    .filter_by_source_returns_document(source_name, title)
+                    .await
+            }
+        }
+    }
+
     // -- documents.merge --
 
     pub async fn merge_documents(&self, winner_guid: &str, loser_guid: &str) {

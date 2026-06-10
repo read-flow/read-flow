@@ -31,6 +31,8 @@ pub struct BddWorld {
     pub status_filter: Option<String>,
     /// Tag filter set by a `When I filter by tag …` step.
     pub tag_filter: Option<String>,
+    /// Source filter set by a `When I filter documents by source …` step.
+    pub source_filter: Option<String>,
     /// Sort direction set by sort steps (true = ascending).
     pub sort_ascending: bool,
     /// Set by `When I open the document for reading` (`reading.epub_viewer`).
@@ -52,6 +54,7 @@ impl BddWorld {
             search_query: None,
             status_filter: None,
             tag_filter: None,
+            source_filter: None,
             sort_ascending: true,
             reading_open: false,
         })

@@ -21,6 +21,7 @@ use cosmic::Task;
 use cosmic::iced::runtime::Action as RuntimeAction;
 use cosmic::iced::runtime::task::into_stream;
 use futures::StreamExt;
+use provider::r#async::HasSetExpired;
 use read_flow_core::ExpandedPath;
 use read_flow_core::api::ReadingStatus;
 use read_flow_core::db::dao;
@@ -635,6 +636,49 @@ impl CosmicDriver {
         })
     }
 
+    // -- documents.pagination --
+
+    /// Returns true if `title` appears in the first page of the document list.
+    pub async fn document_on_first_page(&self, title: &str) -> bool {
+        let docs: Vec<_> = self
+            .document_provider
+            .get_documents()
+            .await
+            .expect("get documents")
+            .into_iter()
+            .collect();
+        let pagination = crate::component::pagination::Pagination::new(docs.len());
+        pagination
+            .filter_visible(&docs)
+            .any(|doc| doc.user_meta.title.as_deref() == Some(title))
+    }
+
+    // -- documents.filter_by_source --
+
+    /// Returns true if the document with `title` is from `source_name` ("Local" or a URL string).
+    pub async fn filter_by_source_returns_document(&self, source_name: &str, title: &str) -> bool {
+        use crate::client::ClientSelector;
+        let selector = if source_name == "Local" {
+            ClientSelector::Local
+        } else {
+            let url = source_name.parse().expect("valid URL for source filter");
+            ClientSelector::Remote(url)
+        };
+        let docs = self
+            .document_provider
+            .get_documents()
+            .await
+            .expect("get documents");
+        docs.into_iter().any(|doc| {
+            doc.user_meta.title.as_deref() == Some(title)
+                && doc
+                    .contents
+                    .iter()
+                    .flat_map(|c| c.sources.iter())
+                    .any(|s| s.client == selector)
+        })
+    }
+
     // -- documents.merge --
 
     /// Merges `loser_guid` into `winner_guid`. After merge, only the winner document remains.
@@ -752,6 +796,113 @@ impl CosmicDriver {
             .is_some()
     }
 
+    // -- sources.send_to_client --
+
+    /// Sends the sample EPUB directly to the TestServer via the `FilesClient::import_file`
+    /// path — the same path exercised by `Aggregator::send_document_to_client`.
+    /// Returns `true` if the upload succeeds (i.e. the server accepted the file).
+    pub async fn send_document_to_server(&self) -> bool {
+        use read_flow_core::api::FileDataSource;
+        use read_flow_core::client::FilesClient;
+        let base_url: url::Url = self.server.base_url.parse().expect("valid TestServer URL");
+        let client = FilesClient::new(
+            base_url,
+            self.server.user.clone(),
+            self.server.password.clone(),
+            false,
+        )
+        .expect("build FilesClient");
+        client
+            .import_file(&fixtures::sample_epub_path())
+            .await
+            .is_ok()
+    }
+
+    // -- online_library.search --
+
+    /// Returns `true` if `GET /online-library/search?q=` responds with 200.
+    /// With no OPDS catalogs configured the result is empty, but the endpoint
+    /// must still be reachable and return a well-formed response.
+    pub async fn online_library_search_responds(&self, query: &str) -> bool {
+        use reqwest::Client;
+        let client = Client::new();
+        let encoded_q: String = query
+            .chars()
+            .flat_map(|c| {
+                if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '~') {
+                    vec![c]
+                } else {
+                    format!("%{:02X}", c as u32).chars().collect()
+                }
+            })
+            .collect();
+        client
+            .get(format!(
+                "{}/online-library/search?q={}",
+                self.server.base_url, encoded_q
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+    }
+
+    // -- online_library.download_import --
+
+    /// Serves `sample.epub` from a local one-shot HTTP fixture server, then
+    /// calls `POST /online-library/import` on the TestServer, and returns
+    /// `true` if the file was imported (HTTP 200).
+    pub async fn online_library_import_responds(&self) -> bool {
+        let url = fixtures::serve_epub_once().await;
+        use reqwest::Client;
+        let client = Client::new();
+        client
+            .post(format!("{}/online-library/import", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!({
+                "title": "BDD Sample Book",
+                "format": {
+                    "mime_type": "application/epub+zip",
+                    "href": url,
+                    "label": "EPUB"
+                }
+            }))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+    }
+
+    // -- documents.select_cover --
+
+    /// Explicitly sets `selected_cover_fingerprint` for the document identified by `doc_api_guid`.
+    pub async fn set_document_cover_fingerprint(&self, doc_api_guid: &str, fingerprint: &str) {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        let doc = dao::select_document_by_guid(&mut conn, doc_api_guid)
+            .await
+            .expect("select document by guid")
+            .unwrap_or_else(|| panic!("document {doc_api_guid} not found"));
+        dao::upsert_document_user_metadata(
+            &mut conn,
+            doc.id,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(fingerprint),
+        )
+        .await
+        .expect("set selected_cover_fingerprint");
+    }
+
     // -- reading.pdf_viewer --
 
     async fn scan_fixture_pdf(&self) -> read_flow_core::db::models::File {
@@ -774,6 +925,39 @@ impl CosmicDriver {
     pub fn pdf_opens_successfully(&self) -> bool {
         let path = fixtures::sample_pdf_path();
         mupdf::Document::open(path.as_path()).is_ok()
+    }
+
+    // -- documents.format_picker --
+
+    /// Seeds an EPUB and a PDF, merges them into a single document, and returns
+    /// the winner's document GUID. Stores the GUID in the world via the caller.
+    pub async fn seed_merged_multiformat_document(&self) -> String {
+        let epub_file = self.scan_fixture().await;
+        let pdf_file = self.scan_fixture_pdf().await;
+        let epub_doc_guid = epub_file
+            .document_guid
+            .clone()
+            .expect("epub fixture must produce a document");
+        let pdf_doc_guid = pdf_file
+            .document_guid
+            .clone()
+            .expect("pdf fixture must produce a document");
+        self.merge_documents(&epub_doc_guid, &pdf_doc_guid).await;
+        // Invalidate cache so get_documents picks up the merged state.
+        self.document_provider.set_expired().await;
+        epub_doc_guid
+    }
+
+    /// Returns true if the document identified by `doc_api_guid` has more than
+    /// one content entry — i.e. it has been merged from multiple-format files.
+    pub async fn document_has_multiple_formats(&self, doc_api_guid: &str) -> bool {
+        let docs = self
+            .document_provider
+            .get_documents()
+            .await
+            .expect("get documents");
+        docs.into_iter()
+            .any(|doc| doc.document_guid == doc_api_guid && doc.contents.len() > 1)
     }
 
     // -- reading.epub_viewer --
