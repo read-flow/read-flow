@@ -385,6 +385,22 @@ impl Driver {
         }
     }
 
+    // -- documents.merge --
+
+    pub async fn merge_documents(&self, winner_guid: &str, loser_guid: &str) {
+        match self {
+            Self::Rest(driver) => driver.merge_documents(winner_guid, loser_guid).await,
+            Self::Cosmic(driver) => driver.merge_documents(winner_guid, loser_guid).await,
+        }
+    }
+
+    pub async fn document_count(&self) -> usize {
+        match self {
+            Self::Rest(driver) => driver.document_count().await,
+            Self::Cosmic(driver) => driver.document_count().await,
+        }
+    }
+
     // -- documents.sort --
 
     pub async fn sorted_document_titles_ascending(&self) -> Vec<String> {

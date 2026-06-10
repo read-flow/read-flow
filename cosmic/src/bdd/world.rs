@@ -16,6 +16,8 @@ pub struct BddWorld {
     pub current_document_fingerprint: Option<String>,
     /// Document-record GUID of the most recently seeded document.
     pub current_document_api_guid: Option<String>,
+    /// Document-record GUID of the second seeded document (for merge/sort/etc.).
+    pub second_document_api_guid: Option<String>,
     /// Temp directory created by an `admin.scan` seed step — kept here so
     /// it outlives the step and is cleaned up when the scenario ends.
     pub _scan_dir: Option<tempfile::TempDir>,
@@ -41,6 +43,7 @@ impl BddWorld {
             current_document_guid: None,
             current_document_fingerprint: None,
             current_document_api_guid: None,
+            second_document_api_guid: None,
             _scan_dir: None,
             _scan_processed: None,
             _check_missing_result: None,

@@ -9,6 +9,7 @@ mod documents_edit_metadata;
 mod documents_filter_by_status;
 mod documents_filter_by_tag;
 mod documents_list;
+mod documents_merge;
 mod documents_search;
 mod documents_sort;
 mod reading_progress;

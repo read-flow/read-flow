@@ -625,6 +625,26 @@ impl CosmicDriver {
         })
     }
 
+    // -- documents.merge --
+
+    /// Merges `loser_guid` into `winner_guid`. After merge, only the winner document remains.
+    pub async fn merge_documents(&self, winner_guid: &str, loser_guid: &str) {
+        let pool = self.application_module.connection_pool().await;
+        dao::merge_documents(&pool, winner_guid, &[loser_guid.to_string()])
+            .await
+            .expect("merge documents");
+    }
+
+    /// Returns the number of documents in the library.
+    pub async fn document_count(&self) -> usize {
+        let docs = self
+            .document_provider
+            .get_documents()
+            .await
+            .expect("get documents");
+        docs.into_iter().count()
+    }
+
     // -- documents.sort --
 
     /// Returns document titles sorted by title ascending.

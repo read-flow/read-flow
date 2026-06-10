@@ -11,8 +11,8 @@ async fn seed_two_documents(world: &mut BddWorld) {
     world.current_document_guid = Some(file_guid);
     world.current_document_api_guid = Some(doc_api_guid);
     world.current_document_fingerprint = Some(fingerprint);
-    // Seed second document — we store the first document's IDs for later steps.
-    world.driver.seed_second_document().await;
+    let (_, second_api_guid, _) = world.driver.seed_second_document().await;
+    world.second_document_api_guid = Some(second_api_guid);
 }
 
 #[when("I sort the documents by title ascending")]

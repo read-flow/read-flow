@@ -228,6 +228,41 @@ impl RestDriver {
         (file_guid, doc_api_guid, fingerprint)
     }
 
+    /// Merges `loser_guid` into `winner_guid` via POST /documents/merge.
+    pub async fn merge_documents(&self, winner_guid: &str, loser_guid: &str) {
+        let response = self
+            .client
+            .post(format!("{}/documents/merge", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!({
+                "winner_guid": winner_guid,
+                "loser_guids": [loser_guid],
+            }))
+            .send()
+            .await
+            .expect("POST /documents/merge");
+        assert!(
+            response.status().is_success(),
+            "POST /documents/merge failed: {}",
+            response.status()
+        );
+    }
+
+    /// Returns the total number of documents via GET /documents.
+    pub async fn document_count(&self) -> usize {
+        let docs: Vec<serde_json::Value> = self
+            .client
+            .get(format!("{}/documents", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /documents")
+            .json()
+            .await
+            .expect("parse documents JSON");
+        docs.len()
+    }
+
     pub async fn add_tag_to_document(&self, guid: &str, tag: &str) {
         let response = self
             .client
