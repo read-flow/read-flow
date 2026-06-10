@@ -422,6 +422,53 @@ impl Driver {
             Self::Cosmic(driver) => driver.batch_add_tag(doc_api_guid, tag).await,
         }
     }
+
+    // -- app.epub_viewer_choice --
+
+    pub async fn set_epub_viewer_choice(&mut self, choice: &str) {
+        match self {
+            Self::Rest(_) => {
+                panic!("`app.epub_viewer_choice` has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.set_epub_viewer_choice(choice).await,
+        }
+    }
+
+    pub fn epub_viewer_choice(&self) -> &str {
+        match self {
+            Self::Rest(_) => {
+                panic!("`app.epub_viewer_choice` has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.epub_viewer_choice(),
+        }
+    }
+
+    // -- documents.cover_display --
+
+    pub async fn seed_cover_document(&self) -> (String, String, String) {
+        match self {
+            Self::Rest(driver) => driver.seed_cover_document().await,
+            Self::Cosmic(driver) => driver.seed_cover_document().await,
+        }
+    }
+
+    pub async fn document_has_cover(&self, doc_api_guid: &str) -> bool {
+        match self {
+            Self::Rest(driver) => driver.document_has_cover(doc_api_guid).await,
+            Self::Cosmic(driver) => driver.document_has_cover(doc_api_guid).await,
+        }
+    }
+
+    // -- reading.epub_viewer --
+
+    pub async fn epub_opens_successfully(&self, doc_api_guid: &str) -> bool {
+        match self {
+            Self::Rest(_) => panic!(
+                "`reading.epub_viewer` has no REST surface — run with BDD_DRIVER=cosmic or BDD_DRIVER=pwa"
+            ),
+            Self::Cosmic(driver) => driver.epub_opens_successfully(doc_api_guid).await,
+        }
+    }
 }
 
 fn env_name() -> &'static str {

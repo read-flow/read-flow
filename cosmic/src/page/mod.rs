@@ -14,6 +14,8 @@ mod traits;
 use core::panic;
 use std::sync::Arc;
 
+pub use app_settings::AppSettingsMessage;
+pub use app_settings::AppSettingsPage;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
@@ -45,8 +47,6 @@ use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::layout::full_page;
-use crate::page::app_settings::AppSettingsMessage;
-use crate::page::app_settings::AppSettingsPage;
 use crate::page::document_details::DocumentDetails;
 use crate::page::document_details::DocumentDetailsMessage;
 use crate::page::document_details::DocumentDetailsOutput;

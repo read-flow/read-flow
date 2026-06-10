@@ -41,6 +41,10 @@ impl AppSettingsPage {
     pub fn update_config(&mut self, config: Config) {
         self.config = config;
     }
+
+    pub fn epub_viewer(&self) -> EpubViewerConfig {
+        self.config.epub_viewer
+    }
 }
 
 impl Page for AppSettingsPage {

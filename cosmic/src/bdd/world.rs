@@ -33,6 +33,8 @@ pub struct BddWorld {
     pub tag_filter: Option<String>,
     /// Sort direction set by sort steps (true = ascending).
     pub sort_ascending: bool,
+    /// Set by `When I open the document for reading` (`reading.epub_viewer`).
+    pub reading_open: bool,
 }
 
 impl BddWorld {
@@ -51,6 +53,7 @@ impl BddWorld {
             status_filter: None,
             tag_filter: None,
             sort_ascending: true,
+            reading_open: false,
         })
     }
 }

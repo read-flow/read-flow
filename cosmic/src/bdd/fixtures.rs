@@ -16,3 +16,10 @@ pub fn sample_epub_path() -> std::path::PathBuf {
 pub fn sample2_epub_path() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features/fixtures/sample2.epub")
 }
+
+/// A third EPUB fixture ("Cover Sample Book") with an embedded cover image —
+/// used by `documents.cover_display`. The OPF declares a manifest item with
+/// `properties="cover-image"` so the scanner extracts and stores a cover.
+pub fn sample_cover_epub_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features/fixtures/sample_cover.epub")
+}
