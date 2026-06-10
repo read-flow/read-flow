@@ -23,3 +23,9 @@ pub fn sample2_epub_path() -> std::path::PathBuf {
 pub fn sample_cover_epub_path() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features/fixtures/sample_cover.epub")
 }
+
+/// A minimal valid PDF — used by `reading.pdf_viewer`. One page; passes MuPDF
+/// structure checks so the scanner creates a `File`/`Content` row for it.
+pub fn sample_pdf_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features/fixtures/sample.pdf")
+}

@@ -15,6 +15,8 @@ mod documents_merge;
 mod documents_search;
 mod documents_sort;
 mod reading_epub_viewer;
+mod reading_image_viewer;
+mod reading_pdf_viewer;
 mod reading_progress;
 mod reading_status;
 mod remotes_manage;

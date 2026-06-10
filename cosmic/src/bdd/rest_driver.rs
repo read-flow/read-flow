@@ -7,6 +7,7 @@ use read_flow_core::test_support::TestServer;
 
 use crate::bdd::fixtures::sample_cover_epub_path;
 use crate::bdd::fixtures::sample_epub_path;
+use crate::bdd::fixtures::sample_pdf_path;
 use crate::bdd::fixtures::sample2_epub_path;
 
 pub const USER: &str = "alice";
@@ -582,6 +583,40 @@ impl RestDriver {
             .await
             .expect("parse tags JSON");
         tags.iter().any(|t| t == tag)
+    }
+
+    // -- reading.pdf_viewer --
+
+    /// Uploads the PDF fixture via `POST /files`.
+    /// Returns `(file_guid, doc_api_guid, fingerprint)`.
+    pub async fn seed_pdf_document(&self) -> (String, String, String) {
+        let bytes = std::fs::read(sample_pdf_path()).expect("read PDF fixture");
+        let part = reqwest::multipart::Part::bytes(bytes)
+            .file_name("sample.pdf")
+            .mime_str("application/pdf")
+            .expect("mime");
+        let form = reqwest::multipart::Form::new().part("file", part);
+        let file: serde_json::Value = self
+            .client
+            .post(format!("{}/files", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .multipart(form)
+            .send()
+            .await
+            .expect("POST /files (pdf)")
+            .json()
+            .await
+            .expect("parse uploaded file JSON");
+        let file_guid = file["guid"].as_str().expect("guid field").to_string();
+        let doc_api_guid = file["document_guid"]
+            .as_str()
+            .expect("document_guid field")
+            .to_string();
+        let fingerprint = file["fingerprint"]
+            .as_str()
+            .expect("fingerprint field")
+            .to_string();
+        (file_guid, doc_api_guid, fingerprint)
     }
 
     // -- documents.cover_display --

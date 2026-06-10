@@ -423,6 +423,24 @@ impl Driver {
         }
     }
 
+    // -- reading.pdf_viewer --
+
+    pub async fn seed_pdf_document(&self) -> (String, String, String) {
+        match self {
+            Self::Rest(driver) => driver.seed_pdf_document().await,
+            Self::Cosmic(driver) => driver.seed_pdf_document().await,
+        }
+    }
+
+    pub fn pdf_opens_successfully(&self) -> bool {
+        match self {
+            Self::Rest(_) => panic!(
+                "`reading.pdf_viewer` has no REST surface — run with BDD_DRIVER=cosmic or BDD_DRIVER=pwa"
+            ),
+            Self::Cosmic(driver) => driver.pdf_opens_successfully(),
+        }
+    }
+
     // -- app.epub_viewer_choice --
 
     pub async fn set_epub_viewer_choice(&mut self, choice: &str) {
@@ -456,6 +474,17 @@ impl Driver {
         match self {
             Self::Rest(driver) => driver.document_has_cover(doc_api_guid).await,
             Self::Cosmic(driver) => driver.document_has_cover(doc_api_guid).await,
+        }
+    }
+
+    // -- reading.image_viewer --
+
+    pub fn image_viewer_opens_successfully(&self) -> bool {
+        match self {
+            Self::Rest(_) => {
+                panic!("`reading.image_viewer` has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.image_viewer_opens_successfully(),
         }
     }
 

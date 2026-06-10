@@ -672,6 +672,32 @@ impl CosmicDriver {
         titles
     }
 
+    // -- reading.image_viewer --
+
+    /// Returns `true` if an `ImageViewer` can be instantiated with test image data —
+    /// the headless proxy for "the image viewer opens and displays the image".
+    pub fn image_viewer_opens_successfully(&self) -> bool {
+        // Minimal 1x1 white PNG bytes — same as the sample_cover fixture's cover image.
+        let png_bytes: &[u8] = &[
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // signature
+            0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR length + type
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // width=1, height=1
+            0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, // 8bpp RGB + CRC
+            0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, // IDAT length + type
+            0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00, 0x00, // compressed scanline
+            0x00, 0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc, 0x33, // + CRC
+            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82, // IEND
+        ];
+        let handle = cosmic::iced::widget::image::Handle::from_bytes(png_bytes.to_vec());
+        let image = crate::page::ViewerImage::Raster {
+            handle,
+            natural_width: 1,
+            natural_height: 1,
+        };
+        let _viewer = crate::page::image_viewer::ImageViewer::new(0, image);
+        true
+    }
+
     // -- app.epub_viewer_choice --
 
     pub async fn set_epub_viewer_choice(&mut self, choice: &str) {
@@ -724,6 +750,30 @@ impl CosmicDriver {
             .await
             .expect("get document cover")
             .is_some()
+    }
+
+    // -- reading.pdf_viewer --
+
+    async fn scan_fixture_pdf(&self) -> read_flow_core::db::models::File {
+        self.scan_fixture_path(fixtures::sample_pdf_path(), "sample.pdf")
+            .await
+    }
+
+    /// Seeds the PDF fixture. Returns `(file_guid, doc_api_guid, fingerprint)`.
+    pub async fn seed_pdf_document(&self) -> (String, String, String) {
+        let file = self.scan_fixture_pdf().await;
+        let doc_api_guid = file
+            .document_guid
+            .clone()
+            .expect("pdf fixture must produce a document (check title in PDF metadata)");
+        (file.guid, doc_api_guid, file.fingerprint)
+    }
+
+    /// Returns `true` if MuPDF can open the PDF fixture (the main observable
+    /// for `reading.pdf_viewer` in a headless environment).
+    pub fn pdf_opens_successfully(&self) -> bool {
+        let path = fixtures::sample_pdf_path();
+        mupdf::Document::open(path.as_path()).is_ok()
     }
 
     // -- reading.epub_viewer --
