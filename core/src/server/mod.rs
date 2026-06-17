@@ -585,7 +585,10 @@ async fn upload_file(
         .transpose()?
         .unwrap();
 
-    if !matches!(extension.to_lowercase().as_str(), "pdf" | "epub" | "mobi") {
+    if !matches!(
+        extension.to_lowercase().as_str(),
+        "pdf" | "epub" | "mobi" | "azw"
+    ) {
         return Err(Error::UnsupportedExtension(extension));
     }
 
@@ -1175,7 +1178,7 @@ async fn import_online_book(
 fn extension_to_content_type(extension: &str) -> Result<ContentType> {
     ContentType::from_extension(extension)
         .or_else(|| match extension.to_lowercase().as_str() {
-            "mobi" | "prc" => ContentType::new("application", "x-mobipocket-ebook").into(),
+            "mobi" | "prc" | "azw" => ContentType::new("application", "x-mobipocket-ebook").into(),
             &_ => None,
         })
         .ok_or(Error::UnsupportedExtension(extension.to_string()))
