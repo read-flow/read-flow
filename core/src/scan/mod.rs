@@ -51,6 +51,8 @@ pub enum DocumentType {
     Pdf,
     Epub,
     Mobi,
+    Azw,
+    Azw3,
     Fb2,
     Cbz,
     Cbt,
@@ -72,6 +74,8 @@ impl DocumentType {
             Pdf => "pdf",
             Epub => "epub",
             Mobi => "mobi",
+            Azw => "azw",
+            Azw3 => "azw3",
             Fb2 => "fb2",
             Cbz => "cbz",
             Cbt => "cbt",
@@ -92,6 +96,8 @@ impl DocumentType {
             Pdf => "PDF",
             Epub => "EPUB",
             Mobi => "MOBI / Kindle",
+            Azw => "Kindle AZW",
+            Azw3 => "Kindle AZW3",
             Fb2 => "FictionBook",
             Cbz => "Comic Book Archive (ZIP)",
             Cbt => "Comic Book Archive (TAR)",
@@ -111,7 +117,7 @@ impl DocumentType {
         match self {
             Pdf => "application-pdf",
             Epub => "application-epub+zip",
-            Mobi => "application-x-mobipocket-ebook",
+            Mobi | Azw | Azw3 => "application-x-mobipocket-ebook",
             Fb2 => "text-x-generic",
             Cbz | Cbt => "application-zip",
             Xps | Oxps => "text-x-generic",
@@ -126,7 +132,7 @@ impl DocumentType {
     pub fn all() -> &'static [DocumentType] {
         use DocumentType::*;
         &[
-            Pdf, Epub, Mobi, Fb2, Cbz, Cbt, Xps, Oxps, Docx, Xlsx, Pptx, Hwpx,
+            Pdf, Epub, Mobi, Azw, Azw3, Fb2, Cbz, Cbt, Xps, Oxps, Docx, Xlsx, Pptx, Hwpx,
         ]
     }
 }
@@ -147,6 +153,8 @@ impl std::str::FromStr for DocumentType {
             "pdf" => Pdf,
             "epub" => Epub,
             "mobi" => Mobi,
+            "azw" => Azw,
+            "azw3" => Azw3,
             "fb2" => Fb2,
             "cbz" => Cbz,
             "cbt" => Cbt,
@@ -415,6 +423,20 @@ mod tests {
     ) {
         let actual = settings.directory_settings_of(path);
         Assert::that(actual).is(expected);
+    }
+
+    #[test]
+    fn document_type_azw_round_trips() {
+        assert_eq!("azw".parse::<DocumentType>().unwrap(), DocumentType::Azw);
+        assert_eq!(DocumentType::Azw.as_str(), "azw");
+        assert_eq!(DocumentType::Azw.label(), "Kindle AZW");
+    }
+
+    #[test]
+    fn document_type_azw3_round_trips() {
+        assert_eq!("azw3".parse::<DocumentType>().unwrap(), DocumentType::Azw3);
+        assert_eq!(DocumentType::Azw3.as_str(), "azw3");
+        assert_eq!(DocumentType::Azw3.label(), "Kindle AZW3");
     }
 
     #[test]

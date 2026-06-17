@@ -61,6 +61,7 @@ provider.path = "../provider"
 rocket = { workspace = true, optional = true, features = ["http2", "json"] }
 rocket_cors = { workspace = true, optional = true }
 password-hash = "0.6.1"
+mobi = "0.8.0"
 
 [dev-dependencies]
 assert4rs.workspace = true
