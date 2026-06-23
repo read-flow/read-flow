@@ -41,6 +41,7 @@ use epub::NavEntry;
 use epub::StyleSheet;
 use epub::TextSpan;
 use read_flow_core::Builder;
+use read_flow_widgets::FontPicker;
 
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
@@ -404,6 +405,12 @@ pub enum EpubViewerMessage {
     CopyCodeBlock(String),
     /// Open the image viewer page for the given image.
     OpenImageViewer(ViewerImage),
+    /// Font picker opened (dropdown now visible).
+    FontPickerOpen,
+    /// Font picker closed without selection.
+    FontPickerClose,
+    /// User typed in the font picker filter input.
+    FontPickerQuery(String),
     Out(EpubViewerOutput),
 }
 
@@ -450,8 +457,12 @@ pub struct EpubViewer {
     pending_node_path: Vec<u32>,
     /// Font family used for rendering EPUB content.
     font_family: FontFamily,
-    /// Pre-computed display names for the font family dropdown.
-    font_family_names: widget::combo_box::State<FontFamily>,
+    /// All font family options (labels) for the picker dropdown.
+    font_picker_options: Vec<&'static str>,
+    /// Current filter query typed into the font picker input.
+    font_picker_query: String,
+    /// Whether the font picker dropdown is open.
+    font_picker_focused: bool,
     /// Ordered nav entries from the EPUB TOC (with depth and fragment-preserving hrefs).
     nav_entries: Vec<NavEntry>,
     /// Index of the most recently activated nav entry, for precise sidebar highlighting.
@@ -526,7 +537,9 @@ impl EpubViewer {
             pending_block_index: None,
             pending_node_path: Vec::new(),
             font_family: saved_prefs.font_family,
-            font_family_names: widget::combo_box::State::new(FontFamily::all()),
+            font_picker_options: FontFamily::all().into_iter().map(|f| f.label()).collect(),
+            font_picker_query: String::new(),
+            font_picker_focused: false,
             nav_entries: Vec::new(),
             active_nav_entry: None,
             top_level_nav_collapsed: false,
@@ -1218,12 +1231,20 @@ impl Page for EpubViewer {
         }
 
         display_section = display_section.add(
-            widget::settings::item::builder(fl!("epub-viewer-font")).control(widget::combo_box(
-                &self.font_family_names,
-                &fl!("epub-viewer-font"),
-                Some(&self.font_family),
-                EpubViewerMessage::SetFontFamily,
-            )),
+            widget::settings::item::builder(fl!("epub-viewer-font")).control(
+                FontPicker::new(
+                    &self.font_picker_options,
+                    fl!("epub-viewer-font"),
+                    &self.font_picker_query,
+                    EpubViewerMessage::FontPickerQuery,
+                )
+                .selected(self.font_family.label())
+                .on_select(|s| EpubViewerMessage::SetFontFamily(str_to_font_family(&s)))
+                .on_open(EpubViewerMessage::FontPickerOpen)
+                .on_close(EpubViewerMessage::FontPickerClose)
+                .focused(self.font_picker_focused)
+                .view(),
+            ),
         );
 
         let font_size_px = self.base_font_size.round() as u32;
@@ -1776,10 +1797,26 @@ impl Page for EpubViewer {
             }
             EpubViewerMessage::SetFontFamily(family) => {
                 self.font_family = family;
+                self.font_picker_query = String::new();
+                self.font_picker_focused = false;
                 self.pagination_cache.clear();
                 self.block_heights_cache.clear();
                 self.maybe_repaginate();
                 self.save_current_prefs();
+                Task::none()
+            }
+            EpubViewerMessage::FontPickerOpen => {
+                self.font_picker_focused = true;
+                self.font_picker_query = String::new();
+                Task::none()
+            }
+            EpubViewerMessage::FontPickerClose => {
+                self.font_picker_focused = false;
+                self.font_picker_query = String::new();
+                Task::none()
+            }
+            EpubViewerMessage::FontPickerQuery(q) => {
+                self.font_picker_query = q;
                 Task::none()
             }
             EpubViewerMessage::SetBaseFontSize(size) => {

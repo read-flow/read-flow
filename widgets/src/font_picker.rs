@@ -4,7 +4,6 @@ use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Renderer;
 use cosmic::Theme;
-use cosmic::iced::Background;
 use cosmic::iced::Length;
 use cosmic::iced::Point;
 use cosmic::iced::Rectangle;
@@ -19,23 +18,25 @@ use cosmic::iced::advanced::mouse;
 use cosmic::iced::advanced::overlay;
 use cosmic::iced::advanced::renderer;
 use cosmic::iced::advanced::widget::Tree;
+use cosmic::iced::font;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::button;
 
-/// A combo-box that combines a free-form text input with a floating overlay
-/// list of predefined options.  The overlay is only shown while the input has
-/// focus (controlled externally via `.focused()`).  The dropdown is drawn on
-/// top of surrounding content and is constrained to the exact width of the
-/// text input.
+use crate::combo_box::DropdownOverlay;
+use crate::combo_box::dropdown_container_style;
+use crate::combo_box::option_button_style;
+
+/// A font-family picker combining a text input (for filtering) with a floating
+/// overlay list where each option is rendered in its own font.
 ///
-/// Focus lifecycle messages (`on_open` / `on_close`) let the caller track
-/// focus state.  `on_select` fires when a listed option is clicked; it
-/// defaults to the `on_change` callback when not set.
-pub struct ComboBox<'a, Message> {
-    options: &'a [String],
+/// The text input uses the font of the *confirmed* selection (`selected`), not
+/// the current filter query, so it stays stable while the user types.
+pub struct FontPicker<'a, Message> {
+    options: &'a [&'static str],
     placeholder: String,
     value: &'a str,
+    selected: Option<&'static str>,
     on_change: Box<dyn Fn(String) -> Message + 'a>,
     on_select: Option<Box<dyn Fn(String) -> Message + 'a>>,
     on_open: Option<Message>,
@@ -45,9 +46,9 @@ pub struct ComboBox<'a, Message> {
     width: Length,
 }
 
-impl<'a, Message: Clone + 'static> ComboBox<'a, Message> {
+impl<'a, Message: Clone + 'static> FontPicker<'a, Message> {
     pub fn new(
-        options: &'a [String],
+        options: &'a [&'static str],
         placeholder: impl Into<String>,
         value: &'a str,
         on_change: impl Fn(String) -> Message + 'a,
@@ -56,6 +57,7 @@ impl<'a, Message: Clone + 'static> ComboBox<'a, Message> {
             options,
             placeholder: placeholder.into(),
             value,
+            selected: None,
             on_change: Box::new(on_change),
             on_select: None,
             on_open: None,
@@ -64,6 +66,12 @@ impl<'a, Message: Clone + 'static> ComboBox<'a, Message> {
             focused: false,
             width: Length::Fill,
         }
+    }
+
+    /// The confirmed font selection — drives the font used to render the text input.
+    pub fn selected(mut self, name: &'static str) -> Self {
+        self.selected = Some(name);
+        self
     }
 
     /// Callback fired when an option row is clicked (defaults to `on_change`).
@@ -84,8 +92,7 @@ impl<'a, Message: Clone + 'static> ComboBox<'a, Message> {
         self
     }
 
-    /// Message emitted when the clear icon button is pressed.  The button is
-    /// only shown when the current value is non-empty.
+    /// Message emitted when the clear icon button is pressed.
     pub fn on_clear(mut self, msg: Message) -> Self {
         self.on_clear = Some(msg);
         self
@@ -110,34 +117,44 @@ impl<'a, Message: Clone + 'static> ComboBox<'a, Message> {
         } = theme::active().cosmic().spacing;
 
         let lower = self.value.to_lowercase();
-        let visible: Vec<&String> = if self.value.is_empty() {
-            self.options.iter().collect()
+        let visible: Vec<&'static str> = if self.value.is_empty() {
+            self.options.iter().copied().collect()
         } else {
             self.options
                 .iter()
+                .copied()
                 .filter(|o| o.to_lowercase().contains(&lower))
                 .collect()
         };
 
-        // Pre-compute option messages before moving on_change into text-input.
-        let option_messages: Vec<(String, Message)> = if let Some(ref on_select) = self.on_select {
-            visible
-                .into_iter()
-                .map(|opt| (opt.clone(), on_select(opt.clone())))
-                .collect()
-        } else {
-            visible
-                .into_iter()
-                .map(|opt| (opt.clone(), (self.on_change)(opt.clone())))
-                .collect()
-        };
+        let option_messages: Vec<(&'static str, Message)> =
+            if let Some(ref on_select) = self.on_select {
+                visible
+                    .into_iter()
+                    .map(|name| (name, on_select(name.to_string())))
+                    .collect()
+            } else {
+                visible
+                    .into_iter()
+                    .map(|name| (name, (self.on_change)(name.to_string())))
+                    .collect()
+            };
 
         let has_overlay = self.focused && !option_messages.is_empty();
 
         let on_close = self.on_close;
         let on_change = self.on_change;
 
+        let input_font = self
+            .selected
+            .map(|name| cosmic::iced::Font {
+                family: font::Family::Name(name),
+                ..cosmic::iced::Font::DEFAULT
+            })
+            .unwrap_or(cosmic::iced::Font::DEFAULT);
+
         let mut input = widget::text_input(self.placeholder, self.value)
+            .font(input_font)
             .on_input(on_change)
             .width(Length::Fill);
 
@@ -148,8 +165,6 @@ impl<'a, Message: Clone + 'static> ComboBox<'a, Message> {
             input = input.on_unfocus(msg);
         }
         if let Some(msg) = self.on_clear.filter(|_| !self.value.is_empty()) {
-            // Use zero vertical padding so the button does not increase the
-            // input height compared to a combo box without a clear button.
             let clear_icon = widget::icon::from_name("edit-clear-symbolic")
                 .size(16)
                 .apply(button::custom)
@@ -160,16 +175,17 @@ impl<'a, Message: Clone + 'static> ComboBox<'a, Message> {
             input = input.trailing_icon(clear_icon);
         }
 
-        // Build the dropdown element — width is set to Fill here but will be
-        // replaced by the actual pixel width of the text input in the overlay
-        // layout pass (see DropdownOverlay::layout).
         let rows: Vec<Element<'a, Message>> = option_messages
             .into_iter()
-            .map(|(label, msg)| {
+            .map(|(name, msg)| {
+                let item_font = cosmic::iced::Font {
+                    family: font::Family::Name(name),
+                    ..cosmic::iced::Font::DEFAULT
+                };
                 button::custom(
-                    widget::text(label)
+                    widget::text(name)
+                        .font(item_font)
                         .apply(widget::container)
-                        // .padding([space_xxs, space_xs])
                         .padding([space_xxxs, space_xs])
                         .width(Length::Fill),
                 )
@@ -188,7 +204,7 @@ impl<'a, Message: Clone + 'static> ComboBox<'a, Message> {
         .width(Length::Fill)
         .into();
 
-        Element::new(ComboBoxWidget {
+        Element::new(FontPickerWidget {
             text_input: input.into(),
             dropdown,
             has_overlay,
@@ -197,9 +213,9 @@ impl<'a, Message: Clone + 'static> ComboBox<'a, Message> {
     }
 }
 
-// ─── Custom widget ────────────────────────────────────────────────────────────
+// ─── Inner widget ─────────────────────────────────────────────────────────────
 
-struct ComboBoxWidget<'a, Message> {
+struct FontPickerWidget<'a, Message> {
     text_input: Element<'a, Message>,
     dropdown: Element<'a, Message>,
     has_overlay: bool,
@@ -207,7 +223,7 @@ struct ComboBoxWidget<'a, Message> {
 }
 
 impl<'a, Message: Clone + 'static> Widget<Message, Theme, Renderer>
-    for ComboBoxWidget<'a, Message>
+    for FontPickerWidget<'a, Message>
 {
     fn size(&self) -> Size<Length> {
         Size::new(self.width, Length::Shrink)
@@ -334,188 +350,47 @@ impl<'a, Message: Clone + 'static> Widget<Message, Theme, Renderer>
     }
 }
 
-// ─── Overlay ──────────────────────────────────────────────────────────────────
-
-pub(crate) struct DropdownOverlay<'a, 'b, Message> {
-    pub(crate) content: &'b mut Element<'a, Message>,
-    pub(crate) tree: &'b mut Tree,
-    pub(crate) position: Point,
-    pub(crate) width: f32,
-}
-
-impl<'a, 'b, Message: Clone + 'static> overlay::Overlay<Message, Theme, Renderer>
-    for DropdownOverlay<'a, 'b, Message>
-{
-    fn layout(&mut self, renderer: &Renderer, bounds: Size) -> layout::Node {
-        // Constrain popup to exactly the text input's pixel width.
-        let limits =
-            layout::Limits::new(Size::ZERO, Size::new(self.width, bounds.height)).width(self.width);
-        let node = self
-            .content
-            .as_widget_mut()
-            .layout(self.tree, renderer, &limits);
-        node.move_to(self.position)
-    }
-
-    fn draw(
-        &self,
-        renderer: &mut Renderer,
-        theme: &Theme,
-        style: &renderer::Style,
-        layout: Layout<'_>,
-        cursor: mouse::Cursor,
-    ) {
-        self.content.as_widget().draw(
-            self.tree,
-            renderer,
-            theme,
-            style,
-            layout,
-            cursor,
-            &layout.bounds(),
-        )
-    }
-
-    fn operate(
-        &mut self,
-        layout: Layout<'_>,
-        renderer: &Renderer,
-        operation: &mut dyn widget::Operation,
-    ) {
-        self.content
-            .as_widget_mut()
-            .operate(self.tree, layout, renderer, operation);
-    }
-
-    fn update(
-        &mut self,
-        event: &cosmic::iced::Event,
-        layout: Layout<'_>,
-        cursor: mouse::Cursor,
-        renderer: &Renderer,
-        clipboard: &mut dyn Clipboard,
-        shell: &mut Shell<'_, Message>,
-    ) {
-        self.content.as_widget_mut().update(
-            self.tree,
-            event,
-            layout,
-            cursor,
-            renderer,
-            clipboard,
-            shell,
-            &layout.bounds(),
-        );
-    }
-
-    fn mouse_interaction(
-        &self,
-        layout: Layout<'_>,
-        cursor: mouse::Cursor,
-        _renderer: &Renderer,
-    ) -> mouse::Interaction {
-        self.content.as_widget().mouse_interaction(
-            self.tree,
-            layout,
-            cursor,
-            &layout.bounds(),
-            _renderer,
-        )
-    }
-}
-
-// ─── Styling ──────────────────────────────────────────────────────────────────
-
-pub(crate) fn dropdown_container_style() -> cosmic::theme::Container<'static> {
-    cosmic::theme::Container::custom(|theme| {
-        let cosmic = theme.cosmic();
-        cosmic::iced::widget::container::Style {
-            background: Some(cosmic::iced::Background::Color(
-                cosmic.background.component.base.into(),
-            )),
-            border: cosmic::iced::Border {
-                color: cosmic.primary.divider.into(),
-                width: 1.0,
-                radius: cosmic.corner_radii.radius_s.into(),
-            },
-            ..Default::default()
-        }
-    })
-}
-
-pub(crate) fn option_button_style() -> cosmic::theme::Button {
-    cosmic::theme::Button::Custom {
-        active: Box::new(|_focused, theme| option_style(false, theme)),
-        hovered: Box::new(|_focused, theme| option_style(true, theme)),
-        pressed: Box::new(|_focused, theme| option_style(true, theme)),
-        disabled: Box::new(|theme| option_style(false, theme)),
-    }
-}
-
-pub(crate) fn option_style(hovered: bool, theme: &Theme) -> cosmic::widget::button::Style {
-    let cosmic = theme.cosmic();
-    let component = &theme.current_container().component;
-    let mut style = cosmic::widget::button::Style::new();
-    style.border_radius = cosmic.corner_radii.radius_s.into();
-    if hovered {
-        style.background = Some(Background::Color(component.hover.into()));
-    }
-    style.text_color = Some(component.on.into());
-    style
-}
-
 #[cfg(test)]
 mod tests {
     use cosmic_golden::golden_test;
 
     use super::*;
 
-    fn options() -> Vec<String> {
-        vec![
-            "Pride and Prejudice".into(),
-            "Persuasion".into(),
-            "Emma".into(),
-            "Sense and Sensibility".into(),
-            "Northanger Abbey".into(),
-        ]
+    const TEST_FONTS: &[&str] = &[
+        "Helvetica",
+        "Times New Roman",
+        "Georgia",
+        "Arial",
+        "Courier New",
+    ];
+
+    #[golden_test(400, 80)]
+    fn font_picker_closed() -> cosmic::Element<'static, String> {
+        FontPicker::new(TEST_FONTS, "Choose font…", "", |s| s)
+            .selected("Helvetica")
+            .view()
     }
 
-    #[golden_test(400, 250)]
-    fn combo_box_empty_shows_all() -> Element<'_, String> {
-        let opts = options();
-        ComboBox::new(&opts, "Choose or type…", "", |s| s)
+    #[golden_test(400, 300)]
+    fn font_picker_open() -> cosmic::Element<'static, String> {
+        FontPicker::new(TEST_FONTS, "Choose font…", "", |s| s)
+            .selected("Helvetica")
             .focused(true)
             .view()
     }
 
-    #[golden_test(400, 250, dark)]
-    fn combo_box_dark() -> Element<'_, String> {
-        let opts = options();
-        ComboBox::new(&opts, "Choose or type…", "", |s| s)
+    #[golden_test(400, 300, dark)]
+    fn font_picker_open_dark() -> cosmic::Element<'static, String> {
+        FontPicker::new(TEST_FONTS, "Choose font…", "", |s| s)
+            .selected("Helvetica")
             .focused(true)
             .view()
     }
 
-    #[golden_test(400, 250)]
-    fn combo_box_filtered() -> Element<'_, String> {
-        let opts = options();
-        ComboBox::new(&opts, "Choose or type…", "per", |s| s)
-            .focused(true)
-            .view()
-    }
-
-    #[golden_test(400, 100)]
-    fn combo_box_with_clear_button() -> Element<'_, String> {
-        let opts = options();
-        ComboBox::new(&opts, "Choose or type…", "per", |s| s)
-            .on_clear(String::new())
-            .view()
-    }
-
-    #[golden_test(400, 100)]
-    fn combo_box_no_match_hides_list() -> Element<'_, String> {
-        let opts = options();
-        ComboBox::new(&opts, "Choose or type…", "xyz", |s| s)
+    #[golden_test(400, 300)]
+    fn font_picker_filtered() -> cosmic::Element<'static, String> {
+        FontPicker::new(TEST_FONTS, "Choose font…", "Hel", |s| s)
+            .selected("Helvetica")
             .focused(true)
             .view()
     }
