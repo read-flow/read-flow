@@ -153,7 +153,14 @@ impl<'a, Message: Clone + 'static> FontPicker<'a, Message> {
             })
             .unwrap_or(cosmic::iced::Font::DEFAULT);
 
-        let mut input = widget::text_input(self.placeholder, self.value)
+        // When closed, show the confirmed selection; when open, show the filter query.
+        let display_value = if self.focused {
+            self.value
+        } else {
+            self.selected.unwrap_or(self.value)
+        };
+
+        let mut input = widget::text_input(self.placeholder, display_value)
             .font(input_font)
             .on_input(on_change)
             .width(Length::Fill);
@@ -199,7 +206,7 @@ impl<'a, Message: Clone + 'static> FontPicker<'a, Message> {
         let dropdown: Element<'a, Message> = widget::container(widget::scrollable::vertical(
             widget::column::with_children(rows),
         ))
-        .max_height(200.0)
+        .max_height(400.0)
         .class(dropdown_container_style())
         .width(Length::Fill)
         .into();
@@ -371,7 +378,7 @@ mod tests {
             .view()
     }
 
-    #[golden_test(400, 300)]
+    #[golden_test(400, 500)]
     fn font_picker_open() -> cosmic::Element<'static, String> {
         FontPicker::new(TEST_FONTS, "Choose font…", "", |s| s)
             .selected("Helvetica")
@@ -379,7 +386,7 @@ mod tests {
             .view()
     }
 
-    #[golden_test(400, 300, dark)]
+    #[golden_test(400, 500, dark)]
     fn font_picker_open_dark() -> cosmic::Element<'static, String> {
         FontPicker::new(TEST_FONTS, "Choose font…", "", |s| s)
             .selected("Helvetica")
@@ -387,7 +394,7 @@ mod tests {
             .view()
     }
 
-    #[golden_test(400, 300)]
+    #[golden_test(400, 500)]
     fn font_picker_filtered() -> cosmic::Element<'static, String> {
         FontPicker::new(TEST_FONTS, "Choose font…", "Hel", |s| s)
             .selected("Helvetica")
