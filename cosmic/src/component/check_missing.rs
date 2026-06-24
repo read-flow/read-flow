@@ -111,6 +111,7 @@ impl CheckMissingComponent {
                 .control(
                     file_list
                         .apply(widget::scrollable::vertical)
+                        .height(cosmic::iced::Length::Fixed(300.0))
                         .apply(widget::container)
                         .class(cosmic::theme::Container::Card)
                         .padding(space_s)
