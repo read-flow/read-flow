@@ -313,13 +313,13 @@ impl DashboardPage {
         if !continue_reading.is_empty() {
             let cards: Vec<Element<'_, DashboardMessage>> = continue_reading
                 .iter()
-                .take(10)
+                .take(4)
                 .map(|entry| self.view_continue_reading_card(entry))
                 .collect();
 
             let cards_row = Row::with_children(cards)
                 .spacing(space_m)
-                .apply(widget::scrollable::horizontal);
+                .width(Length::Fill);
 
             let section = Column::new()
                 .spacing(space_s)
@@ -532,11 +532,17 @@ impl DashboardPage {
 
         let cover_element: Element<'_, DashboardMessage> =
             if let Some(handle) = self.covers.get(cover_key) {
-                widget::image(handle.clone())
-                    .content_fit(ContentFit::Cover)
-                    .width(Length::Fill)
-                    .height(Length::Fixed(140.0))
-                    .into()
+                widget::container(
+                    widget::image(handle.clone())
+                        .content_fit(ContentFit::Cover)
+                        .width(Length::Fill)
+                        .height(Length::Fixed(180.0)),
+                )
+                .clip(true)
+                .width(Length::Fill)
+                .height(Length::Fixed(180.0))
+                .class(cosmic::style::Container::Card)
+                .into()
             } else {
                 let type_icon = entry
                     .document
@@ -546,33 +552,39 @@ impl DashboardPage {
                     .unwrap_or("text-x-generic-symbolic");
 
                 widget::container(widget::icon::from_name(type_icon).size(48).icon())
+                    .clip(true)
                     .width(Length::Fill)
-                    .height(Length::Fixed(140.0))
+                    .height(Length::Fixed(180.0))
                     .center_x(Length::Fill)
-                    .center_y(Length::Fixed(140.0))
+                    .center_y(Length::Fixed(180.0))
+                    .class(cosmic::style::Container::Card)
                     .into()
             };
 
         let pct = (entry.percentage * 100.0) as u32;
-        let bar_width = (entry.percentage as f32 * 140.0).max(2.0);
-        let progress_bar = widget::container(
-            widget::container(
-                widget::Space::new()
-                    .width(Length::Fixed(bar_width))
-                    .height(4),
+        let filled = ((entry.percentage * 100.0).round() as u16).clamp(1, 99);
+        let empty = 100u16.saturating_sub(filled);
+        let progress_bar = Row::new()
+            .push(
+                widget::container(widget::Space::new().height(Length::Fixed(4.0)))
+                    .class(cosmic::style::Container::Primary)
+                    .width(Length::FillPortion(filled)),
             )
-            .class(cosmic::style::Container::Primary),
-        )
-        .width(Length::Fixed(140.0));
+            .push(
+                widget::Space::new()
+                    .width(Length::FillPortion(empty))
+                    .height(Length::Fixed(4.0)),
+            )
+            .width(Length::Fill);
 
         let mut card_content = Column::new()
             .spacing(space_xs)
-            .width(Length::Fixed(140.0))
+            .width(Length::FillPortion(1))
             .push(cover_element)
             .push(
                 widget::text(title)
                     .size(13)
-                    .wrapping(cosmic::iced::widget::text::Wrapping::None),
+                    .wrapping(cosmic::iced::widget::text::Wrapping::WordOrGlyph),
             );
 
         if let Some(a) = authors {
@@ -587,6 +599,7 @@ impl DashboardPage {
         widget::button::custom(card_content)
             .on_press(DashboardMessage::OpenDocument(doc))
             .class(widget::button::ButtonClass::HeaderBar)
+            .width(Length::FillPortion(1))
             .into()
     }
 }
