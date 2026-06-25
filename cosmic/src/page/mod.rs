@@ -712,8 +712,7 @@ impl Pages {
                             last_updated: now.clone(),
                             status_updated_at: "1970-01-01T00:00:00Z".to_string(),
                         };
-                        let aggregator = document_provider.aggregator.read().await;
-                        if let Err(e) = aggregator.upsert_reading_state(state).await {
+                        if let Err(e) = document_provider.upsert_reading_state(state).await {
                             tracing::warn!("failed to save reading state: {e}");
                         }
                         PageMessage::Noop
@@ -799,8 +798,7 @@ impl Pages {
                             last_updated: now,
                             status_updated_at: "1970-01-01T00:00:00Z".to_string(),
                         };
-                        let aggregator = document_provider.aggregator.read().await;
-                        if let Err(e) = aggregator.upsert_reading_state(state).await {
+                        if let Err(e) = document_provider.upsert_reading_state(state).await {
                             tracing::warn!("failed to save reading state: {e}");
                         }
                         PageMessage::Noop
