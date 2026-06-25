@@ -296,6 +296,31 @@ epub-viewer-shortcut-previous-chapter = Previous chapter
 epub-viewer-shortcut-previous-page = Previous page
 epub-viewer-view-paginated = Paginated view
 
+# Dashboard
+dashboard-page-title = Dashboard
+dashboard-continue-reading = Continue Reading
+dashboard-continue-reading-empty = Pick up where you left off
+dashboard-continue-reading-empty-hint = Open a document to start tracking your reading progress.
+dashboard-library-overview = Library Overview
+dashboard-stat-documents = Documents
+dashboard-stat-reading = Reading
+dashboard-stat-completed = Completed
+dashboard-format-breakdown = By Format
+dashboard-sources = Sources
+dashboard-quick-actions = Quick Actions
+dashboard-all-documents = All Documents
+dashboard-welcome-title = Welcome to Read Flow
+dashboard-welcome-description = Your personal document library. Add some documents to get started.
+dashboard-onboarding-step-scan-title = Configure Scan Directories
+dashboard-onboarding-step-scan-description = Tell Read Flow where your documents live on disk.
+dashboard-onboarding-step-run-title = Run Your First Scan
+dashboard-onboarding-step-run-description = Discover and index all documents in your configured directories.
+dashboard-onboarding-step-online-title = Browse Online Libraries
+dashboard-onboarding-step-online-description = Download free books from Project Gutenberg and Standard Ebooks.
+dashboard-onboarding-step-remote-title = Connect a Remote Source
+dashboard-onboarding-step-remote-description = Sync with another Read Flow instance on your network.
+dashboard-action-go = Go
+
 # Online Libraries
 online-library-cancel = Cancel
 online-library-catalog-all = All catalogs

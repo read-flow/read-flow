@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // pages
 mod app_settings;
+mod dashboard;
 mod document_details;
 mod document_list;
 mod epub_viewer;
@@ -26,6 +27,9 @@ use cosmic::iced::keyboard::Key;
 use cosmic::iced::keyboard::Modifiers;
 use cosmic::task;
 use cosmic::widget;
+pub use dashboard::DashboardMessage;
+use dashboard::DashboardOutput;
+use dashboard::DashboardPage;
 use indexmap::IndexMap;
 pub use online_library::OnlineLibraryMessage;
 use online_library::OnlineLibraryOutput;
@@ -82,6 +86,7 @@ pub struct Pages {
     application_module: Arc<ApplicationModule>,
 
     epub_viewer_config: EpubViewerConfig,
+    dashboard: DashboardPage,
     app_settings: AppSettingsPage,
     sources: SourcesPage,
     online_library: OnlineLibraryPage,
@@ -98,6 +103,7 @@ pub struct Pages {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PageSelector {
+    Dashboard,
     Sources,
     OnlineLibrary,
     Documents,
@@ -119,6 +125,7 @@ pub enum PageOutput {
 
 #[derive(Debug, Clone)]
 pub enum PageMessage {
+    Dashboard(DashboardMessage),
     Sources(SourcesMessage),
     OnlineLibrary(OnlineLibraryMessage),
     AddRemote(Url, String, String),       // url, user_id, passphrase
@@ -178,6 +185,11 @@ impl From<SettingsMessage> for PageMessage {
 macro_rules! with_active_page {
     ($self:expr, $selector:expr, |$page:ident, $mapper:ident| $body:expr) => {
         match $selector {
+            PageSelector::Dashboard => {
+                let $page = Some(&$self.dashboard);
+                let $mapper = map_dashboard_message;
+                $body
+            }
             PageSelector::Sources => {
                 let $page = Some(&$self.sources);
                 let $mapper = map_sources_message;
@@ -256,12 +268,14 @@ impl Pages {
             SettingsPage::new(application_module.clone(), document_provider.clone());
 
         let (documents, init_documents) = DocumentList::new(document_provider.clone());
+        let (dashboard, init_dashboard) = DashboardPage::new(document_provider.clone());
 
         let tasks = vec![
             init_app_settings.map(ActionExt::map_into),
             init_sources.map(ActionExt::map_into),
             init_documents.map(ActionExt::map_into),
             init_settings.map(ActionExt::map_into),
+            init_dashboard.map(|action| action.map(map_dashboard_message)),
         ];
 
         let online_library = OnlineLibraryPage::new(application_module.clone());
@@ -271,6 +285,7 @@ impl Pages {
                 document_provider,
                 application_module,
                 epub_viewer_config,
+                dashboard,
                 app_settings,
                 sources,
                 online_library,
@@ -281,7 +296,7 @@ impl Pages {
                 image_viewers: Default::default(),
                 next_image_viewer_id: 0,
                 settings,
-                active: PageSelector::Documents,
+                active: PageSelector::Dashboard,
                 page_order: Default::default(),
             },
             task::batch(tasks),
@@ -332,7 +347,7 @@ impl Pages {
             self.active = info
                 .parent
                 .filter(|p| self.page_order.contains_key(p))
-                .unwrap_or(PageSelector::Documents);
+                .unwrap_or(PageSelector::Dashboard);
         }
     }
 
@@ -349,6 +364,7 @@ impl Pages {
 
     pub fn display_name<'a>(&'a self, page_selector: &'a PageSelector) -> String {
         match &page_selector {
+            PageSelector::Dashboard => fl!("dashboard-page-title"),
             PageSelector::Sources => fl!("app-file-sources"),
             PageSelector::OnlineLibrary => fl!("online-library-page-title"),
             PageSelector::Documents => "Documents".to_string(),
@@ -455,6 +471,10 @@ impl Pages {
         tracing::debug!("received: {message:?}");
         match message {
             PageMessage::Noop => Task::none(),
+            PageMessage::Dashboard(msg) => self
+                .dashboard
+                .update(msg)
+                .map(|action| action.map(map_dashboard_message)),
             PageMessage::Refresh => {
                 let mut messages = self
                     .document_details
@@ -468,6 +488,9 @@ impl Pages {
                     .collect::<Vec<_>>();
                 messages.push(task::message(PageMessage::from(
                     DocumentListMessage::LoadArchive,
+                )));
+                messages.push(task::message(PageMessage::Dashboard(
+                    DashboardMessage::LoadDashboard,
                 )));
                 Task::batch(messages)
             }
@@ -851,6 +874,31 @@ impl Pages {
                 task::message(PageMessage::Out(PageOutput::PageAdded(selector))),
             ])
         }
+    }
+}
+
+fn map_dashboard_message(msg: DashboardMessage) -> PageMessage {
+    match msg {
+        DashboardMessage::Out(output) => match output {
+            DashboardOutput::NavigateToDocuments => {
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::Documents))
+            }
+            DashboardOutput::NavigateToDocumentsWithStatus(_status) => {
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::Documents))
+            }
+            DashboardOutput::NavigateToSettings => {
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::Settings))
+            }
+            DashboardOutput::NavigateToSources => {
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::Sources))
+            }
+            DashboardOutput::NavigateToOnlineLibrary => {
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::OnlineLibrary))
+            }
+            DashboardOutput::OpenDocument(document) => PageMessage::OpenDocument(document),
+            DashboardOutput::Scan => PageMessage::Out(PageOutput::Scan),
+        },
+        msg => PageMessage::Dashboard(msg),
     }
 }
 

@@ -120,7 +120,11 @@ where
         .apply(widget::container)
         .class(theme::Container::Card)
         .padding(space_s)
-        .width(Length::Fill);
+        .width(Length::Fill)
+        .apply(widget::scrollable::vertical)
+        .height(Length::Shrink)
+        .apply(widget::container)
+        .max_height(400.0);
 
     let dialog_title: String = dialog_title.into();
     let mut dialog = widget::dialog()
