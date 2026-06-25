@@ -1035,6 +1035,9 @@ impl Page for DocumentList {
                 .set_document_state(DocumentState::Failed(error))
                 .map(ActionExt::map_into),
             DocumentListMessage::RefreshDocument(document) => {
+                if !self.archive.is_loaded() {
+                    return Task::none();
+                }
                 let document_guid = document.document_guid.clone();
                 self.archive
                     .update_item(move |doc| doc.document_guid == document_guid, document)
@@ -1067,6 +1070,10 @@ impl Page for DocumentList {
                 self.filter_now()
             }
             DocumentListMessage::FilteringComplete(filtered_files) => {
+                if !self.archive.is_loaded() {
+                    self.is_filtering = false;
+                    return Task::none();
+                }
                 let collection_size = filtered_files.len();
                 self.is_filtering = false;
                 self.archive.set_filtered_indices(filtered_files);
