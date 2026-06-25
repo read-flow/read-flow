@@ -9,6 +9,7 @@ use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
 use cosmic::iced::Background;
+use cosmic::iced::Border;
 use cosmic::iced::ContentFit;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
@@ -110,49 +111,62 @@ fn card_button_class() -> cosmic::theme::Button {
         active: Box::new(|_, theme| {
             let cosmic = theme.cosmic();
             cosmic::widget::button::Style {
-                background: Some(Background::Color(cosmic.background.component.base.into())),
+                background: Some(Background::Color(cosmic.primary.base.into())),
                 border_radius: cosmic.corner_radii.radius_s.into(),
                 border_width: 1.0,
                 border_color: cosmic.accent.base.into(),
-                text_color: Some(cosmic.background.component.on.into()),
+                text_color: Some(cosmic.primary.on.into()),
                 ..Default::default()
             }
         }),
         disabled: Box::new(|theme| {
             let cosmic = theme.cosmic();
             cosmic::widget::button::Style {
-                background: Some(Background::Color(cosmic.background.component.base.into())),
+                background: Some(Background::Color(cosmic.primary.base.into())),
                 border_radius: cosmic.corner_radii.radius_s.into(),
                 border_width: 1.0,
                 border_color: cosmic.accent.base.into(),
-                text_color: Some(cosmic.background.component.on.into()),
+                text_color: Some(cosmic.primary.on.into()),
                 ..Default::default()
             }
         }),
         hovered: Box::new(|_, theme| {
             let cosmic = theme.cosmic();
             cosmic::widget::button::Style {
-                background: Some(Background::Color(cosmic.background.component.hover.into())),
+                background: Some(Background::Color(cosmic.primary.component.hover.into())),
                 border_radius: cosmic.corner_radii.radius_s.into(),
                 border_width: 1.0,
                 border_color: cosmic.accent.base.into(),
-                text_color: Some(cosmic.background.component.on.into()),
+                text_color: Some(cosmic.primary.on.into()),
                 ..Default::default()
             }
         }),
         pressed: Box::new(|_, theme| {
             let cosmic = theme.cosmic();
             cosmic::widget::button::Style {
-                background: Some(Background::Color(
-                    cosmic.background.component.pressed.into(),
-                )),
+                background: Some(Background::Color(cosmic.primary.component.pressed.into())),
                 border_radius: cosmic.corner_radii.radius_s.into(),
                 border_width: 1.0,
                 border_color: cosmic.accent.base.into(),
-                text_color: Some(cosmic.background.component.on.into()),
+                text_color: Some(cosmic.primary.on.into()),
                 ..Default::default()
             }
         }),
+    }
+}
+
+fn card_container_style(theme: &cosmic::Theme) -> widget::container::Style {
+    let cosmic = theme.cosmic();
+    widget::container::Style {
+        icon_color: Some(cosmic.primary.on.into()),
+        text_color: Some(cosmic.primary.on.into()),
+        background: Some(Background::Color(cosmic.primary.base.into())),
+        border: Border {
+            color: cosmic.accent.base.into(),
+            width: 1.0,
+            radius: cosmic.corner_radii.radius_s.into(),
+        },
+        ..Default::default()
     }
 }
 
