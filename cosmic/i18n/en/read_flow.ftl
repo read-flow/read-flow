@@ -85,6 +85,7 @@ document-list-empty-title = No Documents Found
 document-list-filter-by-source = Filter by Source
 document-list-filter-by-status = Filter by Reading Status
 document-list-filter-by-tags = Filter by Tags
+document-list-filter-by-type = Filter by File Type
 document-list-filtering = Filtering...
 document-list-go-to-settings = Open Settings
 document-list-keyboard-shortcuts = Keyboard shortcuts

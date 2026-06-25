@@ -33,6 +33,8 @@ export const allowedTags = writable<Set<string>>(new Set());
 export const deniedTags = writable<Set<string>>(new Set());
 // @feature: documents.filter_by_status
 export const statusFilter = writable<ReadingStatus | null>(null);
+// @feature: documents.filter_by_type
+export const typeFilter = writable<string | null>(null);
 // @feature: documents.filter_by_source
 export const sourceFilter = writable<number | null>(null);
 // @feature: documents.sort
@@ -61,13 +63,15 @@ export const filteredDocuments = derived(
 		deniedTags,
 		documentMetaMap,
 		statusFilter,
+		typeFilter,
 		sourceFilter,
 		sortSubject,
 		sortDirection,
 	],
-	([$all, $query, $allowed, $denied, $metaMap, $status, $source, $sortSubject, $sortDirection]) =>
+	([$all, $query, $allowed, $denied, $metaMap, $status, $type, $source, $sortSubject, $sortDirection]) =>
 		filterDocuments($all, $allowed, $denied, $query, $metaMap, {
 			status: $status,
+			type_: $type,
 			sourceId: $source,
 			sortSubject: $sortSubject,
 			sortDirection: $sortDirection,

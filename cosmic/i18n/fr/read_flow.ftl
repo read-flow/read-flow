@@ -82,6 +82,7 @@ document-list-empty-title = Aucun document trouvé
 document-list-filter-by-source = Filtrer par Source
 document-list-filter-by-status = Filtrer par statut de lecture
 document-list-filter-by-tags = Filtrer par étiquettes
+document-list-filter-by-type = Filtrer par type de fichier
 document-list-filtering = Filtrage...
 document-list-go-to-settings = Ouvrir les paramètres
 document-list-keyboard-shortcuts = Raccourcis clavier

@@ -34,6 +34,7 @@ use crate::page::Page;
 pub enum DashboardOutput {
     NavigateToDocuments,
     NavigateToDocumentsWithStatus(ReadingStatus),
+    NavigateToDocumentsWithType(DocumentType),
     NavigateToSettings,
     NavigateToSources,
     NavigateToOnlineLibrary,
@@ -53,6 +54,7 @@ pub enum DashboardMessage {
     CancelFormatPick,
     NavigateToDocuments,
     NavigateToDocumentsWithStatus(ReadingStatus),
+    NavigateToDocumentsWithType(DocumentType),
     NavigateToSettings,
     NavigateToSources,
     NavigateToOnlineLibrary,
@@ -397,32 +399,36 @@ impl DashboardPage {
                 widget::settings::section().title(fl!("dashboard-format-breakdown")),
                 |section, stat| {
                     let bar_width = (stat.count as f32 / max_count as f32) * 100.0;
-                    section.add(
-                        widget::settings::item_row(vec![
-                            widget::icon::from_name(stat.type_.get_file_type_icon())
-                                .size(ICON_SIZE)
-                                .icon()
-                                .into(),
-                            widget::text(stat.type_.label().to_uppercase())
-                                .size(12)
-                                .width(Length::Fixed(80.0))
-                                .into(),
-                            widget::container(
-                                widget::container(
-                                    widget::Space::new()
-                                        .width(Length::Fixed(bar_width))
-                                        .height(8),
-                                )
-                                .class(cosmic::style::Container::Primary),
-                            )
-                            .width(Length::Fixed(100.0))
+                    let type_ = stat.type_;
+                    let row = widget::settings::item_row(vec![
+                        widget::icon::from_name(stat.type_.get_file_type_icon())
+                            .size(ICON_SIZE)
+                            .icon()
                             .into(),
-                            widget::text(stat.count.to_string())
-                                .size(13)
-                                .width(Length::Fixed(40.0))
-                                .into(),
-                        ])
-                        .align_y(Vertical::Center),
+                        widget::text(stat.type_.label().to_uppercase())
+                            .size(12)
+                            .width(Length::Fixed(80.0))
+                            .into(),
+                        widget::container(
+                            widget::container(
+                                widget::Space::new()
+                                    .width(Length::Fixed(bar_width))
+                                    .height(8),
+                            )
+                            .class(cosmic::style::Container::Primary),
+                        )
+                        .width(Length::Fixed(100.0))
+                        .into(),
+                        widget::text(stat.count.to_string())
+                            .size(13)
+                            .width(Length::Fixed(40.0))
+                            .into(),
+                    ])
+                    .align_y(Vertical::Center);
+                    section.add(
+                        widget::button::custom(row)
+                            .class(cosmic::theme::Button::Text)
+                            .on_press(DashboardMessage::NavigateToDocumentsWithType(type_)),
                     )
                 },
             );
@@ -745,6 +751,9 @@ impl Page for DashboardPage {
             }
             DashboardMessage::NavigateToDocumentsWithStatus(status) => task::message(
                 DashboardMessage::Out(DashboardOutput::NavigateToDocumentsWithStatus(status)),
+            ),
+            DashboardMessage::NavigateToDocumentsWithType(type_) => task::message(
+                DashboardMessage::Out(DashboardOutput::NavigateToDocumentsWithType(type_)),
             ),
             DashboardMessage::NavigateToSettings => {
                 task::message(DashboardMessage::Out(DashboardOutput::NavigateToSettings))

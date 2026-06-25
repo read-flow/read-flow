@@ -8,6 +8,8 @@ export type SortDirection = 'asc' | 'desc';
 export interface ListOptions {
 	/** Keep only documents with this reading status. */
 	status?: ReadingStatus | null;
+	/** Keep only documents that have at least one format of this type. */
+	type_?: string | null;
 	/** Keep only documents available on this source (by Dexie source id). */
 	sourceId?: number | null;
 	/** Sort subject (applied only when there is no search query). */
@@ -71,6 +73,11 @@ export function filterDocuments(
 	}
 	if (opts.status) {
 		results = results.filter((f) => f.status === opts.status);
+	}
+	if (opts.type_) {
+		results = results.filter(
+			(f) => f.type_ === opts.type_ || f.otherFormats.some((fmt) => fmt.type_ === opts.type_),
+		);
 	}
 	if (opts.sourceId != null) {
 		results = results.filter((f) => hasSource(f, opts.sourceId as number));

@@ -83,6 +83,7 @@ document-list-empty-title = Geen documenten gevonden
 document-list-filter-by-source = Filteren op Bron
 document-list-filter-by-status = Filteren op Leesstatus
 document-list-filter-by-tags = Filteren op Tags
+document-list-filter-by-type = Filteren op Bestandstype
 document-list-filtering = Filteren...
 document-list-go-to-settings = Instellingen openen
 document-list-keyboard-shortcuts = Toetsenbordsnelkoppelingen

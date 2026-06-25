@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import Icon from '$lib/components/Icon.svelte';
 	import CoverImage from '$lib/components/CoverImage.svelte';
-	import { allDocuments, documentMetaMap, refreshDocuments, statusFilter } from '$lib/stores/documents';
+	import { allDocuments, documentMetaMap, refreshDocuments, statusFilter, typeFilter } from '$lib/stores/documents';
 	import { sources, loadSources } from '$lib/stores/sources';
 	import { fetchReadingState } from '$lib/api/aggregator';
 	import type { AggregatedFile } from '$lib/api/aggregator';
@@ -120,6 +120,11 @@
 
 	function navigateToLibraryWithStatus(status: ReadingStatus) {
 		statusFilter.set(status);
+		goto('/library');
+	}
+
+	function navigateToLibraryWithType(type_: string) {
+		typeFilter.set(type_);
 		goto('/library');
 	}
 
@@ -295,7 +300,10 @@
 						<h2 class="text-base font-semibold mb-3">Formats</h2>
 						<div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl divide-y divide-slate-100 dark:divide-slate-700">
 							{#each formatBreakdown as [type, count]}
-								<div class="flex items-center justify-between px-4 py-2.5">
+								<button
+									onclick={() => navigateToLibraryWithType(type)}
+									class="w-full flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors text-left"
+								>
 									<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
 										{type === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
 										: type === 'epub' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
@@ -303,7 +311,7 @@
 										{type}
 									</span>
 									<span class="text-sm tabular-nums text-slate-500 dark:text-slate-400">{count}</span>
-								</div>
+								</button>
 							{/each}
 						</div>
 					</section>

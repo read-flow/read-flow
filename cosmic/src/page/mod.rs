@@ -149,6 +149,7 @@ pub enum PageMessage {
     KeyEvent(PageSelector, Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(PageSelector, Modifiers),
     NavigateToDocumentsWithStatus(ReadingStatus),
+    NavigateToDocumentsWithType(DocumentType),
     Refresh,
     Noop,
     Out(PageOutput),
@@ -477,6 +478,16 @@ impl Pages {
                 let filter_task = self
                     .documents
                     .update(DocumentListMessage::StatusFilterChanged(Some(status)))
+                    .map(|action| action.map(map_document_list_message));
+                let nav_task = task::message(PageMessage::Out(PageOutput::TogglePage(
+                    PageSelector::Documents,
+                )));
+                Task::batch([filter_task, nav_task])
+            }
+            PageMessage::NavigateToDocumentsWithType(type_) => {
+                let filter_task = self
+                    .documents
+                    .update(DocumentListMessage::TypeFilterChanged(Some(type_)))
                     .map(|action| action.map(map_document_list_message));
                 let nav_task = task::message(PageMessage::Out(PageOutput::TogglePage(
                     PageSelector::Documents,
@@ -897,6 +908,9 @@ fn map_dashboard_message(msg: DashboardMessage) -> PageMessage {
             }
             DashboardOutput::NavigateToDocumentsWithStatus(status) => {
                 PageMessage::NavigateToDocumentsWithStatus(status)
+            }
+            DashboardOutput::NavigateToDocumentsWithType(type_) => {
+                PageMessage::NavigateToDocumentsWithType(type_)
             }
             DashboardOutput::NavigateToSettings => {
                 PageMessage::Out(PageOutput::TogglePage(PageSelector::Settings))

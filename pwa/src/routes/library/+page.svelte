@@ -17,6 +17,7 @@
 		deniedTags,
 		allTags,
 		statusFilter,
+		typeFilter,
 		sourceFilter,
 		sortSubject,
 		sortDirection,
@@ -268,6 +269,19 @@
 					<option value="Read">Read</option>
 				</select>
 
+				{#if $typeFilter}
+					<button
+						onclick={() => typeFilter.set(null)}
+						class="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium uppercase
+							{$typeFilter === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+							: $typeFilter === 'epub' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+							: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}"
+					>
+						{$typeFilter}
+						<span class="ml-0.5 normal-case font-normal opacity-60">✕</span>
+					</button>
+				{/if}
+
 				{#if $sources.length > 1}
 					<select
 						bind:value={$sourceFilter}
@@ -305,7 +319,7 @@
 		{/if}
 
 		<!-- Result count -->
-		{#if ($allowedTags.size > 0 || $deniedTags.size > 0 || $searchQuery.trim().length > 0 || $statusFilter || $sourceFilter != null) && !$isLoading && $sources.length > 0}
+		{#if ($allowedTags.size > 0 || $deniedTags.size > 0 || $searchQuery.trim().length > 0 || $statusFilter || $typeFilter || $sourceFilter != null) && !$isLoading && $sources.length > 0}
 			<p class="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
 				{$filteredDocuments.length} of {$allDocuments.length} documents
 			</p>
@@ -351,9 +365,9 @@
 				<div class="flex flex-col items-center gap-3 py-20 px-6 text-center">
 					<Icon name="search" class="w-8 h-8 text-slate-300 dark:text-slate-600" />
 					<p class="text-sm text-slate-500 dark:text-slate-400">No documents match your search or filters.</p>
-					{#if $allowedTags.size > 0 || $deniedTags.size > 0 || $searchQuery.trim().length > 0 || $statusFilter || $sourceFilter != null}
+					{#if $allowedTags.size > 0 || $deniedTags.size > 0 || $searchQuery.trim().length > 0 || $statusFilter || $typeFilter || $sourceFilter != null}
 						<button
-							onclick={() => { $searchQuery = ''; clearTagFilters(); statusFilter.set(null); sourceFilter.set(null); }}
+							onclick={() => { $searchQuery = ''; clearTagFilters(); statusFilter.set(null); typeFilter.set(null); sourceFilter.set(null); }}
 							class="text-sm text-slate-500 dark:text-slate-400 underline underline-offset-2 hover:text-slate-700 dark:hover:text-slate-300"
 						>
 							Clear all filters
