@@ -34,6 +34,7 @@ use indexmap::IndexMap;
 pub use online_library::OnlineLibraryMessage;
 use online_library::OnlineLibraryOutput;
 pub use online_library::OnlineLibraryPage;
+use read_flow_core::api::ReadingStatus;
 use read_flow_core::client::FilesClient;
 pub use sources::SourcesMessage;
 pub use traits::Page;
@@ -147,6 +148,7 @@ pub enum PageMessage {
     Settings(SettingsMessage),
     KeyEvent(PageSelector, Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(PageSelector, Modifiers),
+    NavigateToDocumentsWithStatus(ReadingStatus),
     Refresh,
     Noop,
     Out(PageOutput),
@@ -471,6 +473,16 @@ impl Pages {
         tracing::debug!("received: {message:?}");
         match message {
             PageMessage::Noop => Task::none(),
+            PageMessage::NavigateToDocumentsWithStatus(status) => {
+                let filter_task = self
+                    .documents
+                    .update(DocumentListMessage::StatusFilterChanged(Some(status)))
+                    .map(|action| action.map(map_document_list_message));
+                let nav_task = task::message(PageMessage::Out(PageOutput::TogglePage(
+                    PageSelector::Documents,
+                )));
+                Task::batch([filter_task, nav_task])
+            }
             PageMessage::Dashboard(msg) => self
                 .dashboard
                 .update(msg)
@@ -883,8 +895,8 @@ fn map_dashboard_message(msg: DashboardMessage) -> PageMessage {
             DashboardOutput::NavigateToDocuments => {
                 PageMessage::Out(PageOutput::TogglePage(PageSelector::Documents))
             }
-            DashboardOutput::NavigateToDocumentsWithStatus(_status) => {
-                PageMessage::Out(PageOutput::TogglePage(PageSelector::Documents))
+            DashboardOutput::NavigateToDocumentsWithStatus(status) => {
+                PageMessage::NavigateToDocumentsWithStatus(status)
             }
             DashboardOutput::NavigateToSettings => {
                 PageMessage::Out(PageOutput::TogglePage(PageSelector::Settings))

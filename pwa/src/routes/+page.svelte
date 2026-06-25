@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
+	import { goto } from '$app/navigation';
 	import Icon from '$lib/components/Icon.svelte';
 	import CoverImage from '$lib/components/CoverImage.svelte';
-	import { allDocuments, documentMetaMap, refreshDocuments } from '$lib/stores/documents';
+	import { allDocuments, documentMetaMap, refreshDocuments, statusFilter } from '$lib/stores/documents';
 	import { sources, loadSources } from '$lib/stores/sources';
 	import { fetchReadingState } from '$lib/api/aggregator';
 	import type { AggregatedFile } from '$lib/api/aggregator';
-	import type { DocumentMeta } from '$lib/api/client';
+	import type { DocumentMeta, ReadingStatus } from '$lib/api/client';
 
 	interface ContinueEntry {
 		doc: AggregatedFile;
@@ -115,6 +116,11 @@
 
 	function basename(path: string): string {
 		return path.split('/').pop() ?? path;
+	}
+
+	function navigateToLibraryWithStatus(status: ReadingStatus) {
+		statusFilter.set(status);
+		goto('/library');
 	}
 
 	function pct(entry: ContinueEntry): number {
@@ -263,20 +269,20 @@
 						<span class="text-2xl font-bold tabular-nums">{totalDocs}</span>
 						<span class="text-xs text-slate-500 dark:text-slate-400">Documents</span>
 					</a>
-					<a
-						href="/library"
-						class="flex flex-col gap-1 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-accent/50 transition-colors"
+					<button
+						onclick={() => navigateToLibraryWithStatus('Reading')}
+						class="flex flex-col gap-1 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-accent/50 transition-colors text-left"
 					>
 						<span class="text-2xl font-bold tabular-nums text-accent">{readingCount}</span>
 						<span class="text-xs text-slate-500 dark:text-slate-400">Reading</span>
-					</a>
-					<a
-						href="/library"
-						class="flex flex-col gap-1 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-accent/50 transition-colors"
+					</button>
+					<button
+						onclick={() => navigateToLibraryWithStatus('Read')}
+						class="flex flex-col gap-1 p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-accent/50 transition-colors text-left"
 					>
 						<span class="text-2xl font-bold tabular-nums text-green-500">{completedCount}</span>
 						<span class="text-xs text-slate-500 dark:text-slate-400">Completed</span>
-					</a>
+					</button>
 				</div>
 			</section>
 
