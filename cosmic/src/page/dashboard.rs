@@ -8,6 +8,7 @@ use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
+use cosmic::iced::Background;
 use cosmic::iced::ContentFit;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
@@ -102,6 +103,57 @@ enum DashboardState {
         sources: Vec<ClientSelector>,
         continue_reading: Vec<ContinueReadingEntry>,
     },
+}
+
+fn card_button_class() -> cosmic::theme::Button {
+    cosmic::theme::Button::Custom {
+        active: Box::new(|_, theme| {
+            let cosmic = theme.cosmic();
+            cosmic::widget::button::Style {
+                background: Some(Background::Color(cosmic.background.component.base.into())),
+                border_radius: cosmic.corner_radii.radius_s.into(),
+                border_width: 1.0,
+                border_color: cosmic.accent.base.into(),
+                text_color: Some(cosmic.background.component.on.into()),
+                ..Default::default()
+            }
+        }),
+        disabled: Box::new(|theme| {
+            let cosmic = theme.cosmic();
+            cosmic::widget::button::Style {
+                background: Some(Background::Color(cosmic.background.component.base.into())),
+                border_radius: cosmic.corner_radii.radius_s.into(),
+                border_width: 1.0,
+                border_color: cosmic.accent.base.into(),
+                text_color: Some(cosmic.background.component.on.into()),
+                ..Default::default()
+            }
+        }),
+        hovered: Box::new(|_, theme| {
+            let cosmic = theme.cosmic();
+            cosmic::widget::button::Style {
+                background: Some(Background::Color(cosmic.background.component.hover.into())),
+                border_radius: cosmic.corner_radii.radius_s.into(),
+                border_width: 1.0,
+                border_color: cosmic.accent.base.into(),
+                text_color: Some(cosmic.background.component.on.into()),
+                ..Default::default()
+            }
+        }),
+        pressed: Box::new(|_, theme| {
+            let cosmic = theme.cosmic();
+            cosmic::widget::button::Style {
+                background: Some(Background::Color(
+                    cosmic.background.component.pressed.into(),
+                )),
+                border_radius: cosmic.corner_radii.radius_s.into(),
+                border_width: 1.0,
+                border_color: cosmic.accent.base.into(),
+                text_color: Some(cosmic.background.component.on.into()),
+                ..Default::default()
+            }
+        }),
+    }
 }
 
 impl DashboardPage {
@@ -359,7 +411,7 @@ impl DashboardPage {
             )
             .width(Length::FillPortion(1))
             .on_press(msg)
-            .class(widget::button::ButtonClass::HeaderBar)
+            .class(card_button_class())
             .into()
         };
 
@@ -598,7 +650,7 @@ impl DashboardPage {
         let doc = entry.document.clone();
         widget::button::custom(card_content)
             .on_press(DashboardMessage::OpenDocument(doc))
-            .class(widget::button::ButtonClass::HeaderBar)
+            .class(card_button_class())
             .width(Length::FillPortion(1))
             .into()
     }
