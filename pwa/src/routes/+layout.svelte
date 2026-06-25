@@ -26,7 +26,8 @@
 	}
 
 	const navLinks: { href: string; label: string; icon: IconName }[] = [
-		{ href: '/', label: 'Library', icon: 'library' },
+		{ href: '/', label: 'Dashboard', icon: 'home' },
+		{ href: '/library', label: 'Library', icon: 'library' },
 		{ href: '/online-library', label: 'Online library', icon: 'globe' },
 		{ href: '/settings', label: 'Settings', icon: 'settings' },
 	];
@@ -65,10 +66,23 @@
 		<nav class="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
 			<a
 				href="/"
-				title="Library"
+				title="Dashboard"
 				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
 					{collapsed ? 'justify-center' : 'gap-3'}
 					{isActive('/')
+						? 'bg-accent/10 text-accent font-medium'
+						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white'}"
+			>
+				<Icon name="home" class="w-4 h-4 shrink-0" />
+				{#if !collapsed}<span class="whitespace-nowrap">Dashboard</span>{/if}
+			</a>
+
+			<a
+				href="/library"
+				title="Library"
+				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
+					{collapsed ? 'justify-center' : 'gap-3'}
+					{isActive('/library')
 						? 'bg-accent/10 text-accent font-medium'
 						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white'}"
 			>

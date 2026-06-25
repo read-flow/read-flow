@@ -23,7 +23,8 @@
 		| 'minimize'
 		| 'edit'
 		| 'globe'
-		| 'download';
+		| 'download'
+	| 'home';
 </script>
 
 <script lang="ts">
@@ -152,5 +153,8 @@
 		<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
 		<polyline points="7 10 12 15 17 10" />
 		<line x1="12" y1="15" x2="12" y2="3" />
+	{:else if name === 'home'}
+		<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+		<polyline points="9 22 9 12 15 12 15 22" />
 	{/if}
 </svg>
