@@ -175,6 +175,7 @@ fn display_list_to_image_tinted(
 pub enum MuPdfViewerOutput {
     /// (fingerprint, page, total_pages) — None when pages not yet loaded.
     Close(Fingerprint, Option<(usize, usize)>),
+    OpenDocumentDetails(Document),
 }
 
 #[derive(Clone, Debug)]
@@ -903,7 +904,18 @@ impl Page for MuPdfViewer {
     }
 
     fn view_header_end(&self) -> Vec<Element<'_, MuPdfViewerMessage>> {
-        Vec::new()
+        let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+        vec![
+            widget::button::icon(
+                widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE),
+            )
+            .on_press(MuPdfViewerMessage::Out(
+                MuPdfViewerOutput::OpenDocumentDetails(self.document.clone()),
+            ))
+            .tooltip(fl!("pdf-viewer-document-details"))
+            .padding(space_xxs)
+            .into(),
+        ]
     }
 
     fn view_context(&self) -> ContextView<'_, MuPdfViewerMessage> {

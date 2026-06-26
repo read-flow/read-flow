@@ -239,6 +239,7 @@ settings-viewer-section = EPUB Viewer
 # PDF viewer
 pdf-viewer = PDF viewer
 pdf-viewer-back = Back
+pdf-viewer-document-details = Document Details
 pdf-viewer-dual-pane = Two-page spread
 pdf-viewer-dual-pane-auto = Auto
 pdf-viewer-dual-pane-off = Off
@@ -264,6 +265,7 @@ pdf-viewer-zoom = Zoom
 # EPUB viewer
 epub-viewer = EPUB viewer
 epub-viewer-back = Back
+epub-viewer-document-details = Document Details
 epub-viewer-copy-code = Copy code
 epub-viewer-display = Display
 epub-viewer-dual-page = Two-page spread

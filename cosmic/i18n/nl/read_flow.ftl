@@ -237,6 +237,7 @@ settings-viewer-section = EPUB Weergave
 # PDF viewer
 pdf-viewer = PDF weergave
 pdf-viewer-back = Terug
+pdf-viewer-document-details = Documentdetails
 pdf-viewer-dual-pane = Dubbelzijdige weergave
 pdf-viewer-dual-pane-auto = Auto
 pdf-viewer-dual-pane-off = Uit
@@ -262,6 +263,7 @@ pdf-viewer-zoom = Zoom
 # EPUB viewer
 epub-viewer = EPUB weergave
 epub-viewer-back = Terug
+epub-viewer-document-details = Documentdetails
 epub-viewer-copy-code = Code kopiëren
 epub-viewer-display = Weergave
 epub-viewer-dual-page = Dubbelzijdige weergave

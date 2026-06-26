@@ -989,6 +989,9 @@ fn map_mu_pdf_viewer_message(fingerprint: Fingerprint, msg: MuPdfViewerMessage) 
             MuPdfViewerOutput::Close(fingerprint, page_info) => {
                 PageMessage::CloseMuPdfViewer(fingerprint, page_info)
             }
+            MuPdfViewerOutput::OpenDocumentDetails(document) => {
+                PageMessage::OpenDocumentDetails(document)
+            }
         },
         msg => PageMessage::MuPdfViewer(fingerprint, msg),
     }
@@ -1004,6 +1007,9 @@ fn map_epub_viewer_message(fingerprint: Fingerprint, msg: EpubViewerMessage) -> 
             EpubViewerOutput::Activate => PageMessage::Out(PageOutput::TogglePage(
                 PageSelector::EpubViewer(fingerprint),
             )),
+            EpubViewerOutput::OpenDocumentDetails(document) => {
+                PageMessage::OpenDocumentDetails(document)
+            }
         },
         msg => PageMessage::EpubViewer(fingerprint, msg),
     }

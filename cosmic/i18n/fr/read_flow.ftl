@@ -236,6 +236,7 @@ settings-viewer-section = Visionneuse EPUB
 # PDF viewer
 pdf-viewer = PDF viewer
 pdf-viewer-back = Retour
+pdf-viewer-document-details = Détails du document
 pdf-viewer-dual-pane = Double page
 pdf-viewer-dual-pane-auto = Auto
 pdf-viewer-dual-pane-off = Désactivé
@@ -261,6 +262,7 @@ pdf-viewer-zoom = Zoom
 # EPUB viewer
 epub-viewer = EPUB viewer
 epub-viewer-back = Retour
+epub-viewer-document-details = Détails du document
 epub-viewer-copy-code = Copier le code
 epub-viewer-display = Affichage
 epub-viewer-dual-page = Double page
