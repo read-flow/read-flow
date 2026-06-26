@@ -333,7 +333,8 @@ impl cosmic::Application for ReadFlow {
                     ],
                 ),
             ),
-        ]);
+        ])
+        .item_width(menu::ItemWidth::Uniform(220));
 
         elements.push(menu_bar.into());
         elements
