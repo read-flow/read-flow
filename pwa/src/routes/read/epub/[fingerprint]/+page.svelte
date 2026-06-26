@@ -1,4 +1,5 @@
 <script lang="ts">
+	// @feature: reading.epub_viewer
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/stores';
 	import ePub from 'epubjs';

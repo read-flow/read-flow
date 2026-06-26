@@ -81,6 +81,7 @@ pub enum ImageViewerMessage {
     ZoomOut,
 }
 
+/// @feature: reading.image_viewer
 pub struct ImageViewer {
     id: u64,
     image: ViewerImage,

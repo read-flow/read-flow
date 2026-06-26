@@ -1,0 +1,225 @@
+# Canonical feature catalog — single source of truth for PWA ⇄ COSMIC parity.
+#
+# Each [[feature]] declares:
+#   id          stable dotted identifier (also used in @feature: code tags)
+#   description one-line human summary
+#   surfaces    the surfaces this feature is *expected* to exist on, for parity
+#               (subset of: "cosmic", "pwa", "rest")
+#   gaps        (optional) surfaces that are intentionally NOT yet implemented
+#               — an acknowledged backlog item. Rendered as a gap in the matrix
+#               but does not fail the checker. Remove an entry from `gaps` and add
+#               the matching `@feature:` annotation when you implement it.
+#
+# Verification: implementations carry a code annotation `@feature: <id>`
+#   - Rust:        /// @feature: documents.select_cover   (doc-comment)
+#   - TS/Svelte:   // @feature: documents.select_cover
+# The checker `core/tests/feature_matrix.rs` reconciles annotations with this
+# catalog, regenerates FEATURE_MATRIX.md, and fails on orphan/drifted tags or
+# unacknowledged missing surfaces. See that file for the exact policy.
+#
+# Surface → scanned tree:
+#   cosmic → cosmic/src (+ widgets/src)   pwa → pwa/src   rest → core/src
+
+# ── Library / document list ────────────────────────────────────────────────
+
+[[feature]]
+id = "documents.list"
+description = "Browse all documents in the library"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "documents.search"
+description = "Keyword search across documents"
+surfaces = ["cosmic", "pwa"]
+
+[[feature]]
+id = "documents.filter_by_tag"
+description = "Filter the list by allowed/denied tags"
+surfaces = ["cosmic", "pwa"]
+
+[[feature]]
+id = "documents.filter_by_status"
+description = "Filter the list by reading status"
+surfaces = ["cosmic", "pwa"]
+
+[[feature]]
+id = "documents.filter_by_source"
+description = "Filter the list by source (local / remote)"
+surfaces = ["cosmic", "pwa"]
+
+[[feature]]
+id = "documents.sort"
+description = "Sort the list (title/filename/size/type/status, asc/desc)"
+surfaces = ["cosmic", "pwa"]
+
+[[feature]]
+id = "documents.pagination"
+description = "Paginate large document collections"
+surfaces = ["cosmic", "pwa"]
+
+[[feature]]
+id = "documents.format_picker"
+description = "Pick a format when a document has multiple versions"
+surfaces = ["cosmic", "pwa"]
+
+[[feature]]
+id = "documents.merge"
+description = "Merge duplicate documents into one"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "documents.batch_tag"
+description = "Add/remove tags on a multi-document selection"
+surfaces = ["cosmic", "pwa"]
+
+# ── Document detail / metadata ─────────────────────────────────────────────
+
+[[feature]]
+id = "documents.detail_view"
+description = "View a single document's details"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "documents.edit_metadata"
+description = "Edit document metadata (title, authors, description, …)"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "documents.cover_display"
+description = "Display a document's cover image"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "documents.select_cover"
+description = "Choose which content's cover represents the document"
+surfaces = ["cosmic", "pwa", "rest"]
+
+# ── Per-document sources ───────────────────────────────────────────────────
+
+[[feature]]
+id = "sources.delete"
+description = "Delete a single source/file of a document"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "sources.send_to_client"
+description = "Send a document to another client (download-to-local / upload)"
+surfaces = ["cosmic", "pwa", "rest"]
+
+# ── Tags ───────────────────────────────────────────────────────────────────
+
+[[feature]]
+id = "tags.list"
+description = "List all tags in the library"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "tags.add"
+description = "Add tags to a document"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "tags.remove"
+description = "Remove tags from a document"
+surfaces = ["cosmic", "pwa", "rest"]
+
+# ── Reading ────────────────────────────────────────────────────────────────
+
+[[feature]]
+id = "reading.status"
+description = "Set a document's reading status (unread/reading/read)"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "reading.progress"
+description = "Save and restore reading position"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "reading.epub_viewer"
+description = "Read EPUB documents"
+surfaces = ["cosmic", "pwa"]
+
+[[feature]]
+id = "reading.pdf_viewer"
+description = "Read PDF documents"
+surfaces = ["cosmic", "pwa"]
+
+[[feature]]
+id = "reading.image_viewer"
+description = "View raster/SVG images"
+surfaces = ["cosmic"]
+
+# ── Remote sources (server configuration) ──────────────────────────────────
+
+[[feature]]
+id = "remotes.manage"
+description = "Add/edit/delete/reorder remote servers"
+surfaces = ["cosmic", "pwa"]
+
+[[feature]]
+id = "remotes.status"
+description = "Check a server's reachability/status"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "remotes.private_mode"
+description = "Private mode (owner-only private tags)"
+surfaces = ["cosmic", "pwa", "rest"]
+
+# ── Server admin (Bucket B — needs REST extension) ─────────────────────────
+
+[[feature]]
+id = "admin.scan"
+description = "Trigger a library scan and observe progress"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "admin.check_missing"
+description = "Check for and purge missing files"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "admin.scan_directories"
+description = "Configure scan directories (CRUD)"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "admin.authorized_users"
+description = "Manage authorized server users (CRUD)"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "admin.server_settings"
+description = "Server settings (db path, file types, dry-run, private)"
+surfaces = ["cosmic", "pwa", "rest"]
+
+# ── Online library (OPDS — needs REST extension) ───────────────────────────
+
+[[feature]]
+id = "online_library.search"
+description = "Search OPDS catalogs"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "online_library.download_import"
+description = "Download and import a book from an OPDS catalog"
+surfaces = ["cosmic", "pwa", "rest"]
+
+# ── Theme ───────────────────────────────────────────────────────────────────
+# PWA-only by design: browsers don't theme web apps, so the PWA ships its own
+# editor (CSS-variable schemes + custom colors). COSMIC apps inherit the
+# desktop theme — libcosmic has no per-app theme override (the Application
+# trait exposes no `theme()`; theming is driven by cosmic-config), and COSMIC
+# Settings already provides a full global theme editor for every cosmic app.
+# So this is platform-provided on the desktop, not a parity gap.
+
+[[feature]]
+id = "theme.editor"
+description = "Customizable theme editor (modes, schemes, custom colors)"
+surfaces = ["pwa"]
+
+[[feature]]
+id = "app.epub_viewer_choice"
+description = "Choose EPUB viewer backend (native/mupdf/external)"
+surfaces = ["cosmic"]

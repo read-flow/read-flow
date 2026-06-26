@@ -23,6 +23,11 @@ icons-dst := clean(rootdir / prefix) / 'share' / 'icons' / 'hicolor'
 icon-svg-src := icons-src / 'scalable' / 'apps' / 'icon.svg'
 icon-svg-dst := icons-dst / 'scalable' / 'apps' / appid + '.svg'
 
+app-name := 'Read Flow'
+app-bundle := 'target' / 'release' / app-name + '.app'
+iconset := 'target' / 'ReadFlow.iconset'
+icns := 'target' / 'ReadFlow.icns'
+
 # Default recipe which runs `just build-release`
 default: build-release
 
@@ -46,6 +51,14 @@ build-release *args: (build-debug '--release' args)
 
 # Compiles release profile with vendored dependencies
 build-vendored *args: vendor-extract (build-release '--frozen --offline' args)
+
+# Runs workspace tests
+test *args:
+    cargo nextest run {{args}}
+
+# Runs the cucumber-rs BDD harness (BDD_DRIVER=rest|cosmic, default rest)
+bdd driver='rest':
+    BDD_DRIVER={{driver}} cargo nextest run -p read-flow bdd
 
 # Runs a clippy check
 check *args:
@@ -98,6 +111,68 @@ vendor-extract:
     rm -rf vendor
     tar pxf vendor.tar
 
+# ── macOS ─────────────────────────────────────────────────────────────────────
+
+# Generate macOS .icns icon from SVG (requires rsvg-convert: brew install librsvg)
+[macos]
+icon:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "{{iconset}}"
+    for size in 16 32 128 256 512; do
+        rsvg-convert -w "$size" -h "$size" "{{icon-svg-src}}" -o "{{iconset}}/icon_${size}x${size}.png"
+        double=$((size * 2))
+        rsvg-convert -w "$double" -h "$double" "{{icon-svg-src}}" -o "{{iconset}}/icon_${size}x${size}@2x.png"
+    done
+    iconutil -c icns "{{iconset}}" -o "{{icns}}"
+    rm -rf "{{iconset}}"
+
+# Build macOS .app bundle
+[macos]
+bundle: build-release icon
+    #!/usr/bin/env bash
+    set -euo pipefail
+    app="{{app-bundle}}"
+    rm -rf "$app"
+    mkdir -p "$app/Contents/MacOS"
+    mkdir -p "$app/Contents/Resources"
+    cp "{{bin-src}}" "$app/Contents/MacOS/"
+    cp "{{icns}}" "$app/Contents/Resources/"
+    cat > "$app/Contents/Info.plist" << 'PLIST'
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+        <key>CFBundleName</key>
+        <string>Read Flow</string>
+        <key>CFBundleDisplayName</key>
+        <string>Read Flow</string>
+        <key>CFBundleIdentifier</key>
+        <string>com.github.peterpaul.read-flow</string>
+        <key>CFBundleVersion</key>
+        <string>0.1.0</string>
+        <key>CFBundleShortVersionString</key>
+        <string>0.1.0</string>
+        <key>CFBundleExecutable</key>
+        <string>read-flow</string>
+        <key>CFBundleIconFile</key>
+        <string>ReadFlow</string>
+        <key>CFBundlePackageType</key>
+        <string>APPL</string>
+        <key>NSHighResolutionCapable</key>
+        <true/>
+        <key>LSMinimumSystemVersion</key>
+        <string>10.15</string>
+    </dict>
+    </plist>
+    PLIST
+    echo "Built: $app"
+
+# Open the .app bundle (build first if needed)
+[macos]
+open-bundle: bundle
+    open "{{app-bundle}}"
+
 # ── PWA ───────────────────────────────────────────────────────────────────────
 
 # Installs PWA dependencies
@@ -127,3 +202,8 @@ pwa-test:
 # Runs PWA tests in watch mode
 pwa-test-watch:
     cd pwa && npm run test:watch
+
+# Runs PWA end-to-end BDD scenarios (Playwright, builds first)
+pwa-test-e2e:
+    cargo build -p read-flow-core --bin read-flow-cli
+    cd pwa && npm run test:e2e

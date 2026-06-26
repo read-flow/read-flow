@@ -20,6 +20,7 @@ use read_flow_core::Builder;
 use crate::ICON_SIZE;
 use crate::fl;
 
+/// @feature: documents.pagination
 pub struct Pagination {
     pub page_size: usize,
     pub collection_size: usize,

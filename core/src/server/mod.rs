@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use authn::AuthorizedUser;
 use authn::PrivateModeHeader;
@@ -31,6 +32,7 @@ use rocket_cors::Cors;
 use rocket_cors::CorsOptions;
 
 use crate::ApplicationModule;
+use crate::ExpandedPath;
 use crate::api::ApiDocument;
 use crate::api::DocumentMeta;
 use crate::api::File;
@@ -40,10 +42,20 @@ use crate::api::ReadingState;
 use crate::api::ReadingStatus;
 use crate::api::Status;
 use crate::db::dao;
+use crate::online_library::DownloadFormat;
+use crate::online_library::OnlineBook;
+use crate::online_library::OnlineCatalog;
+use crate::online_library::OpdsClient;
+use crate::online_library::download_book;
+use crate::scan::DirectorySettings;
+use crate::scan::DocumentType;
+use crate::scan::ScanSummary;
 use crate::settings;
+use crate::settings::HashedPassword;
 pub use crate::settings::ServerSettings;
 use crate::settings::Settings;
 use crate::settings::SettingsError;
+use crate::settings::UserEntry;
 use crate::to_unique_file;
 
 #[derive(Debug, thiserror::Error, Responder)]
@@ -74,6 +86,19 @@ enum Error {
     #[error("private mode access requires owner role")]
     #[response(status = 403)]
     Forbidden(String),
+    #[error("bad request: {0}")]
+    #[response(status = 400)]
+    BadRequest(String),
+    #[error("settings error: {0}")]
+    #[response(status = 500)]
+    Settings(String),
+}
+
+impl From<SettingsError> for Error {
+    fn from(error: SettingsError) -> Self {
+        tracing::error!("settings error: {error}");
+        Error::Settings(error.to_string())
+    }
 }
 
 impl From<dao::Error> for Error {
@@ -173,6 +198,19 @@ async fn serve(config_path: PathBuf) -> Rocket<Build> {
         put_document_metadata,
         post_merge_documents,
         ensure_document_for_file,
+        post_scan,
+        post_check_missing,
+        get_scan_directories,
+        put_scan_directory,
+        delete_scan_directory,
+        get_settings,
+        put_settings,
+        get_users,
+        post_user,
+        put_user,
+        delete_user,
+        search_online_library,
+        import_online_book,
     ];
 
     rocket::custom(figment)
@@ -186,6 +224,7 @@ pub async fn main(config_path: PathBuf) -> Result<Rocket<Ignite>, Box<rocket::Er
 }
 
 #[get("/status")]
+/// @feature: remotes.status
 async fn status(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
@@ -258,6 +297,7 @@ async fn update_file(
 }
 
 #[get("/files/tags")]
+/// @feature: tags.list
 async fn get_files_tags(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     user: AuthorizedUser,
@@ -343,6 +383,7 @@ async fn get_file_tags(
 }
 
 #[post("/files/<guid>/tags", data = "<tags>")]
+/// @feature: tags.add
 async fn post_file_tags(
     guid: &str,
     tags: Json<Vec<String>>,
@@ -380,6 +421,7 @@ async fn post_file_tags(
 }
 
 #[delete("/files/<guid>/tags", data = "<tags>")]
+/// @feature: tags.remove
 async fn delete_file_tags(
     guid: &str,
     tags: Json<Vec<String>>,
@@ -502,6 +544,7 @@ async fn get_file_cover(
 }
 
 #[delete("/files/<guid>")]
+/// @feature: sources.delete
 async fn delete_file(
     guid: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
@@ -530,6 +573,7 @@ async fn delete_file(
 }
 
 #[post("/files", data = "<file>")]
+/// @feature: sources.send_to_client
 async fn upload_file(
     mut file: Form<TempFile<'_>>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
@@ -541,7 +585,10 @@ async fn upload_file(
         .transpose()?
         .unwrap();
 
-    if !matches!(extension.to_lowercase().as_str(), "pdf" | "epub" | "mobi") {
+    if !matches!(
+        extension.to_lowercase().as_str(),
+        "pdf" | "epub" | "mobi" | "azw"
+    ) {
         return Err(Error::UnsupportedExtension(extension));
     }
 
@@ -569,7 +616,9 @@ async fn upload_file(
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let result = dao::select_file_by_path(&mut conn, &target_file.display().to_string())
         .await?
-        .unwrap();
+        .ok_or_else(|| {
+            Error::Scan("file not recorded after scan; server may be in dry-run mode".to_string())
+        })?;
     Ok(Json((result, vec![]).into()))
 }
 
@@ -586,6 +635,7 @@ async fn get_reading_state(
 }
 
 #[put("/reading-state", data = "<state>")]
+/// @feature: reading.progress
 async fn put_reading_state(
     state: Json<ReadingState>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
@@ -603,6 +653,7 @@ struct ReadingStatusRequest {
 }
 
 #[put("/reading-state/<fingerprint>/status", data = "<req>")]
+/// @feature: reading.status
 async fn put_reading_status(
     fingerprint: &str,
     req: Json<ReadingStatusRequest>,
@@ -618,6 +669,7 @@ async fn put_reading_status(
 // ─── Document routes ──────────────────────────────────────────────────────────
 
 #[get("/documents")]
+/// @feature: documents.list
 async fn get_documents(
     application_module: &State<ApplicationModule<SettingsProvider>>,
     _user: AuthorizedUser,
@@ -629,6 +681,7 @@ async fn get_documents(
 }
 
 #[get("/documents/<guid>")]
+/// @feature: documents.detail_view
 async fn get_document(
     guid: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
@@ -641,6 +694,7 @@ async fn get_document(
 }
 
 #[get("/documents/<guid>/cover")]
+/// @feature: documents.cover_display
 async fn get_document_cover(
     guid: &str,
     application_module: &State<ApplicationModule<SettingsProvider>>,
@@ -659,6 +713,8 @@ async fn get_document_cover(
 }
 
 #[put("/documents/<guid>/metadata", data = "<meta>")]
+/// @feature: documents.edit_metadata
+/// @feature: documents.select_cover
 async fn put_document_metadata(
     guid: &str,
     meta: Json<DocumentMeta>,
@@ -710,7 +766,332 @@ async fn ensure_document_for_file(
     Ok(Json(doc))
 }
 
+/// Admin endpoints require the `owner` role regardless of private mode.
+fn require_owner(user: &AuthorizedUser) -> Result<()> {
+    if user.has_role("owner") {
+        Ok(())
+    } else {
+        Err(Error::Forbidden("admin actions require owner role".into()))
+    }
+}
+
+#[post("/scan")]
+/// @feature: admin.scan
+async fn post_scan(
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<ScanSummary>> {
+    require_owner(&user)?;
+    let summary = application_module.scan_configured().await?;
+    Ok(Json(summary))
+}
+
+#[derive(serde::Serialize)]
+struct CheckMissingResponse {
+    missing: Vec<String>,
+    purged: bool,
+}
+
+#[post("/maintenance/check-missing?<purge>")]
+/// @feature: admin.check_missing
+async fn post_check_missing(
+    purge: Option<bool>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<CheckMissingResponse>> {
+    require_owner(&user)?;
+    let purge = purge.unwrap_or(false);
+    let missing = application_module.check_missing(purge).await;
+    Ok(Json(CheckMissingResponse {
+        missing,
+        purged: purge,
+    }))
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ScanDirectoryEntry {
+    path: String,
+    #[serde(flatten)]
+    settings: DirectorySettings,
+}
+
+fn list_scan_directories(settings: &Settings) -> Vec<ScanDirectoryEntry> {
+    settings
+        .scan
+        .directories
+        .iter()
+        .map(|(path, settings)| ScanDirectoryEntry {
+            path: path.display().to_string(),
+            settings: settings.clone(),
+        })
+        .collect()
+}
+
+#[get("/scan-directories")]
+/// @feature: admin.scan_directories
+async fn get_scan_directories(
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<ScanDirectoryEntry>>> {
+    require_owner(&user)?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_scan_directories(&settings)))
+}
+
+#[put("/scan-directories", data = "<entry>")]
+/// @feature: admin.scan_directories
+async fn put_scan_directory(
+    entry: Json<ScanDirectoryEntry>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<ScanDirectoryEntry>>> {
+    require_owner(&user)?;
+    let ScanDirectoryEntry { path, settings } = entry.into_inner();
+    let path = ExpandedPath::from_str(&path)
+        .map_err(|e| Error::BadRequest(format!("invalid path: {e}")))?;
+    application_module
+        .update_settings(move |s| {
+            s.scan.directories.insert(path, settings);
+        })
+        .await?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_scan_directories(&settings)))
+}
+
+#[delete("/scan-directories?<path>")]
+/// @feature: admin.scan_directories
+async fn delete_scan_directory(
+    path: String,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<ScanDirectoryEntry>>> {
+    require_owner(&user)?;
+    let parsed = ExpandedPath::from_str(&path)
+        .map_err(|e| Error::BadRequest(format!("invalid path: {e}")))?;
+    application_module
+        .update_settings(move |s| {
+            s.scan.directories.remove(&parsed);
+        })
+        .await?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_scan_directories(&settings)))
+}
+
+/// Editable server settings. `database_url` is informational/read-only — it is
+/// returned for display but ignored on PUT (changing the DB at runtime would
+/// require rebuilding the connection pool).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ServerSettingsDto {
+    #[serde(default)]
+    database_url: String,
+    extensions: Vec<DocumentType>,
+    dry_run: bool,
+    concurrency: usize,
+    private_mode: bool,
+    private_tags: Vec<String>,
+}
+
+fn server_settings_dto(settings: &Settings) -> ServerSettingsDto {
+    ServerSettingsDto {
+        database_url: settings.database.url().display().to_string(),
+        extensions: settings.scan.extensions.clone(),
+        dry_run: settings.scan.dry_run,
+        concurrency: settings.scan.concurrency,
+        private_mode: settings.ui.private_mode(),
+        private_tags: settings.ui.private_tags().to_vec(),
+    }
+}
+
+#[get("/settings")]
+/// @feature: admin.server_settings
+async fn get_settings(
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<ServerSettingsDto>> {
+    require_owner(&user)?;
+    let settings = application_module.settings().await;
+    Ok(Json(server_settings_dto(&settings)))
+}
+
+#[put("/settings", data = "<dto>")]
+/// @feature: admin.server_settings
+async fn put_settings(
+    dto: Json<ServerSettingsDto>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<ServerSettingsDto>> {
+    require_owner(&user)?;
+    let dto = dto.into_inner();
+    application_module
+        .update_settings(move |s| {
+            s.scan.extensions = dto.extensions;
+            s.scan.dry_run = dto.dry_run;
+            s.scan.concurrency = dto.concurrency;
+            s.ui.set_private_mode(dto.private_mode);
+            s.ui.set_private_tags(dto.private_tags);
+        })
+        .await?;
+    let settings = application_module.settings().await;
+    Ok(Json(server_settings_dto(&settings)))
+}
+
+/// A user as exposed over the API. The password hash is NEVER included.
+#[derive(serde::Serialize)]
+struct UserDto {
+    user_id: String,
+    roles: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct CreateUserRequest {
+    user_id: String,
+    password: String,
+    #[serde(default)]
+    roles: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct UpdateUserRequest {
+    /// When omitted/empty the existing password is kept.
+    #[serde(default)]
+    password: Option<String>,
+    #[serde(default)]
+    roles: Vec<String>,
+}
+
+fn make_user_entry(password: HashedPassword, roles: Vec<String>) -> UserEntry {
+    if roles.is_empty() {
+        UserEntry::Simple(password)
+    } else {
+        UserEntry::Extended { password, roles }
+    }
+}
+
+fn list_users(settings: &Settings) -> Vec<UserDto> {
+    settings
+        .server
+        .authorized_users
+        .iter()
+        .map(|(user_id, entry)| UserDto {
+            user_id: user_id.clone(),
+            roles: entry.roles().to_vec(),
+        })
+        .collect()
+}
+
+fn hash_password(plain: &str) -> Result<HashedPassword> {
+    HashedPassword::try_from(plain.to_string())
+        .map_err(|e| Error::Settings(format!("could not hash password: {e}")))
+}
+
+#[get("/users")]
+/// @feature: admin.authorized_users
+async fn get_users(
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<UserDto>>> {
+    require_owner(&user)?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_users(&settings)))
+}
+
+#[post("/users", data = "<req>")]
+/// @feature: admin.authorized_users
+async fn post_user(
+    req: Json<CreateUserRequest>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<UserDto>>> {
+    require_owner(&user)?;
+    let CreateUserRequest {
+        user_id,
+        password,
+        roles,
+    } = req.into_inner();
+    if user_id.is_empty() {
+        return Err(Error::BadRequest("user_id must not be empty".into()));
+    }
+    if application_module
+        .settings()
+        .await
+        .server
+        .authorized_users
+        .contains_key(&user_id)
+    {
+        return Err(Error::BadRequest(format!("user {user_id} already exists")));
+    }
+    let entry = make_user_entry(hash_password(&password)?, roles);
+    application_module
+        .update_settings(move |s| {
+            s.server.authorized_users.insert(user_id, entry);
+        })
+        .await?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_users(&settings)))
+}
+
+#[put("/users/<user_id>", data = "<req>")]
+/// @feature: admin.authorized_users
+async fn put_user(
+    user_id: &str,
+    req: Json<UpdateUserRequest>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<UserDto>>> {
+    require_owner(&user)?;
+    let UpdateUserRequest { password, roles } = req.into_inner();
+
+    let existing = application_module
+        .settings()
+        .await
+        .server
+        .authorized_users
+        .get(user_id)
+        .cloned();
+    let Some(existing) = existing else {
+        return Err(Error::FileNotFound(format!("user {user_id}")));
+    };
+
+    let password_hash = match password {
+        Some(p) if !p.is_empty() => hash_password(&p)?,
+        _ => existing.password().clone(),
+    };
+    let entry = make_user_entry(password_hash, roles);
+    let id = user_id.to_string();
+    application_module
+        .update_settings(move |s| {
+            s.server.authorized_users.insert(id, entry);
+        })
+        .await?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_users(&settings)))
+}
+
+#[delete("/users/<user_id>")]
+/// @feature: admin.authorized_users
+async fn delete_user(
+    user_id: &str,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    user: AuthorizedUser,
+) -> Result<Json<Vec<UserDto>>> {
+    require_owner(&user)?;
+    if user_id == user.user_id {
+        return Err(Error::BadRequest(
+            "you cannot delete the user you are authenticated as".into(),
+        ));
+    }
+    let id = user_id.to_string();
+    application_module
+        .update_settings(move |s| {
+            s.server.authorized_users.shift_remove(&id);
+        })
+        .await?;
+    let settings = application_module.settings().await;
+    Ok(Json(list_users(&settings)))
+}
+
 #[post("/documents/merge", data = "<req>")]
+/// @feature: documents.merge
 async fn post_merge_documents(
     req: Json<MergeDocumentsRequest>,
     application_module: &State<ApplicationModule<SettingsProvider>>,
@@ -726,10 +1107,78 @@ async fn post_merge_documents(
     Ok(Json(doc))
 }
 
+#[derive(serde::Serialize)]
+struct OnlineLibrarySearchResponse {
+    books: Vec<OnlineBook>,
+    catalogs: Vec<OnlineCatalog>,
+}
+
+#[get("/online-library/search?<q>")]
+/// @feature: online_library.search
+async fn search_online_library(
+    q: String,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Json<OnlineLibrarySearchResponse>> {
+    let settings = application_module.settings().await;
+    let catalogs: Vec<OnlineCatalog> = settings
+        .online_library
+        .catalogs
+        .iter()
+        .filter(|catalog| catalog.enabled)
+        .cloned()
+        .collect();
+
+    let searches = catalogs.iter().cloned().map(|catalog| {
+        let q = q.clone();
+        async move {
+            let catalog_name = catalog.name.clone();
+            let client = OpdsClient::new(catalog);
+            match client.search_with_next(&q).await {
+                Ok((books, _next_url)) => books,
+                Err(e) => {
+                    tracing::warn!("OPDS search of {catalog_name} failed: {e}");
+                    vec![]
+                }
+            }
+        }
+    });
+    let books = futures::future::join_all(searches).await.concat();
+
+    Ok(Json(OnlineLibrarySearchResponse { books, catalogs }))
+}
+
+#[derive(serde::Deserialize)]
+struct ImportOnlineBookRequest {
+    title: String,
+    format: DownloadFormat,
+}
+
+#[post("/online-library/import", data = "<req>")]
+/// @feature: online_library.download_import
+async fn import_online_book(
+    req: Json<ImportOnlineBookRequest>,
+    application_module: &State<ApplicationModule<SettingsProvider>>,
+    _user: AuthorizedUser,
+) -> Result<Json<File>> {
+    let req = req.into_inner();
+    let download_folder = application_module.settings().await.server.download_folder;
+    let path = download_book(&req.format, &req.title, &download_folder)
+        .await
+        .map_err(|e| Error::Scan(e.to_string()))?;
+    application_module.scan(path.clone()).await?;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let result = dao::select_file_by_path(&mut conn, &path.display().to_string())
+        .await?
+        .ok_or_else(|| Error::FileNotFound(path.display().to_string()))?;
+    Ok(Json((result, vec![]).into()))
+}
+
 fn extension_to_content_type(extension: &str) -> Result<ContentType> {
     ContentType::from_extension(extension)
         .or_else(|| match extension.to_lowercase().as_str() {
-            "mobi" | "prc" => ContentType::new("application", "x-mobipocket-ebook").into(),
+            "mobi" | "prc" | "azw" => ContentType::new("application", "x-mobipocket-ebook").into(),
             &_ => None,
         })
         .ok_or(Error::UnsupportedExtension(extension.to_string()))

@@ -34,6 +34,7 @@ pub enum Orientation {
 }
 
 /// Tag editor component for selecting, adding, and removing tags
+/// @feature: tags.list
 pub struct TagEditor<P> {
     /// All tags, loaded from provider
     all_tags: ProvidedState<P, Vec<String>>,

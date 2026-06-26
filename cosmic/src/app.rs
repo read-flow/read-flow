@@ -178,6 +178,8 @@ impl cosmic::Application for ReadFlow {
 
         let (mut pages, page_action) = Pages::new(application_module.clone(), config.clone());
 
+        let label = pages.display_name(&PageSelector::Dashboard);
+        pages.register_page(PageSelector::Dashboard, "go-home-symbolic", label, None);
         let label = pages.display_name(&PageSelector::Documents);
         pages.register_page(
             PageSelector::Documents,
@@ -331,7 +333,8 @@ impl cosmic::Application for ReadFlow {
                     ],
                 ),
             ),
-        ]);
+        ])
+        .item_width(menu::ItemWidth::Uniform(220));
 
         elements.push(menu_bar.into());
         elements

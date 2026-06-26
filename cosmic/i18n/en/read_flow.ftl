@@ -85,6 +85,7 @@ document-list-empty-title = No Documents Found
 document-list-filter-by-source = Filter by Source
 document-list-filter-by-status = Filter by Reading Status
 document-list-filter-by-tags = Filter by Tags
+document-list-filter-by-type = Filter by File Type
 document-list-filtering = Filtering...
 document-list-go-to-settings = Open Settings
 document-list-keyboard-shortcuts = Keyboard shortcuts
@@ -238,6 +239,7 @@ settings-viewer-section = EPUB Viewer
 # PDF viewer
 pdf-viewer = PDF viewer
 pdf-viewer-back = Back
+pdf-viewer-document-details = Document Details
 pdf-viewer-dual-pane = Two-page spread
 pdf-viewer-dual-pane-auto = Auto
 pdf-viewer-dual-pane-off = Off
@@ -263,6 +265,7 @@ pdf-viewer-zoom = Zoom
 # EPUB viewer
 epub-viewer = EPUB viewer
 epub-viewer-back = Back
+epub-viewer-document-details = Document Details
 epub-viewer-copy-code = Copy code
 epub-viewer-display = Display
 epub-viewer-dual-page = Two-page spread
@@ -295,6 +298,31 @@ epub-viewer-shortcut-next-page = Next page
 epub-viewer-shortcut-previous-chapter = Previous chapter
 epub-viewer-shortcut-previous-page = Previous page
 epub-viewer-view-paginated = Paginated view
+
+# Dashboard
+dashboard-page-title = Dashboard
+dashboard-continue-reading = Continue Reading
+dashboard-continue-reading-empty = Pick up where you left off
+dashboard-continue-reading-empty-hint = Open a document to start tracking your reading progress.
+dashboard-library-overview = Library Overview
+dashboard-stat-documents = Documents
+dashboard-stat-reading = Reading
+dashboard-stat-completed = Completed
+dashboard-format-breakdown = By Format
+dashboard-sources = Sources
+dashboard-quick-actions = Quick Actions
+dashboard-all-documents = All Documents
+dashboard-welcome-title = Welcome to Read Flow
+dashboard-welcome-description = Your personal document library. Add some documents to get started.
+dashboard-onboarding-step-scan-title = Configure Scan Directories
+dashboard-onboarding-step-scan-description = Tell Read Flow where your documents live on disk.
+dashboard-onboarding-step-run-title = Run Your First Scan
+dashboard-onboarding-step-run-description = Discover and index all documents in your configured directories.
+dashboard-onboarding-step-online-title = Browse Online Libraries
+dashboard-onboarding-step-online-description = Download free books from Project Gutenberg and Standard Ebooks.
+dashboard-onboarding-step-remote-title = Connect a Remote Source
+dashboard-onboarding-step-remote-description = Sync with another Read Flow instance on your network.
+dashboard-action-go = Go
 
 # Online Libraries
 online-library-cancel = Cancel

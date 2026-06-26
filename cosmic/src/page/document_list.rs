@@ -23,6 +23,7 @@ use cosmic::task;
 use cosmic::widget;
 use read_flow_core::Builder;
 use read_flow_core::api::ReadingStatus;
+use read_flow_core::scan::DocumentType;
 use regex::Regex;
 
 use crate::aggregator::Document;
@@ -207,6 +208,7 @@ pub struct DocumentList {
     sort_subject: SortSubject,            // Current sort subject
     sort_direction: SortDirection,        // Current sort direction
     status_filter: Option<ReadingStatus>, // Optional reading status filter
+    type_filter: Option<DocumentType>,    // Optional file type filter
     tag_filter: TagFilter<Arc<DocumentProvider>>, // Tag Filter component
     source_filter: Option<ClientSelector>, // Optional source filter
     available_sources: Vec<ClientSelector>, // Available sources for filtering
@@ -225,27 +227,38 @@ pub enum DocumentListOutput {
 #[derive(Debug, Clone)]
 pub enum DocumentListMessage {
     LoadArchive,
+    /// @feature: documents.list
     Loaded(Documents),
     LoadingFailed(String),
     RefreshDocument(Document),
+    /// @feature: documents.search
     SearchChanged(String),
     SearchModeChanged(SearchMode),
     ClearSearch,
     FilteringComplete(Vec<usize>),
     FocusSearchInput,
     DebounceTimeout(u32, String), // (counter, query) - triggers filtering after delay
+    /// @feature: documents.sort
     SortSubjectChanged(SortSubject),
     ToggleSortDirection,
     Key(Modifiers, Key),
+    /// @feature: documents.filter_by_status
     StatusFilterChanged(Option<ReadingStatus>),
     ClearStatusFilter,
+    /// @feature: documents.filter_by_type
+    TypeFilterChanged(Option<DocumentType>),
+    ClearTypeFilter,
+    /// @feature: documents.filter_by_source
     SourceFilterChanged(Option<ClientSelector>),
     ClearSourceFilter,
+    /// @feature: documents.filter_by_tag
     TagFilter(TagFilterMessage),
     DocumentsComponent(DocumentsMessage),
     SetAvailableSources(Vec<ClientSelector>),
+    /// @feature: documents.format_picker
     PickDocumentSource(String),
     CancelFormatPick,
+    /// @feature: documents.merge
     OpenMergeDialog,
     MergeWinnerSelected(usize),
     ConfirmMerge,
@@ -328,6 +341,7 @@ impl DocumentList {
                 sort_subject,
                 sort_direction,
                 status_filter: None,
+                type_filter: None,
                 tag_filter,
                 source_filter: None,
                 available_sources: Default::default(),
@@ -392,6 +406,7 @@ impl DocumentList {
                     query: self.search_query.clone(),
                     search_mode: self.search_mode,
                     status_filter: self.status_filter,
+                    type_filter: self.type_filter,
                     source_filter: self.source_filter.clone(),
                     allow_tags: self.tag_filter.allow_tags.clone(),
                     deny_tags: self.tag_filter.deny_tags.clone(),
@@ -587,6 +602,7 @@ struct FilterCriteria {
     query: String,
     search_mode: SearchMode,
     status_filter: Option<ReadingStatus>,
+    type_filter: Option<DocumentType>,
     source_filter: Option<ClientSelector>,
     allow_tags: HashSet<String>,
     deny_tags: HashSet<String>,
@@ -600,6 +616,7 @@ fn filter_document(
     let search_query = criteria.query.as_str();
     let search_mode = criteria.search_mode;
     let status_filter = criteria.status_filter;
+    let type_filter = criteria.type_filter;
     let source_filter = criteria.source_filter.as_ref();
     let allow_tags = &criteria.allow_tags;
     let deny_tags = &criteria.deny_tags;
@@ -673,6 +690,9 @@ fn filter_document(
     let matches_status =
         status_filter.is_none_or(|status| document.contents.iter().any(|c| c.status == status));
 
+    // Filter by file type (document must have at least one content of the given type)
+    let matches_type = type_filter.is_none_or(|t| document.contents.iter().any(|c| c.type_ == t));
+
     // Filter by source (document must exist on the selected source)
     let matches_source = source_filter.is_none_or(|source| {
         document
@@ -690,7 +710,12 @@ fn filter_document(
     let matches_deny_tags =
         deny_tags.is_empty() || !all_tags.iter().any(|tag| deny_tags.contains(tag));
 
-    matches_search && matches_status && matches_source && matches_allow_tags && matches_deny_tags
+    matches_search
+        && matches_status
+        && matches_type
+        && matches_source
+        && matches_allow_tags
+        && matches_deny_tags
 }
 
 impl Page for DocumentList {
@@ -839,6 +864,21 @@ impl Page for DocumentList {
                     .on_press(DocumentListMessage::ClearSourceFilter)
             }));
 
+        // File Type Filter Section
+        let type_section = widget::settings::section()
+            .title(fl!("document-list-filter-by-type"))
+            .add(
+                iced::widget::pick_list(DocumentType::all(), self.type_filter, |t| {
+                    DocumentListMessage::TypeFilterChanged(Some(t))
+                })
+                .width(Length::Fill)
+                .placeholder(fl!("document-list-all-statuses")),
+            )
+            .add_maybe(self.type_filter.map(|_| {
+                widget::button::text(fl!("document-list-clear-filter"))
+                    .on_press(DocumentListMessage::ClearTypeFilter)
+            }));
+
         // Reading Status Filter Section
         let status_section = widget::settings::section()
             .title(fl!("document-list-filter-by-status"))
@@ -889,6 +929,7 @@ impl Page for DocumentList {
                 search_mode_section.into(),
                 sort_section.into(),
                 source_section.into(),
+                type_section.into(),
                 status_section.into(),
                 self.tag_filter.view().map(Into::into),
                 shortcuts_section.into(),
@@ -946,6 +987,7 @@ impl Page for DocumentList {
                     query: self.search_query.clone(),
                     search_mode: self.search_mode,
                     status_filter: self.status_filter,
+                    type_filter: self.type_filter,
                     source_filter: self.source_filter.clone(),
                     allow_tags: self.tag_filter.allow_tags.clone(),
                     deny_tags: self.tag_filter.deny_tags.clone(),
@@ -993,6 +1035,9 @@ impl Page for DocumentList {
                 .set_document_state(DocumentState::Failed(error))
                 .map(ActionExt::map_into),
             DocumentListMessage::RefreshDocument(document) => {
+                if !self.archive.is_loaded() {
+                    return Task::none();
+                }
                 let document_guid = document.document_guid.clone();
                 self.archive
                     .update_item(move |doc| doc.document_guid == document_guid, document)
@@ -1025,6 +1070,10 @@ impl Page for DocumentList {
                 self.filter_now()
             }
             DocumentListMessage::FilteringComplete(filtered_files) => {
+                if !self.archive.is_loaded() {
+                    self.is_filtering = false;
+                    return Task::none();
+                }
                 let collection_size = filtered_files.len();
                 self.is_filtering = false;
                 self.archive.set_filtered_indices(filtered_files);
@@ -1046,6 +1095,7 @@ impl Page for DocumentList {
                             query,
                             search_mode: self.search_mode,
                             status_filter: self.status_filter,
+                            type_filter: self.type_filter,
                             source_filter: self.source_filter.clone(),
                             allow_tags: self.tag_filter.allow_tags.clone(),
                             deny_tags: self.tag_filter.deny_tags.clone(),
@@ -1113,6 +1163,14 @@ impl Page for DocumentList {
             DocumentListMessage::ClearStatusFilter => {
                 self.status_filter = None;
                 // Immediately filter to show all statuses (no debounce needed for clearing)
+                self.filter_now()
+            }
+            DocumentListMessage::TypeFilterChanged(type_) => {
+                self.type_filter = type_;
+                self.filter_now()
+            }
+            DocumentListMessage::ClearTypeFilter => {
+                self.type_filter = None;
                 self.filter_now()
             }
             DocumentListMessage::SourceFilterChanged(source) => {

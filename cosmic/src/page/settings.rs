@@ -72,6 +72,8 @@ pub enum SettingsSection {
     Server,
 }
 
+/// @feature: admin.server_settings
+/// @feature: admin.scan_directories
 pub struct SettingsPage {
     /// Application module, to refresh settings on save
     application_module: Arc<ApplicationModule>,
@@ -171,6 +173,7 @@ impl From<AuthorizedUserFormMessage> for SettingsMessage {
 }
 
 impl SettingsPage {
+    /// @feature: remotes.private_mode
     pub fn current_private_mode(&self) -> bool {
         self.settings.ui.private_mode()
     }

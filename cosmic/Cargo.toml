@@ -18,6 +18,16 @@ assets = [
     { source = "resources/icons/hicolor/scalable/apps/icon.svg", dest = "/usr/share/icons/hicolor/scalable/apps/com.github.peterpaul.read-flow.svg", mode = "644" },
 ]
 
+[package.metadata.bundle]
+name = "Read Flow"
+identifier = "com.github.peterpaul.read-flow"
+icon = ["resources/icons/hicolor/scalable/apps/icon.svg"]
+version = "0.1.0"
+copyright = "Copyright (c) 2024 Peterpaul Klein Haneveld"
+category = "public.app-category.productivity"
+short_description = "Manage Documents Across Multiple Machines"
+osx_minimum_system_version = "10.15"
+
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
@@ -86,6 +96,10 @@ features = [
 
 [dev-dependencies]
 cosmic-golden.workspace = true
+cucumber.workspace = true
+read-flow-core = { path = "../core", features = ["server", "test-support"] }
+reqwest = { workspace = true, features = ["json", "multipart"] }
 rstest.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 zip.workspace = true

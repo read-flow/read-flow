@@ -29,6 +29,7 @@ pub enum CheckMissingMessage {
     Out(CheckMissingOutput),
 }
 
+/// @feature: admin.check_missing
 pub struct CheckMissingComponent {
     files: Option<Vec<String>>,
     application_module: Arc<ApplicationModule>,
@@ -110,6 +111,7 @@ impl CheckMissingComponent {
                 .control(
                     file_list
                         .apply(widget::scrollable::vertical)
+                        .height(cosmic::iced::Length::Fixed(300.0))
                         .apply(widget::container)
                         .class(cosmic::theme::Container::Card)
                         .padding(space_s)

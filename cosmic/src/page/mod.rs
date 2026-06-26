@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // pages
 mod app_settings;
+mod dashboard;
 mod document_details;
 mod document_list;
 mod epub_viewer;
@@ -14,6 +15,8 @@ mod traits;
 use core::panic;
 use std::sync::Arc;
 
+pub use app_settings::AppSettingsMessage;
+pub use app_settings::AppSettingsPage;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
@@ -24,10 +27,14 @@ use cosmic::iced::keyboard::Key;
 use cosmic::iced::keyboard::Modifiers;
 use cosmic::task;
 use cosmic::widget;
+pub use dashboard::DashboardMessage;
+use dashboard::DashboardOutput;
+use dashboard::DashboardPage;
 use indexmap::IndexMap;
 pub use online_library::OnlineLibraryMessage;
 use online_library::OnlineLibraryOutput;
 pub use online_library::OnlineLibraryPage;
+use read_flow_core::api::ReadingStatus;
 use read_flow_core::client::FilesClient;
 pub use sources::SourcesMessage;
 pub use traits::Page;
@@ -45,8 +52,6 @@ use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::layout::full_page;
-use crate::page::app_settings::AppSettingsMessage;
-use crate::page::app_settings::AppSettingsPage;
 use crate::page::document_details::DocumentDetails;
 use crate::page::document_details::DocumentDetailsMessage;
 use crate::page::document_details::DocumentDetailsOutput;
@@ -63,10 +68,10 @@ pub use crate::page::image_viewer::ViewerImage;
 use crate::page::mu_pdf_viewer::MuPdfViewer;
 use crate::page::mu_pdf_viewer::MuPdfViewerMessage;
 use crate::page::mu_pdf_viewer::MuPdfViewerOutput;
-use crate::page::settings::SettingsMessage;
-use crate::page::settings::SettingsPage;
+pub use crate::page::settings::SettingsMessage;
+pub use crate::page::settings::SettingsPage;
 use crate::page::sources::SourcesOutput;
-use crate::page::sources::SourcesPage;
+pub use crate::page::sources::SourcesPage;
 use crate::subscription::SubscriberState;
 
 type Fingerprint = String;
@@ -82,6 +87,7 @@ pub struct Pages {
     application_module: Arc<ApplicationModule>,
 
     epub_viewer_config: EpubViewerConfig,
+    dashboard: DashboardPage,
     app_settings: AppSettingsPage,
     sources: SourcesPage,
     online_library: OnlineLibraryPage,
@@ -98,6 +104,7 @@ pub struct Pages {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PageSelector {
+    Dashboard,
     Sources,
     OnlineLibrary,
     Documents,
@@ -119,6 +126,7 @@ pub enum PageOutput {
 
 #[derive(Debug, Clone)]
 pub enum PageMessage {
+    Dashboard(DashboardMessage),
     Sources(SourcesMessage),
     OnlineLibrary(OnlineLibraryMessage),
     AddRemote(Url, String, String),       // url, user_id, passphrase
@@ -140,6 +148,8 @@ pub enum PageMessage {
     Settings(SettingsMessage),
     KeyEvent(PageSelector, Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(PageSelector, Modifiers),
+    NavigateToDocumentsWithStatus(ReadingStatus),
+    NavigateToDocumentsWithType(DocumentType),
     Refresh,
     Noop,
     Out(PageOutput),
@@ -178,6 +188,11 @@ impl From<SettingsMessage> for PageMessage {
 macro_rules! with_active_page {
     ($self:expr, $selector:expr, |$page:ident, $mapper:ident| $body:expr) => {
         match $selector {
+            PageSelector::Dashboard => {
+                let $page = Some(&$self.dashboard);
+                let $mapper = map_dashboard_message;
+                $body
+            }
             PageSelector::Sources => {
                 let $page = Some(&$self.sources);
                 let $mapper = map_sources_message;
@@ -256,12 +271,14 @@ impl Pages {
             SettingsPage::new(application_module.clone(), document_provider.clone());
 
         let (documents, init_documents) = DocumentList::new(document_provider.clone());
+        let (dashboard, init_dashboard) = DashboardPage::new(document_provider.clone());
 
         let tasks = vec![
             init_app_settings.map(ActionExt::map_into),
             init_sources.map(ActionExt::map_into),
             init_documents.map(ActionExt::map_into),
             init_settings.map(ActionExt::map_into),
+            init_dashboard.map(|action| action.map(map_dashboard_message)),
         ];
 
         let online_library = OnlineLibraryPage::new(application_module.clone());
@@ -271,6 +288,7 @@ impl Pages {
                 document_provider,
                 application_module,
                 epub_viewer_config,
+                dashboard,
                 app_settings,
                 sources,
                 online_library,
@@ -281,7 +299,7 @@ impl Pages {
                 image_viewers: Default::default(),
                 next_image_viewer_id: 0,
                 settings,
-                active: PageSelector::Documents,
+                active: PageSelector::Dashboard,
                 page_order: Default::default(),
             },
             task::batch(tasks),
@@ -332,7 +350,7 @@ impl Pages {
             self.active = info
                 .parent
                 .filter(|p| self.page_order.contains_key(p))
-                .unwrap_or(PageSelector::Documents);
+                .unwrap_or(PageSelector::Dashboard);
         }
     }
 
@@ -349,6 +367,7 @@ impl Pages {
 
     pub fn display_name<'a>(&'a self, page_selector: &'a PageSelector) -> String {
         match &page_selector {
+            PageSelector::Dashboard => fl!("dashboard-page-title"),
             PageSelector::Sources => fl!("app-file-sources"),
             PageSelector::OnlineLibrary => fl!("online-library-page-title"),
             PageSelector::Documents => "Documents".to_string(),
@@ -455,6 +474,30 @@ impl Pages {
         tracing::debug!("received: {message:?}");
         match message {
             PageMessage::Noop => Task::none(),
+            PageMessage::NavigateToDocumentsWithStatus(status) => {
+                let filter_task = self
+                    .documents
+                    .update(DocumentListMessage::StatusFilterChanged(Some(status)))
+                    .map(|action| action.map(map_document_list_message));
+                let nav_task = task::message(PageMessage::Out(PageOutput::TogglePage(
+                    PageSelector::Documents,
+                )));
+                Task::batch([filter_task, nav_task])
+            }
+            PageMessage::NavigateToDocumentsWithType(type_) => {
+                let filter_task = self
+                    .documents
+                    .update(DocumentListMessage::TypeFilterChanged(Some(type_)))
+                    .map(|action| action.map(map_document_list_message));
+                let nav_task = task::message(PageMessage::Out(PageOutput::TogglePage(
+                    PageSelector::Documents,
+                )));
+                Task::batch([filter_task, nav_task])
+            }
+            PageMessage::Dashboard(msg) => self
+                .dashboard
+                .update(msg)
+                .map(|action| action.map(map_dashboard_message)),
             PageMessage::Refresh => {
                 let mut messages = self
                     .document_details
@@ -468,6 +511,9 @@ impl Pages {
                     .collect::<Vec<_>>();
                 messages.push(task::message(PageMessage::from(
                     DocumentListMessage::LoadArchive,
+                )));
+                messages.push(task::message(PageMessage::Dashboard(
+                    DashboardMessage::LoadDashboard,
                 )));
                 Task::batch(messages)
             }
@@ -666,8 +712,7 @@ impl Pages {
                             last_updated: now.clone(),
                             status_updated_at: "1970-01-01T00:00:00Z".to_string(),
                         };
-                        let aggregator = document_provider.aggregator.read().await;
-                        if let Err(e) = aggregator.upsert_reading_state(state).await {
+                        if let Err(e) = document_provider.upsert_reading_state(state).await {
                             tracing::warn!("failed to save reading state: {e}");
                         }
                         PageMessage::Noop
@@ -753,8 +798,7 @@ impl Pages {
                             last_updated: now,
                             status_updated_at: "1970-01-01T00:00:00Z".to_string(),
                         };
-                        let aggregator = document_provider.aggregator.read().await;
-                        if let Err(e) = aggregator.upsert_reading_state(state).await {
+                        if let Err(e) = document_provider.upsert_reading_state(state).await {
                             tracing::warn!("failed to save reading state: {e}");
                         }
                         PageMessage::Noop
@@ -854,6 +898,34 @@ impl Pages {
     }
 }
 
+fn map_dashboard_message(msg: DashboardMessage) -> PageMessage {
+    match msg {
+        DashboardMessage::Out(output) => match output {
+            DashboardOutput::NavigateToDocuments => {
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::Documents))
+            }
+            DashboardOutput::NavigateToDocumentsWithStatus(status) => {
+                PageMessage::NavigateToDocumentsWithStatus(status)
+            }
+            DashboardOutput::NavigateToDocumentsWithType(type_) => {
+                PageMessage::NavigateToDocumentsWithType(type_)
+            }
+            DashboardOutput::NavigateToSettings => {
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::Settings))
+            }
+            DashboardOutput::NavigateToSources => {
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::Sources))
+            }
+            DashboardOutput::NavigateToOnlineLibrary => {
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::OnlineLibrary))
+            }
+            DashboardOutput::OpenDocument(document) => PageMessage::OpenDocument(document),
+            DashboardOutput::Scan => PageMessage::Out(PageOutput::Scan),
+        },
+        msg => PageMessage::Dashboard(msg),
+    }
+}
+
 fn map_online_library_message(msg: OnlineLibraryMessage) -> PageMessage {
     match msg {
         OnlineLibraryMessage::Out(output) => match output {
@@ -917,6 +989,9 @@ fn map_mu_pdf_viewer_message(fingerprint: Fingerprint, msg: MuPdfViewerMessage) 
             MuPdfViewerOutput::Close(fingerprint, page_info) => {
                 PageMessage::CloseMuPdfViewer(fingerprint, page_info)
             }
+            MuPdfViewerOutput::OpenDocumentDetails(document) => {
+                PageMessage::OpenDocumentDetails(document)
+            }
         },
         msg => PageMessage::MuPdfViewer(fingerprint, msg),
     }
@@ -932,6 +1007,9 @@ fn map_epub_viewer_message(fingerprint: Fingerprint, msg: EpubViewerMessage) -> 
             EpubViewerOutput::Activate => PageMessage::Out(PageOutput::TogglePage(
                 PageSelector::EpubViewer(fingerprint),
             )),
+            EpubViewerOutput::OpenDocumentDetails(document) => {
+                PageMessage::OpenDocumentDetails(document)
+            }
         },
         msg => PageMessage::EpubViewer(fingerprint, msg),
     }

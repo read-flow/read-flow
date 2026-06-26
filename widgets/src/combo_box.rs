@@ -336,11 +336,11 @@ impl<'a, Message: Clone + 'static> Widget<Message, Theme, Renderer>
 
 // ─── Overlay ──────────────────────────────────────────────────────────────────
 
-struct DropdownOverlay<'a, 'b, Message> {
-    content: &'b mut Element<'a, Message>,
-    tree: &'b mut Tree,
-    position: Point,
-    width: f32,
+pub(crate) struct DropdownOverlay<'a, 'b, Message> {
+    pub(crate) content: &'b mut Element<'a, Message>,
+    pub(crate) tree: &'b mut Tree,
+    pub(crate) position: Point,
+    pub(crate) width: f32,
 }
 
 impl<'a, 'b, Message: Clone + 'static> overlay::Overlay<Message, Theme, Renderer>
@@ -426,7 +426,7 @@ impl<'a, 'b, Message: Clone + 'static> overlay::Overlay<Message, Theme, Renderer
 
 // ─── Styling ──────────────────────────────────────────────────────────────────
 
-fn dropdown_container_style() -> cosmic::theme::Container<'static> {
+pub(crate) fn dropdown_container_style() -> cosmic::theme::Container<'static> {
     cosmic::theme::Container::custom(|theme| {
         let cosmic = theme.cosmic();
         cosmic::iced::widget::container::Style {
@@ -443,7 +443,7 @@ fn dropdown_container_style() -> cosmic::theme::Container<'static> {
     })
 }
 
-fn option_button_style() -> cosmic::theme::Button {
+pub(crate) fn option_button_style() -> cosmic::theme::Button {
     cosmic::theme::Button::Custom {
         active: Box::new(|_focused, theme| option_style(false, theme)),
         hovered: Box::new(|_focused, theme| option_style(true, theme)),
@@ -452,7 +452,7 @@ fn option_button_style() -> cosmic::theme::Button {
     }
 }
 
-fn option_style(hovered: bool, theme: &Theme) -> cosmic::widget::button::Style {
+pub(crate) fn option_style(hovered: bool, theme: &Theme) -> cosmic::widget::button::Style {
     let cosmic = theme.cosmic();
     let component = &theme.current_container().component;
     let mut style = cosmic::widget::button::Style::new();

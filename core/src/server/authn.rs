@@ -19,6 +19,7 @@ impl AuthorizedUser {
     }
 }
 
+/// @feature: remotes.private_mode
 pub struct PrivateModeHeader(pub bool);
 
 #[rocket::async_trait]

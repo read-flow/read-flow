@@ -7,6 +7,8 @@ pub mod scan;
 pub mod server;
 pub mod settings;
 pub mod tag;
+#[cfg(feature = "test-support")]
+pub mod test_support;
 
 use std::fmt;
 use std::fs;
@@ -80,23 +82,26 @@ pub struct ApplicationModule<P> {
     db_client: Arc<ClientCache<P>>,
 }
 
-pub struct SettingsProvider;
+pub struct SettingsProvider {
+    pub config_path: PathBuf,
+}
 
 impl Provider<Settings> for SettingsProvider {
     type Error = SettingsError;
     async fn provide(&self) -> Result<Settings, Self::Error> {
-        Settings::extract()
+        Settings::extract_from(&self.config_path)
     }
 }
 
 pub struct ScanSettingsProvider {
     pub dry_run: bool,
+    pub config_path: PathBuf,
 }
 
 impl Provider<Settings> for ScanSettingsProvider {
     type Error = SettingsError;
     async fn provide(&self) -> Result<Settings, Self::Error> {
-        let mut settings = Settings::extract()?;
+        let mut settings = Settings::extract_from(&self.config_path)?;
         settings.scan.merge_dry_run(self.dry_run);
         Ok(settings)
     }
@@ -104,7 +109,13 @@ impl Provider<Settings> for ScanSettingsProvider {
 
 impl ApplicationModule<SettingsProvider> {
     pub async fn instantiate(config_path: PathBuf) -> Result<Self, SettingsError> {
-        Self::new(SettingsProvider, config_path).await
+        Self::new(
+            SettingsProvider {
+                config_path: config_path.clone(),
+            },
+            config_path,
+        )
+        .await
     }
 }
 
@@ -141,6 +152,20 @@ where
 
     pub async fn settings(&self) -> Settings {
         self.settings.provide().await.unwrap()
+    }
+
+    /// Mutate the settings in memory, persist them to the configuration file,
+    /// and invalidate the settings cache so subsequent reads observe the change.
+    /// Used by the admin REST endpoints (scan directories, users, server settings).
+    pub async fn update_settings<F>(&self, mutate: F) -> Result<(), SettingsError>
+    where
+        F: FnOnce(&mut Settings),
+    {
+        let mut settings = self.settings().await;
+        mutate(&mut settings);
+        settings.save(self.config_path())?;
+        self.settings.set_expired().await;
+        Ok(())
     }
 
     pub async fn connection_pool(&self) -> ConnectionPool {

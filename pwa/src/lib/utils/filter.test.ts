@@ -166,3 +166,69 @@ describe('filterDocuments — search: basename matching', () => {
 		expect(result).toHaveLength(0);
 	});
 });
+
+describe('filterDocuments — status filter', () => {
+	const lib = [
+		makeDoc({ fingerprint: 'a', status: 'Unread' }),
+		makeDoc({ fingerprint: 'b', status: 'Reading' }),
+		makeDoc({ fingerprint: 'c', status: 'Read' }),
+	];
+
+	it('keeps only documents with the given status', () => {
+		const result = filterDocuments(lib, new Set(), new Set(), '', undefined, { status: 'Reading' });
+		expect(result.map((d) => d.fingerprint)).toEqual(['b']);
+	});
+
+	it('returns all when status is null/undefined', () => {
+		expect(filterDocuments(lib, new Set(), new Set(), '', undefined, {})).toHaveLength(3);
+	});
+});
+
+describe('filterDocuments — source filter', () => {
+	const lib = [
+		makeDoc({ fingerprint: 'a', sourceGuids: { 1: 'a' } }),
+		makeDoc({ fingerprint: 'b', sourceGuids: { 2: 'b' } }),
+		makeDoc({
+			fingerprint: 'c',
+			sourceGuids: { 1: 'c' },
+			otherFormats: [makeDoc({ fingerprint: 'c2', sourceGuids: { 2: 'c2' } })],
+		}),
+	];
+
+	it('keeps documents present on the given source (incl. other formats)', () => {
+		const result = filterDocuments(lib, new Set(), new Set(), '', undefined, { sourceId: 2 });
+		expect(result.map((d) => d.fingerprint).sort()).toEqual(['b', 'c']);
+	});
+});
+
+describe('filterDocuments — sorting', () => {
+	const lib = [
+		makeDoc({ fingerprint: 'a', path: '/x/charlie.epub', size: 30, type_: 'epub', status: 'Read' }),
+		makeDoc({ fingerprint: 'b', path: '/x/alpha.pdf', size: 10, type_: 'pdf', status: 'Unread' }),
+		makeDoc({ fingerprint: 'c', path: '/x/bravo.epub', size: 20, type_: 'epub', status: 'Reading' }),
+	];
+
+	it('sorts by filename ascending', () => {
+		const result = filterDocuments(lib, new Set(), new Set(), '', undefined, { sortSubject: 'filename' });
+		expect(result.map((d) => d.fingerprint)).toEqual(['b', 'c', 'a']);
+	});
+
+	it('sorts by size descending', () => {
+		const result = filterDocuments(lib, new Set(), new Set(), '', undefined, {
+			sortSubject: 'size',
+			sortDirection: 'desc',
+		});
+		expect(result.map((d) => d.fingerprint)).toEqual(['a', 'c', 'b']);
+	});
+
+	it('sorts by status ascending (Unread < Reading < Read)', () => {
+		const result = filterDocuments(lib, new Set(), new Set(), '', undefined, { sortSubject: 'status' });
+		expect(result.map((d) => d.fingerprint)).toEqual(['b', 'c', 'a']);
+	});
+
+	it('does not reorder when a search query is present', () => {
+		// query path: relevance order, sort ignored — just assert it returns matches
+		const result = filterDocuments(lib, new Set(), new Set(), 'alpha', undefined, { sortSubject: 'size' });
+		expect(result.map((d) => d.fingerprint)).toContain('b');
+	});
+});

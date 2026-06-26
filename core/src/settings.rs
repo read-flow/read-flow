@@ -109,6 +109,19 @@ impl HashedPassword {
         let parsed_hash = PasswordHash::new(&self.0).map_err(PbkdfError::from)?;
         Pbkdf2::default().verify_password(password.as_bytes(), &parsed_hash)
     }
+
+    #[cfg(feature = "test-support")]
+    pub fn with_rounds(password: &str, rounds: u32) -> Result<Self, PbkdfError> {
+        use pbkdf2::Params;
+        use pbkdf2::password_hash::CustomizedPasswordHasher;
+        let mut salt = [0u8; 16];
+        OsRng.fill_bytes(&mut salt);
+        let params = Params::new(rounds)?;
+        let password_hash = Pbkdf2::default()
+            .hash_password_customized(password.as_bytes(), &salt, None, None, params)?
+            .to_string();
+        Ok(Self(password_hash))
+    }
 }
 
 /// Settings for the HTTP client (remote file downloads).

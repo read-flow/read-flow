@@ -44,6 +44,7 @@ pub(crate) enum ResultsLayout {
     Compact,
 }
 
+/// @feature: online_library.search
 pub struct OnlineLibraryPage {
     application_module: Arc<ApplicationModule>,
     search_query: String,
@@ -74,6 +75,7 @@ enum DownloadBookState {
 // ─── Messages ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
+/// @feature: online_library.download_import
 pub enum OnlineLibraryMessage {
     SearchChanged(String),
     ClearSearch,

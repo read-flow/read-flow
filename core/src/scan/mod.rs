@@ -11,6 +11,30 @@ use itertools::Itertools;
 pub use pipeline::ScanProgress;
 use provider::r#async::Provider;
 pub use scanner::Scanner;
+
+/// Aggregated outcome of one or more scans.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScanSummary {
+    pub discovered: u64,
+    pub processed: u64,
+    pub errors: u64,
+}
+
+impl ScanSummary {
+    /// Fold a progress event into the running summary (only `Completed` counts).
+    pub fn add_event(&mut self, event: &ScanProgress) {
+        if let ScanProgress::Completed {
+            discovered,
+            processed,
+            errors,
+        } = event
+        {
+            self.discovered += discovered;
+            self.processed += processed;
+            self.errors += errors;
+        }
+    }
+}
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -27,6 +51,8 @@ pub enum DocumentType {
     Pdf,
     Epub,
     Mobi,
+    Azw,
+    Azw3,
     Fb2,
     Cbz,
     Cbt,
@@ -48,6 +74,8 @@ impl DocumentType {
             Pdf => "pdf",
             Epub => "epub",
             Mobi => "mobi",
+            Azw => "azw",
+            Azw3 => "azw3",
             Fb2 => "fb2",
             Cbz => "cbz",
             Cbt => "cbt",
@@ -68,6 +96,8 @@ impl DocumentType {
             Pdf => "PDF",
             Epub => "EPUB",
             Mobi => "MOBI / Kindle",
+            Azw => "Kindle AZW",
+            Azw3 => "Kindle AZW3",
             Fb2 => "FictionBook",
             Cbz => "Comic Book Archive (ZIP)",
             Cbt => "Comic Book Archive (TAR)",
@@ -87,7 +117,7 @@ impl DocumentType {
         match self {
             Pdf => "application-pdf",
             Epub => "application-epub+zip",
-            Mobi => "application-x-mobipocket-ebook",
+            Mobi | Azw | Azw3 => "application-x-mobipocket-ebook",
             Fb2 => "text-x-generic",
             Cbz | Cbt => "application-zip",
             Xps | Oxps => "text-x-generic",
@@ -102,7 +132,7 @@ impl DocumentType {
     pub fn all() -> &'static [DocumentType] {
         use DocumentType::*;
         &[
-            Pdf, Epub, Mobi, Fb2, Cbz, Cbt, Xps, Oxps, Docx, Xlsx, Pptx, Hwpx,
+            Pdf, Epub, Mobi, Azw, Azw3, Fb2, Cbz, Cbt, Xps, Oxps, Docx, Xlsx, Pptx, Hwpx,
         ]
     }
 }
@@ -123,6 +153,8 @@ impl std::str::FromStr for DocumentType {
             "pdf" => Pdf,
             "epub" => Epub,
             "mobi" => Mobi,
+            "azw" => Azw,
+            "azw3" => Azw3,
             "fb2" => Fb2,
             "cbz" => Cbz,
             "cbt" => Cbt,
@@ -266,6 +298,29 @@ where
         }
         Ok(())
     }
+
+    /// Scan every configured `Scan` directory and return an aggregated summary.
+    /// Used by the REST `POST /scan` endpoint.
+    pub async fn scan_configured(&self) -> Result<ScanSummary> {
+        let directories: Vec<ExpandedPath> = self
+            .settings()
+            .await
+            .scan
+            .directories
+            .iter()
+            .filter(|(_, settings)| matches!(settings, DirectorySettings::Scan { .. }))
+            .map(|(dir, _)| dir.clone())
+            .collect();
+
+        let mut summary = ScanSummary::default();
+        for dir in directories {
+            let mut progress_rx = self.start_scan(&dir).await?;
+            while let Some(event) = progress_rx.recv().await {
+                summary.add_event(&event);
+            }
+        }
+        Ok(summary)
+    }
 }
 
 #[cfg(test)]
@@ -274,6 +329,31 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[test]
+    fn scan_summary_aggregates_completed_events() {
+        let mut summary = ScanSummary::default();
+        // Non-Completed events are ignored.
+        summary.add_event(&ScanProgress::FileDiscovered);
+        summary.add_event(&ScanProgress::Completed {
+            discovered: 3,
+            processed: 2,
+            errors: 1,
+        });
+        summary.add_event(&ScanProgress::Completed {
+            discovered: 4,
+            processed: 4,
+            errors: 0,
+        });
+        assert_eq!(
+            summary,
+            ScanSummary {
+                discovered: 7,
+                processed: 6,
+                errors: 1,
+            }
+        );
+    }
 
     fn test_settings(inherit: bool) -> ScanSettings {
         let auto_tags = Default::default();
@@ -343,6 +423,20 @@ mod tests {
     ) {
         let actual = settings.directory_settings_of(path);
         Assert::that(actual).is(expected);
+    }
+
+    #[test]
+    fn document_type_azw_round_trips() {
+        assert_eq!("azw".parse::<DocumentType>().unwrap(), DocumentType::Azw);
+        assert_eq!(DocumentType::Azw.as_str(), "azw");
+        assert_eq!(DocumentType::Azw.label(), "Kindle AZW");
+    }
+
+    #[test]
+    fn document_type_azw3_round_trips() {
+        assert_eq!("azw3".parse::<DocumentType>().unwrap(), DocumentType::Azw3);
+        assert_eq!(DocumentType::Azw3.as_str(), "azw3");
+        assert_eq!(DocumentType::Azw3.label(), "Kindle AZW3");
     }
 
     #[test]

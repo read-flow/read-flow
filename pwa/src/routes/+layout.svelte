@@ -26,7 +26,9 @@
 	}
 
 	const navLinks: { href: string; label: string; icon: IconName }[] = [
-		{ href: '/', label: 'Library', icon: 'library' },
+		{ href: '/', label: 'Dashboard', icon: 'home' },
+		{ href: '/library', label: 'Library', icon: 'library' },
+		{ href: '/online-library', label: 'Online library', icon: 'globe' },
 		{ href: '/settings', label: 'Settings', icon: 'settings' },
 	];
 
@@ -64,10 +66,23 @@
 		<nav class="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
 			<a
 				href="/"
-				title="Library"
+				title="Dashboard"
 				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
 					{collapsed ? 'justify-center' : 'gap-3'}
 					{isActive('/')
+						? 'bg-accent/10 text-accent font-medium'
+						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white'}"
+			>
+				<Icon name="home" class="w-4 h-4 shrink-0" />
+				{#if !collapsed}<span class="whitespace-nowrap">Dashboard</span>{/if}
+			</a>
+
+			<a
+				href="/library"
+				title="Library"
+				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
+					{collapsed ? 'justify-center' : 'gap-3'}
+					{isActive('/library')
 						? 'bg-accent/10 text-accent font-medium'
 						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white'}"
 			>
@@ -76,11 +91,24 @@
 			</a>
 
 			<a
+				href="/online-library"
+				title="Online library"
+				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
+					{collapsed ? 'justify-center' : 'gap-3'}
+					{isActive('/online-library')
+						? 'bg-accent/10 text-accent font-medium'
+						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white'}"
+			>
+				<Icon name="globe" class="w-4 h-4 shrink-0" />
+				{#if !collapsed}<span class="whitespace-nowrap">Online library</span>{/if}
+			</a>
+
+			<a
 				href="/settings"
 				title="Settings"
 				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
 					{collapsed ? 'justify-center' : 'gap-3'}
-					{isActive('/settings') && !isActive('/settings/sources')
+					{$page.url.pathname === '/settings'
 						? 'bg-accent/10 text-accent font-medium'
 						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white'}"
 			>
@@ -88,7 +116,7 @@
 				{#if !collapsed}<span class="whitespace-nowrap">Settings</span>{/if}
 			</a>
 
-			<!-- Sources sub-item — only shown when expanded and on a settings page -->
+			<!-- Settings sub-pages — only shown when expanded and on a settings page -->
 			{#if !collapsed && isActive('/settings')}
 				<div class="ml-4 pl-3 border-l border-slate-200 dark:border-slate-600 space-y-0.5">
 					<a
@@ -100,6 +128,26 @@
 					>
 						<Icon name="server" class="w-3.5 h-3.5 shrink-0" />
 						<span class="whitespace-nowrap">Sources</span>
+					</a>
+					<a
+						href="/settings/admin"
+						class="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors
+							{isActive('/settings/admin')
+								? 'bg-accent/10 text-accent font-medium'
+								: 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-200'}"
+					>
+						<Icon name="settings" class="w-3.5 h-3.5 shrink-0" />
+						<span class="whitespace-nowrap">Server admin</span>
+					</a>
+					<a
+						href="/settings/theme"
+						class="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors
+							{isActive('/settings/theme')
+								? 'bg-accent/10 text-accent font-medium'
+								: 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-200'}"
+					>
+						<Icon name="sun" class="w-3.5 h-3.5 shrink-0" />
+						<span class="whitespace-nowrap">Theme</span>
 					</a>
 				</div>
 			{/if}

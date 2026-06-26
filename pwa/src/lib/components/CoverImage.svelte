@@ -1,4 +1,5 @@
 <script lang="ts">
+	// @feature: documents.cover_display
 	import { fetchCoverFromSources, fetchDocumentCoverFromSources } from '$lib/api/aggregator';
 	import Icon from '$lib/components/Icon.svelte';
 

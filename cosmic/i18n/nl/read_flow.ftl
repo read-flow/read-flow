@@ -83,6 +83,7 @@ document-list-empty-title = Geen documenten gevonden
 document-list-filter-by-source = Filteren op Bron
 document-list-filter-by-status = Filteren op Leesstatus
 document-list-filter-by-tags = Filteren op Tags
+document-list-filter-by-type = Filteren op Bestandstype
 document-list-filtering = Filteren...
 document-list-go-to-settings = Instellingen openen
 document-list-keyboard-shortcuts = Toetsenbordsnelkoppelingen
@@ -236,6 +237,7 @@ settings-viewer-section = EPUB Weergave
 # PDF viewer
 pdf-viewer = PDF weergave
 pdf-viewer-back = Terug
+pdf-viewer-document-details = Documentdetails
 pdf-viewer-dual-pane = Dubbelzijdige weergave
 pdf-viewer-dual-pane-auto = Auto
 pdf-viewer-dual-pane-off = Uit
@@ -261,6 +263,7 @@ pdf-viewer-zoom = Zoom
 # EPUB viewer
 epub-viewer = EPUB weergave
 epub-viewer-back = Terug
+epub-viewer-document-details = Documentdetails
 epub-viewer-copy-code = Code kopiëren
 epub-viewer-display = Weergave
 epub-viewer-dual-page = Dubbelzijdige weergave
@@ -293,6 +296,31 @@ epub-viewer-shortcut-next-page = Volgende pagina
 epub-viewer-shortcut-previous-chapter = Vorig hoofdstuk
 epub-viewer-shortcut-previous-page = Vorige pagina
 epub-viewer-view-paginated = Gepagineerde weergave
+
+# Dashboard
+dashboard-page-title = Dashboard
+dashboard-continue-reading = Verder lezen
+dashboard-continue-reading-empty = Ga verder waar je gebleven was
+dashboard-continue-reading-empty-hint = Open een document om je leesvoortgang bij te houden.
+dashboard-library-overview = Bibliotheek overzicht
+dashboard-stat-documents = Documenten
+dashboard-stat-reading = Bezig met lezen
+dashboard-stat-completed = Voltooid
+dashboard-format-breakdown = Op formaat
+dashboard-sources = Bronnen
+dashboard-quick-actions = Snelle acties
+dashboard-all-documents = Alle documenten
+dashboard-welcome-title = Welkom bij Read Flow
+dashboard-welcome-description = Je persoonlijke documentbibliotheek. Voeg documenten toe om te beginnen.
+dashboard-onboarding-step-scan-title = Scan mappen instellen
+dashboard-onboarding-step-scan-description = Geef aan waar je documenten staan op je schijf.
+dashboard-onboarding-step-run-title = Eerste scan uitvoeren
+dashboard-onboarding-step-run-description = Ontdek en indexeer alle documenten in je ingestelde mappen.
+dashboard-onboarding-step-online-title = Online bibliotheken doorbladeren
+dashboard-onboarding-step-online-description = Download gratis boeken van Project Gutenberg en Standard Ebooks.
+dashboard-onboarding-step-remote-title = Externe bron verbinden
+dashboard-onboarding-step-remote-description = Synchroniseer met een andere Read Flow installatie op je netwerk.
+dashboard-action-go = Ga
 
 # Online bibliotheken
 online-library-cancel = Annuleren

@@ -11,6 +11,7 @@ use read_flow_core::Builder;
 use crate::ICON_SIZE;
 use crate::fl;
 
+/// @feature: admin.authorized_users
 pub struct AuthorizedUserForm {
     pub(crate) original_user_id: Option<String>,
     editing_user_id: String,

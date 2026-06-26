@@ -24,6 +24,8 @@ export interface DocumentMeta {
 	identifier: string | null;
 	date: string | null;
 	subject: string | null;
+	/** Fingerprint of the content whose cover represents the document. */
+	selected_cover_fingerprint: string | null;
 }
 
 export interface RemoteDocument {
@@ -66,6 +68,73 @@ export interface ServerStatus {
 	nested_checks: ServerStatus[];
 }
 
+// ── Admin (server management) ───────────────────────────────────────────────
+
+export interface ScanSummary {
+	discovered: number;
+	processed: number;
+	errors: number;
+}
+
+export interface CheckMissingResponse {
+	missing: string[];
+	purged: boolean;
+}
+
+export interface ScanDirectoryEntry {
+	path: string;
+	action: 'Scan' | 'Ignore';
+	/** Present (possibly empty) for Scan entries. */
+	tags?: string[];
+	inherit: boolean;
+}
+
+export interface ServerSettingsDto {
+	/** Read-only: returned for display, ignored on PUT. */
+	database_url: string;
+	extensions: string[];
+	dry_run: boolean;
+	concurrency: number;
+	private_mode: boolean;
+	private_tags: string[];
+}
+
+/** A user as exposed by the API — never includes the password hash. */
+export interface UserDto {
+	user_id: string;
+	roles: string[];
+}
+
+// ── Online library (OPDS) ───────────────────────────────────────────────────
+
+export interface DownloadFormat {
+	mime_type: string;
+	href: string;
+	label: string;
+}
+
+export interface OnlineBook {
+	id: string;
+	title: string;
+	authors: string[];
+	summary: string | null;
+	cover_url: string | null;
+	formats: DownloadFormat[];
+	catalog_name: string;
+}
+
+export interface OnlineCatalog {
+	name: string;
+	/** OPDS search URL; may contain a `{searchTerms}` template placeholder. */
+	search_url: string;
+	enabled: boolean;
+}
+
+export interface OnlineLibrarySearchResponse {
+	books: OnlineBook[];
+	catalogs: OnlineCatalog[];
+}
+
 export class ReadFlowClient {
 	private baseUrl: string;
 	private authHeader: string;
@@ -83,6 +152,7 @@ export class ReadFlowClient {
 			Authorization: this.authHeader,
 			'Content-Type': 'application/json',
 		};
+		// @feature: remotes.private_mode
 		if (this.privateMode) {
 			base['X-Private-Mode'] = 'true';
 		}
@@ -111,18 +181,22 @@ export class ReadFlowClient {
 		}
 	}
 
+	// @feature: remotes.status
 	async status(): Promise<ServerStatus> {
 		return this.request<ServerStatus>('/status');
 	}
 
+	// @feature: documents.list
 	async getFiles(): Promise<RemoteFile[]> {
 		return this.request<RemoteFile[]>('/files');
 	}
 
+	// @feature: tags.list
 	async getAllTags(): Promise<string[]> {
 		return this.request<string[]>('/files/tags');
 	}
 
+	// @feature: tags.add
 	async addTags(guid: string, tags: string[]): Promise<string[]> {
 		return this.request<string[]>(`/files/${guid}/tags`, {
 			method: 'POST',
@@ -130,6 +204,7 @@ export class ReadFlowClient {
 		});
 	}
 
+	// @feature: tags.remove
 	async deleteTags(guid: string, tags: string[]): Promise<string[]> {
 		return this.request<string[]>(`/files/${guid}/tags`, {
 			method: 'DELETE',
@@ -146,6 +221,7 @@ export class ReadFlowClient {
 		}
 	}
 
+	// @feature: reading.progress
 	async upsertReadingState(state: RemoteReadingState): Promise<RemoteReadingState> {
 		return this.request<RemoteReadingState>('/reading-state', {
 			method: 'PUT',
@@ -153,6 +229,7 @@ export class ReadFlowClient {
 		});
 	}
 
+	// @feature: reading.status
 	async updateReadingStatus(fingerprint: string, status: number): Promise<void> {
 		await this.requestVoid(`/reading-state/${fingerprint}/status`, {
 			method: 'PUT',
@@ -176,6 +253,29 @@ export class ReadFlowClient {
 		if (response.status === 404) return null;
 		if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
 		return response.blob();
+	}
+
+	// @feature: sources.delete
+	async deleteFile(guid: string): Promise<void> {
+		await this.requestVoid(`/files/${guid}`, { method: 'DELETE' });
+	}
+
+	// @feature: sources.send_to_client
+	async uploadFile(blob: Blob, fileName: string): Promise<RemoteFile> {
+		const form = new FormData();
+		form.append('file', blob, fileName);
+		// Multipart: let the browser set Content-Type (with boundary); only send auth.
+		const headers: Record<string, string> = { Authorization: this.authHeader };
+		if (this.privateMode) headers['X-Private-Mode'] = 'true';
+		const response = await fetch(`${this.baseUrl}/files`, {
+			method: 'POST',
+			headers,
+			body: form,
+		});
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status} ${response.statusText} — ${this.baseUrl}/files`);
+		}
+		return response.json() as Promise<RemoteFile>;
 	}
 
 	async downloadFile(guid: string, fileName: string): Promise<Blob> {
@@ -220,4 +320,90 @@ export class ReadFlowClient {
 		});
 	}
 
+	// @feature: admin.scan
+	async scan(): Promise<ScanSummary> {
+		return this.request<ScanSummary>('/scan', { method: 'POST' });
+	}
+
+	// @feature: admin.check_missing
+	async checkMissing(purge = false): Promise<CheckMissingResponse> {
+		return this.request<CheckMissingResponse>(`/maintenance/check-missing?purge=${purge}`, {
+			method: 'POST',
+		});
+	}
+
+	// @feature: admin.scan_directories
+	async getScanDirectories(): Promise<ScanDirectoryEntry[]> {
+		return this.request<ScanDirectoryEntry[]>('/scan-directories');
+	}
+
+	// @feature: admin.scan_directories
+	async putScanDirectory(entry: ScanDirectoryEntry): Promise<ScanDirectoryEntry[]> {
+		return this.request<ScanDirectoryEntry[]>('/scan-directories', {
+			method: 'PUT',
+			body: JSON.stringify(entry),
+		});
+	}
+
+	// @feature: admin.scan_directories
+	async deleteScanDirectory(path: string): Promise<ScanDirectoryEntry[]> {
+		return this.request<ScanDirectoryEntry[]>(
+			`/scan-directories?path=${encodeURIComponent(path)}`,
+			{ method: 'DELETE' },
+		);
+	}
+
+	// @feature: admin.server_settings
+	async getSettings(): Promise<ServerSettingsDto> {
+		return this.request<ServerSettingsDto>('/settings');
+	}
+
+	// @feature: admin.server_settings
+	async putSettings(dto: ServerSettingsDto): Promise<ServerSettingsDto> {
+		return this.request<ServerSettingsDto>('/settings', {
+			method: 'PUT',
+			body: JSON.stringify(dto),
+		});
+	}
+
+	// @feature: admin.authorized_users
+	async getUsers(): Promise<UserDto[]> {
+		return this.request<UserDto[]>('/users');
+	}
+
+	// @feature: admin.authorized_users
+	async createUser(userId: string, password: string, roles: string[]): Promise<UserDto[]> {
+		return this.request<UserDto[]>('/users', {
+			method: 'POST',
+			body: JSON.stringify({ user_id: userId, password, roles }),
+		});
+	}
+
+	// @feature: admin.authorized_users
+	async updateUser(userId: string, roles: string[], password?: string): Promise<UserDto[]> {
+		return this.request<UserDto[]>(`/users/${encodeURIComponent(userId)}`, {
+			method: 'PUT',
+			body: JSON.stringify({ roles, ...(password ? { password } : {}) }),
+		});
+	}
+
+	// @feature: admin.authorized_users
+	async deleteUser(userId: string): Promise<UserDto[]> {
+		return this.request<UserDto[]>(`/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+	}
+
+	// @feature: online_library.search
+	async searchOnlineLibrary(query: string): Promise<OnlineLibrarySearchResponse> {
+		return this.request<OnlineLibrarySearchResponse>(
+			`/online-library/search?q=${encodeURIComponent(query)}`,
+		);
+	}
+
+	// @feature: online_library.download_import
+	async importOnlineBook(title: string, format: DownloadFormat): Promise<RemoteFile> {
+		return this.request<RemoteFile>('/online-library/import', {
+			method: 'POST',
+			body: JSON.stringify({ title, format }),
+		});
+	}
 }

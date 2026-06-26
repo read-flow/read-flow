@@ -2,6 +2,7 @@ import { writable } from 'svelte/store';
 import { db, type Source } from '$lib/db';
 import { ReadFlowClient } from '$lib/api/client';
 
+// @feature: remotes.manage
 export const sources = writable<Source[]>([]);
 
 export async function loadSources(): Promise<void> {

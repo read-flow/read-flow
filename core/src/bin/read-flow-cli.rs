@@ -64,10 +64,16 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::ApplyTags { dry_run, .. } => {
-            ApplicationModule::new(ScanSettingsProvider { dry_run }, config_path)
-                .await?
-                .apply_tags()
-                .await?;
+            ApplicationModule::new(
+                ScanSettingsProvider {
+                    dry_run,
+                    config_path: config_path.clone(),
+                },
+                config_path,
+            )
+            .await?
+            .apply_tags()
+            .await?;
         }
         Commands::ExtractScanDirectories => {
             ApplicationModule::instantiate(config_path)
@@ -100,10 +106,16 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Scan { dry_run, path, .. } => {
-            ApplicationModule::new(ScanSettingsProvider { dry_run }, config_path)
-                .await?
-                .scan(path)
-                .await?;
+            ApplicationModule::new(
+                ScanSettingsProvider {
+                    dry_run,
+                    config_path: config_path.clone(),
+                },
+                config_path,
+            )
+            .await?
+            .scan(path)
+            .await?;
         }
         #[cfg(feature = "server")]
         Commands::Serve => {

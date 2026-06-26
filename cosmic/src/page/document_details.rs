@@ -44,6 +44,7 @@ use crate::page::Page;
 use crate::page::image_viewer::ViewerImage;
 use crate::state::LoadedState;
 
+/// @feature: documents.detail_view
 pub struct DocumentDetails {
     document: Document,
     document_provider: Arc<DocumentProvider>,
@@ -74,6 +75,7 @@ pub enum DocumentDetailsMessage {
     TagsRemoved(Result<(), String>),
     RefreshDocument,
     DocumentRefreshed(Result<Document, String>),
+    /// @feature: reading.status
     UpdateReadingStatus(ReadingStatus),
     ReadingStatusUpdated(Result<(), String>),
     OpenDocument,
@@ -81,17 +83,20 @@ pub enum DocumentDetailsMessage {
     CancelOpenPicker,
     CopyPath(String),
     ToggleEditSources,
+    /// @feature: sources.delete
     RequestDeleteSource(DocumentSource),
     ConfirmDeleteSource,
     CancelDeleteSource,
     DeleteSource(DocumentSource),
     SourceDeleted(Result<(), String>),
     AllClients(ProvidedStateMessage<Vec<ClientSelector>>),
+    /// @feature: sources.send_to_client
     SendToClient(ClientSelector),
     SentToClient(Result<(), String>),
 
     EditUserMeta,
     CancelUserMeta,
+    /// @feature: documents.edit_metadata
     SaveUserMeta,
     UserMetaSaved(Result<(), String>),
     UserMetaTitleChanged(String),
@@ -108,7 +113,9 @@ pub enum DocumentDetailsMessage {
     UserMetaSubjectChanged(String),
 
     CoversLoaded(std::collections::HashMap<String, (cosmic::widget::image::Handle, Vec<u8>)>),
+    /// @feature: documents.cover_display
     OpenCover(String),
+    /// @feature: documents.select_cover
     SelectCover(String),
     CoverSelected(Result<(), String>),
     // Message intended for the parent module
@@ -274,6 +281,7 @@ impl DocumentDetails {
         )
     }
 
+    /// @feature: tags.add
     fn add_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
         let document = self.document.clone();
         let document_provider = self.document_provider.clone();
@@ -287,6 +295,7 @@ impl DocumentDetails {
         .chain(task::message(DocumentDetailsMessage::RefreshDocument))
     }
 
+    /// @feature: tags.remove
     fn remove_tag(&mut self, tag: String) -> Task<Action<DocumentDetailsMessage>> {
         let document = self.document.clone();
         let document_provider = self.document_provider.clone();

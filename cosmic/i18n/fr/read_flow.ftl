@@ -82,6 +82,7 @@ document-list-empty-title = Aucun document trouvé
 document-list-filter-by-source = Filtrer par Source
 document-list-filter-by-status = Filtrer par statut de lecture
 document-list-filter-by-tags = Filtrer par étiquettes
+document-list-filter-by-type = Filtrer par type de fichier
 document-list-filtering = Filtrage...
 document-list-go-to-settings = Ouvrir les paramètres
 document-list-keyboard-shortcuts = Raccourcis clavier
@@ -235,6 +236,7 @@ settings-viewer-section = Visionneuse EPUB
 # PDF viewer
 pdf-viewer = PDF viewer
 pdf-viewer-back = Retour
+pdf-viewer-document-details = Détails du document
 pdf-viewer-dual-pane = Double page
 pdf-viewer-dual-pane-auto = Auto
 pdf-viewer-dual-pane-off = Désactivé
@@ -260,6 +262,7 @@ pdf-viewer-zoom = Zoom
 # EPUB viewer
 epub-viewer = EPUB viewer
 epub-viewer-back = Retour
+epub-viewer-document-details = Détails du document
 epub-viewer-copy-code = Copier le code
 epub-viewer-display = Affichage
 epub-viewer-dual-page = Double page
@@ -292,6 +295,31 @@ epub-viewer-shortcut-next-page = Page suivante
 epub-viewer-shortcut-previous-chapter = Chapitre précédent
 epub-viewer-shortcut-previous-page = Page précédente
 epub-viewer-view-paginated = Vue paginée
+
+# Tableau de bord
+dashboard-page-title = Tableau de bord
+dashboard-continue-reading = Continuer la lecture
+dashboard-continue-reading-empty = Reprenez là où vous en étiez
+dashboard-continue-reading-empty-hint = Ouvrez un document pour commencer à suivre votre progression de lecture.
+dashboard-library-overview = Aperçu de la bibliothèque
+dashboard-stat-documents = Documents
+dashboard-stat-reading = En cours
+dashboard-stat-completed = Terminés
+dashboard-format-breakdown = Par format
+dashboard-sources = Sources
+dashboard-quick-actions = Actions rapides
+dashboard-all-documents = Tous les documents
+dashboard-welcome-title = Bienvenue dans Read Flow
+dashboard-welcome-description = Votre bibliothèque de documents personnelle. Ajoutez des documents pour commencer.
+dashboard-onboarding-step-scan-title = Configurer les répertoires d'analyse
+dashboard-onboarding-step-scan-description = Indiquez à Read Flow où se trouvent vos documents sur le disque.
+dashboard-onboarding-step-run-title = Lancer votre première analyse
+dashboard-onboarding-step-run-description = Découvrez et indexez tous les documents dans vos répertoires configurés.
+dashboard-onboarding-step-online-title = Parcourir les bibliothèques en ligne
+dashboard-onboarding-step-online-description = Téléchargez des livres gratuits depuis Project Gutenberg et Standard Ebooks.
+dashboard-onboarding-step-remote-title = Connecter une source distante
+dashboard-onboarding-step-remote-description = Synchronisez avec une autre instance Read Flow sur votre réseau.
+dashboard-action-go = Aller
 
 # Bibliothèques en ligne
 online-library-cancel = Annuler

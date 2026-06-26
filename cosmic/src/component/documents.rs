@@ -96,6 +96,7 @@ impl From<TagEditorMessage> for DocumentsMessage {
     }
 }
 
+/// @feature: documents.batch_tag
 pub struct DocumentsComponent {
     documents: DocumentState,
     pagination: Pagination,
@@ -380,7 +381,9 @@ impl DocumentsComponent {
     }
 
     pub fn set_filtered_indices(&mut self, files: Vec<usize>) {
-        self.documents.unwrap_mut().set_filtered_indices(files);
+        if let Some(docs) = self.documents.get_loaded_mut() {
+            docs.set_filtered_indices(files);
+        }
     }
 
     fn notify_selection_changed(&self) -> Task<Action<DocumentsMessage>> {
@@ -415,13 +418,13 @@ impl DocumentsComponent {
     where
         F: FnMut(&&mut Document) -> bool + Clone,
     {
-        self.documents
-            .unwrap_mut()
-            .update_item(search_fn.clone(), item.clone());
-        self.batch_tag_editor
-            .provider_mut()
-            .unwrap_mut()
-            .update_item(search_fn, item);
+        let Some(docs) = self.documents.get_loaded_mut() else {
+            return Task::none();
+        };
+        docs.update_item(search_fn.clone(), item.clone());
+        if let Some(provider) = self.batch_tag_editor.provider_mut().get_loaded_mut() {
+            provider.update_item(search_fn, item);
+        }
 
         task::message(DocumentsMessage::BatchTagEditor(TagEditorMessage::Tags(
             ProvidedStateMessage::Load,
@@ -433,18 +436,22 @@ impl DocumentsComponent {
     }
 
     pub fn unfiltered(&self) -> &[Document] {
-        self.documents.unwrap().unfiltered()
+        self.documents
+            .get_loaded()
+            .map(|d| d.unfiltered())
+            .unwrap_or(&[])
     }
 
     pub fn sort_unfiltered<F>(&mut self, sort_fn: F)
     where
         F: FnMut(&mut [Document]) + Clone,
     {
-        self.documents.unwrap_mut().sort_unfiltered(sort_fn.clone());
-        self.batch_tag_editor
-            .provider_mut()
-            .unwrap_mut()
-            .sort_unfiltered(sort_fn);
+        if let Some(docs) = self.documents.get_loaded_mut() {
+            docs.sort_unfiltered(sort_fn.clone());
+        }
+        if let Some(provider) = self.batch_tag_editor.provider_mut().get_loaded_mut() {
+            provider.sort_unfiltered(sort_fn);
+        }
     }
 }
 

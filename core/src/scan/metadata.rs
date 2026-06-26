@@ -29,6 +29,7 @@ pub fn extract_metadata(path: &Path, extension: &str) -> Option<ExtractedMetadat
     match extension {
         "epub" => extract_epub(path),
         "pdf" => extract_mupdf(path),
+        "mobi" | "azw" | "azw3" => extract_mobi(path),
         _ => None,
     }
 }
@@ -64,6 +65,28 @@ fn extract_mupdf(path: &Path) -> Option<ExtractedMetadata> {
     })
 }
 
+fn extract_mobi(path: &Path) -> Option<ExtractedMetadata> {
+    use mobi::headers::Language;
+    let book = mobi::Mobi::from_path(path).ok()?;
+    let nonempty = |s: String| if s.is_empty() { None } else { Some(s) };
+    Some(ExtractedMetadata {
+        title: nonempty(book.title()),
+        authors: book
+            .author()
+            .and_then(nonempty)
+            .map(|a| vec![a])
+            .unwrap_or_default(),
+        language: match book.language() {
+            Language::Neutral | Language::Unknown => None,
+            lang => Some(format!("{lang:?}")),
+        },
+        publisher: book.publisher().and_then(nonempty),
+        identifier: book.isbn().and_then(nonempty),
+        date: book.publish_date().and_then(nonempty),
+        subject: book.description().and_then(nonempty),
+    })
+}
+
 /// PDF dates use the format `D:YYYYMMDDHHmmSS±HH'mm'` (PDF ref §3.8.3).
 /// We display just the date portion as YYYY-MM-DD, falling back to the raw string.
 pub fn format_pdf_date(raw: String) -> String {
@@ -81,9 +104,19 @@ mod tests {
 
     #[test]
     fn unsupported_extension_returns_none() {
-        assert!(extract_metadata(std::path::Path::new("/tmp/book.mobi"), "mobi").is_none());
         assert!(extract_metadata(std::path::Path::new("/tmp/book.cbz"), "cbz").is_none());
         assert!(extract_metadata(std::path::Path::new("/tmp/book.txt"), "txt").is_none());
+    }
+
+    #[test]
+    fn mobi_returns_none_for_missing_file() {
+        assert!(extract_metadata(std::path::Path::new("/tmp/nonexistent.mobi"), "mobi").is_none());
+    }
+
+    #[test]
+    fn azw_returns_none_for_missing_file() {
+        assert!(extract_metadata(std::path::Path::new("/tmp/nonexistent.azw"), "azw").is_none());
+        assert!(extract_metadata(std::path::Path::new("/tmp/nonexistent.azw3"), "azw3").is_none());
     }
 
     #[test]

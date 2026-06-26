@@ -6,8 +6,16 @@ pub fn extract_cover(path: &Path, extension: &str) -> Option<Vec<u8>> {
     match extension {
         "epub" => extract_epub_cover(path).or_else(|| extract_mupdf_cover(path)),
         "pdf" => extract_mupdf_cover(path),
+        "mobi" | "azw" | "azw3" => extract_mobi_cover(path).or_else(|| extract_mupdf_cover(path)),
         _ => None,
     }
+}
+
+fn extract_mobi_cover(path: &Path) -> Option<Vec<u8>> {
+    let book = mobi::Mobi::from_path(path).ok()?;
+    let images = book.image_records();
+    let raw = images.first()?.content.to_vec();
+    decode_resize_webp(&raw)
 }
 
 fn extract_epub_cover(path: &Path) -> Option<Vec<u8>> {

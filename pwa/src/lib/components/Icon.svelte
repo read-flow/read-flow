@@ -21,7 +21,10 @@
 		| 'minus'
 		| 'maximize'
 		| 'minimize'
-		| 'edit';
+		| 'edit'
+		| 'globe'
+		| 'download'
+	| 'home';
 </script>
 
 <script lang="ts">
@@ -142,5 +145,16 @@
 	{:else if name === 'edit'}
 		<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
 		<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+	{:else if name === 'globe'}
+		<circle cx="12" cy="12" r="10" />
+		<line x1="2" y1="12" x2="22" y2="12" />
+		<path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+	{:else if name === 'download'}
+		<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+		<polyline points="7 10 12 15 17 10" />
+		<line x1="12" y1="15" x2="12" y2="3" />
+	{:else if name === 'home'}
+		<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+		<polyline points="9 22 9 12 15 12 15 22" />
 	{/if}
 </svg>
