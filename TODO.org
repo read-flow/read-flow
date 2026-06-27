@@ -16,6 +16,8 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] ~read-flow::EpubViewer~: Add progressbar for initial loading.
   - Fixed by speeding up loading
 - [ ] ~read-flow::ImageViewer~: Add image details to context pane, parse from specific image type if possible.
+- [ ] ~read-flow~: Sync document to all sources simultaneously — ~Aggregator::update_document~ and ~DocumentProvider::update_document~ are implemented but unused. They push the file content to every configured source at once (unlike ~SendToClient~, which targets a single client). Wire these up to a "sync to all remotes" action in the Document Details context pane or library toolbar.
+- [ ] ~read-flow~: Single-document refresh without full list reload — ~Client::get_document(guid)~ fetches one document by GUID from local DB or remote. Currently the ~RefreshDocument~ flow reloads the whole document list. Use ~get_document~ to refresh only the open document in Document Details, reducing latency and server load.
 - [X] ~read-flow::OnlineLibrary~: Display cover images in book cards (~cover_url~ is already parsed from OPDS feeds but not yet rendered).
 - [X] ~read-flow::OnlineLibrary~: Support paginated OPDS results — fetch and display subsequent pages ("load more") when the feed contains an ~rel="next"~ link.
 

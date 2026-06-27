@@ -60,12 +60,4 @@ impl<T> LoadedState<T> {
             panic!("Invalid state: {self:?}")
         }
     }
-
-    pub fn unwrap_mut(&mut self) -> &mut T {
-        if let LoadedState::Loaded(state) = self {
-            state
-        } else {
-            panic!("Invalid state: {self:?}")
-        }
-    }
 }

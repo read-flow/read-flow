@@ -9,7 +9,6 @@ use cosmic::Element;
 use cosmic::Task;
 use cosmic::cosmic_theme;
 use cosmic::iced::Background;
-use cosmic::iced::Border;
 use cosmic::iced::ContentFit;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
@@ -152,21 +151,6 @@ fn card_button_class() -> cosmic::theme::Button {
                 ..Default::default()
             }
         }),
-    }
-}
-
-fn card_container_style(theme: &cosmic::Theme) -> widget::container::Style {
-    let cosmic = theme.cosmic();
-    widget::container::Style {
-        icon_color: Some(cosmic.primary.on.into()),
-        text_color: Some(cosmic.primary.on.into()),
-        background: Some(Background::Color(cosmic.primary.base.into())),
-        border: Border {
-            color: cosmic.accent.base.into(),
-            width: 1.0,
-            radius: cosmic.corner_radii.radius_s.into(),
-        },
-        ..Default::default()
     }
 }
 
