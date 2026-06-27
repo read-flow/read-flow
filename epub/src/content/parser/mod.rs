@@ -650,6 +650,50 @@ mod tests {
     }
 
     #[test]
+    fn styled_div_direct_text_emits_styled_paragraph() {
+        let blocks = parse_with_css(
+            r#"<div class="part">Part One</div>"#,
+            "div.part { text-align: center; font-size: 0.7em; }",
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, style, .. } => {
+                assert_eq!(text, "Part One");
+                assert_eq!(style.text_align, Some(TextAlign::Center));
+                assert_eq!(style.font_size_em, Some(0.7));
+            }
+            other => panic!("expected styled Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn unstyled_div_direct_text_promotes_without_style() {
+        let blocks = parse("<div>plain text</div>");
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, style, .. } => {
+                assert_eq!(text, "plain text");
+                assert_eq!(*style, BlockStyle::default());
+            }
+            other => panic!("expected plain Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn styled_div_with_block_children_promotes_children() {
+        // Div with block-level children: children promoted (style not applied)
+        let blocks = parse_with_css(
+            r#"<div class="part"><p>Inner paragraph</p></div>"#,
+            "div.part { text-align: center; }",
+        );
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Inner paragraph"),
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn image_with_resolver() {
         let png_data = vec![0x89, 0x50, 0x4E, 0x47];
         let data_clone = png_data.clone();

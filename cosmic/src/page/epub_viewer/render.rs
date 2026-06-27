@@ -74,6 +74,7 @@ pub(super) fn render_partial_paragraph<'a>(
                 .on_link_click(|m| m)
                 .size(size)
                 .width(Length::Fill)
+                .align_x(align)
                 .into(),
             style,
         )
@@ -253,7 +254,7 @@ impl<'a> RenderContext<'a> {
                         style,
                     );
                 }
-                apply_text_align(render_spans(spans, size, family), style)
+                apply_text_align(render_spans(spans, size, family, align), style)
             }
             ContentBlock::Paragraph { spans, text, style } => {
                 let size = style
@@ -272,13 +273,13 @@ impl<'a> RenderContext<'a> {
                         style,
                     );
                 }
-                apply_text_align(render_spans(spans, size, family), style)
+                apply_text_align(render_spans(spans, size, family, align), style)
             }
             ContentBlock::Preformatted { text, spans, .. } => {
                 let inner: Element<'a, EpubViewerMessage> = if spans.is_empty() {
                     widget::text::monotext(text).width(Length::Fill).into()
                 } else {
-                    render_spans(spans, font_size, font::Family::Monospace)
+                    render_spans(spans, font_size, font::Family::Monospace, Horizontal::Left)
                 };
                 let code_block = widget::container(inner)
                     .padding([space_xxs, space_s])
@@ -710,12 +711,14 @@ fn render_spans(
     spans: &[TextSpan],
     size: f32,
     family: font::Family,
+    align: Horizontal,
 ) -> Element<'_, EpubViewerMessage> {
     let iced_spans: Vec<_> = spans.iter().map(|s| styled_span(s, family, size)).collect();
     rich_text(iced_spans)
         .on_link_click(|m| m)
         .size(size)
         .width(Length::Fill)
+        .align_x(align)
         .into()
 }
 

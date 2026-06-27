@@ -407,25 +407,41 @@ pub(super) fn handle_end_tag(state: &mut SinkState, tag_name: &str, entry: Stack
             TagClass::AnchorContainer | TagClass::Transparent
         ) =>
         {
-            // Emit an Anchor before promoted children for structural
-            // container elements that carry a non-empty id.
-            if let Some(id) = &element_id
-                && !id.is_empty()
-                && matches!(classify(tag_name), TagClass::AnchorContainer)
+            // If this container has CSS block styling AND only direct text/spans
+            // (no block-level children), emit a styled paragraph so the style is
+            // preserved (e.g. `div.part { text-align: center; font-size: 0.7em; }`).
+            // The element-id Anchor is emitted by the general code below.
+            if block_style != BlockStyle::default()
+                && entry.children.is_empty()
+                && entry.list_items.is_empty()
+                && (!text.is_empty() || !spans.is_empty())
             {
-                let anchor = ContentBlock::Anchor { id: id.clone() };
-                push_block(state, anchor, path.clone());
+                Some(ContentBlock::Paragraph {
+                    text,
+                    spans,
+                    style: block_style,
+                })
+            } else {
+                // Emit an Anchor before promoted children for structural
+                // container elements that carry a non-empty id.
+                if let Some(id) = &element_id
+                    && !id.is_empty()
+                    && matches!(classify(tag_name), TagClass::AnchorContainer)
+                {
+                    let anchor = ContentBlock::Anchor { id: id.clone() };
+                    push_block(state, anchor, path.clone());
+                }
+                promote_to_parent(
+                    state,
+                    path.clone(),
+                    text,
+                    spans,
+                    entry.children,
+                    entry.children_paths,
+                    entry.list_items,
+                );
+                None
             }
-            promote_to_parent(
-                state,
-                path.clone(),
-                text,
-                spans,
-                entry.children,
-                entry.children_paths,
-                entry.list_items,
-            );
-            None
         }
         _ => {
             promote_to_parent(

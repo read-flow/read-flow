@@ -3,7 +3,7 @@ use super::block::InlineStyle;
 use super::block::TextAlign;
 use super::parser::parse_css_declarations;
 
-/// A simple CSS selector — only tag, class, and tag.class are supported.
+/// A simple CSS selector — tag, class, tag.class, and ID-scoped descendants.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CssSelector {
     /// Matches a tag name, e.g. `p`, `h1`, `div`.
@@ -12,6 +12,11 @@ pub enum CssSelector {
     Class(String),
     /// Matches a tag with a class, e.g. `p.indent`.
     TagAndClass(String, String),
+    /// Matches when an ancestor element has the given `id`, e.g. `#titlepage h2`.
+    IdDescendant {
+        ancestor_id: String,
+        inner: Box<CssSelector>,
+    },
 }
 
 /// Resolved style properties from a stylesheet rule.
@@ -72,6 +77,18 @@ impl StyleSheet {
     /// Walks rules in source order; later rules override earlier ones.
     /// The class attribute may contain multiple space-separated class names.
     pub fn resolve(&self, tag: &str, class_attr: &str) -> ResolvedStyle {
+        self.resolve_with_ancestors(tag, class_attr, &[])
+    }
+
+    /// Like [`resolve`], but also checks ID-scoped rules (e.g. `#titlepage h2`).
+    ///
+    /// `ancestor_ids` is the list of `id` attributes on ancestor elements, innermost last.
+    pub fn resolve_with_ancestors(
+        &self,
+        tag: &str,
+        class_attr: &str,
+        ancestor_ids: &[&str],
+    ) -> ResolvedStyle {
         let classes: Vec<&str> = class_attr.split_whitespace().collect();
         let mut result = ResolvedStyle::default();
 
@@ -80,6 +97,17 @@ impl StyleSheet {
                 CssSelector::Tag(t) => t == tag,
                 CssSelector::Class(c) => classes.contains(&c.as_str()),
                 CssSelector::TagAndClass(t, c) => t == tag && classes.contains(&c.as_str()),
+                CssSelector::IdDescendant { ancestor_id, inner } => {
+                    ancestor_ids.contains(&ancestor_id.as_str())
+                        && match inner.as_ref() {
+                            CssSelector::Tag(t) => t == tag,
+                            CssSelector::Class(c) => classes.contains(&c.as_str()),
+                            CssSelector::TagAndClass(t, c) => {
+                                t == tag && classes.contains(&c.as_str())
+                            }
+                            CssSelector::IdDescendant { .. } => false,
+                        }
+                }
             };
             if matches {
                 result.merge_from(style);
@@ -149,35 +177,57 @@ fn parse_rules(text: &str) -> StyleSheet {
 }
 
 /// Parse a single simple CSS selector.
-/// Returns `None` for selectors we don't support (combinators, pseudo-classes, IDs, etc.).
+/// Returns `None` for selectors we don't support (combinators, pseudo-classes, etc.).
 ///
-/// For descendant selectors (space-separated, e.g. `code span.kw`), only the last
-/// segment is used. This handles Pandoc-style syntax-highlighting rules correctly.
+/// Supports:
+/// - `tag`, `.class`, `tag.class` — plain selectors
+/// - `code span.kw` etc. — multi-segment descendants, last segment used
+/// - `#id tag`, `#id .class`, `#id tag.class` — ID-scoped descendants → `IdDescendant`
+/// - `#id` alone — rejected (no descendant to match)
 fn parse_selector(s: &str) -> Option<CssSelector> {
     let s = s.trim();
-    // Reject selectors with child/sibling combinators or pseudo-classes
     if s.contains('>') || s.contains('+') || s.contains('~') || s.contains(':') {
         return None;
     }
-    // Reject ID selectors
-    if s.contains('#') {
-        return None;
-    }
-    // Reject attribute selectors
     if s.contains('[') {
         return None;
     }
-    // For descendant selectors (e.g. `code span.kw`), use only the last segment.
-    let s = s.split_whitespace().last().unwrap_or(s);
 
+    let segments: Vec<&str> = s.split_whitespace().collect();
+
+    // `#id simple-selector` — two segments where the first is an ID reference
+    if segments.len() == 2 && segments[0].starts_with('#') {
+        let ancestor_id = &segments[0][1..];
+        if !ancestor_id.is_empty() && !ancestor_id.contains('#') {
+            if let Some(inner) = parse_simple_selector(segments[1]) {
+                return Some(CssSelector::IdDescendant {
+                    ancestor_id: ancestor_id.to_ascii_lowercase(),
+                    inner: Box::new(inner),
+                });
+            }
+        }
+        return None;
+    }
+
+    // Multi-segment descendant (e.g. `code span.kw`): use only the last segment
+    let last = segments.last().copied().unwrap_or(s);
+    // Reject pure ID selectors or segments containing `#`
+    if last.contains('#') {
+        return None;
+    }
+
+    parse_simple_selector(last)
+}
+
+/// Parse a single token (no spaces) into a `Tag`, `Class`, or `TagAndClass` selector.
+fn parse_simple_selector(s: &str) -> Option<CssSelector> {
+    if s.contains('#') || s.contains(' ') {
+        return None;
+    }
     if let Some(dot_pos) = s.find('.') {
         let tag_part = &s[..dot_pos];
         let class_part = &s[dot_pos + 1..];
-        if class_part.is_empty() {
-            return None;
-        }
-        // Reject chained classes like `.a.b`
-        if class_part.contains('.') {
+        if class_part.is_empty() || class_part.contains('.') {
             return None;
         }
         if tag_part.is_empty() {
@@ -189,7 +239,6 @@ fn parse_selector(s: &str) -> Option<CssSelector> {
             ))
         }
     } else {
-        // Plain tag selector
         Some(CssSelector::Tag(s.to_ascii_lowercase()))
     }
 }
@@ -348,6 +397,61 @@ mod tests {
     fn id_selectors_ignored() {
         let sheet = parse_css("#main { color: red; }");
         assert_eq!(sheet.rules.len(), 0, "ID selector should be ignored");
+    }
+
+    #[test]
+    fn id_scoped_descendant_produces_id_descendant_selector() {
+        let sheet = parse_css("#titlepage h2 { text-align: center; }");
+        assert_eq!(sheet.rules.len(), 1, "should parse one rule");
+        assert_eq!(
+            sheet.rules[0].0,
+            CssSelector::IdDescendant {
+                ancestor_id: "titlepage".into(),
+                inner: Box::new(CssSelector::Tag("h2".into())),
+            }
+        );
+        // Without ancestor context: no match
+        let no_ctx = sheet.resolve("h2", "");
+        assert_eq!(no_ctx.block.text_align, None);
+        // With ancestor context: matches
+        let with_ctx = sheet.resolve_with_ancestors("h2", "", &["titlepage"]);
+        assert_eq!(with_ctx.block.text_align, Some(TextAlign::Center));
+        // Wrong ancestor ID: no match
+        let wrong_ctx = sheet.resolve_with_ancestors("h2", "", &["other"]);
+        assert_eq!(wrong_ctx.block.text_align, None);
+    }
+
+    #[test]
+    fn id_scoped_class_descendant_produces_id_descendant_selector() {
+        let sheet = parse_css("#titlepage h2.special { text-align: center; }");
+        assert_eq!(sheet.rules.len(), 1);
+        assert_eq!(
+            sheet.rules[0].0,
+            CssSelector::IdDescendant {
+                ancestor_id: "titlepage".into(),
+                inner: Box::new(CssSelector::TagAndClass("h2".into(), "special".into())),
+            }
+        );
+        let resolved = sheet.resolve_with_ancestors("h2", "special", &["titlepage"]);
+        assert_eq!(resolved.block.text_align, Some(TextAlign::Center));
+        // Tag without class: no match
+        let no_class = sheet.resolve_with_ancestors("h2", "", &["titlepage"]);
+        assert_eq!(no_class.block.text_align, None);
+    }
+
+    #[test]
+    fn id_scoped_class_only_descendant() {
+        let sheet = parse_css("#titlepage .centered { text-align: center; }");
+        assert_eq!(sheet.rules.len(), 1);
+        assert_eq!(
+            sheet.rules[0].0,
+            CssSelector::IdDescendant {
+                ancestor_id: "titlepage".into(),
+                inner: Box::new(CssSelector::Class("centered".into())),
+            }
+        );
+        let resolved = sheet.resolve_with_ancestors("p", "centered", &["titlepage"]);
+        assert_eq!(resolved.block.text_align, Some(TextAlign::Center));
     }
 
     #[test]
