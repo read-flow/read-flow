@@ -1109,7 +1109,7 @@ impl Page for DocumentDetails {
 
                 task::future(async move {
                     let result = document_provider
-                        .get_document(&document_guid)
+                        .refresh_single_document(&document_guid)
                         .await
                         .map_err(|err| format!("{err}"))
                         .and_then(|document| {

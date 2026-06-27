@@ -306,6 +306,95 @@ impl Aggregator {
         })
     }
 
+    /// Fetch a single document fresh from all clients, bypassing the full-list cache.
+    ///
+    /// For each client, calls `get_document(guid)` to retrieve the `ApiDocument`
+    /// (file GUIDs + metadata), then fetches each listed file via `get_file`.
+    /// Local clients take metadata priority over remotes, matching `aggregate()` semantics.
+    pub async fn get_single_document(
+        &self,
+        document_guid: &str,
+    ) -> Result<Option<Document>, FilesClientError> {
+        let clients: Vec<(ClientSelector, Client)> = self
+            .clients
+            .iter()
+            .map(|(s, c)| (s.clone(), c.clone()))
+            .collect();
+        let client_count = clients.len();
+
+        type ClientResult = (ClientSelector, Vec<File>, Option<UserMeta>);
+        let results: Vec<Result<ClientResult, FilesClientError>> = stream::iter(clients)
+            .map(|(selector, client)| async move {
+                match client.get_document(document_guid).await? {
+                    None => Ok((selector, vec![], None)),
+                    Some(api_doc) => {
+                        let files = stream::iter(api_doc.file_guids)
+                            .map(|guid| {
+                                let client = client.clone();
+                                async move { client.get_file(&guid).await }
+                            })
+                            .buffer_unordered(8)
+                            .filter_map(|r| async move {
+                                match r {
+                                    Ok(Some(f)) => Some(f),
+                                    Ok(None) => None,
+                                    Err(e) => {
+                                        tracing::warn!("error fetching file: {e}");
+                                        None
+                                    }
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .await;
+                        Ok((selector, files, Some(api_doc.metadata)))
+                    }
+                }
+            })
+            .buffer_unordered(client_count.max(1))
+            .collect()
+            .await;
+
+        let mut all: Vec<ClientResult> = results
+            .into_iter()
+            .filter_map(|r| match r {
+                Ok(r) => Some(r),
+                Err(e) => {
+                    tracing::warn!("error fetching document {document_guid}: {e}");
+                    None
+                }
+            })
+            .collect();
+
+        // Remotes first, locals last — locals win on metadata conflict (same as aggregate())
+        all.sort_by_key(|(sel, _, _)| if sel.is_local() { 1u8 } else { 0u8 });
+
+        if all.iter().all(|(_, files, _)| files.is_empty()) {
+            return Ok(None);
+        }
+
+        let mut documents = Documents::default();
+        let mut final_meta: Option<UserMeta> = None;
+        for (selector, files, meta) in all {
+            for file in files {
+                let guid = file
+                    .document_guid
+                    .clone()
+                    .unwrap_or_else(|| file.fingerprint.clone());
+                documents.push(guid, selector.clone(), file);
+            }
+            if let Some(m) = meta {
+                final_meta = Some(m);
+            }
+        }
+
+        Ok(documents.get(document_guid).cloned().map(|mut doc| {
+            if let Some(meta) = final_meta {
+                doc.user_meta = meta;
+            }
+            doc
+        }))
+    }
+
     pub async fn update_document(&self, document: Document) -> Result<(), FilesClientError> {
         let number_of_sources: usize = document.contents.iter().map(|c| c.sources.len()).sum();
         let results: Vec<Result<(), FilesClientError>> = stream::iter(self.iter_document(document))

@@ -132,16 +132,20 @@ impl DocumentProvider {
         self.tags_cache.provide().await
     }
 
-    /// Get a single document by document_guid.
+    /// Refresh a single document directly from all sources, bypassing the full-list cache.
     ///
-    /// Uses the cached documents to efficiently look up a single document.
-    pub async fn get_document(
+    /// Unlike `get_document`, this always issues network/DB requests for the specific document
+    /// rather than reloading all documents. Use this in Document Details to refresh
+    /// after mutations (send-to-client, status changes, tag edits).
+    pub async fn refresh_single_document(
         &self,
         document_guid: &str,
     ) -> Result<Option<Document>, FilesClientError> {
-        self.get_documents()
+        self.aggregator
+            .read()
             .await
-            .map(|docs| docs.get(document_guid).cloned())
+            .get_single_document(document_guid)
+            .await
     }
 
     /// Update a document across all sources.
