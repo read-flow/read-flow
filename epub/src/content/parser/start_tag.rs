@@ -122,16 +122,7 @@ fn handle_start_tag_inner(
     if tag_name == "span" {
         let style_attr = find_attr(attrs, "style");
         let class_attr = find_attr(attrs, "class").unwrap_or_default();
-        let ancestor_ids: Vec<String> = state
-            .stack
-            .iter()
-            .filter_map(|e| e.element_id.clone())
-            .collect();
-        let ancestor_id_refs: Vec<&str> = ancestor_ids.iter().map(|s| s.as_str()).collect();
-        let css_resolved =
-            state
-                .stylesheet
-                .resolve_with_ancestors("span", &class_attr, &ancestor_id_refs);
+        let css_resolved = state.resolve_css("span", &class_attr);
         let has_style = style_attr.is_some();
         let has_css = css_resolved.inline != InlineStyle::default()
             || css_resolved.color.is_some()
@@ -184,16 +175,7 @@ fn handle_start_tag_inner(
 
     // Resolve stylesheet styles from class, then merge inline style= on top
     let class_attr = find_attr(attrs, "class").unwrap_or_default();
-    let ancestor_ids: Vec<String> = state
-        .stack
-        .iter()
-        .filter_map(|e| e.element_id.clone())
-        .collect();
-    let ancestor_id_refs: Vec<&str> = ancestor_ids.iter().map(|s| s.as_str()).collect();
-    let css_resolved =
-        state
-            .stylesheet
-            .resolve_with_ancestors(tag_name, &class_attr, &ancestor_id_refs);
+    let css_resolved = state.resolve_css(tag_name, &class_attr);
     entry.block_style = css_resolved.block;
     if let Some(style_attr) = find_attr(attrs, "style") {
         let inline = parse_inline_style(&style_attr).block;
@@ -288,16 +270,7 @@ fn handle_svg_start(
 
     // Resolve stylesheet styles from class, then merge inline style= on top
     let class_attr = find_attr(attrs, "class").unwrap_or_default();
-    let ancestor_ids: Vec<String> = state
-        .stack
-        .iter()
-        .filter_map(|e| e.element_id.clone())
-        .collect();
-    let ancestor_id_refs: Vec<&str> = ancestor_ids.iter().map(|s| s.as_str()).collect();
-    let css_resolved =
-        state
-            .stylesheet
-            .resolve_with_ancestors(tag_name, &class_attr, &ancestor_id_refs);
+    let css_resolved = state.resolve_css(tag_name, &class_attr);
     entry.block_style = css_resolved.block;
     if let Some(style_attr) = find_attr(attrs, "style") {
         let inline = parse_inline_style(&style_attr).block;
@@ -373,16 +346,7 @@ fn handle_inline_tag(state: &mut SinkState, tag_name: &str, attrs: &[html5ever::
     let mut style = style_for_tag(tag_name, &parent_style);
     // Apply stylesheet styles from class
     let class_attr = find_attr(attrs, "class").unwrap_or_default();
-    let ancestor_ids: Vec<String> = state
-        .stack
-        .iter()
-        .filter_map(|e| e.element_id.clone())
-        .collect();
-    let ancestor_id_refs: Vec<&str> = ancestor_ids.iter().map(|s| s.as_str()).collect();
-    let css_resolved =
-        state
-            .stylesheet
-            .resolve_with_ancestors(tag_name, &class_attr, &ancestor_id_refs);
+    let css_resolved = state.resolve_css(tag_name, &class_attr);
     style.bold |= css_resolved.inline.bold;
     style.italic |= css_resolved.inline.italic;
     style.underline |= css_resolved.inline.underline;

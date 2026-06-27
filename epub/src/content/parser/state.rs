@@ -8,6 +8,7 @@ use crate::content::block::InlineStyle;
 use crate::content::block::ListItem;
 use crate::content::block::TableCell;
 use crate::content::block::TextSpan;
+use crate::content::stylesheet::ResolvedStyle;
 use crate::content::stylesheet::StyleSheet;
 
 type Blocks = Vec<ContentBlock>;
@@ -62,30 +63,7 @@ pub(super) struct StackEntry {
 
 impl StackEntry {
     pub(super) fn new(tag: &str) -> Self {
-        StackEntry {
-            tag: tag.to_string(),
-            text: String::new(),
-            children: Vec::new(),
-            children_paths: Vec::new(),
-            list_items: Vec::new(),
-            element_child_index: 0,
-            ol_start: 1,
-            spans: Vec::new(),
-            inline_style: InlineStyle::default(),
-            link: None,
-            table_rows: Vec::new(),
-            table_cells: Vec::new(),
-            element_id: None,
-            is_footnote: false,
-            is_footnote_container: false,
-            block_style: BlockStyle::default(),
-            span_color: None,
-            span_font_size_em: None,
-            svg_content: String::new(),
-            svg_aspect_ratio: None,
-            figure_caption_spans: Vec::new(),
-            figure_caption_text: String::new(),
-        }
+        Self::new_with_style(tag, InlineStyle::default(), None)
     }
 
     pub(super) fn new_with_style(tag: &str, style: InlineStyle, link: Option<String>) -> Self {
@@ -238,6 +216,18 @@ impl SinkState {
         if let Some(slot) = self.element_child_counts.get_mut(new_depth + 1) {
             *slot = 0;
         }
+    }
+
+    /// Resolve CSS for `tag` / `class_attr`, threading ancestor element IDs from the stack
+    /// so ID-scoped rules (e.g. `#titlepage h2`) are matched correctly.
+    pub(super) fn resolve_css(&self, tag: &str, class_attr: &str) -> ResolvedStyle {
+        let ancestor_ids: Vec<&str> = self
+            .stack
+            .iter()
+            .filter_map(|e| e.element_id.as_deref())
+            .collect();
+        self.stylesheet
+            .resolve_with_ancestors(tag, class_attr, &ancestor_ids)
     }
 }
 

@@ -110,6 +110,32 @@ impl TokenSink for ContentSink {
     }
 }
 
+/// Tokenize `xhtml`, resolve images, and return `(blocks, paths)`.
+/// All other public parse functions delegate here.
+fn run_parser<F>(
+    xhtml: &[u8],
+    chapter_href: &str,
+    stylesheet: &StyleSheet,
+    resolve_image: &mut F,
+) -> (Vec<ContentBlock>, Vec<Vec<u32>>)
+where
+    F: FnMut(&str) -> Option<(Vec<u8>, String)>,
+{
+    let html_str = String::from_utf8_lossy(xhtml);
+    let sink = ContentSink::new(chapter_href, stylesheet.clone());
+    let tokenizer = Tokenizer::new(sink, TokenizerOpts::default());
+    let buf = BufferQueue::default();
+    buf.push_back(html5ever::tendril::StrTendril::from(html_str.as_ref()));
+    let _ = tokenizer.feed(&buf);
+    tokenizer.end();
+    let (mut blocks, mut paths, pending_images) = tokenizer.sink.into_blocks_and_pending();
+    if !pending_images.is_empty() {
+        resolve_images(&mut blocks, &pending_images, resolve_image);
+    }
+    paths.resize(blocks.len(), vec![]);
+    (blocks, paths)
+}
+
 /// Parse XHTML content into structured content blocks.
 ///
 /// - `xhtml`: raw XHTML bytes
@@ -127,25 +153,7 @@ pub fn parse_xhtml<F>(
 where
     F: FnMut(&str) -> Option<(Vec<u8>, String)>,
 {
-    let html_str = String::from_utf8_lossy(xhtml);
-
-    let sink = ContentSink::new(chapter_href, stylesheet.clone());
-
-    let tokenizer = Tokenizer::new(sink, TokenizerOpts::default());
-
-    let buf = BufferQueue::default();
-    buf.push_back(html5ever::tendril::StrTendril::from(html_str.as_ref()));
-    let _ = tokenizer.feed(&buf);
-    tokenizer.end();
-
-    let (mut blocks, _paths, pending_images) = tokenizer.sink.into_blocks_and_pending();
-
-    // Resolve pending images by walking the block tree
-    if !pending_images.is_empty() {
-        resolve_images(&mut blocks, &pending_images, resolve_image);
-    }
-
-    blocks
+    run_parser(xhtml, chapter_href, stylesheet, resolve_image).0
 }
 
 /// Like [`parse_xhtml`] but also returns a parallel vector of DOM node paths,
@@ -164,24 +172,7 @@ pub fn parse_xhtml_with_paths<F>(
 where
     F: FnMut(&str) -> Option<(Vec<u8>, String)>,
 {
-    let html_str = String::from_utf8_lossy(xhtml);
-    let sink = ContentSink::new(chapter_href, stylesheet.clone());
-    let tokenizer = Tokenizer::new(sink, TokenizerOpts::default());
-    let buf = BufferQueue::default();
-    buf.push_back(html5ever::tendril::StrTendril::from(html_str.as_ref()));
-    let _ = tokenizer.feed(&buf);
-    tokenizer.end();
-
-    let (mut blocks, mut paths, pending_images) = tokenizer.sink.into_blocks_and_pending();
-
-    if !pending_images.is_empty() {
-        resolve_images(&mut blocks, &pending_images, resolve_image);
-    }
-
-    // Ensure paths is the same length as blocks (pad with empty if necessary).
-    paths.resize(blocks.len(), vec![]);
-
-    (blocks, paths)
+    run_parser(xhtml, chapter_href, stylesheet, resolve_image)
 }
 
 /// Resolve embedded image references in SVG content by converting xlink:href to data URIs.
@@ -255,6 +246,27 @@ fn parse_viewbox_aspect_ratio(svg: &str) -> Option<f32> {
     util::parse_viewbox_str(vb)
 }
 
+/// Build a fallback `ContentBlock` for an unresolvable image.
+/// Non-empty `alt` → paragraph with bracketed text; empty → `HorizontalRule` (will be filtered).
+fn alt_text_fallback(alt: &str) -> ContentBlock {
+    if !alt.is_empty() {
+        let alt_text = format!("[{alt}]");
+        ContentBlock::Paragraph {
+            spans: vec![TextSpan {
+                text: alt_text.clone(),
+                style: InlineStyle::default(),
+                link: None,
+                color: None,
+                font_size_em: None,
+            }],
+            text: alt_text,
+            style: BlockStyle::default(),
+        }
+    } else {
+        ContentBlock::HorizontalRule
+    }
+}
+
 /// Walk the block tree and resolve placeholder Image blocks.
 fn resolve_images<F>(
     blocks: &mut [ContentBlock],
@@ -279,23 +291,7 @@ fn resolve_images<F>(
                         *data = resolved_data;
                         *media_type = resolved_mt;
                     } else {
-                        // Replace with alt-text paragraph fallback
-                        if !alt.is_empty() {
-                            let alt_text = format!("[{}]", alt);
-                            *block = ContentBlock::Paragraph {
-                                spans: vec![TextSpan {
-                                    text: alt_text.clone(),
-                                    style: InlineStyle::default(),
-                                    link: None,
-                                    color: None,
-                                    font_size_em: None,
-                                }],
-                                text: alt_text,
-                                style: BlockStyle::default(),
-                            };
-                        } else {
-                            *block = ContentBlock::HorizontalRule; // will be filtered
-                        }
+                        *block = alt_text_fallback(alt);
                     }
                 }
             }
@@ -313,42 +309,10 @@ fn resolve_images<F>(
                             *aspect_ratio = parse_viewbox_aspect_ratio(&svg_str);
                             *content = svg_str;
                         } else {
-                            // Wrong media type - replace with alt-text fallback
-                            if !alt.is_empty() {
-                                let alt_text = format!("[{}]", alt);
-                                *block = ContentBlock::Paragraph {
-                                    spans: vec![TextSpan {
-                                        text: alt_text.clone(),
-                                        style: InlineStyle::default(),
-                                        link: None,
-                                        color: None,
-                                        font_size_em: None,
-                                    }],
-                                    text: alt_text,
-                                    style: BlockStyle::default(),
-                                };
-                            } else {
-                                *block = ContentBlock::HorizontalRule; // will be filtered
-                            }
+                            *block = alt_text_fallback(alt);
                         }
                     } else {
-                        // Replace with alt-text paragraph fallback
-                        if !alt.is_empty() {
-                            let alt_text = format!("[{}]", alt);
-                            *block = ContentBlock::Paragraph {
-                                spans: vec![TextSpan {
-                                    text: alt_text.clone(),
-                                    style: InlineStyle::default(),
-                                    link: None,
-                                    color: None,
-                                    font_size_em: None,
-                                }],
-                                text: alt_text,
-                                style: BlockStyle::default(),
-                            };
-                        } else {
-                            *block = ContentBlock::HorizontalRule; // will be filtered
-                        }
+                        *block = alt_text_fallback(alt);
                     }
                 }
             }
