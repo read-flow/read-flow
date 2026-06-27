@@ -641,28 +641,17 @@ impl Pages {
                 )))];
 
                 if let Some((page, total)) = page_info {
-                    let document_provider = self.document_provider.clone();
-                    let fp = fingerprint;
-                    tasks.push(task::future(async move {
-                        let now = iso8601_now();
-                        let percentage = if total > 0 {
-                            (page as f64 + 1.0) / total as f64
-                        } else {
-                            0.0
-                        };
-                        let state = read_flow_core::api::ReadingState {
-                            fingerprint: fp,
-                            status: 0,
-                            position: format!("{{\"page\":{page}}}"),
-                            percentage,
-                            last_updated: now.clone(),
-                            status_updated_at: "1970-01-01T00:00:00Z".to_string(),
-                        };
-                        if let Err(e) = document_provider.upsert_reading_state(state).await {
-                            tracing::warn!("failed to save reading state: {e}");
-                        }
-                        PageMessage::Noop
-                    }));
+                    let percentage = if total > 0 {
+                        (page as f64 + 1.0) / total as f64
+                    } else {
+                        0.0
+                    };
+                    tasks.push(save_reading_state_task(
+                        self.document_provider.clone(),
+                        fingerprint,
+                        format!("{{\"page\":{page}}}"),
+                        percentage,
+                    ));
                 }
 
                 Task::batch(tasks)
@@ -686,19 +675,9 @@ impl Pages {
             PageMessage::OpenImageViewer(image) => {
                 let id = self.next_image_viewer_id;
                 self.next_image_viewer_id += 1;
-                let viewer = ImageViewer::new(id, image);
-                self.image_viewers.insert(id, viewer);
-                let parent = self.active.clone();
+                self.image_viewers.insert(id, ImageViewer::new(id, image));
                 let selector = PageSelector::ImageViewer(id);
-                let label = self.display_name(&selector);
-                self.register_page(
-                    selector.clone(),
-                    "image-x-generic-symbolic",
-                    label,
-                    Some(parent),
-                );
-                self.active = selector.clone();
-                task::message(PageMessage::Out(PageOutput::PageAdded(selector)))
+                self.activate_new_viewer(selector, "image-x-generic-symbolic", Task::none())
             }
             PageMessage::CloseImageViewer(id) => {
                 let selector = PageSelector::ImageViewer(id);
@@ -732,23 +711,12 @@ impl Pages {
                 )))];
 
                 if let Some((position_json, percentage)) = progress_info {
-                    let document_provider = self.document_provider.clone();
-                    let fp = fingerprint;
-                    tasks.push(task::future(async move {
-                        let now = iso8601_now();
-                        let state = read_flow_core::api::ReadingState {
-                            fingerprint: fp,
-                            status: 0,
-                            position: position_json,
-                            percentage,
-                            last_updated: now,
-                            status_updated_at: "1970-01-01T00:00:00Z".to_string(),
-                        };
-                        if let Err(e) = document_provider.upsert_reading_state(state).await {
-                            tracing::warn!("failed to save reading state: {e}");
-                        }
-                        PageMessage::Noop
-                    }));
+                    tasks.push(save_reading_state_task(
+                        self.document_provider.clone(),
+                        fingerprint,
+                        position_json,
+                        percentage,
+                    ));
                 }
 
                 Task::batch(tasks)
@@ -757,6 +725,22 @@ impl Pages {
                 panic!("{message:?} should be handled by the parent component")
             }
         }
+    }
+
+    fn activate_new_viewer(
+        &mut self,
+        selector: PageSelector,
+        icon: &'static str,
+        initialization: Task<Action<PageMessage>>,
+    ) -> Task<Action<PageMessage>> {
+        let parent = self.active.clone();
+        let label = self.display_name(&selector);
+        self.register_page(selector.clone(), icon, label, Some(parent));
+        self.active = selector.clone();
+        Task::batch([
+            initialization,
+            task::message(PageMessage::Out(PageOutput::PageAdded(selector))),
+        ])
     }
 
     fn open_in_external_viewer(&mut self, document: Document) -> Task<Action<PageMessage>> {
@@ -777,32 +761,20 @@ impl Pages {
             .unwrap_or_default();
 
         if self.mu_pdf_viewers.contains_key(&fingerprint) {
-            task::message(PageMessage::Out(PageOutput::TogglePage(
+            return task::message(PageMessage::Out(PageOutput::TogglePage(
                 PageSelector::MuPdfViewer(fingerprint),
-            )))
-        } else {
-            let parent = self.active.clone();
-            let fingerprint_1 = fingerprint.clone();
-            let (pdf_viewer, initialization) =
-                MuPdfViewer::new(document, self.document_provider.clone());
-            self.mu_pdf_viewers.insert(fingerprint.clone(), pdf_viewer);
-            let selector = PageSelector::MuPdfViewer(fingerprint);
-            let label = self.display_name(&selector);
-            self.register_page(
-                selector.clone(),
-                "application-pdf-symbolic",
-                label,
-                Some(parent),
-            );
-            self.active = selector.clone();
-            Task::batch([
-                initialization.map(move |action| {
-                    let fingerprint = fingerprint_1.clone();
-                    action.map(move |msg| map_mu_pdf_viewer_message(fingerprint, msg))
-                }),
-                task::message(PageMessage::Out(PageOutput::PageAdded(selector))),
-            ])
+            )));
         }
+        let fingerprint_1 = fingerprint.clone();
+        let (pdf_viewer, initialization) =
+            MuPdfViewer::new(document, self.document_provider.clone());
+        self.mu_pdf_viewers.insert(fingerprint.clone(), pdf_viewer);
+        let selector = PageSelector::MuPdfViewer(fingerprint);
+        let init_task = initialization.map(move |action| {
+            let fp = fingerprint_1.clone();
+            action.map(move |msg| map_mu_pdf_viewer_message(fp, msg))
+        });
+        self.activate_new_viewer(selector, "application-pdf-symbolic", init_task)
     }
 
     fn open_epub_viewer(&mut self, document: Document) -> Task<Action<PageMessage>> {
@@ -813,32 +785,20 @@ impl Pages {
             .unwrap_or_default();
 
         if self.epub_viewers.contains_key(&fingerprint) {
-            task::message(PageMessage::Out(PageOutput::TogglePage(
+            return task::message(PageMessage::Out(PageOutput::TogglePage(
                 PageSelector::EpubViewer(fingerprint),
-            )))
-        } else {
-            let parent = self.active.clone();
-            let fingerprint_1 = fingerprint.clone();
-            let (epub_viewer, initialization) =
-                EpubViewer::new(document, self.document_provider.clone());
-            self.epub_viewers.insert(fingerprint.clone(), epub_viewer);
-            let selector = PageSelector::EpubViewer(fingerprint);
-            let label = self.display_name(&selector);
-            self.register_page(
-                selector.clone(),
-                "application-epub+zip",
-                label,
-                Some(parent),
-            );
-            self.active = selector.clone();
-            Task::batch([
-                initialization.map(move |action| {
-                    let fingerprint = fingerprint_1.clone();
-                    action.map(move |msg| map_epub_viewer_message(fingerprint, msg))
-                }),
-                task::message(PageMessage::Out(PageOutput::PageAdded(selector))),
-            ])
+            )));
         }
+        let fingerprint_1 = fingerprint.clone();
+        let (epub_viewer, initialization) =
+            EpubViewer::new(document, self.document_provider.clone());
+        self.epub_viewers.insert(fingerprint.clone(), epub_viewer);
+        let selector = PageSelector::EpubViewer(fingerprint);
+        let init_task = initialization.map(move |action| {
+            let fp = fingerprint_1.clone();
+            action.map(move |msg| map_epub_viewer_message(fp, msg))
+        });
+        self.activate_new_viewer(selector, "application-epub+zip", init_task)
     }
 }
 
@@ -966,6 +926,29 @@ fn map_image_viewer_message(id: u64, msg: ImageViewerMessage) -> PageMessage {
         },
         msg => PageMessage::ImageViewer(id, msg),
     }
+}
+
+fn save_reading_state_task(
+    document_provider: Arc<DocumentProvider>,
+    fingerprint: Fingerprint,
+    position: String,
+    percentage: f64,
+) -> Task<Action<PageMessage>> {
+    task::future(async move {
+        let now = iso8601_now();
+        let state = read_flow_core::api::ReadingState {
+            fingerprint,
+            status: 0,
+            position,
+            percentage,
+            last_updated: now,
+            status_updated_at: "1970-01-01T00:00:00Z".to_string(),
+        };
+        if let Err(e) = document_provider.upsert_reading_state(state).await {
+            tracing::warn!("failed to save reading state: {e}");
+        }
+        PageMessage::Noop
+    })
 }
 
 /// Generate an ISO 8601 UTC timestamp string from the current system time.

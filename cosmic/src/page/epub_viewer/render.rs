@@ -15,6 +15,7 @@ use cosmic::theme::Container;
 use cosmic::widget;
 use epub::BlockStyle;
 use epub::ContentBlock;
+use epub::InlineStyle;
 use epub::TableCell;
 use epub::TextAlign;
 use epub::TextSpan;
@@ -79,34 +80,7 @@ pub(super) fn render_partial_paragraph<'a>(
             style,
         )
     };
-    match highlight {
-        BlockHighlight::None => inner,
-        BlockHighlight::Current => widget::container(inner)
-            .style(|theme: &cosmic::Theme| widget::container::Style {
-                background: Some(highlight_background(theme).into()),
-                text_color: Some(highlight_text_color(theme)),
-                border: Border {
-                    radius: theme.cosmic().corner_radii.radius_xl.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
-                ..Default::default()
-            })
-            .width(Length::Fill)
-            .into(),
-        BlockHighlight::SearchMatch => widget::container(inner)
-            .style(|theme: &cosmic::Theme| widget::container::Style {
-                background: Some(search_match_background(theme).into()),
-                border: Border {
-                    radius: theme.cosmic().corner_radii.radius_s.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
-                ..Default::default()
-            })
-            .width(Length::Fill)
-            .into(),
-    }
+    apply_highlight(inner, highlight)
 }
 
 /// Render a partial preformatted block (split at a page boundary) using owned data.
@@ -152,41 +126,47 @@ pub(super) fn render_partial_preformatted(
     }
 }
 
+fn apply_highlight<'a>(
+    inner: Element<'a, EpubViewerMessage>,
+    highlight: BlockHighlight,
+) -> Element<'a, EpubViewerMessage> {
+    match highlight {
+        BlockHighlight::None => inner,
+        BlockHighlight::Current => widget::container(inner)
+            .style(|theme: &cosmic::Theme| widget::container::Style {
+                background: Some(highlight_background(theme).into()),
+                text_color: Some(highlight_text_color(theme)),
+                border: Border {
+                    radius: theme.cosmic().corner_radii.radius_xl.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                ..Default::default()
+            })
+            .width(Length::Fill)
+            .into(),
+        BlockHighlight::SearchMatch => widget::container(inner)
+            .style(|theme: &cosmic::Theme| widget::container::Style {
+                background: Some(search_match_background(theme).into()),
+                border: Border {
+                    radius: theme.cosmic().corner_radii.radius_s.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                ..Default::default()
+            })
+            .width(Length::Fill)
+            .into(),
+    }
+}
+
 impl<'a> RenderContext<'a> {
     pub(super) fn render_block(
         &self,
         block: &'a ContentBlock,
         highlight: BlockHighlight,
     ) -> Element<'a, EpubViewerMessage> {
-        let inner = self.render_block_inner(block);
-        match highlight {
-            BlockHighlight::None => inner,
-            BlockHighlight::Current => widget::container(inner)
-                .style(|theme: &cosmic::Theme| widget::container::Style {
-                    background: Some(highlight_background(theme).into()),
-                    text_color: Some(highlight_text_color(theme)),
-                    border: Border {
-                        radius: theme.cosmic().corner_radii.radius_xl.into(),
-                        width: 0.0,
-                        color: Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                })
-                .width(Length::Fill)
-                .into(),
-            BlockHighlight::SearchMatch => widget::container(inner)
-                .style(|theme: &cosmic::Theme| widget::container::Style {
-                    background: Some(search_match_background(theme).into()),
-                    border: Border {
-                        radius: theme.cosmic().corner_radii.radius_s.into(),
-                        width: 0.0,
-                        color: Color::TRANSPARENT,
-                    },
-                    ..Default::default()
-                })
-                .width(Length::Fill)
-                .into(),
-        }
+        apply_highlight(self.render_block_inner(block), highlight)
     }
 
     fn render_block_inner(&self, block: &'a ContentBlock) -> Element<'a, EpubViewerMessage> {
@@ -652,41 +632,38 @@ fn apply_text_align<'a>(
         .into()
 }
 
-/// Build an iced `Span` from an owned `TextSpan`, producing a `'static` element
-/// that does not borrow the source span data.
-fn owned_styled_span(
-    text_span: TextSpan,
+fn style_span<'a>(
+    mut s: cosmic::iced::widget::text::Span<'a, EpubViewerMessage>,
     family: font::Family,
     font_size: f32,
-) -> cosmic::iced::widget::text::Span<'static, EpubViewerMessage> {
-    let style = text_span.style;
-    let link = text_span.link;
-    let color = text_span.color;
-    let font_size_em = text_span.font_size_em;
-    let weight = if style.bold {
+    inline: &InlineStyle,
+    color: Option<[u8; 3]>,
+    font_size_em: Option<f32>,
+    link: Option<String>,
+) -> cosmic::iced::widget::text::Span<'a, EpubViewerMessage> {
+    let weight = if inline.bold {
         font::Weight::Bold
     } else {
         font::Weight::Normal
     };
-    let font_style = if style.italic {
+    let font_style = if inline.italic {
         font::Style::Italic
     } else {
         font::Style::Normal
     };
-    let mut s = span(text_span.text); // String → Cow::Owned → 'static
     s = s.font(Font {
         family,
         weight,
         style: font_style,
         ..Font::default()
     });
-    if style.underline {
+    if inline.underline {
         s = s.underline(true);
     }
-    if style.strikethrough {
+    if inline.strikethrough {
         s = s.strikethrough(true);
     }
-    if style.monospaced {
+    if inline.monospaced {
         s = s.font(cosmic::font::mono());
         s = s.background(Background::Color(
             cosmic::theme::active().cosmic().secondary.base.into(),
@@ -705,6 +682,22 @@ fn owned_styled_span(
         }
     }
     s
+}
+
+fn owned_styled_span(
+    ts: TextSpan,
+    family: font::Family,
+    font_size: f32,
+) -> cosmic::iced::widget::text::Span<'static, EpubViewerMessage> {
+    style_span(
+        span(ts.text),
+        family,
+        font_size,
+        &ts.style,
+        ts.color,
+        ts.font_size_em,
+        ts.link,
+    )
 }
 
 fn render_spans(
@@ -740,56 +733,19 @@ fn render_list_item_spans<'a>(
 }
 
 fn styled_span<'a>(
-    text_span: &'a TextSpan,
+    ts: &'a TextSpan,
     family: font::Family,
     font_size: f32,
 ) -> cosmic::iced::widget::text::Span<'a, EpubViewerMessage> {
-    let style = &text_span.style;
-    let mut s = span(text_span.text.as_str());
-
-    let weight = if style.bold {
-        font::Weight::Bold
-    } else {
-        font::Weight::Normal
-    };
-    let font_style = if style.italic {
-        font::Style::Italic
-    } else {
-        font::Style::Normal
-    };
-    s = s.font(Font {
+    style_span(
+        span(ts.text.as_str()),
         family,
-        weight,
-        style: font_style,
-        ..Font::default()
-    });
-
-    if style.underline {
-        s = s.underline(true);
-    }
-    if style.strikethrough {
-        s = s.strikethrough(true);
-    }
-    if style.monospaced {
-        s = s.font(cosmic::font::mono());
-        s = s.background(Background::Color(
-            cosmic::theme::active().cosmic().secondary.base.into(),
-        ));
-    }
-    if let Some([r, g, b]) = text_span.color {
-        s = s.color(cosmic::iced::Color::from_rgb8(r, g, b));
-    }
-    if let Some(em) = text_span.font_size_em {
-        s = s.size(em * font_size);
-    }
-    if let Some(href) = &text_span.link {
-        s = s.link(EpubViewerMessage::FollowLink(href.clone()));
-        // Only apply accent color if no explicit color was set
-        if text_span.color.is_none() {
-            s = s.color(theme::active().cosmic().accent_color());
-        }
-    }
-    s
+        font_size,
+        &ts.style,
+        ts.color,
+        ts.font_size_em,
+        ts.link.clone(),
+    )
 }
 
 fn highlight_background(theme: &cosmic::Theme) -> cosmic::iced::Color {
