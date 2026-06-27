@@ -118,7 +118,7 @@ impl<'a, Message: Clone + 'static> FontPicker<'a, Message> {
 
         let lower = self.value.to_lowercase();
         let visible: Vec<&'static str> = if self.value.is_empty() {
-            self.options.iter().copied().collect()
+            self.options.to_vec()
         } else {
             self.options
                 .iter()

@@ -18,8 +18,8 @@
 //!   - orphan tag      — `@feature:` id not present in the catalog
 //!   - drift           — id annotated on a surface not listed in its `surfaces`
 //!   - missing surface — a `surfaces` entry that is neither annotated nor listed
-//!                       in `gaps` (acknowledged backlog)
-//! Acknowledged `gaps` render as 🟡 and do NOT fail the build.
+//!     in `gaps` (acknowledged backlog)
+//!     Acknowledged `gaps` render as 🟡 and do NOT fail the build.
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;

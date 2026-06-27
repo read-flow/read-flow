@@ -6,8 +6,8 @@ use crate::bdd::cosmic_driver::CosmicDriver;
 use crate::bdd::rest_driver::RestDriver;
 
 pub enum Driver {
-    Rest(RestDriver),
-    Cosmic(CosmicDriver),
+    Rest(Box<RestDriver>),
+    Cosmic(Box<CosmicDriver>),
 }
 
 impl Driver {
@@ -15,8 +15,8 @@ impl Driver {
     /// Must be paired with a matching cucumber tag filter — see `bdd::mod`.
     pub async fn new() -> Self {
         match env_name() {
-            "cosmic" => Self::Cosmic(CosmicDriver::new().await),
-            _ => Self::Rest(RestDriver::new().await),
+            "cosmic" => Self::Cosmic(Box::new(CosmicDriver::new().await)),
+            _ => Self::Rest(Box::new(RestDriver::new().await)),
         }
     }
 

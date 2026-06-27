@@ -26,16 +26,16 @@ fn load_fonts() -> Vec<String> {
 #[cfg(target_os = "macos")]
 fn load_fonts() -> Vec<String> {
     // Try fc-list first (fast, available via Homebrew fontconfig)
-    if let Ok(output) = Command::new("fc-list").arg(":").arg("family").output() {
-        if output.status.success() {
-            let mut fonts: Vec<_> = String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
-                .collect();
-            fonts.sort();
-            return fonts;
-        }
+    if let Ok(output) = Command::new("fc-list").arg(":").arg("family").output()
+        && output.status.success()
+    {
+        let mut fonts: Vec<_> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+        fonts.sort();
+        return fonts;
     }
 
     // Fallback: system_profiler (built-in, slower)

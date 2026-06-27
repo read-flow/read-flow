@@ -965,10 +965,10 @@ impl CosmicDriver {
                 .flat_map(|c| c.sources.iter())
                 .find(|s| s.client == ClientSelector::Local)
                 .map(|s| std::path::PathBuf::from(&s.path));
-            if let Some(path) = stored_path {
-                if path.exists() {
-                    return epub::EpubDocument::open(&path).is_ok();
-                }
+            if let Some(path) = stored_path
+                && path.exists()
+            {
+                return epub::EpubDocument::open(&path).is_ok();
             }
         }
         // Temp dir was cleaned up — open the original fixture as a proxy.

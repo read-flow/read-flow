@@ -46,6 +46,7 @@ mod tests {
     #[test]
     fn tag_chips_compiles_with_string_message() {
         // Compile-time check — no runtime assertions needed.
+        #[allow(clippy::type_complexity)]
         let _: fn(&[String], &str, fn(String) -> String, String, fn(String) -> String) =
             |_, _, _, _, _| ();
     }

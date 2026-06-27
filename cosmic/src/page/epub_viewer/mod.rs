@@ -349,7 +349,7 @@ pub enum EpubViewerOutput {
     OpenImageViewer(ViewerImage),
     /// Request the App to navigate to (activate) this viewer's page.
     Activate,
-    OpenDocumentDetails(Document),
+    OpenDocumentDetails(Box<Document>),
 }
 
 #[derive(Debug, Clone)]
@@ -1170,7 +1170,7 @@ impl Page for EpubViewer {
                 widget::icon::from_name("document-properties-symbolic").size(ICON_SIZE),
             )
             .on_press(EpubViewerMessage::Out(
-                EpubViewerOutput::OpenDocumentDetails(self.document.clone()),
+                EpubViewerOutput::OpenDocumentDetails(Box::new(self.document.clone())),
             ))
             .tooltip(fl!("epub-viewer-document-details"))
             .padding(space_xxs)

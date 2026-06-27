@@ -198,13 +198,14 @@ fn parse_selector(s: &str) -> Option<CssSelector> {
     // `#id simple-selector` — two segments where the first is an ID reference
     if segments.len() == 2 && segments[0].starts_with('#') {
         let ancestor_id = &segments[0][1..];
-        if !ancestor_id.is_empty() && !ancestor_id.contains('#') {
-            if let Some(inner) = parse_simple_selector(segments[1]) {
-                return Some(CssSelector::IdDescendant {
-                    ancestor_id: ancestor_id.to_ascii_lowercase(),
-                    inner: Box::new(inner),
-                });
-            }
+        if !ancestor_id.is_empty()
+            && !ancestor_id.contains('#')
+            && let Some(inner) = parse_simple_selector(segments[1])
+        {
+            return Some(CssSelector::IdDescendant {
+                ancestor_id: ancestor_id.to_ascii_lowercase(),
+                inner: Box::new(inner),
+            });
         }
         return None;
     }

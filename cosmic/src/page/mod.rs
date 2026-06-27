@@ -823,7 +823,7 @@ fn map_dashboard_message(msg: DashboardMessage) -> PageMessage {
             DashboardOutput::NavigateToOnlineLibrary => {
                 PageMessage::Out(PageOutput::TogglePage(PageSelector::OnlineLibrary))
             }
-            DashboardOutput::OpenDocument(document) => PageMessage::OpenDocument(document),
+            DashboardOutput::OpenDocument(document) => PageMessage::OpenDocument(*document),
             DashboardOutput::Scan => PageMessage::Out(PageOutput::Scan),
         },
         msg => PageMessage::Dashboard(msg),
@@ -894,7 +894,7 @@ fn map_mu_pdf_viewer_message(fingerprint: Fingerprint, msg: MuPdfViewerMessage) 
                 PageMessage::CloseMuPdfViewer(fingerprint, page_info)
             }
             MuPdfViewerOutput::OpenDocumentDetails(document) => {
-                PageMessage::OpenDocumentDetails(document)
+                PageMessage::OpenDocumentDetails(*document)
             }
         },
         msg => PageMessage::MuPdfViewer(fingerprint, msg),
@@ -912,7 +912,7 @@ fn map_epub_viewer_message(fingerprint: Fingerprint, msg: EpubViewerMessage) -> 
                 PageSelector::EpubViewer(fingerprint),
             )),
             EpubViewerOutput::OpenDocumentDetails(document) => {
-                PageMessage::OpenDocumentDetails(document)
+                PageMessage::OpenDocumentDetails(*document)
             }
         },
         msg => PageMessage::EpubViewer(fingerprint, msg),

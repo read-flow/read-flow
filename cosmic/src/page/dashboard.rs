@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -39,7 +40,7 @@ pub enum DashboardOutput {
     NavigateToSettings,
     NavigateToSources,
     NavigateToOnlineLibrary,
-    OpenDocument(Document),
+    OpenDocument(Box<Document>),
     Scan,
 }
 
@@ -50,7 +51,7 @@ pub enum DashboardMessage {
     LoadingFailed(String),
     CoversLoaded(HashMap<String, Vec<u8>>),
     ReadingStatesLoaded(Vec<(String, f64, String)>),
-    OpenDocument(Document),
+    OpenDocument(Box<Document>),
     PickDocumentSource(String),
     CancelFormatPick,
     NavigateToDocuments,
@@ -98,7 +99,6 @@ enum DashboardState {
         total_documents: usize,
         reading_count: usize,
         read_count: usize,
-        unread_count: usize,
         type_stats: Vec<TypeStat>,
         sources: Vec<ClientSelector>,
         continue_reading: Vec<ContinueReadingEntry>,
@@ -175,7 +175,6 @@ impl DashboardPage {
         let total_documents = documents.len();
         let mut reading_count = 0usize;
         let mut read_count = 0usize;
-        let mut unread_count = 0usize;
         let mut type_counts: HashMap<DocumentType, usize> = HashMap::new();
         let mut continue_reading = Vec::new();
 
@@ -198,7 +197,7 @@ impl DashboardPage {
             }
 
             match status {
-                ReadingStatus::Unread => unread_count += 1,
+                ReadingStatus::Unread => {}
                 ReadingStatus::Reading => {
                     reading_count += 1;
                     let fingerprint = reading_fps.first().cloned().unwrap_or_default();
@@ -227,13 +226,12 @@ impl DashboardPage {
             .into_iter()
             .map(|(type_, count)| TypeStat { type_, count })
             .collect();
-        type_stats.sort_by(|a, b| b.count.cmp(&a.count));
+        type_stats.sort_by_key(|b| Reverse(b.count));
 
         DashboardState::Populated {
             total_documents,
             reading_count,
             read_count,
-            unread_count,
             type_stats,
             sources,
             continue_reading,
@@ -344,7 +342,6 @@ impl DashboardPage {
         total_documents: usize,
         reading_count: usize,
         read_count: usize,
-        _unread_count: usize,
         type_stats: &'a [TypeStat],
         sources: &'a [ClientSelector],
         continue_reading: &'a [ContinueReadingEntry],
@@ -647,7 +644,7 @@ impl DashboardPage {
 
         let doc = entry.document.clone();
         widget::button::custom(card_content)
-            .on_press(DashboardMessage::OpenDocument(doc))
+            .on_press(DashboardMessage::OpenDocument(Box::new(doc)))
             .class(card_button_class())
             .width(Length::FillPortion(1))
             .into()
@@ -665,7 +662,6 @@ impl Page for DashboardPage {
                 total_documents,
                 reading_count,
                 read_count,
-                unread_count,
                 type_stats,
                 sources,
                 continue_reading,
@@ -673,7 +669,6 @@ impl Page for DashboardPage {
                 *total_documents,
                 *reading_count,
                 *read_count,
-                *unread_count,
                 type_stats,
                 sources,
                 continue_reading,
@@ -787,7 +782,7 @@ impl Page for DashboardPage {
                     .filter(|c| c.status == ReadingStatus::Reading)
                     .collect();
                 if reading_contents.len() > 1 {
-                    self.pending_format_pick = Some(document);
+                    self.pending_format_pick = Some(*document);
                     Task::none()
                 } else {
                     task::message(DashboardMessage::Out(DashboardOutput::OpenDocument(
@@ -796,12 +791,12 @@ impl Page for DashboardPage {
                 }
             }
             DashboardMessage::PickDocumentSource(guid) => {
-                if let Some(doc) = self.pending_format_pick.take() {
-                    if let Some(single) = doc.with_source_guid(&guid) {
-                        return task::message(DashboardMessage::Out(
-                            DashboardOutput::OpenDocument(single),
-                        ));
-                    }
+                if let Some(doc) = self.pending_format_pick.take()
+                    && let Some(single) = doc.with_source_guid(&guid)
+                {
+                    return task::message(DashboardMessage::Out(DashboardOutput::OpenDocument(
+                        Box::new(single),
+                    )));
                 }
                 Task::none()
             }

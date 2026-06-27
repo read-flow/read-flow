@@ -133,6 +133,7 @@ pub struct PreferencesPage {
     selected_section: PreferencesSection,
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone)]
 pub enum PreferencesOutput {
     SourceAdded(Url, String, String),
