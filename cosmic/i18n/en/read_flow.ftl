@@ -88,6 +88,7 @@ document-details-edit-sources = Edit sources
 document-details-send-to-missing = Send to
 document-details-source-local = Local
 document-details-sources = Formats
+document-details-sync-to-all-sources = Sync to all sources
 document-details-upload-to = Upload to { $host }
 
 # Document list

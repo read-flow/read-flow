@@ -93,6 +93,9 @@ pub enum DocumentDetailsMessage {
     /// @feature: sources.send_to_client
     SendToClient(ClientSelector),
     SentToClient(Result<(), String>),
+    /// @feature: sources.sync_to_all
+    SyncToAllSources,
+    SyncedToAllSources(Result<(), String>),
 
     EditUserMeta,
     CancelUserMeta,
@@ -540,12 +543,32 @@ impl DocumentDetails {
                 .tooltip(fl!("document-details-edit-sources"))
         };
 
+        let distinct_clients: std::collections::HashSet<_> = self
+            .document
+            .contents
+            .iter()
+            .flat_map(|c| c.sources.iter().map(|s| &s.client))
+            .collect();
+        let has_multiple_clients = distinct_clients.len() > 1;
+
+        let mut header_row = vec![
+            text::heading(fl!("document-details-sources")).into(),
+            widget::space::horizontal().into(),
+        ];
+        if has_multiple_clients && !self.editing_sources {
+            header_row.push(
+                widget::button::icon(
+                    widget::icon::from_name("emblem-synchronizing-symbolic").size(ICON_SIZE),
+                )
+                .on_press(DocumentDetailsMessage::SyncToAllSources)
+                .tooltip(fl!("document-details-sync-to-all-sources"))
+                .into(),
+            );
+        }
+        header_row.push(edit_button.into());
+
         let mut sources_section =
-            widget::settings::section().header(widget::settings::item_row(vec![
-                text::heading(fl!("document-details-sources")).into(),
-                widget::space::horizontal().into(),
-                edit_button.into(),
-            ]));
+            widget::settings::section().header(widget::settings::item_row(header_row));
 
         let all_sources_empty = self.document.contents.iter().all(|c| c.sources.is_empty());
 
@@ -1165,6 +1188,24 @@ impl Page for DocumentDetails {
                 Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),
                 Err(err) => {
                     tracing::error!("Failed to send document to client: {err}");
+                    Task::none()
+                }
+            },
+            DocumentDetailsMessage::SyncToAllSources => {
+                let document = self.document.clone();
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    let result = document_provider
+                        .update_document(document)
+                        .await
+                        .map_err(|err| format!("{err}"));
+                    DocumentDetailsMessage::SyncedToAllSources(result)
+                })
+            }
+            DocumentDetailsMessage::SyncedToAllSources(result) => match result {
+                Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),
+                Err(err) => {
+                    tracing::error!("Failed to sync document to all sources: {err}");
                     Task::none()
                 }
             },

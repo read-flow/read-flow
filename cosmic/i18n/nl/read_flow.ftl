@@ -86,6 +86,7 @@ document-details-edit-sources = Bronnen bewerken
 document-details-send-to-missing = Verzenden naar
 document-details-source-local = Lokaal
 document-details-sources = Formaten
+document-details-sync-to-all-sources = Synchroniseren met alle bronnen
 document-details-upload-to = Uploaden naar { $host }
 
 # Document list
