@@ -16,9 +16,25 @@ scan-progress-scanning = Bezig met scannen… { $discovered } gevonden, { $proce
 scan-progress-completed = Laatste scan: { $discovered } gevonden, { $processed } verwerkt, { $errors } fouten
 view = Weergave
 
-app-file-sources = Document Bronnen
-app-settings-page-title = Weergave
 view-options = Weergaveopties
+
+# Preferences page
+preferences-page-title = Voorkeuren
+preferences-back = ← Voorkeuren
+preferences-appearance-section = Weergave
+preferences-appearance-section-description = Voorkeuren voor documentviewer en weergave
+preferences-library-section = Bibliotheek
+preferences-library-section-description = Locatie van het databasebestand
+preferences-downloads-section = Downloads
+preferences-downloads-section-description = Standaardmap voor gedownloade documenten
+preferences-scanning-section = Scannen
+preferences-scanning-section-description = Automatisch te scannen mappen en ondersteunde bestandstypen
+preferences-sources-section = Documentbronnen
+preferences-sources-section-description = Externe servers om documenten van te synchroniseren
+preferences-server-section = Server
+preferences-server-section-description = Servertoegang en geautoriseerde gebruikers
+preferences-privacy-section = Privacy
+preferences-privacy-section-description = Privémodus en verborgen tags
 
 # Generic messages
 generic-error = 🛑 Fout: { $error }

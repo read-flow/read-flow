@@ -16,9 +16,25 @@ scan-progress-scanning = Scanning… { $discovered } discovered, { $processed } 
 scan-progress-completed = Last scan: { $discovered } discovered, { $processed } processed, { $errors } errors
 view = View
 
-app-file-sources = Document Sources
-app-settings-page-title = Appearance
 view-options = View Options
+
+# Preferences page
+preferences-page-title = Preferences
+preferences-back = ← Preferences
+preferences-appearance-section = Appearance
+preferences-appearance-section-description = Document viewer and display preferences
+preferences-library-section = Library
+preferences-library-section-description = Database file location
+preferences-downloads-section = Downloads
+preferences-downloads-section-description = Default folder for downloaded documents
+preferences-scanning-section = Scanning
+preferences-scanning-section-description = Auto-scan directories and supported file types
+preferences-sources-section = Document Sources
+preferences-sources-section-description = Remote servers to sync documents from
+preferences-server-section = Server
+preferences-server-section-description = Server access and authorized users
+preferences-privacy-section = Privacy
+preferences-privacy-section-description = Private mode and hidden tags
 
 # Generic messages
 generic-error = 🛑 Error: { $error }

@@ -3,9 +3,25 @@
 app-title = Read Flow
 about = À propos
 actions = Actions
-app-file-sources = Sources de documents
-app-settings-page-title = Apparence
 view-options = Options d'affichage
+
+# Preferences page
+preferences-page-title = Préférences
+preferences-back = ← Préférences
+preferences-appearance-section = Apparence
+preferences-appearance-section-description = Préférences du lecteur de documents et d'affichage
+preferences-library-section = Bibliothèque
+preferences-library-section-description = Emplacement du fichier de base de données
+preferences-downloads-section = Téléchargements
+preferences-downloads-section-description = Dossier par défaut pour les documents téléchargés
+preferences-scanning-section = Analyse
+preferences-scanning-section-description = Répertoires d'analyse automatique et types de fichiers pris en charge
+preferences-sources-section = Sources de documents
+preferences-sources-section-description = Serveurs distants pour synchroniser les documents
+preferences-server-section = Serveur
+preferences-server-section-description = Accès au serveur et utilisateurs autorisés
+preferences-privacy-section = Confidentialité
+preferences-privacy-section-description = Mode privé et balises cachées
 context = Contexte
 repository = Dépôt
 scan = Analyser

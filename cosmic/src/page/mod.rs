@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // pages
-mod app_settings;
 mod dashboard;
 mod document_details;
 mod document_list;
@@ -8,15 +7,12 @@ mod epub_viewer;
 pub mod image_viewer;
 mod mu_pdf_viewer;
 mod online_library;
-mod settings;
-mod sources;
+mod preferences;
 mod traits;
 
 use core::panic;
 use std::sync::Arc;
 
-pub use app_settings::AppSettingsMessage;
-pub use app_settings::AppSettingsPage;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
@@ -34,9 +30,11 @@ use indexmap::IndexMap;
 pub use online_library::OnlineLibraryMessage;
 use online_library::OnlineLibraryOutput;
 pub use online_library::OnlineLibraryPage;
+pub use preferences::PreferencesMessage;
+pub use preferences::PreferencesOutput;
+pub use preferences::PreferencesPage;
 use read_flow_core::api::ReadingStatus;
 use read_flow_core::client::FilesClient;
-pub use sources::SourcesMessage;
 pub use traits::Page;
 use url::Url;
 
@@ -68,10 +66,6 @@ pub use crate::page::image_viewer::ViewerImage;
 use crate::page::mu_pdf_viewer::MuPdfViewer;
 use crate::page::mu_pdf_viewer::MuPdfViewerMessage;
 use crate::page::mu_pdf_viewer::MuPdfViewerOutput;
-pub use crate::page::settings::SettingsMessage;
-pub use crate::page::settings::SettingsPage;
-use crate::page::sources::SourcesOutput;
-pub use crate::page::sources::SourcesPage;
 use crate::subscription::SubscriberState;
 
 type Fingerprint = String;
@@ -88,8 +82,7 @@ pub struct Pages {
 
     epub_viewer_config: EpubViewerConfig,
     dashboard: DashboardPage,
-    app_settings: AppSettingsPage,
-    sources: SourcesPage,
+    preferences: PreferencesPage,
     online_library: OnlineLibraryPage,
     documents: DocumentList,
     document_details: IndexMap<Fingerprint, DocumentDetails>,
@@ -97,7 +90,6 @@ pub struct Pages {
     mu_pdf_viewers: IndexMap<Fingerprint, MuPdfViewer>,
     image_viewers: IndexMap<u64, ImageViewer>,
     next_image_viewer_id: u64,
-    settings: SettingsPage,
     active: PageSelector,
     page_order: IndexMap<PageSelector, PageInfo>,
 }
@@ -105,15 +97,13 @@ pub struct Pages {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PageSelector {
     Dashboard,
-    Sources,
+    Preferences,
     OnlineLibrary,
     Documents,
     DocumentDetails(Fingerprint),
     EpubViewer(Fingerprint),
     MuPdfViewer(Fingerprint),
     ImageViewer(u64),
-    AppSettings,
-    Settings,
 }
 
 #[derive(Debug, Clone)]
@@ -127,10 +117,10 @@ pub enum PageOutput {
 #[derive(Debug, Clone)]
 pub enum PageMessage {
     Dashboard(DashboardMessage),
-    Sources(SourcesMessage),
+    Preferences(PreferencesMessage),
     OnlineLibrary(OnlineLibraryMessage),
-    AddRemote(Url, String, String),       // url, user_id, passphrase
-    EditRemote(Url, Url, String, String), // old_url, new_url, user_id, passphrase
+    AddRemote(Url, String, String),
+    EditRemote(Url, Url, String, String),
     DeleteRemote(Url),
     Documents(DocumentListMessage),
     DocumentDetails(Fingerprint, DocumentDetailsMessage),
@@ -144,8 +134,6 @@ pub enum PageMessage {
     ImageViewer(u64, ImageViewerMessage),
     OpenImageViewer(ViewerImage),
     CloseImageViewer(u64),
-    AppSettings(AppSettingsMessage),
-    Settings(SettingsMessage),
     KeyEvent(PageSelector, Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(PageSelector, Modifiers),
     NavigateToDocumentsWithStatus(ReadingStatus),
@@ -153,12 +141,6 @@ pub enum PageMessage {
     Refresh,
     Noop,
     Out(PageOutput),
-}
-
-impl From<SourcesMessage> for PageMessage {
-    fn from(source: SourcesMessage) -> Self {
-        Self::Sources(source)
-    }
 }
 
 impl From<OnlineLibraryMessage> for PageMessage {
@@ -173,15 +155,9 @@ impl From<DocumentListMessage> for PageMessage {
     }
 }
 
-impl From<AppSettingsMessage> for PageMessage {
-    fn from(source: AppSettingsMessage) -> Self {
-        Self::AppSettings(source)
-    }
-}
-
-impl From<SettingsMessage> for PageMessage {
-    fn from(source: SettingsMessage) -> Self {
-        Self::Settings(source)
+impl From<PreferencesMessage> for PageMessage {
+    fn from(source: PreferencesMessage) -> Self {
+        Self::Preferences(source)
     }
 }
 
@@ -193,9 +169,9 @@ macro_rules! with_active_page {
                 let $mapper = map_dashboard_message;
                 $body
             }
-            PageSelector::Sources => {
-                let $page = Some(&$self.sources);
-                let $mapper = map_sources_message;
+            PageSelector::Preferences => {
+                let $page = Some(&$self.preferences);
+                let $mapper = map_preferences_message;
                 $body
             }
             PageSelector::OnlineLibrary => {
@@ -232,16 +208,6 @@ macro_rules! with_active_page {
                 let $mapper = move |msg| map_image_viewer_message(id, msg);
                 $body
             }
-            PageSelector::AppSettings => {
-                let $page = Some(&$self.app_settings);
-                let $mapper = map_app_settings_message;
-                $body
-            }
-            PageSelector::Settings => {
-                let $page = Some(&$self.settings);
-                let $mapper = map_settings_message;
-                $body
-            }
         }
     };
 }
@@ -256,10 +222,7 @@ impl Pages {
         config: Config,
     ) -> (Self, Task<Action<PageMessage>>) {
         let epub_viewer_config = config.epub_viewer;
-        let (app_settings, init_app_settings) = AppSettingsPage::new(config);
-        let (sources, init_sources) = SourcesPage::new(application_module.clone());
 
-        // Remote clients are loaded lazily via SourcesPage; start with only the local client.
         let clients = vec![application_module.clone().into()];
 
         let document_provider = Arc::new(DocumentProvider::new(Aggregator::new(
@@ -267,17 +230,18 @@ impl Pages {
             application_module.clone(),
         )));
 
-        let (settings, init_settings) =
-            SettingsPage::new(application_module.clone(), document_provider.clone());
+        let (preferences, init_preferences) = PreferencesPage::new(
+            application_module.clone(),
+            config,
+            document_provider.clone(),
+        );
 
         let (documents, init_documents) = DocumentList::new(document_provider.clone());
         let (dashboard, init_dashboard) = DashboardPage::new(document_provider.clone());
 
         let tasks = vec![
-            init_app_settings.map(ActionExt::map_into),
-            init_sources.map(ActionExt::map_into),
+            init_preferences.map(ActionExt::map_into),
             init_documents.map(ActionExt::map_into),
-            init_settings.map(ActionExt::map_into),
             init_dashboard.map(|action| action.map(map_dashboard_message)),
         ];
 
@@ -289,8 +253,7 @@ impl Pages {
                 application_module,
                 epub_viewer_config,
                 dashboard,
-                app_settings,
-                sources,
+                preferences,
                 online_library,
                 documents,
                 document_details: Default::default(),
@@ -298,7 +261,6 @@ impl Pages {
                 mu_pdf_viewers: Default::default(),
                 image_viewers: Default::default(),
                 next_image_viewer_id: 0,
-                settings,
                 active: PageSelector::Dashboard,
                 page_order: Default::default(),
             },
@@ -308,7 +270,7 @@ impl Pages {
 
     pub fn update_app_config(&mut self, config: &Config) {
         self.epub_viewer_config = config.epub_viewer;
-        self.app_settings.update_config(config.clone());
+        self.preferences.update_config(config.clone());
     }
 
     pub fn active_page(&self) -> &PageSelector {
@@ -344,9 +306,6 @@ impl Pages {
         if let Some(info) = self.page_order.swap_remove(selector)
             && self.active == *selector
         {
-            // Only use the recorded parent if it is still in page_order; a
-            // chain of closures can remove a parent before its child is
-            // deactivated, so fall back to Documents in that case.
             self.active = info
                 .parent
                 .filter(|p| self.page_order.contains_key(p))
@@ -354,7 +313,6 @@ impl Pages {
         }
     }
 
-    /// Returns the nav sidebar item for the given page, if the page contributes one.
     pub fn nav_tree(
         &self,
         selector: &PageSelector,
@@ -368,7 +326,7 @@ impl Pages {
     pub fn display_name<'a>(&'a self, page_selector: &'a PageSelector) -> String {
         match &page_selector {
             PageSelector::Dashboard => fl!("dashboard-page-title"),
-            PageSelector::Sources => fl!("app-file-sources"),
+            PageSelector::Preferences => fl!("preferences-page-title"),
             PageSelector::OnlineLibrary => fl!("online-library-page-title"),
             PageSelector::Documents => "Documents".to_string(),
             PageSelector::DocumentDetails(fingerprint) => self
@@ -391,8 +349,6 @@ impl Pages {
                 .get(id)
                 .map(|p| p.display_name())
                 .unwrap_or_default(),
-            PageSelector::AppSettings => fl!("app-settings-page-title"),
-            PageSelector::Settings => fl!("settings-page-title"),
         }
     }
 
@@ -524,7 +480,7 @@ impl Pages {
                     action.map(|msg| map_document_details_message(fingerprint.clone(), msg))
                 }),
             PageMessage::AddRemote(url, user_id, passphrase) => {
-                let private_mode = self.settings.current_private_mode();
+                let private_mode = self.preferences.current_private_mode();
                 let document_provider = self.document_provider.clone();
                 task::future(async move {
                     tracing::debug!("adding remote client: {url}");
@@ -540,7 +496,7 @@ impl Pages {
             }
             PageMessage::EditRemote(old_url, new_url, user_id, passphrase) => {
                 let selector = ClientSelector::Remote(old_url);
-                let private_mode = self.settings.current_private_mode();
+                let private_mode = self.preferences.current_private_mode();
                 let document_provider = self.document_provider.clone();
                 task::future(async move {
                     document_provider.remove_client(&selector).await;
@@ -563,10 +519,10 @@ impl Pages {
                     PageMessage::Noop
                 })
             }
-            PageMessage::Sources(sources_message) => self
-                .sources
-                .update(sources_message)
-                .map(move |action| action.map(map_sources_message)),
+            PageMessage::Preferences(preferences_message) => self
+                .preferences
+                .update(preferences_message)
+                .map(move |action| action.map(map_preferences_message)),
             PageMessage::OnlineLibrary(msg) => self
                 .online_library
                 .update(msg)
@@ -575,14 +531,6 @@ impl Pages {
                 .documents
                 .update(document_list_message)
                 .map(move |action| action.map(map_document_list_message)),
-            PageMessage::AppSettings(message) => self
-                .app_settings
-                .update(message)
-                .map(move |action| action.map(map_app_settings_message)),
-            PageMessage::Settings(settings_message) => self
-                .settings
-                .update(settings_message)
-                .map(move |action| action.map(map_settings_message)),
             PageMessage::CloseDocumentDetails(fingerprint) => {
                 let selector = PageSelector::DocumentDetails(fingerprint.clone());
                 let _ = self.document_details.swap_remove(&fingerprint);
@@ -597,9 +545,7 @@ impl Pages {
                     .map(|c| c.type_.get_file_type_icon())
                     .unwrap_or("text-x-generic-symbolic");
 
-                // Only create new document_details if it does not yet exist
                 if self.document_details.contains_key(&fingerprint) {
-                    // Page already exists, just navigate to it
                     task::message(PageMessage::Out(PageOutput::TogglePage(
                         PageSelector::DocumentDetails(fingerprint),
                     )))
@@ -849,8 +795,6 @@ impl Pages {
                 Some(parent),
             );
             self.active = selector.clone();
-            // PageAdded in a batch (not chained) so the viewer page opens
-            // immediately while the initialization stream runs in the background.
             Task::batch([
                 initialization.map(move |action| {
                     let fingerprint = fingerprint_1.clone();
@@ -911,10 +855,10 @@ fn map_dashboard_message(msg: DashboardMessage) -> PageMessage {
                 PageMessage::NavigateToDocumentsWithType(type_)
             }
             DashboardOutput::NavigateToSettings => {
-                PageMessage::Out(PageOutput::TogglePage(PageSelector::Settings))
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::Preferences))
             }
             DashboardOutput::NavigateToSources => {
-                PageMessage::Out(PageOutput::TogglePage(PageSelector::Sources))
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::Preferences))
             }
             DashboardOutput::NavigateToOnlineLibrary => {
                 PageMessage::Out(PageOutput::TogglePage(PageSelector::OnlineLibrary))
@@ -935,18 +879,18 @@ fn map_online_library_message(msg: OnlineLibraryMessage) -> PageMessage {
     }
 }
 
-fn map_sources_message(msg: SourcesMessage) -> PageMessage {
+fn map_preferences_message(msg: PreferencesMessage) -> PageMessage {
     match msg {
-        SourcesMessage::Out(message) => match message {
-            SourcesOutput::Added(url, user_id, passphrase) => {
+        PreferencesMessage::Out(output) => match output {
+            PreferencesOutput::SourceAdded(url, user_id, passphrase) => {
                 PageMessage::AddRemote(url, user_id, passphrase)
             }
-            SourcesOutput::Edited(old_url, new_url, user_id, passphrase) => {
+            PreferencesOutput::SourceEdited(old_url, new_url, user_id, passphrase) => {
                 PageMessage::EditRemote(old_url, new_url, user_id, passphrase)
             }
-            SourcesOutput::Deleted(url) => PageMessage::DeleteRemote(url),
+            PreferencesOutput::SourceDeleted(url) => PageMessage::DeleteRemote(url),
         },
-        msg => msg.into(),
+        msg => PageMessage::Preferences(msg),
     }
 }
 
@@ -956,7 +900,7 @@ fn map_document_list_message(msg: DocumentListMessage) -> PageMessage {
             DocumentListOutput::OpenDetails(document) => PageMessage::OpenDocumentDetails(document),
             DocumentListOutput::OpenDocument(document) => PageMessage::OpenDocument(document),
             DocumentListOutput::NavigateToSettings => {
-                PageMessage::Out(PageOutput::TogglePage(PageSelector::Settings))
+                PageMessage::Out(PageOutput::TogglePage(PageSelector::Preferences))
             }
             DocumentListOutput::Scan => PageMessage::Out(PageOutput::Scan),
         },
@@ -1024,14 +968,6 @@ fn map_image_viewer_message(id: u64, msg: ImageViewerMessage) -> PageMessage {
     }
 }
 
-fn map_app_settings_message(msg: AppSettingsMessage) -> PageMessage {
-    PageMessage::AppSettings(msg)
-}
-
-fn map_settings_message(msg: SettingsMessage) -> PageMessage {
-    PageMessage::Settings(msg)
-}
-
 /// Generate an ISO 8601 UTC timestamp string from the current system time.
 fn iso8601_now() -> String {
     use std::time::SystemTime;
@@ -1048,7 +984,6 @@ fn iso8601_now() -> String {
     let minutes = (time_of_day % 3600) / 60;
     let seconds = time_of_day % 60;
 
-    // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm)
     let z = days + 719468;
     let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
     let doe = (z - era * 146097) as u64;

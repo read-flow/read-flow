@@ -43,19 +43,13 @@ use crate::bdd::rest_driver;
 use crate::client::ClientSelector;
 use crate::config::EpubViewerConfig;
 use crate::document_provider::DocumentProvider;
-use crate::page::AppSettingsMessage;
-use crate::page::AppSettingsPage;
 use crate::page::Page;
-use crate::page::SettingsMessage;
-use crate::page::SettingsPage;
-use crate::page::SourcesMessage;
-use crate::page::SourcesPage;
+use crate::page::PreferencesMessage;
+use crate::page::PreferencesPage;
 
 pub struct CosmicDriver {
     application_module: Arc<ApplicationModule>,
-    sources_page: SourcesPage,
-    settings_page: SettingsPage,
-    app_settings_page: AppSettingsPage,
+    preferences_page: PreferencesPage,
     document_provider: Arc<DocumentProvider>,
     /// A real, network-reachable backend for `Remote`s to point at —
     /// `CheckSourceStatus` makes an actual HTTP call, so there must be
@@ -89,29 +83,20 @@ impl CosmicDriver {
                 .expect("build application module"),
         );
 
-        let (sources_page, init_task) = SourcesPage::new(application_module.clone());
-        drain(init_task).await;
-
-        // Mirrors `Pages::new`'s construction (see `page/mod.rs`) — `SettingsPage`
-        // needs a `DocumentProvider` for its private-tags `TagEditor`, built the
-        // same way: an `Aggregator` over just the local client.
         let document_provider = Arc::new(DocumentProvider::new(Aggregator::new(
             vec![application_module.clone().into()],
             application_module.clone(),
         )));
-        let (settings_page, init_settings_task) =
-            SettingsPage::new(application_module.clone(), document_provider.clone());
-        drain(init_settings_task).await;
-
-        let (app_settings_page, init_app_settings_task) =
-            AppSettingsPage::new(crate::config::Config::default());
-        drain(init_app_settings_task).await;
+        let (preferences_page, init_task) = PreferencesPage::new(
+            application_module.clone(),
+            crate::config::Config::default(),
+            document_provider.clone(),
+        );
+        drain(init_task).await;
 
         Self {
             application_module,
-            sources_page,
-            settings_page,
-            app_settings_page,
+            preferences_page,
             document_provider,
             server,
             _temp_dir: temp_dir,
@@ -146,14 +131,14 @@ impl CosmicDriver {
     /// what the PWA asserts on screen and RestDriver reads from `/status`.
     pub async fn check_source_status(&mut self, remote: &Remote) -> bool {
         let messages = drain(
-            self.sources_page
-                .update(SourcesMessage::CheckSourceStatus(remote.clone())),
+            self.preferences_page
+                .update(PreferencesMessage::CheckSourceStatus(remote.clone())),
         )
         .await;
         messages
             .into_iter()
             .find_map(|message| match message {
-                SourcesMessage::SetSourceStatus(id, reachable) if id == remote.id => {
+                PreferencesMessage::SetSourceStatus(id, reachable) if id == remote.id => {
                     Some(reachable)
                 }
                 _ => None,
@@ -203,15 +188,15 @@ impl CosmicDriver {
     /// `Save`'s `task::future` resolving to `SaveComplete` is exactly that.
     pub async fn enable_dry_run_and_save(&mut self) {
         drain(
-            self.settings_page
-                .update(SettingsMessage::ToggleDryRun(true)),
+            self.preferences_page
+                .update(PreferencesMessage::ToggleDryRun(true)),
         )
         .await;
-        let messages = drain(self.settings_page.update(SettingsMessage::Save)).await;
+        let messages = drain(self.preferences_page.update(PreferencesMessage::Save)).await;
         assert!(
             messages
                 .iter()
-                .any(|message| matches!(message, SettingsMessage::SaveComplete)),
+                .any(|message| matches!(message, PreferencesMessage::SaveComplete)),
             "Save did not complete"
         );
     }
@@ -492,15 +477,15 @@ impl CosmicDriver {
 
     pub async fn enable_private_mode(&mut self) {
         drain(
-            self.settings_page
-                .update(SettingsMessage::TogglePrivateMode(true)),
+            self.preferences_page
+                .update(PreferencesMessage::TogglePrivateMode(true)),
         )
         .await;
-        let messages = drain(self.settings_page.update(SettingsMessage::Save)).await;
+        let messages = drain(self.preferences_page.update(PreferencesMessage::Save)).await;
         assert!(
             messages
                 .iter()
-                .any(|m| matches!(m, SettingsMessage::SaveComplete)),
+                .any(|m| matches!(m, PreferencesMessage::SaveComplete)),
             "Save did not complete"
         );
     }
@@ -751,14 +736,14 @@ impl CosmicDriver {
             _ => EpubViewerConfig::NativeEpub,
         };
         drain(
-            self.app_settings_page
-                .update(AppSettingsMessage::SetEpubViewer(config)),
+            self.preferences_page
+                .update(PreferencesMessage::SetEpubViewer(config)),
         )
         .await;
     }
 
     pub fn epub_viewer_choice(&self) -> &str {
-        match self.app_settings_page.epub_viewer() {
+        match self.preferences_page.epub_viewer() {
             EpubViewerConfig::NativeEpub => "NativeEpub",
             EpubViewerConfig::MuPdf => "MuPdf",
             EpubViewerConfig::ExternalViewer => "ExternalViewer",

@@ -43,7 +43,7 @@ use crate::page::PageMessage;
 use crate::page::PageOutput;
 use crate::page::PageSelector;
 use crate::page::Pages;
-use crate::page::SourcesMessage;
+use crate::page::PreferencesMessage;
 use crate::page::settings_invalidation_subscription;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -187,13 +187,6 @@ impl cosmic::Application for ReadFlow {
             label,
             None,
         );
-        let label = pages.display_name(&PageSelector::Sources);
-        pages.register_page(
-            PageSelector::Sources,
-            "network-server-symbolic",
-            label,
-            None,
-        );
         let label = pages.display_name(&PageSelector::OnlineLibrary);
         pages.register_page(
             PageSelector::OnlineLibrary,
@@ -201,16 +194,9 @@ impl cosmic::Application for ReadFlow {
             label,
             None,
         );
-        let label = pages.display_name(&PageSelector::AppSettings);
+        let label = pages.display_name(&PageSelector::Preferences);
         pages.register_page(
-            PageSelector::AppSettings,
-            "preferences-desktop-symbolic",
-            label,
-            None,
-        );
-        let label = pages.display_name(&PageSelector::Settings);
-        pages.register_page(
-            PageSelector::Settings,
+            PageSelector::Preferences,
             "preferences-system-symbolic",
             label,
             None,
@@ -587,9 +573,9 @@ impl cosmic::Application for ReadFlow {
                 self.pages.activate(selector.clone());
                 let mut tasks = vec![self.update_title()];
                 match &selector {
-                    PageSelector::Sources => {
+                    PageSelector::Preferences => {
                         tasks.push(task::message(cosmic::Action::App(Message::Page(Box::new(
-                            PageMessage::Sources(SourcesMessage::RefreshStatuses),
+                            PageMessage::Preferences(PreferencesMessage::RefreshStatuses),
                         )))));
                     }
                     PageSelector::Documents => {
