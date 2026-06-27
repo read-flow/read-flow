@@ -282,6 +282,7 @@ impl PreferencesPage {
         self.config = config;
     }
 
+    #[cfg(test)]
     pub fn epub_viewer(&self) -> EpubViewerConfig {
         self.config.epub_viewer
     }
