@@ -360,5 +360,6 @@ online-library-layout-section-title = Disposition
 online-library-no-results = Aucun résultat trouvé
 online-library-page-title = Bibliothèques en ligne
 online-library-pick-format = Choisir le format
+online-library-search-button = Rechercher
 online-library-search-placeholder = Rechercher des livres…
 online-library-searching = Recherche en cours…

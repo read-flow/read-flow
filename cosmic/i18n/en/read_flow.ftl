@@ -363,5 +363,6 @@ online-library-layout-section-title = Layout
 online-library-no-results = No results found
 online-library-page-title = Online Libraries
 online-library-pick-format = Choose format
+online-library-search-button = Search
 online-library-search-placeholder = Search books…
 online-library-searching = Searching…

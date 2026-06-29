@@ -34,8 +34,6 @@ use crate::layout::layout;
 use crate::page::Page;
 use crate::state::LoadedState;
 
-const DEBOUNCE_MS: u64 = 400;
-
 // ─── State ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -50,7 +48,6 @@ pub struct OnlineLibraryPage {
     application_module: Arc<ApplicationModule>,
     search_query: String,
     search_input_id: widget::Id,
-    debounce_counter: u32,
     search_state: LoadedState<Vec<OnlineBook>>,
     /// Cached catalog list, populated after the first search.
     catalogs: Vec<OnlineCatalog>,
@@ -79,8 +76,8 @@ enum DownloadBookState {
 /// @feature: online_library.download_import
 pub enum OnlineLibraryMessage {
     SearchChanged(String),
+    SearchSubmitted,
     ClearSearch,
-    DebounceTimeout(u32, String),
     SearchStarted,
     SearchCompleted(Vec<OnlineBook>, Vec<OnlineCatalog>, HashMap<String, String>),
     /// Selects the catalog at index `i`; `None` means "all catalogs".
@@ -113,7 +110,6 @@ impl OnlineLibraryPage {
             application_module,
             search_query: String::new(),
             search_input_id: widget::Id::unique(),
-            debounce_counter: 0,
             search_state: LoadedState::New,
             catalogs: Vec::new(),
             selected_catalog_index: None,
@@ -132,6 +128,7 @@ impl OnlineLibraryPage {
             .id(self.search_input_id.clone())
             .always_active()
             .on_input(OnlineLibraryMessage::SearchChanged)
+            .on_submit(|_| OnlineLibraryMessage::SearchSubmitted)
             .on_clear(OnlineLibraryMessage::ClearSearch)
     }
 }
@@ -196,7 +193,12 @@ impl Page for OnlineLibraryPage {
         if !show {
             return vec![];
         }
-        let search = self.search_bar().width(Length::Fixed(300.0));
+        let search =
+            widget::search_input(fl!("online-library-search-placeholder"), &self.search_query)
+                .id(self.search_input_id.clone())
+                .always_active()
+                .on_clear(OnlineLibraryMessage::ClearSearch)
+                .width(Length::Fixed(300.0));
         vec![search.into()]
     }
 
@@ -296,13 +298,17 @@ impl Page for OnlineLibraryPage {
     fn update(&mut self, message: OnlineLibraryMessage) -> Task<Action<OnlineLibraryMessage>> {
         match message {
             OnlineLibraryMessage::SearchChanged(query) => {
-                self.search_query = query.clone();
-                self.debounce_counter += 1;
-                let counter = self.debounce_counter;
-                task::future(async move {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(DEBOUNCE_MS)).await;
-                    OnlineLibraryMessage::DebounceTimeout(counter, query)
-                })
+                self.search_query = query;
+                Task::none()
+            }
+
+            OnlineLibraryMessage::SearchSubmitted => {
+                if self.search_query.is_empty() {
+                    self.search_state = LoadedState::New;
+                    Task::none()
+                } else {
+                    task::message(OnlineLibraryMessage::SearchStarted)
+                }
             }
 
             OnlineLibraryMessage::ClearSearch => {
@@ -312,23 +318,9 @@ impl Page for OnlineLibraryPage {
                 self.next_urls.clear();
                 self.pagination.has_more = false;
                 self.fetching_more = false;
-                self.debounce_counter += 1;
                 self.pagination.collection_size = 0;
                 self.pagination.index = 0;
                 Task::none()
-            }
-
-            OnlineLibraryMessage::DebounceTimeout(counter, query) => {
-                if counter == self.debounce_counter {
-                    if query.is_empty() {
-                        self.search_state = LoadedState::New;
-                        Task::none()
-                    } else {
-                        task::message(OnlineLibraryMessage::SearchStarted)
-                    }
-                } else {
-                    Task::none()
-                }
             }
 
             OnlineLibraryMessage::SearchStarted => {
@@ -616,7 +608,15 @@ impl OnlineLibraryPage {
             .push(widget::text::title2(fl!("online-library-welcome-title")))
             .push(widget::text(fl!("online-library-welcome-subtitle")).width(Length::Fixed(460.0)));
 
-        let search_bar = self.search_bar().width(Length::Fixed(440.0));
+        let search_row = widget::row::with_children(vec![
+            self.search_bar().width(Length::Fill).into(),
+            widget::button::suggested(fl!("online-library-search-button"))
+                .on_press(OnlineLibraryMessage::SearchSubmitted)
+                .into(),
+        ])
+        .spacing(space_s)
+        .align_y(Vertical::Center)
+        .width(Length::Fixed(480.0));
 
         let hints = widget::row::with_children(vec![
             hint_card(
@@ -666,7 +666,7 @@ impl OnlineLibraryPage {
                     .spacing(space_l)
                     .align_x(Horizontal::Center)
                     .push(hero_section)
-                    .push(search_bar)
+                    .push(search_row)
                     .push(below_search),
             )
             .max_width(700.0),

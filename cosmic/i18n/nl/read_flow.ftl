@@ -361,5 +361,6 @@ online-library-layout-section-title = Weergave
 online-library-no-results = Geen resultaten gevonden
 online-library-page-title = Online bibliotheken
 online-library-pick-format = Kies formaat
+online-library-search-button = Zoeken
 online-library-search-placeholder = Zoek boeken…
 online-library-searching = Zoeken…
