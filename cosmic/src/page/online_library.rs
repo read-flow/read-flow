@@ -15,6 +15,7 @@ use cosmic::iced::alignment::Vertical;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
+use cosmic::widget::Column;
 use read_flow_core::api::FileDataSource;
 use read_flow_core::online_library::DownloadFormat;
 use read_flow_core::online_library::OnlineBook;
@@ -125,6 +126,14 @@ impl OnlineLibraryPage {
             pagination: Pagination::default(),
         }
     }
+
+    fn search_bar(&self) -> widget::TextInput<'_, OnlineLibraryMessage> {
+        widget::search_input(fl!("online-library-search-placeholder"), &self.search_query)
+            .id(self.search_input_id.clone())
+            .always_active()
+            .on_input(OnlineLibraryMessage::SearchChanged)
+            .on_clear(OnlineLibraryMessage::ClearSearch)
+    }
 }
 
 impl Page for OnlineLibraryPage {
@@ -132,41 +141,7 @@ impl Page for OnlineLibraryPage {
 
     fn view(&self) -> Element<'_, OnlineLibraryMessage> {
         let content: Element<'_, OnlineLibraryMessage> = match &self.search_state {
-            LoadedState::New => widget::text(fl!("online-library-empty-state"))
-                .apply(widget::container)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-
-            LoadedState::Loading => widget::text(fl!("online-library-searching"))
-                .apply(widget::container)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-
-            LoadedState::Failed(err) => widget::text(err.as_str())
-                .apply(widget::container)
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-
-            LoadedState::Loaded(books) if books.is_empty() => {
-                widget::text(fl!("online-library-no-results"))
-                    .apply(widget::container)
-                    .align_x(Horizontal::Center)
-                    .align_y(Vertical::Center)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into()
-            }
-
-            LoadedState::Loaded(books) => {
+            LoadedState::Loaded(books) if !books.is_empty() => {
                 let visible: Vec<&OnlineBook> = self.pagination.filter_visible(books).collect();
 
                 let items: Vec<Element<'_, OnlineLibraryMessage>> = match self.results_layout {
@@ -206,6 +181,8 @@ impl Page for OnlineLibraryPage {
                     .height(Length::Fill)
                     .into()
             }
+
+            _ => self.view_empty_state(),
         };
 
         widget::container(content)
@@ -215,13 +192,11 @@ impl Page for OnlineLibraryPage {
     }
 
     fn view_header_center(&self) -> Vec<Element<'_, OnlineLibraryMessage>> {
-        let search =
-            widget::search_input(fl!("online-library-search-placeholder"), &self.search_query)
-                .id(self.search_input_id.clone())
-                .always_active()
-                .on_input(OnlineLibraryMessage::SearchChanged)
-                .on_clear(OnlineLibraryMessage::ClearSearch)
-                .width(Length::Fixed(300.0));
+        let show = matches!(&self.search_state, LoadedState::Loaded(books) if !books.is_empty());
+        if !show {
+            return vec![];
+        }
+        let search = self.search_bar().width(Length::Fixed(300.0));
         vec![search.into()]
     }
 
@@ -614,6 +589,116 @@ impl Page for OnlineLibraryPage {
             }
         }
     }
+}
+
+// ─── Empty state ──────────────────────────────────────────────────────────────
+
+impl OnlineLibraryPage {
+    fn view_empty_state(&self) -> Element<'_, OnlineLibraryMessage> {
+        let cosmic_theme::Spacing {
+            space_s,
+            space_m,
+            space_l,
+            space_xl,
+            ..
+        } = theme::active().cosmic().spacing;
+
+        let is_new = matches!(self.search_state, LoadedState::New);
+
+        let hero_section = Column::new()
+            .spacing(space_m)
+            .align_x(Horizontal::Center)
+            .push(
+                widget::icon::from_name("accessories-dictionary-symbolic")
+                    .size(80)
+                    .icon(),
+            )
+            .push(widget::text::title2(fl!("online-library-welcome-title")))
+            .push(widget::text(fl!("online-library-welcome-subtitle")).width(Length::Fixed(460.0)));
+
+        let search_bar = self.search_bar().width(Length::Fixed(440.0));
+
+        let hints = widget::row::with_children(vec![
+            hint_card(
+                "system-search-symbolic",
+                fl!("online-library-hint-search-title"),
+                fl!("online-library-hint-search-body"),
+                space_s,
+                space_m,
+            ),
+            hint_card(
+                "folder-download-symbolic",
+                fl!("online-library-hint-download-title"),
+                fl!("online-library-hint-download-body"),
+                space_s,
+                space_m,
+            ),
+            hint_card(
+                "user-bookmarks-symbolic",
+                fl!("online-library-hint-library-title"),
+                fl!("online-library-hint-library-body"),
+                space_s,
+                space_m,
+            ),
+        ])
+        .spacing(space_m)
+        .width(Length::Fill);
+
+        let mut below_search = Column::new().spacing(space_m).width(Length::Fill);
+        if !is_new {
+            let status_text = match &self.search_state {
+                LoadedState::Loading => fl!("online-library-searching"),
+                LoadedState::Loaded(_) => fl!("online-library-no-results"),
+                LoadedState::Failed(err) => err.clone(),
+                LoadedState::New => unreachable!(),
+            };
+            below_search = below_search.push(
+                widget::text(status_text)
+                    .apply(widget::container)
+                    .center_x(Length::Fill),
+            );
+        }
+        let below_search: Element<'_, OnlineLibraryMessage> = below_search.push(hints).into();
+
+        widget::container(
+            widget::container(
+                Column::new()
+                    .spacing(space_l)
+                    .align_x(Horizontal::Center)
+                    .push(hero_section)
+                    .push(search_bar)
+                    .push(below_search),
+            )
+            .max_width(700.0),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .padding(space_xl)
+        .into()
+    }
+}
+
+fn hint_card<'a>(
+    icon_name: &'static str,
+    title: String,
+    body: String,
+    space_s: u16,
+    space_m: u16,
+) -> Element<'a, OnlineLibraryMessage> {
+    Column::new()
+        .spacing(space_s)
+        .align_x(Horizontal::Center)
+        .push(widget::icon::from_name(icon_name).size(32).icon())
+        .push(widget::text::heading(title))
+        .push(widget::text(body).width(Length::Fill))
+        .width(Length::Fill)
+        .apply(widget::container)
+        .class(cosmic::theme::Container::Card)
+        .padding(space_m)
+        .width(Length::Fill)
+        .into()
 }
 
 // ─── Shared action area ───────────────────────────────────────────────────────
