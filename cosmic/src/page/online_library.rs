@@ -32,6 +32,7 @@ use crate::component::pagination::PaginationOutput;
 use crate::fl;
 use crate::layout::layout;
 use crate::page::Page;
+use crate::render_blocks;
 use crate::state::LoadedState;
 
 // ─── State ───────────────────────────────────────────────────────────────────
@@ -59,6 +60,8 @@ pub struct OnlineLibraryPage {
     next_urls: HashMap<String, String>,
     fetching_more: bool,
     selected_book: Option<OnlineBook>,
+    /// Parsed HTML blocks for `selected_book.summary_html`, cached on selection.
+    selected_book_blocks: Vec<epub::ContentBlock>,
     results_layout: ResultsLayout,
     pagination: Pagination,
 }
@@ -119,6 +122,7 @@ impl OnlineLibraryPage {
             next_urls: HashMap::new(),
             fetching_more: false,
             selected_book: None,
+            selected_book_blocks: Vec::new(),
             results_layout: ResultsLayout::default(),
             pagination: Pagination::default(),
         }
@@ -236,6 +240,7 @@ impl Page for OnlineLibraryPage {
                 self.pagination.collection_size = 0;
                 self.pagination.index = 0;
                 self.selected_book = None;
+                self.selected_book_blocks.clear();
                 Task::none()
             }
 
@@ -245,6 +250,7 @@ impl Page for OnlineLibraryPage {
                 self.next_urls.clear();
                 self.pagination.has_more = false;
                 self.selected_book = None;
+                self.selected_book_blocks.clear();
                 let am = self.application_module.clone();
                 let query = self.search_query.clone();
                 let catalog_index = self.selected_catalog_index;
@@ -345,12 +351,18 @@ impl Page for OnlineLibraryPage {
             }
 
             OnlineLibraryMessage::SelectBook(book) => {
+                self.selected_book_blocks = book
+                    .summary_html
+                    .as_deref()
+                    .map(epub::parse_html_fragment)
+                    .unwrap_or_default();
                 self.selected_book = Some(book);
                 task::message(OnlineLibraryMessage::Out(OnlineLibraryOutput::OpenContext))
             }
 
             OnlineLibraryMessage::ClearSelectedBook => {
                 self.selected_book = None;
+                self.selected_book_blocks.clear();
                 Task::none()
             }
 
@@ -604,12 +616,15 @@ impl OnlineLibraryPage {
             })
             .push(catalog_badge);
 
-        let summary: Element<'_, OnlineLibraryMessage> = match &book.summary {
-            Some(s) => widget::text(s.as_str()).into(),
-            None => widget::text(fl!("online-library-no-description"))
+        let summary: Element<'_, OnlineLibraryMessage> = if !self.selected_book_blocks.is_empty() {
+            render_blocks::render_blocks(&self.selected_book_blocks, 16.0)
+        } else if let Some(s) = &book.summary {
+            widget::text(s.as_str()).width(Length::Fill).into()
+        } else {
+            widget::text(fl!("online-library-no-description"))
                 .apply(widget::container)
                 .class(cosmic::theme::Container::Card)
-                .into(),
+                .into()
         };
 
         let formats: Element<'_, OnlineLibraryMessage> = match self.download_state.get(&book.id) {

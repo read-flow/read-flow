@@ -45,6 +45,9 @@ pub struct OnlineBook {
     pub title: String,
     pub authors: Vec<String>,
     pub summary: Option<String>,
+    /// Raw HTML collected from `<content type="html">` or serialized from
+    /// `<content type="xhtml">`. Preferred over `summary` for display when present.
+    pub summary_html: Option<String>,
     pub cover_url: Option<String>,
     pub formats: Vec<DownloadFormat>,
     pub catalog_name: String,
@@ -290,6 +293,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
     let mut cur_title = String::new();
     let mut cur_authors: Vec<String> = Vec::new();
     let mut cur_summary: Option<String> = None;
+    let mut cur_summary_html: Option<String> = None;
     let mut cur_cover_url: Option<String> = None;
     let mut cur_formats: Vec<DownloadFormat> = Vec::new();
     let mut cur_subsection_url: Option<String> = None;
@@ -309,6 +313,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                         cur_title.clear();
                         cur_authors.clear();
                         cur_summary = None;
+                        cur_summary_html = None;
                         cur_cover_url = None;
                         cur_formats.clear();
                         cur_subsection_url = None;
@@ -324,12 +329,29 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                         cur_text.clear();
                     }
                     b"summary" | b"content" if in_entry => {
-                        let is_html = get_attr(e, b"type").as_deref() == Some("html");
-                        if !is_html {
-                            collecting = Some(Collecting::Summary);
-                            cur_text.clear();
+                        let content_type = get_attr(e, b"type").unwrap_or_default();
+                        match content_type.as_str() {
+                            "html" => {
+                                // Inner loop consumes </content> and returns the decoded HTML.
+                                let raw = collect_html_content(&mut reader);
+                                if !raw.trim().is_empty() {
+                                    cur_summary_html = Some(raw);
+                                }
+                            }
+                            "xhtml" => {
+                                // Collect inner XHTML nodes as an HTML string.
+                                let raw = collect_xhtml_inner(&mut reader);
+                                if !raw.trim().is_empty() {
+                                    cur_summary_html = Some(raw);
+                                }
+                                // Inner loop consumed </content>; skip outer End handling.
+                            }
+                            _ => {
+                                // type="text" or no type → plain text
+                                collecting = Some(Collecting::Summary);
+                                cur_text.clear();
+                            }
                         }
-                        // HTML content is skipped; plain-text <summary> is preferred
                     }
                     b"author" if in_entry => {
                         in_author = true;
@@ -349,7 +371,10 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                     b"link" if get_attr(e, b"rel").as_deref() == Some("next") => {
                         feed_next_url = get_attr(e, b"href");
                     }
-                    _ => {}
+                    _ => {
+                        let t = std::str::from_utf8(local).unwrap();
+                        tracing::debug!("ignoring unhandled tag: `{t}`");
+                    }
                 }
             }
 
@@ -389,6 +414,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                                 title: cur_title.clone(),
                                 authors: cur_authors.clone(),
                                 summary: cur_summary.clone(),
+                                summary_html: cur_summary_html.clone(),
                                 cover_url: cur_cover_url.clone(),
                                 formats: cur_formats.clone(),
                                 catalog_name: catalog_name.to_string(),
@@ -422,7 +448,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                         }
                     }
                     b"summary" | b"content" if in_entry => {
-                        if matches!(collecting, Some(Collecting::Summary)) {
+                        if let Some(Collecting::Summary) = collecting {
                             let s = cur_text.trim().to_string();
                             if !s.is_empty() {
                                 cur_summary = Some(s);
@@ -616,6 +642,142 @@ fn mime_to_extension(mime: &str) -> &str {
     }
 }
 
+// ─── HTML / XHTML content collectors ────────────────────────────────────────
+
+/// Reads events from `reader` starting just after `<content type="html">`,
+/// decodes XML entity references (e.g. `&lt;` → `<`), and returns the plain
+/// HTML string. Consumes the matching `</content>` end tag before returning.
+/// Temporarily disables text trimming so intra-tag spaces are preserved.
+fn collect_html_content(reader: &mut Reader<&[u8]>) -> String {
+    let trim_start = reader.config().trim_text_start;
+    let trim_end = reader.config().trim_text_end;
+    reader.config_mut().trim_text_start = false;
+    reader.config_mut().trim_text_end = false;
+
+    let mut buf = Vec::new();
+    let mut result = String::new();
+
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Text(ref e)) => {
+                if let Ok(t) = e.decode() {
+                    result.push_str(&t);
+                }
+            }
+            Ok(Event::GeneralRef(ref e)) => {
+                if let Some(ch) = resolve_predefined_entity(e) {
+                    result.push(ch);
+                }
+            }
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+
+    reader.config_mut().trim_text_start = trim_start;
+    reader.config_mut().trim_text_end = trim_end;
+    result
+}
+
+/// Resolve the five predefined XML entities and numeric character references.
+/// Returns `None` for unknown named entity references.
+fn resolve_predefined_entity(e: &quick_xml::events::BytesRef<'_>) -> Option<char> {
+    let name = e.decode().ok()?;
+    match name.as_ref() {
+        "lt" => Some('<'),
+        "gt" => Some('>'),
+        "amp" => Some('&'),
+        "apos" => Some('\''),
+        "quot" => Some('"'),
+        _ => e.resolve_char_ref().ok()?,
+    }
+}
+
+/// Reads events from `reader` starting just after `<content type="xhtml">` and
+/// serialises the inner XML nodes to an HTML string. Consumes the matching
+/// `</content>` end tag before returning, so the outer event loop won't see it.
+fn collect_xhtml_inner(reader: &mut Reader<&[u8]>) -> String {
+    let mut buf = Vec::new();
+    let mut depth: u32 = 1; // already inside <content>
+    let mut raw = String::new();
+
+    loop {
+        buf.clear();
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                depth += 1;
+                let qname = e.name();
+                let local = local_name(qname.as_ref());
+                if let Ok(name) = std::str::from_utf8(local) {
+                    raw.push('<');
+                    raw.push_str(name);
+                    serialize_attrs_to_html(e, &mut raw);
+                    raw.push('>');
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                depth -= 1;
+                if depth == 0 {
+                    break; // consumed </content>
+                }
+                let qname = e.name();
+                let local = local_name(qname.as_ref());
+                if let Ok(name) = std::str::from_utf8(local) {
+                    raw.push_str("</");
+                    raw.push_str(name);
+                    raw.push('>');
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                let qname = e.name();
+                let local = local_name(qname.as_ref());
+                if let Ok(name) = std::str::from_utf8(local) {
+                    raw.push('<');
+                    raw.push_str(name);
+                    serialize_attrs_to_html(e, &mut raw);
+                    raw.push_str("/>");
+                }
+            }
+            Ok(Event::Text(ref e)) => {
+                if let Ok(t) = e.xml_content(XmlVersion::Explicit1_1)
+                    && !t.trim().is_empty()
+                {
+                    raw.push_str(&t);
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    raw
+}
+
+/// Write HTML attributes from a start/empty tag, skipping namespace declarations.
+fn serialize_attrs_to_html(e: &quick_xml::events::BytesStart<'_>, out: &mut String) {
+    for attr in e.attributes().flatten() {
+        let attr_key = attr.key.as_ref().to_vec();
+        if attr_key.starts_with(b"xmlns") {
+            continue; // skip xmlns="..." and xmlns:foo="..."
+        }
+        let local = local_name(&attr_key);
+        if let Ok(name) = std::str::from_utf8(local) {
+            let val = String::from_utf8_lossy(&attr.value).into_owned();
+            out.push(' ');
+            out.push_str(name);
+            out.push_str("=\"");
+            for c in val.chars() {
+                if c == '"' {
+                    out.push_str("&quot;");
+                } else {
+                    out.push(c);
+                }
+            }
+            out.push('"');
+        }
+    }
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -744,8 +906,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_feed_skips_html_only_content() {
-        // When only <content type="html"> is present, summary is None (not garbage HTML)
+    fn parse_feed_collects_html_content_into_summary_html() {
+        // <content type="html"> → summary stays None, summary_html captures the HTML
         let xml = r#"<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -757,6 +919,31 @@ mod tests {
 </feed>"#;
         let books = parse_opds_feed(xml, "Test").unwrap();
         assert_eq!(books[0].summary, None);
+        assert_eq!(
+            books[0].summary_html.as_deref(),
+            Some("<p>A <i>classic</i> novel.</p>")
+        );
+    }
+
+    #[test]
+    fn parse_feed_collects_xhtml_content_into_summary_html() {
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:test:3</id>
+    <title>A Book</title>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml"><p>First.</p><p>Second.</p></div>
+    </content>
+    <link rel="http://opds-spec.org/acquisition" href="/book.epub" type="application/epub+zip"/>
+  </entry>
+</feed>"#;
+        let books = parse_opds_feed(xml, "Test").unwrap();
+        assert_eq!(books[0].summary, None);
+        assert_eq!(
+            books[0].summary_html.as_deref(),
+            Some("<div><p>First.</p><p>Second.</p></div>")
+        );
     }
 
     #[test]
