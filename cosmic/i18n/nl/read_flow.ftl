@@ -340,7 +340,8 @@ dashboard-onboarding-step-remote-description = Synchroniseer met een andere Read
 dashboard-action-go = Ga
 
 # Online bibliotheken
-online-library-cancel = Annuleren
+online-library-back-to-filters = ← Terug naar filters
+online-library-book-details = Boekdetails
 online-library-catalog-all = Alle catalogi
 online-library-catalog-section-title = Catalogus
 online-library-download = Downloaden
@@ -358,9 +359,9 @@ online-library-hint-library-body = Gedownloade boeken worden automatisch toegevo
 online-library-layout-cards = Kaarten
 online-library-layout-compact = Compact
 online-library-layout-section-title = Weergave
+online-library-no-description = Geen beschrijving beschikbaar
 online-library-no-results = Geen resultaten gevonden
 online-library-page-title = Online bibliotheken
-online-library-pick-format = Kies formaat
 online-library-search-button = Zoeken
 online-library-search-placeholder = Zoek boeken…
 online-library-searching = Zoeken…

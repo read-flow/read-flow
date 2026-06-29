@@ -342,7 +342,8 @@ dashboard-onboarding-step-remote-description = Sync with another Read Flow insta
 dashboard-action-go = Go
 
 # Online Libraries
-online-library-cancel = Cancel
+online-library-back-to-filters = ← Back to filters
+online-library-book-details = Book Details
 online-library-catalog-all = All catalogs
 online-library-catalog-section-title = Catalog
 online-library-download = Download
@@ -360,9 +361,9 @@ online-library-hint-library-body = Downloaded books are automatically added to y
 online-library-layout-cards = Cards
 online-library-layout-compact = Compact
 online-library-layout-section-title = Layout
+online-library-no-description = No description available
 online-library-no-results = No results found
 online-library-page-title = Online Libraries
-online-library-pick-format = Choose format
 online-library-search-button = Search
 online-library-search-placeholder = Search books…
 online-library-searching = Searching…

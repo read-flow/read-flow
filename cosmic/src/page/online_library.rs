@@ -58,7 +58,7 @@ pub struct OnlineLibraryPage {
     /// catalog_name → next OPDS page URL, when the server has more pages.
     next_urls: HashMap<String, String>,
     fetching_more: bool,
-    format_dialog: Option<OnlineBook>,
+    selected_book: Option<OnlineBook>,
     results_layout: ResultsLayout,
     pagination: Pagination,
 }
@@ -84,7 +84,8 @@ pub enum OnlineLibraryMessage {
     CatalogFilterChanged(Option<usize>),
     LayoutChanged(ResultsLayout),
     Paginate(PaginationMessage),
-    RequestDownload(OnlineBook),
+    SelectBook(OnlineBook),
+    ClearSelectedBook,
     PickFormat(OnlineBook, DownloadFormat),
     DownloadCompleted(String, PathBuf),
     DownloadFailed(String, String),
@@ -93,13 +94,13 @@ pub enum OnlineLibraryMessage {
     CoverImageLoaded(String, Vec<u8>),
     FetchMore,
     MoreResultsCompleted(Vec<OnlineBook>, HashMap<String, String>),
-    DismissFormatDialog,
     Out(OnlineLibraryOutput),
 }
 
 #[derive(Debug, Clone)]
 pub enum OnlineLibraryOutput {
     BookImported,
+    OpenContext,
 }
 
 // ─── Page Implementation ──────────────────────────────────────────────────────
@@ -117,7 +118,7 @@ impl OnlineLibraryPage {
             cover_images: HashMap::new(),
             next_urls: HashMap::new(),
             fetching_more: false,
-            format_dialog: None,
+            selected_book: None,
             results_layout: ResultsLayout::default(),
             pagination: Pagination::default(),
         }
@@ -203,96 +204,10 @@ impl Page for OnlineLibraryPage {
     }
 
     fn view_context(&self) -> ContextView<'_, OnlineLibraryMessage> {
-        // ── Catalog filter ───────────────────────────────────────────────────
-        let current_idx = self.selected_catalog_index;
-        let all_radio = widget::radio(
-            widget::text::body(fl!("online-library-catalog-all")),
-            None::<usize>,
-            Some(current_idx),
-            OnlineLibraryMessage::CatalogFilterChanged,
-        );
-        let mut radios: Vec<Element<'_, OnlineLibraryMessage>> = vec![all_radio.into()];
-        for (i, catalog) in self.catalogs.iter().enumerate() {
-            radios.push(
-                widget::radio(
-                    widget::text::body(catalog.name.as_str()),
-                    Some(i),
-                    Some(current_idx),
-                    OnlineLibraryMessage::CatalogFilterChanged,
-                )
-                .into(),
-            );
+        match &self.selected_book {
+            Some(book) => self.book_detail_context(book),
+            None => self.filters_context(),
         }
-        let catalog_section = widget::settings::section()
-            .title(fl!("online-library-catalog-section-title"))
-            .add(widget::column::with_children(radios).spacing(8));
-
-        // ── Layout picker ────────────────────────────────────────────────────
-        let layout_section = widget::settings::section()
-            .title(fl!("online-library-layout-section-title"))
-            .add(
-                widget::column::with_children(vec![
-                    widget::radio(
-                        widget::text::body(fl!("online-library-layout-cards")),
-                        ResultsLayout::Cards,
-                        Some(self.results_layout),
-                        OnlineLibraryMessage::LayoutChanged,
-                    )
-                    .into(),
-                    widget::radio(
-                        widget::text::body(fl!("online-library-layout-compact")),
-                        ResultsLayout::Compact,
-                        Some(self.results_layout),
-                        OnlineLibraryMessage::LayoutChanged,
-                    )
-                    .into(),
-                ])
-                .spacing(8),
-            );
-
-        ContextView {
-            title: fl!("online-library-page-title"),
-            content: widget::settings::view_column(vec![
-                catalog_section.into(),
-                layout_section.into(),
-            ])
-            .into(),
-        }
-    }
-
-    fn dialog(&self) -> Option<Element<'_, OnlineLibraryMessage>> {
-        let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
-
-        let book = self.format_dialog.as_ref()?;
-
-        let format_buttons: Vec<Element<'_, OnlineLibraryMessage>> = book
-            .formats
-            .iter()
-            .map(|fmt| {
-                widget::button::standard(fmt.label.as_str())
-                    .on_press(OnlineLibraryMessage::PickFormat(book.clone(), fmt.clone()))
-                    .into()
-            })
-            .collect();
-
-        let controls = widget::column::with_children(format_buttons)
-            .spacing(space_s)
-            .apply(widget::container)
-            .class(cosmic::theme::Container::Card)
-            .padding(space_s)
-            .width(Length::Fill);
-
-        Some(
-            widget::dialog()
-                .title(fl!("online-library-pick-format"))
-                .body(book.title.as_str())
-                .control(controls)
-                .secondary_action(
-                    widget::button::standard(fl!("online-library-cancel"))
-                        .on_press(OnlineLibraryMessage::DismissFormatDialog),
-                )
-                .into(),
-        )
     }
 
     fn update(&mut self, message: OnlineLibraryMessage) -> Task<Action<OnlineLibraryMessage>> {
@@ -320,6 +235,7 @@ impl Page for OnlineLibraryPage {
                 self.fetching_more = false;
                 self.pagination.collection_size = 0;
                 self.pagination.index = 0;
+                self.selected_book = None;
                 Task::none()
             }
 
@@ -328,6 +244,7 @@ impl Page for OnlineLibraryPage {
                 self.cover_images.clear();
                 self.next_urls.clear();
                 self.pagination.has_more = false;
+                self.selected_book = None;
                 let am = self.application_module.clone();
                 let query = self.search_query.clone();
                 let catalog_index = self.selected_catalog_index;
@@ -427,18 +344,17 @@ impl Page for OnlineLibraryPage {
                 Task::none()
             }
 
-            OnlineLibraryMessage::RequestDownload(book) => {
-                self.format_dialog = Some(book);
-                Task::none()
+            OnlineLibraryMessage::SelectBook(book) => {
+                self.selected_book = Some(book);
+                task::message(OnlineLibraryMessage::Out(OnlineLibraryOutput::OpenContext))
             }
 
-            OnlineLibraryMessage::DismissFormatDialog => {
-                self.format_dialog = None;
+            OnlineLibraryMessage::ClearSelectedBook => {
+                self.selected_book = None;
                 Task::none()
             }
 
             OnlineLibraryMessage::PickFormat(book, format) => {
-                self.format_dialog = None;
                 let book_id = book.id.clone();
                 let book_title = book.title.clone();
                 self.download_state
@@ -583,6 +499,160 @@ impl Page for OnlineLibraryPage {
     }
 }
 
+// ─── Context pane ─────────────────────────────────────────────────────────────
+
+impl OnlineLibraryPage {
+    fn filters_context(&self) -> ContextView<'_, OnlineLibraryMessage> {
+        let current_idx = self.selected_catalog_index;
+        let all_radio = widget::radio(
+            widget::text::body(fl!("online-library-catalog-all")),
+            None::<usize>,
+            Some(current_idx),
+            OnlineLibraryMessage::CatalogFilterChanged,
+        );
+        let mut radios: Vec<Element<'_, OnlineLibraryMessage>> = vec![all_radio.into()];
+        for (i, catalog) in self.catalogs.iter().enumerate() {
+            radios.push(
+                widget::radio(
+                    widget::text::body(catalog.name.as_str()),
+                    Some(i),
+                    Some(current_idx),
+                    OnlineLibraryMessage::CatalogFilterChanged,
+                )
+                .into(),
+            );
+        }
+        let catalog_section = widget::settings::section()
+            .title(fl!("online-library-catalog-section-title"))
+            .add(widget::column::with_children(radios).spacing(8));
+
+        let layout_section = widget::settings::section()
+            .title(fl!("online-library-layout-section-title"))
+            .add(
+                widget::column::with_children(vec![
+                    widget::radio(
+                        widget::text::body(fl!("online-library-layout-cards")),
+                        ResultsLayout::Cards,
+                        Some(self.results_layout),
+                        OnlineLibraryMessage::LayoutChanged,
+                    )
+                    .into(),
+                    widget::radio(
+                        widget::text::body(fl!("online-library-layout-compact")),
+                        ResultsLayout::Compact,
+                        Some(self.results_layout),
+                        OnlineLibraryMessage::LayoutChanged,
+                    )
+                    .into(),
+                ])
+                .spacing(8),
+            );
+
+        ContextView {
+            title: fl!("online-library-page-title"),
+            content: widget::settings::view_column(vec![
+                catalog_section.into(),
+                layout_section.into(),
+            ])
+            .into(),
+        }
+    }
+
+    fn book_detail_context<'a>(
+        &'a self,
+        book: &'a OnlineBook,
+    ) -> ContextView<'a, OnlineLibraryMessage> {
+        let cosmic_theme::Spacing {
+            space_xs,
+            space_s,
+            space_m,
+            space_l,
+            ..
+        } = theme::active().cosmic().spacing;
+
+        let back_button = widget::button::standard(fl!("online-library-back-to-filters"))
+            .on_press(OnlineLibraryMessage::ClearSelectedBook);
+
+        let cover: Element<'_, OnlineLibraryMessage> =
+            if let Some(handle) = self.cover_images.get(&book.id) {
+                widget::image(handle.clone())
+                    .width(Length::Fixed(120.0))
+                    .height(Length::Fixed(180.0))
+                    .content_fit(cosmic::iced::ContentFit::Contain)
+                    .apply(widget::container)
+                    .center_x(Length::Fill)
+                    .into()
+            } else {
+                widget::Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Fixed(180.0))
+                    .into()
+            };
+
+        let catalog_badge = widget::text::caption(book.catalog_name.as_str())
+            .apply(widget::container)
+            .class(cosmic::theme::Container::Card)
+            .padding([2, space_xs]);
+
+        let meta = Column::new()
+            .spacing(space_xs)
+            .push(widget::text::title3(book.title.as_str()))
+            .push_maybe(if book.authors.is_empty() {
+                None
+            } else {
+                Some(widget::text(book.authors.join(", ")))
+            })
+            .push(catalog_badge);
+
+        let summary: Element<'_, OnlineLibraryMessage> = match &book.summary {
+            Some(s) => widget::text(s.as_str()).into(),
+            None => widget::text(fl!("online-library-no-description"))
+                .apply(widget::container)
+                .class(cosmic::theme::Container::Card)
+                .into(),
+        };
+
+        let formats: Element<'_, OnlineLibraryMessage> = match self.download_state.get(&book.id) {
+            Some(DownloadBookState::Downloading) => {
+                widget::text(fl!("online-library-downloading")).into()
+            }
+            Some(DownloadBookState::Done) => widget::text(fl!("online-library-downloaded")).into(),
+            Some(DownloadBookState::Failed(err)) => widget::text(err.as_str()).into(),
+            None => {
+                let buttons: Vec<Element<'_, OnlineLibraryMessage>> = book
+                    .formats
+                    .iter()
+                    .map(|fmt| {
+                        widget::button::suggested(fmt.label.as_str())
+                            .on_press(OnlineLibraryMessage::PickFormat(book.clone(), fmt.clone()))
+                            .width(Length::Fill)
+                            .into()
+                    })
+                    .collect();
+                Column::new().spacing(space_s).extend(buttons).into()
+            }
+        };
+
+        let content = Column::new()
+            .spacing(space_m)
+            .push(back_button)
+            .push(cover)
+            .push(meta)
+            .push(widget::divider::horizontal::default())
+            .push(summary)
+            .push(widget::divider::horizontal::default())
+            .push(formats)
+            .padding([0, space_s, space_l, space_s])
+            .apply(widget::scrollable::vertical)
+            .height(Length::Fill);
+
+        ContextView {
+            title: fl!("online-library-book-details"),
+            content: content.into(),
+        }
+    }
+}
+
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
 impl OnlineLibraryPage {
@@ -701,30 +771,21 @@ fn hint_card<'a>(
         .into()
 }
 
-// ─── Shared action area ───────────────────────────────────────────────────────
+// ─── Download status (inline in card/row) ────────────────────────────────────
 
-fn book_action_area<'a>(
+fn book_download_status<'a>(
     book: &'a OnlineBook,
     download_state: &'a HashMap<String, DownloadBookState>,
-) -> Element<'a, OnlineLibraryMessage> {
+) -> Option<Element<'a, OnlineLibraryMessage>> {
     match download_state.get(&book.id) {
         Some(DownloadBookState::Downloading) => {
-            widget::text(fl!("online-library-downloading")).into()
+            Some(widget::text(fl!("online-library-downloading")).into())
         }
-        Some(DownloadBookState::Done) => widget::text(fl!("online-library-downloaded")).into(),
-        Some(DownloadBookState::Failed(err)) => widget::text(err.as_str()).into(),
-        None => {
-            if book.formats.len() == 1 {
-                let fmt = &book.formats[0];
-                widget::button::standard(fmt.label.as_str())
-                    .on_press(OnlineLibraryMessage::PickFormat(book.clone(), fmt.clone()))
-                    .into()
-            } else {
-                widget::button::suggested(fl!("online-library-download"))
-                    .on_press(OnlineLibraryMessage::RequestDownload(book.clone()))
-                    .into()
-            }
+        Some(DownloadBookState::Done) => {
+            Some(widget::text(fl!("online-library-downloaded")).into())
         }
+        Some(DownloadBookState::Failed(err)) => Some(widget::text(err.as_str()).into()),
+        None => None,
     }
 }
 
@@ -766,7 +827,7 @@ fn book_card<'a>(
         widget::Space::new().width(0).height(0).into()
     };
 
-    let text_content = widget::column::with_children(vec![
+    let mut text_rows: Vec<Element<'_, OnlineLibraryMessage>> = vec![
         widget::row::with_children(vec![
             title.into(),
             widget::Space::new().width(Length::Fill).into(),
@@ -776,10 +837,14 @@ fn book_card<'a>(
         .into(),
         authors,
         summary,
-        book_action_area(book, download_state),
-    ])
-    .spacing(space_xs)
-    .width(Length::Fill);
+    ];
+    if let Some(status) = book_download_status(book, download_state) {
+        text_rows.push(status);
+    }
+
+    let text_content = widget::column::with_children(text_rows)
+        .spacing(space_xs)
+        .width(Length::Fill);
 
     let card_body: Element<'_, OnlineLibraryMessage> = if let Some(handle) = cover {
         widget::row::with_children(vec![
@@ -797,12 +862,15 @@ fn book_card<'a>(
         text_content.into()
     };
 
-    card_body
-        .apply(widget::container)
-        .class(cosmic::theme::Container::Card)
-        .padding(space_m)
-        .width(Length::Fill)
-        .into()
+    widget::mouse_area(
+        card_body
+            .apply(widget::container)
+            .class(cosmic::theme::Container::Card)
+            .padding(space_m)
+            .width(Length::Fill),
+    )
+    .on_press(OnlineLibraryMessage::SelectBook(book.clone()))
+    .into()
 }
 
 // ─── Compact row layout ───────────────────────────────────────────────────────
@@ -835,16 +903,21 @@ fn book_row<'a>(
         .apply(widget::container)
         .width(Length::Fill);
 
-    widget::row::with_children(vec![
-        title_column.into(),
-        catalog_badge.into(),
-        book_action_area(book, download_state),
-    ])
-    .spacing(space_s)
-    .align_y(Vertical::Center)
-    .padding([space_xs, space_s])
-    .apply(widget::container)
-    .class(cosmic::theme::Container::Card)
-    .width(Length::Fill)
+    let mut row_children: Vec<Element<'_, OnlineLibraryMessage>> =
+        vec![title_column.into(), catalog_badge.into()];
+    if let Some(status) = book_download_status(book, download_state) {
+        row_children.push(status);
+    }
+
+    widget::mouse_area(
+        widget::row::with_children(row_children)
+            .spacing(space_s)
+            .align_y(Vertical::Center)
+            .padding([space_xs, space_s])
+            .apply(widget::container)
+            .class(cosmic::theme::Container::Card)
+            .width(Length::Fill),
+    )
+    .on_press(OnlineLibraryMessage::SelectBook(book.clone()))
     .into()
 }

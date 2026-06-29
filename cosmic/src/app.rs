@@ -86,6 +86,7 @@ pub struct ReadFlow {
 pub enum Message {
     ToggleContextPage(ContextPage),
     ToggleActivePageContext,
+    OpenActivePageContext,
     ToggleNavBar,
     NavBarResizeStart,
     NavBarDrag(f32),
@@ -117,6 +118,7 @@ impl From<PageOutput> for Message {
             PageOutput::TogglePage(page_selector) => Message::ActivatePage(page_selector),
             PageOutput::PageRemoved(page) => Message::ActivePageRemoved(page),
             PageOutput::Scan => Message::Scan,
+            PageOutput::OpenContext => Message::OpenActivePageContext,
         }
     }
 }
@@ -543,6 +545,12 @@ impl cosmic::Application for ReadFlow {
                 task::message(Message::ToggleContextPage(ContextPage::PageContext(
                     selector,
                 )))
+            }
+            Message::OpenActivePageContext => {
+                let selector = self.pages.active_page().clone();
+                self.context_page = ContextPage::PageContext(selector);
+                self.core.window.show_context = true;
+                Task::none()
             }
             Message::UpdateConfig(config) => {
                 self.pages.update_app_config(&config);

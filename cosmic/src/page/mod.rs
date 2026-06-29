@@ -112,6 +112,7 @@ pub enum PageOutput {
     TogglePage(PageSelector),
     PageRemoved(PageSelector),
     Scan,
+    OpenContext,
 }
 
 #[derive(Debug, Clone)]
@@ -834,6 +835,7 @@ fn map_online_library_message(msg: OnlineLibraryMessage) -> PageMessage {
     match msg {
         OnlineLibraryMessage::Out(output) => match output {
             OnlineLibraryOutput::BookImported => PageMessage::Out(PageOutput::Scan),
+            OnlineLibraryOutput::OpenContext => PageMessage::Out(PageOutput::OpenContext),
         },
         msg => PageMessage::OnlineLibrary(msg),
     }

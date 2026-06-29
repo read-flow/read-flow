@@ -339,7 +339,8 @@ dashboard-onboarding-step-remote-description = Synchronisez avec une autre insta
 dashboard-action-go = Aller
 
 # Bibliothèques en ligne
-online-library-cancel = Annuler
+online-library-back-to-filters = ← Retour aux filtres
+online-library-book-details = Détails du livre
 online-library-catalog-all = Tous les catalogues
 online-library-catalog-section-title = Catalogue
 online-library-download = Télécharger
@@ -357,9 +358,9 @@ online-library-hint-library-body = Les livres téléchargés sont automatiquemen
 online-library-layout-cards = Cartes
 online-library-layout-compact = Compact
 online-library-layout-section-title = Disposition
+online-library-no-description = Aucune description disponible
 online-library-no-results = Aucun résultat trouvé
 online-library-page-title = Bibliothèques en ligne
-online-library-pick-format = Choisir le format
 online-library-search-button = Rechercher
 online-library-search-placeholder = Rechercher des livres…
 online-library-searching = Recherche en cours…
