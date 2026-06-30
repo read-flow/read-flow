@@ -313,7 +313,9 @@ impl Page for OnlineLibraryPage {
                         let book_id = b.id.clone();
                         Some(task::future(async move {
                             match fetch_cover_bytes(&url).await {
-                                Ok(bytes) => OnlineLibraryMessage::CoverImageLoaded(book_id, bytes),
+                                Ok((bytes, _)) => {
+                                    OnlineLibraryMessage::CoverImageLoaded(book_id, bytes)
+                                }
                                 Err(e) => {
                                     tracing::debug!("cover fetch failed for {book_id}: {e}");
                                     OnlineLibraryMessage::CoverImageLoaded(book_id, vec![])
@@ -385,11 +387,32 @@ impl Page for OnlineLibraryPage {
             OnlineLibraryMessage::DownloadCompleted(book, path) => {
                 let book_id = book.id.clone();
                 let meta = book.to_extracted_metadata();
+                let cover_url = book.cover_url.clone();
                 let am = self.application_module.clone();
                 task::future(async move {
                     let db = am.db_client().await;
                     match db.import_with_opds_metadata(&path, &meta).await {
-                        Ok(_) => OnlineLibraryMessage::ImportCompleted(book_id),
+                        Ok(file) => {
+                            if let Some(url) = cover_url {
+                                match fetch_cover_bytes(&url).await {
+                                    Ok((bytes, mime)) if !bytes.is_empty() => {
+                                        if let Err(e) =
+                                            db.store_cover(&file.fingerprint, &bytes, &mime).await
+                                        {
+                                            tracing::warn!(
+                                                "failed to store cover for {}: {e}",
+                                                file.fingerprint
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::debug!("cover fetch failed on import: {e}");
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            OnlineLibraryMessage::ImportCompleted(book_id)
+                        }
                         Err(e) => OnlineLibraryMessage::ImportFailed(book_id, e.to_string()),
                     }
                 })
@@ -482,7 +505,7 @@ impl Page for OnlineLibraryPage {
                             let book_id = b.id.clone();
                             Some(task::future(async move {
                                 match fetch_cover_bytes(&url).await {
-                                    Ok(bytes) => {
+                                    Ok((bytes, _)) => {
                                         OnlineLibraryMessage::CoverImageLoaded(book_id, bytes)
                                     }
                                     Err(e) => {

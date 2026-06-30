@@ -299,6 +299,16 @@ impl DbClient {
         Ok(file)
     }
 
+    pub async fn store_cover(
+        &self,
+        fingerprint: &str,
+        data: &[u8],
+        mime: &str,
+    ) -> Result<(), Error> {
+        let mut conn = self.connection_pool.acquire().await?;
+        dao::upsert_cover(&mut conn, fingerprint, data, mime).await
+    }
+
     pub async fn get_documents(&self) -> Result<Vec<ApiDocument>, Error> {
         let mut conn = self.connection_pool.acquire().await?;
         dao::select_all_api_documents(&mut conn).await

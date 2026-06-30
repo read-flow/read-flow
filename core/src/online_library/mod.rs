@@ -716,10 +716,18 @@ pub async fn download_book(
     Ok(target)
 }
 
-pub async fn fetch_cover_bytes(url: &str) -> Result<Vec<u8>, OnlineLibraryError> {
+pub async fn fetch_cover_bytes(url: &str) -> Result<(Vec<u8>, String), OnlineLibraryError> {
     let client = Client::new();
-    let bytes = client.get(url).send().await?.bytes().await?;
-    Ok(bytes.to_vec())
+    let resp = client.get(url).send().await?;
+    let mime = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(';').next())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "image/jpeg".to_string());
+    let bytes = resp.bytes().await?.to_vec();
+    Ok((bytes, mime))
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
