@@ -16,7 +16,6 @@ use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::Column;
-use read_flow_core::api::FileDataSource;
 use read_flow_core::online_library::DownloadFormat;
 use read_flow_core::online_library::OnlineBook;
 use read_flow_core::online_library::OnlineCatalog;
@@ -90,7 +89,7 @@ pub enum OnlineLibraryMessage {
     SelectBook(OnlineBook),
     ClearSelectedBook,
     PickFormat(OnlineBook, DownloadFormat),
-    DownloadCompleted(String, PathBuf),
+    DownloadCompleted(OnlineBook, PathBuf),
     DownloadFailed(String, String),
     ImportCompleted(String),
     ImportFailed(String, String),
@@ -377,17 +376,19 @@ impl Page for OnlineLibraryPage {
                     let settings = am.settings().await;
                     let download_folder = settings.client.download_folder.get_full_path();
                     match download_book(&format, &book_title, &download_folder).await {
-                        Ok(path) => OnlineLibraryMessage::DownloadCompleted(book_id, path),
+                        Ok(path) => OnlineLibraryMessage::DownloadCompleted(book, path),
                         Err(e) => OnlineLibraryMessage::DownloadFailed(book_id, e.to_string()),
                     }
                 })
             }
 
-            OnlineLibraryMessage::DownloadCompleted(book_id, path) => {
+            OnlineLibraryMessage::DownloadCompleted(book, path) => {
+                let book_id = book.id.clone();
+                let meta = book.to_extracted_metadata();
                 let am = self.application_module.clone();
                 task::future(async move {
                     let db = am.db_client().await;
-                    match db.import_file(&path).await {
+                    match db.import_with_opds_metadata(&path, &meta).await {
                         Ok(_) => OnlineLibraryMessage::ImportCompleted(book_id),
                         Err(e) => OnlineLibraryMessage::ImportFailed(book_id, e.to_string()),
                     }

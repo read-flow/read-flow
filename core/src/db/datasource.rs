@@ -14,6 +14,7 @@ use crate::api::ReadingStatus;
 use crate::api::Status;
 use crate::db::models::ContentTag;
 use crate::db::models::NewFile;
+use crate::scan::metadata::ExtractedMetadata;
 
 #[derive(Clone)]
 pub struct DbClient {
@@ -253,6 +254,51 @@ impl FileDataSource for DbClient {
 }
 
 impl DbClient {
+    /// Import a file and immediately apply OPDS-sourced metadata to the document.
+    /// Combines `import_file`, document-creation, and metadata merge in one call.
+    pub async fn import_with_opds_metadata(
+        &self,
+        path: &Path,
+        meta: &ExtractedMetadata,
+    ) -> Result<File, Error> {
+        let file = self.import_file(path).await?;
+        if !meta.is_empty() {
+            let mut conn = self.connection_pool.acquire().await?;
+            match dao::ensure_document_for_fingerprint(&mut conn, &file.fingerprint).await {
+                Ok(api_doc) => {
+                    let doc_id_result =
+                        sqlx::query_scalar::<_, i32>("SELECT id FROM documents WHERE guid = ?")
+                            .bind(&api_doc.guid)
+                            .fetch_one(&mut *conn)
+                            .await;
+                    match doc_id_result {
+                        Ok(doc_id) => {
+                            if let Err(e) =
+                                dao::merge_document_metadata_from_extracted(&mut conn, doc_id, meta)
+                                    .await
+                            {
+                                tracing::warn!(
+                                    "failed to apply OPDS metadata for {}: {e}",
+                                    file.fingerprint
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "failed to resolve document id for {}: {e}",
+                                file.fingerprint
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("failed to ensure document for {}: {e}", file.fingerprint);
+                }
+            }
+        }
+        Ok(file)
+    }
+
     pub async fn get_documents(&self) -> Result<Vec<ApiDocument>, Error> {
         let mut conn = self.connection_pool.acquire().await?;
         dao::select_all_api_documents(&mut conn).await

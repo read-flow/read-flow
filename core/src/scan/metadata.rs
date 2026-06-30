@@ -3,7 +3,9 @@ use std::path::Path;
 #[derive(Debug, Clone)]
 pub struct ExtractedMetadata {
     pub title: Option<String>,
+    pub subtitle: Option<String>,
     pub authors: Vec<String>,
+    pub description: Option<String>,
     pub language: Option<String>,
     pub publisher: Option<String>,
     pub identifier: Option<String>,
@@ -14,7 +16,9 @@ pub struct ExtractedMetadata {
 impl ExtractedMetadata {
     pub fn is_empty(&self) -> bool {
         self.title.is_none()
+            && self.subtitle.is_none()
             && self.authors.is_empty()
+            && self.description.is_none()
             && self.language.is_none()
             && self.publisher.is_none()
             && self.identifier.is_none()
@@ -40,7 +44,9 @@ fn extract_epub(path: &Path) -> Option<ExtractedMetadata> {
     let m = doc.metadata();
     Some(ExtractedMetadata {
         title: m.title.clone(),
+        subtitle: None,
         authors: m.authors.clone(),
+        description: None,
         language: m.language.clone(),
         publisher: m.publisher.clone(),
         identifier: m.identifier.clone(),
@@ -54,9 +60,11 @@ fn extract_mupdf(path: &Path) -> Option<ExtractedMetadata> {
     let get = |name| doc.metadata(name).ok().filter(|s: &String| !s.is_empty());
     Some(ExtractedMetadata {
         title: get(mupdf::MetadataName::Title),
+        subtitle: None,
         authors: get(mupdf::MetadataName::Author)
             .map(|a| vec![a])
             .unwrap_or_default(),
+        description: None,
         language: None,
         publisher: None,
         identifier: None,
@@ -71,11 +79,13 @@ fn extract_mobi(path: &Path) -> Option<ExtractedMetadata> {
     let nonempty = |s: String| if s.is_empty() { None } else { Some(s) };
     Some(ExtractedMetadata {
         title: nonempty(book.title()),
+        subtitle: None,
         authors: book
             .author()
             .and_then(nonempty)
             .map(|a| vec![a])
             .unwrap_or_default(),
+        description: None,
         language: match book.language() {
             Language::Neutral | Language::Unknown => None,
             lang => Some(format!("{lang:?}")),
@@ -119,18 +129,23 @@ mod tests {
         assert!(extract_metadata(std::path::Path::new("/tmp/nonexistent.azw3"), "azw3").is_none());
     }
 
-    #[test]
-    fn is_empty_true_when_all_fields_empty() {
-        let meta = ExtractedMetadata {
+    fn empty_meta() -> ExtractedMetadata {
+        ExtractedMetadata {
             title: None,
+            subtitle: None,
             authors: vec![],
+            description: None,
             language: None,
             publisher: None,
             identifier: None,
             date: None,
             subject: None,
-        };
-        assert!(meta.is_empty());
+        }
+    }
+
+    #[test]
+    fn is_empty_true_when_all_fields_empty() {
+        assert!(empty_meta().is_empty());
     }
 
     #[test]
@@ -138,66 +153,39 @@ mod tests {
         let fields: &[fn() -> ExtractedMetadata] = &[
             || ExtractedMetadata {
                 title: Some("t".into()),
-                authors: vec![],
-                language: None,
-                publisher: None,
-                identifier: None,
-                date: None,
-                subject: None,
+                ..empty_meta()
             },
             || ExtractedMetadata {
-                title: None,
+                subtitle: Some("s".into()),
+                ..empty_meta()
+            },
+            || ExtractedMetadata {
                 authors: vec!["a".into()],
-                language: None,
-                publisher: None,
-                identifier: None,
-                date: None,
-                subject: None,
+                ..empty_meta()
             },
             || ExtractedMetadata {
-                title: None,
-                authors: vec![],
+                description: Some("d".into()),
+                ..empty_meta()
+            },
+            || ExtractedMetadata {
                 language: Some("en".into()),
-                publisher: None,
-                identifier: None,
-                date: None,
-                subject: None,
+                ..empty_meta()
             },
             || ExtractedMetadata {
-                title: None,
-                authors: vec![],
-                language: None,
                 publisher: Some("p".into()),
-                identifier: None,
-                date: None,
-                subject: None,
+                ..empty_meta()
             },
             || ExtractedMetadata {
-                title: None,
-                authors: vec![],
-                language: None,
-                publisher: None,
                 identifier: Some("id".into()),
-                date: None,
-                subject: None,
+                ..empty_meta()
             },
             || ExtractedMetadata {
-                title: None,
-                authors: vec![],
-                language: None,
-                publisher: None,
-                identifier: None,
                 date: Some("2024".into()),
-                subject: None,
+                ..empty_meta()
             },
             || ExtractedMetadata {
-                title: None,
-                authors: vec![],
-                language: None,
-                publisher: None,
-                identifier: None,
-                date: None,
                 subject: Some("sci-fi".into()),
+                ..empty_meta()
             },
         ];
         for make in fields {

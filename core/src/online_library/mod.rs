@@ -43,14 +43,64 @@ impl DownloadFormat {
 pub struct OnlineBook {
     pub id: String,
     pub title: String,
+    pub subtitle: Option<String>,
     pub authors: Vec<String>,
+    pub contributors: Vec<String>,
     pub summary: Option<String>,
     /// Raw HTML collected from `<content type="html">` or serialized from
     /// `<content type="xhtml">`. Preferred over `summary` for display when present.
     pub summary_html: Option<String>,
+    pub language: Option<String>,
+    pub publisher: Option<String>,
+    pub identifier: Option<String>,
+    pub published: Option<String>,
+    pub rights: Option<String>,
+    pub subject: Option<String>,
     pub cover_url: Option<String>,
     pub formats: Vec<DownloadFormat>,
     pub catalog_name: String,
+}
+
+impl OnlineBook {
+    /// Convert OPDS feed metadata to `ExtractedMetadata` for merging into the library DB.
+    /// Prefers `publisher` if set; falls back to the first contributor name.
+    pub fn to_extracted_metadata(&self) -> crate::scan::metadata::ExtractedMetadata {
+        use crate::scan::metadata::ExtractedMetadata;
+        let description = self
+            .summary
+            .clone()
+            .or_else(|| self.summary_html.as_deref().map(html_to_plain_text));
+        let publisher = self
+            .publisher
+            .clone()
+            .or_else(|| self.contributors.first().cloned());
+        ExtractedMetadata {
+            title: Some(self.title.clone()),
+            subtitle: self.subtitle.clone(),
+            authors: self.authors.clone(),
+            description,
+            language: self.language.clone(),
+            publisher,
+            identifier: self.identifier.clone(),
+            date: self.published.clone(),
+            subject: self.subject.clone(),
+        }
+    }
+}
+
+/// Strip HTML tags, returning plain text for use as a description.
+fn html_to_plain_text(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            c if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -276,14 +326,23 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
     // Per-entry state
     let mut in_entry = false;
     let mut in_author = false;
+    let mut in_contributor = false;
 
     // Tracks which field we're collecting text for
     #[derive(Debug, PartialEq)]
     enum Collecting {
         Title,
+        Subtitle,
         Id,
         Summary,
         AuthorName,
+        ContributorName,
+        Language,
+        Publisher,
+        Identifier,
+        Published,
+        Rights,
+        Subject,
     }
     let mut collecting: Option<Collecting> = None;
     let mut cur_text = String::new();
@@ -291,9 +350,17 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
     // Current entry being built
     let mut cur_id = String::new();
     let mut cur_title = String::new();
+    let mut cur_subtitle: Option<String> = None;
     let mut cur_authors: Vec<String> = Vec::new();
+    let mut cur_contributors: Vec<String> = Vec::new();
     let mut cur_summary: Option<String> = None;
     let mut cur_summary_html: Option<String> = None;
+    let mut cur_language: Option<String> = None;
+    let mut cur_publisher: Option<String> = None;
+    let mut cur_identifier: Option<String> = None;
+    let mut cur_published: Option<String> = None;
+    let mut cur_rights: Option<String> = None;
+    let mut cur_subject: Option<String> = None;
     let mut cur_cover_url: Option<String> = None;
     let mut cur_formats: Vec<DownloadFormat> = Vec::new();
     let mut cur_subsection_url: Option<String> = None;
@@ -311,9 +378,17 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                         in_entry = true;
                         cur_id.clear();
                         cur_title.clear();
+                        cur_subtitle = None;
                         cur_authors.clear();
+                        cur_contributors.clear();
                         cur_summary = None;
                         cur_summary_html = None;
+                        cur_language = None;
+                        cur_publisher = None;
+                        cur_identifier = None;
+                        cur_published = None;
+                        cur_rights = None;
+                        cur_subject = None;
                         cur_cover_url = None;
                         cur_formats.clear();
                         cur_subsection_url = None;
@@ -322,6 +397,10 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                     }
                     b"title" if in_entry => {
                         collecting = Some(Collecting::Title);
+                        cur_text.clear();
+                    }
+                    b"subtitle" if in_entry => {
+                        collecting = Some(Collecting::Subtitle);
                         cur_text.clear();
                     }
                     b"id" if in_entry => {
@@ -356,8 +435,41 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                     b"author" if in_entry => {
                         in_author = true;
                     }
+                    b"contributor" if in_entry => {
+                        in_contributor = true;
+                    }
                     b"name" if in_author => {
                         collecting = Some(Collecting::AuthorName);
+                        cur_text.clear();
+                    }
+                    b"name" if in_contributor => {
+                        collecting = Some(Collecting::ContributorName);
+                        cur_text.clear();
+                    }
+                    // Dublin Core / OPDS extension elements (dc:language, dc:publisher, etc.)
+                    // local_name() strips the namespace prefix, so dc:X and X both match.
+                    b"language" if in_entry => {
+                        collecting = Some(Collecting::Language);
+                        cur_text.clear();
+                    }
+                    b"publisher" if in_entry => {
+                        collecting = Some(Collecting::Publisher);
+                        cur_text.clear();
+                    }
+                    b"identifier" if in_entry => {
+                        collecting = Some(Collecting::Identifier);
+                        cur_text.clear();
+                    }
+                    b"published" | b"date" if in_entry => {
+                        collecting = Some(Collecting::Published);
+                        cur_text.clear();
+                    }
+                    b"rights" if in_entry => {
+                        collecting = Some(Collecting::Rights);
+                        cur_text.clear();
+                    }
+                    b"subject" if in_entry => {
+                        collecting = Some(Collecting::Subject);
                         cur_text.clear();
                     }
                     b"link" if in_entry => {
@@ -412,9 +524,17 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             books.push(OnlineBook {
                                 id: cur_id.clone(),
                                 title: cur_title.clone(),
+                                subtitle: cur_subtitle.clone(),
                                 authors: cur_authors.clone(),
+                                contributors: cur_contributors.clone(),
                                 summary: cur_summary.clone(),
                                 summary_html: cur_summary_html.clone(),
+                                language: cur_language.clone(),
+                                publisher: cur_publisher.clone(),
+                                identifier: cur_identifier.clone(),
+                                published: cur_published.clone(),
+                                rights: cur_rights.clone(),
+                                subject: cur_subject.clone(),
                                 cover_url: cur_cover_url.clone(),
                                 formats: cur_formats.clone(),
                                 catalog_name: catalog_name.to_string(),
@@ -428,14 +548,28 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                         }
                         in_entry = false;
                         in_author = false;
+                        in_contributor = false;
                         collecting = None;
                     }
                     b"author" if in_author => {
                         in_author = false;
                     }
+                    b"contributor" if in_contributor => {
+                        in_contributor = false;
+                    }
                     b"title" if in_entry => {
                         if matches!(collecting, Some(Collecting::Title)) {
                             cur_title = cur_text.trim().to_string();
+                            cur_text.clear();
+                            collecting = None;
+                        }
+                    }
+                    b"subtitle" if in_entry => {
+                        if matches!(collecting, Some(Collecting::Subtitle)) {
+                            let s = cur_text.trim().to_string();
+                            if !s.is_empty() {
+                                cur_subtitle = Some(s);
+                            }
                             cur_text.clear();
                             collecting = None;
                         }
@@ -462,6 +596,76 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             let name = cur_text.trim().to_string();
                             if !name.is_empty() {
                                 cur_authors.push(name);
+                            }
+                            cur_text.clear();
+                            collecting = None;
+                        }
+                    }
+                    b"name" if in_contributor => {
+                        if matches!(collecting, Some(Collecting::ContributorName)) {
+                            let name = cur_text.trim().to_string();
+                            if !name.is_empty() {
+                                cur_contributors.push(name);
+                            }
+                            cur_text.clear();
+                            collecting = None;
+                        }
+                    }
+                    b"language" if in_entry => {
+                        if matches!(collecting, Some(Collecting::Language)) {
+                            let s = cur_text.trim().to_string();
+                            if !s.is_empty() {
+                                cur_language = Some(s);
+                            }
+                            cur_text.clear();
+                            collecting = None;
+                        }
+                    }
+                    b"publisher" if in_entry => {
+                        if matches!(collecting, Some(Collecting::Publisher)) {
+                            let s = cur_text.trim().to_string();
+                            if !s.is_empty() {
+                                cur_publisher = Some(s);
+                            }
+                            cur_text.clear();
+                            collecting = None;
+                        }
+                    }
+                    b"identifier" if in_entry => {
+                        if matches!(collecting, Some(Collecting::Identifier)) {
+                            let s = cur_text.trim().to_string();
+                            if !s.is_empty() {
+                                cur_identifier = Some(s);
+                            }
+                            cur_text.clear();
+                            collecting = None;
+                        }
+                    }
+                    b"published" | b"date" if in_entry => {
+                        if matches!(collecting, Some(Collecting::Published)) {
+                            let s = cur_text.trim().to_string();
+                            if !s.is_empty() {
+                                cur_published = Some(s);
+                            }
+                            cur_text.clear();
+                            collecting = None;
+                        }
+                    }
+                    b"rights" if in_entry => {
+                        if matches!(collecting, Some(Collecting::Rights)) {
+                            let s = cur_text.trim().to_string();
+                            if !s.is_empty() {
+                                cur_rights = Some(s);
+                            }
+                            cur_text.clear();
+                            collecting = None;
+                        }
+                    }
+                    b"subject" if in_entry => {
+                        if matches!(collecting, Some(Collecting::Subject)) {
+                            let s = cur_text.trim().to_string();
+                            if !s.is_empty() {
+                                cur_subject = Some(s);
                             }
                             cur_text.clear();
                             collecting = None;
@@ -944,6 +1148,108 @@ mod tests {
             books[0].summary_html.as_deref(),
             Some("<div><p>First.</p><p>Second.</p></div>")
         );
+    }
+
+    #[test]
+    fn parse_feed_collects_dc_metadata() {
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <entry>
+    <id>urn:test:dc1</id>
+    <title>Moby Dick</title>
+    <author><name>Melville, Herman</name></author>
+    <contributor><name>Penguin Classics</name></contributor>
+    <dc:language>en</dc:language>
+    <dc:publisher>Penguin Classics</dc:publisher>
+    <dc:identifier>isbn:9780142437247</dc:identifier>
+    <published>1851-10-18</published>
+    <rights>Public domain</rights>
+    <dc:subject>Fiction</dc:subject>
+    <link rel="http://opds-spec.org/acquisition" href="/moby.epub" type="application/epub+zip"/>
+  </entry>
+</feed>"#;
+        let books = parse_opds_feed(xml, "Test").unwrap();
+        assert_eq!(books.len(), 1);
+        let b = &books[0];
+        assert_eq!(b.language.as_deref(), Some("en"));
+        assert_eq!(b.publisher.as_deref(), Some("Penguin Classics"));
+        assert_eq!(b.identifier.as_deref(), Some("isbn:9780142437247"));
+        assert_eq!(b.published.as_deref(), Some("1851-10-18"));
+        assert_eq!(b.rights.as_deref(), Some("Public domain"));
+        assert_eq!(b.subject.as_deref(), Some("Fiction"));
+        assert_eq!(b.contributors, vec!["Penguin Classics"]);
+    }
+
+    #[test]
+    fn parse_feed_collects_subtitle() {
+        let xml = r#"<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>urn:test:sub1</id>
+    <title>Moby Dick</title>
+    <subtitle>Or, The Whale</subtitle>
+    <link rel="http://opds-spec.org/acquisition" href="/moby.epub" type="application/epub+zip"/>
+  </entry>
+</feed>"#;
+        let books = parse_opds_feed(xml, "Test").unwrap();
+        assert_eq!(books[0].subtitle.as_deref(), Some("Or, The Whale"));
+    }
+
+    #[test]
+    fn to_extracted_metadata_maps_fields() {
+        let book = OnlineBook {
+            id: "urn:test:1".into(),
+            title: "Moby Dick".into(),
+            subtitle: Some("Or, The Whale".into()),
+            authors: vec!["Melville, Herman".into()],
+            contributors: vec!["Penguin Classics".into()],
+            summary: Some("A seafaring tale.".into()),
+            summary_html: None,
+            language: Some("en".into()),
+            publisher: Some("Penguin".into()),
+            identifier: Some("isbn:123".into()),
+            published: Some("1851-10-18".into()),
+            rights: Some("Public domain".into()),
+            subject: Some("Fiction".into()),
+            cover_url: None,
+            formats: vec![],
+            catalog_name: "Test".into(),
+        };
+        let meta = book.to_extracted_metadata();
+        assert_eq!(meta.title.as_deref(), Some("Moby Dick"));
+        assert_eq!(meta.subtitle.as_deref(), Some("Or, The Whale"));
+        assert_eq!(meta.authors, vec!["Melville, Herman"]);
+        assert_eq!(meta.description.as_deref(), Some("A seafaring tale."));
+        assert_eq!(meta.language.as_deref(), Some("en"));
+        assert_eq!(meta.publisher.as_deref(), Some("Penguin"));
+        assert_eq!(meta.identifier.as_deref(), Some("isbn:123"));
+        assert_eq!(meta.date.as_deref(), Some("1851-10-18"));
+        assert_eq!(meta.subject.as_deref(), Some("Fiction"));
+    }
+
+    #[test]
+    fn to_extracted_metadata_falls_back_to_contributor_as_publisher() {
+        let book = OnlineBook {
+            id: "urn:test:2".into(),
+            title: "Book".into(),
+            subtitle: None,
+            authors: vec![],
+            contributors: vec!["Publisher Co".into()],
+            summary: None,
+            summary_html: None,
+            language: None,
+            publisher: None, // no explicit publisher
+            identifier: None,
+            published: None,
+            rights: None,
+            subject: None,
+            cover_url: None,
+            formats: vec![],
+            catalog_name: "Test".into(),
+        };
+        let meta = book.to_extracted_metadata();
+        assert_eq!(meta.publisher.as_deref(), Some("Publisher Co"));
     }
 
     #[test]

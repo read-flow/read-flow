@@ -823,13 +823,15 @@ pub async fn merge_document_metadata_from_extracted(
             let authors = authors_json(&meta.authors);
             sqlx::query(
                 "INSERT INTO document_metadata \
-                 (document_id, title, authors, language, publisher, \
+                 (document_id, title, subtitle, authors, description, language, publisher, \
                   identifier, date, subject) \
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(document_id)
             .bind(&meta.title)
+            .bind(&meta.subtitle)
             .bind(authors.as_deref())
+            .bind(&meta.description)
             .bind(&meta.language)
             .bind(&meta.publisher)
             .bind(&meta.identifier)
@@ -841,6 +843,8 @@ pub async fn merge_document_metadata_from_extracted(
         Some(existing) => {
             // Merge: for scalar fields keep existing if set, fill from extracted otherwise.
             let merged_title = existing.title.or_else(|| meta.title.clone());
+            let merged_subtitle = existing.subtitle.or_else(|| meta.subtitle.clone());
+            let merged_description = existing.description.or_else(|| meta.description.clone());
             let merged_language = existing.language.or_else(|| meta.language.clone());
             let merged_publisher = existing.publisher.or_else(|| meta.publisher.clone());
             let merged_identifier = existing.identifier.or_else(|| meta.identifier.clone());
@@ -868,13 +872,15 @@ pub async fn merge_document_metadata_from_extracted(
 
             sqlx::query(
                 "UPDATE document_metadata SET \
-                 title = ?, authors = ?, language = ?, publisher = ?, \
-                 identifier = ?, date = ?, subject = ?, \
+                 title = ?, subtitle = ?, authors = ?, description = ?, language = ?, \
+                 publisher = ?, identifier = ?, date = ?, subject = ?, \
                  updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') \
                  WHERE document_id = ?",
             )
             .bind(&merged_title)
+            .bind(merged_subtitle.as_deref())
             .bind(merged_authors.as_deref())
+            .bind(merged_description.as_deref())
             .bind(&merged_language)
             .bind(&merged_publisher)
             .bind(&merged_identifier)
@@ -910,7 +916,9 @@ pub async fn merge_document_metadata_from_document(
         .unwrap_or_default();
     let extracted = ExtractedMetadata {
         title: src.title,
+        subtitle: src.subtitle,
         authors: src_authors,
+        description: src.description,
         language: src.language,
         publisher: src.publisher,
         identifier: src.identifier,
@@ -1282,7 +1290,9 @@ mod tests {
 
         let meta = ExtractedMetadata {
             title: Some("The Book".into()),
+            subtitle: None,
             authors: vec!["Alice".into()],
+            description: None,
             language: Some("en".into()),
             publisher: None,
             identifier: None,
@@ -1400,7 +1410,9 @@ mod tests {
         // Insert initial metadata (simulates what scan writes for file A).
         let first = ExtractedMetadata {
             title: Some("The Book".into()),
+            subtitle: None,
             authors: vec!["Alice".into()],
+            description: None,
             language: Some("en".into()),
             publisher: Some("Pub A".into()),
             identifier: None,
@@ -1414,7 +1426,9 @@ mod tests {
         // Merge metadata for a second format of the same book (different author spelling).
         let second = ExtractedMetadata {
             title: Some("The Book (alternate title)".into()),
+            subtitle: None,
             authors: vec!["Alice".into(), "Bob".into()],
+            description: None,
             language: Some("fr".into()),
             publisher: Some("Pub B".into()),
             identifier: Some("isbn-123".into()),
