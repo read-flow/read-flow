@@ -74,6 +74,16 @@ impl LogEntry {
             .collect::<Vec<_>>()
             .join(" ")
     }
+
+    /// The request URI, if this event happened inside an HTTP request span
+    /// (the `uri` field set by the tower-http trace layer). Innermost span wins.
+    pub fn uri(&self) -> Option<String> {
+        self.spans
+            .iter()
+            .rev()
+            .find_map(|span| span.fields.get("uri"))
+            .map(render_value)
+    }
 }
 
 /// Render a JSON value without the quotes around strings (nicer for the UI).

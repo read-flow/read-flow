@@ -121,6 +121,21 @@ fn short_target(target: &str) -> &str {
     target.rsplit("::").next().unwrap_or(target)
 }
 
+/// Shorten a string to `max` chars by eliding the middle (`/documents/1a2…/cover`),
+/// keeping the ends readable. The full value stays searchable and in the details.
+fn truncate_middle(s: &str, max: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max {
+        return s.to_string();
+    }
+    let keep = max.saturating_sub(1); // room for the ellipsis
+    let head = keep.div_ceil(2);
+    let tail = keep - head;
+    let head_s: String = chars[..head].iter().collect();
+    let tail_s: String = chars[chars.len() - tail..].iter().collect();
+    format!("{head_s}…{tail_s}")
+}
+
 #[derive(Debug, Clone)]
 pub enum ServerLogOutput {
     Start,
@@ -181,6 +196,9 @@ impl ServerLogPage {
         entry.message.to_lowercase().contains(&needle)
             || entry.target.to_lowercase().contains(&needle)
             || entry.fields_summary().to_lowercase().contains(&needle)
+            || entry
+                .uri()
+                .is_some_and(|u| u.to_lowercase().contains(&needle))
     }
 
     fn recompute(&mut self) {
@@ -344,7 +362,17 @@ impl ServerLogPage {
         let target = widget::text::body(short_target(&entry.target).to_string())
             .size(12)
             .class(cosmic::theme::Text::Color(DIM))
-            .width(Length::Fixed(140.0));
+            .width(Length::Fixed(120.0));
+
+        let uri = widget::text::monotext(
+            entry
+                .uri()
+                .map(|u| truncate_middle(&u, 24))
+                .unwrap_or_default(),
+        )
+        .size(12)
+        .class(cosmic::theme::Text::Color(DIM))
+        .width(Length::Fixed(180.0));
 
         let mut message = widget::text::body(entry.message.clone()).size(13);
         if let Some(color) = emphasis_color(entry.level) {
@@ -355,6 +383,7 @@ impl ServerLogPage {
             time.into(),
             level_chip(entry.level),
             target.into(),
+            uri.into(),
             message.width(Length::Fill).into(),
         ])
         .spacing(8)
