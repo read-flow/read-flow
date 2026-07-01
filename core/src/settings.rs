@@ -82,7 +82,6 @@ impl Settings {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[cfg_attr(feature = "server", serde(crate = "rocket::serde"))]
 pub struct HashedPassword(String);
 
 impl fmt::Display for HashedPassword {
@@ -154,7 +153,6 @@ impl Default for ClientSettings {
 /// alice = { password = "$pbkdf2-sha256$...", roles = ["owner"] }
 /// ```
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[cfg_attr(feature = "server", serde(crate = "rocket::serde"))]
 #[serde(untagged)]
 pub enum UserEntry {
     Simple(HashedPassword),
@@ -189,11 +187,21 @@ impl UserEntry {
 ///
 /// Exposed here so they can be edited by the cosmic application.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[cfg_attr(feature = "server", serde(crate = "rocket::serde"))]
 pub struct ServerSettings {
     pub download_folder: ExpandedPath,
 
     pub authorized_users: IndexMap<String, UserEntry>,
+
+    /// Address the HTTP server binds to. Defaults to `127.0.0.1`. Overridable
+    /// at runtime by the `READ_FLOW_ADDRESS` environment variable.
+    #[serde(default)]
+    pub address: Option<String>,
+
+    /// Port the HTTP server binds to. Defaults to `8000`. `0` requests an
+    /// OS-assigned port. Overridable by the `READ_FLOW_PORT` environment
+    /// variable.
+    #[serde(default)]
+    pub port: Option<u16>,
 }
 
 impl Default for ServerSettings {
@@ -201,7 +209,88 @@ impl Default for ServerSettings {
         Self {
             download_folder: std::env::temp_dir().try_into().unwrap(),
             authorized_users: Default::default(),
+            address: None,
+            port: None,
         }
+    }
+}
+
+impl ServerSettings {
+    /// Resolve the socket address the server should bind to. Environment
+    /// variables (`READ_FLOW_ADDRESS`, `READ_FLOW_PORT`) take precedence over
+    /// the configured values, which in turn fall back to `127.0.0.1:8000`.
+    #[cfg(feature = "server")]
+    pub fn bind_addr(&self) -> std::net::SocketAddr {
+        let env_addr = std::env::var("READ_FLOW_ADDRESS").ok();
+        let env_port = std::env::var("READ_FLOW_PORT")
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok());
+        resolve_bind_addr(
+            self.address.as_deref(),
+            self.port,
+            env_addr.as_deref(),
+            env_port,
+        )
+    }
+}
+
+/// Pure resolution of the bind address from the four possible sources, in
+/// precedence order: env var, then configured value, then default.
+#[cfg(feature = "server")]
+fn resolve_bind_addr(
+    cfg_addr: Option<&str>,
+    cfg_port: Option<u16>,
+    env_addr: Option<&str>,
+    env_port: Option<u16>,
+) -> std::net::SocketAddr {
+    use std::net::IpAddr;
+    use std::net::Ipv4Addr;
+
+    let ip: IpAddr = env_addr
+        .or(cfg_addr)
+        .and_then(|a| a.parse().ok())
+        .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let port = env_port.or(cfg_port).unwrap_or(8000);
+    std::net::SocketAddr::new(ip, port)
+}
+
+#[cfg(all(test, feature = "server"))]
+mod bind_addr_tests {
+    use std::net::SocketAddr;
+
+    use rstest::rstest;
+
+    use super::resolve_bind_addr;
+
+    #[rstest]
+    // defaults when nothing is set
+    #[case(None, None, None, None, "127.0.0.1:8000")]
+    // configured values are used
+    #[case(Some("0.0.0.0"), Some(9000), None, None, "0.0.0.0:9000")]
+    // env overrides config
+    #[case(
+        Some("0.0.0.0"),
+        Some(9000),
+        Some("127.0.0.1"),
+        Some(3000),
+        "127.0.0.1:3000"
+    )]
+    // env port only, config address only
+    #[case(Some("0.0.0.0"), None, None, Some(0), "0.0.0.0:0")]
+    // invalid address falls back to default ip, keeps port
+    #[case(Some("not-an-ip"), Some(1234), None, None, "127.0.0.1:1234")]
+    fn resolves(
+        #[case] cfg_addr: Option<&str>,
+        #[case] cfg_port: Option<u16>,
+        #[case] env_addr: Option<&str>,
+        #[case] env_port: Option<u16>,
+        #[case] expected: &str,
+    ) {
+        let expected: SocketAddr = expected.parse().unwrap();
+        assert_eq!(
+            resolve_bind_addr(cfg_addr, cfg_port, env_addr, env_port),
+            expected
+        );
     }
 }
 

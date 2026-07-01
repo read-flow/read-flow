@@ -11,7 +11,7 @@ maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 
 [features]
 default = ["server"]
-server = ["dep:rocket", "dep:rocket_cors"]
+server = ["dep:axum", "dep:tower", "dep:tower-http"]
 online_tests = []
 # Exposes `test_support`: helpers for booting a real `read-flow-cli serve`
 # process for BDD/integration tests outside this crate (e.g. `cosmic`'s
@@ -58,8 +58,9 @@ mupdf.workspace = true
 webp.workspace = true
 provider.path = "../provider"
 
-rocket = { workspace = true, optional = true, features = ["http2", "json"] }
-rocket_cors = { workspace = true, optional = true }
+axum = { workspace = true, optional = true, features = ["multipart"] }
+tower = { workspace = true, optional = true }
+tower-http = { workspace = true, optional = true, features = ["cors"] }
 password-hash = "0.6.1"
 mobi = "0.8.0"
 

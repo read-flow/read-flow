@@ -109,11 +109,11 @@ export async function spawnBackend(): Promise<BackendHandle> {
 	);
 
 	const proc = spawn(READ_FLOW_CLI, ['--configuration-file', configPath, 'serve'], {
-		env: { ...process.env, ROCKET_PORT: '0', ROCKET_ADDRESS: '127.0.0.1' },
+		env: { ...process.env, READ_FLOW_PORT: '0', READ_FLOW_ADDRESS: '127.0.0.1' },
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
 
-	const match = await waitForLine(proc, /Rocket has launched from (http:\/\/127\.0\.0\.1:\d+)/, 30_000);
+	const match = await waitForLine(proc, /Server listening on (http:\/\/127\.0\.0\.1:\d+)/, 30_000);
 	const baseUrl = match[1];
 	await waitForHttp(`${baseUrl}/status`, 10_000);
 

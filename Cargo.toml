@@ -43,8 +43,9 @@ rand_core = "0.6"
 regex = { version = "1.12.4", default-features = false }
 reqwest = { version = "0.13.4", default-features = false }
 rfd = "0.17.2"
-rocket = "0.5.1"
-rocket_cors = "0.6.0"
+axum = "0.8.7"
+tower = "0.5.2"
+tower-http = "0.6.6"
 rstest = "0.26.1"
 rust-embed = "8.11.0"
 serde = "1.0.228"

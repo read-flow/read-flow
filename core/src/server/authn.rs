@@ -1,12 +1,11 @@
+use axum::extract::FromRequestParts;
+use axum::http::StatusCode;
+use axum::http::request::Parts;
+use axum::response::IntoResponse;
+use axum::response::Response;
 use base64::Engine;
-use itertools::Itertools;
-use rocket::http::Status;
-use rocket::request::FromRequest;
-use rocket::request::Outcome;
-use rocket::request::Request;
 
-use crate::ApplicationModule;
-use crate::server::SettingsProvider;
+use crate::server::AppState;
 
 pub struct AuthorizedUser {
     pub user_id: String,
@@ -22,22 +21,27 @@ impl AuthorizedUser {
 /// @feature: remotes.private_mode
 pub struct PrivateModeHeader(pub bool);
 
-#[rocket::async_trait]
-impl<'r> FromRequest<'r> for PrivateModeHeader {
-    type Error = std::convert::Infallible;
+impl<S> FromRequestParts<S> for PrivateModeHeader
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
 
-    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let value = request
-            .headers()
-            .get_one("x-private-mode")
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let value = parts
+            .headers
+            .get("x-private-mode")
+            .and_then(|v| v.to_str().ok())
             .map(|v| v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
-        Outcome::Success(PrivateModeHeader(value))
+        Ok(PrivateModeHeader(value))
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("expected an Authorization header")]
+    MissingAuthorization,
     #[error("expected a single Authorization header, found '{0}'")]
     TooManyAuthorizationHeaders(usize),
     #[error("expected a Basic or Bearer token")]
@@ -46,6 +50,19 @@ pub enum Error {
     InvalidBasicAuth,
     #[error("the presented credentials are invalid")]
     InvalidCredentials,
+}
+
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let status = match self {
+            Error::TooManyAuthorizationHeaders(_) => StatusCode::BAD_REQUEST,
+            Error::MissingAuthorization | Error::InvalidAuthType | Error::InvalidBasicAuth => {
+                StatusCode::UNAUTHORIZED
+            }
+            Error::InvalidCredentials => StatusCode::FORBIDDEN,
+        };
+        (status, self.to_string()).into_response()
+    }
 }
 
 impl AuthorizedUser {
@@ -82,66 +99,45 @@ impl AuthorizedUser {
     }
 }
 
-#[rocket::async_trait]
-impl<'r> FromRequest<'r> for AuthorizedUser {
-    type Error = Error;
+impl FromRequestParts<AppState> for AuthorizedUser {
+    type Rejection = Error;
 
-    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        let application_module = request
-            .rocket()
-            .state::<ApplicationModule<SettingsProvider>>()
-            .expect("ApplicationModule should exist");
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let settings = state.settings().await;
 
-        let settings = application_module.settings().await;
+        let headers: Vec<_> = parts.headers.get_all("authorization").iter().collect();
+        let authorization_header = match headers.as_slice() {
+            [] => return Err(Error::MissingAuthorization),
+            [single] => single.to_str().map_err(|_| Error::InvalidBasicAuth)?,
+            many => return Err(Error::TooManyAuthorizationHeaders(many.len())),
+        };
 
-        let authorization_header = request
-            .headers()
-            .get("authorization")
-            .at_most_one()
-            .map_err(|error| Error::TooManyAuthorizationHeaders(error.count()));
-
-        match authorization_header {
-            Ok(Some(authorization_header)) => {
-                // Try Basic authentication first (user_id:passphrase)
-                if authorization_header.to_lowercase().starts_with("basic ") {
-                    match Self::extract_basic_auth(authorization_header) {
-                        Ok((user_id, passphrase)) => {
-                            if let Some(entry) = settings.server.authorized_users.get(&user_id) {
-                                if entry.password().verify(&passphrase).is_ok() {
-                                    Outcome::Success(AuthorizedUser {
-                                        user_id,
-                                        roles: entry.roles().to_vec(),
-                                    })
-                                } else {
-                                    Outcome::Error((Status::Forbidden, Error::InvalidCredentials))
-                                }
-                            } else {
-                                Outcome::Error((Status::Forbidden, Error::InvalidCredentials))
-                            }
-                        }
-                        Err(error) => Outcome::Error((Status::Unauthorized, error)),
-                    }
-                }
-                // Fall back to Bearer token authentication for backward compatibility
-                else {
-                    match Self::extract_bearer_token(authorization_header) {
-                        Ok(token) => {
-                            for (user_id, entry) in settings.server.authorized_users.iter() {
-                                if entry.password().verify(token).is_ok() {
-                                    return Outcome::Success(AuthorizedUser {
-                                        user_id: user_id.clone(),
-                                        roles: entry.roles().to_vec(),
-                                    });
-                                }
-                            }
-                            Outcome::Error((Status::Forbidden, Error::InvalidCredentials))
-                        }
-                        Err(error) => Outcome::Error((Status::Unauthorized, error)),
-                    }
+        // Try Basic authentication first (user_id:passphrase)
+        if authorization_header.to_lowercase().starts_with("basic ") {
+            let (user_id, passphrase) = Self::extract_basic_auth(authorization_header)?;
+            match settings.server.authorized_users.get(&user_id) {
+                Some(entry) if entry.password().verify(&passphrase).is_ok() => Ok(AuthorizedUser {
+                    user_id,
+                    roles: entry.roles().to_vec(),
+                }),
+                _ => Err(Error::InvalidCredentials),
+            }
+        }
+        // Fall back to Bearer token authentication for backward compatibility
+        else {
+            let token = Self::extract_bearer_token(authorization_header)?;
+            for (user_id, entry) in settings.server.authorized_users.iter() {
+                if entry.password().verify(token).is_ok() {
+                    return Ok(AuthorizedUser {
+                        user_id: user_id.clone(),
+                        roles: entry.roles().to_vec(),
+                    });
                 }
             }
-            Ok(None) => Outcome::Forward(Status::Unauthorized),
-            Err(error) => Outcome::Error((Status::BadRequest, error)),
+            Err(Error::InvalidCredentials)
         }
     }
 }

@@ -5,8 +5,8 @@
 //! The PWA Playwright harness (`pwa/e2e/support/server.ts`) follows the same
 //! boot recipe independently, since it can't link against this crate: write a
 //! temp config + SQLite path, spawn `read-flow-cli serve` with
-//! `ROCKET_PORT=0`, and parse the bound address from the
-//! "Rocket has launched from ..." stdout line.
+//! `READ_FLOW_PORT=0`, and parse the bound address from the
+//! "Server listening on ..." stdout line.
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -22,7 +22,7 @@ use tokio::process::Command;
 
 use crate::settings::HashedPassword;
 
-const LAUNCH_MARKER: &str = "Rocket has launched from ";
+const LAUNCH_MARKER: &str = "Server listening on ";
 
 /// A running `read-flow-cli serve` instance against a fresh temp config and
 /// SQLite database, with one authorized "owner" user. Killed and cleaned up
@@ -62,8 +62,8 @@ impl TestServer {
                 config_path.to_str().expect("temp config path is utf-8"),
                 "serve",
             ])
-            .env("ROCKET_PORT", "0")
-            .env("ROCKET_ADDRESS", "127.0.0.1")
+            .env("READ_FLOW_PORT", "0")
+            .env("READ_FLOW_ADDRESS", "127.0.0.1")
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true)
@@ -122,12 +122,10 @@ async fn wait_for_launch_url(lines: &mut Lines<BufReader<ChildStdout>>) -> Strin
     .expect("timed out waiting for the server to launch")
 }
 
-/// Rocket logs every request to stdout. If nothing keeps reading from our end
-/// of the pipe once we're past the launch line, the next log write gets
-/// `EPIPE` and panics the worker thread mid-request — killing the connection
-/// before any response is written (manifesting as a mysterious empty-response
-/// hang in `wait_for_http` and every subsequent request). Drain for the
-/// server's lifetime to keep the pipe open.
+/// Keep reading the server's stdout for its whole lifetime so the pipe never
+/// fills up and blocks a write on the server side. (Tracing goes to stderr,
+/// but anything the server prints to stdout after the launch line is drained
+/// here.)
 fn keep_draining(mut lines: Lines<BufReader<ChildStdout>>) {
     tokio::spawn(async move { while lines.next_line().await.transpose().is_some() {} });
 }

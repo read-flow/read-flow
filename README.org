@@ -20,7 +20,7 @@ The project is structured as a Rust workspace with three main crates and a separ
 *** =core= (Core Library & Server)
 The main library and server implementation providing:
 - Database management using sqlx (async) with SQLite
-- REST API server using Rocket framework
+- REST API server using Axum framework
 - File scanning and fingerprinting
 - Tag management and automatic tagging
 - Client API for remote server communication
@@ -139,7 +139,6 @@ read-flow/
 ├── read-flow.template.toml    # Configuration template
 ├── openapi.yaml                       # REST API specification
 ├── rest-api.http                      # HTTP test requests
-├── Rocket.toml                        # Rocket server configuration
 ├── database.db                        # SQLite database
 ├── setup.sh                           # Setup script
 └── TODO.org                           # Project tasks
@@ -265,7 +264,7 @@ npm run dev
 ** Workspace Dependencies
 The workspace uses centralized dependency management. Common dependencies include:
 - =sqlx= - Async database (SQLite)
-- =rocket= - Web framework
+- =axum= - Web framework
 - =serde= - Serialization
 - =tokio= - Async runtime
 - =clap= - CLI parsing

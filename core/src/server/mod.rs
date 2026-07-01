@@ -5,31 +5,29 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use authn::AuthorizedUser;
 use authn::PrivateModeHeader;
+use axum::Json;
+use axum::Router;
+use axum::extract::Multipart;
+use axum::extract::Path as AxumPath;
+use axum::extract::Query;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::http::header;
+use axum::response::IntoResponse;
+use axum::response::Response;
+use axum::routing::get;
+use axum::routing::post;
+use axum::routing::put;
 use figment::Figment;
 use provider::r#async::AndThen;
 use provider::r#async::Provider;
-use rocket::Build;
-use rocket::Ignite;
-use rocket::Responder;
-use rocket::Rocket;
-use rocket::State;
-use rocket::delete;
-use rocket::form::Form;
-use rocket::fs::NamedFile;
-use rocket::fs::TempFile;
-use rocket::get;
-use rocket::http::ContentType;
-use rocket::http::Method;
-use rocket::post;
-use rocket::put;
-use rocket::routes;
-use rocket::serde::json::Json;
-use rocket_cors::AllowedOrigins;
-use rocket_cors::Cors;
-use rocket_cors::CorsOptions;
+use tokio::net::TcpListener;
+use tower_http::cors::Any;
+use tower_http::cors::CorsLayer;
 
 use crate::ApplicationModule;
 use crate::ExpandedPath;
@@ -58,40 +56,42 @@ use crate::settings::SettingsError;
 use crate::settings::UserEntry;
 use crate::to_unique_file;
 
-#[derive(Debug, thiserror::Error, Responder)]
+#[derive(Debug, thiserror::Error)]
 enum Error {
     #[error("database error: {0}")]
-    #[response(status = 500)]
-    Dao(
-        String,
-        #[response(ignore)]
-        #[source]
-        dao::Error,
-    ),
+    Dao(String, #[source] dao::Error),
     #[error("filesystem error: {0}")]
-    #[response(status = 500)]
     Io(#[from] io::Error),
     #[error("extension {0} is not supported")]
-    #[response(status = 400)]
     UnsupportedExtension(String),
     #[error("content-type {0} is not supported")]
-    #[response(status = 400)]
     UnsupportedContentType(String),
     #[error("could not import file: {0}")]
-    #[response(status = 500)]
     Scan(String),
     #[error("file with guid {0} not found")]
-    #[response(status = 404)]
     FileNotFound(String),
     #[error("private mode access requires owner role")]
-    #[response(status = 403)]
     Forbidden(String),
     #[error("bad request: {0}")]
-    #[response(status = 400)]
     BadRequest(String),
     #[error("settings error: {0}")]
-    #[response(status = 500)]
     Settings(String),
+}
+
+impl IntoResponse for Error {
+    fn into_response(self) -> Response {
+        let status = match &self {
+            Error::Dao(..) | Error::Io(_) | Error::Scan(_) | Error::Settings(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+            Error::UnsupportedExtension(_)
+            | Error::UnsupportedContentType(_)
+            | Error::BadRequest(_) => StatusCode::BAD_REQUEST,
+            Error::FileNotFound(_) => StatusCode::NOT_FOUND,
+            Error::Forbidden(_) => StatusCode::FORBIDDEN,
+        };
+        (status, self.to_string()).into_response()
+    }
 }
 
 impl From<SettingsError> for Error {
@@ -117,28 +117,30 @@ impl From<anyhow::Error> for Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-pub fn create_cors() -> Cors {
-    let cors = CorsOptions::default()
-        .allowed_origins(AllowedOrigins::all())
-        .allowed_methods(
-            vec![
-                Method::Get,
-                Method::Post,
-                Method::Put,
-                Method::Options,
-                Method::Delete,
-            ]
-            .into_iter()
-            .map(From::from)
-            .collect(),
-        )
-        .allowed_headers(rocket_cors::AllowedHeaders::All)
-        .allow_credentials(true);
+/// Shared application state handed to every handler and extractor. Cheap to
+/// clone (`Arc`), and derefs to the underlying [`ApplicationModule`] so handler
+/// bodies read exactly as before.
+#[derive(Clone)]
+pub struct AppState(Arc<ApplicationModule<SettingsProvider>>);
 
-    cors.to_cors().unwrap()
+impl std::ops::Deref for AppState {
+    type Target = ApplicationModule<SettingsProvider>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
-struct FigmentProvider {
+/// Permissive CORS policy mirroring the previous `rocket_cors` setup: any
+/// origin, the same method set, and any header.
+fn cors_layer() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any)
+}
+
+pub struct FigmentProvider {
     config_path: PathBuf,
 }
 
@@ -146,87 +148,103 @@ impl Provider<Figment> for FigmentProvider {
     type Error = SettingsError;
     async fn provide(&self) -> Result<Figment, Self::Error> {
         Ok(settings::decorate_with(
-            rocket::Config::figment(),
+            Figment::new(),
             self.config_path.clone(),
         ))
     }
 }
 
-type SettingsProvider =
+pub type SettingsProvider =
     AndThen<FigmentProvider, fn(Figment) -> Result<Settings, SettingsError>, Figment>;
 
 fn extract_settings(figment: Figment) -> Result<Settings, SettingsError> {
     Ok(figment.extract()?)
 }
 
-async fn serve(config_path: PathBuf) -> Rocket<Build> {
+async fn build_state(config_path: PathBuf) -> anyhow::Result<AppState> {
     let figment_provider = FigmentProvider {
         config_path: config_path.clone(),
     };
-    // unwrap is safe because FigmentProvider technically doesn't err
-    let figment = figment_provider.provide().await.unwrap();
-
     let settings_provider = figment_provider
         .and_then(extract_settings as fn(Figment) -> Result<Settings, SettingsError>);
 
     let application_module: ApplicationModule<SettingsProvider> =
-        ApplicationModule::new(settings_provider, config_path)
-            .await
-            .expect("extract settings");
+        ApplicationModule::new(settings_provider, config_path).await?;
 
-    let cors = create_cors();
-
-    let routes = routes![
-        status,
-        get_file,
-        update_file,
-        get_file_tags,
-        post_file_tags,
-        delete_file_tags,
-        get_files,
-        get_files_tags,
-        download_file,
-        get_file_cover,
-        upload_file,
-        delete_file,
-        get_reading_state,
-        put_reading_state,
-        put_reading_status,
-        get_documents,
-        get_document,
-        get_document_cover,
-        put_document_metadata,
-        post_merge_documents,
-        ensure_document_for_file,
-        post_scan,
-        post_check_missing,
-        get_scan_directories,
-        put_scan_directory,
-        delete_scan_directory,
-        get_settings,
-        put_settings,
-        get_users,
-        post_user,
-        put_user,
-        delete_user,
-        search_online_library,
-        import_online_book,
-    ];
-
-    rocket::custom(figment)
-        .mount("/", routes)
-        .manage(application_module)
-        .attach(cors)
+    Ok(AppState(Arc::new(application_module)))
 }
 
-pub async fn main(config_path: PathBuf) -> Result<Rocket<Ignite>, Box<rocket::Error>> {
-    Ok(serve(config_path).await.launch().await?)
+/// Build the fully-configured router (routes + CORS + state). Exposed so the
+/// COSMIC app can embed the server in-process and serve it on its own runtime.
+pub fn build_router(state: AppState) -> Router {
+    Router::new()
+        .route("/status", get(status))
+        .route("/files", get(get_files).put(update_file).post(upload_file))
+        .route("/files/tags", get(get_files_tags))
+        .route("/files/{guid}", get(get_file).delete(delete_file))
+        .route(
+            "/files/{guid}/tags",
+            get(get_file_tags)
+                .post(post_file_tags)
+                .delete(delete_file_tags),
+        )
+        .route("/files/{guid}/download-as/{file_name}", get(download_file))
+        .route("/files/{guid}/cover", get(get_file_cover))
+        .route("/files/{guid}/document", post(ensure_document_for_file))
+        .route("/reading-state", put(put_reading_state))
+        .route("/reading-state/{fingerprint}", get(get_reading_state))
+        .route(
+            "/reading-state/{fingerprint}/status",
+            put(put_reading_status),
+        )
+        .route("/documents", get(get_documents))
+        .route("/documents/merge", post(post_merge_documents))
+        .route("/documents/{guid}", get(get_document))
+        .route("/documents/{guid}/cover", get(get_document_cover))
+        .route("/documents/{guid}/metadata", put(put_document_metadata))
+        .route("/scan", post(post_scan))
+        .route("/maintenance/check-missing", post(post_check_missing))
+        .route(
+            "/scan-directories",
+            get(get_scan_directories)
+                .put(put_scan_directory)
+                .delete(delete_scan_directory),
+        )
+        .route("/settings", get(get_settings).put(put_settings))
+        .route("/users", get(get_users).post(post_user))
+        .route("/users/{user_id}", put(put_user).delete(delete_user))
+        .route("/online-library/search", get(search_online_library))
+        .route("/online-library/import", post(import_online_book))
+        .layer(cors_layer())
+        .with_state(state)
 }
 
-#[get("/status")]
+/// Build the router directly from a configuration file. Convenience entry point
+/// for embedding the server.
+pub async fn build_app(config_path: PathBuf) -> anyhow::Result<Router> {
+    Ok(build_router(build_state(config_path).await?))
+}
+
+/// Serve an already-built router on the given listener until shutdown.
+pub async fn serve_on(listener: TcpListener, app: Router) -> std::io::Result<()> {
+    axum::serve(listener, app).await
+}
+
+pub async fn main(config_path: PathBuf) -> anyhow::Result<()> {
+    let state = build_state(config_path).await?;
+    let addr = state.settings().await.server.bind_addr();
+    let listener = TcpListener::bind(addr).await?;
+    // Printed to stdout (tracing goes to stderr) so test/e2e harnesses can
+    // parse the bound address, which matters when `port = 0`.
+    println!("Server listening on http://{}", listener.local_addr()?);
+    let app = build_router(state);
+    serve_on(listener, app).await?;
+    Ok(())
+}
+
 /// @feature: remotes.status
 async fn status(
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
 ) -> Result<Json<Status>> {
     let db_status = application_module.db_client().await.status().await?;
@@ -238,9 +256,8 @@ async fn status(
     Ok(Json(status))
 }
 
-#[get("/files")]
 async fn get_files(
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
     private_mode: PrivateModeHeader,
 ) -> Result<Json<Vec<File>>> {
@@ -282,24 +299,22 @@ async fn get_files(
     Ok(Json(files))
 }
 
-#[put("/files", data = "<file>")]
 async fn update_file(
-    file: Json<File>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
+    Json(file): Json<File>,
 ) -> Result<Json<File>> {
     application_module
         .db_client()
         .await
-        .update_file(file.0.clone())
+        .update_file(file.clone())
         .await?;
-    Ok(file)
+    Ok(Json(file))
 }
 
-#[get("/files/tags")]
 /// @feature: tags.list
 async fn get_files_tags(
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
     private_mode: PrivateModeHeader,
 ) -> Result<Json<Vec<String>>> {
@@ -322,18 +337,18 @@ async fn get_files_tags(
     Ok(Json(tags))
 }
 
-#[get("/files/<guid>")]
 async fn get_file(
-    guid: &str,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(guid): AxumPath<String>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
     private_mode: PrivateModeHeader,
-) -> Result<Option<Json<File>>> {
+) -> Result<Response> {
+    let guid = guid.as_str();
     let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
-        return Ok(None);
+        return Ok(StatusCode::NOT_FOUND.into_response());
     };
     let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
     if private_mode.0 {
@@ -346,21 +361,21 @@ async fn get_file(
         .ui
         .contains_hidden_tag(&tags.iter().map(|t| t.tag.clone()).collect::<Vec<_>>())
     {
-        return Ok(None);
+        return Ok(StatusCode::NOT_FOUND.into_response());
     }
     let has_cover = dao::cover_exists(&mut conn, &file.fingerprint).await?;
     let mut api_file: File = (file, tags).into();
     api_file.has_cover = has_cover;
-    Ok(Some(Json(api_file)))
+    Ok(Json(api_file).into_response())
 }
 
-#[get("/files/<guid>/tags")]
 async fn get_file_tags(
-    guid: &str,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(guid): AxumPath<String>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
     private_mode: PrivateModeHeader,
 ) -> Result<Json<Vec<String>>> {
+    let guid = guid.as_str();
     let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
@@ -382,15 +397,15 @@ async fn get_file_tags(
     Ok(Json(tag_strings))
 }
 
-#[post("/files/<guid>/tags", data = "<tags>")]
 /// @feature: tags.add
 async fn post_file_tags(
-    guid: &str,
-    tags: Json<Vec<String>>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(guid): AxumPath<String>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
     private_mode: PrivateModeHeader,
+    Json(tags): Json<Vec<String>>,
 ) -> Result<Json<Vec<String>>> {
+    let guid = guid.as_str();
     let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
@@ -412,23 +427,28 @@ async fn post_file_tags(
         return Ok(Json(vec![]));
     }
     let content_tags = tags
-        .into_inner()
         .into_iter()
         .map(|tag| crate::db::models::ContentTag::new(file.fingerprint.clone(), tag))
         .collect();
     dao::upsert_many_content_tags(&mut conn, content_tags).await?;
-    get_file_tags(guid, application_module, user, private_mode).await
+    get_file_tags(
+        AxumPath(guid.to_string()),
+        State(application_module),
+        user,
+        private_mode,
+    )
+    .await
 }
 
-#[delete("/files/<guid>/tags", data = "<tags>")]
 /// @feature: tags.remove
 async fn delete_file_tags(
-    guid: &str,
-    tags: Json<Vec<String>>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(guid): AxumPath<String>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
     private_mode: PrivateModeHeader,
+    Json(tags): Json<Vec<String>>,
 ) -> Result<Json<Vec<String>>> {
+    let guid = guid.as_str();
     let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
@@ -449,76 +469,75 @@ async fn delete_file_tags(
     } else if settings.ui.contains_hidden_tag(&existing_tags) {
         return Ok(Json(vec![]));
     }
-    dao::delete_content_tags(&mut conn, &file.fingerprint, tags.into_inner()).await?;
-    get_file_tags(guid, application_module, user, private_mode).await
+    dao::delete_content_tags(&mut conn, &file.fingerprint, tags).await?;
+    get_file_tags(
+        AxumPath(guid.to_string()),
+        State(application_module),
+        user,
+        private_mode,
+    )
+    .await
 }
 
-#[get("/files/<guid>/download-as/<file_name>")]
 async fn download_file(
-    guid: &str,
-    file_name: &str,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath((guid, file_name)): AxumPath<(String, String)>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
     private_mode: PrivateModeHeader,
-) -> Result<Option<(ContentType, NamedFile)>> {
+) -> Result<Response> {
     let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let file = dao::select_file_by_guid(&mut conn, guid).await?;
+    let file = dao::select_file_by_guid(&mut conn, &guid).await?;
 
-    match file {
-        None => Ok(None),
-        Some(file) => {
-            let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
-                .await?
-                .iter()
-                .map(|t| t.tag.clone())
-                .collect::<Vec<_>>();
-            if private_mode.0 {
-                if !user.has_role("owner") {
-                    return Err(Error::Forbidden(
-                        "private mode access requires owner role".into(),
-                    ));
-                }
-            } else if settings.ui.contains_hidden_tag(&tags) {
-                return Ok(None);
-            }
-            if !file_name.ends_with(&file.type_.to_lowercase()) {
-                tracing::error!(
-                    "Incorrect file extension on `{file_name}`, expected `{}`",
-                    file.type_
-                );
-                return Ok(None);
-            }
+    let Some(file) = file else {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    };
 
-            let path = Path::new(&file.path);
-            if !path.exists() {
-                tracing::error!("Database out of sync, file not found: {path:?}");
-                return Ok(None);
-            }
-
-            let content_type = extension_to_content_type(&file.type_)?;
-
-            Ok(NamedFile::open(path)
-                .await
-                .ok()
-                .map(|file| (content_type, file)))
+    let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
+        .await?
+        .iter()
+        .map(|t| t.tag.clone())
+        .collect::<Vec<_>>();
+    if private_mode.0 {
+        if !user.has_role("owner") {
+            return Err(Error::Forbidden(
+                "private mode access requires owner role".into(),
+            ));
         }
+    } else if settings.ui.contains_hidden_tag(&tags) {
+        return Ok(StatusCode::NOT_FOUND.into_response());
     }
+    if !file_name.ends_with(&file.type_.to_lowercase()) {
+        tracing::error!(
+            "Incorrect file extension on `{file_name}`, expected `{}`",
+            file.type_
+        );
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    }
+
+    let path = Path::new(&file.path);
+    if !path.exists() {
+        tracing::error!("Database out of sync, file not found: {path:?}");
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    }
+
+    let content_type = content_type_for_extension(&file.type_)?;
+    let data = tokio::fs::read(path).await?;
+    Ok(([(header::CONTENT_TYPE, content_type)], data).into_response())
 }
 
-#[get("/files/<guid>/cover")]
 async fn get_file_cover(
-    guid: &str,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(guid): AxumPath<String>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
     private_mode: PrivateModeHeader,
-) -> Result<Option<(ContentType, Vec<u8>)>> {
+) -> Result<Response> {
     let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
-        return Ok(None);
+    let Some(file) = dao::select_file_by_guid(&mut conn, &guid).await? else {
+        return Ok(StatusCode::NOT_FOUND.into_response());
     };
     if private_mode.0 {
         if !user.has_role("owner") {
@@ -533,24 +552,23 @@ async fn get_file_cover(
             .map(|t| t.tag.clone())
             .collect::<Vec<_>>();
         if settings.ui.contains_hidden_tag(&tags) {
-            return Ok(None);
+            return Ok(StatusCode::NOT_FOUND.into_response());
         }
     }
     let Some((data, mime)) = dao::get_cover(&mut conn, &file.fingerprint).await? else {
-        return Ok(None);
+        return Ok(StatusCode::NOT_FOUND.into_response());
     };
-    let content_type = mime.parse::<ContentType>().unwrap_or(ContentType::JPEG);
-    Ok(Some((content_type, data)))
+    Ok(cover_response(data, mime))
 }
 
-#[delete("/files/<guid>")]
 /// @feature: sources.delete
 async fn delete_file(
-    guid: &str,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(guid): AxumPath<String>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
     private_mode: PrivateModeHeader,
 ) -> Result<()> {
+    let guid = guid.as_str();
     let settings = application_module.settings().await;
     let db_client = application_module.db_client().await;
     let file = db_client.get_file(guid).await?;
@@ -572,18 +590,31 @@ async fn delete_file(
     }
 }
 
-#[post("/files", data = "<file>")]
 /// @feature: sources.send_to_client
 async fn upload_file(
-    mut file: Form<TempFile<'_>>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
+    mut multipart: Multipart,
 ) -> Result<Json<File>> {
-    let extension = file
-        .content_type()
+    let field = multipart
+        .next_field()
+        .await
+        .map_err(|e| Error::BadRequest(e.to_string()))?
+        .ok_or_else(|| Error::BadRequest("no file field in multipart form".into()))?;
+
+    // Read metadata before consuming the field body with `bytes()`.
+    let content_type = field.content_type().map(|s| s.to_string());
+    let raw_name = field.file_name().map(|s| s.to_string());
+    let data = field
+        .bytes()
+        .await
+        .map_err(|e| Error::BadRequest(e.to_string()))?;
+
+    let extension = content_type
+        .as_deref()
         .map(content_type_to_extension)
         .transpose()?
-        .unwrap();
+        .ok_or_else(|| Error::UnsupportedContentType("missing content-type".into()))?;
 
     if !matches!(
         extension.to_lowercase().as_str(),
@@ -592,7 +623,14 @@ async fn upload_file(
         return Err(Error::UnsupportedExtension(extension));
     }
 
-    let filename = file.name().unwrap(); // sanitized filename, safe to use
+    // The sanitized base name (without extension), mirroring the previous
+    // `TempFile::name()` behaviour.
+    let filename = raw_name
+        .as_deref()
+        .and_then(|n| Path::new(n).file_stem())
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| Error::BadRequest("missing file name".into()))?;
+
     let target_dir = application_module
         .settings()
         .await
@@ -608,7 +646,7 @@ async fn upload_file(
 
     to_unique_file(&mut target_file, &extension);
 
-    file.persist_to(target_file.as_path()).await?;
+    tokio::fs::write(&target_file, &data).await?;
 
     application_module.scan(target_file.clone()).await?;
 
@@ -622,28 +660,29 @@ async fn upload_file(
     Ok(Json((result, vec![]).into()))
 }
 
-#[get("/reading-state/<fingerprint>")]
 async fn get_reading_state(
-    fingerprint: &str,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(fingerprint): AxumPath<String>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
-) -> Result<Option<Json<ReadingState>>> {
+) -> Result<Response> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let state = dao::get_reading_state(&mut conn, fingerprint).await?;
-    Ok(state.map(Json))
+    let state = dao::get_reading_state(&mut conn, &fingerprint).await?;
+    Ok(match state {
+        Some(state) => Json(state).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    })
 }
 
-#[put("/reading-state", data = "<state>")]
 /// @feature: reading.progress
 async fn put_reading_state(
-    state: Json<ReadingState>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
+    Json(state): Json<ReadingState>,
 ) -> Result<Json<ReadingState>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let result = dao::upsert_reading_state(&mut conn, state.into_inner()).await?;
+    let result = dao::upsert_reading_state(&mut conn, state).await?;
     Ok(Json(result))
 }
 
@@ -652,26 +691,24 @@ struct ReadingStatusRequest {
     status: ReadingStatus,
 }
 
-#[put("/reading-state/<fingerprint>/status", data = "<req>")]
 /// @feature: reading.status
 async fn put_reading_status(
-    fingerprint: &str,
-    req: Json<ReadingStatusRequest>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(fingerprint): AxumPath<String>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
+    Json(req): Json<ReadingStatusRequest>,
 ) -> Result<()> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    dao::update_reading_status_only(&mut conn, fingerprint, req.into_inner().status.into()).await?;
+    dao::update_reading_status_only(&mut conn, &fingerprint, req.status.into()).await?;
     Ok(())
 }
 
 // ─── Document routes ──────────────────────────────────────────────────────────
 
-#[get("/documents")]
 /// @feature: documents.list
 async fn get_documents(
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
 ) -> Result<Json<Vec<ApiDocument>>> {
     let pool = application_module.connection_pool().await;
@@ -680,47 +717,47 @@ async fn get_documents(
     Ok(Json(docs))
 }
 
-#[get("/documents/<guid>")]
 /// @feature: documents.detail_view
 async fn get_document(
-    guid: &str,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(guid): AxumPath<String>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
-) -> Result<Option<Json<ApiDocument>>> {
+) -> Result<Response> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let doc = dao::select_api_document_by_guid(&mut conn, guid).await?;
-    Ok(doc.map(Json))
+    let doc = dao::select_api_document_by_guid(&mut conn, &guid).await?;
+    Ok(match doc {
+        Some(doc) => Json(doc).into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    })
 }
 
-#[get("/documents/<guid>/cover")]
 /// @feature: documents.cover_display
 async fn get_document_cover(
-    guid: &str,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(guid): AxumPath<String>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
-) -> Result<Option<(ContentType, Vec<u8>)>> {
+) -> Result<Response> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let Some(doc) = dao::select_document_by_guid(&mut conn, guid).await? else {
-        return Ok(None);
+    let Some(doc) = dao::select_document_by_guid(&mut conn, &guid).await? else {
+        return Ok(StatusCode::NOT_FOUND.into_response());
     };
     let Some((data, mime)) = dao::get_document_selected_cover(&mut conn, doc.id).await? else {
-        return Ok(None);
+        return Ok(StatusCode::NOT_FOUND.into_response());
     };
-    let content_type = mime.parse::<ContentType>().unwrap_or(ContentType::JPEG);
-    Ok(Some((content_type, data)))
+    Ok(cover_response(data, mime))
 }
 
-#[put("/documents/<guid>/metadata", data = "<meta>")]
 /// @feature: documents.edit_metadata
 /// @feature: documents.select_cover
 async fn put_document_metadata(
-    guid: &str,
-    meta: Json<DocumentMeta>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(guid): AxumPath<String>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
+    Json(meta): Json<DocumentMeta>,
 ) -> Result<Json<ApiDocument>> {
+    let guid = guid.as_str();
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
 
@@ -728,7 +765,6 @@ async fn put_document_metadata(
         .await?
         .ok_or_else(|| Error::FileNotFound(guid.to_string()))?;
 
-    let meta = meta.into_inner();
     let doc_type_str = meta.document_type_str();
     let authors_json = meta.authors_json();
     dao::upsert_document_user_metadata(
@@ -754,15 +790,14 @@ async fn put_document_metadata(
     Ok(Json(updated))
 }
 
-#[post("/files/<guid>/document")]
 async fn ensure_document_for_file(
-    guid: &str,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(guid): AxumPath<String>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
 ) -> Result<Json<ApiDocument>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let doc = dao::ensure_document_for_file_guid(&mut conn, guid).await?;
+    let doc = dao::ensure_document_for_file_guid(&mut conn, &guid).await?;
     Ok(Json(doc))
 }
 
@@ -775,10 +810,9 @@ fn require_owner(user: &AuthorizedUser) -> Result<()> {
     }
 }
 
-#[post("/scan")]
 /// @feature: admin.scan
 async fn post_scan(
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
 ) -> Result<Json<ScanSummary>> {
     require_owner(&user)?;
@@ -792,15 +826,20 @@ struct CheckMissingResponse {
     purged: bool,
 }
 
-#[post("/maintenance/check-missing?<purge>")]
+#[derive(serde::Deserialize)]
+struct CheckMissingQuery {
+    #[serde(default)]
+    purge: Option<bool>,
+}
+
 /// @feature: admin.check_missing
 async fn post_check_missing(
-    purge: Option<bool>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
+    Query(query): Query<CheckMissingQuery>,
 ) -> Result<Json<CheckMissingResponse>> {
     require_owner(&user)?;
-    let purge = purge.unwrap_or(false);
+    let purge = query.purge.unwrap_or(false);
     let missing = application_module.check_missing(purge).await;
     Ok(Json(CheckMissingResponse {
         missing,
@@ -827,10 +866,9 @@ fn list_scan_directories(settings: &Settings) -> Vec<ScanDirectoryEntry> {
         .collect()
 }
 
-#[get("/scan-directories")]
 /// @feature: admin.scan_directories
 async fn get_scan_directories(
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
 ) -> Result<Json<Vec<ScanDirectoryEntry>>> {
     require_owner(&user)?;
@@ -838,15 +876,14 @@ async fn get_scan_directories(
     Ok(Json(list_scan_directories(&settings)))
 }
 
-#[put("/scan-directories", data = "<entry>")]
 /// @feature: admin.scan_directories
 async fn put_scan_directory(
-    entry: Json<ScanDirectoryEntry>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
+    Json(entry): Json<ScanDirectoryEntry>,
 ) -> Result<Json<Vec<ScanDirectoryEntry>>> {
     require_owner(&user)?;
-    let ScanDirectoryEntry { path, settings } = entry.into_inner();
+    let ScanDirectoryEntry { path, settings } = entry;
     let path = ExpandedPath::from_str(&path)
         .map_err(|e| Error::BadRequest(format!("invalid path: {e}")))?;
     application_module
@@ -858,15 +895,19 @@ async fn put_scan_directory(
     Ok(Json(list_scan_directories(&settings)))
 }
 
-#[delete("/scan-directories?<path>")]
+#[derive(serde::Deserialize)]
+struct PathQuery {
+    path: String,
+}
+
 /// @feature: admin.scan_directories
 async fn delete_scan_directory(
-    path: String,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
+    Query(query): Query<PathQuery>,
 ) -> Result<Json<Vec<ScanDirectoryEntry>>> {
     require_owner(&user)?;
-    let parsed = ExpandedPath::from_str(&path)
+    let parsed = ExpandedPath::from_str(&query.path)
         .map_err(|e| Error::BadRequest(format!("invalid path: {e}")))?;
     application_module
         .update_settings(move |s| {
@@ -902,10 +943,9 @@ fn server_settings_dto(settings: &Settings) -> ServerSettingsDto {
     }
 }
 
-#[get("/settings")]
 /// @feature: admin.server_settings
 async fn get_settings(
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
 ) -> Result<Json<ServerSettingsDto>> {
     require_owner(&user)?;
@@ -913,15 +953,13 @@ async fn get_settings(
     Ok(Json(server_settings_dto(&settings)))
 }
 
-#[put("/settings", data = "<dto>")]
 /// @feature: admin.server_settings
 async fn put_settings(
-    dto: Json<ServerSettingsDto>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
+    Json(dto): Json<ServerSettingsDto>,
 ) -> Result<Json<ServerSettingsDto>> {
     require_owner(&user)?;
-    let dto = dto.into_inner();
     application_module
         .update_settings(move |s| {
             s.scan.extensions = dto.extensions;
@@ -984,10 +1022,9 @@ fn hash_password(plain: &str) -> Result<HashedPassword> {
         .map_err(|e| Error::Settings(format!("could not hash password: {e}")))
 }
 
-#[get("/users")]
 /// @feature: admin.authorized_users
 async fn get_users(
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
 ) -> Result<Json<Vec<UserDto>>> {
     require_owner(&user)?;
@@ -995,19 +1032,18 @@ async fn get_users(
     Ok(Json(list_users(&settings)))
 }
 
-#[post("/users", data = "<req>")]
 /// @feature: admin.authorized_users
 async fn post_user(
-    req: Json<CreateUserRequest>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
+    Json(req): Json<CreateUserRequest>,
 ) -> Result<Json<Vec<UserDto>>> {
     require_owner(&user)?;
     let CreateUserRequest {
         user_id,
         password,
         roles,
-    } = req.into_inner();
+    } = req;
     if user_id.is_empty() {
         return Err(Error::BadRequest("user_id must not be empty".into()));
     }
@@ -1030,16 +1066,16 @@ async fn post_user(
     Ok(Json(list_users(&settings)))
 }
 
-#[put("/users/<user_id>", data = "<req>")]
 /// @feature: admin.authorized_users
 async fn put_user(
-    user_id: &str,
-    req: Json<UpdateUserRequest>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(user_id): AxumPath<String>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
+    Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<Vec<UserDto>>> {
     require_owner(&user)?;
-    let UpdateUserRequest { password, roles } = req.into_inner();
+    let user_id = user_id.as_str();
+    let UpdateUserRequest { password, roles } = req;
 
     let existing = application_module
         .settings()
@@ -1067,14 +1103,14 @@ async fn put_user(
     Ok(Json(list_users(&settings)))
 }
 
-#[delete("/users/<user_id>")]
 /// @feature: admin.authorized_users
 async fn delete_user(
-    user_id: &str,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    AxumPath(user_id): AxumPath<String>,
+    State(application_module): State<AppState>,
     user: AuthorizedUser,
 ) -> Result<Json<Vec<UserDto>>> {
     require_owner(&user)?;
+    let user_id = user_id.as_str();
     if user_id == user.user_id {
         return Err(Error::BadRequest(
             "you cannot delete the user you are authenticated as".into(),
@@ -1090,15 +1126,13 @@ async fn delete_user(
     Ok(Json(list_users(&settings)))
 }
 
-#[post("/documents/merge", data = "<req>")]
 /// @feature: documents.merge
 async fn post_merge_documents(
-    req: Json<MergeDocumentsRequest>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
+    Json(req): Json<MergeDocumentsRequest>,
 ) -> Result<Json<ApiDocument>> {
     let pool = application_module.connection_pool().await;
-    let req = req.into_inner();
     dao::merge_documents(&pool, &req.winner_guid, &req.loser_guids).await?;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let doc = dao::select_api_document_by_guid(&mut conn, &req.winner_guid)
@@ -1113,12 +1147,16 @@ struct OnlineLibrarySearchResponse {
     catalogs: Vec<OnlineCatalog>,
 }
 
-#[get("/online-library/search?<q>")]
+#[derive(serde::Deserialize)]
+struct SearchQuery {
+    q: String,
+}
+
 /// @feature: online_library.search
 async fn search_online_library(
-    q: String,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
+    Query(SearchQuery { q }): Query<SearchQuery>,
 ) -> Result<Json<OnlineLibrarySearchResponse>> {
     let settings = application_module.settings().await;
     let catalogs: Vec<OnlineCatalog> = settings
@@ -1154,14 +1192,12 @@ struct ImportOnlineBookRequest {
     format: DownloadFormat,
 }
 
-#[post("/online-library/import", data = "<req>")]
 /// @feature: online_library.download_import
 async fn import_online_book(
-    req: Json<ImportOnlineBookRequest>,
-    application_module: &State<ApplicationModule<SettingsProvider>>,
+    State(application_module): State<AppState>,
     _user: AuthorizedUser,
+    Json(req): Json<ImportOnlineBookRequest>,
 ) -> Result<Json<File>> {
-    let req = req.into_inner();
     let download_folder = application_module.settings().await.server.download_folder;
     let path = download_book(&req.format, &req.title, &download_folder)
         .await
@@ -1175,22 +1211,57 @@ async fn import_online_book(
     Ok(Json((result, vec![]).into()))
 }
 
-fn extension_to_content_type(extension: &str) -> Result<ContentType> {
-    ContentType::from_extension(extension)
-        .or_else(|| match extension.to_lowercase().as_str() {
-            "mobi" | "prc" | "azw" => ContentType::new("application", "x-mobipocket-ebook").into(),
-            &_ => None,
-        })
-        .ok_or(Error::UnsupportedExtension(extension.to_string()))
+/// Build an image response for a cover, using the stored MIME type and falling
+/// back to `image/jpeg` when it is missing or not a valid header value.
+fn cover_response(data: Vec<u8>, mime: String) -> Response {
+    let mime = if mime.trim().is_empty() {
+        "image/jpeg".to_string()
+    } else {
+        mime
+    };
+    match axum::http::HeaderValue::from_str(&mime) {
+        Ok(value) => ([(header::CONTENT_TYPE, value)], data).into_response(),
+        Err(_) => (
+            [(
+                header::CONTENT_TYPE,
+                header::HeaderValue::from_static("image/jpeg"),
+            )],
+            data,
+        )
+            .into_response(),
+    }
 }
 
-fn content_type_to_extension(content_type: &ContentType) -> Result<String> {
-    content_type
-        .extension()
-        .map(|ext| ext.as_str().to_owned())
-        .or_else(|| {
-            (content_type.top() == "application" && content_type.sub() == "x-mobipocket-ebook")
-                .then(|| "mobi".to_owned())
-        })
-        .ok_or(Error::UnsupportedContentType(content_type.to_string()))
+/// Map a file extension to its MIME type for downloads.
+fn content_type_for_extension(extension: &str) -> Result<&'static str> {
+    Ok(match extension.to_lowercase().as_str() {
+        "pdf" => "application/pdf",
+        "epub" => "application/epub+zip",
+        "mobi" | "prc" | "azw" => "application/x-mobipocket-ebook",
+        "fb2" => "application/x-fictionbook+xml",
+        "cbz" => "application/vnd.comicbook+zip",
+        "cbt" => "application/vnd.comicbook+tar",
+        _ => return Err(Error::UnsupportedExtension(extension.to_string())),
+    })
+}
+
+/// Map an uploaded content-type (MIME, possibly with parameters) to a file
+/// extension.
+fn content_type_to_extension(content_type: &str) -> Result<String> {
+    let base = content_type
+        .split(';')
+        .next()
+        .unwrap_or(content_type)
+        .trim()
+        .to_lowercase();
+    Ok(match base.as_str() {
+        "application/pdf" => "pdf",
+        "application/epub+zip" => "epub",
+        "application/x-mobipocket-ebook" => "mobi",
+        "application/x-fictionbook+xml" => "fb2",
+        "application/vnd.comicbook+zip" => "cbz",
+        "application/vnd.comicbook+tar" => "cbt",
+        _ => return Err(Error::UnsupportedContentType(content_type.to_string())),
+    }
+    .to_string())
 }
