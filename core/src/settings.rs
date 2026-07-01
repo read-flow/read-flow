@@ -2,7 +2,9 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
+use argon2::Argon2;
 use figment::Figment;
 use figment::providers::Format;
 use figment::providers::Toml;
@@ -90,13 +92,34 @@ impl fmt::Display for HashedPassword {
     }
 }
 
+/// A fixed Argon2id hash used only to spend a comparable amount of time when an
+/// unknown user authenticates, so timing doesn't reveal which usernames exist.
+static DUMMY_HASH: LazyLock<String> = LazyLock::new(|| {
+    let mut salt = [0u8; 16];
+    OsRng.fill_bytes(&mut salt);
+    Argon2::default()
+        .hash_password_with_salt(b"read-flow-dummy-password", &salt)
+        .expect("dummy hash")
+        .to_string()
+});
+
+/// Run a password verification against a throwaway hash. Call this on the
+/// user-not-found path so it costs the same as a real (wrong-password) verify.
+pub fn verify_dummy(password: &str) {
+    if let Ok(parsed) = PasswordHash::new(&DUMMY_HASH) {
+        let _ = Argon2::default().verify_password(password.as_bytes(), &parsed);
+    }
+}
+
 impl TryFrom<String> for HashedPassword {
     type Error = PbkdfError;
 
+    /// New passwords are hashed with **Argon2id**. Existing PBKDF2 hashes are
+    /// still accepted by [`HashedPassword::verify`].
     fn try_from(password: String) -> Result<Self, Self::Error> {
         let mut salt = [0u8; 16];
         OsRng.fill_bytes(&mut salt);
-        let password_hash = Pbkdf2::default()
+        let password_hash = Argon2::default()
             .hash_password_with_salt(password.as_bytes(), &salt)?
             .to_string();
         Ok(Self(password_hash))
@@ -104,9 +127,20 @@ impl TryFrom<String> for HashedPassword {
 }
 
 impl HashedPassword {
+    /// Verify against whichever algorithm the stored PHC string uses — Argon2id
+    /// for new hashes, PBKDF2 for legacy ones.
     pub fn verify(&self, password: &str) -> Result<(), PbkdfError> {
-        let parsed_hash = PasswordHash::new(&self.0).map_err(PbkdfError::from)?;
-        Pbkdf2::default().verify_password(password.as_bytes(), &parsed_hash)
+        let parsed = PasswordHash::new(&self.0)?;
+        Argon2::default()
+            .verify_password(password.as_bytes(), &parsed)
+            .or_else(|_| Pbkdf2::default().verify_password(password.as_bytes(), &parsed))
+    }
+
+    /// Wrap a pre-computed PHC hash string (used to construct fixtures / verify
+    /// legacy hashes in tests).
+    #[cfg(test)]
+    fn from_phc(phc: &str) -> Self {
+        Self(phc.to_string())
     }
 
     #[cfg(feature = "test-support")]
@@ -202,6 +236,28 @@ pub struct ServerSettings {
     /// variable.
     #[serde(default)]
     pub port: Option<u16>,
+
+    /// Origins allowed by CORS. When empty, any origin is allowed (a warning is
+    /// logged); set this to the PWA's origin(s) to lock it down.
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
+
+    /// Maximum accepted upload size in bytes. Defaults to 100 MiB.
+    #[serde(default)]
+    pub max_upload_bytes: Option<u64>,
+
+    /// TLS configuration. When set, the server speaks HTTPS.
+    #[serde(default)]
+    pub tls: Option<TlsSettings>,
+}
+
+/// TLS options: serve HTTPS with a certificate + key from disk.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct TlsSettings {
+    /// Path to the PEM certificate chain.
+    pub cert: ExpandedPath,
+    /// Path to the PEM private key.
+    pub key: ExpandedPath,
 }
 
 impl Default for ServerSettings {
@@ -211,9 +267,15 @@ impl Default for ServerSettings {
             authorized_users: Default::default(),
             address: None,
             port: None,
+            allowed_origins: Vec::new(),
+            max_upload_bytes: None,
+            tls: None,
         }
     }
 }
+
+/// Default maximum upload size: 100 MiB.
+pub const DEFAULT_MAX_UPLOAD_BYTES: u64 = 100 * 1024 * 1024;
 
 impl ServerSettings {
     /// Resolve the socket address the server should bind to. Environment
@@ -458,5 +520,26 @@ alice = { password = "$pbkdf2-sha256$i=100000,l=32$abc$def", roles = ["owner"] }
                 .any(|c| c.name.contains("Gutenberg")),
             "default catalogs should include Project Gutenberg"
         );
+    }
+
+    #[test]
+    fn new_passwords_hash_with_argon2id_and_verify() {
+        let hashed = HashedPassword::try_from("correct horse".to_string()).expect("hash");
+        assert!(
+            hashed.to_string().starts_with("$argon2id$"),
+            "new hashes should be argon2id, got: {hashed}"
+        );
+        assert!(hashed.verify("correct horse").is_ok());
+        assert!(hashed.verify("wrong").is_err());
+    }
+
+    #[test]
+    fn legacy_pbkdf2_hashes_still_verify() {
+        // A real PBKDF2 hash of the password "password".
+        let legacy = HashedPassword::from_phc(
+            "$pbkdf2-sha256$i=600000,l=32$lDfQV3ZLp9y84mZpRnhwBg$UTvTJJhP8dU/Cpy2t1o1v19gsOSzfq5qF1ifY/9rdbc",
+        );
+        assert!(legacy.verify("password").is_ok());
+        assert!(legacy.verify("nope").is_err());
     }
 }

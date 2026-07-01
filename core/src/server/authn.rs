@@ -142,7 +142,13 @@ impl FromRequestParts<AppState> for AuthorizedUser {
                     user_id,
                     roles: entry.roles().to_vec(),
                 }),
-                _ => Err(Error::InvalidCredentials),
+                Some(_) => Err(Error::InvalidCredentials),
+                None => {
+                    // Spend the same time as a real verify so timing doesn't
+                    // reveal which usernames exist.
+                    crate::settings::verify_dummy(&passphrase);
+                    Err(Error::InvalidCredentials)
+                }
             }
         }
         // Bearer: verify the JWT with the in-memory secret. Fast path — no DB,

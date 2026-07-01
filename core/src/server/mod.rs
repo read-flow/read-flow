@@ -26,13 +26,20 @@ use axum::response::Response;
 use axum::routing::get;
 use axum::routing::post;
 use axum::routing::put;
+use axum_server::Handle;
+pub use axum_server::tls_rustls::RustlsConfig;
 use figment::Figment;
 use provider::r#async::AndThen;
 use provider::r#async::Provider;
 use token::TokenService;
 use tokio::net::TcpListener;
+use tower_governor::GovernorLayer;
+use tower_governor::governor::GovernorConfigBuilder;
+use tower_governor::key_extractor::GlobalKeyExtractor;
 use tower_http::cors::Any;
 use tower_http::cors::CorsLayer;
+use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::DefaultMakeSpan;
 use tower_http::trace::DefaultOnRequest;
 use tower_http::trace::DefaultOnResponse;
@@ -218,13 +225,22 @@ impl std::ops::Deref for AppState {
     }
 }
 
-/// Permissive CORS policy mirroring the previous `rocket_cors` setup: any
-/// origin, the same method set, and any header.
-fn cors_layer() -> CorsLayer {
-    CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any)
+/// CORS policy: any method/header, but origin restricted to
+/// `[server].allowed_origins` when set. Empty list = any origin (with a warning).
+fn cors_layer(allowed_origins: &[String]) -> CorsLayer {
+    let base = CorsLayer::new().allow_methods(Any).allow_headers(Any);
+    if allowed_origins.is_empty() {
+        tracing::warn!(
+            "CORS is unrestricted (any origin allowed); set [server].allowed_origins to restrict it"
+        );
+        base.allow_origin(Any)
+    } else {
+        let origins: Vec<HeaderValue> = allowed_origins
+            .iter()
+            .filter_map(|o| o.parse().ok())
+            .collect();
+        base.allow_origin(origins)
+    }
 }
 
 pub struct FigmentProvider {
@@ -261,12 +277,37 @@ async fn build_state(config_path: PathBuf) -> anyhow::Result<AppState> {
     Ok(AppState::new(Arc::new(application_module)))
 }
 
-/// Build the fully-configured router (routes + CORS + state). Exposed so the
-/// COSMIC app can embed the server in-process and serve it on its own runtime.
-pub fn build_router(state: AppState) -> Router {
-    Router::new()
+/// Build the fully-configured router (routes + security layers + state).
+/// Reads `[server]` for CORS, upload limit, and TLS/HSTS. Exposed so the COSMIC
+/// app can embed the server in-process and serve it on its own runtime.
+pub async fn build_router(state: AppState) -> Router {
+    let server = state.settings().await.server;
+    let max_upload = server
+        .max_upload_bytes
+        .unwrap_or(settings::DEFAULT_MAX_UPLOAD_BYTES) as usize;
+
+    // Rate-limit the token endpoint to blunt password brute-forcing. Global key
+    // (per-IP needs ConnectInfo; a reverse proxy is the recommended per-IP path).
+    let governor = GovernorLayer {
+        config: std::sync::Arc::new(
+            GovernorConfigBuilder::default()
+                .per_second(2)
+                .burst_size(10)
+                .key_extractor(GlobalKeyExtractor)
+                .finish()
+                .expect("governor config"),
+        ),
+    };
+
+    let mut router = Router::new()
         .route("/status", get(status))
-        .route("/files", get(get_files).put(update_file).post(upload_file))
+        .route(
+            "/files",
+            get(get_files)
+                .put(update_file)
+                .post(upload_file)
+                .layer(RequestBodyLimitLayer::new(max_upload)),
+        )
         .route("/files/tags", get(get_files_tags))
         .route("/files/{guid}", get(get_file).delete(delete_file))
         .route(
@@ -302,8 +343,17 @@ pub fn build_router(state: AppState) -> Router {
         .route("/users/{user_id}", put(put_user).delete(delete_user))
         .route("/online-library/search", get(search_online_library))
         .route("/online-library/import", post(import_online_book))
-        .route("/oauth/token", post(oauth_token))
-        .layer(cors_layer())
+        .route("/oauth/token", post(oauth_token).layer(governor))
+        .layer(cors_layer(&server.allowed_origins))
+        // Baseline security headers (HSTS added below only when TLS is on).
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("no-referrer"),
+        ))
         // Outermost: log every request/response (method, path, status, latency)
         // at INFO. The per-handler `#[instrument]` spans nest under this.
         .layer(
@@ -311,43 +361,102 @@ pub fn build_router(state: AppState) -> Router {
                 .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
                 .on_request(DefaultOnRequest::new().level(Level::INFO))
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
-        )
-        .with_state(state)
+        );
+
+    // HSTS only makes sense over HTTPS.
+    if server.tls.is_some() {
+        router = router.layer(SetResponseHeaderLayer::if_not_present(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=31536000"),
+        ));
+    }
+
+    router.with_state(state)
 }
 
 /// Build the router directly from a configuration file. Convenience entry point
 /// for embedding the server.
 pub async fn build_app(config_path: PathBuf) -> anyhow::Result<Router> {
-    Ok(build_router(build_state(config_path).await?))
+    Ok(build_router(build_state(config_path).await?).await)
 }
 
-/// Serve an already-built router on the given listener until shutdown.
-pub async fn serve_on(listener: TcpListener, app: Router) -> std::io::Result<()> {
-    axum::serve(listener, app).await
+/// Load a rustls config from the configured cert/key PEM files, if TLS is set.
+pub async fn load_tls(
+    tls: &Option<crate::settings::TlsSettings>,
+) -> anyhow::Result<Option<RustlsConfig>> {
+    match tls {
+        None => Ok(None),
+        Some(tls) => {
+            let config = RustlsConfig::from_pem_file(tls.cert.as_path(), tls.key.as_path()).await?;
+            Ok(Some(config))
+        }
+    }
+}
+
+/// Serve an already-built router on the given listener until shutdown. Speaks
+/// HTTPS when `tls` is provided, plain HTTP otherwise.
+pub async fn serve_on(
+    listener: TcpListener,
+    app: Router,
+    tls: Option<RustlsConfig>,
+) -> std::io::Result<()> {
+    match tls {
+        None => axum::serve(listener, app).await,
+        Some(config) => {
+            let std_listener = listener.into_std()?;
+            axum_server::from_tcp_rustls(std_listener, config)
+                .serve(app.into_make_service())
+                .await
+        }
+    }
 }
 
 /// Serve until either the process ends or `shutdown` resolves. The shutdown
 /// hook is how the embedding app (COSMIC) stops/restarts the server: complete
-/// the future and `axum` drains in-flight requests and returns.
+/// the future and the server drains in-flight requests and returns. Speaks
+/// HTTPS when `tls` is provided.
 pub async fn serve_on_with_shutdown(
     listener: TcpListener,
     app: Router,
+    tls: Option<RustlsConfig>,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown)
-        .await
+    match tls {
+        None => {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown)
+                .await
+        }
+        Some(config) => {
+            let handle = Handle::new();
+            tokio::spawn({
+                let handle = handle.clone();
+                async move {
+                    shutdown.await;
+                    handle.graceful_shutdown(Some(std::time::Duration::from_secs(5)));
+                }
+            });
+            let std_listener = listener.into_std()?;
+            axum_server::from_tcp_rustls(std_listener, config)
+                .handle(handle)
+                .serve(app.into_make_service())
+                .await
+        }
+    }
 }
 
 pub async fn main(config_path: PathBuf) -> anyhow::Result<()> {
     let state = build_state(config_path).await?;
-    let addr = state.settings().await.server.bind_addr();
+    let server = state.settings().await.server;
+    let addr = server.bind_addr();
+    let tls = load_tls(&server.tls).await?;
     let listener = TcpListener::bind(addr).await?;
     // Printed to stdout (tracing goes to stderr) so test/e2e harnesses can
     // parse the bound address, which matters when `port = 0`.
-    println!("Server listening on http://{}", listener.local_addr()?);
-    let app = build_router(state);
-    serve_on(listener, app).await?;
+    let scheme = if tls.is_some() { "https" } else { "http" };
+    println!("Server listening on {scheme}://{}", listener.local_addr()?);
+    let app = build_router(state).await;
+    serve_on(listener, app, tls).await?;
     Ok(())
 }
 
@@ -439,6 +548,8 @@ async fn oauth_token(
 
     let settings = state.settings().await;
     let Some(entry) = settings.server.authorized_users.get(&user_id) else {
+        // Match the timing of a real verify (anti username-enumeration).
+        settings::verify_dummy(&password);
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",

@@ -173,10 +173,12 @@ fn run_headless(
             addr.set_port(port);
         }
 
+        let tls = server::load_tls(&module.settings().await.server.tls).await?;
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        println!("Server listening on http://{}", listener.local_addr()?);
-        let router = server::build_router(server::AppState::new(module));
-        server::serve_on(listener, router).await?;
+        let scheme = if tls.is_some() { "https" } else { "http" };
+        println!("Server listening on {scheme}://{}", listener.local_addr()?);
+        let router = server::build_router(server::AppState::new(module)).await;
+        server::serve_on(listener, router, tls).await?;
         Ok::<(), anyhow::Error>(())
     })
 }

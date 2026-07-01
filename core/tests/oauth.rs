@@ -156,6 +156,41 @@ async fn basic_still_works_and_bad_token_is_rejected() {
 }
 
 #[tokio::test]
+async fn oversized_upload_is_rejected() {
+    // Build a router with a tiny upload cap.
+    let dir = tempfile::tempdir().expect("temp dir");
+    let download = dir.path().join("dl");
+    std::fs::create_dir_all(&download).expect("download dir");
+    let hash = HashedPassword::try_from("password".to_string())
+        .expect("hash")
+        .to_string();
+    let config = format!(
+        "[database]\nurl = \"{db}\"\n\n\
+         [server]\ndownload_folder = \"{dl}\"\nmax_upload_bytes = 16\n\n\
+         [server.authorized_users.owner]\npassword = \"{hash}\"\nroles = [\"owner\"]\n",
+        db = dir.path().join("test.db").display(),
+        dl = download.display(),
+    );
+    let config_path = dir.path().join("read-flow.toml");
+    std::fs::write(&config_path, config).expect("write config");
+    let router = server::build_app(PathBuf::from(&config_path))
+        .await
+        .expect("router");
+
+    // A body well over the 16-byte cap → 413 before the handler runs.
+    let request = Request::builder()
+        .method("POST")
+        .uri("/files")
+        .header(header::AUTHORIZATION, basic("owner", "password"))
+        .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(header::CONTENT_LENGTH, "1024")
+        .body(Body::from(vec![0u8; 1024]))
+        .unwrap();
+    let (status, _) = send(&router, request).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+#[tokio::test]
 async fn bad_credentials_yield_invalid_grant() {
     let (router, _dir) = test_router().await;
     let request = Request::builder()

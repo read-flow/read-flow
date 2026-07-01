@@ -908,14 +908,16 @@ async fn start_server(
 ) -> anyhow::Result<SocketAddr> {
     use read_flow_core::server;
 
-    let addr = module.settings().await.server.bind_addr();
+    let server_settings = module.settings().await.server;
+    let addr = server_settings.bind_addr();
+    let tls = server::load_tls(&server_settings.tls).await?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let local = listener.local_addr()?;
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
-    let router = server::build_router(server::AppState::new(module));
+    let router = server::build_router(server::AppState::new(module)).await;
     let handle = tokio::spawn(async move {
-        let _ = server::serve_on_with_shutdown(listener, router, async move {
+        let _ = server::serve_on_with_shutdown(listener, router, tls, async move {
             let _ = shutdown_rx.await;
         })
         .await;
