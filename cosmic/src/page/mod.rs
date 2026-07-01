@@ -125,6 +125,7 @@ pub enum PageOutput {
     StopServer,
     RestartServer,
     ReloadServerConfig,
+    CloseContext,
 }
 
 #[derive(Debug, Clone)]
@@ -874,6 +875,8 @@ fn map_server_log_message(msg: ServerLogMessage) -> PageMessage {
             ServerLogOutput::Stop => PageMessage::Out(PageOutput::StopServer),
             ServerLogOutput::Restart => PageMessage::Out(PageOutput::RestartServer),
             ServerLogOutput::ReloadConfig => PageMessage::Out(PageOutput::ReloadServerConfig),
+            ServerLogOutput::OpenContext => PageMessage::Out(PageOutput::OpenContext),
+            ServerLogOutput::CloseContext => PageMessage::Out(PageOutput::CloseContext),
         },
         msg => PageMessage::ServerLog(msg),
     }

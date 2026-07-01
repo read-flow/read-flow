@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Server control + live log page.
 //!
-//! Shows the embedded HTTP server's status, start/stop/restart/reload controls,
-//! and a filterable/searchable view of the captured JSON log ([`LogBus`]).
+//! A self-explanatory control panel for the embedded HTTP server, plus a
+//! colorized, filterable log. Rows are clickable: selecting one opens the
+//! context pane with the full message, structured fields, and enclosing spans.
+//!
 //! Server control lives in the App (it owns the process handle); this page only
 //! renders status and emits [`ServerLogOutput`] for the App to act on.
 
@@ -13,13 +15,19 @@ use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::iced::Alignment;
+use cosmic::iced::Border;
+use cosmic::iced::Color;
 use cosmic::iced::Length;
+use cosmic::task;
 use cosmic::widget;
 use tracing::Level;
 
+use crate::app::ContextView;
 use crate::fl;
 use crate::logging::LogBus;
 use crate::logging::LogEntry;
+use crate::logging::SpanInfo;
+use crate::logging::render_value;
 use crate::page::traits::Page;
 
 /// Runtime status of the embedded server, mirrored into the App model.
@@ -40,18 +48,78 @@ impl ServerStatus {
     }
 }
 
-/// Level filter choices, in dropdown order. `None` = all levels.
-const LEVELS: [Option<Level>; 6] = [
-    None,
-    Some(Level::ERROR),
-    Some(Level::WARN),
-    Some(Level::INFO),
-    Some(Level::DEBUG),
-    Some(Level::TRACE),
-];
-
 /// Max rows rendered at once (the buffer can hold many more).
 const MAX_RENDERED: usize = 1000;
+
+/// Severity rank, high = more severe. Used for the min-level filter.
+fn severity(level: Level) -> usize {
+    match level {
+        Level::TRACE => 0,
+        Level::DEBUG => 1,
+        Level::INFO => 2,
+        Level::WARN => 3,
+        Level::ERROR => 4,
+    }
+}
+
+fn level_from_severity(sev: usize) -> Level {
+    match sev {
+        0 => Level::TRACE,
+        1 => Level::DEBUG,
+        2 => Level::INFO,
+        3 => Level::WARN,
+        _ => Level::ERROR,
+    }
+}
+
+fn level_label(level: Level) -> String {
+    match level {
+        Level::TRACE => fl!("log-level-trace"),
+        Level::DEBUG => fl!("log-level-debug"),
+        Level::INFO => fl!("log-level-info"),
+        Level::WARN => fl!("log-level-warn"),
+        Level::ERROR => fl!("log-level-error"),
+    }
+}
+
+fn level_short(level: Level) -> &'static str {
+    match level {
+        Level::TRACE => "TRACE",
+        Level::DEBUG => "DEBUG",
+        Level::INFO => "INFO",
+        Level::WARN => "WARN",
+        Level::ERROR => "ERROR",
+    }
+}
+
+/// Chip background color per level (chosen to read on both light and dark).
+fn level_color(level: Level) -> Color {
+    match level {
+        Level::TRACE => Color::from_rgb8(0x8A, 0x8A, 0x8A),
+        Level::DEBUG => Color::from_rgb8(0x5B, 0x8D, 0xB5),
+        Level::INFO => Color::from_rgb8(0x2E, 0x8B, 0x57),
+        Level::WARN => Color::from_rgb8(0xD9, 0x8E, 0x1F),
+        Level::ERROR => Color::from_rgb8(0xD1, 0x3B, 0x3B),
+    }
+}
+
+/// Message tint: only WARN/ERROR get emphasized so normal logs stay calm.
+fn emphasis_color(level: Level) -> Option<Color> {
+    match level {
+        Level::WARN => Some(Color::from_rgb8(0xB8, 0x76, 0x0E)),
+        Level::ERROR => Some(Color::from_rgb8(0xC6, 0x2E, 0x2E)),
+        _ => None,
+    }
+}
+
+const DIM: Color = Color::from_rgb(0.55, 0.55, 0.55);
+const SELECTED_BG: Color = Color::from_rgba(0.40, 0.60, 1.0, 0.14);
+const SPAN_BG: Color = Color::from_rgba(0.5, 0.5, 0.5, 0.08);
+
+/// Last path segment of a target (`read_flow_core::server` → `server`).
+fn short_target(target: &str) -> &str {
+    target.rsplit("::").next().unwrap_or(target)
+}
 
 #[derive(Debug, Clone)]
 pub enum ServerLogOutput {
@@ -59,6 +127,8 @@ pub enum ServerLogOutput {
     Stop,
     Restart,
     ReloadConfig,
+    OpenContext,
+    CloseContext,
 }
 
 #[derive(Debug, Clone)]
@@ -68,7 +138,9 @@ pub enum ServerLogMessage {
     /// The App pushed a new server status.
     StatusChanged(ServerStatus),
     SearchChanged(String),
-    LevelSelected(usize),
+    MinLevelSelected(usize),
+    EntrySelected(u64),
+    ClearSelection,
     Out(ServerLogOutput),
 }
 
@@ -76,9 +148,12 @@ pub struct ServerLogPage {
     log_bus: LogBus,
     status: ServerStatus,
     search: String,
-    level_index: usize,
+    /// Minimum severity shown (INFO by default): this level and everything above.
+    min_severity: usize,
     /// Cached, already-filtered view (most recent last).
     filtered: Vec<LogEntry>,
+    /// The entry whose details are shown in the context pane.
+    selected: Option<LogEntry>,
 }
 
 impl ServerLogPage {
@@ -87,23 +162,16 @@ impl ServerLogPage {
             log_bus,
             status: ServerStatus::Stopped,
             search: String::new(),
-            level_index: 0,
+            min_severity: severity(Level::INFO),
             filtered: Vec::new(),
+            selected: None,
         };
         page.recompute();
         page
     }
 
-    fn min_level(&self) -> Option<Level> {
-        LEVELS.get(self.level_index).copied().flatten()
-    }
-
     fn matches(&self, entry: &LogEntry) -> bool {
-        // `tracing::Level` orders ERROR < WARN < INFO < ... via `>=` on verbosity;
-        // "at least this severe" means `entry.level <= min` (ERROR is most severe).
-        if let Some(min) = self.min_level()
-            && entry.level > min
-        {
+        if severity(entry.level) < self.min_severity {
             return false;
         }
         if self.search.is_empty() {
@@ -122,49 +190,88 @@ impl ServerLogPage {
         if len > MAX_RENDERED {
             self.filtered.drain(0..len - MAX_RENDERED);
         }
-    }
-
-    fn level_label(level: Level) -> &'static str {
-        match level {
-            Level::ERROR => "ERROR",
-            Level::WARN => "WARN",
-            Level::INFO => "INFO",
-            Level::DEBUG => "DEBUG",
-            Level::TRACE => "TRACE",
+        if let Some(selected) = &self.selected
+            && let Some(updated) = self.filtered.iter().find(|e| e.id == selected.id)
+        {
+            self.selected = Some(updated.clone());
         }
     }
 
-    fn status_text(&self) -> String {
+    fn error_warn_counts(&self) -> (usize, usize) {
+        self.filtered
+            .iter()
+            .fold((0, 0), |(e, w), entry| match entry.level {
+                Level::ERROR => (e + 1, w),
+                Level::WARN => (e, w + 1),
+                _ => (e, w),
+            })
+    }
+
+    // ── Control panel ────────────────────────────────────────────────────────
+
+    /// Colored status indicator, human sentence, and detail line.
+    fn status_summary(&self) -> (Color, String, Option<String>) {
         match &self.status {
-            ServerStatus::Stopped => fl!("server-status-stopped"),
-            ServerStatus::Starting => fl!("server-status-starting"),
-            ServerStatus::Running(addr) => {
-                fl!("server-status-running", address = format!("http://{addr}"))
-            }
-            ServerStatus::Failed(err) => fl!("server-status-failed", error = err.clone()),
+            ServerStatus::Stopped => (
+                DIM,
+                fl!("server-status-stopped"),
+                Some(fl!("server-status-stopped-detail")),
+            ),
+            ServerStatus::Starting => (
+                level_color(Level::WARN),
+                fl!("server-status-starting"),
+                None,
+            ),
+            ServerStatus::Running(addr) => (
+                level_color(Level::INFO),
+                fl!("server-status-running"),
+                Some(fl!(
+                    "server-status-running-detail",
+                    address = format!("http://{addr}")
+                )),
+            ),
+            ServerStatus::Failed(err) => (
+                level_color(Level::ERROR),
+                fl!("server-status-failed"),
+                Some(err.clone()),
+            ),
         }
     }
 
-    fn controls(&self) -> Element<'_, ServerLogMessage> {
+    fn control_panel(&self) -> Element<'_, ServerLogMessage> {
+        let (dot_color, title, detail) = self.status_summary();
+
+        let mut text_children: Vec<Element<'_, ServerLogMessage>> =
+            vec![widget::text::heading(title).into()];
+        if let Some(detail) = detail {
+            text_children.push(
+                widget::text::body(detail)
+                    .class(cosmic::theme::Text::Color(DIM))
+                    .into(),
+            );
+        }
+        let text_col = widget::column::with_children(text_children).spacing(2);
+
+        let status_row = widget::Row::with_children(vec![status_dot(dot_color), text_col.into()])
+            .spacing(12)
+            .align_y(Alignment::Center);
+
         let running = self.status.is_running();
         let busy = self.status.is_busy();
 
-        let start = {
-            let b = widget::button::standard(fl!("server-start"));
-            if !running && !busy {
+        // Primary action flips between Start and Stop depending on state.
+        let primary = if running {
+            widget::button::destructive(fl!("server-stop"))
+                .on_press(ServerLogMessage::Out(ServerLogOutput::Stop))
+        } else {
+            let b = widget::button::suggested(fl!("server-start"));
+            if busy {
+                b
+            } else {
                 b.on_press(ServerLogMessage::Out(ServerLogOutput::Start))
-            } else {
-                b
             }
         };
-        let stop = {
-            let b = widget::button::standard(fl!("server-stop"));
-            if running {
-                b.on_press(ServerLogMessage::Out(ServerLogOutput::Stop))
-            } else {
-                b
-            }
-        };
+
         let restart = {
             let b = widget::button::standard(fl!("server-restart"));
             if running {
@@ -182,67 +289,145 @@ impl ServerLogPage {
             }
         };
 
-        widget::Row::with_children(vec![
-            widget::text::heading(self.status_text()).into(),
-            widget::space::horizontal().width(Length::Fill).into(),
-            start.into(),
-            stop.into(),
-            restart.into(),
-            reload.into(),
-        ])
-        .spacing(8)
-        .align_y(Alignment::Center)
-        .into()
+        let buttons =
+            widget::Row::with_children(vec![primary.into(), restart.into(), reload.into()])
+                .spacing(8);
+
+        widget::settings::section()
+            .title(fl!("server-panel-title"))
+            .add(status_row)
+            .add(buttons)
+            .into()
     }
 
-    fn filters(&self) -> Element<'_, ServerLogMessage> {
-        let level_options: Vec<String> = LEVELS
-            .iter()
-            .map(|l| match l {
-                None => fl!("server-log-level-all"),
-                Some(level) => Self::level_label(*level).to_string(),
-            })
+    // ── Filter bar ───────────────────────────────────────────────────────────
+
+    fn filter_bar(&self) -> Element<'_, ServerLogMessage> {
+        let level_options: Vec<String> = (0..=4)
+            .map(|s| level_label(level_from_severity(s)))
             .collect();
 
+        let (errors, warns) = self.error_warn_counts();
+        let counts =
+            widget::text::body(fl!("server-log-counts", errors = errors, warnings = warns))
+                .class(cosmic::theme::Text::Color(DIM));
+
         widget::Row::with_children(vec![
+            widget::text::body(fl!("server-log-min-level")).into(),
+            widget::dropdown(
+                level_options,
+                Some(self.min_severity),
+                ServerLogMessage::MinLevelSelected,
+            )
+            .into(),
             widget::text_input(fl!("server-log-search"), &self.search)
                 .on_input(ServerLogMessage::SearchChanged)
                 .width(Length::Fill)
                 .into(),
-            widget::dropdown(
-                level_options,
-                Some(self.level_index),
-                ServerLogMessage::LevelSelected,
-            )
-            .into(),
+            counts.into(),
         ])
         .spacing(8)
         .align_y(Alignment::Center)
         .into()
     }
 
-    fn log_list(&self) -> Element<'_, ServerLogMessage> {
-        let mut children: Vec<Element<'_, ServerLogMessage>> = Vec::new();
-        if self.filtered.is_empty() {
-            children.push(widget::text::body(fl!("server-log-empty")).into());
-        } else {
-            for entry in &self.filtered {
-                let line = format!(
-                    "{} {:>5} {}: {} {}",
-                    entry.timestamp,
-                    Self::level_label(entry.level),
-                    entry.target,
-                    entry.message,
-                    entry.fields_summary(),
-                );
-                children.push(widget::text::monotext(line).size(12).into());
-            }
+    // ── Log list ─────────────────────────────────────────────────────────────
+
+    fn log_row(&self, entry: &LogEntry) -> Element<'_, ServerLogMessage> {
+        let selected = self.selected.as_ref().map(|e| e.id) == Some(entry.id);
+
+        let time = widget::text::monotext(entry.timestamp.clone())
+            .size(12)
+            .class(cosmic::theme::Text::Color(DIM))
+            .width(Length::Fixed(92.0));
+
+        let target = widget::text::body(short_target(&entry.target).to_string())
+            .size(12)
+            .class(cosmic::theme::Text::Color(DIM))
+            .width(Length::Fixed(140.0));
+
+        let mut message = widget::text::body(entry.message.clone()).size(13);
+        if let Some(color) = emphasis_color(entry.level) {
+            message = message.class(cosmic::theme::Text::Color(color));
         }
+
+        let row = widget::Row::with_children(vec![
+            time.into(),
+            level_chip(entry.level),
+            target.into(),
+            message.width(Length::Fill).into(),
+        ])
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+        let mut container = widget::container(row).padding([3, 6]).width(Length::Fill);
+        if selected {
+            container = container.style(move |_theme: &cosmic::Theme| rounded_bg(SELECTED_BG, 4.0));
+        }
+
+        widget::mouse_area(container)
+            .on_press(ServerLogMessage::EntrySelected(entry.id))
+            .into()
+    }
+
+    fn log_list(&self) -> Element<'_, ServerLogMessage> {
+        if self.filtered.is_empty() {
+            return widget::container(
+                widget::text::body(fl!("server-log-empty")).class(cosmic::theme::Text::Color(DIM)),
+            )
+            .center_x(Length::Fill)
+            .padding(24)
+            .into();
+        }
+
+        let children: Vec<Element<'_, ServerLogMessage>> =
+            self.filtered.iter().map(|e| self.log_row(e)).collect();
         widget::column::with_children(children)
-            .spacing(2)
+            .spacing(1)
             .apply(widget::scrollable::vertical)
             .height(Length::Fill)
             .into()
+    }
+
+    // ── Context pane (entry details) ─────────────────────────────────────────
+
+    fn entry_details(&self, entry: &LogEntry) -> Element<'_, ServerLogMessage> {
+        let back =
+            widget::button::link(fl!("server-log-back")).on_press(ServerLogMessage::ClearSelection);
+
+        let header = widget::Row::with_children(vec![
+            level_chip(entry.level),
+            widget::text::monotext(entry.timestamp.clone())
+                .class(cosmic::theme::Text::Color(DIM))
+                .into(),
+        ])
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+        let mut children: Vec<Element<'_, ServerLogMessage>> = vec![
+            back.into(),
+            header.into(),
+            detail_row(fl!("server-log-detail-target"), entry.target.clone()),
+            detail_row(fl!("server-log-detail-message"), entry.message.clone()),
+        ];
+
+        if !entry.fields.is_empty() {
+            children.push(widget::divider::horizontal::default().into());
+            children.push(widget::text::heading(fl!("server-log-detail-fields")).into());
+            for (key, value) in &entry.fields {
+                children.push(detail_row(key.clone(), render_value(value)));
+            }
+        }
+
+        if !entry.spans.is_empty() {
+            children.push(widget::divider::horizontal::default().into());
+            children.push(widget::text::heading(fl!("server-log-detail-spans")).into());
+            for span in &entry.spans {
+                children.push(span_card(span));
+            }
+        }
+
+        widget::column::with_children(children).spacing(12).into()
     }
 }
 
@@ -250,10 +435,25 @@ impl Page for ServerLogPage {
     type Message = ServerLogMessage;
 
     fn view(&self) -> Element<'_, Self::Message> {
-        widget::column::with_children(vec![self.controls(), self.filters(), self.log_list()])
-            .spacing(12)
-            .padding(16)
-            .into()
+        widget::column::with_children(vec![
+            self.control_panel(),
+            self.filter_bar(),
+            self.log_list(),
+        ])
+        .spacing(12)
+        .padding(16)
+        .into()
+    }
+
+    fn view_context(&self) -> ContextView<'_, Self::Message> {
+        let content = match &self.selected {
+            Some(entry) => self.entry_details(entry),
+            None => widget::text::body(fl!("server-log-select-hint")).into(),
+        };
+        ContextView {
+            title: fl!("server-log-details-title"),
+            content,
+        }
     }
 
     fn update(&mut self, message: Self::Message) -> Task<Action<Self::Message>> {
@@ -264,14 +464,98 @@ impl Page for ServerLogPage {
                 self.search = search;
                 self.recompute();
             }
-            ServerLogMessage::LevelSelected(index) => {
-                self.level_index = index;
+            ServerLogMessage::MinLevelSelected(severity) => {
+                self.min_severity = severity;
                 self.recompute();
             }
-            // `Out` is intercepted by the message mapper at the view boundary and
-            // never reaches here; the arm exists only for exhaustiveness.
+            ServerLogMessage::EntrySelected(id) => {
+                self.selected = self.filtered.iter().find(|e| e.id == id).cloned();
+                // Ask the App to open the context drawer for this page.
+                return task::message(ServerLogMessage::Out(ServerLogOutput::OpenContext));
+            }
+            ServerLogMessage::ClearSelection => {
+                self.selected = None;
+                return task::message(ServerLogMessage::Out(ServerLogOutput::CloseContext));
+            }
+            // Other `Out` variants are intercepted by the mapper at the view
+            // boundary and never reach here.
             ServerLogMessage::Out(_) => {}
         }
         Task::none()
     }
+}
+
+// ── small view helpers ───────────────────────────────────────────────────────
+
+/// A solid-color rounded background style.
+fn rounded_bg(color: Color, radius: f32) -> widget::container::Style {
+    let mut style = widget::container::background(color);
+    style.border = Border {
+        radius: radius.into(),
+        ..Default::default()
+    };
+    style
+}
+
+/// A small colored square, the server status indicator.
+fn status_dot<'a>(color: Color) -> Element<'a, ServerLogMessage> {
+    widget::container(widget::text::body(""))
+        .width(Length::Fixed(12.0))
+        .height(Length::Fixed(12.0))
+        .style(move |_theme: &cosmic::Theme| rounded_bg(color, 6.0))
+        .into()
+}
+
+/// A colored level chip with white text.
+fn level_chip<'a>(level: Level) -> Element<'a, ServerLogMessage> {
+    let color = level_color(level);
+    widget::container(
+        widget::text::body(level_short(level))
+            .size(11)
+            .class(cosmic::theme::Text::Color(Color::WHITE)),
+    )
+    .padding([1, 6])
+    .style(move |_theme: &cosmic::Theme| rounded_bg(color, 4.0))
+    .into()
+}
+
+/// A "Label / value" detail block for the context pane.
+fn detail_row<'a>(label: String, value: String) -> Element<'a, ServerLogMessage> {
+    widget::column::with_children(vec![
+        widget::text::body(label)
+            .size(11)
+            .class(cosmic::theme::Text::Color(DIM))
+            .into(),
+        widget::text::monotext(value).into(),
+    ])
+    .spacing(2)
+    .into()
+}
+
+/// A card showing one span's name, target, and fields.
+fn span_card<'a>(span: &SpanInfo) -> Element<'a, ServerLogMessage> {
+    let header = widget::Row::with_children(vec![
+        widget::text::heading(span.name.clone()).into(),
+        widget::text::body(short_target(&span.target).to_string())
+            .size(11)
+            .class(cosmic::theme::Text::Color(DIM))
+            .into(),
+    ])
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    let mut children: Vec<Element<'_, ServerLogMessage>> = vec![header.into()];
+    for (key, value) in &span.fields {
+        children.push(
+            widget::text::monotext(format!("{key} = {}", render_value(value)))
+                .size(12)
+                .into(),
+        );
+    }
+
+    widget::container(widget::column::with_children(children).spacing(2))
+        .padding(8)
+        .width(Length::Fill)
+        .style(move |_theme: &cosmic::Theme| rounded_bg(SPAN_BG, 6.0))
+        .into()
 }

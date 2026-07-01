@@ -150,6 +150,7 @@ impl From<PageOutput> for Message {
             PageOutput::StopServer => Message::ServerStop,
             PageOutput::RestartServer => Message::ServerRestart,
             PageOutput::ReloadServerConfig => Message::ServerReloadConfig,
+            PageOutput::CloseContext => Message::ToggleActivePageContext,
         }
     }
 }

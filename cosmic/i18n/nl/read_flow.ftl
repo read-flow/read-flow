@@ -368,17 +368,34 @@ online-library-searching = Zoeken…
 
 # Server page
 server-log-page-title = Server
-server-start = Starten
-server-stop = Stoppen
+server-panel-title = Serverbeheer
+server-start = Server starten
+server-stop = Server stoppen
 server-restart = Herstarten
 server-reload-config = Config herladen
-server-status-stopped = Server gestopt
-server-status-starting = Starten…
-server-status-running = Actief op { $address }
-server-status-failed = Mislukt: { $error }
+server-status-stopped = De server is gestopt
+server-status-stopped-detail = Start de server om verbindingen van je andere apparaten te accepteren.
+server-status-starting = De server wordt gestart…
+server-status-running = De server is actief
+server-status-running-detail = Bereikbaar op { $address }
+server-status-failed = De server kon niet starten
+# Log viewer
+server-log-min-level = Toon
 server-log-search = Logboeken zoeken…
-server-log-level-all = Alle niveaus
-server-log-empty = Geen logregels
+server-log-empty = Nog niets te tonen
+server-log-counts = { $errors } fouten · { $warnings } waarschuwingen
+server-log-details-title = Logregel
+server-log-back = ← Terug
+server-log-select-hint = Selecteer een logregel om het bericht, de details en de context te zien.
+server-log-detail-target = Bron
+server-log-detail-message = Bericht
+server-log-detail-fields = Details
+server-log-detail-spans = Context
+log-level-trace = Trace en hoger
+log-level-debug = Debug en hoger
+log-level-info = Info en hoger
+log-level-warn = Waarschuwingen en fouten
+log-level-error = Alleen fouten
 # Server preferences
 settings-server-address = Bind-adres
 settings-server-address-description = IP-adres waarop de server luistert (bijv. 127.0.0.1 of 0.0.0.0)

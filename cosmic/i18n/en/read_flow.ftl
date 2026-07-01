@@ -370,17 +370,34 @@ online-library-searching = Searching…
 
 # Server page
 server-log-page-title = Server
-server-start = Start
-server-stop = Stop
+server-panel-title = Server control
+server-start = Start server
+server-stop = Stop server
 server-restart = Restart
 server-reload-config = Reload config
-server-status-stopped = Server stopped
-server-status-starting = Starting…
-server-status-running = Running on { $address }
-server-status-failed = Failed: { $error }
+server-status-stopped = The server is stopped
+server-status-stopped-detail = Start it to accept connections from your other devices.
+server-status-starting = Starting the server…
+server-status-running = The server is running
+server-status-running-detail = Reachable at { $address }
+server-status-failed = The server could not start
+# Log viewer
+server-log-min-level = Show
 server-log-search = Search logs…
-server-log-level-all = All levels
-server-log-empty = No log entries
+server-log-empty = Nothing to show yet
+server-log-counts = { $errors } errors · { $warnings } warnings
+server-log-details-title = Log entry
+server-log-back = ← Back
+server-log-select-hint = Select a log entry to see its message, fields, and spans.
+server-log-detail-target = Source
+server-log-detail-message = Message
+server-log-detail-fields = Details
+server-log-detail-spans = Context
+log-level-trace = Trace and above
+log-level-debug = Debug and above
+log-level-info = Info and above
+log-level-warn = Warnings and errors
+log-level-error = Errors only
 # Server preferences
 settings-server-address = Bind address
 settings-server-address-description = IP address the server listens on (e.g. 127.0.0.1 or 0.0.0.0)

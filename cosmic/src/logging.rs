@@ -13,6 +13,8 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 
 use serde_json::Map;
 use serde_json::Value;
@@ -24,6 +26,8 @@ use tracing::Level;
 use tracing::Subscriber;
 use tracing::field::Field;
 use tracing::field::Visit;
+use tracing::span::Attributes;
+use tracing::span::Id;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt;
 use tracing_subscriber::layer::Context;
@@ -34,27 +38,54 @@ use tracing_subscriber::registry::LookupSpan;
 /// Max log lines kept in memory for the UI. Older lines are dropped.
 const RING_CAPACITY: usize = 5000;
 
+/// Monotonic id source so the UI can reference a specific captured entry
+/// (e.g. the one the user clicked) even as the ring buffer scrolls.
+static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+
+/// An enclosing span captured for a log event (root-first order).
+#[derive(Clone, Debug)]
+pub struct SpanInfo {
+    pub name: String,
+    pub target: String,
+    pub fields: Map<String, Value>,
+}
+
 /// One captured log event, already flattened for display.
 #[derive(Clone, Debug)]
 pub struct LogEntry {
+    /// Stable, unique id (for click-to-select in the UI).
+    pub id: u64,
     /// `HH:MM:SS.mmm`, UTC.
     pub timestamp: String,
     pub level: Level,
     pub target: String,
     pub message: String,
     pub fields: Map<String, Value>,
+    /// Enclosing spans at the time of the event, outermost first.
+    pub spans: Vec<SpanInfo>,
 }
 
 impl LogEntry {
-    /// A single-line JSON-ish rendering of the structured fields, for the UI.
+    /// A single-line rendering of the structured fields, for compact display.
     pub fn fields_summary(&self) -> String {
         self.fields
             .iter()
-            .map(|(k, v)| format!("{k}={v}"))
+            .map(|(k, v)| format!("{k}={}", render_value(v)))
             .collect::<Vec<_>>()
             .join(" ")
     }
 }
+
+/// Render a JSON value without the quotes around strings (nicer for the UI).
+pub fn render_value(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+/// Fields captured for a span, stashed in its registry extensions.
+struct SpanFields(Map<String, Value>);
 
 /// Shared, cloneable handle to the captured log: a bounded ring buffer plus a
 /// broadcast that signals "something changed" (the page re-reads the buffer).
@@ -138,16 +169,44 @@ impl<S> Layer<S> for BroadcastLayer
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
-    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+    fn on_new_span(&self, attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
+        if let Some(span) = ctx.span(id) {
+            let mut visitor = FieldVisitor::default();
+            attrs.record(&mut visitor);
+            span.extensions_mut().insert(SpanFields(visitor.fields));
+        }
+    }
+
+    fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
         let mut visitor = FieldVisitor::default();
         event.record(&mut visitor);
         let meta = event.metadata();
+
+        // Walk the enclosing span scope, outermost (root) first.
+        let mut spans = Vec::new();
+        if let Some(scope) = ctx.event_scope(event) {
+            for span in scope.from_root() {
+                let fields = span
+                    .extensions()
+                    .get::<SpanFields>()
+                    .map(|f| f.0.clone())
+                    .unwrap_or_default();
+                spans.push(SpanInfo {
+                    name: span.name().to_string(),
+                    target: span.metadata().target().to_string(),
+                    fields,
+                });
+            }
+        }
+
         self.bus.push(LogEntry {
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             timestamp: now_hms(),
             level: *meta.level(),
             target: meta.target().to_string(),
             message: visitor.message,
             fields: visitor.fields,
+            spans,
         });
     }
 }

@@ -367,17 +367,34 @@ online-library-searching = Recherche en cours…
 
 # Server page
 server-log-page-title = Serveur
-server-start = Démarrer
-server-stop = Arrêter
+server-panel-title = Contrôle du serveur
+server-start = Démarrer le serveur
+server-stop = Arrêter le serveur
 server-restart = Redémarrer
 server-reload-config = Recharger la config
-server-status-stopped = Serveur arrêté
-server-status-starting = Démarrage…
-server-status-running = En cours sur { $address }
-server-status-failed = Échec : { $error }
+server-status-stopped = Le serveur est arrêté
+server-status-stopped-detail = Démarrez-le pour accepter les connexions de vos autres appareils.
+server-status-starting = Démarrage du serveur…
+server-status-running = Le serveur est en cours d'exécution
+server-status-running-detail = Accessible à { $address }
+server-status-failed = Le serveur n'a pas pu démarrer
+# Log viewer
+server-log-min-level = Afficher
 server-log-search = Rechercher dans les journaux…
-server-log-level-all = Tous les niveaux
-server-log-empty = Aucune entrée de journal
+server-log-empty = Rien à afficher pour l'instant
+server-log-counts = { $errors } erreurs · { $warnings } avertissements
+server-log-details-title = Entrée de journal
+server-log-back = ← Retour
+server-log-select-hint = Sélectionnez une entrée pour voir son message, ses détails et son contexte.
+server-log-detail-target = Source
+server-log-detail-message = Message
+server-log-detail-fields = Détails
+server-log-detail-spans = Contexte
+log-level-trace = Trace et plus
+log-level-debug = Débogage et plus
+log-level-info = Info et plus
+log-level-warn = Avertissements et erreurs
+log-level-error = Erreurs uniquement
 # Server preferences
 settings-server-address = Adresse d'écoute
 settings-server-address-description = Adresse IP sur laquelle le serveur écoute (p. ex. 127.0.0.1 ou 0.0.0.0)
