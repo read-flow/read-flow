@@ -365,3 +365,25 @@ online-library-page-title = Online bibliotheken
 online-library-search-button = Zoeken
 online-library-search-placeholder = Zoek boeken…
 online-library-searching = Zoeken…
+
+# Server page
+server-log-page-title = Server
+server-start = Starten
+server-stop = Stoppen
+server-restart = Herstarten
+server-reload-config = Config herladen
+server-status-stopped = Server gestopt
+server-status-starting = Starten…
+server-status-running = Actief op { $address }
+server-status-failed = Mislukt: { $error }
+server-log-search = Logboeken zoeken…
+server-log-level-all = Alle niveaus
+server-log-empty = Geen logregels
+# Server preferences
+settings-server-address = Bind-adres
+settings-server-address-description = IP-adres waarop de server luistert (bijv. 127.0.0.1 of 0.0.0.0)
+settings-server-port = Poort
+settings-server-port-description = Poort waarop de server luistert (0 = kies een vrije poort)
+settings-server-start-on-launch = Server starten bij openen
+settings-server-start-on-launch-description = Start de server automatisch wanneer de toepassing opent
+settings-server-restart-to-apply = Herstart de server om het nieuwe adres of de nieuwe poort toe te passen

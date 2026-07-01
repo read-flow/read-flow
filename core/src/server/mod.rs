@@ -39,7 +39,9 @@ use crate::api::MergeDocumentsRequest;
 use crate::api::ReadingState;
 use crate::api::ReadingStatus;
 use crate::api::Status;
+use crate::db::ConnectionPool;
 use crate::db::dao;
+use crate::db::datasource::DbClient;
 use crate::online_library::DownloadFormat;
 use crate::online_library::OnlineBook;
 use crate::online_library::OnlineCatalog;
@@ -117,17 +119,80 @@ impl From<anyhow::Error> for Error {
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// The subset of [`ApplicationModule`] behaviour the HTTP handlers and
+/// extractors depend on. Object-safe, so the server can run over **any**
+/// settings provider `P` (e.g. the COSMIC app's own `ApplicationModule`)
+/// without making every handler generic — the app shares one module with the
+/// embedded server.
+#[async_trait::async_trait]
+pub trait ServerModule: Send + Sync + 'static {
+    async fn settings(&self) -> Settings;
+    async fn connection_pool(&self) -> ConnectionPool;
+    async fn db_client(&self) -> DbClient;
+    async fn scan(&self, path: PathBuf) -> anyhow::Result<()>;
+    async fn scan_configured(&self) -> anyhow::Result<ScanSummary>;
+    async fn check_missing(&self, purge: bool) -> Vec<String>;
+    async fn update_settings(
+        &self,
+        mutate: Box<dyn for<'a> FnOnce(&'a mut Settings) + Send>,
+    ) -> std::result::Result<(), SettingsError>;
+    async fn reload_settings(&self);
+}
+
+#[async_trait::async_trait]
+impl<P> ServerModule for ApplicationModule<P>
+where
+    P: Provider<Settings, Error = SettingsError> + Send + Sync + 'static,
+{
+    // NB: `self` is the concrete `ApplicationModule<P>`, so these resolve to the
+    // inherent methods (inherent methods shadow trait methods of the same name),
+    // not back into this trait impl.
+    async fn settings(&self) -> Settings {
+        self.settings().await
+    }
+    async fn connection_pool(&self) -> ConnectionPool {
+        self.connection_pool().await
+    }
+    async fn db_client(&self) -> DbClient {
+        self.db_client().await
+    }
+    async fn scan(&self, path: PathBuf) -> anyhow::Result<()> {
+        self.scan(path).await
+    }
+    async fn scan_configured(&self) -> anyhow::Result<ScanSummary> {
+        self.scan_configured().await
+    }
+    async fn check_missing(&self, purge: bool) -> Vec<String> {
+        self.check_missing(purge).await
+    }
+    async fn update_settings(
+        &self,
+        mutate: Box<dyn for<'a> FnOnce(&'a mut Settings) + Send>,
+    ) -> std::result::Result<(), SettingsError> {
+        self.update_settings(mutate).await
+    }
+    async fn reload_settings(&self) {
+        self.reload_settings().await
+    }
+}
+
 /// Shared application state handed to every handler and extractor. Cheap to
-/// clone (`Arc`), and derefs to the underlying [`ApplicationModule`] so handler
-/// bodies read exactly as before.
+/// clone (`Arc`), derefs to a [`ServerModule`] so handler bodies read the same
+/// as before.
 #[derive(Clone)]
-pub struct AppState(Arc<ApplicationModule<SettingsProvider>>);
+pub struct AppState(Arc<dyn ServerModule>);
+
+impl AppState {
+    pub fn new(module: Arc<dyn ServerModule>) -> Self {
+        Self(module)
+    }
+}
 
 impl std::ops::Deref for AppState {
-    type Target = ApplicationModule<SettingsProvider>;
+    type Target = dyn ServerModule;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &*self.0
     }
 }
 
@@ -171,7 +236,7 @@ async fn build_state(config_path: PathBuf) -> anyhow::Result<AppState> {
     let application_module: ApplicationModule<SettingsProvider> =
         ApplicationModule::new(settings_provider, config_path).await?;
 
-    Ok(AppState(Arc::new(application_module)))
+    Ok(AppState::new(Arc::new(application_module)))
 }
 
 /// Build the fully-configured router (routes + CORS + state). Exposed so the
@@ -228,6 +293,19 @@ pub async fn build_app(config_path: PathBuf) -> anyhow::Result<Router> {
 /// Serve an already-built router on the given listener until shutdown.
 pub async fn serve_on(listener: TcpListener, app: Router) -> std::io::Result<()> {
     axum::serve(listener, app).await
+}
+
+/// Serve until either the process ends or `shutdown` resolves. The shutdown
+/// hook is how the embedding app (COSMIC) stops/restarts the server: complete
+/// the future and `axum` drains in-flight requests and returns.
+pub async fn serve_on_with_shutdown(
+    listener: TcpListener,
+    app: Router,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await
 }
 
 pub async fn main(config_path: PathBuf) -> anyhow::Result<()> {
@@ -887,9 +965,9 @@ async fn put_scan_directory(
     let path = ExpandedPath::from_str(&path)
         .map_err(|e| Error::BadRequest(format!("invalid path: {e}")))?;
     application_module
-        .update_settings(move |s| {
+        .update_settings(Box::new(move |s: &mut Settings| {
             s.scan.directories.insert(path, settings);
-        })
+        }))
         .await?;
     let settings = application_module.settings().await;
     Ok(Json(list_scan_directories(&settings)))
@@ -910,9 +988,9 @@ async fn delete_scan_directory(
     let parsed = ExpandedPath::from_str(&query.path)
         .map_err(|e| Error::BadRequest(format!("invalid path: {e}")))?;
     application_module
-        .update_settings(move |s| {
+        .update_settings(Box::new(move |s: &mut Settings| {
             s.scan.directories.remove(&parsed);
-        })
+        }))
         .await?;
     let settings = application_module.settings().await;
     Ok(Json(list_scan_directories(&settings)))
@@ -961,13 +1039,13 @@ async fn put_settings(
 ) -> Result<Json<ServerSettingsDto>> {
     require_owner(&user)?;
     application_module
-        .update_settings(move |s| {
+        .update_settings(Box::new(move |s: &mut Settings| {
             s.scan.extensions = dto.extensions;
             s.scan.dry_run = dto.dry_run;
             s.scan.concurrency = dto.concurrency;
             s.ui.set_private_mode(dto.private_mode);
             s.ui.set_private_tags(dto.private_tags);
-        })
+        }))
         .await?;
     let settings = application_module.settings().await;
     Ok(Json(server_settings_dto(&settings)))
@@ -1058,9 +1136,9 @@ async fn post_user(
     }
     let entry = make_user_entry(hash_password(&password)?, roles);
     application_module
-        .update_settings(move |s| {
+        .update_settings(Box::new(move |s: &mut Settings| {
             s.server.authorized_users.insert(user_id, entry);
-        })
+        }))
         .await?;
     let settings = application_module.settings().await;
     Ok(Json(list_users(&settings)))
@@ -1095,9 +1173,9 @@ async fn put_user(
     let entry = make_user_entry(password_hash, roles);
     let id = user_id.to_string();
     application_module
-        .update_settings(move |s| {
+        .update_settings(Box::new(move |s: &mut Settings| {
             s.server.authorized_users.insert(id, entry);
-        })
+        }))
         .await?;
     let settings = application_module.settings().await;
     Ok(Json(list_users(&settings)))
@@ -1118,9 +1196,9 @@ async fn delete_user(
     }
     let id = user_id.to_string();
     application_module
-        .update_settings(move |s| {
+        .update_settings(Box::new(move |s: &mut Settings| {
             s.server.authorized_users.shift_remove(&id);
-        })
+        }))
         .await?;
     let settings = application_module.settings().await;
     Ok(Json(list_users(&settings)))

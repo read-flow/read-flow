@@ -1022,6 +1022,9 @@ impl AppSettings {
                 configuration_file: Some(config_path),
                 private_mode: false,
                 private_tags: Vec::new(),
+                headless: false,
+                address: None,
+                port: None,
                 files: Vec::new(),
             },
         }

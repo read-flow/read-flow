@@ -168,6 +168,16 @@ where
         Ok(())
     }
 
+    /// Invalidate the cached settings (and the caches derived from them) so the
+    /// next access re-reads the configuration file. Unlike [`update_settings`],
+    /// this makes no change of its own — it is the "reload config" hook for
+    /// picking up edits made outside the running process.
+    pub async fn reload_settings(&self) {
+        self.settings.set_expired().await;
+        self.connection_pool.set_expired().await;
+        self.db_client.set_expired().await;
+    }
+
     pub async fn connection_pool(&self) -> ConnectionPool {
         self.connection_pool.provide().await.unwrap()
     }

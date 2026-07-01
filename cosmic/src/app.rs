@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -38,13 +39,17 @@ use crate::component::scan_progress::ScanProgressOutput;
 use crate::config::Config;
 use crate::cosmic_ext::ActionExt;
 use crate::fl;
+use crate::logging::LogBus;
 use crate::page::DocumentListMessage;
 use crate::page::PageMessage;
 use crate::page::PageOutput;
 use crate::page::PageSelector;
 use crate::page::Pages;
 use crate::page::PreferencesMessage;
+use crate::page::ServerLogMessage;
+use crate::page::ServerStatus;
 use crate::page::settings_invalidation_subscription;
+use crate::subscription::SubscriberState;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 pub(crate) const APP_ICON: &[u8] =
@@ -79,6 +84,21 @@ pub struct ReadFlow {
     scan_component: Option<ScanComponent>,
     /// Check-missing component, present while the dialog is open.
     check_missing_component: Option<CheckMissingComponent>,
+    /// Captured application log (JSON), shown on the server page.
+    log_bus: LogBus,
+    /// Embedded HTTP server status.
+    server: ServerStatus,
+    /// Shutdown + join handle for the running server (kept out of `Message`,
+    /// which must stay `Clone`).
+    server_ctl: Arc<tokio::sync::Mutex<ServerControl>>,
+}
+
+/// Handles for a running embedded server. Held behind an async mutex so start /
+/// stop tasks can move the non-`Clone` pieces around without touching `Message`.
+#[derive(Default)]
+struct ServerControl {
+    shutdown: Option<tokio::sync::oneshot::Sender<()>>,
+    handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -109,6 +129,13 @@ pub enum Message {
         Option<cosmic::iced::core::SmolStr>,
     ),
     ModifiersChanged(cosmic::iced::keyboard::Modifiers),
+    ServerStart,
+    ServerStop,
+    ServerRestart,
+    ServerReloadConfig,
+    ServerStarted(SocketAddr),
+    ServerStopped,
+    ServerFailed(String),
 }
 
 impl From<PageOutput> for Message {
@@ -119,6 +146,10 @@ impl From<PageOutput> for Message {
             PageOutput::PageRemoved(page) => Message::ActivePageRemoved(page),
             PageOutput::Scan => Message::Scan,
             PageOutput::OpenContext => Message::OpenActivePageContext,
+            PageOutput::StartServer => Message::ServerStart,
+            PageOutput::StopServer => Message::ServerStop,
+            PageOutput::RestartServer => Message::ServerRestart,
+            PageOutput::ReloadServerConfig => Message::ServerReloadConfig,
         }
     }
 }
@@ -150,7 +181,7 @@ impl cosmic::Application for ReadFlow {
     type Executor = cosmic::executor::Default;
 
     /// Data that your application receives to its init method.
-    type Flags = (Arc<ApplicationModule>, Vec<PathBuf>);
+    type Flags = (Arc<ApplicationModule>, Vec<PathBuf>, LogBus);
 
     /// Messages which the application and its widgets will emit.
     type Message = Message;
@@ -169,7 +200,7 @@ impl cosmic::Application for ReadFlow {
     /// Initializes the application with any given flags and startup commands.
     fn init(
         core: cosmic::Core,
-        (application_module, initial_files): Self::Flags,
+        (application_module, initial_files, log_bus): Self::Flags,
     ) -> (Self, Task<cosmic::Action<Self::Message>>) {
         let config = cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
             .map(|context| match Config::get_entry(&context) {
@@ -178,7 +209,8 @@ impl cosmic::Application for ReadFlow {
             })
             .unwrap_or_default();
 
-        let (mut pages, page_action) = Pages::new(application_module.clone(), config.clone());
+        let (mut pages, page_action) =
+            Pages::new(application_module.clone(), config.clone(), log_bus.clone());
 
         let label = pages.display_name(&PageSelector::Dashboard);
         pages.register_page(PageSelector::Dashboard, "go-home-symbolic", label, None);
@@ -200,6 +232,13 @@ impl cosmic::Application for ReadFlow {
         pages.register_page(
             PageSelector::Preferences,
             "preferences-system-symbolic",
+            label,
+            None,
+        );
+        let label = pages.display_name(&PageSelector::ServerLog);
+        pages.register_page(
+            PageSelector::ServerLog,
+            "network-server-symbolic",
             label,
             None,
         );
@@ -227,10 +266,19 @@ impl cosmic::Application for ReadFlow {
             pages,
             scan_component: None,
             check_missing_component: None,
+            log_bus,
+            server: ServerStatus::Stopped,
+            server_ctl: Arc::new(tokio::sync::Mutex::new(ServerControl::default())),
         };
 
         // Create a startup command that sets the window title.
         let command = app.update_title();
+
+        // Auto-start the server if the user enabled it.
+        let auto_start = app
+            .config
+            .server_start_on_launch
+            .then(|| cosmic::task::message(cosmic::action::app(Message::ServerStart)));
 
         // Emit OpenDocument for each file passed on the command line.
         let open_tasks: Vec<_> = initial_files
@@ -249,6 +297,7 @@ impl cosmic::Application for ReadFlow {
                 [command, page_action.map(ActionExt::map_into)]
                     .into_iter()
                     .chain(open_tasks)
+                    .chain(auto_start)
                     .collect::<Vec<_>>(),
             ),
         )
@@ -469,6 +518,15 @@ impl cosmic::Application for ReadFlow {
             settings_invalidation_subscription(self.application_module.clone(), || {
                 Message::ExpireDocumentProvider
             }),
+            // Re-render the server log page whenever a log line is captured.
+            Subscription::run_with(
+                SubscriberState::new(self.log_bus.subscribe(), || {
+                    Message::Page(Box::new(PageMessage::ServerLog(
+                        ServerLogMessage::LogsChanged,
+                    )))
+                }),
+                SubscriberState::run,
+            ),
             // Watch for application configuration changes.
             self.core()
                 .watch_config::<Config>(Self::APP_ID)
@@ -613,6 +671,75 @@ impl cosmic::Application for ReadFlow {
                     document_provider.set_expired().await;
                     Message::Page(Box::new(PageMessage::Refresh))
                 })
+            }
+            Message::ServerStart => {
+                if matches!(
+                    self.server,
+                    ServerStatus::Running(_) | ServerStatus::Starting
+                ) {
+                    return Task::none();
+                }
+                self.server = ServerStatus::Starting;
+                let module = self.application_module.clone();
+                let ctl = self.server_ctl.clone();
+                Task::batch([
+                    self.push_server_status(),
+                    task::future(async move {
+                        match start_server(module, ctl).await {
+                            Ok(addr) => Message::ServerStarted(addr),
+                            Err(e) => Message::ServerFailed(e.to_string()),
+                        }
+                    }),
+                ])
+            }
+            Message::ServerStop => {
+                self.server = ServerStatus::Stopped;
+                let ctl = self.server_ctl.clone();
+                Task::batch([
+                    self.push_server_status(),
+                    task::future(async move {
+                        stop_server(ctl).await;
+                        Message::ServerStopped
+                    }),
+                ])
+            }
+            Message::ServerRestart => {
+                self.server = ServerStatus::Starting;
+                let module = self.application_module.clone();
+                let ctl = self.server_ctl.clone();
+                Task::batch([
+                    self.push_server_status(),
+                    task::future(async move {
+                        stop_server(ctl.clone()).await;
+                        match start_server(module, ctl).await {
+                            Ok(addr) => Message::ServerStarted(addr),
+                            Err(e) => Message::ServerFailed(e.to_string()),
+                        }
+                    }),
+                ])
+            }
+            Message::ServerReloadConfig => {
+                let module = self.application_module.clone();
+                task::future(async move {
+                    module.reload_settings().await;
+                    tracing::info!("server configuration reloaded from disk");
+                    Message::Page(Box::new(PageMessage::Noop))
+                })
+            }
+            Message::ServerStarted(addr) => {
+                tracing::info!("server listening on http://{addr}");
+                self.server = ServerStatus::Running(addr);
+                self.push_server_status()
+            }
+            Message::ServerStopped => {
+                tracing::info!("server stopped");
+                self.server = ServerStatus::Stopped;
+                self.push_server_status()
+            }
+            Message::ServerFailed(error) => {
+                tracing::error!("server failed: {error}");
+                self.server = ServerStatus::Failed(error);
+                self.push_server_status()
             }
             Message::CheckMissing => {
                 let (component, init_task) =
@@ -761,6 +888,55 @@ impl ReadFlow {
         } else {
             Task::none()
         }
+    }
+
+    /// Push the current server status to the server log page.
+    fn push_server_status(&self) -> Task<cosmic::Action<Message>> {
+        let status = self.server.clone();
+        task::message(cosmic::action::app(Message::Page(Box::new(
+            PageMessage::ServerLog(ServerLogMessage::StatusChanged(status)),
+        ))))
+    }
+}
+
+/// Bind and spawn the embedded server, recording its shutdown + join handle.
+/// Returns the actually-bound address (which matters when the port is 0).
+async fn start_server(
+    module: Arc<ApplicationModule>,
+    ctl: Arc<tokio::sync::Mutex<ServerControl>>,
+) -> anyhow::Result<SocketAddr> {
+    use read_flow_core::server;
+
+    let addr = module.settings().await.server.bind_addr();
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let local = listener.local_addr()?;
+
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let router = server::build_router(server::AppState::new(module));
+    let handle = tokio::spawn(async move {
+        let _ = server::serve_on_with_shutdown(listener, router, async move {
+            let _ = shutdown_rx.await;
+        })
+        .await;
+    });
+
+    let mut guard = ctl.lock().await;
+    guard.shutdown = Some(shutdown_tx);
+    guard.handle = Some(handle);
+    Ok(local)
+}
+
+/// Signal the running server to shut down and wait for it to drain.
+async fn stop_server(ctl: Arc<tokio::sync::Mutex<ServerControl>>) {
+    let (shutdown, handle) = {
+        let mut guard = ctl.lock().await;
+        (guard.shutdown.take(), guard.handle.take())
+    };
+    if let Some(shutdown) = shutdown {
+        let _ = shutdown.send(());
+    }
+    if let Some(handle) = handle {
+        let _ = handle.await;
     }
 }
 

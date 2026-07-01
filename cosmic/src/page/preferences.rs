@@ -139,6 +139,7 @@ pub enum PreferencesOutput {
     SourceAdded(Url, String, String),
     SourceEdited(Url, Url, String, String),
     SourceDeleted(Url),
+    RestartServer,
 }
 
 #[derive(Debug, Clone)]
@@ -159,6 +160,9 @@ pub enum PreferencesMessage {
     SelectedClientDownloadFolder(Option<FileHandle>),
     SelectServerDownloadFolder,
     SelectedServerDownloadFolder(Option<FileHandle>),
+    ServerAddressChanged(String),
+    ServerPortChanged(String),
+    ToggleServerStartOnLaunch(bool),
     AuthorizedUserForm(AuthorizedUserFormMessage),
     AddAuthorizedUser,
     EditAuthorizedUser(String),
@@ -703,6 +707,48 @@ impl PreferencesPage {
                         .align_y(Vertical::Center)
                         .width(Length::Shrink),
                     ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-server-address"))
+                    .description(fl!("settings-server-address-description"))
+                    .control(
+                        widget::text_input(
+                            "127.0.0.1",
+                            self.settings.server.address.clone().unwrap_or_default(),
+                        )
+                        .on_input(PreferencesMessage::ServerAddressChanged)
+                        .width(Length::Fixed(180.0)),
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-server-port"))
+                    .description(fl!("settings-server-port-description"))
+                    .control(
+                        widget::text_input(
+                            "8000",
+                            self.settings
+                                .server
+                                .port
+                                .map(|p| p.to_string())
+                                .unwrap_or_default(),
+                        )
+                        .on_input(PreferencesMessage::ServerPortChanged)
+                        .width(Length::Fixed(120.0)),
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-server-start-on-launch"))
+                    .description(fl!("settings-server-start-on-launch-description"))
+                    .toggler(
+                        self.config.server_start_on_launch,
+                        PreferencesMessage::ToggleServerStartOnLaunch,
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-server-restart-to-apply")).control(
+                    widget::button::standard(fl!("server-restart"))
+                        .on_press(PreferencesMessage::Out(PreferencesOutput::RestartServer)),
+                ),
             );
 
         let authorized_users_section = self
@@ -938,6 +984,33 @@ impl Page for PreferencesPage {
             PreferencesMessage::TogglePrivateMode(value) => {
                 self.settings.ui.set_private_mode(value);
                 self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            PreferencesMessage::ServerAddressChanged(value) => {
+                let trimmed = value.trim();
+                self.settings.server.address = (!trimmed.is_empty()).then(|| trimmed.to_string());
+                self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            PreferencesMessage::ServerPortChanged(value) => {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    self.settings.server.port = None;
+                    self.save_state = SaveState::Idle;
+                } else if let Ok(port) = trimmed.parse::<u16>() {
+                    self.settings.server.port = Some(port);
+                    self.save_state = SaveState::Idle;
+                }
+                // Ignore non-numeric input (keeps the previous value).
+                Task::none()
+            }
+            PreferencesMessage::ToggleServerStartOnLaunch(value) => {
+                self.config.server_start_on_launch = value;
+                if let Ok(ctx) =
+                    cosmic_config::Config::new(crate::app::ReadFlow::APP_ID, Config::VERSION)
+                {
+                    let _ = self.config.write_entry(&ctx);
+                }
                 Task::none()
             }
             PreferencesMessage::TagEditor(message) => match message {

@@ -8,6 +8,7 @@ pub mod image_viewer;
 mod mu_pdf_viewer;
 mod online_library;
 mod preferences;
+mod server_log;
 mod traits;
 
 use core::panic;
@@ -35,6 +36,10 @@ pub use preferences::PreferencesOutput;
 pub use preferences::PreferencesPage;
 use read_flow_core::api::ReadingStatus;
 use read_flow_core::client::FilesClient;
+pub use server_log::ServerLogMessage;
+use server_log::ServerLogOutput;
+pub use server_log::ServerLogPage;
+pub use server_log::ServerStatus;
 pub use traits::Page;
 use url::Url;
 
@@ -50,6 +55,7 @@ use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::layout::full_page;
+use crate::logging::LogBus;
 use crate::page::document_details::DocumentDetails;
 use crate::page::document_details::DocumentDetailsMessage;
 use crate::page::document_details::DocumentDetailsOutput;
@@ -85,6 +91,7 @@ pub struct Pages {
     preferences: PreferencesPage,
     online_library: OnlineLibraryPage,
     documents: DocumentList,
+    server_log: ServerLogPage,
     document_details: IndexMap<Fingerprint, DocumentDetails>,
     epub_viewers: IndexMap<Fingerprint, EpubViewer>,
     mu_pdf_viewers: IndexMap<Fingerprint, MuPdfViewer>,
@@ -100,6 +107,7 @@ pub enum PageSelector {
     Preferences,
     OnlineLibrary,
     Documents,
+    ServerLog,
     DocumentDetails(Fingerprint),
     EpubViewer(Fingerprint),
     MuPdfViewer(Fingerprint),
@@ -113,6 +121,10 @@ pub enum PageOutput {
     PageRemoved(PageSelector),
     Scan,
     OpenContext,
+    StartServer,
+    StopServer,
+    RestartServer,
+    ReloadServerConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -120,6 +132,7 @@ pub enum PageMessage {
     Dashboard(DashboardMessage),
     Preferences(PreferencesMessage),
     OnlineLibrary(OnlineLibraryMessage),
+    ServerLog(ServerLogMessage),
     AddRemote(Url, String, String),
     EditRemote(Url, Url, String, String),
     DeleteRemote(Url),
@@ -185,6 +198,11 @@ macro_rules! with_active_page {
                 let $mapper = map_document_list_message;
                 $body
             }
+            PageSelector::ServerLog => {
+                let $page = Some(&$self.server_log);
+                let $mapper = map_server_log_message;
+                $body
+            }
             PageSelector::DocumentDetails(fingerprint) => {
                 let $page = $self.document_details.get(fingerprint);
                 let fingerprint = fingerprint.clone();
@@ -221,6 +239,7 @@ impl Pages {
     pub fn new(
         application_module: Arc<ApplicationModule>,
         config: Config,
+        log_bus: LogBus,
     ) -> (Self, Task<Action<PageMessage>>) {
         let epub_viewer_config = config.epub_viewer;
 
@@ -247,6 +266,7 @@ impl Pages {
         ];
 
         let online_library = OnlineLibraryPage::new(application_module.clone());
+        let server_log = ServerLogPage::new(log_bus);
 
         (
             Self {
@@ -257,6 +277,7 @@ impl Pages {
                 preferences,
                 online_library,
                 documents,
+                server_log,
                 document_details: Default::default(),
                 epub_viewers: Default::default(),
                 mu_pdf_viewers: Default::default(),
@@ -329,6 +350,7 @@ impl Pages {
             PageSelector::Dashboard => fl!("dashboard-page-title"),
             PageSelector::Preferences => fl!("preferences-page-title"),
             PageSelector::OnlineLibrary => fl!("online-library-page-title"),
+            PageSelector::ServerLog => fl!("server-log-page-title"),
             PageSelector::Documents => "Documents".to_string(),
             PageSelector::DocumentDetails(fingerprint) => self
                 .document_details
@@ -528,6 +550,10 @@ impl Pages {
                 .online_library
                 .update(msg)
                 .map(move |action| action.map(map_online_library_message)),
+            PageMessage::ServerLog(msg) => self
+                .server_log
+                .update(msg)
+                .map(move |action| action.map(map_server_log_message)),
             PageMessage::Documents(document_list_message) => self
                 .documents
                 .update(document_list_message)
@@ -841,6 +867,18 @@ fn map_online_library_message(msg: OnlineLibraryMessage) -> PageMessage {
     }
 }
 
+fn map_server_log_message(msg: ServerLogMessage) -> PageMessage {
+    match msg {
+        ServerLogMessage::Out(output) => match output {
+            ServerLogOutput::Start => PageMessage::Out(PageOutput::StartServer),
+            ServerLogOutput::Stop => PageMessage::Out(PageOutput::StopServer),
+            ServerLogOutput::Restart => PageMessage::Out(PageOutput::RestartServer),
+            ServerLogOutput::ReloadConfig => PageMessage::Out(PageOutput::ReloadServerConfig),
+        },
+        msg => PageMessage::ServerLog(msg),
+    }
+}
+
 fn map_preferences_message(msg: PreferencesMessage) -> PageMessage {
     match msg {
         PreferencesMessage::Out(output) => match output {
@@ -851,6 +889,7 @@ fn map_preferences_message(msg: PreferencesMessage) -> PageMessage {
                 PageMessage::EditRemote(old_url, new_url, user_id, passphrase)
             }
             PreferencesOutput::SourceDeleted(url) => PageMessage::DeleteRemote(url),
+            PreferencesOutput::RestartServer => PageMessage::Out(PageOutput::RestartServer),
         },
         msg => PageMessage::Preferences(msg),
     }

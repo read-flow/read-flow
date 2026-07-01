@@ -13,7 +13,9 @@ pub enum EpubViewerConfig {
 }
 
 #[derive(Debug, Default, Clone, CosmicConfigEntry, Eq, PartialEq)]
-#[version = 1]
+#[version = 2]
 pub struct Config {
     pub epub_viewer: EpubViewerConfig,
+    /// Start the embedded HTTP server automatically when the app launches.
+    pub server_start_on_launch: bool,
 }

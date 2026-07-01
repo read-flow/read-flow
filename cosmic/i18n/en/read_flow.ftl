@@ -367,3 +367,25 @@ online-library-page-title = Online Libraries
 online-library-search-button = Search
 online-library-search-placeholder = Search books…
 online-library-searching = Searching…
+
+# Server page
+server-log-page-title = Server
+server-start = Start
+server-stop = Stop
+server-restart = Restart
+server-reload-config = Reload config
+server-status-stopped = Server stopped
+server-status-starting = Starting…
+server-status-running = Running on { $address }
+server-status-failed = Failed: { $error }
+server-log-search = Search logs…
+server-log-level-all = All levels
+server-log-empty = No log entries
+# Server preferences
+settings-server-address = Bind address
+settings-server-address-description = IP address the server listens on (e.g. 127.0.0.1 or 0.0.0.0)
+settings-server-port = Port
+settings-server-port-description = Port the server listens on (0 = pick a free port)
+settings-server-start-on-launch = Start server on launch
+settings-server-start-on-launch-description = Automatically start the server when the application opens
+settings-server-restart-to-apply = Restart the server to apply the new address or port

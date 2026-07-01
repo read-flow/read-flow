@@ -364,3 +364,25 @@ online-library-page-title = Bibliothèques en ligne
 online-library-search-button = Rechercher
 online-library-search-placeholder = Rechercher des livres…
 online-library-searching = Recherche en cours…
+
+# Server page
+server-log-page-title = Serveur
+server-start = Démarrer
+server-stop = Arrêter
+server-restart = Redémarrer
+server-reload-config = Recharger la config
+server-status-stopped = Serveur arrêté
+server-status-starting = Démarrage…
+server-status-running = En cours sur { $address }
+server-status-failed = Échec : { $error }
+server-log-search = Rechercher dans les journaux…
+server-log-level-all = Tous les niveaux
+server-log-empty = Aucune entrée de journal
+# Server preferences
+settings-server-address = Adresse d'écoute
+settings-server-address-description = Adresse IP sur laquelle le serveur écoute (p. ex. 127.0.0.1 ou 0.0.0.0)
+settings-server-port = Port
+settings-server-port-description = Port sur lequel le serveur écoute (0 = port libre automatique)
+settings-server-start-on-launch = Démarrer le serveur au lancement
+settings-server-start-on-launch-description = Démarrer automatiquement le serveur à l'ouverture de l'application
+settings-server-restart-to-apply = Redémarrez le serveur pour appliquer la nouvelle adresse ou le nouveau port
