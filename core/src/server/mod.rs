@@ -652,7 +652,7 @@ async fn upload_file(
 
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let result = dao::select_file_by_path(&mut conn, &target_file.display().to_string())
+    let result = dao::select_file_by_path(&mut conn, &canonical_path_string(&target_file))
         .await?
         .ok_or_else(|| {
             Error::Scan("file not recorded after scan; server may be in dry-run mode".to_string())
@@ -1205,7 +1205,7 @@ async fn import_online_book(
     application_module.scan(path.clone()).await?;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let result = dao::select_file_by_path(&mut conn, &path.display().to_string())
+    let result = dao::select_file_by_path(&mut conn, &canonical_path_string(&path))
         .await?
         .ok_or_else(|| Error::FileNotFound(path.display().to_string()))?;
     Ok(Json((result, vec![]).into()))
@@ -1230,6 +1230,18 @@ fn cover_response(data: Vec<u8>, mime: String) -> Response {
         )
             .into_response(),
     }
+}
+
+/// Path string used to look a file up after a scan. `scan` canonicalizes the
+/// path before storing it (`ApplicationModule::start_scan`), so the lookup must
+/// canonicalize too — otherwise a symlinked download folder (e.g. macOS
+/// `/var` → `/private/var`) yields a mismatch and the freshly-scanned file
+/// isn't found. Falls back to the raw path if canonicalization fails.
+fn canonical_path_string(path: &Path) -> String {
+    path.canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .display()
+        .to_string()
 }
 
 /// Map a file extension to its MIME type for downloads.

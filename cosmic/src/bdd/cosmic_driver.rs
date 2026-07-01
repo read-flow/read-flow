@@ -296,9 +296,13 @@ impl CosmicDriver {
             .await
             .expect("scan fixture epub");
 
+        // `scan` canonicalizes the path before storing it, so the lookup must
+        // canonicalize too (matters when the temp dir is symlinked, e.g. macOS
+        // `/var` → `/private/var`).
+        let stored = dest.canonicalize().unwrap_or(dest);
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");
-        dao::select_file_by_path(&mut conn, &dest.to_string_lossy())
+        dao::select_file_by_path(&mut conn, &stored.to_string_lossy())
             .await
             .expect("select file by path")
             .expect("scanned file is in the DB")
