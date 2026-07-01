@@ -28,6 +28,11 @@ use provider::r#async::Provider;
 use tokio::net::TcpListener;
 use tower_http::cors::Any;
 use tower_http::cors::CorsLayer;
+use tower_http::trace::DefaultMakeSpan;
+use tower_http::trace::DefaultOnRequest;
+use tower_http::trace::DefaultOnResponse;
+use tower_http::trace::TraceLayer;
+use tracing::Level;
 
 use crate::ApplicationModule;
 use crate::ExpandedPath;
@@ -281,6 +286,14 @@ pub fn build_router(state: AppState) -> Router {
         .route("/online-library/search", get(search_online_library))
         .route("/online-library/import", post(import_online_book))
         .layer(cors_layer())
+        // Outermost: log every request/response (method, path, status, latency)
+        // at INFO. The per-handler `#[instrument]` spans nest under this.
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .on_request(DefaultOnRequest::new().level(Level::INFO))
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
         .with_state(state)
 }
 
@@ -321,6 +334,7 @@ pub async fn main(config_path: PathBuf) -> anyhow::Result<()> {
 }
 
 /// @feature: remotes.status
+#[tracing::instrument(skip_all)]
 async fn status(
     State(application_module): State<AppState>,
     user: AuthorizedUser,
@@ -334,6 +348,7 @@ async fn status(
     Ok(Json(status))
 }
 
+#[tracing::instrument(skip_all)]
 async fn get_files(
     State(application_module): State<AppState>,
     user: AuthorizedUser,
@@ -377,6 +392,7 @@ async fn get_files(
     Ok(Json(files))
 }
 
+#[tracing::instrument(skip_all)]
 async fn update_file(
     State(application_module): State<AppState>,
     _user: AuthorizedUser,
@@ -391,6 +407,7 @@ async fn update_file(
 }
 
 /// @feature: tags.list
+#[tracing::instrument(skip_all)]
 async fn get_files_tags(
     State(application_module): State<AppState>,
     user: AuthorizedUser,
@@ -415,6 +432,7 @@ async fn get_files_tags(
     Ok(Json(tags))
 }
 
+#[tracing::instrument(skip_all)]
 async fn get_file(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -447,6 +465,7 @@ async fn get_file(
     Ok(Json(api_file).into_response())
 }
 
+#[tracing::instrument(skip_all)]
 async fn get_file_tags(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -476,6 +495,7 @@ async fn get_file_tags(
 }
 
 /// @feature: tags.add
+#[tracing::instrument(skip_all)]
 async fn post_file_tags(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -519,6 +539,7 @@ async fn post_file_tags(
 }
 
 /// @feature: tags.remove
+#[tracing::instrument(skip_all)]
 async fn delete_file_tags(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -557,6 +578,7 @@ async fn delete_file_tags(
     .await
 }
 
+#[tracing::instrument(skip_all)]
 async fn download_file(
     AxumPath((guid, file_name)): AxumPath<(String, String)>,
     State(application_module): State<AppState>,
@@ -605,6 +627,7 @@ async fn download_file(
     Ok(([(header::CONTENT_TYPE, content_type)], data).into_response())
 }
 
+#[tracing::instrument(skip_all)]
 async fn get_file_cover(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -640,6 +663,7 @@ async fn get_file_cover(
 }
 
 /// @feature: sources.delete
+#[tracing::instrument(skip_all)]
 async fn delete_file(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -669,6 +693,7 @@ async fn delete_file(
 }
 
 /// @feature: sources.send_to_client
+#[tracing::instrument(skip_all)]
 async fn upload_file(
     State(application_module): State<AppState>,
     _user: AuthorizedUser,
@@ -738,6 +763,7 @@ async fn upload_file(
     Ok(Json((result, vec![]).into()))
 }
 
+#[tracing::instrument(skip_all)]
 async fn get_reading_state(
     AxumPath(fingerprint): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -753,6 +779,7 @@ async fn get_reading_state(
 }
 
 /// @feature: reading.progress
+#[tracing::instrument(skip_all)]
 async fn put_reading_state(
     State(application_module): State<AppState>,
     _user: AuthorizedUser,
@@ -770,6 +797,7 @@ struct ReadingStatusRequest {
 }
 
 /// @feature: reading.status
+#[tracing::instrument(skip_all)]
 async fn put_reading_status(
     AxumPath(fingerprint): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -785,6 +813,7 @@ async fn put_reading_status(
 // ─── Document routes ──────────────────────────────────────────────────────────
 
 /// @feature: documents.list
+#[tracing::instrument(skip_all)]
 async fn get_documents(
     State(application_module): State<AppState>,
     _user: AuthorizedUser,
@@ -796,6 +825,7 @@ async fn get_documents(
 }
 
 /// @feature: documents.detail_view
+#[tracing::instrument(skip_all)]
 async fn get_document(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -811,6 +841,7 @@ async fn get_document(
 }
 
 /// @feature: documents.cover_display
+#[tracing::instrument(skip_all)]
 async fn get_document_cover(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -829,6 +860,7 @@ async fn get_document_cover(
 
 /// @feature: documents.edit_metadata
 /// @feature: documents.select_cover
+#[tracing::instrument(skip_all)]
 async fn put_document_metadata(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -868,6 +900,7 @@ async fn put_document_metadata(
     Ok(Json(updated))
 }
 
+#[tracing::instrument(skip_all)]
 async fn ensure_document_for_file(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -889,6 +922,7 @@ fn require_owner(user: &AuthorizedUser) -> Result<()> {
 }
 
 /// @feature: admin.scan
+#[tracing::instrument(skip_all)]
 async fn post_scan(
     State(application_module): State<AppState>,
     user: AuthorizedUser,
@@ -911,6 +945,7 @@ struct CheckMissingQuery {
 }
 
 /// @feature: admin.check_missing
+#[tracing::instrument(skip_all)]
 async fn post_check_missing(
     State(application_module): State<AppState>,
     user: AuthorizedUser,
@@ -945,6 +980,7 @@ fn list_scan_directories(settings: &Settings) -> Vec<ScanDirectoryEntry> {
 }
 
 /// @feature: admin.scan_directories
+#[tracing::instrument(skip_all)]
 async fn get_scan_directories(
     State(application_module): State<AppState>,
     user: AuthorizedUser,
@@ -955,6 +991,7 @@ async fn get_scan_directories(
 }
 
 /// @feature: admin.scan_directories
+#[tracing::instrument(skip_all)]
 async fn put_scan_directory(
     State(application_module): State<AppState>,
     user: AuthorizedUser,
@@ -979,6 +1016,7 @@ struct PathQuery {
 }
 
 /// @feature: admin.scan_directories
+#[tracing::instrument(skip_all)]
 async fn delete_scan_directory(
     State(application_module): State<AppState>,
     user: AuthorizedUser,
@@ -1022,6 +1060,7 @@ fn server_settings_dto(settings: &Settings) -> ServerSettingsDto {
 }
 
 /// @feature: admin.server_settings
+#[tracing::instrument(skip_all)]
 async fn get_settings(
     State(application_module): State<AppState>,
     user: AuthorizedUser,
@@ -1032,6 +1071,7 @@ async fn get_settings(
 }
 
 /// @feature: admin.server_settings
+#[tracing::instrument(skip_all)]
 async fn put_settings(
     State(application_module): State<AppState>,
     user: AuthorizedUser,
@@ -1101,6 +1141,7 @@ fn hash_password(plain: &str) -> Result<HashedPassword> {
 }
 
 /// @feature: admin.authorized_users
+#[tracing::instrument(skip_all)]
 async fn get_users(
     State(application_module): State<AppState>,
     user: AuthorizedUser,
@@ -1111,6 +1152,7 @@ async fn get_users(
 }
 
 /// @feature: admin.authorized_users
+#[tracing::instrument(skip_all)]
 async fn post_user(
     State(application_module): State<AppState>,
     user: AuthorizedUser,
@@ -1145,6 +1187,7 @@ async fn post_user(
 }
 
 /// @feature: admin.authorized_users
+#[tracing::instrument(skip_all)]
 async fn put_user(
     AxumPath(user_id): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -1182,6 +1225,7 @@ async fn put_user(
 }
 
 /// @feature: admin.authorized_users
+#[tracing::instrument(skip_all)]
 async fn delete_user(
     AxumPath(user_id): AxumPath<String>,
     State(application_module): State<AppState>,
@@ -1205,6 +1249,7 @@ async fn delete_user(
 }
 
 /// @feature: documents.merge
+#[tracing::instrument(skip_all)]
 async fn post_merge_documents(
     State(application_module): State<AppState>,
     _user: AuthorizedUser,
@@ -1231,6 +1276,7 @@ struct SearchQuery {
 }
 
 /// @feature: online_library.search
+#[tracing::instrument(skip_all)]
 async fn search_online_library(
     State(application_module): State<AppState>,
     _user: AuthorizedUser,
@@ -1271,6 +1317,7 @@ struct ImportOnlineBookRequest {
 }
 
 /// @feature: online_library.download_import
+#[tracing::instrument(skip_all)]
 async fn import_online_book(
     State(application_module): State<AppState>,
     _user: AuthorizedUser,

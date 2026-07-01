@@ -60,7 +60,7 @@ provider.path = "../provider"
 
 axum = { workspace = true, optional = true, features = ["multipart"] }
 tower = { workspace = true, optional = true }
-tower-http = { workspace = true, optional = true, features = ["cors"] }
+tower-http = { workspace = true, optional = true, features = ["cors", "trace"] }
 password-hash = "0.6.1"
 mobi = "0.8.0"
 
