@@ -1,5 +1,7 @@
 use axum::extract::FromRequestParts;
+use axum::http::HeaderValue;
 use axum::http::StatusCode;
+use axum::http::header;
 use axum::http::request::Parts;
 use axum::response::IntoResponse;
 use axum::response::Response;
@@ -50,23 +52,40 @@ pub enum Error {
     InvalidBasicAuth,
     #[error("the presented credentials are invalid")]
     InvalidCredentials,
+    #[error("the bearer token is invalid or expired")]
+    InvalidToken,
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        let status = match self {
+        let status = match &self {
             Error::TooManyAuthorizationHeaders(_) => StatusCode::BAD_REQUEST,
-            Error::MissingAuthorization | Error::InvalidAuthType | Error::InvalidBasicAuth => {
-                StatusCode::UNAUTHORIZED
-            }
+            Error::MissingAuthorization
+            | Error::InvalidAuthType
+            | Error::InvalidBasicAuth
+            | Error::InvalidToken => StatusCode::UNAUTHORIZED,
             Error::InvalidCredentials => StatusCode::FORBIDDEN,
         };
-        (status, self.to_string()).into_response()
+        // RFC 6750 §3: advertise the Bearer scheme on 401s.
+        let challenge = match &self {
+            Error::InvalidToken => "Bearer error=\"invalid_token\"",
+            _ => "Bearer",
+        };
+        let mut response = (status, self.to_string()).into_response();
+        if status == StatusCode::UNAUTHORIZED {
+            response.headers_mut().insert(
+                header::WWW_AUTHENTICATE,
+                HeaderValue::from_static(challenge),
+            );
+        }
+        response
     }
 }
 
 impl AuthorizedUser {
-    fn extract_basic_auth(authorization_header: &str) -> Result<(String, String), Error> {
+    pub(crate) fn extract_basic_auth(
+        authorization_header: &str,
+    ) -> Result<(String, String), Error> {
         if !authorization_header.to_lowercase().starts_with("basic ") {
             return Err(Error::InvalidAuthType);
         }
@@ -106,8 +125,6 @@ impl FromRequestParts<AppState> for AuthorizedUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let settings = state.settings().await;
-
         let headers: Vec<_> = parts.headers.get_all("authorization").iter().collect();
         let authorization_header = match headers.as_slice() {
             [] => return Err(Error::MissingAuthorization),
@@ -115,8 +132,10 @@ impl FromRequestParts<AppState> for AuthorizedUser {
             many => return Err(Error::TooManyAuthorizationHeaders(many.len())),
         };
 
-        // Try Basic authentication first (user_id:passphrase)
+        // Try Basic authentication first (user_id:passphrase). This is the slow
+        // path (PBKDF2) — used for `/oauth/token` and simple clients.
         if authorization_header.to_lowercase().starts_with("basic ") {
+            let settings = state.settings().await;
             let (user_id, passphrase) = Self::extract_basic_auth(authorization_header)?;
             match settings.server.authorized_users.get(&user_id) {
                 Some(entry) if entry.password().verify(&passphrase).is_ok() => Ok(AuthorizedUser {
@@ -126,18 +145,17 @@ impl FromRequestParts<AppState> for AuthorizedUser {
                 _ => Err(Error::InvalidCredentials),
             }
         }
-        // Fall back to Bearer token authentication for backward compatibility
+        // Bearer: verify the JWT with the in-memory secret. Fast path — no DB,
+        // no PBKDF2. Roles come straight from the token claims.
         else {
             let token = Self::extract_bearer_token(authorization_header)?;
-            for (user_id, entry) in settings.server.authorized_users.iter() {
-                if entry.password().verify(token).is_ok() {
-                    return Ok(AuthorizedUser {
-                        user_id: user_id.clone(),
-                        roles: entry.roles().to_vec(),
-                    });
-                }
+            match state.tokens().verify(token) {
+                Ok(claims) => Ok(AuthorizedUser {
+                    user_id: claims.sub,
+                    roles: claims.roles,
+                }),
+                Err(_) => Err(Error::InvalidToken),
             }
-            Err(Error::InvalidCredentials)
         }
     }
 }

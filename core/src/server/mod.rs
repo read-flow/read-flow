@@ -1,4 +1,5 @@
 mod authn;
+mod token;
 
 use std::collections::HashMap;
 use std::io;
@@ -11,10 +12,13 @@ use authn::AuthorizedUser;
 use authn::PrivateModeHeader;
 use axum::Json;
 use axum::Router;
+use axum::extract::Form;
 use axum::extract::Multipart;
 use axum::extract::Path as AxumPath;
 use axum::extract::Query;
 use axum::extract::State;
+use axum::http::HeaderMap;
+use axum::http::HeaderValue;
 use axum::http::StatusCode;
 use axum::http::header;
 use axum::response::IntoResponse;
@@ -25,6 +29,7 @@ use axum::routing::put;
 use figment::Figment;
 use provider::r#async::AndThen;
 use provider::r#async::Provider;
+use token::TokenService;
 use tokio::net::TcpListener;
 use tower_http::cors::Any;
 use tower_http::cors::CorsLayer;
@@ -183,13 +188,25 @@ where
 
 /// Shared application state handed to every handler and extractor. Cheap to
 /// clone (`Arc`), derefs to a [`ServerModule`] so handler bodies read the same
-/// as before.
+/// as before. Also carries the [`TokenService`] used to issue/verify Bearer
+/// tokens.
 #[derive(Clone)]
-pub struct AppState(Arc<dyn ServerModule>);
+pub struct AppState {
+    module: Arc<dyn ServerModule>,
+    tokens: Arc<TokenService>,
+}
 
 impl AppState {
     pub fn new(module: Arc<dyn ServerModule>) -> Self {
-        Self(module)
+        Self {
+            module,
+            tokens: Arc::new(TokenService::generate()),
+        }
+    }
+
+    /// The token issuer/verifier for this server instance.
+    pub(crate) fn tokens(&self) -> &TokenService {
+        &self.tokens
     }
 }
 
@@ -197,7 +214,7 @@ impl std::ops::Deref for AppState {
     type Target = dyn ServerModule;
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        &*self.module
     }
 }
 
@@ -285,6 +302,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/users/{user_id}", put(put_user).delete(delete_user))
         .route("/online-library/search", get(search_online_library))
         .route("/online-library/import", post(import_online_book))
+        .route("/oauth/token", post(oauth_token))
         .layer(cors_layer())
         // Outermost: log every request/response (method, path, status, latency)
         // at INFO. The per-handler `#[instrument]` spans nest under this.
@@ -331,6 +349,135 @@ pub async fn main(config_path: PathBuf) -> anyhow::Result<()> {
     let app = build_router(state);
     serve_on(listener, app).await?;
     Ok(())
+}
+
+// ─── OAuth2 token endpoint ────────────────────────────────────────────────────
+
+/// RFC 6749 §4.3 token request (form-encoded). The resource-owner credentials
+/// may also arrive via the `Authorization: Basic` header, which takes priority.
+#[derive(serde::Deserialize)]
+struct TokenRequest {
+    grant_type: Option<String>,
+    username: Option<String>,
+    password: Option<String>,
+}
+
+/// RFC 6749 §5.1 successful token response.
+#[derive(serde::Serialize)]
+struct TokenResponse {
+    access_token: String,
+    token_type: &'static str,
+    expires_in: u64,
+    scope: String,
+}
+
+/// RFC 6749 §5.2 error response.
+#[derive(serde::Serialize)]
+struct OAuthErrorBody {
+    error: &'static str,
+    error_description: String,
+}
+
+fn oauth_error(
+    status: StatusCode,
+    error: &'static str,
+    description: impl Into<String>,
+) -> Response {
+    (
+        status,
+        Json(OAuthErrorBody {
+            error,
+            error_description: description.into(),
+        }),
+    )
+        .into_response()
+}
+
+/// Resource-owner credentials: prefer the `Authorization: Basic` header, else
+/// the form body's `username`/`password`.
+fn resource_owner_credentials(headers: &HeaderMap, req: &TokenRequest) -> Option<(String, String)> {
+    if let Some(value) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        && value.to_lowercase().starts_with("basic ")
+        && let Ok(pair) = AuthorizedUser::extract_basic_auth(value)
+    {
+        return Some(pair);
+    }
+    match (req.username.clone(), req.password.clone()) {
+        (Some(username), Some(password)) => Some((username, password)),
+        _ => None,
+    }
+}
+
+/// `POST /oauth/token` — exchange Basic (or form) credentials for a Bearer JWT.
+/// This is the one place that still runs PBKDF2; every other endpoint can then
+/// present the fast-to-verify token.
+#[tracing::instrument(skip_all)]
+async fn oauth_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(req): Form<TokenRequest>,
+) -> Response {
+    if let Some(grant_type) = &req.grant_type
+        && grant_type != "password"
+    {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_grant_type",
+            format!("grant_type '{grant_type}' is not supported"),
+        );
+    }
+
+    let Some((user_id, password)) = resource_owner_credentials(&headers, &req) else {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "missing resource owner credentials",
+        );
+    };
+
+    let settings = state.settings().await;
+    let Some(entry) = settings.server.authorized_users.get(&user_id) else {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "invalid username or password",
+        );
+    };
+    if entry.password().verify(&password).is_err() {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "invalid username or password",
+        );
+    }
+
+    let roles = entry.roles().to_vec();
+    match state.tokens().issue(&user_id, &roles) {
+        Ok(access_token) => {
+            let body = TokenResponse {
+                access_token,
+                token_type: "Bearer",
+                expires_in: state.tokens().ttl_seconds(),
+                scope: roles.join(" "),
+            };
+            let mut response = Json(body).into_response();
+            // RFC 6749 §5.1: tokens must not be cached.
+            response
+                .headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            response
+        }
+        Err(error) => {
+            tracing::error!("could not issue token: {error}");
+            oauth_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                "could not issue token",
+            )
+        }
+    }
 }
 
 /// @feature: remotes.status

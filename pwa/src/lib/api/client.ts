@@ -135,34 +135,93 @@ export interface OnlineLibrarySearchResponse {
 	catalogs: OnlineCatalog[];
 }
 
+/** A cached Bearer token, valid until `expiresAt` (epoch ms). */
+interface CachedToken {
+	token: string;
+	expiresAt: number;
+}
+
+/**
+ * Bearer tokens keyed by `baseUrl|userId`, shared across the short-lived
+ * `ReadFlowClient` instances the aggregator creates per call. Kept in memory
+ * only; re-obtained after a page reload.
+ */
+const tokenCache = new Map<string, CachedToken>();
+
+/** Test hook: clear all cached tokens. */
+export function __clearTokenCache(): void {
+	tokenCache.clear();
+}
+
 export class ReadFlowClient {
 	private baseUrl: string;
-	private authHeader: string;
+	private basicHeader: string;
+	private cacheKey: string;
 	private privateMode: boolean;
 
 	constructor(source: Source) {
 		this.baseUrl = source.baseUrl.replace(/\/$/, '');
 		const credentials = btoa(`${source.userId}:${source.passphrase}`);
-		this.authHeader = `Basic ${credentials}`;
+		this.basicHeader = `Basic ${credentials}`;
+		this.cacheKey = `${this.baseUrl}|${source.userId}`;
 		this.privateMode = source.privateMode ?? false;
 	}
 
-	private headers(extra?: HeadersInit): HeadersInit {
-		const base: Record<string, string> = {
-			Authorization: this.authHeader,
-			'Content-Type': 'application/json',
-		};
-		// @feature: remotes.private_mode
-		if (this.privateMode) {
-			base['X-Private-Mode'] = 'true';
+	/** Obtain a valid Bearer token, exchanging Basic via `/oauth/token`. Returns
+	 * `null` if the server has no token endpoint (older server) or on failure,
+	 * so callers fall back to Basic. */
+	private async ensureToken(): Promise<string | null> {
+		const cached = tokenCache.get(this.cacheKey);
+		if (cached && cached.expiresAt > Date.now()) return cached.token;
+		try {
+			const response = await fetch(`${this.baseUrl}/oauth/token`, {
+				method: 'POST',
+				headers: {
+					Authorization: this.basicHeader,
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: 'grant_type=password',
+			});
+			if (!response.ok) return null;
+			const data = (await response.json()) as { access_token: string; expires_in: number };
+			// Refresh a little early to avoid racing the expiry.
+			const expiresAt = Date.now() + (data.expires_in - 30) * 1000;
+			tokenCache.set(this.cacheKey, { token: data.access_token, expiresAt });
+			return data.access_token;
+		} catch {
+			return null;
 		}
-		return { ...base, ...extra };
+	}
+
+	private async authorization(): Promise<string> {
+		const token = await this.ensureToken();
+		return token ? `Bearer ${token}` : this.basicHeader;
+	}
+
+	/** Fetch with the current auth header (Bearer if available, else Basic) and
+	 * the private-mode header. On 401, drop the cached token and retry once. */
+	private async authedFetch(path: string, options: RequestInit = {}): Promise<Response> {
+		const send = async (): Promise<Response> => {
+			const headers: Record<string, string> = { Authorization: await this.authorization() };
+			// @feature: remotes.private_mode
+			if (this.privateMode) headers['X-Private-Mode'] = 'true';
+			return fetch(`${this.baseUrl}${path}`, {
+				...options,
+				headers: { ...headers, ...(options.headers as Record<string, string> | undefined) },
+			});
+		};
+		let response = await send();
+		if (response.status === 401) {
+			tokenCache.delete(this.cacheKey);
+			response = await send();
+		}
+		return response;
 	}
 
 	private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-		const response = await fetch(`${this.baseUrl}${path}`, {
+		const response = await this.authedFetch(path, {
 			...options,
-			headers: this.headers(options.headers),
+			headers: { 'Content-Type': 'application/json', ...(options.headers as object) },
 		});
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status} ${response.statusText} — ${this.baseUrl}${path}`);
@@ -172,9 +231,9 @@ export class ReadFlowClient {
 
 	// For endpoints that return 200 with an empty body (e.g. PUT /reading-progress).
 	private async requestVoid(path: string, options: RequestInit = {}): Promise<void> {
-		const response = await fetch(`${this.baseUrl}${path}`, {
+		const response = await this.authedFetch(path, {
 			...options,
-			headers: this.headers(options.headers),
+			headers: { 'Content-Type': 'application/json', ...(options.headers as object) },
 		});
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status} ${response.statusText} — ${this.baseUrl}${path}`);
@@ -238,18 +297,14 @@ export class ReadFlowClient {
 	}
 
 	async downloadDocumentCover(documentGuid: string): Promise<Blob | null> {
-		const response = await fetch(`${this.baseUrl}/documents/${documentGuid}/cover`, {
-			headers: this.headers(),
-		});
+		const response = await this.authedFetch(`/documents/${documentGuid}/cover`);
 		if (response.status === 404) return null;
 		if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
 		return response.blob();
 	}
 
 	async downloadCover(guid: string): Promise<Blob | null> {
-		const response = await fetch(`${this.baseUrl}/files/${guid}/cover`, {
-			headers: this.headers(),
-		});
+		const response = await this.authedFetch(`/files/${guid}/cover`);
 		if (response.status === 404) return null;
 		if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
 		return response.blob();
@@ -264,14 +319,9 @@ export class ReadFlowClient {
 	async uploadFile(blob: Blob, fileName: string): Promise<RemoteFile> {
 		const form = new FormData();
 		form.append('file', blob, fileName);
-		// Multipart: let the browser set Content-Type (with boundary); only send auth.
-		const headers: Record<string, string> = { Authorization: this.authHeader };
-		if (this.privateMode) headers['X-Private-Mode'] = 'true';
-		const response = await fetch(`${this.baseUrl}/files`, {
-			method: 'POST',
-			headers,
-			body: form,
-		});
+		// Multipart: let the browser set Content-Type (with boundary); authedFetch
+		// only adds the Authorization + private-mode headers.
+		const response = await this.authedFetch('/files', { method: 'POST', body: form });
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status} ${response.statusText} — ${this.baseUrl}/files`);
 		}
@@ -279,9 +329,8 @@ export class ReadFlowClient {
 	}
 
 	async downloadFile(guid: string, fileName: string): Promise<Blob> {
-		const response = await fetch(
-			`${this.baseUrl}/files/${guid}/download-as/${encodeURIComponent(fileName)}`,
-			{ headers: this.headers() },
+		const response = await this.authedFetch(
+			`/files/${guid}/download-as/${encodeURIComponent(fileName)}`,
 		);
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status} ${response.statusText}`);

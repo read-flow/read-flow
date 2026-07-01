@@ -5,13 +5,18 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
 
 use base64::Engine;
 use futures::StreamExt;
 use reqwest::Client;
+use reqwest::RequestBuilder;
+use reqwest::StatusCode;
 use reqwest::Url;
 use reqwest::header;
 use tokio::fs;
+use tokio::sync::Mutex;
 
 use crate::Builder;
 use crate::api::ApiDocument;
@@ -24,6 +29,19 @@ use crate::api::Status;
 use crate::extension_of;
 use crate::to_unique_file;
 
+/// A Bearer access token cached until shortly before it expires.
+struct CachedToken {
+    value: String,
+    expires_at: Instant,
+}
+
+/// Subset of the `/oauth/token` response we need.
+#[derive(serde::Deserialize)]
+struct TokenResponse {
+    access_token: String,
+    expires_in: u64,
+}
+
 #[derive(Clone)]
 pub struct FilesClient {
     pub base_url: Url,
@@ -31,6 +49,8 @@ pub struct FilesClient {
     passphrase: String,
     private_mode: bool,
     client: Client,
+    /// Cached Bearer token, shared across clones of this client.
+    token: Arc<Mutex<Option<CachedToken>>>,
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -76,6 +96,7 @@ impl FilesClient {
             passphrase,
             private_mode,
             client: Client::new(),
+            token: Arc::new(Mutex::new(None)),
         };
         Ok(result)
     }
@@ -84,29 +105,98 @@ impl FilesClient {
         &self.base_url
     }
 
-    fn get_auth_header(&self) -> String {
-        // Use Basic authentication with user_id:passphrase
+    fn basic_header(&self) -> String {
+        // HTTP Basic with user_id:passphrase — used to obtain a token, and as a
+        // fallback when the server has no token endpoint.
         let credentials = format!("{}:{}", self.user_id, self.passphrase);
         let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
         format!("Basic {}", encoded)
+    }
+
+    /// The `Authorization` header value to use: a cached Bearer token if valid,
+    /// otherwise obtain one via `/oauth/token`, falling back to Basic.
+    async fn auth_header(&self) -> String {
+        if let Some(bearer) = self.cached_bearer().await {
+            return bearer;
+        }
+        self.fetch_token()
+            .await
+            .unwrap_or_else(|| self.basic_header())
+    }
+
+    async fn cached_bearer(&self) -> Option<String> {
+        let guard = self.token.lock().await;
+        guard
+            .as_ref()
+            .filter(|t| t.expires_at > Instant::now())
+            .map(|t| format!("Bearer {}", t.value))
+    }
+
+    /// Exchange Basic credentials for a Bearer token and cache it. Returns
+    /// `None` if the server has no `/oauth/token` (older server) or on any
+    /// failure, so the caller falls back to Basic.
+    async fn fetch_token(&self) -> Option<String> {
+        let url = self.base_url.join("oauth/token").ok()?;
+        let response = self
+            .client
+            .post(url)
+            .header(header::AUTHORIZATION, self.basic_header())
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body("grant_type=password")
+            .send()
+            .await
+            .ok()?;
+        if !response.status().is_success() {
+            return None;
+        }
+        let body: TokenResponse = response.json().await.ok()?;
+        // Refresh a little early to avoid racing the expiry.
+        let expires_at = Instant::now() + Duration::from_secs(body.expires_in.saturating_sub(30));
+        let bearer = format!("Bearer {}", body.access_token);
+        *self.token.lock().await = Some(CachedToken {
+            value: body.access_token,
+            expires_at,
+        });
+        Some(bearer)
+    }
+
+    async fn invalidate_token(&self) {
+        *self.token.lock().await = None;
+    }
+
+    /// Send `builder` with the current auth header. If the server replies 401
+    /// (e.g. the token expired or the server restarted with a new secret),
+    /// drop the cached token and retry once with a fresh one.
+    async fn send(&self, builder: RequestBuilder) -> Result<reqwest::Response, Error> {
+        let retry = builder.try_clone();
+        let response = builder
+            .header(header::AUTHORIZATION, self.auth_header().await)
+            .send()
+            .await?;
+        if response.status() == StatusCode::UNAUTHORIZED
+            && let Some(retry) = retry
+        {
+            self.invalidate_token().await;
+            return Ok(retry
+                .header(header::AUTHORIZATION, self.auth_header().await)
+                .send()
+                .await?);
+        }
+        Ok(response)
     }
 
     async fn get_json<T>(&self, relative_url: &str) -> Result<T, Error>
     where
         T: for<'a> serde::Deserialize<'a>,
     {
-        let result = self
+        let builder = self
             .client
             .get(self.base_url.join(relative_url)?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
             .apply_if(self.private_mode, |req| {
                 req.header("x-private-mode", "true")
-            })
-            .send()
-            .await?
-            .json()
-            .await?;
+            });
+        let result = self.send(builder).await?.json().await?;
         Ok(result)
     }
 
@@ -120,16 +210,14 @@ impl FilesClient {
     }
 
     pub async fn download_file(&self, guid: &str, filename: &Path) -> Result<PathBuf, Error> {
-        let response = self
+        let builder = self
             .client
             .get(self.base_url.join(&format!(
                 "files/{guid}/download-as/{}",
                 filename.file_name().and_then(OsStr::to_str).unwrap()
             ))?)
-            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .send()
-            .await?;
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON));
+        let response = self.send(builder).await?;
 
         let mut bytes = response.bytes_stream();
 
@@ -152,14 +240,12 @@ impl FilesClient {
             .file("file", filename)
             .await?;
 
-        let response = self
+        let builder = self
             .client
             .post(self.base_url.join("/files")?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .multipart(form)
-            .send()
-            .await?;
+            .multipart(form);
+        let response = self.send(builder).await?;
 
         let result = response.json().await?;
 
@@ -199,14 +285,12 @@ impl FileDataSource for FilesClient {
     }
 
     async fn update_file(&self, file: File) -> Result<(), Error> {
-        let response = self
+        let builder = self
             .client
             .put(self.base_url.join("/files")?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .json(&file)
-            .send()
-            .await?;
+            .json(&file);
+        let response = self.send(builder).await?;
 
         response.error_for_status_ref()?;
 
@@ -218,14 +302,12 @@ impl FileDataSource for FilesClient {
     }
 
     async fn add_file_tags(&self, guid: &str, tags: Vec<String>) -> Result<Vec<String>, Error> {
-        let response = self
+        let builder = self
             .client
             .post(self.base_url.join(&format!("/files/{guid}/tags"))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .json(&tags)
-            .send()
-            .await?;
+            .json(&tags);
+        let response = self.send(builder).await?;
 
         let result = response.json().await?;
 
@@ -233,14 +315,12 @@ impl FileDataSource for FilesClient {
     }
 
     async fn delete_file_tags(&self, guid: &str, tags: Vec<String>) -> Result<(), Error> {
-        let response = self
+        let builder = self
             .client
             .delete(self.base_url.join(&format!("/files/{guid}/tags"))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .json(&tags)
-            .send()
-            .await?;
+            .json(&tags);
+        let response = self.send(builder).await?;
 
         let _result: Vec<String> = response.json().await?;
 
@@ -270,13 +350,11 @@ impl FileDataSource for FilesClient {
     }
 
     async fn delete_file(&self, file: File) -> Result<(), Error> {
-        let response = self
+        let builder = self
             .client
             .delete(self.base_url.join(&format!("files/{}", file.guid))?)
-            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .send()
-            .await?;
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON));
+        let response = self.send(builder).await?;
 
         // Check if the request was successful
         response.error_for_status_ref()?;
@@ -289,16 +367,14 @@ impl FileDataSource for FilesClient {
     }
 
     async fn get_reading_state(&self, fingerprint: &str) -> Result<Option<ReadingState>, Error> {
-        let response = self
+        let builder = self
             .client
             .get(
                 self.base_url
                     .join(&format!("reading-state/{fingerprint}"))?,
             )
-            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .send()
-            .await?;
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON));
+        let response = self.send(builder).await?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
@@ -309,14 +385,12 @@ impl FileDataSource for FilesClient {
     }
 
     async fn upsert_reading_state(&self, state: ReadingState) -> Result<ReadingState, Error> {
-        let response = self
+        let builder = self
             .client
             .put(self.base_url.join("reading-state")?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .json(&state)
-            .send()
-            .await?;
+            .json(&state);
+        let response = self.send(builder).await?;
 
         response.error_for_status_ref()?;
         Ok(response.json().await?)
@@ -331,17 +405,15 @@ impl FileDataSource for FilesClient {
         struct Req {
             status: ReadingStatus,
         }
-        let response = self
+        let builder = self
             .client
             .put(
                 self.base_url
                     .join(&format!("reading-state/{fingerprint}/status"))?,
             )
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .json(&Req { status })
-            .send()
-            .await?;
+            .json(&Req { status });
+        let response = self.send(builder).await?;
 
         response.error_for_status_ref()?;
         Ok(())
@@ -354,13 +426,11 @@ impl FilesClient {
     }
 
     pub async fn get_document(&self, guid: &str) -> Result<Option<ApiDocument>, Error> {
-        let response = self
+        let builder = self
             .client
             .get(self.base_url.join(&format!("documents/{guid}"))?)
-            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .send()
-            .await?;
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON));
+        let response = self.send(builder).await?;
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -372,14 +442,12 @@ impl FilesClient {
         guid: &str,
         meta: DocumentMeta,
     ) -> Result<ApiDocument, Error> {
-        let response = self
+        let builder = self
             .client
             .put(self.base_url.join(&format!("documents/{guid}/metadata"))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .json(&meta)
-            .send()
-            .await?;
+            .json(&meta);
+        let response = self.send(builder).await?;
         response.error_for_status_ref()?;
         Ok(response.json().await?)
     }
@@ -393,26 +461,22 @@ impl FilesClient {
             winner_guid: winner_guid.to_string(),
             loser_guids: loser_guids.to_vec(),
         };
-        let response = self
+        let builder = self
             .client
             .post(self.base_url.join("documents/merge")?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .json(&req)
-            .send()
-            .await?;
+            .json(&req);
+        let response = self.send(builder).await?;
         response.error_for_status_ref()?;
         Ok(())
     }
 
     pub async fn ensure_document_for_file(&self, file_guid: &str) -> Result<ApiDocument, Error> {
-        let response = self
+        let builder = self
             .client
             .post(self.base_url.join(&format!("files/{file_guid}/document"))?)
-            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .header(header::AUTHORIZATION, self.get_auth_header())
-            .send()
-            .await?;
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON));
+        let response = self.send(builder).await?;
         response.error_for_status_ref()?;
         Ok(response.json().await?)
     }

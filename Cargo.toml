@@ -33,6 +33,7 @@ indexmap = "2.14.0"
 itertools = "0.14.0"
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git" }
 mime = "0.3.17"
+jsonwebtoken = "9.3.1"
 mupdf = "0.7.0"
 open = "5.3.6"
 pbkdf2 = "0.13.0"
