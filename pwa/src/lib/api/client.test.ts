@@ -42,7 +42,7 @@ function tokenResponse(): Response {
 /** A fetch mock that answers `/oauth/token` with a token and every other path
  * with `body`. */
 function routeFetch(body: unknown) {
-	return vi.fn((url: string) => {
+	return vi.fn((url: string, _options: RequestInit) => {
 		if (url.endsWith('/oauth/token')) return Promise.resolve(tokenResponse());
 		return Promise.resolve(mockOk(body));
 	});
@@ -92,7 +92,7 @@ describe('ReadFlowClient — token exchange', () => {
 
 	it('retries once with a fresh token on a 401', async () => {
 		let apiHits = 0;
-		const fetchSpy = vi.fn((url: string) => {
+		const fetchSpy = vi.fn((url: string, _options: RequestInit) => {
 			if (url.endsWith('/oauth/token')) return Promise.resolve(tokenResponse());
 			apiHits += 1;
 			return Promise.resolve(apiHits === 1 ? mockError(401, 'Unauthorized') : mockOk([]));
@@ -106,7 +106,7 @@ describe('ReadFlowClient — token exchange', () => {
 	});
 
 	it('falls back to Basic when the server has no token endpoint', async () => {
-		const fetchSpy = vi.fn((url: string) => {
+		const fetchSpy = vi.fn((url: string, _options: RequestInit) => {
 			if (url.endsWith('/oauth/token')) return Promise.resolve(mockError(404, 'Not Found'));
 			return Promise.resolve(mockOk([]));
 		});
@@ -165,7 +165,7 @@ describe('ReadFlowClient — getFiles', () => {
 	it('throws on a non-OK response', async () => {
 		vi.stubGlobal(
 			'fetch',
-			vi.fn((url: string) =>
+			vi.fn((url: string, _options: RequestInit) =>
 				Promise.resolve(
 					url.endsWith('/oauth/token')
 						? tokenResponse()
@@ -228,7 +228,7 @@ describe('ReadFlowClient — getReadingState', () => {
 	it('returns null on a 404 response', async () => {
 		vi.stubGlobal(
 			'fetch',
-			vi.fn((url: string) =>
+			vi.fn((url: string, _options: RequestInit) =>
 				Promise.resolve(url.endsWith('/oauth/token') ? tokenResponse() : mockError(404, 'Not Found')),
 			),
 		);
@@ -239,7 +239,7 @@ describe('ReadFlowClient — getReadingState', () => {
 	it('re-throws non-404 errors', async () => {
 		vi.stubGlobal(
 			'fetch',
-			vi.fn((url: string) =>
+			vi.fn((url: string, _options: RequestInit) =>
 				Promise.resolve(
 					url.endsWith('/oauth/token') ? tokenResponse() : mockError(503, 'Service Unavailable'),
 				),
@@ -290,7 +290,7 @@ describe('ReadFlowClient — downloadFile', () => {
 		const blob = new Blob(['pdf-content'], { type: 'application/pdf' });
 		vi.stubGlobal(
 			'fetch',
-			vi.fn((url: string) =>
+			vi.fn((url: string, _options: RequestInit) =>
 				Promise.resolve(
 					url.endsWith('/oauth/token')
 						? tokenResponse()
@@ -303,7 +303,7 @@ describe('ReadFlowClient — downloadFile', () => {
 	});
 
 	it('encodes the filename in the URL', async () => {
-		const fetchSpy = vi.fn((url: string) =>
+		const fetchSpy = vi.fn((url: string, _options: RequestInit) =>
 			Promise.resolve(
 				url.endsWith('/oauth/token')
 					? tokenResponse()
@@ -320,7 +320,7 @@ describe('ReadFlowClient — downloadFile', () => {
 	it('throws on a non-OK download response', async () => {
 		vi.stubGlobal(
 			'fetch',
-			vi.fn((url: string) =>
+			vi.fn((url: string, _options: RequestInit) =>
 				Promise.resolve(url.endsWith('/oauth/token') ? tokenResponse() : mockError(403, 'Forbidden')),
 			),
 		);
