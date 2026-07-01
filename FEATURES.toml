@@ -43,6 +43,11 @@ description = "Filter the list by reading status"
 surfaces = ["cosmic", "pwa"]
 
 [[feature]]
+id = "documents.filter_by_type"
+description = "Filter the list by document type (pdf/epub/…)"
+surfaces = ["cosmic", "pwa"]
+
+[[feature]]
 id = "documents.filter_by_source"
 description = "Filter the list by source (local / remote)"
 surfaces = ["cosmic", "pwa"]
@@ -105,6 +110,11 @@ surfaces = ["cosmic", "pwa", "rest"]
 id = "sources.send_to_client"
 description = "Send a document to another client (download-to-local / upload)"
 surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
+id = "sources.sync_to_all"
+description = "Sync a document to all configured sources"
+surfaces = ["cosmic"]
 
 # ── Tags ───────────────────────────────────────────────────────────────────
 

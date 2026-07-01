@@ -10,6 +10,7 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `documents.search` | ✅ | ✅ |  | Keyword search across documents |
 | `documents.filter_by_tag` | ✅ | ✅ |  | Filter the list by allowed/denied tags |
 | `documents.filter_by_status` | ✅ | ✅ |  | Filter the list by reading status |
+| `documents.filter_by_type` | ✅ | ✅ |  | Filter the list by document type (pdf/epub/…) |
 | `documents.filter_by_source` | ✅ | ✅ |  | Filter the list by source (local / remote) |
 | `documents.sort` | ✅ | ✅ |  | Sort the list (title/filename/size/type/status, asc/desc) |
 | `documents.pagination` | ✅ | ✅ |  | Paginate large document collections |
@@ -22,6 +23,7 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `documents.select_cover` | ✅ | ✅ | ✅ | Choose which content's cover represents the document |
 | `sources.delete` | ✅ | ✅ | ✅ | Delete a single source/file of a document |
 | `sources.send_to_client` | ✅ | ✅ | ✅ | Send a document to another client (download-to-local / upload) |
+| `sources.sync_to_all` | ✅ |  |  | Sync a document to all configured sources |
 | `tags.list` | ✅ | ✅ | ✅ | List all tags in the library |
 | `tags.add` | ✅ | ✅ | ✅ | Add tags to a document |
 | `tags.remove` | ✅ | ✅ | ✅ | Remove tags from a document |
@@ -43,4 +45,4 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `theme.editor` |  | ✅ |  | Customizable theme editor (modes, schemes, custom colors) |
 | `app.epub_viewer_choice` | ✅ |  |  | Choose EPUB viewer backend (native/mupdf/external) |
 
-_36 features tracked._
+_38 features tracked._
