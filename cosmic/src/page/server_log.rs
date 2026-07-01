@@ -103,6 +103,19 @@ fn level_color(level: Level) -> Color {
     }
 }
 
+/// Color for an HTTP method, by convention (GET safe/blue, mutations warmer,
+/// DELETE red). Unknown/other verbs stay dim.
+fn method_color(method: &str) -> Color {
+    match method.to_ascii_uppercase().as_str() {
+        "GET" => Color::from_rgb8(0x5B, 0x8D, 0xB5),
+        "POST" => Color::from_rgb8(0x2E, 0x8B, 0x57),
+        "PUT" => Color::from_rgb8(0xD9, 0x8E, 0x1F),
+        "PATCH" => Color::from_rgb8(0x2E, 0x9B, 0x9B),
+        "DELETE" => Color::from_rgb8(0xD1, 0x3B, 0x3B),
+        _ => DIM,
+    }
+}
+
 /// Message tint: only WARN/ERROR get emphasized so normal logs stay calm.
 fn emphasis_color(level: Level) -> Option<Color> {
     match level {
@@ -367,9 +380,10 @@ impl ServerLogPage {
             .class(cosmic::theme::Text::Color(DIM))
             .width(Length::Fixed(120.0));
 
-        let method = widget::text::monotext(entry.method().unwrap_or_default())
+        let method_text = entry.method().unwrap_or_default();
+        let method = widget::text::monotext(method_text.clone())
             .size(12)
-            .class(cosmic::theme::Text::Color(DIM))
+            .class(cosmic::theme::Text::Color(method_color(&method_text)))
             .width(Length::Fixed(52.0));
 
         let uri = widget::text::monotext(
