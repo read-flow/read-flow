@@ -153,6 +153,23 @@ export function __clearTokenCache(): void {
 	tokenCache.clear();
 }
 
+/** Warn when credentials would be sent over plaintext HTTP to a non-local host.
+ * (A browser will also block an HTTP API when the PWA itself is served over
+ * HTTPS — mixed content.) */
+function warnIfCleartext(baseUrl: string): void {
+	try {
+		const url = new URL(baseUrl);
+		const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
+		if (url.protocol !== 'https:' && !local) {
+			console.warn(
+				`Read Flow: credentials will be sent over plaintext HTTP to ${baseUrl} — use HTTPS to avoid interception.`,
+			);
+		}
+	} catch {
+		// ignore malformed URLs
+	}
+}
+
 export class ReadFlowClient {
 	private baseUrl: string;
 	private basicHeader: string;
@@ -165,6 +182,7 @@ export class ReadFlowClient {
 		this.basicHeader = `Basic ${credentials}`;
 		this.cacheKey = `${this.baseUrl}|${source.userId}`;
 		this.privateMode = source.privateMode ?? false;
+		warnIfCleartext(this.baseUrl);
 	}
 
 	/** Obtain a valid Bearer token, exchanging Basic via `/oauth/token`. Returns

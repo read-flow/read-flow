@@ -71,6 +71,25 @@ pub enum Error {
     InvalidFile(PathBuf),
 }
 
+/// Warn when credentials would be sent over plaintext HTTP to a non-loopback
+/// host. Loopback (localhost / 127.0.0.1 / ::1) is fine for same-machine use.
+fn warn_if_cleartext(base_url: &Url) {
+    if base_url.scheme() != "https" {
+        let loopback = match base_url.host() {
+            Some(url::Host::Domain(h)) => h == "localhost",
+            Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+            Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+            None => false,
+        };
+        if !loopback {
+            tracing::warn!(
+                "credentials will be sent over plaintext HTTP to {base_url} — use HTTPS \
+                 (see the deployment docs) to avoid interception"
+            );
+        }
+    }
+}
+
 impl From<reqwest::Error> for Error {
     fn from(error: reqwest::Error) -> Self {
         Error::Http(error.into())
@@ -90,8 +109,10 @@ impl FilesClient {
         passphrase: String,
         private_mode: bool,
     ) -> Result<Self, Infallible> {
+        let base_url = base_url.into();
+        warn_if_cleartext(&base_url);
         let result = Self {
-            base_url: base_url.into(),
+            base_url,
             user_id,
             passphrase,
             private_mode,
