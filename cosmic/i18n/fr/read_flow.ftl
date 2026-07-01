@@ -403,3 +403,15 @@ settings-server-port-description = Port sur lequel le serveur écoute (0 = port 
 settings-server-start-on-launch = Démarrer le serveur au lancement
 settings-server-start-on-launch-description = Démarrer automatiquement le serveur à l'ouverture de l'application
 settings-server-restart-to-apply = Redémarrez le serveur pour appliquer la nouvelle adresse ou le nouveau port
+# Server network/TLS preferences
+settings-server-allowed-origins = Origines autorisées
+settings-server-allowed-origins-description = Origines web autorisées par CORS, séparées par des virgules (vide = toutes)
+settings-server-allowed-origins-placeholder = toutes les origines
+settings-server-max-upload = Téléversement max (Mio)
+settings-server-max-upload-description = Taille maximale de téléversement acceptée, en mébioctets
+settings-server-tls = Activer HTTPS (TLS)
+settings-server-tls-description = Servir en HTTPS avec le certificat et la clé ci-dessous (redémarrage requis)
+settings-server-tls-cert = Certificat TLS
+settings-server-tls-cert-placeholder = /chemin/vers/fullchain.pem
+settings-server-tls-key = Clé privée TLS
+settings-server-tls-key-placeholder = /chemin/vers/privkey.pem

@@ -97,6 +97,10 @@ export interface ServerSettingsDto {
 	concurrency: number;
 	private_mode: boolean;
 	private_tags: string[];
+	/** Origins allowed by CORS (empty = any). */
+	allowed_origins: string[];
+	/** Maximum upload size in bytes (null = server default). */
+	max_upload_bytes: number | null;
 }
 
 /** A user as exposed by the API — never includes the password hash. */

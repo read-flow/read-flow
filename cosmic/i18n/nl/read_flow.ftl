@@ -404,3 +404,15 @@ settings-server-port-description = Poort waarop de server luistert (0 = kies een
 settings-server-start-on-launch = Server starten bij openen
 settings-server-start-on-launch-description = Start de server automatisch wanneer de toepassing opent
 settings-server-restart-to-apply = Herstart de server om het nieuwe adres of de nieuwe poort toe te passen
+# Server network/TLS preferences
+settings-server-allowed-origins = Toegestane origins
+settings-server-allowed-origins-description = Door komma's gescheiden web-origins toegestaan door CORS (leeg = alle)
+settings-server-allowed-origins-placeholder = alle origins
+settings-server-max-upload = Max. upload (MiB)
+settings-server-max-upload-description = Grootste geaccepteerde uploadgrootte in mebibytes
+settings-server-tls = HTTPS (TLS) inschakelen
+settings-server-tls-description = Serveer via HTTPS met het certificaat en de sleutel hieronder (herstart vereist)
+settings-server-tls-cert = TLS-certificaat
+settings-server-tls-cert-placeholder = /pad/naar/fullchain.pem
+settings-server-tls-key = TLS-privésleutel
+settings-server-tls-key-placeholder = /pad/naar/privkey.pem

@@ -406,3 +406,15 @@ settings-server-port-description = Port the server listens on (0 = pick a free p
 settings-server-start-on-launch = Start server on launch
 settings-server-start-on-launch-description = Automatically start the server when the application opens
 settings-server-restart-to-apply = Restart the server to apply the new address or port
+# Server network/TLS preferences
+settings-server-allowed-origins = Allowed origins
+settings-server-allowed-origins-description = Comma-separated web origins allowed by CORS (empty = any)
+settings-server-allowed-origins-placeholder = any origin
+settings-server-max-upload = Max upload (MiB)
+settings-server-max-upload-description = Largest accepted upload size in mebibytes
+settings-server-tls = Enable HTTPS (TLS)
+settings-server-tls-description = Serve over HTTPS using the certificate and key below (restart to apply)
+settings-server-tls-cert = TLS certificate
+settings-server-tls-cert-placeholder = /path/to/fullchain.pem
+settings-server-tls-key = TLS private key
+settings-server-tls-key-placeholder = /path/to/privkey.pem

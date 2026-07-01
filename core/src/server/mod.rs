@@ -1304,6 +1304,12 @@ struct ServerSettingsDto {
     concurrency: usize,
     private_mode: bool,
     private_tags: Vec<String>,
+    /// Origins allowed by CORS (empty = any).
+    #[serde(default)]
+    allowed_origins: Vec<String>,
+    /// Maximum upload size in bytes (`null` = server default).
+    #[serde(default)]
+    max_upload_bytes: Option<u64>,
 }
 
 fn server_settings_dto(settings: &Settings) -> ServerSettingsDto {
@@ -1314,6 +1320,8 @@ fn server_settings_dto(settings: &Settings) -> ServerSettingsDto {
         concurrency: settings.scan.concurrency,
         private_mode: settings.ui.private_mode(),
         private_tags: settings.ui.private_tags().to_vec(),
+        allowed_origins: settings.server.allowed_origins.clone(),
+        max_upload_bytes: settings.server.max_upload_bytes,
     }
 }
 
@@ -1343,6 +1351,8 @@ async fn put_settings(
             s.scan.concurrency = dto.concurrency;
             s.ui.set_private_mode(dto.private_mode);
             s.ui.set_private_tags(dto.private_tags);
+            s.server.allowed_origins = dto.allowed_origins;
+            s.server.max_upload_bytes = dto.max_upload_bytes;
         }))
         .await?;
     let settings = application_module.settings().await;

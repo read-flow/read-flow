@@ -129,8 +129,12 @@
 	let settings = $state<ServerSettingsDto | null>(null);
 	let extCsv = $state('');
 	let tagsCsv = $state('');
+	let originsCsv = $state('');
+	let maxUploadMiB = $state<number | null>(null);
 	let settingsError = $state('');
 	let settingsSaving = $state(false);
+
+	const MIB = 1024 * 1024;
 
 	$effect(() => {
 		const id = selectedId;
@@ -145,6 +149,8 @@
 				settings = dto;
 				extCsv = dto.extensions.join(', ');
 				tagsCsv = dto.private_tags.join(', ');
+				originsCsv = dto.allowed_origins.join(', ');
+				maxUploadMiB = dto.max_upload_bytes != null ? Math.round(dto.max_upload_bytes / MIB) : null;
 			} catch (err) {
 				settingsError = err instanceof Error ? err.message : 'Failed to load settings.';
 			}
@@ -163,12 +169,16 @@
 			...settings,
 			extensions: csv(extCsv),
 			private_tags: csv(tagsCsv),
+			allowed_origins: csv(originsCsv),
+			max_upload_bytes: maxUploadMiB != null && maxUploadMiB > 0 ? Math.round(maxUploadMiB * MIB) : null,
 		};
 		try {
 			const saved = await client.putSettings(dto);
 			settings = saved;
 			extCsv = saved.extensions.join(', ');
 			tagsCsv = saved.private_tags.join(', ');
+			originsCsv = saved.allowed_origins.join(', ');
+			maxUploadMiB = saved.max_upload_bytes != null ? Math.round(saved.max_upload_bytes / MIB) : null;
 		} catch (err) {
 			settingsError = err instanceof Error ? err.message : 'Failed to save settings.';
 		} finally {
@@ -484,7 +494,20 @@
 						<input id="ptags" type="text" bind:value={tagsCsv} placeholder="private"
 							class="flex-1 min-w-0 bg-transparent text-right focus:outline-none" />
 					</div>
+					<div class="flex items-center px-4 py-3 gap-3">
+						<label for="origins" class="text-slate-500 dark:text-slate-400 shrink-0">Allowed origins</label>
+						<input id="origins" type="text" bind:value={originsCsv} placeholder="any origin"
+							class="flex-1 min-w-0 bg-transparent text-right focus:outline-none" />
+					</div>
+					<div class="flex items-center justify-between px-4 py-3 gap-3">
+						<label for="maxup" class="text-slate-500 dark:text-slate-400 shrink-0">Max upload (MiB)</label>
+						<input id="maxup" type="number" min="0" bind:value={maxUploadMiB} placeholder="default"
+							class="w-24 bg-transparent text-right focus:outline-none" />
+					</div>
 				</div>
+				<p class="mt-2 text-xs text-slate-400 dark:text-slate-500">
+					Allowed origins and max upload apply after the server restarts.
+				</p>
 				<div class="mt-3 flex justify-end">
 					<button
 						onclick={saveSettings}

@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use cosmic::Action;
@@ -35,6 +36,7 @@ use read_flow_core::db::models::Remote;
 use read_flow_core::scan::DirectorySettings;
 use read_flow_core::scan::DocumentType;
 use read_flow_core::settings::Settings;
+use read_flow_core::settings::TlsSettings;
 use read_flow_core::settings::UserEntry;
 use rfd::AsyncFileDialog;
 use rfd::FileHandle;
@@ -162,6 +164,11 @@ pub enum PreferencesMessage {
     SelectedServerDownloadFolder(Option<FileHandle>),
     ServerAddressChanged(String),
     ServerPortChanged(String),
+    ServerAllowedOriginsChanged(String),
+    ServerMaxUploadChanged(String),
+    ToggleServerTls(bool),
+    ServerTlsCertChanged(String),
+    ServerTlsKeyChanged(String),
     ToggleServerStartOnLaunch(bool),
     AuthorizedUserForm(AuthorizedUserFormMessage),
     AddAuthorizedUser,
@@ -685,6 +692,15 @@ impl PreferencesPage {
             .into()
     }
 
+    /// Get the TLS settings, creating an empty entry (so cert/key can be typed
+    /// in) if none exists.
+    fn ensure_tls(&mut self) -> &mut TlsSettings {
+        self.settings.server.tls.get_or_insert_with(|| TlsSettings {
+            cert: ExpandedPath::from_str("").expect("empty path"),
+            key: ExpandedPath::from_str("").expect("empty path"),
+        })
+    }
+
     fn view_section_server(&self) -> Vec<Element<'_, PreferencesMessage>> {
         let server_section = widget::settings::section()
             .title(fl!("preferences-server-section"))
@@ -735,6 +751,72 @@ impl PreferencesPage {
                         .on_input(PreferencesMessage::ServerPortChanged)
                         .width(Length::Fixed(120.0)),
                     ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-server-allowed-origins"))
+                    .description(fl!("settings-server-allowed-origins-description"))
+                    .control(
+                        widget::text_input(
+                            fl!("settings-server-allowed-origins-placeholder"),
+                            self.settings.server.allowed_origins.join(", "),
+                        )
+                        .on_input(PreferencesMessage::ServerAllowedOriginsChanged)
+                        .width(Length::Fixed(240.0)),
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-server-max-upload"))
+                    .description(fl!("settings-server-max-upload-description"))
+                    .control(
+                        widget::text_input(
+                            "100",
+                            self.settings
+                                .server
+                                .max_upload_bytes
+                                .map(|b| (b / (1024 * 1024)).to_string())
+                                .unwrap_or_default(),
+                        )
+                        .on_input(PreferencesMessage::ServerMaxUploadChanged)
+                        .width(Length::Fixed(120.0)),
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-server-tls"))
+                    .description(fl!("settings-server-tls-description"))
+                    .toggler(
+                        self.settings.server.tls.is_some(),
+                        PreferencesMessage::ToggleServerTls,
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-server-tls-cert")).control(
+                    widget::text_input(
+                        fl!("settings-server-tls-cert-placeholder"),
+                        self.settings
+                            .server
+                            .tls
+                            .as_ref()
+                            .map(|t| t.cert.display().to_string())
+                            .unwrap_or_default(),
+                    )
+                    .on_input(PreferencesMessage::ServerTlsCertChanged)
+                    .width(Length::Fixed(240.0)),
+                ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-server-tls-key")).control(
+                    widget::text_input(
+                        fl!("settings-server-tls-key-placeholder"),
+                        self.settings
+                            .server
+                            .tls
+                            .as_ref()
+                            .map(|t| t.key.display().to_string())
+                            .unwrap_or_default(),
+                    )
+                    .on_input(PreferencesMessage::ServerTlsKeyChanged)
+                    .width(Length::Fixed(240.0)),
+                ),
             )
             .add(
                 widget::settings::item::builder(fl!("settings-server-start-on-launch"))
@@ -1002,6 +1084,49 @@ impl Page for PreferencesPage {
                     self.save_state = SaveState::Idle;
                 }
                 // Ignore non-numeric input (keeps the previous value).
+                Task::none()
+            }
+            PreferencesMessage::ServerAllowedOriginsChanged(value) => {
+                self.settings.server.allowed_origins = value
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            PreferencesMessage::ServerMaxUploadChanged(value) => {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    self.settings.server.max_upload_bytes = None;
+                    self.save_state = SaveState::Idle;
+                } else if let Ok(mib) = trimmed.parse::<u64>() {
+                    self.settings.server.max_upload_bytes = Some(mib * 1024 * 1024);
+                    self.save_state = SaveState::Idle;
+                }
+                Task::none()
+            }
+            PreferencesMessage::ToggleServerTls(enabled) => {
+                if enabled {
+                    self.ensure_tls();
+                } else {
+                    self.settings.server.tls = None;
+                }
+                self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            PreferencesMessage::ServerTlsCertChanged(value) => {
+                if let Ok(path) = ExpandedPath::from_str(value.trim()) {
+                    self.ensure_tls().cert = path;
+                    self.save_state = SaveState::Idle;
+                }
+                Task::none()
+            }
+            PreferencesMessage::ServerTlsKeyChanged(value) => {
+                if let Ok(path) = ExpandedPath::from_str(value.trim()) {
+                    self.ensure_tls().key = path;
+                    self.save_state = SaveState::Idle;
+                }
                 Task::none()
             }
             PreferencesMessage::ToggleServerStartOnLaunch(value) => {
