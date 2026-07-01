@@ -39,6 +39,7 @@ mupdf = "0.7.0"
 open = "5.3.6"
 pbkdf2 = "0.13.0"
 quick-xml = "0.40.1"
+rcgen = "0.13"
 rand = { version = "0.10.1", default-features = false }
 rustc-hash = "2"
 rand_core = "0.6"

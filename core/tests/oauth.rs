@@ -191,6 +191,17 @@ async fn oversized_upload_is_rejected() {
 }
 
 #[tokio::test]
+async fn generated_self_signed_cert_loads_as_rustls() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (cert, key) =
+        server::generate_self_signed_cert(dir.path(), vec!["localhost".to_string()]).expect("gen");
+    assert!(cert.exists() && key.exists());
+    server::RustlsConfig::from_pem_file(&cert, &key)
+        .await
+        .expect("generated cert/key load as a rustls config");
+}
+
+#[tokio::test]
 async fn bad_credentials_yield_invalid_grant() {
     let (router, _dir) = test_router().await;
     let request = Request::builder()

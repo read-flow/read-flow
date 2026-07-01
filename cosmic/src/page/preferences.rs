@@ -169,6 +169,8 @@ pub enum PreferencesMessage {
     ToggleServerTls(bool),
     ServerTlsCertChanged(String),
     ServerTlsKeyChanged(String),
+    GenerateTlsCert,
+    GeneratedTlsCert(Result<(PathBuf, PathBuf), String>),
     ToggleServerStartOnLaunch(bool),
     AuthorizedUserForm(AuthorizedUserFormMessage),
     AddAuthorizedUser,
@@ -819,6 +821,14 @@ impl PreferencesPage {
                 ),
             )
             .add(
+                widget::settings::item::builder(fl!("settings-server-generate-cert"))
+                    .description(fl!("settings-server-generate-cert-description"))
+                    .control(
+                        widget::button::standard(fl!("settings-server-generate-cert-button"))
+                            .on_press(PreferencesMessage::GenerateTlsCert),
+                    ),
+            )
+            .add(
                 widget::settings::item::builder(fl!("settings-server-start-on-launch"))
                     .description(fl!("settings-server-start-on-launch-description"))
                     .toggler(
@@ -1126,6 +1136,49 @@ impl Page for PreferencesPage {
                 if let Ok(path) = ExpandedPath::from_str(value.trim()) {
                     self.ensure_tls().key = path;
                     self.save_state = SaveState::Idle;
+                }
+                Task::none()
+            }
+            PreferencesMessage::GenerateTlsCert => {
+                let dir = self
+                    .application_module
+                    .config_path()
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| PathBuf::from("."));
+                // Cover localhost plus the configured address if it's a real host.
+                let mut sans = vec!["localhost".to_string()];
+                if let Some(addr) = &self.settings.server.address
+                    && !addr.is_empty()
+                    && addr != "127.0.0.1"
+                    && addr != "0.0.0.0"
+                {
+                    sans.push(addr.clone());
+                }
+                task::future(async move {
+                    let result = tokio::task::spawn_blocking(move || {
+                        read_flow_core::server::generate_self_signed_cert(&dir, sans)
+                    })
+                    .await
+                    .map_err(|e| e.to_string())
+                    .and_then(|r| r.map_err(|e| e.to_string()));
+                    PreferencesMessage::GeneratedTlsCert(result)
+                })
+            }
+            PreferencesMessage::GeneratedTlsCert(result) => {
+                match result {
+                    Ok((cert, key)) => {
+                        if let (Ok(cert), Ok(key)) = (
+                            ExpandedPath::from_str(&cert.to_string_lossy()),
+                            ExpandedPath::from_str(&key.to_string_lossy()),
+                        ) {
+                            self.settings.server.tls = Some(TlsSettings { cert, key });
+                            self.save_state = SaveState::Idle;
+                        }
+                    }
+                    Err(error) => {
+                        self.save_state = SaveState::Error(error);
+                    }
                 }
                 Task::none()
             }

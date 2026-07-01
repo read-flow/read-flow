@@ -380,6 +380,29 @@ pub async fn build_app(config_path: PathBuf) -> anyhow::Result<Router> {
     Ok(build_router(build_state(config_path).await?).await)
 }
 
+/// Generate an ECDSA key pair and a self-signed certificate covering `sans`
+/// (DNS names; defaults to `localhost`), writing `read-flow-cert.pem` and
+/// `read-flow-key.pem` into `dir`. Returns `(cert_path, key_path)`.
+///
+/// Self-signed certs work for our own COSMIC client but browsers/PWAs will not
+/// trust them without manually importing the certificate.
+pub fn generate_self_signed_cert(
+    dir: &Path,
+    sans: Vec<String>,
+) -> anyhow::Result<(PathBuf, PathBuf)> {
+    let sans = if sans.is_empty() {
+        vec!["localhost".to_string()]
+    } else {
+        sans
+    };
+    let generated = rcgen::generate_simple_self_signed(sans)?;
+    let cert_path = dir.join("read-flow-cert.pem");
+    let key_path = dir.join("read-flow-key.pem");
+    std::fs::write(&cert_path, generated.cert.pem())?;
+    std::fs::write(&key_path, generated.key_pair.serialize_pem())?;
+    Ok((cert_path, key_path))
+}
+
 /// Load a rustls config from the configured cert/key PEM files, if TLS is set.
 pub async fn load_tls(
     tls: &Option<crate::settings::TlsSettings>,

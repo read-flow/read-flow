@@ -415,3 +415,7 @@ settings-server-tls-cert = Certificat TLS
 settings-server-tls-cert-placeholder = /chemin/vers/fullchain.pem
 settings-server-tls-key = Clé privée TLS
 settings-server-tls-key-placeholder = /chemin/vers/privkey.pem
+# Self-signed certificate generation
+settings-server-generate-cert = Certificat auto-signé
+settings-server-generate-cert-description = Générer une paire de clés et un certificat auto-signé (approuvé par l'application de bureau ; les navigateurs nécessitent un import manuel). Enregistrez pour appliquer.
+settings-server-generate-cert-button = Générer

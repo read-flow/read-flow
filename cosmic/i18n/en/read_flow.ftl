@@ -418,3 +418,7 @@ settings-server-tls-cert = TLS certificate
 settings-server-tls-cert-placeholder = /path/to/fullchain.pem
 settings-server-tls-key = TLS private key
 settings-server-tls-key-placeholder = /path/to/privkey.pem
+# Self-signed certificate generation
+settings-server-generate-cert = Self-signed certificate
+settings-server-generate-cert-description = Generate a key pair and self-signed certificate (trusted by the desktop app; browsers require manual import). Save to apply.
+settings-server-generate-cert-button = Generate

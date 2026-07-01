@@ -416,3 +416,7 @@ settings-server-tls-cert = TLS-certificaat
 settings-server-tls-cert-placeholder = /pad/naar/fullchain.pem
 settings-server-tls-key = TLS-privésleutel
 settings-server-tls-key-placeholder = /pad/naar/privkey.pem
+# Self-signed certificate generation
+settings-server-generate-cert = Zelfondertekend certificaat
+settings-server-generate-cert-description = Genereer een sleutelpaar en zelfondertekend certificaat (vertrouwd door de desktop-app; browsers vereisen handmatige import). Opslaan om toe te passen.
+settings-server-generate-cert-button = Genereren
