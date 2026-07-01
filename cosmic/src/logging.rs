@@ -78,10 +78,19 @@ impl LogEntry {
     /// The request URI, if this event happened inside an HTTP request span
     /// (the `uri` field set by the tower-http trace layer). Innermost span wins.
     pub fn uri(&self) -> Option<String> {
+        self.span_field("uri")
+    }
+
+    /// The HTTP method, from the enclosing request span. Innermost span wins.
+    pub fn method(&self) -> Option<String> {
+        self.span_field("method")
+    }
+
+    fn span_field(&self, key: &str) -> Option<String> {
         self.spans
             .iter()
             .rev()
-            .find_map(|span| span.fields.get("uri"))
+            .find_map(|span| span.fields.get(key))
             .map(render_value)
     }
 }

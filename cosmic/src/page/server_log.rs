@@ -199,6 +199,9 @@ impl ServerLogPage {
             || entry
                 .uri()
                 .is_some_and(|u| u.to_lowercase().contains(&needle))
+            || entry
+                .method()
+                .is_some_and(|m| m.to_lowercase().contains(&needle))
     }
 
     fn recompute(&mut self) {
@@ -364,6 +367,11 @@ impl ServerLogPage {
             .class(cosmic::theme::Text::Color(DIM))
             .width(Length::Fixed(120.0));
 
+        let method = widget::text::monotext(entry.method().unwrap_or_default())
+            .size(12)
+            .class(cosmic::theme::Text::Color(DIM))
+            .width(Length::Fixed(52.0));
+
         let uri = widget::text::monotext(
             entry
                 .uri()
@@ -383,6 +391,7 @@ impl ServerLogPage {
             time.into(),
             level_chip(entry.level),
             target.into(),
+            method.into(),
             uri.into(),
             message.width(Length::Fill).into(),
         ])
