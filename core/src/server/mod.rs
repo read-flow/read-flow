@@ -18,6 +18,7 @@ use axum::extract::Path as AxumPath;
 use axum::extract::Query;
 use axum::extract::State;
 use axum::http::HeaderMap;
+use axum::http::HeaderName;
 use axum::http::HeaderValue;
 use axum::http::StatusCode;
 use axum::http::header;
@@ -225,10 +226,19 @@ impl std::ops::Deref for AppState {
     }
 }
 
-/// CORS policy: any method/header, but origin restricted to
+/// CORS policy: any method, an explicit header allow-list, origin restricted to
 /// `[server].allowed_origins` when set. Empty list = any origin (with a warning).
+///
+/// Headers are listed explicitly rather than `*` because the CORS wildcard does
+/// **not** cover `Authorization` (per the Fetch spec), which every request uses.
 fn cors_layer(allowed_origins: &[String]) -> CorsLayer {
-    let base = CorsLayer::new().allow_methods(Any).allow_headers(Any);
+    let headers = [
+        header::AUTHORIZATION,
+        header::CONTENT_TYPE,
+        header::ACCEPT,
+        HeaderName::from_static("x-private-mode"),
+    ];
+    let base = CorsLayer::new().allow_methods(Any).allow_headers(headers);
     if allowed_origins.is_empty() {
         tracing::warn!(
             "CORS is unrestricted (any origin allowed); set [server].allowed_origins to restrict it"
