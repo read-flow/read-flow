@@ -133,7 +133,7 @@ pub enum Message {
     ServerStop,
     ServerRestart,
     ServerReloadConfig,
-    ServerStarted(SocketAddr),
+    ServerStarted(SocketAddr, bool),
     ServerStopped,
     ServerFailed(String),
 }
@@ -676,7 +676,7 @@ impl cosmic::Application for ReadFlow {
             Message::ServerStart => {
                 if matches!(
                     self.server,
-                    ServerStatus::Running(_) | ServerStatus::Starting
+                    ServerStatus::Running(..) | ServerStatus::Starting
                 ) {
                     return Task::none();
                 }
@@ -687,7 +687,7 @@ impl cosmic::Application for ReadFlow {
                     self.push_server_status(),
                     task::future(async move {
                         match start_server(module, ctl).await {
-                            Ok(addr) => Message::ServerStarted(addr),
+                            Ok((addr, secure)) => Message::ServerStarted(addr, secure),
                             Err(e) => Message::ServerFailed(e.to_string()),
                         }
                     }),
@@ -713,7 +713,7 @@ impl cosmic::Application for ReadFlow {
                     task::future(async move {
                         stop_server(ctl.clone()).await;
                         match start_server(module, ctl).await {
-                            Ok(addr) => Message::ServerStarted(addr),
+                            Ok((addr, secure)) => Message::ServerStarted(addr, secure),
                             Err(e) => Message::ServerFailed(e.to_string()),
                         }
                     }),
@@ -727,9 +727,10 @@ impl cosmic::Application for ReadFlow {
                     Message::Page(Box::new(PageMessage::Noop))
                 })
             }
-            Message::ServerStarted(addr) => {
-                tracing::info!("server listening on http://{addr}");
-                self.server = ServerStatus::Running(addr);
+            Message::ServerStarted(addr, secure) => {
+                let scheme = if secure { "https" } else { "http" };
+                tracing::info!("server listening on {scheme}://{addr}");
+                self.server = ServerStatus::Running(addr, secure);
                 self.push_server_status()
             }
             Message::ServerStopped => {
@@ -901,16 +902,18 @@ impl ReadFlow {
 }
 
 /// Bind and spawn the embedded server, recording its shutdown + join handle.
-/// Returns the actually-bound address (which matters when the port is 0).
+/// Returns the actually-bound address (which matters when the port is 0) and
+/// whether it is serving over TLS.
 async fn start_server(
     module: Arc<ApplicationModule>,
     ctl: Arc<tokio::sync::Mutex<ServerControl>>,
-) -> anyhow::Result<SocketAddr> {
+) -> anyhow::Result<(SocketAddr, bool)> {
     use read_flow_core::server;
 
     let server_settings = module.settings().await.server;
     let addr = server_settings.bind_addr();
     let tls = server::load_tls(&server_settings.tls).await?;
+    let secure = tls.is_some();
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let local = listener.local_addr()?;
 
@@ -926,7 +929,7 @@ async fn start_server(
     let mut guard = ctl.lock().await;
     guard.shutdown = Some(shutdown_tx);
     guard.handle = Some(handle);
-    Ok(local)
+    Ok((local, secure))
 }
 
 /// Signal the running server to shut down and wait for it to drain.

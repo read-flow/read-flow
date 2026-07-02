@@ -35,13 +35,13 @@ use crate::page::traits::Page;
 pub enum ServerStatus {
     Stopped,
     Starting,
-    Running(SocketAddr),
+    Running(SocketAddr, bool),
     Failed(String),
 }
 
 impl ServerStatus {
     fn is_running(&self) -> bool {
-        matches!(self, ServerStatus::Running(_))
+        matches!(self, ServerStatus::Running(..))
     }
     fn is_busy(&self) -> bool {
         matches!(self, ServerStatus::Starting)
@@ -256,14 +256,17 @@ impl ServerLogPage {
                 fl!("server-status-starting"),
                 None,
             ),
-            ServerStatus::Running(addr) => (
-                level_color(Level::INFO),
-                fl!("server-status-running"),
-                Some(fl!(
-                    "server-status-running-detail",
-                    address = format!("http://{addr}")
-                )),
-            ),
+            ServerStatus::Running(addr, secure) => {
+                let scheme = if *secure { "https" } else { "http" };
+                (
+                    level_color(Level::INFO),
+                    fl!("server-status-running"),
+                    Some(fl!(
+                        "server-status-running-detail",
+                        address = format!("{scheme}://{addr}")
+                    )),
+                )
+            }
             ServerStatus::Failed(err) => (
                 level_color(Level::ERROR),
                 fl!("server-status-failed"),
