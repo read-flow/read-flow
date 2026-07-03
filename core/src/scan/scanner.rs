@@ -2,6 +2,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use futures::StreamExt as _;
 use tokio::sync::mpsc;
 
 use super::ScanSettings;
@@ -55,8 +56,9 @@ impl Scanner {
         });
 
         // Stage 3 — DB writer
+        let concurrency = self.settings.concurrency;
         tokio::spawn(async move {
-            stage3_writer(ch2_rx, pool, progress_tx3).await;
+            stage3_writer(ch2_rx, pool, concurrency, progress_tx3).await;
         });
 
         progress_rx
@@ -412,6 +414,7 @@ async fn fingerprint_file(item: TraversalItem) -> Result<ScannedFile, (PathBuf, 
 async fn stage3_writer(
     mut rx: mpsc::Receiver<ScannedFile>,
     pool: sqlx::SqlitePool,
+    concurrency: usize,
     progress_tx: mpsc::Sender<ScanProgress>,
 ) {
     let mut discovered: u64 = 0;
@@ -441,12 +444,28 @@ async fn stage3_writer(
             }
         }
 
-        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+        flush_batch(
+            &mut batch,
+            &pool,
+            concurrency,
+            &progress_tx,
+            &mut processed,
+            &mut errors,
+        )
+        .await;
     }
 
     // Flush any remaining items (channel closed mid-accumulation).
     if !batch.is_empty() {
-        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+        flush_batch(
+            &mut batch,
+            &pool,
+            concurrency,
+            &progress_tx,
+            &mut processed,
+            &mut errors,
+        )
+        .await;
     }
 
     // Post-scan: auto-link contents that share a directory/stem into Documents.
@@ -466,6 +485,7 @@ async fn stage3_writer(
 async fn flush_batch(
     batch: &mut Vec<ScannedFile>,
     pool: &sqlx::SqlitePool,
+    concurrency: usize,
     progress_tx: &mpsc::Sender<ScanProgress>,
     processed: &mut u64,
     errors: &mut u64,
@@ -553,83 +573,100 @@ async fn flush_batch(
     }
 
     // For each new/updated file: extract metadata + cover, then persist both.
-    for (fingerprint, path, extension, archive_inner) in needs_metadata {
-        // Archive members are extracted to a temp file so the metadata and
-        // cover extractors can read them like any regular file. The guard
-        // keeps the temp file alive until the end of the iteration.
-        let (path, _tmp_guard) = match archive_inner {
-            Some(inner) => {
-                match extract_member_to_temp_file(path.clone(), inner, extension.clone()).await {
-                    Ok(tmp) => (tmp.path().to_path_buf(), Some(tmp)),
-                    Err(e) => {
-                        tracing::warn!(
-                            "failed to extract archive member for metadata from {path:?}: {e}"
-                        );
-                        continue;
-                    }
+    // CPU-bound extraction (MuPDF et al.) dominates scan time, so files are
+    // enriched concurrently rather than one at a time.
+    futures::stream::iter(needs_metadata)
+        .for_each_concurrent(
+            concurrency.max(1),
+            |(fingerprint, path, extension, inner)| {
+                enrich_file(pool, fingerprint, path, extension, inner)
+            },
+        )
+        .await;
+}
+
+/// Extract metadata + cover for one new/updated file and persist both.
+async fn enrich_file(
+    pool: &sqlx::SqlitePool,
+    fingerprint: String,
+    path: PathBuf,
+    extension: String,
+    archive_inner: Option<String>,
+) {
+    // Archive members are extracted to a temp file so the metadata and
+    // cover extractors can read them like any regular file. The guard
+    // keeps the temp file alive until extraction is done.
+    let (path, _tmp_guard) = match archive_inner {
+        Some(inner) => {
+            match extract_member_to_temp_file(path.clone(), inner, extension.clone()).await {
+                Ok(tmp) => (tmp.path().to_path_buf(), Some(tmp)),
+                Err(e) => {
+                    tracing::warn!(
+                        "failed to extract archive member for metadata from {path:?}: {e}"
+                    );
+                    return;
                 }
             }
-            None => (path, None),
-        };
-        let path_meta = path.clone();
-        let path_cover = path.clone();
-        let ext_meta = extension.clone();
-        let ext_cover = extension.clone();
+        }
+        None => (path, None),
+    };
+    let path_meta = path.clone();
+    let path_cover = path.clone();
+    let ext_meta = extension.clone();
+    let ext_cover = extension.clone();
 
-        let (meta_result, cover_result) = tokio::join!(
-            tokio::task::spawn_blocking(move || metadata::extract_metadata(&path_meta, &ext_meta)),
-            tokio::task::spawn_blocking(move || cover::extract_cover(&path_cover, &ext_cover)),
-        );
-        let meta = meta_result.unwrap_or(None);
-        let cover = cover_result.unwrap_or(None);
+    let (meta_result, cover_result) = tokio::join!(
+        tokio::task::spawn_blocking(move || metadata::extract_metadata(&path_meta, &ext_meta)),
+        tokio::task::spawn_blocking(move || cover::extract_cover(&path_cover, &ext_cover)),
+    );
+    let meta = meta_result.unwrap_or(None);
+    let cover = cover_result.unwrap_or(None);
 
-        match pool.acquire().await {
-            Ok(mut conn) => {
-                // Persist cover if extracted.
-                if let Some(cover_bytes) = cover
-                    && let Err(e) =
-                        dao::upsert_cover(&mut conn, &fingerprint, &cover_bytes, "image/webp").await
-                {
-                    tracing::warn!("failed to store cover for {fingerprint}: {e}");
-                }
+    match pool.acquire().await {
+        Ok(mut conn) => {
+            // Persist cover if extracted.
+            if let Some(cover_bytes) = cover
+                && let Err(e) =
+                    dao::upsert_cover(&mut conn, &fingerprint, &cover_bytes, "image/webp").await
+            {
+                tracing::warn!("failed to store cover for {fingerprint}: {e}");
+            }
 
-                // Persist metadata if present.
-                if let Some(meta) = meta.filter(|m| !m.is_empty()) {
-                    match dao::ensure_document_for_fingerprint(&mut conn, &fingerprint).await {
-                        Ok(api_doc) => {
-                            let doc_id_result = sqlx::query_scalar::<_, i32>(
-                                "SELECT id FROM documents WHERE guid = ?",
-                            )
-                            .bind(&api_doc.guid)
-                            .fetch_one(&mut *conn)
-                            .await;
-                            match doc_id_result {
-                                Ok(doc_id) => {
-                                    if let Err(e) = dao::merge_document_metadata_from_extracted(
-                                        &mut conn, doc_id, &meta,
-                                    )
-                                    .await
-                                    {
-                                        tracing::warn!(
-                                            "failed to merge metadata for {fingerprint}: {e}"
-                                        );
-                                    }
-                                }
-                                Err(e) => {
+            // Persist metadata if present.
+            if let Some(meta) = meta.filter(|m| !m.is_empty()) {
+                match dao::ensure_document_for_fingerprint(&mut conn, &fingerprint).await {
+                    Ok(api_doc) => {
+                        let doc_id_result =
+                            sqlx::query_scalar::<_, i32>("SELECT id FROM documents WHERE guid = ?")
+                                .bind(&api_doc.guid)
+                                .fetch_one(&mut *conn)
+                                .await;
+                        match doc_id_result {
+                            Ok(doc_id) => {
+                                if let Err(e) = dao::merge_document_metadata_from_extracted(
+                                    &mut conn, doc_id, &meta,
+                                )
+                                .await
+                                {
                                     tracing::warn!(
-                                        "failed to resolve document id for {fingerprint}: {e}"
-                                    )
+                                        "failed to merge metadata for {fingerprint}: {e}"
+                                    );
                                 }
                             }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "failed to resolve document id for {fingerprint}: {e}"
+                                )
+                            }
                         }
-                        Err(e) => {
-                            tracing::warn!("failed to ensure document for {fingerprint}: {e}")
-                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("failed to ensure document for {fingerprint}: {e}")
                     }
                 }
             }
-            Err(e) => tracing::warn!("failed to acquire connection for {fingerprint}: {e}"),
         }
+        Err(e) => tracing::warn!("failed to acquire connection for {fingerprint}: {e}"),
     }
 }
 
@@ -1209,7 +1246,15 @@ mod tests {
         let mut processed = 0u64;
         let mut errors = 0u64;
 
-        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+        flush_batch(
+            &mut batch,
+            &pool,
+            4,
+            &progress_tx,
+            &mut processed,
+            &mut errors,
+        )
+        .await;
 
         assert_eq!(processed, 2);
         assert_eq!(errors, 0);
@@ -1246,7 +1291,15 @@ mod tests {
             tags: vec![],
             archive_inner_path: Some("books/novel.epub".into()),
         }];
-        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+        flush_batch(
+            &mut batch,
+            &pool,
+            4,
+            &progress_tx,
+            &mut processed,
+            &mut errors,
+        )
+        .await;
 
         assert_eq!(errors, 0);
         let row: (String, Option<String>, Option<String>) =
@@ -1268,11 +1321,27 @@ mod tests {
 
         // First flush
         let mut batch = vec![scanned("/tmp/a.pdf", "pdf", 10, "fp1", vec![])];
-        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+        flush_batch(
+            &mut batch,
+            &pool,
+            4,
+            &progress_tx,
+            &mut processed,
+            &mut errors,
+        )
+        .await;
 
         // Second flush — same path, same content
         let mut batch = vec![scanned("/tmp/a.pdf", "pdf", 10, "fp1", vec![])];
-        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+        flush_batch(
+            &mut batch,
+            &pool,
+            4,
+            &progress_tx,
+            &mut processed,
+            &mut errors,
+        )
+        .await;
 
         assert_eq!(errors, 0);
         let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM files")
@@ -1294,7 +1363,15 @@ mod tests {
             scanned("/tmp/books/book.pdf", "pdf", 10, "fp-pdf", vec![]),
             scanned("/tmp/books/book.epub", "epub", 20, "fp-epub", vec![]),
         ];
-        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+        flush_batch(
+            &mut batch,
+            &pool,
+            4,
+            &progress_tx,
+            &mut processed,
+            &mut errors,
+        )
+        .await;
 
         dao::auto_link_documents(&pool).await.unwrap();
 
@@ -1340,7 +1417,15 @@ mod tests {
             scanned("/tmp/books/alice.pdf", "pdf", 10, "fp1", vec![]),
             scanned("/tmp/books/bob.epub", "epub", 20, "fp2", vec![]),
         ];
-        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+        flush_batch(
+            &mut batch,
+            &pool,
+            4,
+            &progress_tx,
+            &mut processed,
+            &mut errors,
+        )
+        .await;
 
         dao::auto_link_documents(&pool).await.unwrap();
 
@@ -1363,7 +1448,15 @@ mod tests {
             scanned("/tmp/books/book.pdf", "pdf", 10, "fp-pdf", vec![]),
             scanned("/tmp/books/book.epub", "epub", 20, "fp-epub", vec![]),
         ];
-        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+        flush_batch(
+            &mut batch,
+            &pool,
+            4,
+            &progress_tx,
+            &mut processed,
+            &mut errors,
+        )
+        .await;
         dao::auto_link_documents(&pool).await.unwrap();
 
         // Second scan: mobi added with the same stem.
@@ -1374,7 +1467,15 @@ mod tests {
             "fp-mobi",
             vec![],
         )];
-        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+        flush_batch(
+            &mut batch,
+            &pool,
+            4,
+            &progress_tx,
+            &mut processed,
+            &mut errors,
+        )
+        .await;
         dao::auto_link_documents(&pool).await.unwrap();
 
         // All three contents must share the same document, and there's still only one document.
