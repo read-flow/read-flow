@@ -28,6 +28,7 @@
 	let catalogs = $state<OnlineCatalog[]>([]);
 	let catalogFilter = $state<string | null>(null);
 	let searchedOnce = $state(false);
+	let layout = $state<'cards' | 'compact'>('cards');
 
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let debounceCounter = 0;
@@ -35,6 +36,7 @@
 	const filteredBooks = $derived(
 		catalogFilter ? books.filter((b) => b.catalog_name === catalogFilter) : books,
 	);
+	const hasResults = $derived(filteredBooks.length > 0);
 
 	function onQueryInput(): void {
 		if (debounceTimer) clearTimeout(debounceTimer);
@@ -55,7 +57,8 @@
 	}
 
 	async function runSearch(q: string): Promise<void> {
-		if (!client) return;
+		if (!client || !q) return;
+		if (debounceTimer) clearTimeout(debounceTimer);
 		searching = true;
 		searchError = '';
 		try {
@@ -80,23 +83,15 @@
 		catalogs = [];
 		catalogFilter = null;
 		searchedOnce = false;
+		detailBook = null;
 	}
 
 	// ── Download / import ───────────────────────────────────────────────────────
 	type ImportState = 'importing' | 'done' | { failed: string };
 	let importState = $state<Record<string, ImportState>>({});
-	let formatPickBook = $state<OnlineBook | null>(null);
-
-	function openFormatPicker(book: OnlineBook): void {
-		if (book.formats.length === 1) {
-			void startImport(book, book.formats[0]);
-		} else {
-			formatPickBook = book;
-		}
-	}
+	let detailBook = $state<OnlineBook | null>(null);
 
 	async function startImport(book: OnlineBook, format: DownloadFormat): Promise<void> {
-		formatPickBook = null;
 		if (!client) return;
 		importState = { ...importState, [book.id]: 'importing' };
 		try {
@@ -109,15 +104,21 @@
 			};
 		}
 	}
+
+	function summaryPreview(s: string): string {
+		return s.length > 200 ? `${s.slice(0, 200)}…` : s;
+	}
+
+	const hints = [
+		{ icon: 'search' as const, title: 'Search', body: 'Find books by title, author, or keyword across all your connected catalogs' },
+		{ icon: 'download' as const, title: 'Download', body: 'Get books in EPUB, PDF, and other formats with one click' },
+		{ icon: 'library' as const, title: 'Grow Your Library', body: 'Downloaded books are automatically added to your local collection' },
+	];
 </script>
 
 <div class="max-w-3xl mx-auto px-4 py-6 md:px-6">
-	<h1 class="text-xl font-semibold mb-1">Online library</h1>
-	<p class="text-sm text-slate-400 dark:text-slate-500 mb-6">
-		Search OPDS catalogs configured on a server and import books directly into its library.
-	</p>
-
 	{#if $sources.length === 0}
+		<h1 class="text-xl font-semibold mb-6">Online library</h1>
 		<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-6 text-center">
 			<p class="text-sm text-slate-500 dark:text-slate-400">No sources configured.</p>
 			<a href="/settings/sources" class="mt-2 inline-block text-sm text-accent underline underline-offset-2">Add a source</a>
@@ -137,147 +138,247 @@
 			</select>
 		</label>
 
-		<!-- Search -->
-		<div class="relative">
-			<Icon name="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500" />
-			<input
-				type="search"
-				placeholder="Search online catalogs…"
-				bind:value={query}
-				oninput={onQueryInput}
-				disabled={!client}
-				class="w-full pl-9 pr-9 py-2 rounded-lg border border-slate-200 dark:border-slate-600
-					bg-slate-50 dark:bg-slate-700/50
-					focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-transparent
-					placeholder:text-slate-400 dark:placeholder:text-slate-500 disabled:opacity-50"
-			/>
-			{#if query}
-				<button
-					onclick={clearSearch}
-					aria-label="Clear search"
-					class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
-				>
-					<Icon name="x" class="w-4 h-4" />
-				</button>
-			{/if}
-		</div>
-
-		<!-- Catalog filter -->
-		{#if catalogs.length > 1}
-			<div class="mt-2.5">
-				<select
-					bind:value={catalogFilter}
-					class="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-accent/50"
-					aria-label="Filter by catalog"
-				>
-					<option value={null}>All catalogs</option>
-					{#each catalogs as c}
-						<option value={c.name}>{c.name}</option>
-					{/each}
-				</select>
-			</div>
-		{/if}
-
-		<!-- Results -->
-		<div class="mt-6">
-			{#if searching}
-				<div class="flex items-center justify-center py-10 text-slate-400 dark:text-slate-500">
-					<Icon name="loader" class="w-5 h-5 animate-spin mr-2" />
-					Searching…
+		{#if hasResults}
+			<!-- ── Results view ──────────────────────────────────────────────────── -->
+			<!-- Toolbar: search + catalog filter + layout toggle -->
+			<div class="flex flex-wrap items-center gap-2 mb-4">
+				<div class="relative flex-1 min-w-[12rem]">
+					<Icon name="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500" />
+					<input
+						type="search"
+						placeholder="Search online catalogs…"
+						bind:value={query}
+						oninput={onQueryInput}
+						class="w-full pl-9 pr-9 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-slate-400 dark:placeholder:text-slate-500"
+					/>
+					<button
+						onclick={clearSearch}
+						aria-label="Clear search"
+						class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
+					>
+						<Icon name="x" class="w-4 h-4" />
+					</button>
 				</div>
-			{:else if searchError}
-				<p class="text-sm text-red-500 dark:text-red-400">{searchError}</p>
-			{:else if searchedOnce && filteredBooks.length === 0}
-				<p class="text-sm text-slate-400 dark:text-slate-500 text-center py-10">No results.</p>
-			{:else if filteredBooks.length > 0}
+
+				{#if catalogs.length > 1}
+					<select
+						bind:value={catalogFilter}
+						aria-label="Filter by catalog"
+						class="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+					>
+						<option value={null}>All catalogs</option>
+						{#each catalogs as c}
+							<option value={c.name}>{c.name}</option>
+						{/each}
+					</select>
+				{/if}
+
+				<!-- Layout toggle -->
+				<div class="inline-flex rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden">
+					<button
+						onclick={() => (layout = 'cards')}
+						class="px-2.5 py-2 text-xs font-medium transition-colors {layout === 'cards'
+							? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900'
+							: 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}"
+					>
+						Cards
+					</button>
+					<button
+						onclick={() => (layout = 'compact')}
+						class="px-2.5 py-2 text-xs font-medium transition-colors {layout === 'compact'
+							? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900'
+							: 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}"
+					>
+						Compact
+					</button>
+				</div>
+			</div>
+
+			{#if layout === 'cards'}
 				<ul class="space-y-3">
 					{#each filteredBooks as book (book.id)}
 						{@const state = importState[book.id]}
-						<li class="flex gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
-							<div class="w-16 h-24 shrink-0 rounded-md overflow-hidden bg-slate-100 dark:bg-slate-700 flex items-center justify-center">
-								{#if book.cover_url}
-									<img src={book.cover_url} alt="" class="w-full h-full object-cover" loading="lazy" />
-								{:else}
-									<Icon name="library" class="w-5 h-5 text-slate-400" />
-								{/if}
-							</div>
-							<div class="flex-1 min-w-0">
-								<p class="text-sm font-medium truncate">{book.title}</p>
-								{#if book.authors.length > 0}
-									<p class="text-xs text-slate-500 dark:text-slate-400 truncate">{book.authors.join(', ')}</p>
-								{/if}
-								{#if book.summary}
-									<p class="mt-1 text-xs text-slate-400 dark:text-slate-500 line-clamp-2">{book.summary}</p>
-								{/if}
-								<div class="mt-2 flex items-center gap-2">
-									<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400">
-										{book.catalog_name}
-									</span>
-									{#if state === 'done'}
-										<span class="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-											<Icon name="check" class="w-3.5 h-3.5" /> Imported
-										</span>
-									{:else if state === 'importing'}
-										<span class="inline-flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
-											<Icon name="loader" class="w-3.5 h-3.5 animate-spin" /> Importing…
-										</span>
-									{:else if state && typeof state === 'object'}
-										<span class="text-xs text-red-500 dark:text-red-400" title={state.failed}>Import failed</span>
+						<li>
+							<button
+								onclick={() => (detailBook = book)}
+								class="w-full text-left flex gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 hover:border-slate-300 dark:hover:border-slate-600 transition-colors"
+							>
+								<div class="w-16 h-24 shrink-0 rounded-md overflow-hidden bg-slate-100 dark:bg-slate-700 flex items-center justify-center">
+									{#if book.cover_url}
+										<img src={book.cover_url} alt="" class="w-full h-full object-cover" loading="lazy" />
 									{:else}
-										<button
-											onclick={() => openFormatPicker(book)}
-											disabled={book.formats.length === 0}
-											class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors disabled:opacity-40"
-										>
-											<Icon name="download" class="w-3.5 h-3.5" />
-											Import
-										</button>
+										<Icon name="library" class="w-5 h-5 text-slate-400" />
 									{/if}
 								</div>
-							</div>
+								<div class="flex-1 min-w-0">
+									<div class="flex items-start gap-2">
+										<p class="text-sm font-medium flex-1 min-w-0 truncate">{book.title}</p>
+										<span class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400">{book.catalog_name}</span>
+									</div>
+									{#if book.authors.length > 0}
+										<p class="text-xs text-slate-500 dark:text-slate-400 truncate">{book.authors.join(', ')}</p>
+									{/if}
+									{#if book.summary}
+										<p class="mt-1 text-xs text-slate-400 dark:text-slate-500 line-clamp-2">{summaryPreview(book.summary)}</p>
+									{/if}
+									{#if state === 'done'}
+										<span class="mt-2 inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400"><Icon name="check" class="w-3.5 h-3.5" /> Added to library</span>
+									{:else if state === 'importing'}
+										<span class="mt-2 inline-flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500"><Icon name="loader" class="w-3.5 h-3.5 animate-spin" /> Downloading…</span>
+									{/if}
+								</div>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<!-- Compact -->
+				<ul class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50 overflow-hidden">
+					{#each filteredBooks as book (book.id)}
+						{@const state = importState[book.id]}
+						<li>
+							<button
+								onclick={() => (detailBook = book)}
+								class="w-full text-left flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+							>
+								<div class="flex-1 min-w-0">
+									<p class="text-sm font-medium truncate">{book.title}</p>
+									{#if book.authors.length > 0}
+										<p class="text-xs text-slate-500 dark:text-slate-400 truncate">{book.authors.join(', ')}</p>
+									{/if}
+								</div>
+								{#if state === 'done'}
+									<Icon name="check" class="w-4 h-4 text-green-600 dark:text-green-400 shrink-0" />
+								{:else if state === 'importing'}
+									<Icon name="loader" class="w-4 h-4 animate-spin text-slate-400 shrink-0" />
+								{/if}
+								<span class="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400">{book.catalog_name}</span>
+							</button>
 						</li>
 					{/each}
 				</ul>
 			{/if}
-		</div>
+		{:else}
+			<!-- ── Hero / empty state ────────────────────────────────────────────── -->
+			<div class="text-center pt-6 pb-4">
+				<Icon name="library" class="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600" />
+				<h1 class="mt-4 text-2xl font-semibold">Discover Books Online</h1>
+				<p class="mt-1.5 text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+					Search free and open catalogs worldwide, then download directly to your library
+				</p>
+			</div>
+
+			<div class="max-w-md mx-auto flex items-center gap-2">
+				<div class="relative flex-1">
+					<Icon name="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500" />
+					<input
+						type="search"
+						placeholder="Search online catalogs…"
+						bind:value={query}
+						oninput={onQueryInput}
+						disabled={!client}
+						class="w-full pl-9 pr-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 focus:outline-none focus:ring-2 focus:ring-accent/50 placeholder:text-slate-400 dark:placeholder:text-slate-500 disabled:opacity-50"
+					/>
+				</div>
+				<button
+					onclick={() => runSearch(query.trim())}
+					disabled={!client || !query.trim()}
+					class="shrink-0 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors disabled:opacity-40"
+				>
+					Search
+				</button>
+			</div>
+
+			<!-- Status -->
+			{#if searching}
+				<p class="mt-6 flex items-center justify-center gap-2 text-sm text-slate-400 dark:text-slate-500">
+					<Icon name="loader" class="w-4 h-4 animate-spin" /> Searching…
+				</p>
+			{:else if searchError}
+				<p class="mt-6 text-center text-sm text-red-500 dark:text-red-400">{searchError}</p>
+			{:else if searchedOnce}
+				<p class="mt-6 text-center text-sm text-slate-400 dark:text-slate-500">No results found</p>
+			{/if}
+
+			<!-- Hint cards -->
+			<div class="mt-8 grid gap-3 sm:grid-cols-3">
+				{#each hints as h}
+					<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 text-center">
+						<Icon name={h.icon} class="w-7 h-7 mx-auto text-slate-400 dark:text-slate-500" />
+						<p class="mt-2 text-sm font-medium">{h.title}</p>
+						<p class="mt-1 text-xs text-slate-400 dark:text-slate-500">{h.body}</p>
+					</div>
+				{/each}
+			</div>
+		{/if}
 	{/if}
 </div>
 
-<!-- Format picker dialog -->
-{#if formatPickBook}
-	{@const book = formatPickBook}
+<!-- ── Book detail modal ──────────────────────────────────────────────────────── -->
+{#if detailBook}
+	{@const book = detailBook}
+	{@const state = importState[book.id]}
 	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-		onclick={() => (formatPickBook = null)}
-	>
+	<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40" onclick={() => (detailBook = null)}>
 		<div
-			class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6 w-80 max-w-[90vw]"
+			class="bg-white dark:bg-slate-800 rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:w-[32rem] max-w-[92vw] max-h-[85vh] overflow-y-auto"
 			onclick={(e) => e.stopPropagation()}
 		>
-			<h2 class="text-base font-semibold mb-1">Choose format</h2>
-			<p class="text-sm text-slate-500 dark:text-slate-400 mb-4 truncate">{book.title}</p>
-			<div class="flex flex-col gap-2">
-				{#each book.formats as fmt}
-					<button
-						onclick={() => startImport(book, fmt)}
-						class="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600
-							hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-left"
-					>
-						<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium uppercase
-							bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400">
-							{fmt.label}
-						</span>
-						<span class="text-sm text-slate-700 dark:text-slate-300 truncate">{fmt.mime_type}</span>
+			<div class="p-5">
+				<div class="flex justify-between items-start gap-3">
+					<button onclick={() => (detailBook = null)} class="text-sm text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300">
+						← Back
 					</button>
-				{/each}
+					<button onclick={() => (detailBook = null)} aria-label="Close" class="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300">
+						<Icon name="x" class="w-5 h-5" />
+					</button>
+				</div>
+
+				<div class="mt-3 flex gap-4">
+					<div class="w-24 h-36 shrink-0 rounded-md overflow-hidden bg-slate-100 dark:bg-slate-700 flex items-center justify-center">
+						{#if book.cover_url}
+							<img src={book.cover_url} alt="" class="w-full h-full object-cover" />
+						{:else}
+							<Icon name="library" class="w-6 h-6 text-slate-400" />
+						{/if}
+					</div>
+					<div class="flex-1 min-w-0">
+						<h2 class="text-base font-semibold">{book.title}</h2>
+						{#if book.authors.length > 0}
+							<p class="text-sm text-slate-500 dark:text-slate-400">{book.authors.join(', ')}</p>
+						{/if}
+						<span class="mt-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400">{book.catalog_name}</span>
+					</div>
+				</div>
+
+				<p class="mt-4 text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
+					{book.summary ?? 'No description available'}
+				</p>
+
+				<div class="mt-5 border-t border-slate-100 dark:border-slate-700/50 pt-4">
+					{#if state === 'done'}
+						<p class="inline-flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400"><Icon name="check" class="w-4 h-4" /> Added to library</p>
+					{:else if state === 'importing'}
+						<p class="inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400"><Icon name="loader" class="w-4 h-4 animate-spin" /> Downloading…</p>
+					{:else if state && typeof state === 'object'}
+						<p class="text-sm text-red-500 dark:text-red-400">{state.failed}</p>
+					{:else if book.formats.length === 0}
+						<p class="text-sm text-slate-400 dark:text-slate-500">No downloadable formats.</p>
+					{:else}
+						<div class="flex flex-col gap-2">
+							{#each book.formats as fmt}
+								<button
+									onclick={() => startImport(book, fmt)}
+									class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors"
+								>
+									<Icon name="download" class="w-4 h-4" />
+									Download {fmt.label}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
 			</div>
-			<button
-				onclick={() => (formatPickBook = null)}
-				class="mt-4 w-full text-sm text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-			>
-				Cancel
-			</button>
 		</div>
 	</div>
 {/if}
