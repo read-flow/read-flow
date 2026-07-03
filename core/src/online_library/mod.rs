@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
@@ -242,7 +243,7 @@ impl OpdsClient {
         }
 
         let resolved_next = next_url.and_then(|u| resolve_url(url, &u).ok());
-        Ok((books, resolved_next))
+        Ok((merge_gutenberg_editions(books), resolved_next))
     }
 
     /// Like `search`, but also returns the `rel="next"` URL from the feed if present.
@@ -685,6 +686,105 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
         stubs,
         next_url: feed_next_url,
     })
+}
+
+// ─── Gutenberg edition merging ───────────────────────────────────────────────
+
+/// Extract the base id from a Gutenberg variant entry id.
+/// `urn:gutenberg:2701:3` → `urn:gutenberg:2701`; anything else → `None`.
+fn gutenberg_base_id(id: &str) -> Option<String> {
+    let rest = id.strip_prefix("urn:gutenberg:")?;
+    let (book, variant) = rest.split_once(':')?;
+    let is_number = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    (is_number(book) && is_number(variant)).then(|| format!("urn:gutenberg:{book}"))
+}
+
+/// Gutenberg book pages list one `<entry>` per edition variant of the same book
+/// (e.g. `urn:gutenberg:2701:2` without images, `urn:gutenberg:2701:3` with
+/// images). Merge entries sharing a base id into a single book whose format
+/// list is the union of all variants; the per-format labels ("EPUB (no images,
+/// older E-readers)", "EPUB3 (E-readers incl. Send-to-Kindle)", …) keep the
+/// variants distinguishable as download options. Entries whose id does not
+/// match the Gutenberg pattern pass through unchanged, so other catalogs are
+/// unaffected.
+pub fn merge_gutenberg_editions(books: Vec<OnlineBook>) -> Vec<OnlineBook> {
+    let mut merged: Vec<OnlineBook> = Vec::with_capacity(books.len());
+    let mut index_by_base: HashMap<String, usize> = HashMap::new();
+    for book in books {
+        match gutenberg_base_id(&book.id) {
+            Some(base) => {
+                let book = strip_gutenberg_edition_note(book);
+                match index_by_base.get(&base) {
+                    Some(&i) => merge_book_into(&mut merged[i], book),
+                    None => {
+                        index_by_base.insert(base.clone(), merged.len());
+                        merged.push(OnlineBook { id: base, ..book });
+                    }
+                }
+            }
+            None => merged.push(book),
+        }
+    }
+    merged
+}
+
+/// Per-variant edition notes Gutenberg prepends to each entry's description.
+/// After merging variants into one book these no longer describe the result,
+/// so they are removed from both the plain and HTML summaries.
+const GUTENBERG_EDITION_NOTES: [&str; 2] = [
+    "This edition had all images removed.",
+    "This edition has images.",
+];
+
+fn strip_gutenberg_edition_note(book: OnlineBook) -> OnlineBook {
+    let strip = |text: String, wrap: fn(&str) -> String| {
+        GUTENBERG_EDITION_NOTES
+            .iter()
+            .fold(text, |acc, note| acc.replace(&wrap(note), ""))
+            .trim()
+            .to_string()
+    };
+    let summary = book
+        .summary
+        .map(|s| strip(s, str::to_string))
+        .filter(|s| !s.is_empty());
+    let summary_html = book
+        .summary_html
+        .map(|s| strip(s, |note| format!("<p>{note}</p>")))
+        .filter(|s| !html_to_plain_text(s).is_empty());
+    OnlineBook {
+        summary,
+        summary_html,
+        ..book
+    }
+}
+
+/// Fold `other` into `target`: append unseen formats (by href) and fill in
+/// metadata fields that the earlier variant left empty.
+fn merge_book_into(target: &mut OnlineBook, other: OnlineBook) {
+    let known: Vec<String> = target.formats.iter().map(|f| f.href.clone()).collect();
+    target.formats.extend(
+        other
+            .formats
+            .into_iter()
+            .filter(|f| !known.contains(&f.href)),
+    );
+    target.subtitle = target.subtitle.take().or(other.subtitle);
+    target.summary = target.summary.take().or(other.summary);
+    target.summary_html = target.summary_html.take().or(other.summary_html);
+    target.language = target.language.take().or(other.language);
+    target.publisher = target.publisher.take().or(other.publisher);
+    target.identifier = target.identifier.take().or(other.identifier);
+    target.published = target.published.take().or(other.published);
+    target.rights = target.rights.take().or(other.rights);
+    target.subject = target.subject.take().or(other.subject);
+    target.cover_url = target.cover_url.take().or(other.cover_url);
+    if target.authors.is_empty() {
+        target.authors = other.authors;
+    }
+    if target.contributors.is_empty() {
+        target.contributors = other.contributors;
+    }
 }
 
 // ─── Download ────────────────────────────────────────────────────────────────
@@ -1382,6 +1482,170 @@ mod tests {
     fn sanitize_title_empty_falls_back_to_book() {
         assert_eq!(sanitize_title(""), "book");
         assert_eq!(sanitize_title("---"), "book");
+    }
+
+    // ── merge_gutenberg_editions ─────────────────────────────────────────────
+
+    fn book(id: &str, formats: Vec<DownloadFormat>) -> OnlineBook {
+        OnlineBook {
+            id: id.into(),
+            title: "Moby Dick".into(),
+            subtitle: None,
+            authors: vec!["Melville, Herman".into()],
+            contributors: vec![],
+            summary: None,
+            summary_html: None,
+            language: None,
+            publisher: None,
+            identifier: None,
+            published: None,
+            rights: None,
+            subject: None,
+            cover_url: None,
+            formats,
+            catalog_name: "Project Gutenberg".into(),
+        }
+    }
+
+    fn format(label: &str, href: &str) -> DownloadFormat {
+        DownloadFormat {
+            mime_type: "application/epub+zip".into(),
+            href: href.into(),
+            label: label.into(),
+        }
+    }
+
+    #[test]
+    fn merge_combines_gutenberg_variants_of_same_book() {
+        let no_images = book(
+            "urn:gutenberg:2701:2",
+            vec![format(
+                "EPUB (no images, older E-readers)",
+                "/2701.epub.noimages",
+            )],
+        );
+        let with_images = book(
+            "urn:gutenberg:2701:3",
+            vec![format(
+                "EPUB3 (E-readers incl. Send-to-Kindle)",
+                "/2701.epub3.images",
+            )],
+        );
+        let merged = merge_gutenberg_editions(vec![no_images, with_images]);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].id, "urn:gutenberg:2701");
+        let labels: Vec<&str> = merged[0].formats.iter().map(|f| f.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            vec![
+                "EPUB (no images, older E-readers)",
+                "EPUB3 (E-readers incl. Send-to-Kindle)"
+            ]
+        );
+    }
+
+    #[test]
+    fn merge_keeps_distinct_gutenberg_books_separate() {
+        let a = book("urn:gutenberg:2701:2", vec![format("EPUB", "/2701.epub")]);
+        let b = book("urn:gutenberg:2489:2", vec![format("EPUB", "/2489.epub")]);
+        let merged = merge_gutenberg_editions(vec![a, b]);
+        assert_eq!(merged.len(), 2);
+    }
+
+    #[test]
+    fn merge_leaves_non_gutenberg_ids_untouched() {
+        let a = book(
+            "https://standardebooks.org/ebooks/herman-melville/moby-dick",
+            vec![format("EPUB", "/moby.epub")],
+        );
+        let b = book(
+            "https://standardebooks.org/ebooks/herman-melville/moby-dick",
+            vec![format("EPUB", "/moby.epub")],
+        );
+        let merged = merge_gutenberg_editions(vec![a, b]);
+        assert_eq!(merged.len(), 2, "non-Gutenberg ids must pass through");
+    }
+
+    #[test]
+    fn merge_fills_missing_metadata_from_later_variant() {
+        let first = book("urn:gutenberg:2701:2", vec![format("EPUB", "/a.epub")]);
+        let mut second = book("urn:gutenberg:2701:3", vec![format("EPUB3", "/b.epub")]);
+        second.cover_url = Some("/cover.jpg".into());
+        second.language = Some("en".into());
+        let merged = merge_gutenberg_editions(vec![first, second]);
+        assert_eq!(merged[0].cover_url.as_deref(), Some("/cover.jpg"));
+        assert_eq!(merged[0].language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn merge_dedupes_formats_by_href() {
+        let a = book("urn:gutenberg:2701:2", vec![format("EPUB", "/same.epub")]);
+        let b = book("urn:gutenberg:2701:3", vec![format("EPUB", "/same.epub")]);
+        let merged = merge_gutenberg_editions(vec![a, b]);
+        assert_eq!(merged[0].formats.len(), 1);
+    }
+
+    #[test]
+    fn merge_strips_edition_note_from_summary_html() {
+        let mut no_images = book("urn:gutenberg:2701:2", vec![format("EPUB", "/a.epub")]);
+        no_images.summary_html = Some(
+            "<div><p>This edition had all images removed.</p><p>A whale tale.</p></div>".into(),
+        );
+        let mut with_images = book("urn:gutenberg:2701:3", vec![format("EPUB3", "/b.epub")]);
+        with_images.summary_html =
+            Some("<div><p>This edition has images.</p><p>A whale tale.</p></div>".into());
+        let merged = merge_gutenberg_editions(vec![no_images, with_images]);
+        assert_eq!(
+            merged[0].summary_html.as_deref(),
+            Some("<div><p>A whale tale.</p></div>")
+        );
+    }
+
+    #[test]
+    fn merge_strips_edition_note_from_plain_summary() {
+        let mut variant = book("urn:gutenberg:2701:2", vec![format("EPUB", "/a.epub")]);
+        variant.summary = Some("This edition had all images removed. A whale tale.".into());
+        let merged = merge_gutenberg_editions(vec![variant]);
+        assert_eq!(merged[0].summary.as_deref(), Some("A whale tale."));
+    }
+
+    #[test]
+    fn merge_drops_summary_that_is_only_an_edition_note() {
+        let mut variant = book("urn:gutenberg:2701:2", vec![format("EPUB", "/a.epub")]);
+        variant.summary = Some("This edition has images.".into());
+        variant.summary_html = Some("<div><p>This edition has images.</p></div>".into());
+        let merged = merge_gutenberg_editions(vec![variant]);
+        assert_eq!(merged[0].summary, None);
+        assert_eq!(
+            merged[0].summary_html, None,
+            "html reduced to empty markup should be dropped"
+        );
+    }
+
+    #[test]
+    fn merge_leaves_non_gutenberg_summaries_untouched() {
+        let mut other = book(
+            "https://standardebooks.org/ebooks/x",
+            vec![format("EPUB", "/x.epub")],
+        );
+        other.summary = Some("This edition has images. But a real description.".into());
+        let merged = merge_gutenberg_editions(vec![other]);
+        assert_eq!(
+            merged[0].summary.as_deref(),
+            Some("This edition has images. But a real description.")
+        );
+    }
+
+    #[test]
+    fn gutenberg_base_id_parses_variant_ids_only() {
+        assert_eq!(
+            gutenberg_base_id("urn:gutenberg:2701:3").as_deref(),
+            Some("urn:gutenberg:2701")
+        );
+        assert_eq!(gutenberg_base_id("urn:gutenberg:2701"), None);
+        assert_eq!(gutenberg_base_id("urn:gutenberg:2701:3:4"), None);
+        assert_eq!(gutenberg_base_id("urn:gutenberg:abc:3"), None);
+        assert_eq!(gutenberg_base_id("urn:isbn:123:4"), None);
     }
 
     // ── rel="next" pagination ────────────────────────────────────────────────
