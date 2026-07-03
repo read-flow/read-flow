@@ -692,6 +692,34 @@ pub struct DocumentSource {
     pub path: String,
     pub client: ClientSelector,
     pub size: i32,
+    /// Path of the containing archive on disk, when this source lives inside one.
+    pub archive_path: Option<String>,
+    /// Path of this source inside the containing archive.
+    pub archive_inner_path: Option<String>,
+}
+
+impl DocumentSource {
+    /// Local filesystem path for reading this source. Archive members are
+    /// extracted (blocking) to a cached temp file, keyed by source guid, on
+    /// first use; later calls reuse the extracted copy.
+    pub fn local_read_path(&self) -> std::io::Result<std::path::PathBuf> {
+        match (&self.archive_path, &self.archive_inner_path) {
+            (Some(archive), Some(inner)) => {
+                let extension = std::path::Path::new(inner)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                read_flow_core::scan::archive::extract_member_to_cache(
+                    std::path::Path::new(archive),
+                    inner,
+                    &self.guid,
+                    &extension,
+                )
+            }
+            _ => Ok(std::path::PathBuf::from(&self.path)),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -748,6 +776,8 @@ impl Document {
                     path: abs_path.to_string_lossy().into_owned(),
                     client: ClientSelector::Local,
                     size: 0,
+                    archive_path: None,
+                    archive_inner_path: None,
                 }],
             }],
         })
@@ -867,6 +897,8 @@ impl Documents {
             path: file.path,
             client: selector,
             size: file.size,
+            archive_path: file.archive_path,
+            archive_inner_path: file.archive_inner_path,
         };
 
         if let Some(doc) = self.by_document_guid.get_mut(&document_guid) {
@@ -945,6 +977,8 @@ impl From<Document> for Vec<(ClientSelector, File)> {
                         status,
                         document_guid: Some(document_guid.clone()),
                         has_cover: false,
+                        archive_path: source.archive_path,
+                        archive_inner_path: source.archive_inner_path,
                     };
                     (selector, file)
                 })
@@ -964,5 +998,7 @@ fn content_source_to_file(content: DocumentContent, source: DocumentSource) -> F
         status: content.status,
         document_guid: None,
         has_cover: false,
+        archive_path: source.archive_path,
+        archive_inner_path: source.archive_inner_path,
     }
 }

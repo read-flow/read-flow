@@ -16,6 +16,32 @@ use crate::db::models::ContentTag;
 use crate::db::models::NewFile;
 use crate::scan::metadata::ExtractedMetadata;
 
+/// Extract an archive member to a stable temp location (keyed by file guid)
+/// so it can be opened with the system default application. Repeat opens
+/// reuse the previously extracted copy.
+async fn extract_member_to_cache(
+    archive_path: &str,
+    inner: &str,
+    guid: &str,
+    extension: &str,
+) -> Result<std::path::PathBuf, Error> {
+    let archive_path = archive_path.to_owned();
+    let inner = inner.to_owned();
+    let guid = guid.to_owned();
+    let extension = extension.to_owned();
+    tokio::task::spawn_blocking(move || {
+        crate::scan::archive::extract_member_to_cache(
+            Path::new(&archive_path),
+            &inner,
+            &guid,
+            &extension,
+        )
+    })
+    .await
+    .map_err(|e| Error::IO(Arc::new(std::io::Error::other(e))))?
+    .map_err(|e| Error::IO(Arc::new(e)))
+}
+
 #[derive(Clone)]
 pub struct DbClient {
     connection_pool: ConnectionPool,
@@ -107,6 +133,8 @@ impl FileDataSource for DbClient {
             type_: file.type_.clone(),
             size: file.size,
             fingerprint: file.fingerprint.clone(),
+            archive_path: existing.archive_path.clone(),
+            archive_inner_path: existing.archive_inner_path.clone(),
             status: existing.status,
             document_guid: existing.document_guid.clone(),
         };
@@ -173,7 +201,13 @@ impl FileDataSource for DbClient {
     }
 
     async fn open_file(&self, file: File) -> Result<(), Self::Error> {
-        open::that_detached(&file.path).map_err(|e| Error::IO(Arc::new(e)))
+        let path = match (&file.archive_path, &file.archive_inner_path) {
+            (Some(archive_path), Some(inner)) => {
+                extract_member_to_cache(archive_path, inner, &file.guid, &file.type_).await?
+            }
+            _ => std::path::PathBuf::from(&file.path),
+        };
+        open::that_detached(&path).map_err(|e| Error::IO(Arc::new(e)))
     }
 
     async fn delete_file(&self, file: File) -> Result<(), Self::Error> {
@@ -241,6 +275,8 @@ impl FileDataSource for DbClient {
                 type_: extension,
                 size,
                 fingerprint: fingerprint.clone(),
+                archive_path: None,
+                archive_inner_path: None,
             },
         )
         .await?;

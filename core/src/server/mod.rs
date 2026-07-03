@@ -907,14 +907,30 @@ async fn download_file(
         return Ok(StatusCode::NOT_FOUND.into_response());
     }
 
-    let path = Path::new(&file.path);
-    if !path.exists() {
-        tracing::error!("Database out of sync, file not found: {path:?}");
-        return Ok(StatusCode::NOT_FOUND.into_response());
-    }
-
     let content_type = content_type_for_extension(&file.type_)?;
-    let data = tokio::fs::read(path).await?;
+    let data = match (&file.archive_path, &file.archive_inner_path) {
+        (Some(archive_path), Some(inner)) => {
+            if !Path::new(archive_path).exists() {
+                tracing::error!("Database out of sync, archive not found: {archive_path:?}");
+                return Ok(StatusCode::NOT_FOUND.into_response());
+            }
+            let archive_path = archive_path.clone();
+            let inner = inner.clone();
+            tokio::task::spawn_blocking(move || {
+                crate::scan::archive::extract_archive_member(Path::new(&archive_path), &inner)
+            })
+            .await
+            .map_err(io::Error::other)??
+        }
+        _ => {
+            let path = Path::new(&file.path);
+            if !path.exists() {
+                tracing::error!("Database out of sync, file not found: {path:?}");
+                return Ok(StatusCode::NOT_FOUND.into_response());
+            }
+            tokio::fs::read(path).await?
+        }
+    };
     Ok(([(header::CONTENT_TYPE, content_type)], data).into_response())
 }
 

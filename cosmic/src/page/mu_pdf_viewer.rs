@@ -260,12 +260,19 @@ impl MuPdfViewer {
             .map(|c| c.fingerprint.clone())
             .unwrap_or_default();
 
-        // Resolve local file path from document sources
+        // Resolve local file path from document sources. Archive members are
+        // extracted to a cached temp file first.
         let sources = document.sources_by_priority();
         let local_source = sources
             .iter()
             .find(|(_, s)| s.client == ClientSelector::Local);
-        let file_path = local_source.map(|(_, s)| PathBuf::from(&s.path));
+        let file_path = local_source.and_then(|(_, s)| match s.local_read_path() {
+            Ok(path) => Some(path),
+            Err(e) => {
+                tracing::error!("cannot resolve local read path for {}: {e}", s.path);
+                None
+            }
+        });
 
         let zoom_names: Vec<String> = Zoom::all().iter().map(|z| z.to_string()).collect();
 

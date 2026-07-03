@@ -97,6 +97,14 @@ pub struct File {
     /// `#[serde(default)]` for backward compat with older clients.
     #[serde(default)]
     pub has_cover: bool,
+    /// Path of the containing archive on disk, when this file lives inside one.
+    /// `#[serde(default)]` for backward compat with older clients.
+    #[serde(default)]
+    pub archive_path: Option<String>,
+    /// Path of this file inside the containing archive.
+    /// `#[serde(default)]` for backward compat with older clients.
+    #[serde(default)]
+    pub archive_inner_path: Option<String>,
 }
 
 impl From<(DbFile, Vec<ContentTag>)> for File {
@@ -108,6 +116,8 @@ impl From<(DbFile, Vec<ContentTag>)> for File {
             type_,
             size,
             fingerprint,
+            archive_path,
+            archive_inner_path,
             status,
             document_guid,
             ..
@@ -122,6 +132,8 @@ impl From<(DbFile, Vec<ContentTag>)> for File {
             status: status.into(),
             document_guid,
             has_cover: false,
+            archive_path,
+            archive_inner_path,
         }
     }
 }

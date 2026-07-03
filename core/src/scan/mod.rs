@@ -1,3 +1,4 @@
+pub mod archive;
 pub mod cover;
 pub mod metadata;
 pub mod pipeline;

@@ -59,6 +59,10 @@ pub struct File {
     pub type_: String,
     pub size: i32,
     pub fingerprint: String,
+    /// Path of the containing archive on disk, when this file lives inside one.
+    pub archive_path: Option<String>,
+    /// Path of this file inside the containing archive.
+    pub archive_inner_path: Option<String>,
     /// Joined from contents.status
     pub status: i32,
     /// Joined from documents.guid via contents.document_id (NULL when ungrouped)
@@ -71,6 +75,8 @@ pub struct NewFile {
     pub type_: String,
     pub size: i32,
     pub fingerprint: String,
+    pub archive_path: Option<String>,
+    pub archive_inner_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]

@@ -206,7 +206,9 @@ where
 
         let mut missing = Vec::new();
         for file in files {
-            if !tokio::fs::try_exists(&file.path).await.unwrap_or(false) {
+            // Archive members exist as long as their containing archive does.
+            let fs_path = file.archive_path.as_ref().unwrap_or(&file.path);
+            if !tokio::fs::try_exists(fs_path).await.unwrap_or(false) {
                 if purge && let Err(e) = dao::delete_file_record(&connection_pool, file.id).await {
                     tracing::warn!("Failed to delete record for {}: {e}", file.path);
                 }
@@ -233,7 +235,8 @@ where
             .await
             .expect("database available")
             .into_iter()
-            .map(|f| PathBuf::from(f.path))
+            // For archive members, the relevant on-disk location is the archive.
+            .map(|f| PathBuf::from(f.archive_path.unwrap_or(f.path)))
             .collect();
 
         let directories: Vec<String> = files

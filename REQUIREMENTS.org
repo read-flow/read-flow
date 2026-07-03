@@ -138,6 +138,18 @@ a pattern receives the associated tags on scan.
 PDF, EPUB, MOBI, FictionBook (FB2), CBZ, CBT, XPS/OpenXPS, DOCX, XLSX,
 PPTX, HWPX, and a catch-all =Other= variant.
 
+*** DONE Documents inside archives
+The scanner detects archive files (=.zip=, =.tar=, =.tar.gz=/=.tgz=,
+=.tar.bz2=/=.tbz2=, =.tar.xz=/=.txz=) and indexes matching document files
+found inside them. Archive members are fingerprinted (SHA256 of the
+member bytes), get metadata and cover extraction via a temp file, and are
+stored in =files= with the synthetic unique path
+={archive_path}::{inner_path}= plus dedicated =archive_path= /
+=archive_inner_path= columns. The REST download endpoint and the local
+open action extract the member on demand. Nested archives (archives
+inside archives) are not supported yet; the =::= path encoding and the
+=core/src/scan/archive.rs= module are designed to allow recursing later.
+
 ** REST API
 
 *** DONE Authentication

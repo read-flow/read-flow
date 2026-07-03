@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use super::ScanSettings;
+use super::archive;
 use super::cover;
 use super::metadata;
 use super::pipeline::ScanProgress;
@@ -84,10 +85,82 @@ async fn stage1_traversal(
         if settings.dry_run {
             tracing::info!("[dry_run] would scan: {root:?}");
             let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
-        } else if tx.send(TraversalItem { path: root, tags }).await.is_ok() {
+        } else if tx
+            .send(TraversalItem {
+                path: root,
+                tags,
+                archive_inner_path: None,
+            })
+            .await
+            .is_ok()
+        {
             let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
         }
+    } else if archive::is_archive_path(&root) {
+        emit_archive_members(&root, settings, &tx, &progress_tx).await;
     }
+}
+
+/// Whether any component of an archive member path is hidden (dot-prefixed),
+/// e.g. `__MACOSX` resource forks like `._book.pdf` or `.hidden/book.pdf`.
+fn has_hidden_component(inner: &str) -> bool {
+    Path::new(inner)
+        .components()
+        .any(|c| is_hidden(c.as_os_str().as_ref()))
+}
+
+/// Enumerate the members of an archive file and emit a `TraversalItem` for
+/// every member whose extension matches the scan settings.
+/// Returns `false` if the receiver was dropped (pipeline shutting down).
+async fn emit_archive_members(
+    archive_path: &Path,
+    settings: &ScanSettings,
+    tx: &mpsc::Sender<TraversalItem>,
+    progress_tx: &mpsc::Sender<ScanProgress>,
+) -> bool {
+    let Some(tags) = tags_for_path(archive_path, settings) else {
+        tracing::debug!("skipping ignored archive: {archive_path:?}");
+        return true;
+    };
+
+    let members = {
+        let path = archive_path.to_path_buf();
+        tokio::task::spawn_blocking(move || archive::enumerate_archive_members(&path)).await
+    };
+    let members = match members {
+        Ok(Ok(members)) => members,
+        Ok(Err(e)) => {
+            tracing::error!("cannot enumerate archive {archive_path:?}: {e}");
+            return true;
+        }
+        Err(e) => {
+            tracing::error!("archive enumeration task failed for {archive_path:?}: {e}");
+            return true;
+        }
+    };
+
+    for member in members {
+        if has_hidden_component(&member)
+            || !extension_matches(Path::new(&member), &settings.extensions)
+        {
+            continue;
+        }
+        if settings.dry_run {
+            tracing::info!("[dry_run] would scan: {archive_path:?}::{member}");
+            let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
+            continue;
+        }
+        let item = TraversalItem {
+            path: archive_path.to_path_buf(),
+            tags: tags.clone(),
+            archive_inner_path: Some(member),
+        };
+        if tx.send(item).await.is_err() {
+            return false;
+        }
+        let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
+    }
+    true
 }
 
 fn is_hidden(path: &Path) -> bool {
@@ -177,11 +250,21 @@ fn visit_dir<'a>(
                     let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
                     continue;
                 }
-                if tx.send(TraversalItem { path, tags }).await.is_err() {
+                let item = TraversalItem {
+                    path,
+                    tags,
+                    archive_inner_path: None,
+                };
+                if tx.send(item).await.is_err() {
                     // Receiver dropped — pipeline shutting down.
                     return;
                 }
                 let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
+            } else if archive::is_archive_path(&path)
+                && !emit_archive_members(&path, settings, tx, progress_tx).await
+            {
+                // Receiver dropped — pipeline shutting down.
+                return;
             }
         }
     })
@@ -227,9 +310,56 @@ async fn stage2_fingerprint(
     while join_set.join_next().await.is_some() {}
 }
 
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(bytes);
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
+}
+
+/// Fingerprint an archive member: extract its bytes and hash them.
+/// `size` is the uncompressed member size.
+async fn fingerprint_archive_member(
+    archive_path: PathBuf,
+    inner: String,
+    tags: Vec<String>,
+) -> Result<ScannedFile, (PathBuf, std::io::Error)> {
+    let extension = Path::new(&inner)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    let bytes = {
+        let path = archive_path.clone();
+        let member = inner.clone();
+        tokio::task::spawn_blocking(move || archive::extract_archive_member(&path, &member))
+            .await
+            .map_err(|e| (archive_path.clone(), std::io::Error::other(e)))?
+            .map_err(|e| (archive_path.clone(), e))?
+    };
+
+    Ok(ScannedFile {
+        path: archive_path,
+        extension,
+        size: bytes.len() as i64,
+        fingerprint: sha256_hex(&bytes),
+        tags,
+        archive_inner_path: Some(inner),
+    })
+}
+
 async fn fingerprint_file(item: TraversalItem) -> Result<ScannedFile, (PathBuf, std::io::Error)> {
     use sha2::Digest as _;
     use tokio::io::AsyncReadExt as _;
+
+    if let Some(inner) = item.archive_inner_path {
+        return fingerprint_archive_member(item.path, inner, item.tags).await;
+    }
 
     let extension = item
         .path
@@ -271,6 +401,7 @@ async fn fingerprint_file(item: TraversalItem) -> Result<ScannedFile, (PathBuf, 
         size,
         fingerprint,
         tags: item.tags,
+        archive_inner_path: None,
     })
 }
 
@@ -358,12 +489,22 @@ async fn flush_batch(
         }
     };
 
-    // Collect (fingerprint, path, extension) for files that are new or updated,
-    // so we can extract their metadata after the transaction commits.
-    let mut needs_metadata: Vec<(String, PathBuf, String)> = Vec::new();
+    // Collect (fingerprint, path, extension, archive_inner_path) for files that
+    // are new or updated, so we can extract their metadata after the
+    // transaction commits.
+    let mut needs_metadata: Vec<(String, PathBuf, String, Option<String>)> = Vec::new();
 
     for file in items {
-        let path_str = file.path.to_string_lossy();
+        let fs_path = file.path.to_string_lossy().into_owned();
+        // Archive members are stored under the synthetic unique path
+        // "{archive_path}::{inner_path}".
+        let (path_str, archive_member) = match file.archive_inner_path.as_deref() {
+            Some(inner) => (
+                archive::joined_archive_path(&file.path, inner),
+                Some((fs_path.as_str(), inner)),
+            ),
+            None => (fs_path.clone(), None),
+        };
         match dao::write_scanned_file(
             &mut tx,
             &path_str,
@@ -371,6 +512,7 @@ async fn flush_batch(
             file.size,
             &file.fingerprint,
             &file.tags,
+            archive_member,
         )
         .await
         {
@@ -380,12 +522,13 @@ async fn flush_batch(
                         file.fingerprint.clone(),
                         file.path.clone(),
                         file.extension.clone(),
+                        file.archive_inner_path.clone(),
                     ));
                 }
                 *processed += 1;
                 let _ = progress_tx
                     .send(ScanProgress::FileProcessed {
-                        path: file.path,
+                        path: PathBuf::from(path_str),
                         was_new,
                         was_updated,
                     })
@@ -393,10 +536,10 @@ async fn flush_batch(
             }
             Err(e) => {
                 *errors += 1;
-                tracing::warn!("failed to write {:?}: {e}", file.path);
+                tracing::warn!("failed to write {path_str:?}: {e}");
                 let _ = progress_tx
                     .send(ScanProgress::FileError {
-                        path: file.path,
+                        path: PathBuf::from(path_str),
                         error: e.to_string(),
                     })
                     .await;
@@ -410,7 +553,24 @@ async fn flush_batch(
     }
 
     // For each new/updated file: extract metadata + cover, then persist both.
-    for (fingerprint, path, extension) in needs_metadata {
+    for (fingerprint, path, extension, archive_inner) in needs_metadata {
+        // Archive members are extracted to a temp file so the metadata and
+        // cover extractors can read them like any regular file. The guard
+        // keeps the temp file alive until the end of the iteration.
+        let (path, _tmp_guard) = match archive_inner {
+            Some(inner) => {
+                match extract_member_to_temp_file(path.clone(), inner, extension.clone()).await {
+                    Ok(tmp) => (tmp.path().to_path_buf(), Some(tmp)),
+                    Err(e) => {
+                        tracing::warn!(
+                            "failed to extract archive member for metadata from {path:?}: {e}"
+                        );
+                        continue;
+                    }
+                }
+            }
+            None => (path, None),
+        };
         let path_meta = path.clone();
         let path_cover = path.clone();
         let ext_meta = extension.clone();
@@ -471,6 +631,25 @@ async fn flush_batch(
             Err(e) => tracing::warn!("failed to acquire connection for {fingerprint}: {e}"),
         }
     }
+}
+
+/// Extract an archive member into a named temp file with the right extension
+/// so format-sniffing extractors (MuPDF et al.) can open it.
+async fn extract_member_to_temp_file(
+    archive_path: PathBuf,
+    inner: String,
+    extension: String,
+) -> std::io::Result<tempfile::NamedTempFile> {
+    tokio::task::spawn_blocking(move || {
+        let bytes = archive::extract_archive_member(&archive_path, &inner)?;
+        let mut tmp = tempfile::Builder::new()
+            .suffix(&format!(".{extension}"))
+            .tempfile()?;
+        std::io::Write::write_all(&mut tmp, &bytes)?;
+        Ok(tmp)
+    })
+    .await
+    .map_err(std::io::Error::other)?
 }
 
 // ---------------------------------------------------------------------------
@@ -708,6 +887,108 @@ mod tests {
         assert_eq!(ev, ScanProgress::FileDiscovered);
     }
 
+    fn make_zip(dir: &Path, name: &str, members: &[(&str, &[u8])]) -> PathBuf {
+        use std::io::Write as _;
+        let path = dir.join(name);
+        let file = fs::File::create(&path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for (member, data) in members {
+            writer.start_file(*member, options).unwrap();
+            writer.write_all(data).unwrap();
+        }
+        writer.finish().unwrap();
+        path
+    }
+
+    #[tokio::test]
+    async fn traversal_emits_matching_archive_members() {
+        let tmp = TempDir::new().unwrap();
+        let zip = make_zip(
+            tmp.path(),
+            "library.zip",
+            &[
+                ("books/novel.epub", b"epub-data"),
+                ("notes.txt", b"not a document"),
+                ("__MACOSX/._novel.epub", b"resource fork"),
+                (".hidden/other.epub", b"hidden dir"),
+            ],
+        );
+
+        let items = collect_traversal(tmp.path().to_path_buf(), default_settings()).await;
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path, zip);
+        assert_eq!(
+            items[0].archive_inner_path.as_deref(),
+            Some("books/novel.epub")
+        );
+    }
+
+    #[tokio::test]
+    async fn traversal_archive_members_get_directory_tags() {
+        let tmp = TempDir::new().unwrap();
+        make_zip(tmp.path(), "library.zip", &[("novel.epub", b"x")]);
+
+        let items = collect_traversal(
+            tmp.path().to_path_buf(),
+            settings_with_tags(tmp.path(), vec!["fiction".into()]),
+        )
+        .await;
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].tags, vec!["fiction"]);
+    }
+
+    #[tokio::test]
+    async fn traversal_skips_archive_in_ignored_directory() {
+        let tmp = TempDir::new().unwrap();
+        let ignored = make_dir(tmp.path(), "ignored");
+        make_zip(&ignored, "library.zip", &[("novel.epub", b"x")]);
+
+        let items =
+            collect_traversal(tmp.path().to_path_buf(), settings_with_ignore(&ignored)).await;
+        assert!(items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn traversal_archive_root_path_emits_members() {
+        let tmp = TempDir::new().unwrap();
+        let zip = make_zip(tmp.path(), "library.zip", &[("novel.epub", b"x")]);
+
+        let items = collect_traversal(zip.clone(), default_settings()).await;
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].path, zip);
+    }
+
+    #[tokio::test]
+    async fn fingerprint_archive_member_hashes_member_bytes() {
+        use sha2::Digest as _;
+
+        let tmp = TempDir::new().unwrap();
+        let content: &[u8] = b"epub member content";
+        let zip = make_zip(tmp.path(), "library.zip", &[("books/novel.epub", content)]);
+
+        let item = TraversalItem {
+            path: zip.clone(),
+            tags: vec!["fiction".into()],
+            archive_inner_path: Some("books/novel.epub".into()),
+        };
+        let scanned = fingerprint_file(item).await.unwrap();
+
+        let expected: String = sha2::Sha256::digest(content)
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        assert_eq!(scanned.fingerprint, expected);
+        assert_eq!(scanned.size, content.len() as i64);
+        assert_eq!(scanned.extension, "epub");
+        assert_eq!(scanned.path, zip);
+        assert_eq!(
+            scanned.archive_inner_path.as_deref(),
+            Some("books/novel.epub")
+        );
+        assert_eq!(scanned.tags, vec!["fiction"]);
+    }
+
     #[tokio::test]
     async fn fingerprint_file_produces_correct_sha256() {
         let tmp = TempDir::new().unwrap();
@@ -717,6 +998,7 @@ mod tests {
         let item = TraversalItem {
             path: path.clone(),
             tags: vec![],
+            archive_inner_path: None,
         };
         let scanned = fingerprint_file(item).await.unwrap();
 
@@ -733,7 +1015,11 @@ mod tests {
         let path = tmp.path().join("BOOK.PDF");
         fs::write(&path, b"data").unwrap();
 
-        let item = TraversalItem { path, tags: vec![] };
+        let item = TraversalItem {
+            path,
+            tags: vec![],
+            archive_inner_path: None,
+        };
         let scanned = fingerprint_file(item).await.unwrap();
         assert_eq!(scanned.extension, "pdf");
     }
@@ -765,6 +1051,7 @@ mod tests {
             file.size,
             &file.fingerprint,
             &file.tags,
+            None,
         )
         .await
     }
@@ -776,6 +1063,7 @@ mod tests {
             size,
             fingerprint: fp.into(),
             tags: tags.into_iter().map(String::from).collect(),
+            archive_inner_path: None,
         }
     }
 
@@ -941,6 +1229,34 @@ mod tests {
             })
             .collect();
         assert_eq!(paths.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn flush_batch_stores_archive_member_with_synthetic_path() {
+        let pool = test_pool().await;
+        let (progress_tx, _progress_rx) = mpsc::channel(64);
+        let mut processed = 0u64;
+        let mut errors = 0u64;
+
+        let mut batch = vec![ScannedFile {
+            path: PathBuf::from("/data/library.zip"),
+            extension: "epub".into(),
+            size: 42,
+            fingerprint: "fp-zip1".into(),
+            tags: vec![],
+            archive_inner_path: Some("books/novel.epub".into()),
+        }];
+        flush_batch(&mut batch, &pool, &progress_tx, &mut processed, &mut errors).await;
+
+        assert_eq!(errors, 0);
+        let row: (String, Option<String>, Option<String>) =
+            sqlx::query_as("SELECT path, archive_path, archive_inner_path FROM files")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row.0, "/data/library.zip::books/novel.epub");
+        assert_eq!(row.1.as_deref(), Some("/data/library.zip"));
+        assert_eq!(row.2.as_deref(), Some("books/novel.epub"));
     }
 
     #[tokio::test]

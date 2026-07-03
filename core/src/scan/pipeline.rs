@@ -2,17 +2,23 @@ use std::path::PathBuf;
 
 /// Sent from Stage 1 (traversal) to Stage 2 (fingerprinting) over ch1.
 pub struct TraversalItem {
+    /// Filesystem path; the archive path when `archive_inner_path` is set.
     pub path: PathBuf,
     pub tags: Vec<String>,
+    /// Path inside the archive at `path`, for archive members.
+    pub archive_inner_path: Option<String>,
 }
 
 /// Sent from Stage 2 (fingerprinting) to Stage 3 (DB writer) over ch2.
 pub struct ScannedFile {
+    /// Filesystem path; the archive path when `archive_inner_path` is set.
     pub path: PathBuf,
     pub extension: String,
     pub size: i64,
     pub fingerprint: String,
     pub tags: Vec<String>,
+    /// Path inside the archive at `path`, for archive members.
+    pub archive_inner_path: Option<String>,
 }
 
 /// Progress events emitted by the scanner to the caller.

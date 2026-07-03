@@ -1,0 +1,308 @@
+//! Reading document files stored inside archives (zipfiles and tarballs).
+//!
+//! Archive members are addressed by the pair `(archive_path, inner_path)`;
+//! the scanner stores them in `files` with the synthetic unique path
+//! `"{archive_path}::{inner_path}"`.
+
+use std::io;
+use std::io::Read;
+use std::path::Path;
+
+/// Separator between the archive path and the member path in the synthetic
+/// `files.path` value.
+pub const ARCHIVE_PATH_SEPARATOR: &str = "::";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArchiveKind {
+    Zip,
+    Tar,
+    TarGz,
+    TarBz2,
+    TarXz,
+}
+
+fn archive_kind(path: &Path) -> Option<ArchiveKind> {
+    let name = path.file_name()?.to_str()?.to_ascii_lowercase();
+    use ArchiveKind::*;
+    [
+        (".tar.gz", TarGz),
+        (".tgz", TarGz),
+        (".tar.bz2", TarBz2),
+        (".tbz2", TarBz2),
+        (".tar.xz", TarXz),
+        (".txz", TarXz),
+        (".tar", Tar),
+        (".zip", Zip),
+    ]
+    .into_iter()
+    .find(|(suffix, _)| name.ends_with(suffix))
+    .map(|(_, kind)| kind)
+}
+
+/// Whether `path` looks like a supported archive (zip, tar, tar.gz/tgz,
+/// tar.bz2/tbz2, tar.xz/txz).
+pub fn is_archive_path(path: &Path) -> bool {
+    archive_kind(path).is_some()
+}
+
+/// Build the synthetic unique `files.path` value for an archive member.
+pub fn joined_archive_path(archive: &Path, inner: &str) -> String {
+    format!("{}{ARCHIVE_PATH_SEPARATOR}{inner}", archive.display())
+}
+
+fn tar_reader(path: &Path, kind: ArchiveKind) -> io::Result<Box<dyn Read>> {
+    let file = std::fs::File::open(path)?;
+    Ok(match kind {
+        ArchiveKind::Tar => Box::new(file),
+        ArchiveKind::TarGz => Box::new(flate2::read::GzDecoder::new(file)),
+        ArchiveKind::TarBz2 => Box::new(bzip2::read::BzDecoder::new(file)),
+        ArchiveKind::TarXz => Box::new(xz2::read::XzDecoder::new(file)),
+        ArchiveKind::Zip => unreachable!("zip handled separately"),
+    })
+}
+
+fn not_an_archive(path: &Path) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!("not a supported archive: {path:?}"),
+    )
+}
+
+fn member_not_found(archive: &Path, inner: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::NotFound,
+        format!("member {inner:?} not found in archive {archive:?}"),
+    )
+}
+
+/// List the inner paths of all regular-file members of the archive.
+/// Filtering by document extension is the caller's responsibility.
+///
+/// Blocking I/O — call from a blocking context (e.g. `spawn_blocking`).
+pub fn enumerate_archive_members(path: &Path) -> io::Result<Vec<String>> {
+    match archive_kind(path).ok_or_else(|| not_an_archive(path))? {
+        ArchiveKind::Zip => {
+            let file = std::fs::File::open(path)?;
+            let archive = zip::ZipArchive::new(file).map_err(io::Error::other)?;
+            Ok(archive
+                .file_names()
+                .filter(|name| !name.ends_with('/'))
+                .map(str::to_owned)
+                .collect())
+        }
+        kind => {
+            let mut archive = tar::Archive::new(tar_reader(path, kind)?);
+            archive
+                .entries()?
+                .filter_map(|entry| {
+                    let entry = match entry {
+                        Ok(e) => e,
+                        Err(e) => return Some(Err(e)),
+                    };
+                    entry
+                        .header()
+                        .entry_type()
+                        .is_file()
+                        .then(|| entry.path().map(|p| p.to_string_lossy().into_owned()))
+                })
+                .collect()
+        }
+    }
+}
+
+/// Extract a single member (by inner path) from the archive and return its bytes.
+///
+/// Blocking I/O — call from a blocking context (e.g. `spawn_blocking`).
+// TODO nested-archives: to support archives inside archives, recurse here on
+// `::`-separated inner segments, extracting each level to memory/temp first.
+pub fn extract_archive_member(archive_path: &Path, inner: &str) -> io::Result<Vec<u8>> {
+    match archive_kind(archive_path).ok_or_else(|| not_an_archive(archive_path))? {
+        ArchiveKind::Zip => {
+            let file = std::fs::File::open(archive_path)?;
+            let mut archive = zip::ZipArchive::new(file).map_err(io::Error::other)?;
+            let mut member = archive.by_name(inner).map_err(|e| match e {
+                zip::result::ZipError::FileNotFound => member_not_found(archive_path, inner),
+                other => io::Error::other(other),
+            })?;
+            let mut bytes = Vec::with_capacity(member.size() as usize);
+            member.read_to_end(&mut bytes)?;
+            Ok(bytes)
+        }
+        kind => {
+            let mut archive = tar::Archive::new(tar_reader(archive_path, kind)?);
+            for entry in archive.entries()? {
+                let mut entry = entry?;
+                if entry.header().entry_type().is_file() && entry.path()?.as_os_str() == inner {
+                    let mut bytes = Vec::with_capacity(entry.size() as usize);
+                    entry.read_to_end(&mut bytes)?;
+                    return Ok(bytes);
+                }
+            }
+            Err(member_not_found(archive_path, inner))
+        }
+    }
+}
+
+/// Extract an archive member to a stable cached location
+/// (`{temp}/read-flow/{key}.{extension}`) so local readers can open it like a
+/// regular file. Repeat calls with the same `key` reuse the extracted copy.
+///
+/// Blocking I/O — call from a blocking context (e.g. `spawn_blocking`).
+pub fn extract_member_to_cache(
+    archive_path: &Path,
+    inner: &str,
+    key: &str,
+    extension: &str,
+) -> io::Result<std::path::PathBuf> {
+    let dir = std::env::temp_dir().join("read-flow");
+    std::fs::create_dir_all(&dir)?;
+    let target = dir.join(format!("{key}.{extension}"));
+    if !target.exists() {
+        let bytes = extract_archive_member(archive_path, inner)?;
+        std::fs::write(&target, bytes)?;
+    }
+    Ok(target)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write as _;
+    use std::path::PathBuf;
+
+    use rstest::rstest;
+    use tempfile::TempDir;
+
+    use super::*;
+
+    fn make_zip(dir: &Path, name: &str, members: &[(&str, &[u8])]) -> PathBuf {
+        let path = dir.join(name);
+        let file = std::fs::File::create(&path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for (member, data) in members {
+            writer.start_file(*member, options).unwrap();
+            writer.write_all(data).unwrap();
+        }
+        writer.finish().unwrap();
+        path
+    }
+
+    fn make_tar_gz(dir: &Path, name: &str, members: &[(&str, &[u8])]) -> PathBuf {
+        let path = dir.join(name);
+        let file = std::fs::File::create(&path).unwrap();
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+        for (member, data) in members {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder.append_data(&mut header, member, *data).unwrap();
+        }
+        builder.into_inner().unwrap().finish().unwrap();
+        path
+    }
+
+    #[rstest]
+    #[case("library.zip", true)]
+    #[case("library.ZIP", true)]
+    #[case("backup.tar", true)]
+    #[case("backup.tar.gz", true)]
+    #[case("backup.tgz", true)]
+    #[case("backup.tar.bz2", true)]
+    #[case("backup.tbz2", true)]
+    #[case("backup.tar.xz", true)]
+    #[case("backup.txz", true)]
+    #[case("book.pdf", false)]
+    #[case("comic.cbz", false)]
+    #[case("archive.rar", false)]
+    #[case("noextension", false)]
+    fn detects_archive_paths(#[case] name: &str, #[case] expected: bool) {
+        assert_eq!(is_archive_path(Path::new(name)), expected);
+    }
+
+    #[test]
+    fn joined_archive_path_uses_separator() {
+        let joined = joined_archive_path(Path::new("/data/lib.zip"), "books/novel.epub");
+        assert_eq!(joined, "/data/lib.zip::books/novel.epub");
+    }
+
+    #[test]
+    fn enumerates_zip_members() {
+        let tmp = TempDir::new().unwrap();
+        let zip = make_zip(
+            tmp.path(),
+            "lib.zip",
+            &[("books/a.epub", b"epub-a"), ("b.pdf", b"pdf-b")],
+        );
+
+        let mut members = enumerate_archive_members(&zip).unwrap();
+        members.sort();
+        assert_eq!(members, vec!["b.pdf", "books/a.epub"]);
+    }
+
+    #[test]
+    fn enumerates_tar_gz_members() {
+        let tmp = TempDir::new().unwrap();
+        let tarball = make_tar_gz(
+            tmp.path(),
+            "lib.tar.gz",
+            &[("books/a.epub", b"epub-a"), ("b.pdf", b"pdf-b")],
+        );
+
+        let mut members = enumerate_archive_members(&tarball).unwrap();
+        members.sort();
+        assert_eq!(members, vec!["b.pdf", "books/a.epub"]);
+    }
+
+    #[test]
+    fn extracts_zip_member_bytes() {
+        let tmp = TempDir::new().unwrap();
+        let zip = make_zip(tmp.path(), "lib.zip", &[("books/a.epub", b"epub-bytes")]);
+
+        let bytes = extract_archive_member(&zip, "books/a.epub").unwrap();
+        assert_eq!(bytes, b"epub-bytes");
+    }
+
+    #[test]
+    fn extracts_tar_gz_member_bytes() {
+        let tmp = TempDir::new().unwrap();
+        let tarball = make_tar_gz(tmp.path(), "lib.tar.gz", &[("b.pdf", b"pdf-bytes")]);
+
+        let bytes = extract_archive_member(&tarball, "b.pdf").unwrap();
+        assert_eq!(bytes, b"pdf-bytes");
+    }
+
+    #[test]
+    fn extract_missing_member_is_not_found() {
+        let tmp = TempDir::new().unwrap();
+        let zip = make_zip(tmp.path(), "lib.zip", &[("a.epub", b"x")]);
+
+        let err = extract_archive_member(&zip, "missing.pdf").unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn extract_member_to_cache_creates_and_reuses_file() {
+        let tmp = TempDir::new().unwrap();
+        let zip = make_zip(tmp.path(), "lib.zip", &[("a.epub", b"first")]);
+        let key = format!("test-cache-{}", std::process::id());
+
+        let target = extract_member_to_cache(&zip, "a.epub", &key, "epub").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"first");
+
+        // Second call reuses the cached copy even if the archive changed.
+        let zip = make_zip(tmp.path(), "lib.zip", &[("a.epub", b"second")]);
+        let again = extract_member_to_cache(&zip, "a.epub", &key, "epub").unwrap();
+        assert_eq!(again, target);
+        assert_eq!(std::fs::read(&again).unwrap(), b"first");
+
+        std::fs::remove_file(target).unwrap();
+    }
+
+    #[test]
+    fn enumerate_non_archive_is_invalid_input() {
+        let err = enumerate_archive_members(Path::new("/tmp/book.pdf")).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    }
+}

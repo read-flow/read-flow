@@ -46,6 +46,7 @@ impl From<io::Error> for Error {
 /// Status is derived from reading_state (defaults to 0/Unread when no row exists).
 const FILE_SELECT: &str = r#"
     SELECT f.id, f.guid, f.path, f.type, f.size, f.fingerprint,
+           f.archive_path, f.archive_inner_path,
            COALESCE(rs.status, 0) AS status,
            d.guid AS document_guid
     FROM files f
@@ -55,13 +56,16 @@ const FILE_SELECT: &str = r#"
 
 pub async fn insert_file(conn: &mut SqliteConnection, file: NewFile) -> Result<File, Error> {
     sqlx::query(
-        r#"INSERT INTO files (guid, path, "type", size, fingerprint) VALUES (?, ?, ?, ?, ?)"#,
+        r#"INSERT INTO files (guid, path, "type", size, fingerprint, archive_path, archive_inner_path)
+           VALUES (?, ?, ?, ?, ?, ?, ?)"#,
     )
     .bind(&file.guid)
     .bind(&file.path)
     .bind(&file.type_)
     .bind(file.size)
     .bind(&file.fingerprint)
+    .bind(&file.archive_path)
+    .bind(&file.archive_inner_path)
     .execute(&mut *conn)
     .await?;
     let row = select_file_by_path(&mut *conn, &file.path)
@@ -72,13 +76,16 @@ pub async fn insert_file(conn: &mut SqliteConnection, file: NewFile) -> Result<F
 
 pub async fn upsert_file(conn: &mut SqliteConnection, file: NewFile) -> Result<(), Error> {
     sqlx::query(
-        r#"INSERT OR IGNORE INTO files (guid, path, "type", size, fingerprint) VALUES (?, ?, ?, ?, ?)"#,
+        r#"INSERT OR IGNORE INTO files (guid, path, "type", size, fingerprint, archive_path, archive_inner_path)
+           VALUES (?, ?, ?, ?, ?, ?, ?)"#,
     )
     .bind(&file.guid)
     .bind(&file.path)
     .bind(&file.type_)
     .bind(file.size)
     .bind(&file.fingerprint)
+    .bind(&file.archive_path)
+    .bind(&file.archive_inner_path)
     .execute(&mut *conn)
     .await?;
     Ok(())
@@ -658,6 +665,8 @@ pub async fn update_reading_status_only(
 // ─── High-level scan writer ───────────────────────────────────────────────────
 
 /// Write a single scanned file (upsert content + upsert file + add tags).
+/// For archive members, `archive` is `(archive_path, inner_path)` and `path`
+/// is the synthetic unique form `"{archive_path}::{inner_path}"`.
 /// Returns `(was_new, was_updated)`.
 pub async fn write_scanned_file(
     conn: &mut SqliteConnection,
@@ -666,6 +675,7 @@ pub async fn write_scanned_file(
     size: i64,
     fingerprint: &str,
     tags: &[String],
+    archive: Option<(&str, &str)>,
 ) -> Result<(bool, bool), Error> {
     // Ensure content row exists for this fingerprint.
     upsert_content(&mut *conn, fingerprint).await?;
@@ -681,6 +691,8 @@ pub async fn write_scanned_file(
                     type_: extension.to_owned(),
                     size: size as i32,
                     fingerprint: fingerprint.to_owned(),
+                    archive_path: archive.map(|(a, _)| a.to_owned()),
+                    archive_inner_path: archive.map(|(_, i)| i.to_owned()),
                 },
             )
             .await?;
@@ -1460,7 +1472,7 @@ mod tests {
 
     async fn make_file(conn: &mut SqliteConnection, path: &str, fingerprint: &str) -> File {
         upsert_content(conn, fingerprint).await.unwrap();
-        write_scanned_file(conn, path, "epub", 1000, fingerprint, &[])
+        write_scanned_file(conn, path, "epub", 1000, fingerprint, &[], None)
             .await
             .unwrap();
         select_file_by_path(conn, path).await.unwrap().unwrap()
@@ -1487,6 +1499,8 @@ mod tests {
             type_: "epub".into(),
             size: 42,
             fingerprint: "fp-idem".into(),
+            archive_path: None,
+            archive_inner_path: None,
         };
         upsert_file(&mut conn, make()).await.unwrap();
         upsert_file(&mut conn, make()).await.unwrap(); // must not error
@@ -1540,6 +1554,7 @@ mod tests {
             100,
             "fp-wsf1",
             &["fiction".into()],
+            None,
         )
         .await
         .unwrap();
@@ -1556,11 +1571,11 @@ mod tests {
     async fn write_scanned_file_unchanged_returns_false_false() {
         let pool = test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        write_scanned_file(&mut conn, "/b.epub", "epub", 200, "fp-wsf2", &[])
+        write_scanned_file(&mut conn, "/b.epub", "epub", 200, "fp-wsf2", &[], None)
             .await
             .unwrap();
         let (was_new, was_updated) =
-            write_scanned_file(&mut conn, "/b.epub", "epub", 200, "fp-wsf2", &[])
+            write_scanned_file(&mut conn, "/b.epub", "epub", 200, "fp-wsf2", &[], None)
                 .await
                 .unwrap();
         assert!(!was_new);
@@ -1571,11 +1586,11 @@ mod tests {
     async fn write_scanned_file_changed_fingerprint_returns_false_true() {
         let pool = test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        write_scanned_file(&mut conn, "/c.epub", "epub", 300, "fp-wsf3a", &[])
+        write_scanned_file(&mut conn, "/c.epub", "epub", 300, "fp-wsf3a", &[], None)
             .await
             .unwrap();
         let (was_new, was_updated) =
-            write_scanned_file(&mut conn, "/c.epub", "epub", 300, "fp-wsf3b", &[])
+            write_scanned_file(&mut conn, "/c.epub", "epub", 300, "fp-wsf3b", &[], None)
                 .await
                 .unwrap();
         assert!(!was_new);
@@ -1682,6 +1697,7 @@ mod tests {
             1,
             "fp-keep",
             &["allowed".into()],
+            None,
         )
         .await
         .unwrap();
@@ -1692,6 +1708,7 @@ mod tests {
             2,
             "fp-skip",
             &["excluded".into()],
+            None,
         )
         .await
         .unwrap();
@@ -1982,12 +1999,28 @@ mod tests {
         let pool = test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         // Two formats of the same book: /books/mybook.epub and /books/mybook.pdf
-        write_scanned_file(&mut conn, "/books/mybook.epub", "epub", 1, "fp-link1", &[])
-            .await
-            .unwrap();
-        write_scanned_file(&mut conn, "/books/mybook.pdf", "pdf", 2, "fp-link2", &[])
-            .await
-            .unwrap();
+        write_scanned_file(
+            &mut conn,
+            "/books/mybook.epub",
+            "epub",
+            1,
+            "fp-link1",
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
+        write_scanned_file(
+            &mut conn,
+            "/books/mybook.pdf",
+            "pdf",
+            2,
+            "fp-link2",
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
         drop(conn);
         auto_link_documents(&pool).await.unwrap();
         let mut conn = pool.acquire().await.unwrap();
@@ -2008,12 +2041,28 @@ mod tests {
     async fn auto_link_documents_does_not_link_different_stems() {
         let pool = test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        write_scanned_file(&mut conn, "/books/alpha.epub", "epub", 1, "fp-ns1", &[])
-            .await
-            .unwrap();
-        write_scanned_file(&mut conn, "/books/beta.epub", "epub", 2, "fp-ns2", &[])
-            .await
-            .unwrap();
+        write_scanned_file(
+            &mut conn,
+            "/books/alpha.epub",
+            "epub",
+            1,
+            "fp-ns1",
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
+        write_scanned_file(
+            &mut conn,
+            "/books/beta.epub",
+            "epub",
+            2,
+            "fp-ns2",
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
         drop(conn);
         auto_link_documents(&pool).await.unwrap();
         let mut conn = pool.acquire().await.unwrap();
@@ -2034,10 +2083,18 @@ mod tests {
     async fn auto_link_documents_already_linked_is_no_op() {
         let pool = test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        write_scanned_file(&mut conn, "/books/same.epub", "epub", 1, "fp-al1", &[])
-            .await
-            .unwrap();
-        write_scanned_file(&mut conn, "/books/same.pdf", "pdf", 2, "fp-al2", &[])
+        write_scanned_file(
+            &mut conn,
+            "/books/same.epub",
+            "epub",
+            1,
+            "fp-al1",
+            &[],
+            None,
+        )
+        .await
+        .unwrap();
+        write_scanned_file(&mut conn, "/books/same.pdf", "pdf", 2, "fp-al2", &[], None)
             .await
             .unwrap();
         drop(conn);

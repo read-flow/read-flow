@@ -510,7 +510,14 @@ impl EpubViewer {
         let local_source = sources
             .iter()
             .find(|(_, s)| s.client == ClientSelector::Local);
-        let file_path = local_source.map(|(_, s)| PathBuf::from(&s.path));
+        // Archive members are extracted to a cached temp file first.
+        let file_path = local_source.and_then(|(_, s)| match s.local_read_path() {
+            Ok(path) => Some(path),
+            Err(e) => {
+                tracing::error!("cannot resolve local read path for {}: {e}", s.path);
+                None
+            }
+        });
 
         let saved_prefs = load_epub_prefs();
 

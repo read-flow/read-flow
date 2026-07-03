@@ -53,6 +53,14 @@ uuid.workspace = true
 
 quick-xml = { workspace = true }
 
+# Archive support: scan for documents inside zipfiles and tarballs.
+zip = { workspace = true, features = ["deflate"] }
+tar.workspace = true
+flate2.workspace = true
+bzip2.workspace = true
+xz2.workspace = true
+tempfile.workspace = true
+
 epub.path = "../epub"
 image = { workspace = true, features = ["jpeg", "png"] }
 mupdf.workspace = true
