@@ -69,7 +69,7 @@ check-json: (check '--message-format=json')
 
 # Run the COSMIC desktop app for testing purposes
 run *args:
-    env RUST_BACKTRACE=full cargo run -p cosmic --release {{args}}
+    env RUST_BACKTRACE=full cargo run -p read-flow --release {{args}}
 
 # Installs files
 install:

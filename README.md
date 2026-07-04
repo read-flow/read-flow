@@ -58,7 +58,7 @@ libraries the desktop app needs).
 **Run the desktop app:**
 
 ```bash
-cargo run -p cosmic --release
+cargo run -p read-flow --release
 ```
 
 Then add one or more folders to scan from the app's settings, and let Read Flow index your documents.
@@ -67,7 +67,7 @@ Then add one or more folders to scan from the app's settings, and let Read Flow 
 
 ```bash
 # On the server machine:
-cargo run -p cosmic --release -- --headless --address 0.0.0.0 --port 8000
+cargo run -p read-flow --release -- --headless --address 0.0.0.0 --port 8000
 
 # On your workstation:
 cd pwa && npm install && npm run dev

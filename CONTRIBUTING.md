@@ -64,10 +64,10 @@ convenient recipes, but the raw Cargo/npm commands work everywhere:
 cargo build                              # or: cargo build --release
 
 # Run the desktop app
-cargo run -p cosmic --release            # or: just run
+cargo run -p read-flow --release            # or: just run
 
 # Run the headless server (no UI)
-cargo run -p cosmic --release -- --headless --address 0.0.0.0 --port 8000
+cargo run -p read-flow --release -- --headless --address 0.0.0.0 --port 8000
 
 # Run the web app dev server
 cd pwa && npm install && npm run dev     # or: just pwa-install && just pwa-dev
