@@ -188,7 +188,7 @@ impl cosmic::Application for ReadFlow {
     type Message = Message;
 
     /// Unique identifier in RDNN (reverse domain name notation) format.
-    const APP_ID: &'static str = "com.github.peterpaul.read-flow";
+    const APP_ID: &'static str = "com.github.read-flow.read-flow";
 
     fn core(&self) -> &cosmic::Core {
         &self.core

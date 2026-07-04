@@ -15,7 +15,7 @@ use tokio::fs;
 
 use crate::to_unique_file;
 
-const USER_AGENT: &str = "read-flow/0.1 (+https://github.com/peterpaul/read-flow)";
+const USER_AGENT: &str = "read-flow/0.1 (+https://github.com/read-flow/read-flow)";
 
 // ─── Domain Types ────────────────────────────────────────────────────────────
 

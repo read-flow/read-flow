@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>com.github.peterpaul.read-flow</id>
+  <id>com.github.read-flow.read-flow</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <name>Read Flow</name>
   <summary>Manage Documents Accross Multiple Machines</summary>
   <icon type="remote" width="64" height="64" scale="1">
-    https://github.com/peterpaul/read-flow/raw/main/resources/icons/hicolor/scalable/apps/icon.svg
+    https://github.com/read-flow/read-flow/raw/main/resources/icons/hicolor/scalable/apps/icon.svg
   </icon>
-  <url type="vcs-browser">https://github.com/peterpaul/read-flow</url>
-  <launchable type="desktop-id">com.github.peterpaul.read-flow.desktop</launchable>
+  <url type="vcs-browser">https://github.com/read-flow/read-flow</url>
+  <launchable type="desktop-id">com.github.read-flow.read-flow.desktop</launchable>
   <provides>
-    <id>com.github.peterpaul.read-flow</id>
+    <id>com.github.read-flow.read-flow</id>
     <binaries>
       <binary>read-flow</binary>
     </binaries>

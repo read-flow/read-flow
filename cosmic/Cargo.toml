@@ -4,7 +4,7 @@ version.workspace = true
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Manage Documents Accross Multiple Machines"
-repository = "https://github.com/peterpaul/read-flow"
+repository = "https://github.com/read-flow/read-flow"
 
 authors = ["Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"]
 
@@ -12,14 +12,14 @@ authors = ["Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"]
 maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"
 assets = [
     { source = "target/release/read-flow", dest = "/usr/bin/read-flow", mode = "755" },
-    { source = "resources/com.github.peterpaul.read-flow.desktop", dest = "/usr/share/applications/", mode = "644" },
-    { source = "resources/com.github.peterpaul.read-flow.metainfo.xml", dest = "/usr/share/appdata/", mode = "644" },
-    { source = "resources/icons/hicolor/scalable/apps/icon.svg", dest = "/usr/share/icons/hicolor/scalable/apps/com.github.peterpaul.read-flow.svg", mode = "644" },
+    { source = "resources/com.github.read-flow.read-flow.desktop", dest = "/usr/share/applications/", mode = "644" },
+    { source = "resources/com.github.read-flow.read-flow.metainfo.xml", dest = "/usr/share/appdata/", mode = "644" },
+    { source = "resources/icons/hicolor/scalable/apps/icon.svg", dest = "/usr/share/icons/hicolor/scalable/apps/com.github.read-flow.read-flow.svg", mode = "644" },
 ]
 
 [package.metadata.bundle]
 name = "Read Flow"
-identifier = "com.github.peterpaul.read-flow"
+identifier = "com.github.read-flow.read-flow"
 icon = ["resources/icons/hicolor/scalable/apps/icon.svg"]
 version = "0.1.0"
 copyright = "Copyright (c) 2024 Peterpaul Klein Haneveld"

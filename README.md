@@ -8,7 +8,7 @@ Everything runs on your own hardware; there is no cloud account and nothing leav
 unless you ask it to.
 
 > **Status:** early release (`0.1.0`). Prebuilt binaries for Linux (x86_64) and macOS (Apple
-> Silicon) are published on the [Releases](https://github.com/peterpaul/read-flow/releases) page;
+> Silicon) are published on the [Releases](https://github.com/read-flow/read-flow/releases) page;
 > you can also build from source.
 
 ## Screenshots
@@ -55,7 +55,7 @@ Read Flow gives you three ways in, all backed by the same library:
 ## Install
 
 Grab the latest build for your platform from the
-[Releases](https://github.com/peterpaul/read-flow/releases) page.
+[Releases](https://github.com/read-flow/read-flow/releases) page.
 
 **Linux (x86_64)**
 

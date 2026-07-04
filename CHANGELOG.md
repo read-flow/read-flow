@@ -37,5 +37,5 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/peterpaul/read-flow/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/peterpaul/read-flow/releases/tag/v0.1.0
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/read-flow/read-flow/releases/tag/v0.1.0
