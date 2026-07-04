@@ -19,14 +19,20 @@ marked _(decide)_ are open for discussion; refine this file as the process settl
 
 ## Release channels / artifacts
 
-For each release we intend to publish, from a Git tag:
+The [`release.yml`](.github/workflows/release.yml) workflow builds these automatically from a
+Git tag (`vX.Y.Z`) and attaches them to a **draft** GitHub Release:
 
-- **Linux**: a `.deb` package (`just deb`, via `cargo-deb`). _(decide: also a portable tarball / AppImage?)_
-- **macOS**: a `.app` bundle, zipped (`just bundle` → zip `target/release/Read Flow.app`).
-  _(decide: code signing + notarization — required for Gatekeeper-friendly distribution.)_
-- **PWA**: static build (`just pwa-build`). _(decide: where is it hosted? GitHub Pages / Netlify /
-  bundled with the server? Out of scope for the binary release for now.)_
-- **Checksums**: `SHA256SUMS` for all uploaded artifacts. _(TODO in the workflow.)_
+- **Linux x86_64**: a portable `.tar.gz` (binary + `.desktop`/icon/metainfo + README/LICENSE/NOTICE)
+  **and** a `.deb` package (`cargo-deb`).
+- **macOS arm64** (Apple Silicon): a zipped `.app` bundle. **Unsigned** — users bypass Gatekeeper on
+  first launch (documented in the README). _(decide: signing + notarization — see open questions.)_
+- **Checksums**: `SHA256SUMS` covering every artifact, generated in the workflow.
+
+Not built by the workflow (yet):
+
+- **PWA**: static build (`just pwa-build`). _(decide: hosting — GitHub Pages / Netlify / bundled
+  with the server? Out of scope for the binary release for now.)_
+- Additional targets/formats: macOS Intel, Linux arm64, AppImage, Flatpak — _(decide)_.
 
 ## Release procedure
 
@@ -77,9 +83,10 @@ git push github vX.Y.Z          # pushing the tag triggers the release workflow
 ## Open questions to iterate on
 
 - [x] Version unification (`[workspace.package]`) — **done**; single version in root `Cargo.toml`.
-- [ ] macOS signing & notarization.
-- [ ] Linux artifact set (deb only, or + AppImage/tarball/Flatpak).
+- [x] Prebuilt binaries — **yes**, automated in `release.yml` (Linux x86_64 `.deb`+tarball, macOS arm64 `.app`).
+- [x] Linux artifact set — **deb + portable tarball** for now.
+- [ ] macOS signing & notarization (currently unsigned; README documents the Gatekeeper workaround).
+- [ ] More targets/formats: macOS Intel, Linux arm64, AppImage, Flatpak.
 - [ ] PWA hosting and its release cadence relative to the app.
-- [ ] Prebuilt binaries vs. build-from-source expectation for 0.1.0.
 - [ ] Changelog automation (e.g. `git-cliff`) vs. hand-maintained.
 - [ ] Publishing library crates (`read-flow-core`, `provider`, `epub`) to crates.io.

@@ -1,12 +1,13 @@
-# Release workflow — INITIAL DRAFT, iterate before relying on it.
+# Release workflow — builds prebuilt binaries and opens a draft GitHub Release.
 #
-# Triggered by pushing a tag like `v0.1.0`. Builds Linux + macOS artifacts and
-# opens a *draft* GitHub Release with the matching CHANGELOG section as the body.
+# Triggered by pushing a tag like `v0.1.0`. Produces:
+#   - Linux x86_64:  portable .tar.gz  +  .deb
+#   - macOS arm64:   .app bundle, zipped (UNSIGNED — see README install notes)
+#   - SHA256SUMS for every artifact
 #
-# TODO (see RELEASING.md):
+# TODO (see RELEASING.md open questions):
 #   - macOS code signing + notarization
-#   - SHA256SUMS for artifacts
-#   - decide the full artifact set (AppImage/tarball/Flatpak?)
+#   - additional targets (macOS Intel, Linux arm64) / formats (AppImage, Flatpak)
 name: Release
 
 on:
@@ -29,7 +30,6 @@ jobs:
         name: Extract notes for this version
         run: |
           version="${GITHUB_REF_NAME#v}"
-          # Print the body of the "## [<version>]" section from CHANGELOG.md.
           # Grab the body of "## [<version>]" up to the next section, link-reference
           # block, or trailing comment.
           notes="$(awk -v ver="$version" '
@@ -44,7 +44,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   build-linux:
-    name: Build Linux (.deb)
+    name: Build Linux x86_64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,16 +59,28 @@ jobs:
         run: |
           cargo install just
           cargo install cargo-deb
-      - name: Build .deb
-        run: just deb
+      - name: Build release + .deb
+        run: just deb          # runs build-release, then cargo-deb
+      - name: Assemble portable tarball
+        run: |
+          pkg="read-flow-${GITHUB_REF_NAME}-linux-x86_64"
+          mkdir -p "dist/${pkg}"
+          cp target/release/read-flow "dist/${pkg}/"
+          cp cosmic/resources/com.github.peterpaul.read-flow.desktop "dist/${pkg}/"
+          cp cosmic/resources/com.github.peterpaul.read-flow.metainfo.xml "dist/${pkg}/"
+          cp cosmic/resources/icons/hicolor/scalable/apps/icon.svg "dist/${pkg}/read-flow.svg"
+          cp README.md LICENSE-GPL NOTICE "dist/${pkg}/"
+          tar -czf "${pkg}.tar.gz" -C dist "${pkg}"
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-deb
-          path: target/debian/*.deb
+          name: linux-x86_64
+          path: |
+            target/debian/*.deb
+            read-flow-*-linux-x86_64.tar.gz
 
   build-macos:
-    name: Build macOS (.app)
-    runs-on: macos-latest
+    name: Build macOS arm64
+    runs-on: macos-14          # Apple Silicon
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
@@ -78,14 +90,14 @@ jobs:
           cargo install just
       - name: Build .app bundle
         run: just bundle
-      - name: Zip the bundle
+      - name: Zip the bundle (unsigned)
         run: |
           cd target/release
-          zip -r -y "Read-Flow-${GITHUB_REF_NAME}-macos.zip" "Read Flow.app"
+          zip -r -y "../../read-flow-${GITHUB_REF_NAME}-macos-arm64.zip" "Read Flow.app"
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-app
-          path: target/release/*.zip
+          name: macos-arm64
+          path: read-flow-*-macos-arm64.zip
 
   release:
     name: Publish draft release
@@ -95,12 +107,18 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+      - name: Collect artifacts and checksums
+        run: |
+          mkdir -p out
+          find artifacts -type f \( -name '*.deb' -o -name '*.tar.gz' -o -name '*.zip' \) \
+            -exec cp {} out/ \;
+          cd out
+          shasum -a 256 * > SHA256SUMS
+          cat SHA256SUMS
       - name: Create draft release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           name: Read Flow ${{ github.ref_name }}
           body: ${{ needs.changelog.outputs.notes }}
-          files: |
-            artifacts/**/*.deb
-            artifacts/**/*.zip
+          files: out/*

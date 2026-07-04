@@ -7,8 +7,9 @@ tag and track your reading, and reads your books for you in a built-in PDF and E
 Everything runs on your own hardware; there is no cloud account and nothing leaves your network
 unless you ask it to.
 
-> **Status:** early release (`0.1.0`). Read Flow is built from source today — there are no
-> pre-packaged binaries yet.
+> **Status:** early release (`0.1.0`). Prebuilt binaries for Linux (x86_64) and macOS (Apple
+> Silicon) are published on the [Releases](https://github.com/peterpaul/read-flow/releases) page;
+> you can also build from source.
 
 ## Screenshots
 
@@ -49,7 +50,28 @@ Read Flow gives you three ways in, all backed by the same library:
 3. **Web app (PWA)** — a browser-based reader that connects to one or more Read Flow servers, with
    fuzzy search and offline-capable reading. Install it to your device like a native app.
 
-## Quick start
+## Install
+
+Grab the latest build for your platform from the
+[Releases](https://github.com/peterpaul/read-flow/releases) page.
+
+**Linux (x86_64)**
+
+- **`.deb`** (Debian/Ubuntu): `sudo apt install ./read-flow_*.deb`
+- **Portable tarball**: extract `read-flow-*-linux-x86_64.tar.gz` and run the `read-flow` binary
+  inside. (Optionally copy the `.desktop` and `.svg` files into `~/.local/share/`.)
+
+**macOS (Apple Silicon)**
+
+Download `read-flow-*-macos-arm64.zip`, unzip it, and move **Read Flow.app** to `/Applications`.
+
+> The app is **not code-signed** yet, so macOS Gatekeeper blocks it on first launch. To open it:
+> right-click **Read Flow.app** → **Open** → **Open**. Alternatively, from a terminal:
+> `xattr -dr com.apple.quarantine "/Applications/Read Flow.app"`.
+
+Verify a download against `SHA256SUMS` from the release: `shasum -a 256 -c SHA256SUMS`.
+
+## Build from source
 
 You'll need the [Rust toolchain](https://rustup.rs/) and, for the web app, [Node.js](https://nodejs.org/) ≥ 20.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full list of prerequisites (including the Linux system
