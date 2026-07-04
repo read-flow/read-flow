@@ -130,6 +130,30 @@ cd pwa && npm run test:e2e      # end-to-end (Playwright/Cucumber, builds first)
   inline `#[cfg(test)]` modules, co-located with the code.
 - Web app tests are `*.test.ts` files next to the code they cover.
 
+## Translations
+
+The desktop app is localized with [Fluent](https://projectfluent.org/); translation files live in
+[`cosmic/i18n/`](cosmic/i18n). To add a language, copy the English localization (`cosmic/i18n/en`),
+rename the directory to the desired [ISO 639-1 language code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes),
+and translate each [message identifier](https://projectfluent.org/fluent/guide/hello.html). Messages
+that need no translation may be omitted. New settings and UI strings must ship with en/fr/nl entries.
+
+## Packaging
+
+When packaging for a Linux distribution, vendor the dependencies with the `vendor` recipe and build
+with the vendored sources using `build-vendored`. Use the `rootdir` and `prefix` variables to adjust
+installation paths:
+
+```sh
+just vendor
+just build-vendored
+just rootdir=debian/read-flow prefix=/usr install
+```
+
+It is recommended to create the vendored source tarball on the host (`just vendor`) before entering
+the build environment. `just deb` and `just bundle` build distributable artifacts directly (both
+enable the `embed-pwa` feature).
+
 ## Code style
 
 - **Rust formatting:** run `cargo +nightly fmt` before committing. Never commit unformatted code.
