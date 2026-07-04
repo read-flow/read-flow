@@ -2,10 +2,9 @@
 name = "read-flow"
 version = "0.1.0"
 edition = "2024"
-license = "GPL-2"
+license = "GPL-3.0-or-later"
 description = "Manage Documents Accross Multiple Machines"
-repository = "http://raspberrypi:3000/peterpaul/read-flow.git"
-# repository = "https://github.com/peterpaul/read-flow"
+repository = "https://github.com/peterpaul/read-flow"
 
 authors = ["Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"]
 

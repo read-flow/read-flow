@@ -1,0 +1,43 @@
+Read Flow — licensing and attribution
+======================================
+
+Read Flow is a multi-crate workspace released under a split license. Which
+license applies depends on the component:
+
+GPL-3.0-or-later
+----------------
+  - read-flow          (cosmic/  — the desktop application)
+  - read-flow-widgets  (widgets/ — shared desktop UI widgets)
+
+  The full text is in LICENSE-GPL.
+
+  These components, and any binary built from them (including the
+  `read-flow` desktop app and its `--headless` server mode), are covered
+  by the GNU General Public License, version 3 or later.
+
+MIT
+---
+  - read-flow-core     (core/)
+  - provider           (provider/)
+  - epub               (epub/)
+  - read-flow-pwa      (pwa/)
+
+  The full text is in LICENSE-MIT.
+
+  These components may be reused under the permissive MIT terms. Note that
+  when they are linked into the GPL-3.0-or-later desktop application, the
+  resulting combined binary is governed by the GPL.
+
+
+Third-party attribution
+------------------------
+
+The PDF viewer in the desktop application (cosmic/) is derived from
+COSMIC Reader by System76:
+
+    https://github.com/pop-os/cosmic-reader
+    Copyright (C) System76
+    Licensed under the GNU General Public License, version 3 or later.
+
+This derivation is the reason the desktop application is licensed under
+GPL-3.0-or-later.
