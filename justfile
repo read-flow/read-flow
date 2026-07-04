@@ -71,6 +71,10 @@ check-json: (check '--message-format=json')
 run *args:
     env RUST_BACKTRACE=full cargo run -p read-flow --release {{args}}
 
+# Run the desktop app with the embedded PWA so its in-app server hosts the web UI
+run-embedded *args: pwa-build
+    env RUST_BACKTRACE=full cargo run -p read-flow --release --features embed-pwa {{args}}
+
 # Run the headless server with the embedded PWA (builds the PWA first)
 serve *args: pwa-build
     cargo run -p read-flow --release --features embed-pwa -- --headless {{args}}

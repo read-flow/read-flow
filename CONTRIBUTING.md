@@ -69,9 +69,23 @@ cargo run -p read-flow --release            # or: just run
 # Run the headless server (no UI)
 cargo run -p read-flow --release -- --headless --address 0.0.0.0 --port 8000
 
-# Run the web app dev server
+# Run the web app dev server (talks to a running server over REST)
 cd pwa && npm install && npm run dev     # or: just pwa-install && just pwa-dev
 ```
+
+**Embedding the PWA.** The server (both `--headless` and the desktop app's in-app server) only
+hosts the web UI when built with the `embed-pwa` feature, which embeds `pwa/build` into the binary.
+Plain dev builds (`just run`, `cargo run -p read-flow`) omit it so they don't require a Node build.
+To run the desktop app or headless server with the web UI, build the PWA first and enable the
+feature:
+
+```bash
+just run-embedded    # desktop app; its in-app server also hosts the web UI
+just serve           # headless server hosting the web UI
+```
+
+Packaging recipes (`just deb`, `just bundle`) enable `embed-pwa` automatically, so **installed
+builds always host the PWA** from the in-app server.
 
 ### Database
 
