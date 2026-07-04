@@ -1,0 +1,106 @@
+# Release workflow — INITIAL DRAFT, iterate before relying on it.
+#
+# Triggered by pushing a tag like `v0.1.0`. Builds Linux + macOS artifacts and
+# opens a *draft* GitHub Release with the matching CHANGELOG section as the body.
+#
+# TODO (see RELEASING.md):
+#   - macOS code signing + notarization
+#   - SHA256SUMS for artifacts
+#   - decide the full artifact set (AppImage/tarball/Flatpak?)
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  changelog:
+    name: Extract changelog
+    runs-on: ubuntu-latest
+    outputs:
+      notes: ${{ steps.extract.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: extract
+        name: Extract notes for this version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # Print the body of the "## [<version>]" section from CHANGELOG.md.
+          # Grab the body of "## [<version>]" up to the next section, link-reference
+          # block, or trailing comment.
+          notes="$(awk -v ver="$version" '
+            $0 ~ "^## \\[" ver "\\]" { grab=1; next }
+            grab && (/^## \[/ || /^\[.*\]: / || /^<!--/) { exit }
+            grab { print }
+          ' CHANGELOG.md)"
+          {
+            echo "notes<<EOF"
+            echo "$notes"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  build-linux:
+    name: Build Linux (.deb)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwayland-dev libxkbcommon-dev libudev-dev libinput-dev \
+            libgbm-dev libegl1-mesa-dev libsqlite3-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+      - name: Install packaging tools
+        run: |
+          cargo install just
+          cargo install cargo-deb
+      - name: Build .deb
+        run: just deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: target/debian/*.deb
+
+  build-macos:
+    name: Build macOS (.app)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Install tooling
+        run: |
+          brew install librsvg
+          cargo install just
+      - name: Build .app bundle
+        run: just bundle
+      - name: Zip the bundle
+        run: |
+          cd target/release
+          zip -r -y "Read-Flow-${GITHUB_REF_NAME}-macos.zip" "Read Flow.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: target/release/*.zip
+
+  release:
+    name: Publish draft release
+    needs: [changelog, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Read Flow ${{ github.ref_name }}
+          body: ${{ needs.changelog.outputs.notes }}
+          files: |
+            artifacts/**/*.deb
+            artifacts/**/*.zip
