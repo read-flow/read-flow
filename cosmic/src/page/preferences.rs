@@ -554,30 +554,51 @@ impl PreferencesPage {
         })
         .on_press(PreferencesMessage::ToggleAllDocumentTypes(!all_selected));
 
-        let file_types_section = DocumentType::all().iter().fold(
-            widget::settings::section()
-                .header(widget::settings::item_row(vec![
-                    widget::text::heading(fl!("settings-scan-file-types-section")).into(),
-                    widget::space::horizontal().into(),
-                    toggle_all_button.into(),
-                ]))
-                .add(
-                    widget::text::body(fl!("settings-scan-file-types-description"))
-                        .width(Length::Fill),
-                ),
-            |section, doc_type| {
+        let cosmic_theme::Spacing {
+            space_xxs,
+            space_xs,
+            ..
+        } = theme::active().cosmic().spacing;
+
+        let file_type_pills: Vec<Element<'_, PreferencesMessage>> = DocumentType::all()
+            .iter()
+            .map(|doc_type| {
                 let enabled = self.settings.scan.extensions.contains(doc_type);
-                let doc_type_clone = *doc_type;
-                section.add(
-                    widget::settings::item::builder(format!(".{}", doc_type.as_str()))
-                        .description(doc_type.label())
-                        .icon(widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE))
-                        .toggler(enabled, move |v| {
-                            PreferencesMessage::ToggleDocumentType(doc_type_clone, v)
-                        }),
-                )
-            },
-        );
+                let doc_type = *doc_type;
+                let content = widget::column::with_children(vec![
+                    widget::text::body(format!(".{}", doc_type.as_str())).into(),
+                    widget::text::caption(doc_type.label()).into(),
+                ])
+                .align_x(Horizontal::Center);
+                widget::button::custom(content)
+                    .class(if enabled {
+                        theme::Button::Suggested
+                    } else {
+                        theme::Button::Standard
+                    })
+                    .padding([space_xxs, space_xs])
+                    .on_press(PreferencesMessage::ToggleDocumentType(doc_type, !enabled))
+                    .into()
+            })
+            .collect();
+
+        let file_types_section = widget::settings::section()
+            .header(widget::settings::item_row(vec![
+                widget::text::heading(fl!("settings-scan-file-types-section")).into(),
+                widget::space::horizontal().into(),
+                toggle_all_button.into(),
+            ]))
+            .add(
+                widget::text::body(fl!("settings-scan-file-types-description")).width(Length::Fill),
+            )
+            .add(
+                widget::flex_row(file_type_pills)
+                    .row_spacing(space_xxs)
+                    .column_spacing(space_xs)
+                    .apply(container)
+                    .padding([space_xxs, 0])
+                    .width(Length::Fill),
+            );
 
         let directories_section = self
             .settings
