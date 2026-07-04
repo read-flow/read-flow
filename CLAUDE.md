@@ -1,0 +1,97 @@
+# CLAUDE.md
+
+## Build Commands
+
+```bash
+# Build entire workspace
+cargo build
+
+# Build release (with LTO)
+cargo build --release
+
+# Run tests (workspace-wide)
+cargo nextest run
+
+# Run tests for a specific crate
+cargo nextest run -p read-flow-core
+cargo nextest run -p provider
+
+# Run a single test
+cargo nextest run -p read-flow-core test_name
+
+# Run the COSMIC desktop app
+cargo run -p read-flow
+
+# Run the headless server (no UI) — this is the user-facing server
+cargo run -p read-flow -- --headless --address 0.0.0.0 --port 8000
+
+# read-flow-cli is an INTERNAL test-harness server launcher only (not user-facing).
+# Subcommands: scan, apply-tags, serve, extract-scan-directories, check-missing.
+cargo run --bin read-flow-cli -- scan /path/to/directory
+
+# Format code (requires nightly)
+cargo +nightly fmt
+```
+
+### PWA (pwa/)
+
+```bash
+cd pwa && npm install && npm run dev
+```
+
+## Architecture
+
+Rust workspace (edition 2024, resolver 3), multiple crates + JS PWA:
+
+- **`read-flow-core`** (MIT) — Core lib: async SQLite (sqlx), Axum REST API (`server` feature, on by default), async file scan (tokio), tag mgmt. Also holds the internal `read-flow-cli` test-harness binary (`src/bin/read-flow-cli.rs`; subcommands `scan`, `apply-tags`, `serve`, `extract-scan-directories`, `check-missing`) — not a user-facing tool.
+- **`read-flow`** (GPL-3.0-or-later; PDF viewer derived from pop-os/cosmic-reader) — COSMIC desktop GUI **and** the headless HTTP server (`--headless`). `libcosmic` (git, pop-os). Async tokio, i18n (en/fr/nl via Fluent), observable `provider` pattern. Entry: `src/main.rs`. Package name `read-flow`, in `cosmic/` (use `cargo run -p read-flow`, not `-p cosmic`).
+- **`provider`** — DI library (edition 2021). `Provider<T>` trait with combinators (`map`, `and_then`, `cache`, etc.), `ObservableCache` with `tokio::sync::broadcast` invalidation.
+- **`epub/`** — EPUB3 parsing: container, package doc, nav, resource resolution, HTML→content, CSS, images.
+- **`widgets/`** — Shared UI widgets for COSMIC app.
+- **`pwa/`** — SvelteKit + TypeScript PWA. Fuse.js fuzzy search, PDF.js + epub.js rendering, IndexedDB via Dexie.
+
+### Dependency flow
+```
+read-flow → read-flow-core → provider
+                ↑
+              pwa (independent, talks to REST API)
+```
+
+`read-flow` depends on `read-flow-core` **with** the `server` feature — the desktop app embeds the Axum server so it can run headless (`--headless`) or serve the PWA while the GUI is open. The `pwa` is independent and talks to that server over REST.
+
+### Database
+
+SQLite + sqlx (async). WAL mode, foreign keys on, pool ≤5. Migrations: `core/migrations/` as `{timestamp}_{description}.sql`, auto-run at startup via `sqlx::migrate!("./migrations")`.
+
+### Configuration
+
+Runtime config: `read-flow.toml`. Supports `$HOME`/`~`. Sections: `[database]`, `[client]`, `[server]`, `[scan]`, `[ui]`, `[online_library]` (OPDS catalogs).
+
+## Workflow
+
+- **Cargo commands**: run freely (build, test, fmt, clippy, run, etc.) without asking. Prefer token-efficient invocations (e.g. `cargo nextest run -p crate test_name` over full workspace runs when possible).
+- **REQUIREMENTS.org** at workspace root: consult before implementing features, mark `DONE` when shipped. May be committed.
+- **Config UI parity**: every setting in `read-flow.toml` MUST have a user-friendly configuration UI. When adding or changing a setting, also add/update its control in the COSMIC Preferences page (`cosmic/src/page/preferences.rs`, local config) and — for server settings exposed over the REST API (`ServerSettingsDto`) — the PWA admin settings page (`pwa/src/routes/settings/admin/+page.svelte`). Operator-local/sensitive settings (e.g. TLS cert/key, bind address/port) stay in COSMIC + the config file only, not the remote REST DTO. Add matching i18n strings (en/fr/nl).
+- **Token efficiency**: when multiple approaches exist, pick least token-expensive (targeted commands, scoped searches, narrow file reads).
+- **Commit messages**: concise, no co-author line, never mention Claude.
+- **Before committing**: run `cargo +nightly fmt`. Never commit unformatted code.
+
+## Code Conventions
+
+- **Rust formatting**: nightly rustfmt, vertical imports, one per line, grouped std/external/crate (`group_imports = "StdExternalCrate"`).
+- **Testing**: `rstest` (parameterized), `assert4rs`. Inline `#[cfg(test)]` modules. PWA: Vitest (`pwa/src/**/*.test.ts`).
+- **COSMIC state**: observable provider/cache from `provider` crate. Settings propagate via broadcast invalidation.
+- **Feature gating**: `server` feature (on `read-flow-core`) gates all Axum/REST code. The `read-flow` desktop app **does** enable it (embeds the server for `--headless` mode and PWA access).
+
+### Style: functional
+
+- Prefer pure functions, immutable data, transformation pipelines (`map`/`filter`/`fold` in Rust; `map`/`filter`/`reduce` in TS) over imperative loops.
+- Functions depend only on arguments, no side effects. Isolate I/O + DB at boundary; keep logic underneath pure.
+- Every non-trivial pure function gets unit test. Small, deterministic, no network/fs/DB. Use DI/params to decouple from env (see `pwa/src/lib/utils/filter.ts`, `pwa/src/lib/api/merge.ts`).
+
+### Design: Test Driven Development (TDD)
+
+- Write tests before or alongside implementation. Tests define the expected behaviour; code satisfies them.
+- Red → Green → Refactor: start with a failing test, make it pass with minimal code, then clean up.
+- New behaviour = new test first. Bug fix = failing regression test first, then the fix.
+- Tests live in inline `#[cfg(test)]` modules (Rust) or `*.test.ts` files (PWA), co-located with the code they cover.
