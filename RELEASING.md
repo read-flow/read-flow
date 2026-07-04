@@ -28,11 +28,15 @@ Git tag (`vX.Y.Z`) and attaches them to a **draft** GitHub Release:
   first launch (documented in the README). _(decide: signing + notarization — see open questions.)_
 - **Checksums**: `SHA256SUMS` covering every artifact, generated in the workflow.
 
+The **PWA** is not shipped as a separate artifact: the packaging recipes (`just deb`, `just bundle`)
+build it (`just pwa-build`) and **embed** it into the `read-flow` binary via the `embed-pwa` feature,
+so the server hosts the web UI at its own address (same origin — no CORS/HTTPS gymnastics).
+
 Not built by the workflow (yet):
 
-- **PWA**: static build (`just pwa-build`). _(decide: hosting — GitHub Pages / Netlify / bundled
-  with the server? Out of scope for the binary release for now.)_
 - Additional targets/formats: macOS Intel, Linux arm64, AppImage, Flatpak — _(decide)_.
+- A separately hosted PWA (e.g. GitHub Pages) — possible later, but requires users to expose their
+  server over trusted HTTPS; the embedded copy is the primary path.
 
 ## Release procedure
 
@@ -86,7 +90,8 @@ git push github vX.Y.Z          # pushing the tag triggers the release workflow
 - [x] Prebuilt binaries — **yes**, automated in `release.yml` (Linux x86_64 `.deb`+tarball, macOS arm64 `.app`).
 - [x] Linux artifact set — **deb + portable tarball** for now.
 - [ ] macOS signing & notarization (currently unsigned; README documents the Gatekeeper workaround).
+- [x] PWA hosting — **embedded in the server** (`embed-pwa` feature); packaged builds serve it at `/`.
 - [ ] More targets/formats: macOS Intel, Linux arm64, AppImage, Flatpak.
-- [ ] PWA hosting and its release cadence relative to the app.
+- [ ] Optionally also host the PWA standalone (GitHub Pages) — needs server HTTPS; deferred.
 - [ ] Changelog automation (e.g. `git-cliff`) vs. hand-maintained.
 - [ ] Publishing library crates (`read-flow-core`, `provider`, `epub`) to crates.io.

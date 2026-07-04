@@ -39,6 +39,9 @@ use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::GlobalKeyExtractor;
 use tower_http::cors::Any;
 use tower_http::cors::CorsLayer;
+
+#[cfg(feature = "embed-pwa")]
+mod spa;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::DefaultMakeSpan;
@@ -309,7 +312,7 @@ pub async fn build_router(state: AppState) -> Router {
         ),
     };
 
-    let mut router = Router::new()
+    let routes = Router::new()
         .route("/status", get(status))
         .route(
             "/files",
@@ -353,7 +356,14 @@ pub async fn build_router(state: AppState) -> Router {
         .route("/users/{user_id}", put(put_user).delete(delete_user))
         .route("/online-library/search", get(search_online_library))
         .route("/online-library/import", post(import_online_book))
-        .route("/oauth/token", post(oauth_token).layer(governor))
+        .route("/oauth/token", post(oauth_token).layer(governor));
+
+    // Serve the embedded PWA for any unmatched route so the security/trace
+    // layers below also wrap the static responses (feature `embed-pwa`).
+    #[cfg(feature = "embed-pwa")]
+    let routes = routes.fallback(spa::handler);
+
+    let mut router = routes
         .layer(cors_layer(&server.allowed_origins))
         // Baseline security headers (HSTS added below only when TLS is on).
         .layer(SetResponseHeaderLayer::if_not_present(

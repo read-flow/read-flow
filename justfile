@@ -71,6 +71,10 @@ check-json: (check '--message-format=json')
 run *args:
     env RUST_BACKTRACE=full cargo run -p read-flow --release {{args}}
 
+# Run the headless server with the embedded PWA (builds the PWA first)
+serve *args: pwa-build
+    cargo run -p read-flow --release --features embed-pwa -- --headless {{args}}
+
 # Installs files
 install:
     install -Dm0755 {{bin-src}} {{bin-dst}}
@@ -82,8 +86,8 @@ install:
 uninstall:
     rm {{bin-dst}} {{desktop-dst}} {{icon-svg-dst}}
 
-# Builds a .deb package for the COSMIC desktop app
-deb: build-release
+# Builds a .deb package for the COSMIC desktop app (with embedded PWA)
+deb: pwa-build (build-release '--features' 'embed-pwa' '-p' 'read-flow')
     cargo deb -p read-flow --no-build
 
 # Vendor dependencies locally
@@ -127,9 +131,9 @@ icon:
     iconutil -c icns "{{iconset}}" -o "{{icns}}"
     rm -rf "{{iconset}}"
 
-# Build macOS .app bundle
+# Build macOS .app bundle (with embedded PWA)
 [macos]
-bundle: build-release icon
+bundle: pwa-build (build-release '--features' 'embed-pwa' '-p' 'read-flow') icon
     #!/usr/bin/env bash
     set -euo pipefail
     app="{{app-bundle}}"

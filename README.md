@@ -47,8 +47,10 @@ Read Flow gives you three ways in, all backed by the same library:
    way to use Read Flow: browse your library, read, tag, and manage scan folders from a GUI.
 2. **Headless server** (`read-flow --headless`) — run the same app without a UI on a home server or
    NAS, so the web app can connect to it over your network.
-3. **Web app (PWA)** — a browser-based reader that connects to one or more Read Flow servers, with
-   fuzzy search and offline-capable reading. Install it to your device like a native app.
+3. **Web app (PWA)** — a browser-based reader with fuzzy search and offline-capable reading. The
+   server hosts it at its own address, so you just open the server URL in a browser (no separate
+   deployment), and install it to your device like a native app. It can aggregate multiple Read
+   Flow servers as sources.
 
 ## Install
 
@@ -85,16 +87,15 @@ cargo run -p read-flow --release
 
 Then add one or more folders to scan from the app's settings, and let Read Flow index your documents.
 
-**Run a headless server** (e.g. on a home server) and connect to it from the web app:
+**Run a headless server** (e.g. on a home server) that also serves the web app at the same address:
 
 ```bash
-# On the server machine:
-cargo run -p read-flow --release -- --headless --address 0.0.0.0 --port 8000
-
-# On your workstation:
-cd pwa && npm install && npm run dev
-# then point the web app at http://<server>:8000
+# On the server machine — builds the PWA, embeds it, and serves API + web UI together:
+just serve --address 0.0.0.0 --port 8000
 ```
+
+Then open `http://<server>:8000` in a browser and install the PWA from there. (Packaged release
+builds already include the embedded web app, so `read-flow --headless` serves it directly.)
 
 ## Configuration
 

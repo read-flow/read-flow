@@ -27,6 +27,12 @@ category = "public.app-category.productivity"
 short_description = "Manage Documents Across Multiple Machines"
 osx_minimum_system_version = "10.15"
 
+[features]
+# Embed the built PWA into the binary so `read-flow --headless` also serves the
+# web UI at the same origin. Requires `just pwa-build` first; enabled for
+# packaging/release builds, off for plain dev builds.
+embed-pwa = ["read-flow-core/embed-pwa"]
+
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
