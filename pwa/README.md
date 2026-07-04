@@ -137,5 +137,6 @@ updated entry. Updates are written back to all sources in parallel.
 
 ## Design document
 
-See [`DESIGN.md`](./DESIGN.md) for architecture decisions, library assessments, and
-the full feature roadmap.
+See [`DESIGN.md`](./DESIGN.md) for architecture decisions and library assessments.
+The feature catalog lives in [`FEATURES.toml`](../FEATURES.toml) and the generated
+[`FEATURE_MATRIX.md`](../FEATURE_MATRIX.md).
