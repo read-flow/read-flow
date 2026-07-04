@@ -524,6 +524,10 @@ impl PreferencesPage {
             .add(
                 widget::settings::item::builder(fl!("settings-scan-concurrency"))
                     .description(fl!("settings-scan-concurrency-description"))
+                    .icon(
+                        widget::icon::from_name("utilities-system-monitor-symbolic")
+                            .size(ICON_SIZE),
+                    )
                     .control(
                         widget::text_input("16", self.settings.scan.concurrency.to_string())
                             .on_input(PreferencesMessage::ScanConcurrencyChanged)
@@ -533,6 +537,7 @@ impl PreferencesPage {
             .add(
                 widget::settings::item::builder(fl!("settings-scan-tar-single-pass"))
                     .description(fl!("settings-scan-tar-single-pass-description"))
+                    .icon(widget::icon::from_name("package-x-generic-symbolic").size(ICON_SIZE))
                     .toggler(
                         self.settings.scan.tar_single_pass,
                         PreferencesMessage::ToggleTarSinglePass,
@@ -566,6 +571,7 @@ impl PreferencesPage {
                 section.add(
                     widget::settings::item::builder(format!(".{}", doc_type.as_str()))
                         .description(doc_type.label())
+                        .icon(widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE))
                         .toggler(enabled, move |v| {
                             PreferencesMessage::ToggleDocumentType(doc_type_clone, v)
                         }),
@@ -723,6 +729,10 @@ impl PreferencesPage {
     }
 
     fn view_section_server(&self) -> Vec<Element<'_, PreferencesMessage>> {
+        // Uniform width for every text input in the server sections.
+        const INPUT_WIDTH: f32 = 240.0;
+
+        // General: what the server does on this device.
         let server_section = widget::settings::section()
             .title(fl!("preferences-server-section"))
             .add(widget::text::body(fl!("settings-server-description")).width(Length::Fill))
@@ -746,20 +756,38 @@ impl PreferencesPage {
                     ),
             )
             .add(
+                widget::settings::item::builder(fl!("settings-server-start-on-launch"))
+                    .description(fl!("settings-server-start-on-launch-description"))
+                    .icon(widget::icon::from_name("media-playback-start-symbolic").size(ICON_SIZE))
+                    .toggler(
+                        self.config.server_start_on_launch,
+                        PreferencesMessage::ToggleServerStartOnLaunch,
+                    ),
+            );
+
+        // Network: where the server listens and what clients may send.
+        let network_section = widget::settings::section()
+            .title(fl!("settings-server-network-section"))
+            .add(
                 widget::settings::item::builder(fl!("settings-server-address"))
                     .description(fl!("settings-server-address-description"))
+                    .icon(widget::icon::from_name("network-wired-symbolic").size(ICON_SIZE))
                     .control(
                         widget::text_input(
                             "127.0.0.1",
                             self.settings.server.address.clone().unwrap_or_default(),
                         )
                         .on_input(PreferencesMessage::ServerAddressChanged)
-                        .width(Length::Fixed(180.0)),
+                        .width(Length::Fixed(INPUT_WIDTH)),
                     ),
             )
             .add(
                 widget::settings::item::builder(fl!("settings-server-port"))
                     .description(fl!("settings-server-port-description"))
+                    .icon(
+                        widget::icon::from_name("network-transmit-receive-symbolic")
+                            .size(ICON_SIZE),
+                    )
                     .control(
                         widget::text_input(
                             "8000",
@@ -770,24 +798,26 @@ impl PreferencesPage {
                                 .unwrap_or_default(),
                         )
                         .on_input(PreferencesMessage::ServerPortChanged)
-                        .width(Length::Fixed(120.0)),
+                        .width(Length::Fixed(INPUT_WIDTH)),
                     ),
             )
             .add(
                 widget::settings::item::builder(fl!("settings-server-allowed-origins"))
                     .description(fl!("settings-server-allowed-origins-description"))
+                    .icon(widget::icon::from_name("web-browser-symbolic").size(ICON_SIZE))
                     .control(
                         widget::text_input(
                             fl!("settings-server-allowed-origins-placeholder"),
                             self.settings.server.allowed_origins.join(", "),
                         )
                         .on_input(PreferencesMessage::ServerAllowedOriginsChanged)
-                        .width(Length::Fixed(240.0)),
+                        .width(Length::Fixed(INPUT_WIDTH)),
                     ),
             )
             .add(
                 widget::settings::item::builder(fl!("settings-server-max-upload"))
                     .description(fl!("settings-server-max-upload-description"))
+                    .icon(widget::icon::from_name("document-send-symbolic").size(ICON_SIZE))
                     .control(
                         widget::text_input(
                             "100",
@@ -798,68 +828,74 @@ impl PreferencesPage {
                                 .unwrap_or_default(),
                         )
                         .on_input(PreferencesMessage::ServerMaxUploadChanged)
-                        .width(Length::Fixed(120.0)),
+                        .width(Length::Fixed(INPUT_WIDTH)),
                     ),
             )
             .add(
+                widget::settings::item::builder(fl!("settings-server-restart-to-apply"))
+                    .icon(widget::icon::from_name("view-refresh-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::button::standard(fl!("server-restart"))
+                            .on_press(PreferencesMessage::Out(PreferencesOutput::RestartServer)),
+                    ),
+            );
+
+        // HTTPS: TLS toggle, certificate material, self-signed generation.
+        let tls_section = widget::settings::section()
+            .title(fl!("settings-server-tls-section"))
+            .add(
                 widget::settings::item::builder(fl!("settings-server-tls"))
                     .description(fl!("settings-server-tls-description"))
+                    .icon(widget::icon::from_name("security-high-symbolic").size(ICON_SIZE))
                     .toggler(
                         self.settings.server.tls.is_some(),
                         PreferencesMessage::ToggleServerTls,
                     ),
             )
             .add(
-                widget::settings::item::builder(fl!("settings-server-tls-cert")).control(
-                    widget::text_input(
-                        fl!("settings-server-tls-cert-placeholder"),
-                        self.settings
-                            .server
-                            .tls
-                            .as_ref()
-                            .map(|t| t.cert.display().to_string())
-                            .unwrap_or_default(),
+                widget::settings::item::builder(fl!("settings-server-tls-cert"))
+                    .icon(
+                        widget::icon::from_name("application-certificate-symbolic").size(ICON_SIZE),
                     )
-                    .on_input(PreferencesMessage::ServerTlsCertChanged)
-                    .width(Length::Fixed(240.0)),
-                ),
+                    .control(
+                        widget::text_input(
+                            fl!("settings-server-tls-cert-placeholder"),
+                            self.settings
+                                .server
+                                .tls
+                                .as_ref()
+                                .map(|t| t.cert.display().to_string())
+                                .unwrap_or_default(),
+                        )
+                        .on_input(PreferencesMessage::ServerTlsCertChanged)
+                        .width(Length::Fixed(INPUT_WIDTH)),
+                    ),
             )
             .add(
-                widget::settings::item::builder(fl!("settings-server-tls-key")).control(
-                    widget::text_input(
-                        fl!("settings-server-tls-key-placeholder"),
-                        self.settings
-                            .server
-                            .tls
-                            .as_ref()
-                            .map(|t| t.key.display().to_string())
-                            .unwrap_or_default(),
-                    )
-                    .on_input(PreferencesMessage::ServerTlsKeyChanged)
-                    .width(Length::Fixed(240.0)),
-                ),
+                widget::settings::item::builder(fl!("settings-server-tls-key"))
+                    .icon(widget::icon::from_name("dialog-password-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::text_input(
+                            fl!("settings-server-tls-key-placeholder"),
+                            self.settings
+                                .server
+                                .tls
+                                .as_ref()
+                                .map(|t| t.key.display().to_string())
+                                .unwrap_or_default(),
+                        )
+                        .on_input(PreferencesMessage::ServerTlsKeyChanged)
+                        .width(Length::Fixed(INPUT_WIDTH)),
+                    ),
             )
             .add(
                 widget::settings::item::builder(fl!("settings-server-generate-cert"))
                     .description(fl!("settings-server-generate-cert-description"))
+                    .icon(widget::icon::from_name("document-new-symbolic").size(ICON_SIZE))
                     .control(
                         widget::button::standard(fl!("settings-server-generate-cert-button"))
                             .on_press(PreferencesMessage::GenerateTlsCert),
                     ),
-            )
-            .add(
-                widget::settings::item::builder(fl!("settings-server-start-on-launch"))
-                    .description(fl!("settings-server-start-on-launch-description"))
-                    .toggler(
-                        self.config.server_start_on_launch,
-                        PreferencesMessage::ToggleServerStartOnLaunch,
-                    ),
-            )
-            .add(
-                widget::settings::item::builder(fl!("settings-server-restart-to-apply")).control(
-                    widget::button::standard(fl!("server-restart"))
-                        .on_press(PreferencesMessage::Out(PreferencesOutput::RestartServer)),
-                ),
             );
 
         let authorized_users_section = self
@@ -887,6 +923,8 @@ impl PreferencesPage {
         let mut items: Vec<Element<'_, PreferencesMessage>> = vec![
             widget::text::title2(fl!("preferences-server-section")).into(),
             server_section.into(),
+            network_section.into(),
+            tls_section.into(),
             authorized_users_section.into(),
         ];
 
