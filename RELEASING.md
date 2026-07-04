@@ -9,13 +9,13 @@ marked _(decide)_ are open for discussion; refine this file as the process settl
   `read-flow` desktop application.
 - Read Flow follows [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`.
   While pre-1.0, breaking changes may land in `MINOR` releases.
-- _(decide)_ **Single vs. per-crate versions.** Today each workspace crate has its own
-  `version` (all `0.1.0`, except the PWA at `0.0.1`). Options to brainstorm:
-  1. Unify everything under one version via `[workspace.package] version = "..."` and
-     `version.workspace = true` in each crate (simplest to reason about).
-  2. Keep library crates (`read-flow-core`, `provider`, `epub`) independently versioned for
-     potential separate publishing, and only the product version is tagged.
-  For 0.1.0 we align every crate (incl. the PWA) to `0.1.0` and tag `v0.1.0`.
+- **Unified version.** All workspace crates share a single version through
+  `[workspace.package] version` in the root `Cargo.toml`; each crate sets
+  `version.workspace = true`. Bump the version in **one place** (root `Cargo.toml`).
+- Two values are **not** workspace-inheritable and must be bumped by hand to match:
+  - `pwa/package.json` `version`.
+  - `cosmic/Cargo.toml` `[package.metadata.bundle] version` and the `CFBundleVersion` /
+    `CFBundleShortVersionString` strings in the `justfile` macOS bundle recipe.
 
 ## Release channels / artifacts
 
@@ -35,9 +35,10 @@ For each release we intend to publish, from a Git tag:
 1. Make sure `master` is green in CI and the working tree is clean.
 2. Decide the new version `X.Y.Z`.
 3. Bump versions:
-   - `read-flow` (`cosmic/Cargo.toml`) and the other crates per the versioning decision above.
-   - `pwa/package.json`.
-   - macOS bundle version strings are read from the crate version in the `justfile` — verify.
+   - `[workspace.package] version` in the root `Cargo.toml` (covers all crates).
+   - `pwa/package.json` `version`.
+   - `cosmic/Cargo.toml` `[package.metadata.bundle] version` and the `CFBundle*` strings in the
+     `justfile` macOS bundle recipe.
 4. Update **[CHANGELOG.md](CHANGELOG.md)**:
    - Move `[Unreleased]` entries under a new `## [X.Y.Z] - YYYY-MM-DD` heading.
    - Add fresh empty `Added / Changed / Fixed` subsections to `[Unreleased]`.
@@ -75,7 +76,7 @@ git push github vX.Y.Z          # pushing the tag triggers the release workflow
 
 ## Open questions to iterate on
 
-- [ ] Version unification (`[workspace.package]`) — yes/no.
+- [x] Version unification (`[workspace.package]`) — **done**; single version in root `Cargo.toml`.
 - [ ] macOS signing & notarization.
 - [ ] Linux artifact set (deb only, or + AppImage/tarball/Flatpak).
 - [ ] PWA hosting and its release cadence relative to the app.
