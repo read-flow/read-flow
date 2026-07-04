@@ -211,6 +211,7 @@ settings-page-title = Paramètres de la bibliothèque
 settings-remove-directory = Supprimer le répertoire
 settings-remove-directory-tag = Supprimer l'étiquette
 settings-remove-private-tag = Supprimer le tag privé
+settings-revert = Annuler les modifications
 settings-save = Enregistrer les paramètres
 settings-save-directory = Enregistrer le répertoire
 settings-save-error = Erreur lors de l'enregistrement des paramètres

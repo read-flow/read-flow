@@ -181,6 +181,7 @@ pub enum PreferencesMessage {
     Save,
     SaveComplete,
     SaveError(String),
+    Revert,
     ToggleDocumentType(DocumentType, bool),
     ToggleAllDocumentTypes(bool),
     AddDirectory,
@@ -326,6 +327,12 @@ impl PreferencesPage {
             widget::button::standard(fl!("settings-save"))
         };
 
+        let revert_button = if self.is_modified() && self.can_be_saved() {
+            widget::button::standard(fl!("settings-revert")).on_press(PreferencesMessage::Revert)
+        } else {
+            widget::button::standard(fl!("settings-revert"))
+        };
+
         let save_status = match &self.save_state {
             SaveState::Idle => widget::text(""),
             SaveState::Saving => widget::text(fl!("settings-saving")),
@@ -337,6 +344,7 @@ impl PreferencesPage {
 
         widget::Row::new()
             .push(save_button)
+            .push(revert_button)
             .push(widget::space::horizontal())
             .push(save_status)
             .spacing(space_m)
@@ -1475,6 +1483,15 @@ impl Page for PreferencesPage {
             PreferencesMessage::SaveError(error) => {
                 self.save_state = SaveState::Error(error);
                 Task::none()
+            }
+            PreferencesMessage::Revert => {
+                self.settings = (*self.original_settings).clone();
+                self.save_state = SaveState::Idle;
+                self.tag_editor
+                    .update(TagEditorMessage::SetTags(
+                        self.original_settings.ui.private_tags().to_vec(),
+                    ))
+                    .map(ActionExt::map_into)
             }
             PreferencesMessage::AddAuthorizedUser => {
                 let (authorized_user_form, init) = AuthorizedUserForm::new(None, vec![]);

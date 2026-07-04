@@ -212,6 +212,7 @@ settings-page-title = Bibliotheekinstellingen
 settings-remove-directory = Map Verwijderen
 settings-remove-directory-tag = Tag verwijderen
 settings-remove-private-tag = Privé tag verwijderen
+settings-revert = Wijzigingen Terugdraaien
 settings-save = Instellingen Opslaan
 settings-save-directory = Map Opslaan
 settings-save-error = Fout bij opslaan van instellingen

@@ -214,6 +214,7 @@ settings-page-title = Library Settings
 settings-remove-directory = Remove Directory
 settings-remove-directory-tag = Remove tag
 settings-remove-private-tag = Remove private tag
+settings-revert = Revert
 settings-save = Save Settings
 settings-save-directory = Save Directory
 settings-save-error = Error saving settings
