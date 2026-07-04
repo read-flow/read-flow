@@ -182,6 +182,12 @@ pub struct ScanSettings {
     pub extensions: Vec<DocumentType>,
     #[serde(default = "default_concurrency")]
     pub concurrency: usize,
+    /// Extract all wanted members of a tar-based archive in one decompression
+    /// pass (spooled to a temp dir) instead of re-decompressing the archive
+    /// for every member. Costs temp disk space up to the uncompressed size of
+    /// the archive's documents.
+    #[serde(default = "default_tar_single_pass")]
+    pub tar_single_pass: bool,
 }
 
 fn default_extensions() -> Vec<DocumentType> {
@@ -193,6 +199,10 @@ fn default_concurrency() -> usize {
     16
 }
 
+fn default_tar_single_pass() -> bool {
+    true
+}
+
 impl Default for ScanSettings {
     fn default() -> Self {
         Self {
@@ -201,6 +211,7 @@ impl Default for ScanSettings {
             directories: Default::default(),
             extensions: default_extensions(),
             concurrency: default_concurrency(),
+            tar_single_pass: default_tar_single_pass(),
         }
     }
 }
@@ -486,5 +497,22 @@ mod tests {
         let toml = r#"dry_run = false"#;
         let settings: ScanSettings = toml::from_str(toml).unwrap();
         Assert::that(settings.concurrency).is(16usize);
+    }
+
+    #[test]
+    fn tar_single_pass_deserialized_from_toml() {
+        let toml = r#"
+            dry_run = false
+            tar_single_pass = false
+        "#;
+        let settings: ScanSettings = toml::from_str(toml).unwrap();
+        Assert::that(settings.tar_single_pass).is(false);
+    }
+
+    #[test]
+    fn missing_tar_single_pass_in_toml_defaults_to_true() {
+        let toml = r#"dry_run = false"#;
+        let settings: ScanSettings = toml::from_str(toml).unwrap();
+        Assert::that(settings.tar_single_pass).is(true);
     }
 }

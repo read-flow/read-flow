@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use super::archive::SpooledFile;
+
 /// Sent from Stage 1 (traversal) to Stage 2 (fingerprinting) over ch1.
 pub struct TraversalItem {
     /// Filesystem path; the archive path when `archive_inner_path` is set.
@@ -7,6 +9,9 @@ pub struct TraversalItem {
     pub tags: Vec<String>,
     /// Path inside the archive at `path`, for archive members.
     pub archive_inner_path: Option<String>,
+    /// Pre-extracted copy of the archive member (single-pass tar spooling).
+    /// When set, later stages read this file instead of re-extracting.
+    pub spool: Option<SpooledFile>,
 }
 
 /// Sent from Stage 2 (fingerprinting) to Stage 3 (DB writer) over ch2.
@@ -19,6 +24,8 @@ pub struct ScannedFile {
     pub tags: Vec<String>,
     /// Path inside the archive at `path`, for archive members.
     pub archive_inner_path: Option<String>,
+    /// Pre-extracted copy of the archive member (single-pass tar spooling).
+    pub spool: Option<SpooledFile>,
 }
 
 /// Progress events emitted by the scanner to the caller.

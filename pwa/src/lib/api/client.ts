@@ -95,6 +95,8 @@ export interface ServerSettingsDto {
 	extensions: string[];
 	dry_run: boolean;
 	concurrency: number;
+	/** Single-pass extraction of tar archive members during scans. */
+	tar_single_pass: boolean;
 	private_mode: boolean;
 	private_tags: string[];
 	/** Origins allowed by CORS (empty = any). */

@@ -1351,6 +1351,9 @@ struct ServerSettingsDto {
     extensions: Vec<DocumentType>,
     dry_run: bool,
     concurrency: usize,
+    /// Single-pass extraction of tar archive members during scans.
+    #[serde(default = "default_tar_single_pass_dto")]
+    tar_single_pass: bool,
     private_mode: bool,
     private_tags: Vec<String>,
     /// Origins allowed by CORS (empty = any).
@@ -1361,12 +1364,17 @@ struct ServerSettingsDto {
     max_upload_bytes: Option<u64>,
 }
 
+fn default_tar_single_pass_dto() -> bool {
+    true
+}
+
 fn server_settings_dto(settings: &Settings) -> ServerSettingsDto {
     ServerSettingsDto {
         database_url: settings.database.url().display().to_string(),
         extensions: settings.scan.extensions.clone(),
         dry_run: settings.scan.dry_run,
         concurrency: settings.scan.concurrency,
+        tar_single_pass: settings.scan.tar_single_pass,
         private_mode: settings.ui.private_mode(),
         private_tags: settings.ui.private_tags().to_vec(),
         allowed_origins: settings.server.allowed_origins.clone(),
@@ -1398,6 +1406,7 @@ async fn put_settings(
             s.scan.extensions = dto.extensions;
             s.scan.dry_run = dto.dry_run;
             s.scan.concurrency = dto.concurrency;
+            s.scan.tar_single_pass = dto.tar_single_pass;
             s.ui.set_private_mode(dto.private_mode);
             s.ui.set_private_tags(dto.private_tags);
             s.server.allowed_origins = dto.allowed_origins;

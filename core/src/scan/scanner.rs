@@ -92,6 +92,7 @@ async fn stage1_traversal(
                 path: root,
                 tags,
                 archive_inner_path: None,
+                spool: None,
             })
             .await
             .is_ok()
@@ -141,20 +142,53 @@ async fn emit_archive_members(
         }
     };
 
-    for member in members {
-        if has_hidden_component(&member)
-            || !extension_matches(Path::new(&member), &settings.extensions)
-        {
-            continue;
-        }
-        if settings.dry_run {
+    let matching: Vec<String> = members
+        .into_iter()
+        .filter(|member| {
+            !has_hidden_component(member)
+                && extension_matches(Path::new(member), &settings.extensions)
+        })
+        .collect();
+
+    if settings.dry_run {
+        for member in &matching {
             tracing::info!("[dry_run] would scan: {archive_path:?}::{member}");
             let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
-            continue;
         }
+        return true;
+    }
+
+    // Tar archives have no random access: extracting members one by one
+    // re-decompresses the stream from the start every time (O(n²)). With
+    // single-pass extraction enabled, spool all matching members to a temp
+    // dir in one sweep; later stages read the spooled copies instead.
+    let mut spooled = if settings.tar_single_pass && archive::is_tar_archive_path(archive_path) {
+        let path = archive_path.to_path_buf();
+        let wanted: std::collections::HashSet<String> = matching.iter().cloned().collect();
+        match tokio::task::spawn_blocking(move || archive::spool_tar_archive(&path, &wanted)).await
+        {
+            Ok(Ok(spooled)) => spooled,
+            Ok(Err(e)) => {
+                tracing::warn!(
+                    "single-pass spooling failed for {archive_path:?}, \
+                     falling back to per-member extraction: {e}"
+                );
+                Default::default()
+            }
+            Err(e) => {
+                tracing::warn!("spooling task failed for {archive_path:?}: {e}");
+                Default::default()
+            }
+        }
+    } else {
+        Default::default()
+    };
+
+    for member in matching {
         let item = TraversalItem {
             path: archive_path.to_path_buf(),
             tags: tags.clone(),
+            spool: spooled.remove(&member),
             archive_inner_path: Some(member),
         };
         if tx.send(item).await.is_err() {
@@ -256,6 +290,7 @@ fn visit_dir<'a>(
                     path,
                     tags,
                     archive_inner_path: None,
+                    spool: None,
                 };
                 if tx.send(item).await.is_err() {
                     // Receiver dropped — pipeline shutting down.
@@ -324,11 +359,13 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Fingerprint an archive member: extract its bytes and hash them.
-/// `size` is the uncompressed member size.
+/// `size` is the uncompressed member size. Reads the spooled copy when
+/// present instead of re-extracting from the archive.
 async fn fingerprint_archive_member(
     archive_path: PathBuf,
     inner: String,
     tags: Vec<String>,
+    spool: Option<archive::SpooledFile>,
 ) -> Result<ScannedFile, (PathBuf, std::io::Error)> {
     let extension = Path::new(&inner)
         .extension()
@@ -336,13 +373,18 @@ async fn fingerprint_archive_member(
         .unwrap_or("")
         .to_ascii_lowercase();
 
-    let bytes = {
-        let path = archive_path.clone();
-        let member = inner.clone();
-        tokio::task::spawn_blocking(move || archive::extract_archive_member(&path, &member))
+    let bytes = match &spool {
+        Some(spooled) => tokio::fs::read(&spooled.path)
             .await
-            .map_err(|e| (archive_path.clone(), std::io::Error::other(e)))?
-            .map_err(|e| (archive_path.clone(), e))?
+            .map_err(|e| (archive_path.clone(), e))?,
+        None => {
+            let path = archive_path.clone();
+            let member = inner.clone();
+            tokio::task::spawn_blocking(move || archive::extract_archive_member(&path, &member))
+                .await
+                .map_err(|e| (archive_path.clone(), std::io::Error::other(e)))?
+                .map_err(|e| (archive_path.clone(), e))?
+        }
     };
 
     Ok(ScannedFile {
@@ -352,6 +394,7 @@ async fn fingerprint_archive_member(
         fingerprint: sha256_hex(&bytes),
         tags,
         archive_inner_path: Some(inner),
+        spool,
     })
 }
 
@@ -360,7 +403,7 @@ async fn fingerprint_file(item: TraversalItem) -> Result<ScannedFile, (PathBuf, 
     use tokio::io::AsyncReadExt as _;
 
     if let Some(inner) = item.archive_inner_path {
-        return fingerprint_archive_member(item.path, inner, item.tags).await;
+        return fingerprint_archive_member(item.path, inner, item.tags, item.spool).await;
     }
 
     let extension = item
@@ -404,6 +447,7 @@ async fn fingerprint_file(item: TraversalItem) -> Result<ScannedFile, (PathBuf, 
         fingerprint,
         tags: item.tags,
         archive_inner_path: None,
+        spool: None,
     })
 }
 
@@ -509,10 +553,9 @@ async fn flush_batch(
         }
     };
 
-    // Collect (fingerprint, path, extension, archive_inner_path) for files that
-    // are new or updated, so we can extract their metadata after the
-    // transaction commits.
-    let mut needs_metadata: Vec<(String, PathBuf, String, Option<String>)> = Vec::new();
+    // Collect the files that are new or updated, so we can extract their
+    // metadata after the transaction commits.
+    let mut needs_metadata: Vec<EnrichTask> = Vec::new();
 
     for file in items {
         let fs_path = file.path.to_string_lossy().into_owned();
@@ -538,12 +581,13 @@ async fn flush_batch(
         {
             Ok((was_new, was_updated)) => {
                 if was_new || was_updated {
-                    needs_metadata.push((
-                        file.fingerprint.clone(),
-                        file.path.clone(),
-                        file.extension.clone(),
-                        file.archive_inner_path.clone(),
-                    ));
+                    needs_metadata.push(EnrichTask {
+                        fingerprint: file.fingerprint.clone(),
+                        path: file.path.clone(),
+                        extension: file.extension.clone(),
+                        archive_inner: file.archive_inner_path.clone(),
+                        spool: file.spool.clone(),
+                    });
                 }
                 *processed += 1;
                 let _ = progress_tx
@@ -576,30 +620,39 @@ async fn flush_batch(
     // CPU-bound extraction (MuPDF et al.) dominates scan time, so files are
     // enriched concurrently rather than one at a time.
     futures::stream::iter(needs_metadata)
-        .for_each_concurrent(
-            concurrency.max(1),
-            |(fingerprint, path, extension, inner)| {
-                enrich_file(pool, fingerprint, path, extension, inner)
-            },
-        )
+        .for_each_concurrent(concurrency.max(1), |task| enrich_file(pool, task))
         .await;
 }
 
-/// Extract metadata + cover for one new/updated file and persist both.
-async fn enrich_file(
-    pool: &sqlx::SqlitePool,
+/// A new/updated file queued for metadata + cover extraction after commit.
+struct EnrichTask {
     fingerprint: String,
+    /// Filesystem path; the archive path when `archive_inner` is set.
     path: PathBuf,
     extension: String,
     archive_inner: Option<String>,
-) {
-    // Archive members are extracted to a temp file so the metadata and
-    // cover extractors can read them like any regular file. The guard
-    // keeps the temp file alive until extraction is done.
-    let (path, _tmp_guard) = match archive_inner {
-        Some(inner) => {
+    /// Pre-extracted copy of the archive member (single-pass tar spooling).
+    spool: Option<archive::SpooledFile>,
+}
+
+/// Extract metadata + cover for one new/updated file and persist both.
+async fn enrich_file(pool: &sqlx::SqlitePool, task: EnrichTask) {
+    let EnrichTask {
+        fingerprint,
+        path,
+        extension,
+        archive_inner,
+        spool,
+    } = task;
+    // Archive members are read from their spooled copy when present;
+    // otherwise they are extracted to a temp file so the metadata and cover
+    // extractors can read them like any regular file. The guards keep the
+    // local copy alive until extraction is done.
+    let (path, _spool_guard, _tmp_guard) = match (archive_inner, spool) {
+        (Some(_), Some(spooled)) => (spooled.path.clone(), Some(spooled), None),
+        (Some(inner), None) => {
             match extract_member_to_temp_file(path.clone(), inner, extension.clone()).await {
-                Ok(tmp) => (tmp.path().to_path_buf(), Some(tmp)),
+                Ok(tmp) => (tmp.path().to_path_buf(), None, Some(tmp)),
                 Err(e) => {
                     tracing::warn!(
                         "failed to extract archive member for metadata from {path:?}: {e}"
@@ -608,7 +661,7 @@ async fn enrich_file(
                 }
             }
         }
-        None => (path, None),
+        (None, _) => (path, None, None),
     };
     let path_meta = path.clone();
     let path_cover = path.clone();
@@ -996,6 +1049,87 @@ mod tests {
         assert_eq!(items[0].path, zip);
     }
 
+    fn make_tar_gz(dir: &Path, name: &str, members: &[(&str, &[u8])]) -> PathBuf {
+        let path = dir.join(name);
+        let file = fs::File::create(&path).unwrap();
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+        for (member, data) in members {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder.append_data(&mut header, member, *data).unwrap();
+        }
+        builder.into_inner().unwrap().finish().unwrap();
+        path
+    }
+
+    #[tokio::test]
+    async fn traversal_spools_tar_members_when_single_pass_enabled() {
+        let tmp = TempDir::new().unwrap();
+        make_tar_gz(
+            tmp.path(),
+            "lib.tar.gz",
+            &[("a.epub", b"epub-a"), ("b.pdf", b"pdf-b")],
+        );
+
+        let items = collect_traversal(tmp.path().to_path_buf(), default_settings()).await;
+        assert_eq!(items.len(), 2);
+        for item in &items {
+            let spool = item.spool.as_ref().expect("tar member must be spooled");
+            assert!(spool.path.exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn traversal_does_not_spool_when_single_pass_disabled() {
+        let tmp = TempDir::new().unwrap();
+        make_tar_gz(tmp.path(), "lib.tar.gz", &[("a.epub", b"epub-a")]);
+
+        let settings = ScanSettings {
+            tar_single_pass: false,
+            ..ScanSettings::default()
+        };
+        let items = collect_traversal(tmp.path().to_path_buf(), settings).await;
+        assert_eq!(items.len(), 1);
+        assert!(items[0].spool.is_none());
+    }
+
+    #[tokio::test]
+    async fn traversal_does_not_spool_zip_members() {
+        let tmp = TempDir::new().unwrap();
+        make_zip(tmp.path(), "lib.zip", &[("a.epub", b"epub-a")]);
+
+        let items = collect_traversal(tmp.path().to_path_buf(), default_settings()).await;
+        assert_eq!(items.len(), 1);
+        assert!(items[0].spool.is_none(), "zip has random access, no spool");
+    }
+
+    #[tokio::test]
+    async fn fingerprint_spooled_member_matches_direct_extraction() {
+        use sha2::Digest as _;
+
+        let tmp = TempDir::new().unwrap();
+        let content: &[u8] = b"tar member content";
+        make_tar_gz(tmp.path(), "lib.tar.gz", &[("books/novel.epub", content)]);
+
+        let items = collect_traversal(tmp.path().to_path_buf(), default_settings()).await;
+        assert_eq!(items.len(), 1);
+        assert!(items[0].spool.is_some());
+
+        let scanned = fingerprint_file(items.into_iter().next().unwrap())
+            .await
+            .unwrap();
+        let expected: String = sha2::Sha256::digest(content)
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        assert_eq!(scanned.fingerprint, expected);
+        assert_eq!(scanned.size, content.len() as i64);
+        assert!(scanned.spool.is_some(), "spool must flow to stage 3");
+    }
+
     #[tokio::test]
     async fn fingerprint_archive_member_hashes_member_bytes() {
         use sha2::Digest as _;
@@ -1008,6 +1142,7 @@ mod tests {
             path: zip.clone(),
             tags: vec!["fiction".into()],
             archive_inner_path: Some("books/novel.epub".into()),
+            spool: None,
         };
         let scanned = fingerprint_file(item).await.unwrap();
 
@@ -1036,6 +1171,7 @@ mod tests {
             path: path.clone(),
             tags: vec![],
             archive_inner_path: None,
+            spool: None,
         };
         let scanned = fingerprint_file(item).await.unwrap();
 
@@ -1056,6 +1192,7 @@ mod tests {
             path,
             tags: vec![],
             archive_inner_path: None,
+            spool: None,
         };
         let scanned = fingerprint_file(item).await.unwrap();
         assert_eq!(scanned.extension, "pdf");
@@ -1101,6 +1238,7 @@ mod tests {
             fingerprint: fp.into(),
             tags: tags.into_iter().map(String::from).collect(),
             archive_inner_path: None,
+            spool: None,
         }
     }
 
@@ -1290,6 +1428,7 @@ mod tests {
             fingerprint: "fp-zip1".into(),
             tags: vec![],
             archive_inner_path: Some("books/novel.epub".into()),
+            spool: None,
         }];
         flush_batch(
             &mut batch,

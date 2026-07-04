@@ -153,6 +153,8 @@ pub enum PreferencesMessage {
 
     // settings (TOML)
     ToggleDryRun(bool),
+    ToggleTarSinglePass(bool),
+    ScanConcurrencyChanged(String),
     TogglePrivateMode(bool),
     TagEditor(TagEditorMessage),
     DirectorySettingsForm(DirectorySettingsFormMessage),
@@ -518,6 +520,23 @@ impl PreferencesPage {
                     .description(fl!("settings-scan-dry-run-description"))
                     .icon(widget::icon::from_name("system-run-symbolic").size(ICON_SIZE))
                     .toggler(self.settings.scan.dry_run, PreferencesMessage::ToggleDryRun),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-scan-concurrency"))
+                    .description(fl!("settings-scan-concurrency-description"))
+                    .control(
+                        widget::text_input("16", self.settings.scan.concurrency.to_string())
+                            .on_input(PreferencesMessage::ScanConcurrencyChanged)
+                            .width(Length::Fixed(120.0)),
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-scan-tar-single-pass"))
+                    .description(fl!("settings-scan-tar-single-pass-description"))
+                    .toggler(
+                        self.settings.scan.tar_single_pass,
+                        PreferencesMessage::ToggleTarSinglePass,
+                    ),
             );
 
         let all_selected = DocumentType::all()
@@ -1071,6 +1090,21 @@ impl Page for PreferencesPage {
             PreferencesMessage::ToggleDryRun(value) => {
                 self.settings.scan.set_dry_run(value);
                 self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            PreferencesMessage::ToggleTarSinglePass(value) => {
+                self.settings.scan.tar_single_pass = value;
+                self.save_state = SaveState::Idle;
+                Task::none()
+            }
+            PreferencesMessage::ScanConcurrencyChanged(value) => {
+                if let Ok(concurrency) = value.trim().parse::<usize>()
+                    && concurrency >= 1
+                {
+                    self.settings.scan.concurrency = concurrency;
+                    self.save_state = SaveState::Idle;
+                }
+                // Ignore non-numeric input (keeps the previous value).
                 Task::none()
             }
             PreferencesMessage::TogglePrivateMode(value) => {

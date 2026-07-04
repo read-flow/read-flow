@@ -486,6 +486,10 @@
 						<input id="dry" type="checkbox" bind:checked={settings.dry_run} class="accent-slate-900 dark:accent-slate-100" />
 					</div>
 					<div class="flex items-center justify-between px-4 py-3">
+						<label for="tarsp" class="text-slate-500 dark:text-slate-400">Single-pass tar extraction</label>
+						<input id="tarsp" type="checkbox" bind:checked={settings.tar_single_pass} class="accent-slate-900 dark:accent-slate-100" />
+					</div>
+					<div class="flex items-center justify-between px-4 py-3">
 						<label for="pm" class="text-slate-500 dark:text-slate-400">Private mode</label>
 						<input id="pm" type="checkbox" bind:checked={settings.private_mode} class="accent-slate-900 dark:accent-slate-100" />
 					</div>
