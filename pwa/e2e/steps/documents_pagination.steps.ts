@@ -16,7 +16,7 @@ const SLOW_LOAD_TIMEOUT = 15_000;
 Then(
 	'{string} appears on the first page of the document list',
 	async function (this: BddWorld, title: string) {
-		await this.page.goto(`${this.baseUrl}/`);
+		await this.page.goto(`${this.baseUrl}/library`);
 		await expect(this.page.getByText(title, { exact: true })).toBeVisible({
 			timeout: SLOW_LOAD_TIMEOUT,
 		});

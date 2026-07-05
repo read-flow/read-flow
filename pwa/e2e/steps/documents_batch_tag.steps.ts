@@ -9,7 +9,7 @@ const SLOW_LOAD_TIMEOUT = 15_000;
 When(
 	'I batch-add tag {string} to the selected documents',
 	async function (this: BddWorld, tag: string) {
-		await this.page.goto(`${this.baseUrl}/`);
+		await this.page.goto(`${this.baseUrl}/library`);
 
 		// Wait for documents to load (source must already be registered by the seed step).
 		await expect(this.page.getByText('BDD Sample Book', { exact: true })).toBeVisible({

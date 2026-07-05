@@ -11,16 +11,21 @@ let backend: BackendHandle;
 let preview: PreviewHandle;
 
 BeforeAll(async function () {
-	[backend, preview] = await Promise.all([spawnBackend(), spawnPreview()]);
+	preview = await spawnPreview();
 	browser = await chromium.launch();
 });
 
 AfterAll(async function () {
 	await browser?.close();
-	await Promise.all([backend?.stop(), preview?.stop()]);
+	await preview?.stop();
 });
 
 Before(async function (this: BddWorld) {
+	// Fresh backend per scenario: scenarios mutate server state (rename titles,
+	// attach formats, delete files), so sharing one DB leaks state between them.
+	// The browser context is fresh too, so the PWA's IndexedDB starts empty and
+	// each scenario registers its source(s) itself.
+	backend = await spawnBackend();
 	const fixtures: SharedFixtures = { browser, backend, preview };
 	this.fixtures = fixtures;
 	this.context = await browser.newContext();
@@ -29,4 +34,5 @@ Before(async function (this: BddWorld) {
 
 After(async function (this: BddWorld) {
 	await this.context?.close();
+	await backend?.stop();
 });

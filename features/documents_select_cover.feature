@@ -9,4 +9,5 @@ Feature: Document cover selection
     Given a read-flow server is running with user "alice" and passphrase "correct-horse"
     And a document with a cover image has been added to the library
     When I set the document's cover to its file's cover image
+    And I request the document's cover
     Then a cover image is returned

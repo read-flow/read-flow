@@ -26,5 +26,7 @@ When('I add the tag {string} to the document', async function (this: BddWorld, t
 });
 
 Then("{string} appears in the document's tag list", async function (this: BddWorld, tag: string) {
-	await expect(this.page.getByText(tag, { exact: true })).toBeVisible();
+	// .first(): on the library page the tag shows up both as a filter chip and
+	// as a pill on the document row — either proves the tag was applied.
+	await expect(this.page.getByText(tag, { exact: true }).first()).toBeVisible();
 });

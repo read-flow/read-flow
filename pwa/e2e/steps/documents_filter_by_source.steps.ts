@@ -35,26 +35,18 @@ async function ensureSourceRegistered(world: BddWorld, name: string): Promise<vo
 When(
 	'I filter documents by source {string}',
 	async function (this: BddWorld, sourceName: string) {
-		// The source filter `<select>` only renders when at least 2 sources are registered.
-		// Register a second dummy source so the filter becomes visible, then select by label.
-		const DUMMY_SOURCE = 'BDD Source Filter Dummy';
-		await ensureSourceRegistered(this, 'BDD Backend');
-		await this.page.goto(`${this.baseUrl}/settings/sources`);
-		if (!(await this.page.getByText(DUMMY_SOURCE, { exact: true }).isVisible())) {
-			await this.page.getByRole('button', { name: 'Add source' }).click();
-			await this.page.getByLabel('Name').fill(DUMMY_SOURCE);
-			await this.page.getByLabel('Base URL').fill('http://localhost:1');
-			await this.page.getByLabel('User ID').fill('dummy');
-			await this.page.getByLabel('Passphrase').fill('dummy');
-			await this.page.getByRole('button', { name: 'Add', exact: true }).click();
-			await expect(this.page.getByText(DUMMY_SOURCE, { exact: true })).toBeVisible({
-				timeout: SLOW_LOAD_TIMEOUT,
-			});
-		}
-		await this.page.goto(`${this.baseUrl}/`);
+		// The source filter `<select>` only renders when at least 2 sources are
+		// registered, and adding a source verifies connectivity — an unreachable
+		// dummy is rejected. Register a second *real* source (same backend, other
+		// name) purely so the filter becomes visible.
+		await ensureSourceRegistered(this, 'BDD Second Source');
+		await this.page.goto(`${this.baseUrl}/library`);
 		const filterSelect = this.page.getByLabel('Filter by source');
 		await expect(filterSelect).toBeVisible({ timeout: SLOW_LOAD_TIMEOUT });
-		await filterSelect.selectOption({ label: sourceName });
+		// The PWA has no local library — "Local" (the COSMIC surface's own
+		// collection) maps to the seeded backend source, "Home Server".
+		const label = sourceName === 'Local' ? 'Home Server' : sourceName;
+		await filterSelect.selectOption({ label });
 	},
 );
 

@@ -58,8 +58,23 @@ Given(
 );
 
 When("I request the document's cover", async function (this: BddWorld) {
-	// Navigate to the document detail page where the cover is displayed.
 	const fp = this.currentDocumentFingerprint ?? this.currentDocumentGuid ?? '';
+
+	// Cover extraction runs asynchronously after upload; the page only renders
+	// a CoverImage when the fetched file already has has_cover=true, and it
+	// doesn't re-poll. Wait server-side for extraction to finish first.
+	const { baseUrl, user, password } = this.fixtures.backend;
+	const auth = basicAuthHeader(user, password);
+	const deadline = Date.now() + SLOW_LOAD_TIMEOUT;
+	for (;;) {
+		const res = await fetch(`${baseUrl}/files`, { headers: { Authorization: auth } });
+		const files = (await res.json()) as Array<{ fingerprint: string; has_cover?: boolean }>;
+		if (files.some((f) => f.fingerprint === fp && f.has_cover)) break;
+		if (Date.now() > deadline) throw new Error(`cover for ${fp} was never extracted`);
+		await new Promise((resolve) => setTimeout(resolve, 200));
+	}
+
+	// Navigate to the document detail page where the cover is displayed.
 	await this.page.goto(`${this.baseUrl}/documents/${fp}`);
 	await expect(this.page.getByRole('heading', { level: 1 })).toBeVisible({
 		timeout: SLOW_LOAD_TIMEOUT,
@@ -67,7 +82,9 @@ When("I request the document's cover", async function (this: BddWorld) {
 });
 
 Then('a cover image is returned', async function (this: BddWorld) {
-	// DocumentDetail renders a CoverImage (<img class="…object-cover…">) when has_cover is true.
-	const coverImg = this.page.locator('img.object-cover');
+	// DocumentDetail renders a CoverImage (<img class="…object-cover…">) when
+	// has_cover is true — the hero cover first, then per-format thumbnails, so
+	// take the first match.
+	const coverImg = this.page.locator('img.object-cover').first();
 	await expect(coverImg).toBeVisible({ timeout: SLOW_LOAD_TIMEOUT });
 });

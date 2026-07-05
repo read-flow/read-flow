@@ -9,7 +9,9 @@ Given('a read-flow server is running', async function (this: BddWorld) {
 });
 
 When('I open the app', async function (this: BddWorld) {
-	await this.page.goto(this.baseUrl);
+	// The app root is a dashboard; the library page the smoke asserts on
+	// lives at /library.
+	await this.page.goto(`${this.baseUrl}/library`);
 });
 
 Then('I see the library heading', async function (this: BddWorld) {

@@ -360,6 +360,10 @@
 		onclick={() => (formatPickEntry = null)}
 	>
 		<div
+			role="dialog"
+			aria-modal="true"
+			aria-label="Choose format"
+			tabindex="-1"
 			class="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6 w-80 max-w-[90vw]"
 			onclick={(e) => e.stopPropagation()}
 		>

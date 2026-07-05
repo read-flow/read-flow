@@ -134,7 +134,6 @@ export async function updateReadingStatus(
 	fingerprint: string,
 	status: ReadingStatus,
 ): Promise<void> {
-	const statusNum = STATUS_LABELS.indexOf(status);
 	const sources = await db.sources.orderBy('order').toArray();
 	await db.readingState
 		.where('fingerprint')
@@ -143,7 +142,7 @@ export async function updateReadingStatus(
 	await Promise.allSettled(
 		sources
 			.filter((s) => s.id !== undefined && sourceGuids[s.id as number] !== undefined)
-			.map((s) => new ReadFlowClient(s).updateReadingStatus(fingerprint, statusNum)),
+			.map((s) => new ReadFlowClient(s).updateReadingStatus(fingerprint, status)),
 	);
 }
 
