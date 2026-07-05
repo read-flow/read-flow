@@ -36,6 +36,7 @@
 	// ── Document & PDF state ───────────────────────────────────────────────────
 	let doc = $state<AggregatedFile | null>(null);
 	let pdfDoc = $state<PDFDocumentProxy | null>(null);
+	let loadingTask: ReturnType<typeof pdfjsLib.getDocument> | null = null;
 	let currentPage = $state(1);
 	let totalPages = $state(0);
 	let userScale = $state(1.0); // multiplier on top of fit-width
@@ -266,7 +267,8 @@
 		try {
 			const blob = await downloadFileFromSources(doc.sourceGuids, fileName);
 			const data = await blob.arrayBuffer();
-			pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+			loadingTask = pdfjsLib.getDocument({ data });
+			pdfDoc = await loadingTask.promise;
 			totalPages = pdfDoc.numPages;
 			currentPage = clamp(startPage, 1, totalPages);
 			isLoading = false;
@@ -307,7 +309,8 @@
 		if (resizeTimer) clearTimeout(resizeTimer);
 		resizeObserver?.disconnect();
 		pinchAbortController?.abort();
-		pdfDoc?.destroy();
+		// pdfjs 6: destroy() lives on the loading task, not the document proxy
+		void loadingTask?.destroy();
 	});
 </script>
 

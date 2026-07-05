@@ -24,7 +24,11 @@ vi.mock('$lib/db', () => ({
 }));
 
 vi.mock('./client', () => ({
-	ReadFlowClient: mocks.MockReadFlowClient,
+	// Wrap in a constructible function: vitest no longer allows `new` on a
+	// vi.fn() whose implementations are arrow functions.
+	ReadFlowClient: function (this: unknown, ...args: unknown[]) {
+		return mocks.MockReadFlowClient(...args);
+	},
 }));
 
 import {
