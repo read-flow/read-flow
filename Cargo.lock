@@ -1313,7 +1313,7 @@ dependencies = [
 [[package]]
 name = "cosmic-golden"
 version = "0.5.0"
-source = "git+https://github.com/peterpaul/cosmic-golden-test.git?tag=0.5.0#9c9e22308b7cb4c20a5ac404bb07f0ba3dade71d"
+source = "git+https://github.com/peterpaul/cosmic-golden-test.git?rev=8bdf062#8bdf0622e33baf3f70978c0f56573d2d18601393"
 dependencies = [
  "cosmic-golden-macros",
  "futures",
@@ -1324,7 +1324,7 @@ dependencies = [
 [[package]]
 name = "cosmic-golden-macros"
 version = "0.5.0"
-source = "git+https://github.com/peterpaul/cosmic-golden-test.git?tag=0.5.0#9c9e22308b7cb4c20a5ac404bb07f0ba3dade71d"
+source = "git+https://github.com/peterpaul/cosmic-golden-test.git?rev=8bdf062#8bdf0622e33baf3f70978c0f56573d2d18601393"
 dependencies = [
  "proc-macro2",
  "quote",
