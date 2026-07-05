@@ -6,3 +6,6 @@
 /database.db-wal
 /target/
 /.idea/
+*.actual.png
+*.diff.png
+*.expected.png

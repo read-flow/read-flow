@@ -38,6 +38,24 @@ jobs:
         run: cargo clippy --workspace --all-targets
       - name: Tests
         run: cargo nextest run --workspace
+      - name: Collect golden test failures
+        if: failure()
+        run: |
+          find . -path ./target -prune -o -name '*.actual.png' -print | while read -r f; do
+            base="${f%.actual.png}"
+            [ -f "$base.png" ] && cp "$base.png" "$base.expected.png"
+          done
+      - name: Upload golden test failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-failures
+          path: |
+            **/snapshots/**/*.actual.png
+            **/snapshots/**/*.diff.png
+            **/snapshots/**/*.expected.png
+          if-no-files-found: ignore
+          retention-days: 14
 
   pwa:
     name: web app
