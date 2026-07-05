@@ -40,6 +40,7 @@ pub enum DirectoryAction {
     Ignore,
 }
 
+/// @feature: admin.scan_directories
 pub struct DirectorySettingsForm {
     document_provider: Arc<DocumentProvider>,
     /// Original settings, or `None` if this is a new entry

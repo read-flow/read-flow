@@ -421,6 +421,7 @@ impl PreferencesPage {
             .into()
     }
 
+    /// @feature: app.epub_viewer_choice
     fn view_section_appearance(&self) -> Vec<Element<'_, PreferencesMessage>> {
         let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
 
@@ -519,6 +520,8 @@ impl PreferencesPage {
         ]
     }
 
+    /// @feature: admin.scan_directories
+    /// @feature: admin.server_settings
     fn view_section_scanning(&self) -> Vec<Element<'_, PreferencesMessage>> {
         let scan_section = widget::settings::section()
             .title(fl!("preferences-scanning-section"))
@@ -636,6 +639,7 @@ impl PreferencesPage {
         items
     }
 
+    /// @feature: remotes.manage
     fn view_section_sources(&self) -> Vec<Element<'_, PreferencesMessage>> {
         let sources_section = match &self.remotes_state.state {
             LoadedState::New => settings::section()
@@ -690,6 +694,7 @@ impl PreferencesPage {
         items
     }
 
+    /// @feature: remotes.status
     fn view_source<'a>(
         &self,
         source: &'a Remote,
@@ -964,6 +969,7 @@ impl PreferencesPage {
         items
     }
 
+    /// @feature: remotes.private_mode
     fn view_section_privacy(&self) -> Vec<Element<'_, PreferencesMessage>> {
         let privacy_section = widget::settings::section()
             .title(fl!("preferences-privacy-section"))
