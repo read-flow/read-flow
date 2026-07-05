@@ -273,15 +273,18 @@ describe('ReadFlowClient — upsertReadingState', () => {
 });
 
 describe('ReadFlowClient — updateReadingStatus', () => {
-	it('PUTs status to /reading-state/:fp/status', async () => {
+	it('PUTs the status label to /reading-state/:fp/status', async () => {
 		const fetchSpy = routeFetch({});
 		vi.stubGlobal('fetch', fetchSpy);
 		const client = new ReadFlowClient(makeSource());
-		await client.updateReadingStatus('fp-1', 2);
+		await client.updateReadingStatus('fp-1', 'Read');
 		const [url, options] = apiCall(fetchSpy)!;
 		expect(url).toBe('http://localhost:8000/reading-state/fp-1/status');
 		expect(options.method).toBe('PUT');
-		expect(JSON.parse(options.body as string)).toEqual({ status: 2 });
+		// The endpoint deserializes into the ReadingStatus enum, which serde
+		// represents as the variant name — not the integer encoding used by
+		// /reading-state.
+		expect(JSON.parse(options.body as string)).toEqual({ status: 'Read' });
 	});
 });
 

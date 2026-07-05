@@ -58,7 +58,7 @@ Given('two documents have been added to the library', async function (this: BddW
 });
 
 When('I sort the documents by title ascending', async function (this: BddWorld) {
-	await this.page.goto(`${this.baseUrl}/`);
+	await this.page.goto(`${this.baseUrl}/library`);
 	// Wait for documents to appear.
 	await expect(this.page.getByText('BDD Sample Book', { exact: true })).toBeVisible({
 		timeout: SLOW_LOAD_TIMEOUT,

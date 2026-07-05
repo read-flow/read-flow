@@ -8,7 +8,7 @@ const SLOW_LOAD_TIMEOUT = 15_000;
 const MERGE_TIMEOUT = 20_000;
 
 When('I merge the two documents', async function (this: BddWorld) {
-	await this.page.goto(`${this.baseUrl}/`);
+	await this.page.goto(`${this.baseUrl}/library`);
 
 	// Wait for both documents to appear.
 	await expect(this.page.getByText('BDD Sample Book', { exact: true })).toBeVisible({
@@ -49,7 +49,7 @@ When('I merge the two documents', async function (this: BddWorld) {
 });
 
 Then('only one document remains in the library', async function (this: BddWorld) {
-	await this.page.goto(`${this.baseUrl}/`);
+	await this.page.goto(`${this.baseUrl}/library`);
 	// After the merge, navigate back and count document titles.
 	// We wait for one to appear and then assert the other is gone.
 	await expect(this.page.getByText('BDD Sample Book', { exact: true })).toBeVisible({

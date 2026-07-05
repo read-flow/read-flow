@@ -73,7 +73,7 @@ Given('a document has been added to the library', async function (this: BddWorld
 });
 
 Then('{string} appears in the library\'s list of documents', async function (this: BddWorld, title: string) {
-	await this.page.goto(`${this.baseUrl}/`);
+	await this.page.goto(`${this.baseUrl}/library`);
 	// The aggregator fetches documents from the newly-registered source
 	// asynchronously after navigation — same "give it room to load" margin as
 	// the slow-auth waits above, not a fixed UI animation.

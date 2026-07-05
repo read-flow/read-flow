@@ -313,7 +313,9 @@ export class ReadFlowClient {
 	}
 
 	// @feature: reading.status
-	async updateReadingStatus(fingerprint: string, status: number): Promise<void> {
+	async updateReadingStatus(fingerprint: string, status: ReadingStatus): Promise<void> {
+		// Unlike /reading-state (integer-encoded status), this endpoint
+		// deserializes the ReadingStatus enum — serde expects the variant name.
 		await this.requestVoid(`/reading-state/${fingerprint}/status`, {
 			method: 'PUT',
 			body: JSON.stringify({ status }),

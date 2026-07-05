@@ -85,7 +85,7 @@ Then(
 	async function (this: BddWorld) {
 		// Navigate to the document list and click the merged document row.
 		// The format picker dialog should appear because the document has > 0 otherFormats.
-		await this.page.goto(`${this.baseUrl}/`);
+		await this.page.goto(`${this.baseUrl}/library`);
 		// Wait for the list to load by looking for the EPUB title.
 		const row = this.page.getByRole('link', { name: /BDD Sample Book/i }).first();
 		await expect(row).toBeVisible({ timeout: SLOW_LOAD_TIMEOUT });

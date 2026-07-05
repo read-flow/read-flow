@@ -5,7 +5,7 @@ import type { BddWorld } from '../support/world';
 const SLOW_LOAD_TIMEOUT = 15_000;
 
 When('I filter by reading status {string}', async function (this: BddWorld, status: string) {
-	await this.page.goto(`${this.baseUrl}/`);
+	await this.page.goto(`${this.baseUrl}/library`);
 	// Wait for the document list to be ready.
 	await expect(this.page.getByLabel('Filter by reading status')).toBeVisible({ timeout: SLOW_LOAD_TIMEOUT });
 	await this.page.getByLabel('Filter by reading status').selectOption(status);

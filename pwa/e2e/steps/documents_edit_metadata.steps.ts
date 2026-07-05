@@ -16,7 +16,8 @@ When("I set the document's title to {string}", async function (this: BddWorld, t
 	// Enter editing mode via the "Edit document info" icon button.
 	await this.page.getByRole('button', { name: 'Edit document info' }).click();
 	// Fill the title field, then save.
-	await this.page.getByLabel('Title').fill(title);
+	// exact: the substring default also matches the "Subtitle" field.
+	await this.page.getByLabel('Title', { exact: true }).fill(title);
 	await this.page.getByRole('button', { name: 'Save', exact: true }).click();
 	// Wait for edit mode to close (Save/Cancel buttons disappear) so the Then
 	// step asserts against the persisted, non-editing view.

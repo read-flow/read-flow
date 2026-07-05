@@ -34,6 +34,13 @@ export interface PreviewHandle {
 	stop(): Promise<void>;
 }
 
+// eslint-disable-next-line no-control-regex
+const ANSI_ESCAPES = /\x1b\[[0-9;]*[A-Za-z]/g;
+
+function stripAnsi(text: string): string {
+	return text.replace(ANSI_ESCAPES, '');
+}
+
 function waitForLine(proc: ChildProcess, pattern: RegExp, timeoutMs: number): Promise<RegExpMatchArray> {
 	return new Promise((resolve, reject) => {
 		const chunks: string[] = [];
@@ -43,7 +50,9 @@ function waitForLine(proc: ChildProcess, pattern: RegExp, timeoutMs: number): Pr
 		}, timeoutMs);
 
 		function onData(data: Buffer): void {
-			const text = data.toString('utf-8');
+			// Vite (and other tools) colorize their output; escape sequences can
+			// land inside the URL (e.g. a bold port number), so match plain text.
+			const text = stripAnsi(data.toString('utf-8'));
 			chunks.push(text);
 			const match = text.match(pattern);
 			if (match) {
