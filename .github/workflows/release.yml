@@ -55,6 +55,14 @@ jobs:
             libwayland-dev libxkbcommon-dev libudev-dev libinput-dev \
             libgbm-dev libegl1-mesa-dev libsqlite3-dev libfontconfig1-dev pkg-config
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: pwa/package-lock.json
+      - name: Install PWA dependencies
+        run: npm ci
+        working-directory: pwa
       - name: Install packaging tools
         run: |
           cargo install just
@@ -84,6 +92,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: pwa/package-lock.json
+      - name: Install PWA dependencies
+        run: npm ci
+        working-directory: pwa
       - name: Install tooling
         run: |
           brew install librsvg
