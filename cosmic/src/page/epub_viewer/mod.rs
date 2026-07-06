@@ -3495,7 +3495,7 @@ mod tests {
                 "<figure>\
                    <svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 60\">\
                      <rect width=\"100\" height=\"60\" fill=\"#4080c0\"/>\
-                     <text x=\"50\" y=\"35\" text-anchor=\"middle\" fill=\"white\" font-size=\"14\">SVG</text>\
+                     <polygon points=\"50,10 80,50 20,50\" fill=\"white\"/>\
                    </svg>\
                    <figcaption>Figure 1: A simple coloured rectangle.</figcaption>\
                  </figure>",
@@ -3563,7 +3563,7 @@ mod tests {
                  <svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 200 100\">\
                    <rect width=\"200\" height=\"100\" rx=\"10\" fill=\"#6060c0\"/>\
                    <circle cx=\"100\" cy=\"50\" r=\"30\" fill=\"#ffffff\" opacity=\"0.6\"/>\
-                   <text x=\"100\" y=\"55\" text-anchor=\"middle\" fill=\"#6060c0\" font-size=\"18\">SVG</text>\
+                   <line x1=\"70\" y1=\"50\" x2=\"130\" y2=\"50\" stroke=\"#6060c0\" stroke-width=\"4\"/>\
                  </svg>",
             )
             .build();
