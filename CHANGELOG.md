@@ -18,7 +18,7 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Fixed
 
-## [0.1.0] - 2026-07-04
+## [0.1.0] - 2026-07-06
 
 First public release.
 
