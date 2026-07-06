@@ -363,25 +363,21 @@ mod tests {
 
     use super::*;
 
-    const TEST_FONTS: &[&str] = &[
-        "Helvetica",
-        "Times New Roman",
-        "Georgia",
-        "Arial",
-        "Courier New",
-    ];
+    // Only fonts bundled by cosmic-golden: entries render in their own face,
+    // and host-installed fonts would make the goldens machine-dependent.
+    const TEST_FONTS: &[&str] = &["Noto Sans", "Noto Serif", "Noto Sans Mono"];
 
     #[golden_test(400, 80)]
     fn font_picker_closed() -> cosmic::Element<'static, String> {
         FontPicker::new(TEST_FONTS, "Choose font…", "", |s| s)
-            .selected("Helvetica")
+            .selected("Noto Serif")
             .view()
     }
 
     #[golden_test(400, 500)]
     fn font_picker_open() -> cosmic::Element<'static, String> {
         FontPicker::new(TEST_FONTS, "Choose font…", "", |s| s)
-            .selected("Helvetica")
+            .selected("Noto Serif")
             .focused(true)
             .view()
     }
@@ -389,15 +385,15 @@ mod tests {
     #[golden_test(400, 500, dark)]
     fn font_picker_open_dark() -> cosmic::Element<'static, String> {
         FontPicker::new(TEST_FONTS, "Choose font…", "", |s| s)
-            .selected("Helvetica")
+            .selected("Noto Serif")
             .focused(true)
             .view()
     }
 
     #[golden_test(400, 500)]
     fn font_picker_filtered() -> cosmic::Element<'static, String> {
-        FontPicker::new(TEST_FONTS, "Choose font…", "Hel", |s| s)
-            .selected("Helvetica")
+        FontPicker::new(TEST_FONTS, "Choose font…", "Ser", |s| s)
+            .selected("Noto Serif")
             .focused(true)
             .view()
     }
