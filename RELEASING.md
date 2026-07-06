@@ -42,7 +42,7 @@ Not built by the workflow (yet):
 
 ### 1. Prepare
 
-1. Make sure `master` is green in CI and the working tree is clean.
+1. Make sure `main` is green in CI and the working tree is clean.
 2. Decide the new version `X.Y.Z`.
 3. Bump versions:
    - `[workspace.package] version` in the root `Cargo.toml` (covers all crates).
@@ -61,7 +61,7 @@ Not built by the workflow (yet):
 git add -A
 git commit -m "release: vX.Y.Z"
 git tag -a vX.Y.Z -m "Read Flow vX.Y.Z"
-git push github master
+git push github main
 git push github vX.Y.Z          # pushing the tag triggers the release workflow
 ```
 
