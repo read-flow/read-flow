@@ -42,6 +42,7 @@ jobs:
         if: failure()
         run: |
           find . -path ./target -prune -o -name '*.actual.png' -print | while read -r f; do
+            echo "::warning file=${f#./}::golden test failure"
             base="${f%.actual.png}"
             [ -f "$base.png" ] && cp "$base.png" "$base.expected.png"
           done
