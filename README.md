@@ -12,14 +12,15 @@ unless you ask it to.
 > you can also build from source.
 
 ## Screenshots
+|                                                                                                       |                                                                                                         |
+|:-----------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------------:|
+|     ![Dark Dashboard](https://github.com/read-flow/read-flow/blob/screenshots/dark-dashboard.png)     |     ![Light Dashboard](https://github.com/read-flow/read-flow/blob/screenshots/light-dashboard.png)     |
+| ![Dark Document List](https://github.com/read-flow/read-flow/blob/screenshots/dark-document-list.png) | ![Light Document List](https://github.com/read-flow/read-flow/blob/screenshots/light-document-list.png) |
+|   ![Dark OPDF Search](https://github.com/read-flow/read-flow/blob/screenshots/dark-opds-search.png)   |   ![Light OPDS Search](https://github.com/read-flow/read-flow/blob/screenshots/light-opds-search.png)   |
 
-<!-- screenshot: desktop app — library / dashboard view -->
-<!-- screenshot: desktop app — EPUB reader -->
-<!-- screenshot: desktop app — PDF reader -->
-<!-- screenshot: web app (PWA) — library with fuzzy search -->
-<!-- screenshot: online library (OPDS) search -->
-
-_Screenshots coming soon._
+|                                            EPUB Reader                                            |                                           PDF Reader                                            |
+|:-------------------------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------------:|
+| ![Dark Epub Reader](https://github.com/read-flow/read-flow/blob/screenshots/dark-epub-reader.png) | ![Dark Pdf Reader](https://github.com/read-flow/read-flow/blob/screenshots/dark-pdf-reader.png) |
 
 ## Features
 
