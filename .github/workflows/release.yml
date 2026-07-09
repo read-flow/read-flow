@@ -2,12 +2,13 @@
 #
 # Triggered by pushing a tag like `v0.1.0`. Produces:
 #   - Linux x86_64:  portable .tar.gz  +  .deb
+#   - Linux arm64:   portable .tar.gz  +  .deb (e.g. Raspberry Pi 5)
 #   - macOS arm64:   .app bundle, zipped (UNSIGNED — see README install notes)
 #   - SHA256SUMS for every artifact
 #
 # TODO (see RELEASING.md open questions):
 #   - macOS code signing + notarization
-#   - additional targets (macOS Intel, Linux arm64) / formats (AppImage, Flatpak)
+#   - additional targets (macOS Intel) / formats (AppImage, Flatpak)
 name: Release
 
 on:
@@ -44,8 +45,15 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   build-linux:
-    name: Build Linux x86_64
-    runs-on: ubuntu-latest
+    name: Build Linux ${{ matrix.arch }}
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-latest
+          - arch: arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
@@ -71,7 +79,7 @@ jobs:
         run: just deb          # runs build-release, then cargo-deb
       - name: Assemble portable tarball
         run: |
-          pkg="read-flow-${GITHUB_REF_NAME}-linux-x86_64"
+          pkg="read-flow-${GITHUB_REF_NAME}-linux-${{ matrix.arch }}"
           mkdir -p "dist/${pkg}"
           cp target/release/read-flow "dist/${pkg}/"
           cp cosmic/resources/com.github.read-flow.read-flow.desktop "dist/${pkg}/"
@@ -81,10 +89,10 @@ jobs:
           tar -czf "${pkg}.tar.gz" -C dist "${pkg}"
       - uses: actions/upload-artifact@v4
         with:
-          name: linux-x86_64
+          name: linux-${{ matrix.arch }}
           path: |
             target/debian/*.deb
-            read-flow-*-linux-x86_64.tar.gz
+            read-flow-*-linux-${{ matrix.arch }}.tar.gz
 
   build-macos:
     name: Build macOS arm64

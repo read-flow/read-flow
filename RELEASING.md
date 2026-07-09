@@ -22,8 +22,10 @@ marked _(decide)_ are open for discussion; refine this file as the process settl
 The [`release.yml`](.github/workflows/release.yml) workflow builds these automatically from a
 Git tag (`vX.Y.Z`) and attaches them to a **draft** GitHub Release:
 
-- **Linux x86_64**: a portable `.tar.gz` (binary + `.desktop`/icon/metainfo + README/LICENSE/NOTICE)
-  **and** a `.deb` package (`cargo-deb`).
+- **Linux x86_64 / arm64**: a portable `.tar.gz` (binary + `.desktop`/icon/metainfo +
+  README/LICENSE/NOTICE) **and** a `.deb` package (`cargo-deb`) for each arch. The arm64 build
+  runs natively on GitHub's `ubuntu-24.04-arm` runner (no cross-compilation) and targets e.g.
+  Raspberry Pi 5.
 - **macOS arm64** (Apple Silicon): a zipped `.app` bundle. **Unsigned** — users bypass Gatekeeper on
   first launch (documented in the README). _(decide: signing + notarization — see open questions.)_
 - **Checksums**: `SHA256SUMS` covering every artifact, generated in the workflow.
@@ -34,7 +36,7 @@ so the server hosts the web UI at its own address (same origin — no CORS/HTTPS
 
 Not built by the workflow (yet):
 
-- Additional targets/formats: macOS Intel, Linux arm64, AppImage, Flatpak — _(decide)_.
+- Additional targets/formats: macOS Intel, AppImage, Flatpak — _(decide)_.
 - A separately hosted PWA (e.g. GitHub Pages) — possible later, but requires users to expose their
   server over trusted HTTPS; the embedded copy is the primary path.
 
