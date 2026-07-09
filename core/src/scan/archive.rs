@@ -23,6 +23,7 @@ enum ArchiveKind {
     TarGz,
     TarBz2,
     TarXz,
+    TarZstd,
 }
 
 fn archive_kind(path: &Path) -> Option<ArchiveKind> {
@@ -35,6 +36,9 @@ fn archive_kind(path: &Path) -> Option<ArchiveKind> {
         (".tbz2", TarBz2),
         (".tar.xz", TarXz),
         (".txz", TarXz),
+        (".tar.zst", TarZstd),
+        (".tar.zstd", TarZstd),
+        (".tzst", TarZstd),
         (".tar", Tar),
         (".zip", Zip),
     ]
@@ -44,7 +48,7 @@ fn archive_kind(path: &Path) -> Option<ArchiveKind> {
 }
 
 /// Whether `path` looks like a supported archive (zip, tar, tar.gz/tgz,
-/// tar.bz2/tbz2, tar.xz/txz).
+/// tar.bz2/tbz2, tar.xz/txz, tar.zst/tar.zstd/tzst).
 pub fn is_archive_path(path: &Path) -> bool {
     archive_kind(path).is_some()
 }
@@ -68,6 +72,7 @@ fn tar_reader(path: &Path, kind: ArchiveKind) -> io::Result<Box<dyn Read>> {
         ArchiveKind::TarGz => Box::new(flate2::read::GzDecoder::new(file)),
         ArchiveKind::TarBz2 => Box::new(bzip2::read::BzDecoder::new(file)),
         ArchiveKind::TarXz => Box::new(xz2::read::XzDecoder::new(file)),
+        ArchiveKind::TarZstd => Box::new(zstd::stream::read::Decoder::new(file)?),
         ArchiveKind::Zip => unreachable!("zip handled separately"),
     })
 }
@@ -278,6 +283,24 @@ mod tests {
         path
     }
 
+    fn make_tar_zst(dir: &Path, name: &str, members: &[(&str, &[u8])]) -> PathBuf {
+        let path = dir.join(name);
+        let file = std::fs::File::create(&path).unwrap();
+        let encoder = zstd::stream::write::Encoder::new(file, 0)
+            .unwrap()
+            .auto_finish();
+        let mut builder = tar::Builder::new(encoder);
+        for (member, data) in members {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder.append_data(&mut header, member, *data).unwrap();
+        }
+        builder.into_inner().unwrap();
+        path
+    }
+
     #[rstest]
     #[case("library.zip", true)]
     #[case("library.ZIP", true)]
@@ -288,6 +311,9 @@ mod tests {
     #[case("backup.tbz2", true)]
     #[case("backup.tar.xz", true)]
     #[case("backup.txz", true)]
+    #[case("backup.tar.zst", true)]
+    #[case("backup.tar.zstd", true)]
+    #[case("backup.tzst", true)]
     #[case("book.pdf", false)]
     #[case("comic.cbz", false)]
     #[case("archive.rar", false)]
@@ -331,6 +357,20 @@ mod tests {
     }
 
     #[test]
+    fn enumerates_tar_zst_members() {
+        let tmp = TempDir::new().unwrap();
+        let tarball = make_tar_zst(
+            tmp.path(),
+            "lib.tar.zst",
+            &[("books/a.epub", b"epub-a"), ("b.pdf", b"pdf-b")],
+        );
+
+        let mut members = enumerate_archive_members(&tarball).unwrap();
+        members.sort();
+        assert_eq!(members, vec!["b.pdf", "books/a.epub"]);
+    }
+
+    #[test]
     fn extracts_zip_member_bytes() {
         let tmp = TempDir::new().unwrap();
         let zip = make_zip(tmp.path(), "lib.zip", &[("books/a.epub", b"epub-bytes")]);
@@ -343,6 +383,15 @@ mod tests {
     fn extracts_tar_gz_member_bytes() {
         let tmp = TempDir::new().unwrap();
         let tarball = make_tar_gz(tmp.path(), "lib.tar.gz", &[("b.pdf", b"pdf-bytes")]);
+
+        let bytes = extract_archive_member(&tarball, "b.pdf").unwrap();
+        assert_eq!(bytes, b"pdf-bytes");
+    }
+
+    #[test]
+    fn extracts_tar_zst_member_bytes() {
+        let tmp = TempDir::new().unwrap();
+        let tarball = make_tar_zst(tmp.path(), "lib.tar.zst", &[("b.pdf", b"pdf-bytes")]);
 
         let bytes = extract_archive_member(&tarball, "b.pdf").unwrap();
         assert_eq!(bytes, b"pdf-bytes");
@@ -379,6 +428,7 @@ mod tests {
     #[case("backup.tar", true)]
     #[case("backup.tar.gz", true)]
     #[case("backup.txz", true)]
+    #[case("backup.tar.zst", true)]
     #[case("library.zip", false)]
     #[case("book.pdf", false)]
     fn detects_tar_archive_paths(#[case] name: &str, #[case] expected: bool) {

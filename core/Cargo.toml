@@ -63,6 +63,7 @@ tar.workspace = true
 flate2.workspace = true
 bzip2.workspace = true
 xz2.workspace = true
+zstd.workspace = true
 tempfile.workspace = true
 
 epub.path = "../epub"

@@ -73,6 +73,7 @@ tar = "0.4"
 flate2 = "1"
 bzip2 = "0.5"
 xz2 = "0.1"
+zstd = "0.13"
 tempfile = "3"
 zip = { version = "8.6.0", default-features = false }
 
