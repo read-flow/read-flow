@@ -14,6 +14,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+- Archive scanning supports zstd-compressed tarballs (`.tar.zst`, `.tar.zstd`, `.tzst`).
+
 ### Changed
 
 ### Fixed

@@ -83,6 +83,7 @@ Runtime config: `read-flow.toml`. Supports `$HOME`/`~`. Sections: `[database]`, 
 - **Token efficiency**: when multiple approaches exist, pick least token-expensive (targeted commands, scoped searches, narrow file reads).
 - **Commit messages**: concise, no co-author line, never mention Claude.
 - **Before committing**: run `cargo +nightly fmt`. Never commit unformatted code.
+- **CHANGELOG.md**: user-facing change (new feature, behavior change, bug fix) = add an entry under `[Unreleased]` (`Added`/`Changed`/`Fixed`) in the same commit, so it lands in release notes.
 
 ## Code Conventions
 
