@@ -4,18 +4,12 @@ This is a tool to help discover and organize files locally and on remote servers
 
 * Open
 
-** Tier 1 — Quick Wins (High value, Low effort) [2/3]
+** Tier 1 — Quick Wins (High value, Low effort) [2/2]
 
 - [X] ~read-flow::EpubViewer~: Make nav pane resizeable
 - [X] ~read-flow::EpubViewer~: Use `widget::search_input` for search box.
-- [ ] ~read-flow::OnlineLibrary~: Investigate the Internet Archive OPDS endpoint and add it as a catalog if usable.
-  - Moved from Tier 3 ("Add more OPDS catalogs") and narrowed — all other candidates are ruled out:
-    - Feedbooks: shut down in 2024 — cannot add.
-    - Manybooks: OPDS endpoint returns 403 (bot-blocking) — cannot add without workaround.
-    - Open Library: no OPDS search feed; only per-book OPDS entries — cannot add as searchable catalog.
-  - Integration test infrastructure is in place (~core/tests/online_library.rs~, ~online_tests~ feature).
 
-** Tier 2 — High Impact, Moderate Effort [5/9]
+** Tier 2 — High Impact, Moderate Effort [5/7]
 
 - [X] ~read-flow-core~: HTTP response code & error handling in ~client~ module
   - Done: ~client.rs~ checks status codes throughout — 401 triggers token refresh, expected 404s map to ~None~, everything else goes through ~error_for_status_ref~.
@@ -23,16 +17,13 @@ This is a tool to help discover and organize files locally and on remote servers
   - Done: ~impl IntoResponse for Error~ maps domain errors to 400/403/404/500; ~authn~ errors map to 400/401/403. Auth status codes are covered by ~core/tests/oauth.rs~.
 - [X] ~read-flow::EpubViewer~: Add progressbar for initial loading.
   - Fixed by speeding up loading
-- [ ] ~read-flow::ImageViewer~: Add image details (dimensions, file size, EXIF where available) to the context pane, parsed per image format.
 - [X] ~read-flow~: Sync document to all sources simultaneously — ~Aggregator::update_document~ and ~DocumentProvider::update_document~ are implemented but unused. They push the file content to every configured source at once (unlike ~SendToClient~, which targets a single client). Wire these up to a "sync to all remotes" action in the Document Details context pane or library toolbar.
 - [X] ~read-flow::OnlineLibrary~: Display cover images in book cards (~cover_url~ is already parsed from OPDS feeds but not yet rendered).
 - [X] ~read-flow::OnlineLibrary~: Support paginated OPDS results — fetch and display subsequent pages ("load more") when the feed contains an ~rel="next"~ link.
-- [ ] ~read-flow::OnlineLibrary~: Add a settings panel to manage OPDS catalogs — add, remove, enable/disable, and edit name/URL — persisted to ~read-flow.toml~ via the existing ~OnlineLibrarySettings~.
-  - Moved from Tier 3: it is a self-contained CRUD form; Preferences already has the form infrastructure for this (see the authorized-users editor).
 - [ ] ~read-flow::OnlineLibrary~: Auto-migrate user config when catalog defaults change (e.g. updated search URL for Standard Ebooks) instead of silently falling back to the stale value in ~read-flow.toml~.
   - Moved from Tier 3: scope is small — detect a stored value equal to an old default and replace it with the new default on load.
 
-** Tier 3 — Significant Features [3/7]
+** Tier 3 — Significant Features [3/3]
 
 - [X] ~read-flow~: Use context view of Document Details page for multiple actions: [4/4]
   - [X] Remove duplicates (including files)
@@ -42,42 +33,16 @@ This is a tool to help discover and organize files locally and on remote servers
   - [X] For all (reachable) sources: Check whether the file still exists
 - [X] ~read-flow-core~ & ~read-flow~: Make it possible to correlate `books` of different file types
   - Done: ~merge_documents~ in the DAO merges two documents (metadata + contents keep the winner's identity), exposed through the aggregator/document provider/REST client and as a merge action in the document list UI.
-- [ ] ~read-flow-core~ & ~read-flow~: Per-extension viewer configuration
-  - Partially done: ~ScanSettings.extensions~ (~Vec<DocumentType>~, default =[pdf, epub, mobi]=, 14 supported types) is implemented and configurable from TOML, and EPUB already has a viewer choice in Preferences (~EpubViewerConfig~: native / MuPDF / external).
-  - Remaining: generalize that EPUB-only choice into a per-extension → viewer-backend mapping (config schema + Preferences UI).
-- [ ] ~read-flow-core~ & ~read-flow~: Audit log for automatic file changes during scan
-  - The async scanner logs file updates (size/fingerprint changed) and new tag insertions at =INFO=
-    level. Future: add an =audit_log= table (migration required) and a COSMIC audit log page where
-    the user can inspect what changed between scans and when. The DB writer already has all the
-    information needed (old/new size, old/new fingerprint, added tags).
-- [ ] Separate file discovery in multiple main categories:
-  - documents(.doc, .docx, .pdf, .epub, .mobi, etc.)
-  - images(.jpg, .png, .webp, etc.)
-  - videos(.mpeg, .mov, mp4, etc.)
-  - audio(.ogg, .mp3, .wav, etc.)
-  - Clarification: scan currently only knows document types (~DocumentType~ in ~core/src/scan/mod.rs~); this item introduces top-level media categories, each with its own extension set and (eventually) its own viewer.
 - [X] Add unit/integration tests
   - Done as an ongoing practice: workspace nextest suite (inline ~#[cfg(test)]~ modules + ~core/tests/~), BDD harness (~just bdd~, REST and COSMIC drivers), generated feature-parity matrix, PWA Vitest. TDD is codified in CLAUDE.md.
-- [ ] Add concept of book collections, where the files of each collection are stored under the same directory tree
-  - Clarification: needs a ~collection~ entity in the DB (migration), scan-time mapping of directory trees to collections, and UI to browse/filter by collection.
 
-** Tier 4 — Useful but Larger Scope [1/7]
+** Tier 4 — Useful but Larger Scope [1/2]
 
-- [ ] Recognize calibre directories, and support calibre database to import data
-- [ ] Allow duplicating files to/from remote, with configuration/input of location.
-  - Basic push/pull is already implemented (see Tier 3 checked items): the "Send to Missing" section in Document Details pushes to a remote that lacks the file, and pulls to local when only a remote copy exists.
-  - What is *not* implemented is the "with configuration/input of location" part:
-    - Downloads always go to the globally-configured ~download_folder~; no per-file destination picker.
-    - Uploads send to the remote server with no way to specify the target folder/path on the remote.
-    - There is no way to explicitly copy a file to a remote that *already* has it (forced duplicate).
 - [X] Add role-based authorization for server REST API, read/write access [1/1]
   - Done: ~server/authn.rs~ authenticates users (config entries or token claims) with roles; write endpoints require the =owner= role and return 403 ~Forbidden~ otherwise, reads only require authentication.
   - [X] Update cosmic settings editor
     - Done: Preferences has an authorized-users editor (~AuthorizedUserForm~) managing user id, passphrase and roles.
 - [ ] Investigate/use ~pdfium_render~ crate to render PDFs.
-- [ ] Add Google drive as document source/storage
-- [ ] Add Dropbox as document source/storage
-- [ ] Add OneDrive as document source/storage
 
 ** Tier 5 — Refactoring / Technical Debt [2/3]
 
@@ -85,14 +50,6 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] ~read-flow~: Use same approach for ~Out~ messages, ~settings.rs~ uses different approach then ~page/mod.rs~
   - Obsolete: ~settings.rs~ no longer exists — the separate settings pages were merged into the single Preferences page (~page/preferences.rs~), which lives inside the regular page framework.
 - [X] ~read-flow::OnlineLibrary~: Remove dead ~SearchFailed~ variant from ~OnlineLibraryMessage~ — it is never constructed (search errors are currently swallowed per-catalog and only surface as empty results).
-
-** Tier 6 — Low Priority / Niche [0/1]
-
-- [ ] ~read-flow-core~ & ~read-flow~: Implement 2-way (mutual) TLS (including configuration/database) [0/2]
-  - One-way TLS is already done: the server speaks HTTPS via rustls (~TlsSettings~ cert/key in ~read-flow.toml~), and Preferences has a server-TLS section including self-signed certificate generation.
-  - Remaining is the mutual part (client certificates):
-  - [ ] ~read-flow-core~: client-certificate verification on the server and client-certificate presentation in the ~client~ module, with configuration
-  - [ ] ~read-flow~: extend sources & Preferences TLS settings to configure client certificates
 
 ** Prepare for public release [6/14]
 

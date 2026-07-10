@@ -115,6 +115,12 @@ position, bookmarks, etc. Upserted on viewer close; loaded on open.
 Files have zero or more string tags stored as rows in =file_tags=. Tags are
 add-only on rescan (existing tags are not removed when a file is re-scanned).
 
+*** TODO Book collections
+A =collection= entity (DB migration) grouping the files found under one
+directory tree, populated at scan time by mapping directory trees to
+collections. Browsing/filtering by collection needs matching UI on both
+COSMIC and PWA.
+
 ** File Scanning
 
 *** DONE Three-stage async pipeline
@@ -165,6 +171,24 @@ Index document body text (EPUB content blocks, PDF text layer already
 extracted by MuPDF) and extend search beyond filename/path/tags to match
 document content. Current search (=documents.search=, DONE) only covers
 filename, path, and tags.
+
+*** TODO Media category expansion
+The scanner only knows document types (=DocumentType= in
+=core/src/scan/mod.rs=). Introduce top-level media categories — documents
+(=.doc=/=.docx=/=.pdf=/=.epub=/=.mobi=/etc.), images (=.jpg=/=.png=/=.webp=/etc.),
+videos (=.mpeg=/=.mov=/=.mp4=/etc.), audio (=.ogg=/=.mp3=/=.wav=/etc.) — each
+with its own extension set and, eventually, its own viewer.
+
+*** TODO Audit log for scan changes
+The async scanner already logs file updates (size/fingerprint changed)
+and new tag insertions at =INFO= level with all the before/after data
+needed. Persist that as an =audit_log= table (migration required) plus a
+COSMIC page to inspect what changed between scans and when.
+
+*** TODO Calibre library import
+Recognize Calibre library directories during scan and support importing
+metadata from a Calibre database (=metadata.db=) instead of relying only
+on filesystem scanning.
 
 ** REST API
 
@@ -231,6 +255,13 @@ The server optionally terminates HTTPS directly (rustls) when a
 settings are operator-local (COSMIC + config file only, not exposed over
 the REST =ServerSettingsDto=).
 
+*** TODO Mutual TLS (client certificates)
+One-way TLS is done (server speaks HTTPS, Preferences has a server-TLS
+section including self-signed cert generation). Remaining: client
+certificate verification on the server, client certificate presentation
+in the =client= module, and extending sources + Preferences TLS settings
+to configure client certificates.
+
 ** Configuration
 
 *** DONE Sections
@@ -251,6 +282,10 @@ the REST =ServerSettingsDto=).
 HTTP client that mirrors =FileDataSource= over the REST API. Supports
 Basic Auth with user_id:passphrase, file upload/download, and reading
 progress sync.
+
+*** TODO Cloud storage backends
+Add Google Drive, Dropbox, and OneDrive as document sources/storage,
+alongside the existing local + remote-server (=FilesClient=) sources.
 
 ** ApplicationModule
 
@@ -371,6 +406,15 @@ book): delete an individual source, choose which source's cover
 represents the document, send a source to another configured client, or
 sync a document to all configured sources.
 
+*** TODO Configurable duplication location
+Basic push/pull between local and remote already works ("send to
+missing" pushes to a remote lacking the file; pulls to local when only a
+remote copy exists), but always to/from a fixed location. Add: a
+per-file destination picker instead of the global =download_folder=; a
+way to specify the target folder/path on the remote for uploads; and a
+way to explicitly copy a file to a remote that already has it (forced
+duplicate).
+
 *** DONE Keyboard shortcuts display
 Relevant keyboard shortcuts for the active viewer are shown in the context
 pane.
@@ -409,6 +453,10 @@ to that chapter/section. Back button returns to the document list.
 *** DONE Image viewer
 Tapping an image opens a fullscreen image-viewer page.
 
+*** TODO Image details
+Show image details (dimensions, file size, EXIF where available) in the
+context pane, parsed per image format.
+
 *** DONE Progress persistence
 Chapter index and character offset saved on close; restored on reopen.
 
@@ -424,6 +472,11 @@ are shown.
 COSMIC-only setting to choose which EPUB viewer backend opens a document:
 the native =cosmic_text= renderer, MuPDF, or the system's external
 default application.
+
+*** TODO Per-extension viewer configuration
+Generalize the EPUB-only viewer-backend choice into a per-extension →
+viewer-backend mapping (config schema + Preferences UI), so any
+supported format can pick its rendering backend the way EPUB already can.
 
 ** TODO Comic Viewer (CBZ/CBT)
 CBZ/CBT are scanned and indexed but have no in-app reader today — the
@@ -447,6 +500,19 @@ default). Parses Atom feed XML into a list of books with formats and authors.
 *** DONE Download and import
 Select a format (EPUB preferred, PDF fallback); download to the configured
 client folder; auto-import into the local database.
+
+*** TODO Internet Archive catalog
+Investigate the Internet Archive OPDS endpoint and add it as a catalog if
+usable. (Other candidates are ruled out: Feedbooks shut down in 2024;
+Manybooks' OPDS endpoint 403s on bots; Open Library has no searchable
+OPDS feed, only per-book entries.) Integration test infrastructure
+already exists (=core/tests/online_library.rs=, =online_tests= feature).
+
+*** TODO Catalog management UI
+A settings panel to add, remove, enable/disable, and edit name/URL for
+OPDS catalogs, persisted to =read-flow.toml= via the existing
+=OnlineLibrarySettings= — a self-contained CRUD form, same pattern as the
+authorized-users editor in Preferences.
 
 ** Remote Sources
 
