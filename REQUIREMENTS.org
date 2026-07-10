@@ -140,15 +140,19 @@ PPTX, HWPX, and a catch-all =Other= variant.
 
 *** DONE Documents inside archives
 The scanner detects archive files (=.zip=, =.tar=, =.tar.gz=/=.tgz=,
-=.tar.bz2=/=.tbz2=, =.tar.xz=/=.txz=) and indexes matching document files
-found inside them. Archive members are fingerprinted (SHA256 of the
-member bytes), get metadata and cover extraction via a temp file, and are
-stored in =files= with the synthetic unique path
-={archive_path}::{inner_path}= plus dedicated =archive_path= /
+=.tar.bz2=/=.tbz2=, =.tar.xz=/=.txz=, =.tar.zst=/=.tar.zstd=/=.tzst=) and
+indexes matching document files found inside them. Archive members are
+fingerprinted (SHA256 of the member bytes), get metadata and cover
+extraction via a temp file, and are stored in =files= with the synthetic
+unique path ={archive_path}::{inner_path}= plus dedicated =archive_path= /
 =archive_inner_path= columns. The REST download endpoint and the local
-open action extract the member on demand. Nested archives (archives
-inside archives) are not supported yet; the =::= path encoding and the
-=core/src/scan/archive.rs= module are designed to allow recursing later.
+open action extract the member on demand. Tar-based archives (unlike zip)
+have no random access, so when a scan needs multiple members from one tar
+archive, =tar_single_pass= spools all wanted members to a temp dir in a
+single decompression sweep instead of re-decompressing per member.
+Nested archives (archives inside archives) are not supported yet; the
+=::= path encoding and the =core/src/scan/archive.rs= module are designed
+to allow recursing later.
 
 ** REST API
 
@@ -157,22 +161,63 @@ HTTP Basic Auth with per-user PBKDF2-hashed passwords stored in config.
 
 *** DONE File endpoints
 - =GET /files= — list all files with tags
-- =GET /files/<id>= — single file with tags
+- =GET /files/<guid>= — single file with tags
 - =GET /files/tags= — all tags in use
 - =PUT /files= — update file (status, metadata)
 - =POST /files= — upload multipart file; auto-scan and import
-- =DELETE /files/<id>= — remove from DB and filesystem
+- =DELETE /files/<guid>= — remove from DB and filesystem
+- =GET /files/<guid>/cover= — cover image
+- =POST /files/<guid>/document= — resolve/create the document a file belongs to
 
 *** DONE Tag endpoints
 - =POST /files/<id>/tags= — add tags
 - =DELETE /files/<id>/tags= — remove tags
 
 *** DONE Download endpoint
-=GET /files/<id>/download-as/<filename>= — stream file bytes.
+=GET /files/<guid>/download-as/<filename>= — stream file bytes.
 
 *** DONE Reading-progress endpoints
-- =GET /reading-progress/<fingerprint>=
-- =PUT /reading-progress=
+- =GET /reading-state/<fingerprint>=
+- =PUT /reading-state=
+
+*** DONE Document endpoints
+Documents group one or more files (sources) that represent the same work
+(e.g. an EPUB and a PDF of the same book, or duplicate scans).
+- =GET /documents= — list documents with their sources
+- =GET /documents/<guid>= — single document detail
+- =PUT /documents/<guid>/metadata= — edit title/authors/description/etc.
+- =GET /documents/<guid>/cover= — document cover (from the selected source,
+  or overridden — see =select_cover=)
+- =POST /documents/merge= — merge two or more duplicate documents into one
+
+*** DONE Source management endpoints
+- =DELETE= a single source/file of a document (=sources.delete=)
+- Send a document to another configured client — download-to-local or
+  upload (=sources.send_to_client=)
+- Sync a document to all configured sources, COSMIC-only (=sources.sync_to_all=)
+- Choose which source's cover represents the document (=documents.select_cover=)
+
+*** DONE Admin endpoints (owner role required)
+- =POST /scan= — trigger a library scan; returns a =ScanSummary=
+- =POST /maintenance/check-missing= — detect and purge DB rows whose
+  underlying file no longer exists on disk
+- =GET/PUT/DELETE /scan-directories= — CRUD scan directory configuration
+- =GET/PUT /settings= — server settings (db path, file types, dry-run, private mode)
+- =GET/POST /users=, =PUT/DELETE /users/<user_id>= — CRUD authorised server users
+
+*** DONE Online library (OPDS) endpoints
+- =GET /online-library/search= — search configured OPDS catalogs
+- =POST /online-library/import= — download and import a book
+
+*** DONE Remote status
+Each remote server exposes =GET /status=; the PWA and COSMIC clients probe
+a configured remote's =/status= to show reachability before use.
+
+*** DONE TLS
+The server optionally terminates HTTPS directly (rustls) when a
+=[server.tls]= cert/key pair is configured; plain HTTP otherwise. TLS
+settings are operator-local (COSMIC + config file only, not exposed over
+the REST =ServerSettingsDto=).
 
 ** Configuration
 
@@ -180,7 +225,7 @@ HTTP Basic Auth with per-user PBKDF2-hashed passwords stored in config.
 =read-flow.toml= (see =archive-organizer.template.toml=):
 - =[database]= — SQLite path
 - =[client]= — download folder for remote files
-- =[server]= — upload folder, authorised users
+- =[server]= — upload folder, authorised users, optional =[server.tls]= cert/key
 - =[scan]= — directories, extensions, concurrency, auto-tag rules, dry-run
 - =[ui]= — private mode, private-tag list
 - =[online_library]= — enabled OPDS catalogs
@@ -283,10 +328,18 @@ Multi-select files → bulk add/remove tags or bulk delete.
 *** DONE Preferences persistence
 Sort column, sort direction, and search mode are persisted across sessions.
 
+*** DONE Merge duplicates
+Select two or more documents identified as duplicates and merge them into
+one, combining their sources and tags.
+
 ** Document Details (context pane)
 
 *** DONE Metadata display
 Type icon, filename, path, size, reading status, tags.
+
+*** DONE Metadata editing
+Edit title, authors, description, and other metadata fields; persists via
+=PUT /documents/<guid>/metadata=.
 
 *** DONE Status editor
 Radio-button status selector (Unread / Reading / Read) updates the DB
@@ -299,6 +352,12 @@ persist immediately.
 *** DONE Open / delete actions
 Open with the native viewer (PDF / EPUB) or the system default application.
 Delete removes from DB and filesystem.
+
+*** DONE Source management
+For documents with multiple sources (e.g. an EPUB and a PDF of the same
+book): delete an individual source, choose which source's cover
+represents the document, send a source to another configured client, or
+sync a document to all configured sources.
 
 *** DONE Keyboard shortcuts display
 Relevant keyboard shortcuts for the active viewer are shown in the context
@@ -349,6 +408,11 @@ context pane.
 When the EPUB cannot be opened, a centred error icon and localised message
 are shown.
 
+*** DONE Viewer backend choice
+COSMIC-only setting to choose which EPUB viewer backend opens a document:
+the native =cosmic_text= renderer, MuPDF, or the system's external
+default application.
+
 ** Online Library (OPDS)
 
 *** DONE Catalog search
@@ -377,6 +441,12 @@ define auto-tag glob rules; toggle dry-run.
 
 *** DONE Server settings UI
 Add/remove authorised users with PBKDF2-hashed passwords.
+
+*** DONE Scan trigger and maintenance
+Trigger a library scan on demand and observe progress; check for and
+purge DB rows whose file no longer exists on disk (=check-missing=).
+Available both locally (COSMIC) and remotely (PWA, over REST) for any
+server the user administers.
 
 *** DONE App settings UI
 Private-mode toggle; private-tag list editor; theme and language selection.
@@ -446,8 +516,16 @@ scroll position to change unexpectedly.
 ** DONE File list
 Paginated table of all documents with fuzzy search. Reads from the REST API.
 
+** DONE Fuzzy search
+Fuse.js-backed fuzzy search wired to the document list search UI
+(=pwa/src/lib/stores/documents.ts=), matching filename/path/tags.
+
 ** DONE PDF viewer
 PDF.js embedded viewer with zoom and page navigation.
+
+** DONE EPUB viewer
+epub.js embedded viewer, parity with the COSMIC native reader (chapter
+nav, reading-progress persistence).
 
 ** DONE Tag management
 Add/remove tags via modal UI.
@@ -455,5 +533,23 @@ Add/remove tags via modal UI.
 ** DONE Authentication
 Basic auth (username + password) with session persisted in =localStorage=.
 
-** TODO Full-text search
-Fuse.js is integrated but not yet wired to the document list search UI.
+** DONE Document merge and cover selection
+=MergeDialog.svelte= merges duplicate documents; =DocumentDetail.svelte=
+lets the user pick which source's cover represents the document.
+
+** DONE Source management
+Delete an individual source/file of a document; send a document to
+another configured client (download-to-local or upload).
+
+** DONE Admin settings UI
+=pwa/src/routes/settings/admin/+page.svelte= — trigger scans and observe
+progress, check/purge missing files, manage scan directories and
+authorised users, edit server settings.
+
+** DONE Online library (OPDS)
+Search configured OPDS catalogs and import a book, mirroring the COSMIC
+feature over the REST =/online-library= endpoints.
+
+** DONE Theme editor
+PWA-only customizable theme editor (modes, colour schemes, custom
+colors) — the desktop app inherits the COSMIC system theme instead.
