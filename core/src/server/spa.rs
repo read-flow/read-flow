@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 //! Serves the embedded Progressive Web App (the built `pwa/build`) as the
 //! router's fallback, so a single `read-flow` server can host both the REST API
 //! and the web UI at the same origin — no CORS, no mixed-content, works on a

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 //! Bearer-token issuance and verification.
 //!
 //! After the resource owner authenticates once with HTTP Basic (PBKDF2), the

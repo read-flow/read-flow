@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 //! Helpers for booting a real `read-flow-cli serve` process bound to an
 //! OS-assigned port, for BDD/integration tests that need a network-reachable
 //! backend (e.g. the cucumber-rs `RestDriver` in `cosmic`'s BDD harness).

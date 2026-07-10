@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 pub mod dao;
 pub mod datasource;
 pub mod models;

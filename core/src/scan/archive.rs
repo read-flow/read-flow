@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 //! Reading document files stored inside archives (zipfiles and tarballs).
 //!
 //! Archive members are addressed by the pair `(archive_path, inner_path)`;
