@@ -154,6 +154,18 @@ Nested archives (archives inside archives) are not supported yet; the
 =::= path encoding and the =core/src/scan/archive.rs= module are designed
 to allow recursing later.
 
+*** TODO Nested archives
+Recurse into =::=-separated inner segments so an archive found inside
+another archive is scanned and indexed too, extracting each level to
+memory/temp before descending. Tracked inline as a TODO in
+=core/src/scan/archive.rs=.
+
+*** TODO Full-text content search
+Index document body text (EPUB content blocks, PDF text layer already
+extracted by MuPDF) and extend search beyond filename/path/tags to match
+document content. Current search (=documents.search=, DONE) only covers
+filename, path, and tags.
+
 ** REST API
 
 *** DONE Authentication
@@ -412,6 +424,19 @@ are shown.
 COSMIC-only setting to choose which EPUB viewer backend opens a document:
 the native =cosmic_text= renderer, MuPDF, or the system's external
 default application.
+
+** TODO Comic Viewer (CBZ/CBT)
+CBZ/CBT are scanned and indexed but have no in-app reader today — the
+"open" action falls back to the system default application. Add a native
+paged image-strip viewer (reusing the EPUB image-viewer page) for
+CBZ/CBT archive contents.
+
+** TODO MOBI/FB2 native reader
+MOBI and FictionBook (FB2) are scanned and indexed but have no in-app
+reader today — the "open" action falls back to the system default
+application. Parse and render them (likely via the existing EPUB
+content-block renderer, since FB2 and MOBI both map reasonably onto that
+model) instead of shelling out.
 
 ** Online Library (OPDS)
 
