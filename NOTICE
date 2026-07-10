@@ -24,9 +24,11 @@ MIT
 
   The full text is in LICENSE-MIT.
 
-  These components may be reused under the permissive MIT terms. Note that
-  when they are linked into the GPL-3.0-or-later desktop application, the
-  resulting combined binary is governed by the GPL.
+  These components' own code may be reused under the permissive MIT terms.
+  Note that when they are linked into the GPL-3.0-or-later desktop
+  application, the resulting combined binary is governed by the GPL — and
+  see the AGPL-3.0 caveat on read-flow-core below, which applies regardless
+  of which binary it's linked into.
 
 
 Third-party attribution
@@ -41,3 +43,51 @@ COSMIC Reader by System76:
 
 This derivation is the reason the desktop application is licensed under
 GPL-3.0-or-later.
+
+
+Dependency license audit
+-------------------------
+
+Audited with `cargo deny check licenses` (config: deny.toml) for the Rust
+workspace, and a package.json-metadata scan for pwa/'s npm dependencies.
+Re-run `cargo deny check licenses` from the repo root to reproduce.
+
+npm (pwa/): every dependency resolves to a permissive license (MIT, ISC,
+Apache-2.0, BSD-2/3-Clause, BlueOak-1.0.0, MPL-2.0, CC0-1.0, CC-BY-3.0/4.0,
+or a permissive OR-choice). No copyleft, nothing unlicensed.
+
+Rust workspace: the large majority of third-party crates are permissive
+(MIT/Apache-2.0/BSD/ISC/Zlib/Unicode-3.0/MPL-2.0/CC0-1.0/Unlicense), plus
+one data license (CDLA-Permissive-2.0, covering the bundled Mozilla root
+certificate list in `webpki-root-certs` — not source code, no copyleft
+obligations). Copyleft dependencies present, all intentional and all
+flowing only into the GPL-3.0-or-later `read-flow`/`read-flow-widgets`
+binary target:
+  - `cosmic-protocols` / `cosmic-client-toolkit` (pop-os) — GPL-3.0-only,
+    Wayland protocol bindings pulled in transitively via libcosmic.
+  - A handful of libcosmic/window_clipboard sub-crates (`cosmic-config`,
+    `cosmic-config-derive`, `cosmic-settings-daemon`, `cosmic-theme`,
+    `iced_accessibility`, `dnd`, `mime`) omit a `license` field in their
+    own Cargo.toml; verified by hand against the LICENSE file at the root
+    of their source repo (MPL-2.0 for the libcosmic-family crates, MIT for
+    the window_clipboard-family ones) and recorded as clarifications in
+    deny.toml.
+
+  ** Finding needing a decision: `read-flow-core` (declared MIT) has an
+  unconditional, non-optional, non-dev dependency on `mupdf` (used in
+  `core/src/scan/metadata.rs` and `core/src/scan/cover.rs` for PDF
+  metadata/cover extraction). The `mupdf` crate — and the underlying
+  MuPDF C library from Artifex it binds — is licensed AGPL-3.0-only
+  (dual-licensed commercially by Artifex; see the upstream LICENSE file).
+  This means: (a) read-flow-core cannot actually be built or distributed
+  under MIT-only terms as currently written — anyone linking it pulls in
+  AGPL-3.0 obligations regardless of core's own declared license; and
+  (b) because `read-flow`'s `--headless` mode serves a REST API over a
+  network, AGPL-3.0 §13's source-offer requirement plausibly extends to
+  network users of that server, on top of GPL-3.0-or-later's own terms.
+  This wasn't flagged before this audit. Options to resolve, not yet
+  decided: gate mupdf-based extraction behind an optional feature so a
+  mupdf-free MIT build of core is possible; document core's MIT license
+  as applying only to its own code with a mupdf/AGPL-3.0 caveat (similar
+  to this note); or accept AGPL-3.0 terms project-wide and update the
+  license header/NOTICE accordingly.

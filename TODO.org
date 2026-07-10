@@ -51,7 +51,7 @@ This is a tool to help discover and organize files locally and on remote servers
   - Obsolete: ~settings.rs~ no longer exists — the separate settings pages were merged into the single Preferences page (~page/preferences.rs~), which lives inside the regular page framework.
 - [X] ~read-flow::OnlineLibrary~: Remove dead ~SearchFailed~ variant from ~OnlineLibraryMessage~ — it is never constructed (search errors are currently swallowed per-catalog and only surface as empty results).
 
-** Prepare for public release [6/14]
+** Prepare for public release [7/14]
 
 - [X] Move =justfile= from ~cosmic/~ to project root, and update to work for the whole repository
 - [X] Create read-flow application branding [1/1]
@@ -69,9 +69,9 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] Try to build and run ~read-flow~ on MacBook
   - Done: the release workflow builds a macOS arm64 .app bundle on =macos-14= (unsigned; see next item).
 - [ ] macOS code signing + notarization — the released .app bundle is currently unsigned
-- [-] Licensing [1/2]
-  - [ ] Investigate the license of all dependencies
-    - Clarification: run an automated audit (e.g. ~cargo deny check licenses~ or ~cargo about~) and record the result; =NOTICE= currently only covers the workspace crates and the cosmic-reader derivation.
+- [X] Licensing [2/2]
+  - [X] Investigate the license of all dependencies
+    - Done: ~deny.toml~ (~cargo deny check licenses~) audits the Rust workspace; a package.json scan covered pwa/'s npm deps. Result recorded in =NOTICE= ("Dependency license audit" section). npm deps are all permissive. Rust copyleft deps are all intentional and scoped to the GPL desktop binary — *except* one real finding: ~read-flow-core~ (declared MIT) unconditionally depends on ~mupdf~, which is AGPL-3.0. Not yet resolved — see NOTICE for the options under consideration.
   - [X] Set license on this repository
     - Done: =LICENSE-GPL= + =LICENSE-MIT= + =NOTICE= at the root; every crate declares ~license~ in its Cargo.toml (core/provider/epub MIT, cosmic/widgets GPL-3.0-or-later).
 - [ ] Extract the ~provider~ crate to a separate repository?

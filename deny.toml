@@ -1,0 +1,82 @@
+# cargo-deny configuration — run with `cargo deny check licenses`.
+# Only the licenses check is configured; advisories/bans/sources use
+# cargo-deny's defaults.
+#
+# See NOTICE for the narrative summary of this audit (methodology, and the
+# one substantive finding: read-flow-core unconditionally depends on the
+# AGPL-3.0 `mupdf` crate despite being declared MIT).
+
+[graph]
+all-features = true
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CC0-1.0",
+    "BSL-1.0",
+    "Unlicense",
+    # Data license covering the bundled Mozilla root certificate list
+    # (webpki-root-certs); not source code, no copyleft obligations.
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+
+# Copyleft licenses used intentionally by specific crates. Anything not
+# listed here that turns out to be GPL/AGPL will still fail the check —
+# these exceptions are scoped per-crate on purpose, not blanket-allowed.
+exceptions = [
+    # This workspace's own GPL-3.0-or-later crates (cosmic/, widgets/).
+    { allow = ["GPL-3.0-or-later"], crate = "read-flow" },
+    { allow = ["GPL-3.0-or-later"], crate = "read-flow-widgets" },
+    # pop-os Wayland protocol bindings, GPL-3.0-only, pulled in transitively
+    # for the desktop app only.
+    { allow = ["GPL-3.0-only"], crate = "cosmic-protocols" },
+    { allow = ["GPL-3.0-only"], crate = "cosmic-client-toolkit" },
+    # MuPDF (Artifex) — AGPL-3.0, dual-licensed commercially by Artifex.
+    # See NOTICE: read-flow-core depends on this unconditionally (PDF
+    # metadata/cover extraction), which is a real tension with core's own
+    # MIT declaration — flagged there, not silently resolved here.
+    { allow = ["AGPL-3.0"], crate = "mupdf" },
+    { allow = ["AGPL-3.0"], crate = "mupdf-sys" },
+]
+
+# Crates that don't declare a `license` field in their own Cargo.toml.
+# Verified by hand against the LICENSE file at the root of their source
+# repository (cargo-deny can't do this automatically for git dependencies
+# whose sub-crates omit per-crate `license` metadata).
+[[licenses.clarify]]
+crate = "cosmic-config"
+expression = "MPL-2.0"
+license-files = []
+[[licenses.clarify]]
+crate = "cosmic-config-derive"
+expression = "MPL-2.0"
+license-files = []
+[[licenses.clarify]]
+crate = "cosmic-settings-daemon"
+expression = "MPL-2.0"
+license-files = []
+[[licenses.clarify]]
+crate = "cosmic-theme"
+expression = "MPL-2.0"
+license-files = []
+[[licenses.clarify]]
+crate = "iced_accessibility"
+expression = "MPL-2.0"
+license-files = []
+[[licenses.clarify]]
+crate = "dnd"
+expression = "MIT"
+license-files = []
+[[licenses.clarify]]
+crate = "mime"
+expression = "MIT"
+license-files = []
