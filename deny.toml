@@ -2,9 +2,9 @@
 # Only the licenses check is configured; advisories/bans/sources use
 # cargo-deny's defaults.
 #
-# See NOTICE for the narrative summary of this audit (methodology, and the
-# one substantive finding: read-flow-core unconditionally depends on the
-# AGPL-3.0 `mupdf` crate despite being declared MIT).
+# See NOTICE for the narrative summary of this audit (methodology, and why
+# read-flow/read-flow-widgets/read-flow-core are AGPL-3.0-or-later: the
+# mupdf dependency is AGPL-3.0-only).
 
 [graph]
 all-features = true
@@ -33,17 +33,18 @@ confidence-threshold = 0.8
 # listed here that turns out to be GPL/AGPL will still fail the check —
 # these exceptions are scoped per-crate on purpose, not blanket-allowed.
 exceptions = [
-    # This workspace's own GPL-3.0-or-later crates (cosmic/, widgets/).
-    { allow = ["GPL-3.0-or-later"], crate = "read-flow" },
-    { allow = ["GPL-3.0-or-later"], crate = "read-flow-widgets" },
+    # This workspace's own AGPL-3.0-or-later crates (cosmic/, widgets/, core/).
+    { allow = ["AGPL-3.0-or-later"], crate = "read-flow" },
+    { allow = ["AGPL-3.0-or-later"], crate = "read-flow-widgets" },
+    { allow = ["AGPL-3.0-or-later"], crate = "read-flow-core" },
     # pop-os Wayland protocol bindings, GPL-3.0-only, pulled in transitively
-    # for the desktop app only.
+    # for the desktop app only. Compatible with AGPL-3.0 (GPLv3 §13 permits
+    # combining with AGPLv3).
     { allow = ["GPL-3.0-only"], crate = "cosmic-protocols" },
     { allow = ["GPL-3.0-only"], crate = "cosmic-client-toolkit" },
-    # MuPDF (Artifex) — AGPL-3.0, dual-licensed commercially by Artifex.
-    # See NOTICE: read-flow-core depends on this unconditionally (PDF
-    # metadata/cover extraction), which is a real tension with core's own
-    # MIT declaration — flagged there, not silently resolved here.
+    # MuPDF (Artifex) — AGPL-3.0-only, dual-licensed commercially by
+    # Artifex. This is *why* read-flow/read-flow-widgets/read-flow-core are
+    # AGPL-3.0-or-later — see NOTICE ("Why AGPL").
     { allow = ["AGPL-3.0"], crate = "mupdf" },
     { allow = ["AGPL-3.0"], crate = "mupdf-sys" },
 ]

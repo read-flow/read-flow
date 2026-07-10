@@ -4,7 +4,7 @@ version.workspace = true
 edition = "2024"
 
 authors = ["Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"]
-license = "MIT"
+license = "AGPL-3.0-or-later"
 
 [package.metadata.deb]
 maintainer = "Peterpaul Klein Haneveld <pp.kleinhaneveld@gmail.com>"

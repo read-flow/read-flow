@@ -50,11 +50,11 @@ cd pwa && npm install && npm run dev
 
 Rust workspace (edition 2024, resolver 3), multiple crates + JS PWA:
 
-- **`read-flow-core`** (MIT) — Core lib: async SQLite (sqlx), Axum REST API (`server` feature, on by default), async file scan (tokio), tag mgmt. Also holds the internal `read-flow-cli` test-harness binary (`src/bin/read-flow-cli.rs`; subcommands `scan`, `apply-tags`, `serve`, `extract-scan-directories`, `check-missing`) — not a user-facing tool.
-- **`read-flow`** (GPL-3.0-or-later; PDF viewer derived from pop-os/cosmic-reader) — COSMIC desktop GUI **and** the headless HTTP server (`--headless`). `libcosmic` (git, pop-os). Async tokio, i18n (en/fr/nl via Fluent), observable `provider` pattern. Entry: `src/main.rs`. Package name `read-flow`, in `cosmic/` (use `cargo run -p read-flow`, not `-p cosmic`).
-- **`provider`** — DI library (edition 2021). `Provider<T>` trait with combinators (`map`, `and_then`, `cache`, etc.), `ObservableCache` with `tokio::sync::broadcast` invalidation.
-- **`epub/`** — EPUB3 parsing: container, package doc, nav, resource resolution, HTML→content, CSS, images.
-- **`widgets/`** — Shared UI widgets for COSMIC app.
+- **`read-flow-core`** (AGPL-3.0-or-later; depends on Artifex's MuPDF, AGPL-3.0-only, for PDF metadata/cover extraction) — Core lib: async SQLite (sqlx), Axum REST API (`server` feature, on by default), async file scan (tokio), tag mgmt. Also holds the internal `read-flow-cli` test-harness binary (`src/bin/read-flow-cli.rs`; subcommands `scan`, `apply-tags`, `serve`, `extract-scan-directories`, `check-missing`) — not a user-facing tool.
+- **`read-flow`** (AGPL-3.0-or-later; PDF viewer derived from pop-os/cosmic-reader) — COSMIC desktop GUI **and** the headless HTTP server (`--headless`). `libcosmic` (git, pop-os). Async tokio, i18n (en/fr/nl via Fluent), observable `provider` pattern. Entry: `src/main.rs`. Package name `read-flow`, in `cosmic/` (use `cargo run -p read-flow`, not `-p cosmic`).
+- **`provider`** (MIT) — DI library (edition 2021). `Provider<T>` trait with combinators (`map`, `and_then`, `cache`, etc.), `ObservableCache` with `tokio::sync::broadcast` invalidation.
+- **`epub/`** (MIT) — EPUB3 parsing: container, package doc, nav, resource resolution, HTML→content, CSS, images.
+- **`widgets/`** (AGPL-3.0-or-later) — Shared UI widgets for COSMIC app.
 - **`pwa/`** — SvelteKit + TypeScript PWA. Fuse.js fuzzy search, PDF.js + epub.js rendering, IndexedDB via Dexie.
 
 ### Dependency flow

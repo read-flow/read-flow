@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-other
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 use cosmic::Action;
 use cosmic::Element;

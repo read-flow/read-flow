@@ -125,11 +125,11 @@ Read Flow is a Rust [workspace](https://doc.rust-lang.org/cargo/reference/worksp
 
 | Crate / package      | Role                                                                             | License            |
 | -------------------- | -------------------------------------------------------------------------------- | ------------------ |
-| `cosmic/` (`read-flow`) | Desktop app (libcosmic GUI) **and** the headless HTTP server. PDF + EPUB readers. | GPL-3.0-or-later   |
-| `core/` (`read-flow-core`) | Core library: async SQLite (sqlx), file scanning, tagging, Axum REST API.   | MIT                |
+| `cosmic/` (`read-flow`) | Desktop app (libcosmic GUI) **and** the headless HTTP server. PDF + EPUB readers. | AGPL-3.0-or-later  |
+| `core/` (`read-flow-core`) | Core library: async SQLite (sqlx), file scanning, tagging, Axum REST API.   | AGPL-3.0-or-later  |
 | `provider/`          | Small dependency-injection / observable-cache library used across the app.       | MIT                |
 | `epub/`              | EPUB3 parsing and rendering (container, nav, HTML→content, CSS, images).         | MIT                |
-| `widgets/` (`read-flow-widgets`) | Shared desktop UI widgets.                                            | GPL-3.0-or-later   |
+| `widgets/` (`read-flow-widgets`) | Shared desktop UI widgets.                                            | AGPL-3.0-or-later  |
 | `pwa/` (`read-flow-pwa`) | SvelteKit + TypeScript web app; talks to servers over REST.                  | MIT                |
 
 Dependency flow:
@@ -175,12 +175,15 @@ cd pwa && npm install && npm test   # web app unit tests
 
 Read Flow is released under a **split license** (see [`NOTICE`](NOTICE) for the full breakdown):
 
-- The **desktop application** (`read-flow`) and `read-flow-widgets` are licensed under the
-  **GNU General Public License v3.0 or later** ([`LICENSE-GPL`](LICENSE-GPL)). The PDF viewer is
-  derived from [COSMIC Reader](https://github.com/pop-os/cosmic-reader) by System76 (GPL-3.0-or-later),
-  which is why the app carries this license.
-- The **library crates** (`read-flow-core`, `provider`, `epub`) and the **web app**
-  (`read-flow-pwa`) are licensed under the **MIT License** ([`LICENSE-MIT`](LICENSE-MIT)).
+- The **desktop application** (`read-flow`), `read-flow-widgets`, and `read-flow-core` are
+  licensed under the **GNU Affero General Public License v3.0 or later**
+  ([`LICENSE-AGPL`](LICENSE-AGPL)). Two independent reasons: the PDF viewer is derived from
+  [COSMIC Reader](https://github.com/pop-os/cosmic-reader) by System76 (GPL-3.0-or-later), and
+  `read-flow-core` depends on Artifex's MuPDF (AGPL-3.0-only) for PDF metadata/cover extraction.
+  Because `read-flow` serves a REST API over a network (`--headless` mode), the AGPL's
+  network-use clause (§13) applies — see NOTICE for details.
+- The **library crates** (`provider`, `epub`) and the **web app** (`read-flow-pwa`) don't touch
+  MuPDF and are licensed under the **MIT License** ([`LICENSE-MIT`](LICENSE-MIT)).
 
 ## Development & AI transparency
 

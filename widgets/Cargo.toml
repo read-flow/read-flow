@@ -2,7 +2,7 @@
 name = "read-flow-widgets"
 version.workspace = true
 edition = "2024"
-license = "GPL-3.0-or-later"
+license = "AGPL-3.0-or-later"
 
 [dependencies]
 libcosmic = { workspace = true }

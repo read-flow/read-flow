@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 //! Server control + live log page.
 //!
 //! A self-explanatory control panel for the embedded HTTP server, plus a
