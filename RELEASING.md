@@ -36,7 +36,9 @@ so the server hosts the web UI at its own address (same origin — no CORS/HTTPS
 
 Not built by the workflow (yet):
 
-- Additional targets/formats: macOS Intel, AppImage, Flatpak — _(decide)_.
+- Flathub (Flatpak) and a Homebrew tap — planned next, see "Application stores" below.
+- macOS Intel — no current plan. AppImage and Snap — decided against for now (see "Application
+  stores").
 - A separately hosted PWA (e.g. GitHub Pages) — possible later, but requires users to expose their
   server over trusted HTTPS; the embedded copy is the primary path.
 
@@ -89,11 +91,50 @@ git push github vX.Y.Z          # pushing the tag triggers the release workflow
 ## Open questions to iterate on
 
 - [x] Version unification (`[workspace.package]`) — **done**; single version in root `Cargo.toml`.
-- [x] Prebuilt binaries — **yes**, automated in `release.yml` (Linux x86_64 `.deb`+tarball, macOS arm64 `.app`).
+- [x] Prebuilt binaries — **yes**, automated in `release.yml` (Linux x86_64/arm64 `.deb`+tarball, macOS arm64 `.app`).
 - [x] Linux artifact set — **deb + portable tarball** for now.
 - [ ] macOS signing & notarization (currently unsigned; README documents the Gatekeeper workaround).
+  Needs a paid Apple Developer Program membership before `notarytool` can be wired into
+  `release.yml`. Matters for Homebrew Cask trust too, not just direct downloads.
 - [x] PWA hosting — **embedded in the server** (`embed-pwa` feature); packaged builds serve it at `/`.
-- [ ] More targets/formats: macOS Intel, Linux arm64, AppImage, Flatpak.
+- [x] More targets/formats — **decided**: Flathub and a personal Homebrew tap are the priorities
+  (see "Application stores" below); AppImage and Snap are deprioritized/skipped for now; macOS
+  Intel stays open (no current plan).
 - [ ] Optionally also host the PWA standalone (GitHub Pages) — needs server HTTPS; deferred.
-- [ ] Changelog automation (e.g. `git-cliff`) vs. hand-maintained.
-- [ ] Publishing library crates (`read-flow-core`, `provider`, `epub`) to crates.io.
+- [x] Changelog automation — **decided**: stay hand-maintained (solo maintainer; `git-cliff` adds
+  ceremony without enough payoff at this scale).
+- [ ] Publishing library crates (`read-flow-core`, `provider`, `epub`) to crates.io — low priority,
+  not required for app-store distribution; revisit if/when `provider`/`epub` get extracted to their
+  own repos.
+- [ ] Announce channel (README badge, GitHub Discussions, elsewhere) — deferred, low stakes.
+
+## Application stores
+
+Priority order, decided 2026-07-10:
+
+1. **Flathub** — best fit technically: Flatpak's portal-based file access (native folder picker
+   crossing the sandbox) matches Read Flow's "scan user-configured directories" model better than
+   Snap's static plugs. No cost, no publisher account beyond GitHub.
+   - Prerequisite (done): app ID renamed `com.github.read-flow.read-flow` →
+     `io.github.read-flow.read-flow` — Flathub requires the `io.github.<owner>.<repo>` convention
+     for GitHub-hosted apps; `com.github.*` is not accepted.
+   - Still needed: a flatpak-builder manifest (`io.github.read-flow.read-flow.yml`), a decision on
+     the sandboxing/file-access model (see below), and a real build+test on Linux — flatpak-builder
+     doesn't run on macOS, so this can't be verified from a Mac dev machine; needs a Linux box or a
+     CI job.
+   - **Open decision**: file-access permission model. Read Flow currently does raw filesystem
+     walks over configured scan directories, which doesn't fit Flatpak's sandbox cleanly. Options:
+     `--filesystem=home:rw` (simple, well-precedented for file-manager-style apps, but broader than
+     strictly needed) vs. proper `xdg-desktop-portal` folder-access integration (correct sandboxing,
+     but needs the `ashpd` crate and UI changes to request/persist folder grants — real dev work).
+     Leaning `--filesystem=home` for a first submission, revisit portal integration later.
+2. **Homebrew** — own tap (e.g. `read-flow/homebrew-read-flow`), not homebrew-core (which requires
+   "notability" — stars/forks this project doesn't have yet). Ship a Cask for the macOS `.app`;
+   optionally a Formula for `read-flow --headless` server use, once decided whether that needs a
+   separate GUI-free build target.
+3. **AUR** — near-zero-effort bonus alongside Flathub: a `PKGBUILD` in a personal repo, no review
+   process, can reuse the same build steps as `just deb`.
+4. **Snap Store** — deprioritized. Mechanically similar effort to the existing `.deb` (same system
+   deps), but strict confinement fights the arbitrary-directory-scanning use case (`home`/
+   `removable-media` plugs, or Canonical manual review for broader access). Revisit if Flathub
+   traction doesn't pan out.

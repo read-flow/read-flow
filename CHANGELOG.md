@@ -18,6 +18,14 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Changed
 
+- Relicensed `read-flow-core`, `read-flow`, and `read-flow-widgets` as AGPL-3.0-or-later (was
+  MIT / GPL-3.0-or-later); see `NOTICE` for why.
+- Application ID renamed `com.github.read-flow.read-flow` → `io.github.read-flow.read-flow`
+  (Flathub requires the `io.github.<owner>.<repo>` convention for GitHub-hosted apps). **Existing
+  local installs will see their desktop-app preferences (theme, window state) reset once**, since
+  `cosmic-config` stores them under a path keyed by the app ID — reading progress, tags, and the
+  document library (SQLite) are unaffected, only COSMIC UI prefs.
+
 ### Fixed
 
 ## [0.1.0] - 2026-07-06
