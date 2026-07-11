@@ -60,11 +60,13 @@ modules:
       #    on the 24.08 runtime provides rustc 1.89, which is too old for this
       #    dependency tree (libcosmic needs 1.93, sqlx needs 1.94, wgpu/iced
       #    need 1.92). Install the official standalone tarball instead (the
-      #    `type: archive` source below is auto-extracted by flatpak-builder,
-      #    so its install.sh is already sitting here), into this module's own
-      #    build dir — never copied into /app, so it doesn't bloat the shipped
-      #    app.
-      - ./rust-*/install.sh --prefix="$(pwd)/rust-toolchain" --without=rust-docs
+      #    `type: archive` source below, with dest: rust-dist, is
+      #    auto-extracted there by flatpak-builder before build-commands run),
+      #    into this module's own build dir — never copied into /app, so it
+      #    doesn't bloat the shipped app.
+      - echo "=== build root ===" && ls -la && echo "=== rust-dist ===" && ls -la rust-dist || true
+      - ./rust-dist/rust-1.97.0-x86_64-unknown-linux-gnu/install.sh
+        --prefix="$(pwd)/rust-toolchain" --without=rust-docs
 
       # 2. Build the PWA (embedded into the binary via the `embed-pwa`
       #    feature). flatpak-node-generator's sources populate the offline
@@ -102,3 +104,4 @@ modules:
       - type: archive
         url: https://static.rust-lang.org/dist/rust-1.97.0-x86_64-unknown-linux-gnu.tar.xz
         sha256: 1cf17e4905b841d4c8e3f76467ac148d55fb3f54bf213c86f0d287a36471d904
+        dest: rust-dist
