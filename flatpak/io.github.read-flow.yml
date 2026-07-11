@@ -59,14 +59,14 @@ modules:
       # 1. Install a current Rust toolchain. org.freedesktop.Sdk.Extension.rust-stable
       #    on the 24.08 runtime provides rustc 1.89, which is too old for this
       #    dependency tree (libcosmic needs 1.93, sqlx needs 1.94, wgpu/iced
-      #    need 1.92). Install the official standalone tarball instead (the
-      #    `type: archive` source below, with dest: rust-dist, is
-      #    auto-extracted there by flatpak-builder before build-commands run),
+      #    need 1.92). Install the official standalone tarball instead. The
+      #    `type: archive` source below has dest: rust-dist -- flatpak-builder
+      #    strips the archive's single top-level wrapper directory when a
+      #    dest is given, so install.sh lands directly at rust-dist/install.sh
+      #    (confirmed via the earlier diagnostic `ls`, now removed). Installed
       #    into this module's own build dir — never copied into /app, so it
       #    doesn't bloat the shipped app.
-      - echo "=== build root ===" && ls -la && echo "=== rust-dist ===" && ls -la rust-dist || true
-      - ./rust-dist/rust-1.97.0-x86_64-unknown-linux-gnu/install.sh
-        --prefix="$(pwd)/rust-toolchain" --without=rust-docs
+      - ./rust-dist/install.sh --prefix="$(pwd)/rust-toolchain" --without=rust-docs
 
       # 2. Build the PWA (embedded into the binary via the `embed-pwa`
       #    feature). flatpak-node-generator's sources populate the offline
