@@ -18,7 +18,6 @@ runtime: org.freedesktop.Platform
 runtime-version: '24.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
-  - org.freedesktop.Sdk.Extension.rust-stable
   - org.freedesktop.Sdk.Extension.node22
 command: read-flow
 
@@ -39,7 +38,12 @@ finish-args:
   - --filesystem=home:rw
 
 build-options:
-  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin
+  # /run/build/read-flow/rust-toolchain/bin is created by the "1. Install a
+  # current Rust toolchain" build-command below, before it's needed — the
+  # SDK's rust-stable extension is too old for this dependency tree (see
+  # that step's comment). Listed first so it's found ahead of any system
+  # rustc.
+  append-path: /run/build/read-flow/rust-toolchain/bin:/usr/lib/sdk/node22/bin
   env:
     CARGO_HOME: /run/build/read-flow/cargo
     # npm's offline cache location, populated by flatpak-node-generator's
@@ -52,19 +56,29 @@ modules:
   - name: read-flow
     buildsystem: simple
     build-commands:
-      # 1. Build the PWA (embedded into the binary via the `embed-pwa`
+      # 1. Install a current Rust toolchain. org.freedesktop.Sdk.Extension.rust-stable
+      #    on the 24.08 runtime provides rustc 1.89, which is too old for this
+      #    dependency tree (libcosmic needs 1.93, sqlx needs 1.94, wgpu/iced
+      #    need 1.92). Install the official standalone tarball instead (the
+      #    `type: archive` source below is auto-extracted by flatpak-builder,
+      #    so its install.sh is already sitting here), into this module's own
+      #    build dir — never copied into /app, so it doesn't bloat the shipped
+      #    app.
+      - ./rust-*/install.sh --prefix="$(pwd)/rust-toolchain" --without=rust-docs
+
+      # 2. Build the PWA (embedded into the binary via the `embed-pwa`
       #    feature). flatpak-node-generator's sources populate the offline
       #    npm cache at $npm_config_cache (see build-options.env above) —
       #    npm resolves it from there automatically.
       - cd pwa && npm install --offline && npm run build
 
-      # 2. Build read-flow with the embedded PWA. cargo-sources.json (added
+      # 3. Build read-flow with the embedded PWA. cargo-sources.json (added
       #    to `sources` below) makes flatpak-builder vendor every crate —
       #    including git dependencies (libcosmic and friends) — and wires up
       #    offline resolution automatically.
       - cargo --offline build --release --features embed-pwa -p read-flow
 
-      # 3. Install.
+      # 4. Install.
       - install -Dm755 target/release/read-flow /app/bin/read-flow
       - install -Dm644 cosmic/resources/io.github.read-flow.desktop
         /app/share/applications/io.github.read-flow.desktop
@@ -82,3 +96,9 @@ modules:
         path: ..
       - cargo-sources.json
       - node-sources.json
+      # Pinned to whatever was current stable when this manifest was last
+      # touched (2026-07-11); bump the version/sha256 here if cargo's MSRV
+      # requirements move past it again.
+      - type: archive
+        url: https://static.rust-lang.org/dist/rust-1.97.0-x86_64-unknown-linux-gnu.tar.xz
+        sha256: 1cf17e4905b841d4c8e3f76467ac148d55fb3f54bf213c86f0d287a36471d904
