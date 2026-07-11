@@ -19,6 +19,9 @@ runtime-version: '24.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.node22
+  # mupdf-sys uses bindgen (runtime libclang loading) to generate FFI
+  # bindings; the base SDK doesn't expose libclang.so on the loader path.
+  - org.freedesktop.Sdk.Extension.llvm18
 command: read-flow
 
 finish-args:
@@ -43,9 +46,12 @@ build-options:
   # SDK's rust-stable extension is too old for this dependency tree (see
   # that step's comment). Listed first so it's found ahead of any system
   # rustc.
-  append-path: /run/build/read-flow/rust-toolchain/bin:/usr/lib/sdk/node22/bin
+  append-path: /run/build/read-flow/rust-toolchain/bin:/usr/lib/sdk/node22/bin:/usr/lib/sdk/llvm18/bin
   env:
     CARGO_HOME: /run/build/read-flow/cargo
+    # bindgen (mupdf-sys) needs libclang.so at build time; provided by the
+    # llvm18 SDK extension above, not the base SDK.
+    LIBCLANG_PATH: /usr/lib/sdk/llvm18/lib
     # npm's offline cache location, populated by flatpak-node-generator's
     # sources during the (networked) source-fetch phase, before the
     # sandboxed (offline) build-commands run.
