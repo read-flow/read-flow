@@ -61,7 +61,7 @@ npm run test:watch
 2. Click **Add source** and enter:
    - **Name** — a friendly label (e.g. "Home server")
    - **Base URL** — the full URL of the server (e.g. `http://192.168.1.10:8000`)
-   - **User ID** and **Passphrase** — as configured in `archive-organizer.toml`
+   - **User ID** and **Passphrase** — as configured in `read-flow.toml`
 3. The app tests connectivity before saving. Once added, the Library page
    fetches documents from all configured sources.
 

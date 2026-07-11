@@ -265,7 +265,7 @@ to configure client certificates.
 ** Configuration
 
 *** DONE Sections
-=read-flow.toml= (see =archive-organizer.template.toml=):
+=read-flow.toml= (generated with defaults by the first-time setup wizard; not tracked in git):
 - =[database]= — SQLite path
 - =[client]= — download folder for remote files
 - =[server]= — upload folder, authorised users, optional =[server.tls]= cert/key
