@@ -2,7 +2,7 @@
 Name=Read Flow
 Comment=Manage Documents Accross Multiple Machines
 Type=Application
-Icon=io.github.read-flow.read-flow
+Icon=io.github.read-flow
 Exec=read-flow %F
 Terminal=false
 StartupNotify=true

@@ -86,8 +86,8 @@ jobs:
           pkg="read-flow-${GITHUB_REF_NAME}-linux-${{ matrix.arch }}"
           mkdir -p "dist/${pkg}"
           cp target/release/read-flow "dist/${pkg}/"
-          cp cosmic/resources/io.github.read-flow.read-flow.desktop "dist/${pkg}/"
-          cp cosmic/resources/io.github.read-flow.read-flow.metainfo.xml "dist/${pkg}/"
+          cp cosmic/resources/io.github.read-flow.desktop "dist/${pkg}/"
+          cp cosmic/resources/io.github.read-flow.metainfo.xml "dist/${pkg}/"
           cp cosmic/resources/icons/hicolor/scalable/apps/icon.svg "dist/${pkg}/read-flow.svg"
           cp README.md LICENSE-AGPL NOTICE "dist/${pkg}/"
           tar -czf "${pkg}.tar.gz" -C dist "${pkg}"
@@ -148,7 +148,7 @@ jobs:
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: read-flow-${{ github.ref_name }}.flatpak
-          manifest-path: flatpak/io.github.read-flow.read-flow.yml
+          manifest-path: flatpak/io.github.read-flow.yml
           cache-key: flatpak-builder-${{ github.sha }}
       - uses: actions/upload-artifact@v4
         with:

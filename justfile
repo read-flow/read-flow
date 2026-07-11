@@ -1,5 +1,5 @@
 name := 'read-flow'
-appid := 'io.github.read-flow.read-flow'
+appid := 'io.github.read-flow'
 
 rootdir := ''
 prefix := '/usr'
@@ -156,7 +156,7 @@ bundle: pwa-build (build-release '--features' 'embed-pwa' '-p' 'read-flow') icon
         <key>CFBundleDisplayName</key>
         <string>Read Flow</string>
         <key>CFBundleIdentifier</key>
-        <string>io.github.read-flow.read-flow</string>
+        <string>io.github.read-flow</string>
         <key>CFBundleVersion</key>
         <string>0.1.0</string>
         <key>CFBundleShortVersionString</key>

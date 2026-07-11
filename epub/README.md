@@ -131,7 +131,7 @@ case-insensitive substring match across all `ContentBlock` variants.
 cycle; Escape dismisses; cleared on chapter navigation.
 
 **Font persistence:** `load_epub_font_prefs()` / `save_epub_font_prefs()` use
-`ConfigGet` / `ConfigSet` with app ID `io.github.read-flow.read-flow`, version 1.
+`ConfigGet` / `ConfigSet` with app ID `io.github.read-flow`, version 1.
 Keys: `epub_font_family` (String), `epub_base_font_size` (u32 pixels). Named fonts
 round-trip via a `fonts()` list lookup.
 

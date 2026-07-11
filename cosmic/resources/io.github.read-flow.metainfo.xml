@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.read-flow.read-flow</id>
+  <id>io.github.read-flow</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>AGPL-3.0-or-later</project_license>
   <name>Read Flow</name>
@@ -9,9 +9,9 @@
     https://github.com/read-flow/read-flow/raw/main/resources/icons/hicolor/scalable/apps/icon.svg
   </icon>
   <url type="vcs-browser">https://github.com/read-flow/read-flow</url>
-  <launchable type="desktop-id">io.github.read-flow.read-flow.desktop</launchable>
+  <launchable type="desktop-id">io.github.read-flow.desktop</launchable>
   <provides>
-    <id>io.github.read-flow.read-flow</id>
+    <id>io.github.read-flow</id>
     <binaries>
       <binary>read-flow</binary>
     </binaries>

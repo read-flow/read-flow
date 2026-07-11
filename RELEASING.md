@@ -29,7 +29,7 @@ Git tag (`vX.Y.Z`) and attaches them to a **draft** GitHub Release:
 - **macOS arm64** (Apple Silicon): a zipped `.app` bundle. **Unsigned** — users bypass Gatekeeper on
   first launch (documented in the README). _(decide: signing + notarization — see open questions.)_
 - **Flatpak**: a single-file `.flatpak` bundle, built from
-  [`flatpak/io.github.read-flow.read-flow.yml`](flatpak/io.github.read-flow.read-flow.yml) — draft,
+  [`flatpak/io.github.read-flow.yml`](flatpak/io.github.read-flow.yml) — draft,
   not yet build-verified (see "Application stores" below).
 - **Checksums**: `SHA256SUMS` covering every artifact, generated in the workflow.
 
@@ -119,9 +119,9 @@ Priority order, decided 2026-07-10:
    crossing the sandbox) matches Read Flow's "scan user-configured directories" model better than
    Snap's static plugs. No cost, no publisher account beyond GitHub.
    - Prerequisite (done): app ID renamed `com.github.read-flow.read-flow` →
-     `io.github.read-flow.read-flow` — Flathub requires the `io.github.<owner>.<repo>` convention
+     `io.github.read-flow` — Flathub requires the `io.github.<owner>.<repo>` convention
      for GitHub-hosted apps; `com.github.*` is not accepted.
-   - Manifest (done, draft): [`flatpak/io.github.read-flow.read-flow.yml`](flatpak/io.github.read-flow.read-flow.yml).
+   - Manifest (done, draft): [`flatpak/io.github.read-flow.yml`](flatpak/io.github.read-flow.yml).
      File-access model: `--filesystem=home:rw` for the first submission (simple, well-precedented
      for file-manager-style apps) rather than `xdg-desktop-portal` folder grants (correct
      sandboxing, but needs the `ashpd` crate + UI changes — real dev work, revisit later if

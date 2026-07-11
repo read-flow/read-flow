@@ -15,7 +15,7 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 ### Added
 
 - Archive scanning supports zstd-compressed tarballs (`.tar.zst`, `.tar.zstd`, `.tzst`).
-- Draft Flatpak packaging (`flatpak/io.github.read-flow.read-flow.yml`), built to a `.flatpak`
+- Draft Flatpak packaging (`flatpak/io.github.read-flow.yml`), built to a `.flatpak`
   bundle and attached to releases by CI. First step toward a Flathub submission — see
   RELEASING.md. Not yet build-verified (flatpak-builder doesn't run on macOS).
 
@@ -23,11 +23,15 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 - Relicensed `read-flow-core`, `read-flow`, and `read-flow-widgets` as AGPL-3.0-or-later (was
   MIT / GPL-3.0-or-later); see `NOTICE` for why.
-- Application ID renamed `com.github.read-flow.read-flow` → `io.github.read-flow.read-flow`
-  (Flathub requires the `io.github.<owner>.<repo>` convention for GitHub-hosted apps). **Existing
-  local installs will see their desktop-app preferences (theme, window state) reset once**, since
-  `cosmic-config` stores them under a path keyed by the app ID — reading progress, tags, and the
-  document library (SQLite) are unaffected, only COSMIC UI prefs.
+- Application ID renamed `com.github.read-flow.read-flow` → `io.github.read-flow` (two steps: first
+  to `io.github.read-flow.read-flow` for the `io.github.<owner>.<repo>` convention Flathub requires
+  for GitHub-hosted apps, then collapsed to the 3-segment `io.github.read-flow` because Flatpak app
+  IDs only permit a hyphen in the *last* segment — `read-flow` the org and `read-flow` the repo both
+  have one, so the 4-segment form was invalid; dropping the redundant repo segment, since org and
+  repo share a name here, sidesteps that). **Existing local installs will see their desktop-app
+  preferences (theme, window state) reset once**, since `cosmic-config` stores them under a path
+  keyed by the app ID — reading progress, tags, and the document library (SQLite) are unaffected,
+  only COSMIC UI prefs.
 
 ### Fixed
 

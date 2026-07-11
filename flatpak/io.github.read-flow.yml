@@ -13,7 +13,7 @@
 # multi-thousand-line generated files by hand and keeps them in sync with the
 # lockfiles automatically.
 
-app-id: io.github.read-flow.read-flow
+app-id: io.github.read-flow
 runtime: org.freedesktop.Platform
 runtime-version: '24.08'
 sdk: org.freedesktop.Sdk
@@ -61,12 +61,12 @@ modules:
 
       # 3. Install.
       - install -Dm755 target/release/read-flow /app/bin/read-flow
-      - install -Dm644 cosmic/resources/io.github.read-flow.read-flow.desktop
-        /app/share/applications/io.github.read-flow.read-flow.desktop
-      - install -Dm644 cosmic/resources/io.github.read-flow.read-flow.metainfo.xml
-        /app/share/metainfo/io.github.read-flow.read-flow.metainfo.xml
+      - install -Dm644 cosmic/resources/io.github.read-flow.desktop
+        /app/share/applications/io.github.read-flow.desktop
+      - install -Dm644 cosmic/resources/io.github.read-flow.metainfo.xml
+        /app/share/metainfo/io.github.read-flow.metainfo.xml
       - install -Dm644 cosmic/resources/icons/hicolor/scalable/apps/icon.svg
-        /app/share/icons/hicolor/scalable/apps/io.github.read-flow.read-flow.svg
+        /app/share/icons/hicolor/scalable/apps/io.github.read-flow.svg
     sources:
       # `type: dir` points at the already-checked-out tagged commit — correct
       # for our own CI, which builds from a local clone. A future Flathub
