@@ -51,7 +51,7 @@ This is a tool to help discover and organize files locally and on remote servers
   - Obsolete: ~settings.rs~ no longer exists — the separate settings pages were merged into the single Preferences page (~page/preferences.rs~), which lives inside the regular page framework.
 - [X] ~read-flow::OnlineLibrary~: Remove dead ~SearchFailed~ variant from ~OnlineLibraryMessage~ — it is never constructed (search errors are currently swallowed per-catalog and only surface as empty results).
 
-** Prepare for public release [7/14]
+** Prepare for public release [8/14]
 
 - [X] Move =justfile= from ~cosmic/~ to project root, and update to work for the whole repository
 - [X] Create read-flow application branding [1/1]
@@ -61,8 +61,8 @@ This is a tool to help discover and organize files locally and on remote servers
   - Done: the release workflow builds a .deb via cargo-deb (~just deb~); the package ships =/usr/bin/read-flow=, the .desktop file, metainfo and icon.
   - [X] Maybe both binaries in the same package
     - Resolved: only ~read-flow~ is packaged; ~read-flow-cli~ is an internal test harness, not user-facing.
-- [ ] Convert org-mode files to markdown files (?)
-  - Remaining org files: =TODO.org=, =REQUIREMENTS.org=.
+- [X] Convert org-mode files to markdown files (?)
+  - Decided against: keeping =TODO.org= and =REQUIREMENTS.org= in org format.
 - [ ] Remove files that are not needed anymore
   - Clarification: sweep the repository for leftover/obsolete files (unused resources, dead scripts, stale docs) before release.
 - [ ] Try to build and run ~read-flow~ on Windows
@@ -71,9 +71,9 @@ This is a tool to help discover and organize files locally and on remote servers
 - [ ] macOS code signing + notarization — the released .app bundle is currently unsigned
 - [X] Licensing [2/2]
   - [X] Investigate the license of all dependencies
-    - Done: ~deny.toml~ (~cargo deny check licenses~) audits the Rust workspace; a package.json scan covered pwa/'s npm deps. Result recorded in =NOTICE= ("Dependency license audit" section). npm deps are all permissive. Rust copyleft deps are all intentional and scoped to the GPL desktop binary — *except* one real finding: ~read-flow-core~ (declared MIT) unconditionally depends on ~mupdf~, which is AGPL-3.0. Not yet resolved — see NOTICE for the options under consideration.
+    - Done: ~deny.toml~ (~cargo deny check licenses~) audits the Rust workspace; a package.json scan covered pwa/'s npm deps. Result recorded in =NOTICE= ("Dependency license audit" section). npm deps are all permissive. Rust copyleft deps are all intentional. Found and resolved one real issue: ~read-flow-core~ was declared MIT but unconditionally depends on ~mupdf~ (AGPL-3.0) — resolved by relicensing ~read-flow-core~/~read-flow~/~read-flow-widgets~ to AGPL-3.0-or-later (see below).
   - [X] Set license on this repository
-    - Done: =LICENSE-GPL= + =LICENSE-MIT= + =NOTICE= at the root; every crate declares ~license~ in its Cargo.toml (core/provider/epub MIT, cosmic/widgets GPL-3.0-or-later).
+    - Done: =LICENSE-AGPL= + =LICENSE-MIT= + =NOTICE= at the root; every crate declares ~license~ in its Cargo.toml (provider/epub/pwa MIT, read-flow-core/read-flow/read-flow-widgets AGPL-3.0-or-later — relicensed from MIT/GPL-3.0-or-later once the mupdf/AGPL dependency was found). v0.1.0's GitHub release notes carry a correction pointing at the fix; a follow-up release with corrected bundled license files is still pending.
 - [ ] Extract the ~provider~ crate to a separate repository?
 - [ ] Extract the ~epub~ crate to a separate repository?
 - [X] Recreate main ~README.md~
