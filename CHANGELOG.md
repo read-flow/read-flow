@@ -15,6 +15,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 ### Added
 
 - Archive scanning supports zstd-compressed tarballs (`.tar.zst`, `.tar.zstd`, `.tzst`).
+- Draft Flatpak packaging (`flatpak/io.github.read-flow.read-flow.yml`), built to a `.flatpak`
+  bundle and attached to releases by CI. First step toward a Flathub submission — see
+  RELEASING.md. Not yet build-verified (flatpak-builder doesn't run on macOS).
 
 ### Changed
 

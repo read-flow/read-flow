@@ -1,0 +1,79 @@
+# Flatpak manifest for Read Flow.
+#
+# This is a *draft*, built and validated by CI (.github/workflows/release.yml,
+# job `build-flatpak`) rather than by hand — flatpak-builder doesn't run on
+# macOS, so this file has not been build-tested locally. Expect to iterate on
+# it after the first real CI run(s). See RELEASING.md ("Application stores")
+# for the sandboxing/permission tradeoffs behind the choices below.
+#
+# `cargo-sources.json` and `node-sources.json` referenced below are NOT
+# committed to the repo — CI generates them fresh from Cargo.lock and
+# pwa/package-lock.json on every build, using the official generators from
+# https://github.com/flatpak/flatpak-builder-tools. This avoids maintaining
+# multi-thousand-line generated files by hand and keeps them in sync with the
+# lockfiles automatically.
+
+app-id: io.github.read-flow.read-flow
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node20
+command: read-flow
+
+finish-args:
+  # GUI: Wayland-first (libcosmic), with X11 fallback.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  # GPU acceleration (wgpu backend).
+  - --device=dri
+  # Remote sources (FilesClient), OPDS catalog search/download, online-library
+  # import all need outbound network access.
+  - --share=network
+  # Read Flow scans user-configured directories for documents; broad home
+  # access is the pragmatic first-submission choice over portal-based
+  # per-folder grants (which would need ashpd integration + UI changes — see
+  # RELEASING.md). Revisit before/if Flathub reviewers push back.
+  - --filesystem=home:rw
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
+  env:
+    CARGO_HOME: /run/build/read-flow/cargo
+
+modules:
+  - name: read-flow
+    buildsystem: simple
+    build-commands:
+      # 1. Build the PWA (embedded into the binary via the `embed-pwa`
+      #    feature). flatpak-node-generator's sources populate an offline npm
+      #    cache; exact invocation may need adjusting once the generator's
+      #    actual output is exercised in CI.
+      - cd pwa && npm install --offline && npm run build
+
+      # 2. Build read-flow with the embedded PWA. cargo-sources.json (added
+      #    to `sources` below) makes flatpak-builder vendor every crate —
+      #    including git dependencies (libcosmic and friends) — and wires up
+      #    offline resolution automatically.
+      - cargo --offline build --release --features embed-pwa -p read-flow
+
+      # 3. Install.
+      - install -Dm755 target/release/read-flow /app/bin/read-flow
+      - install -Dm644 cosmic/resources/io.github.read-flow.read-flow.desktop
+        /app/share/applications/io.github.read-flow.read-flow.desktop
+      - install -Dm644 cosmic/resources/io.github.read-flow.read-flow.metainfo.xml
+        /app/share/metainfo/io.github.read-flow.read-flow.metainfo.xml
+      - install -Dm644 cosmic/resources/icons/hicolor/scalable/apps/icon.svg
+        /app/share/icons/hicolor/scalable/apps/io.github.read-flow.read-flow.svg
+    sources:
+      # `type: dir` points at the already-checked-out tagged commit — correct
+      # for our own CI, which builds from a local clone. A future Flathub
+      # submission (a separate manifest living in Flathub's own repo for this
+      # app) would replace this with `type: git, url: ..., tag: vX.Y.Z` so
+      # Flathub's build infrastructure can clone it independently.
+      - type: dir
+        path: ..
+      - cargo-sources.json
+      - node-sources.json

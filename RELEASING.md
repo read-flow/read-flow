@@ -28,6 +28,9 @@ Git tag (`vX.Y.Z`) and attaches them to a **draft** GitHub Release:
   Raspberry Pi 5.
 - **macOS arm64** (Apple Silicon): a zipped `.app` bundle. **Unsigned** — users bypass Gatekeeper on
   first launch (documented in the README). _(decide: signing + notarization — see open questions.)_
+- **Flatpak**: a single-file `.flatpak` bundle, built from
+  [`flatpak/io.github.read-flow.read-flow.yml`](flatpak/io.github.read-flow.read-flow.yml) — draft,
+  not yet build-verified (see "Application stores" below).
 - **Checksums**: `SHA256SUMS` covering every artifact, generated in the workflow.
 
 The **PWA** is not shipped as a separate artifact: the packaging recipes (`just deb`, `just bundle`)
@@ -36,7 +39,7 @@ so the server hosts the web UI at its own address (same origin — no CORS/HTTPS
 
 Not built by the workflow (yet):
 
-- Flathub (Flatpak) and a Homebrew tap — planned next, see "Application stores" below.
+- A Homebrew tap — planned next, see "Application stores" below.
 - macOS Intel — no current plan. AppImage and Snap — decided against for now (see "Application
   stores").
 - A separately hosted PWA (e.g. GitHub Pages) — possible later, but requires users to expose their
@@ -118,16 +121,21 @@ Priority order, decided 2026-07-10:
    - Prerequisite (done): app ID renamed `com.github.read-flow.read-flow` →
      `io.github.read-flow.read-flow` — Flathub requires the `io.github.<owner>.<repo>` convention
      for GitHub-hosted apps; `com.github.*` is not accepted.
-   - Still needed: a flatpak-builder manifest (`io.github.read-flow.read-flow.yml`), a decision on
-     the sandboxing/file-access model (see below), and a real build+test on Linux — flatpak-builder
-     doesn't run on macOS, so this can't be verified from a Mac dev machine; needs a Linux box or a
-     CI job.
-   - **Open decision**: file-access permission model. Read Flow currently does raw filesystem
-     walks over configured scan directories, which doesn't fit Flatpak's sandbox cleanly. Options:
-     `--filesystem=home:rw` (simple, well-precedented for file-manager-style apps, but broader than
-     strictly needed) vs. proper `xdg-desktop-portal` folder-access integration (correct sandboxing,
-     but needs the `ashpd` crate and UI changes to request/persist folder grants — real dev work).
-     Leaning `--filesystem=home` for a first submission, revisit portal integration later.
+   - Manifest (done, draft): [`flatpak/io.github.read-flow.read-flow.yml`](flatpak/io.github.read-flow.read-flow.yml).
+     File-access model: `--filesystem=home:rw` for the first submission (simple, well-precedented
+     for file-manager-style apps) rather than `xdg-desktop-portal` folder grants (correct
+     sandboxing, but needs the `ashpd` crate + UI changes — real dev work, revisit later if
+     Flathub reviewers push back).
+   - CI (done): `.github/workflows/release.yml` job `build-flatpak` builds a `.flatpak` bundle on
+     every tagged release and attaches it to the GitHub Release, using the official
+     `flatpak/flatpak-github-actions` action + `flatpak-builder-tools` generators for offline
+     cargo/npm sources. **Not yet verified** — flatpak-builder can't run on macOS, so this hasn't
+     been build-tested; expect to debug the first real CI run(s) (mupdf's C/C++ build in
+     particular is compile-heavy and untested in this environment).
+   - **Still open**: actually submitting to Flathub is a separate manual step (a PR against
+     `github.com/flathub/flathub` with an adapted manifest using a `type: git` source instead of
+     the local `type: dir` one CI uses) — do this once the CI-built bundle installs and runs
+     cleanly.
 2. **Homebrew** — own tap (e.g. `read-flow/homebrew-read-flow`), not homebrew-core (which requires
    "notability" — stars/forks this project doesn't have yet). Ship a Cask for the macOS `.app`;
    optionally a Formula for `read-flow --headless` server use, once decided whether that needs a

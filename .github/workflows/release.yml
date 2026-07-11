@@ -4,11 +4,15 @@
 #   - Linux x86_64:  portable .tar.gz  +  .deb
 #   - Linux arm64:   portable .tar.gz  +  .deb (e.g. Raspberry Pi 5)
 #   - macOS arm64:   .app bundle, zipped (UNSIGNED — see README install notes)
+#   - Flatpak:       single-file .flatpak bundle (flatpak/*.yml manifest — draft,
+#                     see RELEASING.md "Application stores"; this is CI-built for
+#                     direct install, not yet submitted to Flathub itself)
 #   - SHA256SUMS for every artifact
 #
 # TODO (see RELEASING.md open questions):
 #   - macOS code signing + notarization
-#   - additional targets (macOS Intel) / formats (AppImage, Flatpak)
+#   - additional targets: macOS Intel
+#   - submit the Flatpak manifest to Flathub; set up a Homebrew tap
 name: Release
 
 on:
@@ -123,9 +127,36 @@ jobs:
           name: macos-arm64
           path: read-flow-*-macos-arm64.zip
 
+  build-flatpak:
+    name: Build Flatpak
+    runs-on: ubuntu-latest
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:freedesktop-24.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate offline cargo/npm sources
+        run: |
+          pip3 install --break-system-packages aiohttp toml requirements-parser semver packaging
+          curl -sL -o flatpak/cargo-generator.py \
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+          curl -sL -o flatpak/node-generator.py \
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/node/flatpak-node-generator.py
+          python3 flatpak/cargo-generator.py Cargo.lock -o flatpak/cargo-sources.json
+          python3 flatpak/node-generator.py npm pwa/package-lock.json -o flatpak/node-sources.json
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: read-flow-${{ github.ref_name }}.flatpak
+          manifest-path: flatpak/io.github.read-flow.read-flow.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: read-flow-*.flatpak
+
   release:
     name: Publish draft release
-    needs: [changelog, build-linux, build-macos]
+    needs: [changelog, build-linux, build-macos, build-flatpak]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -134,7 +165,7 @@ jobs:
       - name: Collect artifacts and checksums
         run: |
           mkdir -p out
-          find artifacts -type f \( -name '*.deb' -o -name '*.tar.gz' -o -name '*.zip' \) \
+          find artifacts -type f \( -name '*.deb' -o -name '*.tar.gz' -o -name '*.zip' -o -name '*.flatpak' \) \
             -exec cp {} out/ \;
           cd out
           shasum -a 256 * > SHA256SUMS
