@@ -19,7 +19,7 @@ runtime-version: '24.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
-  - org.freedesktop.Sdk.Extension.node20
+  - org.freedesktop.Sdk.Extension.node22
 command: read-flow
 
 finish-args:
@@ -39,18 +39,23 @@ finish-args:
   - --filesystem=home:rw
 
 build-options:
-  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin
   env:
     CARGO_HOME: /run/build/read-flow/cargo
+    # npm's offline cache location, populated by flatpak-node-generator's
+    # sources during the (networked) source-fetch phase, before the
+    # sandboxed (offline) build-commands run.
+    XDG_CACHE_HOME: /run/build/read-flow/flatpak-node/cache
+    npm_config_cache: /run/build/read-flow/flatpak-node/npm-cache
 
 modules:
   - name: read-flow
     buildsystem: simple
     build-commands:
       # 1. Build the PWA (embedded into the binary via the `embed-pwa`
-      #    feature). flatpak-node-generator's sources populate an offline npm
-      #    cache; exact invocation may need adjusting once the generator's
-      #    actual output is exercised in CI.
+      #    feature). flatpak-node-generator's sources populate the offline
+      #    npm cache at $npm_config_cache (see build-options.env above) —
+      #    npm resolves it from there automatically.
       - cd pwa && npm install --offline && npm run build
 
       # 2. Build read-flow with the embedded PWA. cargo-sources.json (added
