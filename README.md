@@ -187,14 +187,8 @@ Read Flow is released under a **split license** (see [`NOTICE`](NOTICE) for the 
 
 ## Development & AI transparency
 
-<!-- TODO (author): review and adjust the wording/tools below before publishing — this is your personal note. -->
-
 Read Flow started as a project I wrote by hand, including its first user interface built with
 [iced](https://iced.rs/). As development continued, I began experimenting with AI coding tools —
 GitHub Copilot, the Cursor editor, and others (including Claude Code) — especially while building
 the current desktop UI on [libcosmic](https://github.com/pop-os/libcosmic). AI assistance has been
 part of the workflow since then; all code is reviewed and integrated by me.
-
-## Author
-
-Peterpaul Klein Haneveld — <pp.kleinhaneveld@gmail.com>
