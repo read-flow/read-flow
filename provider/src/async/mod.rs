@@ -19,8 +19,8 @@ pub use fallback_provider::FallbackProvider;
 pub use map::Map;
 pub use observable_cache::ObservableCache;
 pub use observable_provider::ObservableProvider;
-use tokio::sync::broadcast;
 use tokio::sync::RwLock;
+use tokio::sync::broadcast;
 pub use value::Value;
 
 #[trait_variant::make(Send)]
@@ -195,10 +195,10 @@ pub trait Observable<T> {
 #[cfg(test)]
 mod tests {
     use std::convert::Infallible;
+    use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::AtomicU8;
     use std::sync::atomic::Ordering;
-    use std::sync::Arc;
 
     use super::*;
 

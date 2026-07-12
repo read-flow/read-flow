@@ -3,8 +3,8 @@ use std::convert::identity;
 use std::fmt;
 use std::marker::PhantomData;
 
-use tokio::sync::broadcast;
 use tokio::sync::RwLock;
+use tokio::sync::broadcast;
 
 use crate::r#async::Expiring;
 use crate::r#async::HasSetExpired;

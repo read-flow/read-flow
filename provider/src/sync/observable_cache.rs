@@ -2,15 +2,15 @@ use std::any::type_name;
 use std::convert::identity;
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::mpsc;
 use std::sync::RwLock;
+use std::sync::mpsc;
 
-use crate::sync::broadcaster::Broadcaster;
 use crate::sync::Expiring;
 use crate::sync::HasSetExpired;
 use crate::sync::Invalidated;
 use crate::sync::Observable;
 use crate::sync::Provider;
+use crate::sync::broadcaster::Broadcaster;
 
 /// An observable cache that notifies subscribers when invalidated.
 pub struct ObservableCache<P, F, T, R> {

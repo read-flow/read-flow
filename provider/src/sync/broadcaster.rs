@@ -1,5 +1,5 @@
-use std::sync::mpsc;
 use std::sync::Mutex;
+use std::sync::mpsc;
 
 /// A simple broadcast channel backed by `std::sync::mpsc`.
 ///

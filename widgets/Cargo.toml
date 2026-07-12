@@ -1,7 +1,8 @@
 [package]
 name = "read-flow-widgets"
 version.workspace = true
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 license = "AGPL-3.0-or-later"
 
 [dependencies]

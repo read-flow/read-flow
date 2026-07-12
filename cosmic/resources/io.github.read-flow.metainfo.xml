@@ -5,6 +5,22 @@
   <project_license>AGPL-3.0-or-later</project_license>
   <name>Read Flow</name>
   <summary>Manage Documents Accross Multiple Machines</summary>
+  <description>
+    <p>
+      Read Flow is a local-first document archive organizer for e-books and PDFs. It scans
+      your library, fingerprints and deduplicates files by content, and lets you tag, search,
+      and track reading progress across every source.
+    </p>
+    <p>
+      Built-in readers cover PDF and EPUB, with support for MOBI, FictionBook, CBZ/CBT,
+      DOCX/XLSX/PPTX/XPS, and documents inside archives. Read Flow can also search and import
+      books from online libraries such as Project Gutenberg and Standard Ebooks.
+    </p>
+    <p>
+      The same server that powers the desktop app can run headless, so a phone, tablet, or web
+      browser can reach your library through the companion Progressive Web App.
+    </p>
+  </description>
   <icon type="remote" width="64" height="64" scale="1">
     https://github.com/read-flow/read-flow/raw/main/resources/icons/hicolor/scalable/apps/icon.svg
   </icon>

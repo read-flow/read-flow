@@ -9,9 +9,9 @@ mod observable_cache;
 mod observable_provider;
 mod value;
 
-use std::sync::mpsc;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::sync::mpsc;
 
 pub use and_then::AndThen;
 pub use cache::Cache;
@@ -203,10 +203,10 @@ pub trait Observable<T> {
 #[cfg(test)]
 mod tests {
     use std::convert::Infallible;
+    use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::AtomicU8;
     use std::sync::atomic::Ordering;
-    use std::sync::Arc;
 
     use super::*;
 

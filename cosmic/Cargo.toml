@@ -1,7 +1,8 @@
 [package]
 name = "read-flow"
 version.workspace = true
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 license = "AGPL-3.0-or-later"
 description = "Manage Documents Accross Multiple Machines"
 repository = "https://github.com/read-flow/read-flow"

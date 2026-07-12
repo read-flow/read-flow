@@ -6,12 +6,12 @@
 
 use std::sync::mpsc;
 
-use crate::sync::broadcaster::Broadcaster;
 use crate::sync::Expiring;
 use crate::sync::HasSetExpired;
 use crate::sync::Invalidated;
 use crate::sync::Observable;
 use crate::sync::Provider;
+use crate::sync::broadcaster::Broadcaster;
 
 /// An observable provider that notifies subscribers when invalidated.
 ///
