@@ -431,10 +431,10 @@ pub(crate) fn dropdown_container_style() -> cosmic::theme::Container<'static> {
         let cosmic = theme.cosmic();
         cosmic::iced::widget::container::Style {
             background: Some(cosmic::iced::Background::Color(
-                cosmic.background.component.base.into(),
+                cosmic.background(false).component.base.into(),
             )),
             border: cosmic::iced::Border {
-                color: cosmic.primary.divider.into(),
+                color: cosmic.primary(false).divider.into(),
                 width: 1.0,
                 radius: cosmic.corner_radii.radius_s.into(),
             },

@@ -490,7 +490,7 @@ impl Deref for ExpandedPath {
 
 impl fmt::Display for ExpandedPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &self.0.display())
+        write!(f, "{}", self.0.display())
     }
 }
 

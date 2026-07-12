@@ -666,7 +666,11 @@ fn style_span<'a>(
     if inline.monospaced {
         s = s.font(cosmic::font::mono());
         s = s.background(Background::Color(
-            cosmic::theme::active().cosmic().secondary.base.into(),
+            cosmic::theme::active()
+                .cosmic()
+                .secondary(false)
+                .base
+                .into(),
         ));
     }
     if let Some([r, g, b]) = color {

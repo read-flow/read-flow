@@ -1242,7 +1242,7 @@ impl Page for EpubViewer {
                     widget::slider(0.0..=128.0, self.page_margin, |v| {
                         EpubViewerMessage::SetPageMargin(v)
                     })
-                    .step(4.0),
+                    .step(4.0_f32),
                 ),
             );
         }
@@ -1275,7 +1275,7 @@ impl Page for EpubViewer {
                 widget::slider(12.0..=24.0, self.base_font_size, |v| {
                     EpubViewerMessage::SetBaseFontSize(v)
                 })
-                .step(1.0),
+                .step(1.0_f32),
             ),
         );
 

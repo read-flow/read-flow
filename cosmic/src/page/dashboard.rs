@@ -110,44 +110,48 @@ fn card_button_class() -> cosmic::theme::Button {
         active: Box::new(|_, theme| {
             let cosmic = theme.cosmic();
             cosmic::widget::button::Style {
-                background: Some(Background::Color(cosmic.primary.base.into())),
+                background: Some(Background::Color(cosmic.primary(false).base.into())),
                 border_radius: cosmic.corner_radii.radius_s.into(),
                 border_width: 1.0,
                 border_color: cosmic.accent.base.into(),
-                text_color: Some(cosmic.primary.on.into()),
+                text_color: Some(cosmic.primary(false).on.into()),
                 ..Default::default()
             }
         }),
         disabled: Box::new(|theme| {
             let cosmic = theme.cosmic();
             cosmic::widget::button::Style {
-                background: Some(Background::Color(cosmic.primary.base.into())),
+                background: Some(Background::Color(cosmic.primary(false).base.into())),
                 border_radius: cosmic.corner_radii.radius_s.into(),
                 border_width: 1.0,
                 border_color: cosmic.accent.base.into(),
-                text_color: Some(cosmic.primary.on.into()),
+                text_color: Some(cosmic.primary(false).on.into()),
                 ..Default::default()
             }
         }),
         hovered: Box::new(|_, theme| {
             let cosmic = theme.cosmic();
             cosmic::widget::button::Style {
-                background: Some(Background::Color(cosmic.primary.component.hover.into())),
+                background: Some(Background::Color(
+                    cosmic.primary(false).component.hover.into(),
+                )),
                 border_radius: cosmic.corner_radii.radius_s.into(),
                 border_width: 1.0,
                 border_color: cosmic.accent.base.into(),
-                text_color: Some(cosmic.primary.on.into()),
+                text_color: Some(cosmic.primary(false).on.into()),
                 ..Default::default()
             }
         }),
         pressed: Box::new(|_, theme| {
             let cosmic = theme.cosmic();
             cosmic::widget::button::Style {
-                background: Some(Background::Color(cosmic.primary.component.pressed.into())),
+                background: Some(Background::Color(
+                    cosmic.primary(false).component.pressed.into(),
+                )),
                 border_radius: cosmic.corner_radii.radius_s.into(),
                 border_width: 1.0,
                 border_color: cosmic.accent.base.into(),
-                text_color: Some(cosmic.primary.on.into()),
+                text_color: Some(cosmic.primary(false).on.into()),
                 ..Default::default()
             }
         }),

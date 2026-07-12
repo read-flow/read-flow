@@ -238,10 +238,9 @@ fn parse_viewbox_aspect_ratio(svg: &str) -> Option<f32> {
     let rest = rest.trim_start();
     let vb = if let Some(s) = rest.strip_prefix('"') {
         s.split('"').next()?
-    } else if let Some(s) = rest.strip_prefix('\'') {
-        s.split('\'').next()?
     } else {
-        return None;
+        let s = rest.strip_prefix('\'')?;
+        s.split('\'').next()?
     };
     util::parse_viewbox_str(vb)
 }

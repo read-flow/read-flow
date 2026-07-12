@@ -50,10 +50,10 @@ where
         // Try to read the cached value first
         {
             let value = self.value.read().unwrap();
-            if let Some(ref cached) = *value {
-                if !cached.is_expired() {
-                    return Ok(cached.clone());
-                }
+            if let Some(ref cached) = *value
+                && !cached.is_expired()
+            {
+                return Ok(cached.clone());
             }
         }
 
@@ -61,10 +61,10 @@ where
         let mut value = self.value.write().unwrap();
 
         // Double-check after acquiring write lock
-        if let Some(ref cached) = *value {
-            if !cached.is_expired() {
-                return Ok(cached.clone());
-            }
+        if let Some(ref cached) = *value
+            && !cached.is_expired()
+        {
+            return Ok(cached.clone());
         }
 
         let new_value = self.provider.provide()?;
