@@ -29,17 +29,17 @@ Git tag (`vX.Y.Z`) and attaches them to a **draft** GitHub Release:
 - **macOS arm64** (Apple Silicon): a zipped `.app` bundle. **Unsigned** — users bypass Gatekeeper on
   first launch (documented in the README). _(decide: signing + notarization — see open questions.)_
 - **Flatpak**: a single-file `.flatpak` bundle, built from
-  [`flatpak/io.github.read-flow.yml`](flatpak/io.github.read-flow.yml) — draft,
-  not yet build-verified (see "Application stores" below).
+  [`flatpak/io.github.read-flow.yml`](flatpak/io.github.read-flow.yml) — confirmed green
+  end-to-end on v0.1.1 (see "Application stores" below).
 - **Checksums**: `SHA256SUMS` covering every artifact, generated in the workflow.
 
 The **PWA** is not shipped as a separate artifact: the packaging recipes (`just deb`, `just bundle`)
 build it (`just pwa-build`) and **embed** it into the `read-flow` binary via the `embed-pwa` feature,
 so the server hosts the web UI at its own address (same origin — no CORS/HTTPS gymnastics).
 
-Not built by the workflow (yet):
+Not built by the workflow (bumped by hand instead — see "Application stores"):
 
-- A Homebrew tap — planned next, see "Application stores" below.
+- The Homebrew Cask (`Casks/read-flow.rb` in `read-flow/homebrew-read-flow`).
 - macOS Intel — no current plan. AppImage and Snap — decided against for now (see "Application
   stores").
 - A separately hosted PWA (e.g. GitHub Pages) — possible later, but requires users to expose their
@@ -121,25 +121,32 @@ Priority order, decided 2026-07-10:
    - Prerequisite (done): app ID renamed `com.github.read-flow.read-flow` →
      `io.github.read-flow` — Flathub requires the `io.github.<owner>.<repo>` convention
      for GitHub-hosted apps; `com.github.*` is not accepted.
-   - Manifest (done, draft): [`flatpak/io.github.read-flow.yml`](flatpak/io.github.read-flow.yml).
-     File-access model: `--filesystem=home:rw` for the first submission (simple, well-precedented
-     for file-manager-style apps) rather than `xdg-desktop-portal` folder grants (correct
-     sandboxing, but needs the `ashpd` crate + UI changes — real dev work, revisit later if
-     Flathub reviewers push back).
-   - CI (done): `.github/workflows/release.yml` job `build-flatpak` builds a `.flatpak` bundle on
-     every tagged release and attaches it to the GitHub Release, using the official
+   - Manifest: [`flatpak/io.github.read-flow.yml`](flatpak/io.github.read-flow.yml). File-access
+     model: `--filesystem=home:rw` for the first submission (simple, well-precedented for
+     file-manager-style apps) rather than `xdg-desktop-portal` folder grants (correct sandboxing,
+     but needs the `ashpd` crate + UI changes — real dev work, revisit later if Flathub reviewers
+     push back).
+   - CI: `.github/workflows/release.yml` job `build-flatpak` builds a `.flatpak` bundle on every
+     tagged release and attaches it to the GitHub Release, using the official
      `flatpak/flatpak-github-actions` action + `flatpak-builder-tools` generators for offline
-     cargo/npm sources. **Not yet verified** — flatpak-builder can't run on macOS, so this hasn't
-     been build-tested; expect to debug the first real CI run(s) (mupdf's C/C++ build in
-     particular is compile-heavy and untested in this environment).
-   - **Still open**: actually submitting to Flathub is a separate manual step (a PR against
-     `github.com/flathub/flathub` with an adapted manifest using a `type: git` source instead of
-     the local `type: dir` one CI uses) — do this once the CI-built bundle installs and runs
-     cleanly.
-2. **Homebrew** — own tap (e.g. `read-flow/homebrew-read-flow`), not homebrew-core (which requires
-   "notability" — stars/forks this project doesn't have yet). Ship a Cask for the macOS `.app`;
-   optionally a Formula for `read-flow --headless` server use, once decided whether that needs a
-   separate GUI-free build target.
+     cargo/npm sources. **Confirmed working**: green end-to-end on v0.1.1, including mupdf's full
+     C/C++ compile and the entire libcosmic/wgpu/sqlx stack (run 29185080376).
+   - Standalone submission repo: [`read-flow/io.github.read-flow`](https://github.com/read-flow/io.github.read-flow)
+     — the manifest adapted for Flathub's build infrastructure (`type: git` source pinned to a
+     release tag/commit instead of the local checkout CI uses), with `cargo-sources.json` /
+     `node-sources.json` committed as static files (Flathub can't run our CI's generation step).
+     Same build logic as the CI-verified manifest above.
+   - **Still open**: submitting to Flathub itself (a PR against `github.com/flathub/flathub`
+     pointing at the submission repo) and a Linux-side `flatpak-builder` run of that repo — neither
+     done yet, both straightforward from here.
+2. **Homebrew**: own tap, [`read-flow/homebrew-read-flow`](https://github.com/read-flow/homebrew-read-flow)
+   — not homebrew-core (which requires "notability" — stars/forks this project doesn't have yet).
+   Ships a Cask (`Casks/read-flow.rb`) for the macOS `.app`, installing via
+   `brew install --cask read-flow/read-flow/read-flow`. **Confirmed working**: `brew style`/`brew
+   audit --online` clean, `brew install` verified the download/sha256 and resolved to the correct
+   `/Applications/Read Flow.app` path. No Formula for `read-flow --headless` server use — the
+   binary needs the full GUI dependency tree either way, so a Formula would just be a heavier
+   build-from-source path to the same thing the Cask already covers.
 3. **AUR** — near-zero-effort bonus alongside Flathub: a `PKGBUILD` in a personal repo, no review
    process, can reuse the same build steps as `just deb`.
 4. **Snap Store** — deprioritized. Mechanically similar effort to the existing `.deb` (same system

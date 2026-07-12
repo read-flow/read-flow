@@ -1,9 +1,9 @@
 # Flatpak manifest for Read Flow.
 #
-# This is a *draft*, built and validated by CI (.github/workflows/release.yml,
-# job `build-flatpak`) rather than by hand — flatpak-builder doesn't run on
-# macOS, so this file has not been build-tested locally. Expect to iterate on
-# it after the first real CI run(s). See RELEASING.md ("Application stores")
+# Built and validated by CI (.github/workflows/release.yml, job
+# `build-flatpak`) on every tagged release — confirmed green end-to-end for
+# v0.1.1 (run 29185080376), including mupdf's full C/C++ compile and the
+# entire libcosmic/wgpu/sqlx stack. See RELEASING.md ("Application stores")
 # for the sandboxing/permission tradeoffs behind the choices below.
 #
 # `cargo-sources.json` and `node-sources.json` referenced below are NOT
@@ -12,6 +12,9 @@
 # https://github.com/flatpak/flatpak-builder-tools. This avoids maintaining
 # multi-thousand-line generated files by hand and keeps them in sync with the
 # lockfiles automatically.
+#
+# For the standalone Flathub submission manifest (static, committed sources,
+# git-pinned to a release tag), see github.com/read-flow/io.github.read-flow.
 
 app-id: io.github.read-flow
 runtime: org.freedesktop.Platform
