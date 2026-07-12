@@ -42,7 +42,7 @@ indexmap = { workspace = true, features = ["serde"] }
 itertools.workspace = true
 mime.workspace = true
 pbkdf2 = { workspace = true, features = ["phc", "rand_core"] }
-rand_core = { workspace = true, features = ["getrandom"] }
+rand = { workspace = true, features = ["std", "sys_rng"] }
 rustc-hash.workspace = true
 reqwest = { workspace = true, features = ["json", "stream", "multipart", "default-tls", "system-proxy"] }
 serde = { workspace = true, features = ["derive"] }
@@ -78,7 +78,7 @@ axum-server = { workspace = true, optional = true }
 tower = { workspace = true, optional = true }
 tower-http = { workspace = true, optional = true, features = ["cors", "trace", "set-header", "limit"] }
 tower_governor = { workspace = true, optional = true }
-jsonwebtoken = { workspace = true, optional = true }
+jsonwebtoken = { workspace = true, optional = true, features = ["rust_crypto"] }
 rcgen = { workspace = true, optional = true }
 rust-embed = { workspace = true, optional = true, features = ["mime-guess"] }
 password-hash = "0.6.1"

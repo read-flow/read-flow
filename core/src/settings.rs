@@ -16,8 +16,8 @@ use pbkdf2::PasswordVerifier;
 use pbkdf2::Pbkdf2;
 use pbkdf2::password_hash::Error as PbkdfError;
 use pbkdf2::phc::PasswordHash;
-use rand_core::OsRng;
-use rand_core::RngCore;
+use rand::TryRng;
+use rand::rngs::SysRng;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -98,7 +98,9 @@ impl fmt::Display for HashedPassword {
 /// unknown user authenticates, so timing doesn't reveal which usernames exist.
 static DUMMY_HASH: LazyLock<String> = LazyLock::new(|| {
     let mut salt = [0u8; 16];
-    OsRng.fill_bytes(&mut salt);
+    SysRng
+        .try_fill_bytes(&mut salt)
+        .expect("OS RNG unavailable");
     Argon2::default()
         .hash_password_with_salt(b"read-flow-dummy-password", &salt)
         .expect("dummy hash")
@@ -120,7 +122,9 @@ impl TryFrom<String> for HashedPassword {
     /// still accepted by [`HashedPassword::verify`].
     fn try_from(password: String) -> Result<Self, Self::Error> {
         let mut salt = [0u8; 16];
-        OsRng.fill_bytes(&mut salt);
+        SysRng
+            .try_fill_bytes(&mut salt)
+            .expect("OS RNG unavailable");
         let password_hash = Argon2::default()
             .hash_password_with_salt(password.as_bytes(), &salt)?
             .to_string();
@@ -150,7 +154,9 @@ impl HashedPassword {
         use pbkdf2::Params;
         use pbkdf2::password_hash::CustomizedPasswordHasher;
         let mut salt = [0u8; 16];
-        OsRng.fill_bytes(&mut salt);
+        SysRng
+            .try_fill_bytes(&mut salt)
+            .expect("OS RNG unavailable");
         let params = Params::new(rounds)?;
         let password_hash = Pbkdf2::default()
             .hash_password_customized(password.as_bytes(), &salt, None, None, params)?

@@ -25,8 +25,8 @@ use jsonwebtoken::DecodingKey;
 use jsonwebtoken::EncodingKey;
 use jsonwebtoken::Header;
 use jsonwebtoken::Validation;
-use rand_core::OsRng;
-use rand_core::RngCore;
+use rand::TryRng;
+use rand::rngs::SysRng;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -74,7 +74,9 @@ impl TokenService {
 
     pub fn with_ttl(ttl: Duration) -> Self {
         let mut secret = [0u8; 32];
-        OsRng.fill_bytes(&mut secret);
+        SysRng
+            .try_fill_bytes(&mut secret)
+            .expect("OS RNG unavailable");
 
         let mut validation = Validation::new(Algorithm::HS256);
         validation.set_issuer(&[ISSUER]);

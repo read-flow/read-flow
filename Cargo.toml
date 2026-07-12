@@ -19,10 +19,10 @@ assert4rs = "0.2.1"
 async-trait = "0.1.89"
 base64 = "0.22.1"
 clap = "4.6.1"
-directories = "5"
+directories = "6"
 cosmic-golden = { git = "https://github.com/peterpaul/cosmic-golden-test.git", tag = "0.6.0" }
 cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git" }
-cucumber = "0.21"
+cucumber = "0.23"
 derive_more = "2.1.1"
 sha2 = "0.11"
 sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio", "macros"] }
@@ -34,35 +34,34 @@ image = { version = "0.25", default-features = false }
 i18n-embed = "0.16.0"
 i18n-embed-fl = "0.10.0"
 indexmap = "2.14.0"
-itertools = "0.14.0"
+itertools = "0.15.0"
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git" }
 mime = "0.3.17"
 argon2 = "0.6.0-rc.8"
-jsonwebtoken = "9.3.1"
-mupdf = "0.7.0"
-open = "5.3.6"
+jsonwebtoken = "10.4.0"
+mupdf = "0.8.0"
+open = "5.4.0"
 pbkdf2 = "0.13.0"
-quick-xml = "0.40.1"
-rcgen = "0.13"
-rand = { version = "0.10.1", default-features = false }
+quick-xml = "0.41.0"
+rcgen = "0.14"
+rand = { version = "0.10.2", default-features = false }
 rustc-hash = "2"
-rand_core = "0.6"
-regex = { version = "1.12.4", default-features = false }
+regex = { version = "1.13.0", default-features = false }
 reqwest = { version = "0.13.4", default-features = false }
 rfd = "0.17.2"
-axum = "0.8.7"
-axum-server = { version = "0.7.2", features = ["tls-rustls"] }
-tower = "0.5.2"
-tower-http = "0.6.6"
-tower_governor = "0.7.0"
+axum = "0.8.9"
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
+tower = "0.5.3"
+tower-http = "0.7.0"
+tower_governor = "0.8.0"
 rstest = "0.26.1"
-rust-embed = "8.11.0"
+rust-embed = "8.12.0"
 serde = "1.0.228"
 serde_json = "1"
 serde_with = "3.21.0"
 strum = "0.28"
 thiserror = "2.0.18"
-time = { version = "0.3.51", default-features = false }
+time = { version = "0.3.53", default-features = false }
 tokio = "1.52.3"
 toml = "1.1.2"
 tracing = "0.1.44"
@@ -73,7 +72,7 @@ uuid = { version = "1", features = ["v4"] }
 webp = "0.3"
 tar = "0.4"
 flate2 = "1"
-bzip2 = "0.5"
+bzip2 = "0.6"
 xz2 = "0.1"
 zstd = "0.13"
 tempfile = "3"

@@ -303,16 +303,14 @@ pub async fn build_router(state: AppState) -> Router {
 
     // Rate-limit the token endpoint to blunt password brute-forcing. Global key
     // (per-IP needs ConnectInfo; a reverse proxy is the recommended per-IP path).
-    let governor = GovernorLayer {
-        config: std::sync::Arc::new(
-            GovernorConfigBuilder::default()
-                .per_second(2)
-                .burst_size(10)
-                .key_extractor(GlobalKeyExtractor)
-                .finish()
-                .expect("governor config"),
-        ),
-    };
+    let governor = GovernorLayer::new(std::sync::Arc::new(
+        GovernorConfigBuilder::default()
+            .per_second(2)
+            .burst_size(10)
+            .key_extractor(GlobalKeyExtractor)
+            .finish()
+            .expect("governor config"),
+    ));
 
     let routes = Router::new()
         .route("/status", get(status))
@@ -421,7 +419,7 @@ pub fn generate_self_signed_cert(
     let cert_path = dir.join("read-flow-cert.pem");
     let key_path = dir.join("read-flow-key.pem");
     std::fs::write(&cert_path, generated.cert.pem())?;
-    std::fs::write(&key_path, generated.key_pair.serialize_pem())?;
+    std::fs::write(&key_path, generated.signing_key.serialize_pem())?;
     Ok((cert_path, key_path))
 }
 
@@ -449,7 +447,7 @@ pub async fn serve_on(
         None => axum::serve(listener, app).await,
         Some(config) => {
             let std_listener = listener.into_std()?;
-            axum_server::from_tcp_rustls(std_listener, config)
+            axum_server::from_tcp_rustls(std_listener, config)?
                 .serve(app.into_make_service())
                 .await
         }
@@ -482,7 +480,7 @@ pub async fn serve_on_with_shutdown(
                 }
             });
             let std_listener = listener.into_std()?;
-            axum_server::from_tcp_rustls(std_listener, config)
+            axum_server::from_tcp_rustls(std_listener, config)?
                 .handle(handle)
                 .serve(app.into_make_service())
                 .await
