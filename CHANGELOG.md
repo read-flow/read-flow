@@ -14,10 +14,19 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.1.1] - 2026-07-12
+
+### Added
+
 - Archive scanning supports zstd-compressed tarballs (`.tar.zst`, `.tar.zstd`, `.tzst`).
-- Draft Flatpak packaging (`flatpak/io.github.read-flow.yml`), built to a `.flatpak`
-  bundle and attached to releases by CI. First step toward a Flathub submission — see
-  RELEASING.md. Not yet build-verified (flatpak-builder doesn't run on macOS).
+- Linux arm64 release builds (native `.deb` + portable tarball, e.g. for Raspberry Pi 5),
+  alongside the existing x86_64 build.
+- Flatpak packaging (`flatpak/io.github.read-flow.yml`), built to a `.flatpak` bundle and
+  attached to releases by CI. First step toward a Flathub submission — see RELEASING.md.
 
 ### Changed
 
@@ -54,5 +63,6 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/read-flow/read-flow/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/read-flow/read-flow/releases/tag/v0.1.0

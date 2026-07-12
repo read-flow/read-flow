@@ -7,9 +7,10 @@ tag and track your reading, and reads your books for you in a built-in PDF and E
 Everything runs on your own hardware; there is no cloud account and nothing leaves your network
 unless you ask it to.
 
-> **Status:** early release (`0.1.0`). Prebuilt binaries for Linux (x86_64) and macOS (Apple
-> Silicon) are published on the [Releases](https://github.com/read-flow/read-flow/releases) page;
-> you can also build from source.
+> **Status:** early release (`0.1.1`). Prebuilt binaries for Linux (x86_64/arm64, including a
+> Flatpak) and macOS (Apple Silicon) are published on the
+> [Releases](https://github.com/read-flow/read-flow/releases) page; you can also build from
+> source.
 
 ## Screenshots
 |                                                                                                       |                                                                                                         |
