@@ -893,6 +893,8 @@ fn map_preferences_message(msg: PreferencesMessage) -> PageMessage {
             }
             PreferencesOutput::SourceDeleted(url) => PageMessage::DeleteRemote(url),
             PreferencesOutput::RestartServer => PageMessage::Out(PageOutput::RestartServer),
+            PreferencesOutput::OpenContext => PageMessage::Out(PageOutput::OpenContext),
+            PreferencesOutput::CloseContext => PageMessage::Out(PageOutput::CloseContext),
         },
         msg => PageMessage::Preferences(msg),
     }

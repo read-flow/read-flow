@@ -644,3 +644,13 @@ feature over the REST =/online-library= endpoints.
 ** DONE Theme editor
 PWA-only customizable theme editor (modes, colour schemes, custom
 colors) — the desktop app inherits the COSMIC system theme instead.
+
+** DONE Desktop per-app theme overrides
+Preferences → Appearance lets users theme the COSMIC app (dark/light,
+accent, density, roundness, frosted glass, interface font, advanced
+background colours) without changing global COSMIC settings. Stored in
+=[ui.theme]= of read-flow.toml; applies live (font family via the
+in-process CosmicTk global) except font size (restart). Frosted glass
+is Linux-only (=cfg(target_os = "linux")=; needs compositor blur) —
+controls hidden and mapping skipped elsewhere.
+Feature id =app.theme_overrides=.

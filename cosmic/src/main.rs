@@ -2,6 +2,7 @@
 
 mod aggregator;
 mod app;
+mod app_theme;
 #[cfg(test)]
 mod bdd;
 mod client;
@@ -107,6 +108,9 @@ fn main() -> anyhow::Result<()> {
     // Enable localizations to be applied.
     i18n::init(&requested_languages);
 
+    // Start listing installed fonts in the background; first use is slow.
+    fonts::preload();
+
     // Parse commandline parameters.
     let cli = Cli::parse();
     let headless = cli.headless;
@@ -133,11 +137,27 @@ fn main() -> anyhow::Result<()> {
     };
 
     // Settings for configuring the application window and iced runtime.
-    let settings = cosmic::app::Settings::default().size_limits(
-        cosmic::iced::Limits::NONE
-            .min_width(360.0)
-            .min_height(180.0),
-    );
+    // Theme and interface font come from the `[ui.theme]` overrides so the
+    // first frame already matches. The font family is written into the
+    // in-process CosmicTk global (live-updatable); the size is a renderer
+    // setting and only applies at startup.
+    let theme_settings = Settings::extract_from(application_module.config_path())
+        .map(|s| s.ui.theme().clone())
+        .unwrap_or_default();
+    app_theme::apply_interface_font(&theme_settings);
+    let mut settings = cosmic::app::Settings::default()
+        .size_limits(
+            cosmic::iced::Limits::NONE
+                .min_width(360.0)
+                .min_height(180.0),
+        )
+        .theme(app_theme::effective_theme(&theme_settings));
+    if let Some(font) = app_theme::interface_font(&theme_settings) {
+        settings = settings.default_font(font);
+    }
+    if let Some(size) = theme_settings.interface_font_size {
+        settings = settings.default_text_size(f32::from(size));
+    }
 
     // Starts the application's event loop.
     cosmic::app::run::<app::ReadFlow>(settings, (application_module, initial_files, log_bus))?;

@@ -44,5 +44,6 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `online_library.download_import` | ✅ | ✅ | ✅ | Download and import a book from an OPDS catalog |
 | `theme.editor` |  | ✅ |  | Customizable theme editor (modes, schemes, custom colors) |
 | `app.epub_viewer_choice` | ✅ |  |  | Choose EPUB viewer backend (native/mupdf/external) |
+| `app.theme_overrides` | ✅ |  |  | Per-app theme overrides (dark/light, accent, density, roundness, frosted glass, interface font) without changing global COSMIC settings |
 
-_38 features tracked._
+_39 features tracked._

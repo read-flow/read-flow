@@ -233,3 +233,8 @@ surfaces = ["pwa"]
 id = "app.epub_viewer_choice"
 description = "Choose EPUB viewer backend (native/mupdf/external)"
 surfaces = ["cosmic"]
+
+[[feature]]
+id = "app.theme_overrides"
+description = "Per-app theme overrides (dark/light, accent, density, roundness, frosted glass, interface font) without changing global COSMIC settings"
+surfaces = ["cosmic"]

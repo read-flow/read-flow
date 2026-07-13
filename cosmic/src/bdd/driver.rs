@@ -547,6 +547,62 @@ impl Driver {
         }
     }
 
+    // -- app.theme_overrides --
+
+    pub async fn set_custom_theme_enabled(&mut self, enabled: bool) {
+        match self {
+            Self::Rest(_) => {
+                panic!("`app.theme_overrides` has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.set_custom_theme_enabled(enabled).await,
+        }
+    }
+
+    pub async fn set_theme_variant(&mut self, variant: &str) {
+        match self {
+            Self::Rest(_) => {
+                panic!("`app.theme_overrides` has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.set_theme_variant(variant).await,
+        }
+    }
+
+    pub async fn set_theme_accent(&mut self, hex: &str) {
+        match self {
+            Self::Rest(_) => {
+                panic!("`app.theme_overrides` has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.set_theme_accent(hex).await,
+        }
+    }
+
+    pub fn effective_theme_is_dark(&self) -> bool {
+        match self {
+            Self::Rest(_) => {
+                panic!("`app.theme_overrides` has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.effective_theme_is_dark(),
+        }
+    }
+
+    pub fn effective_accent_hex(&self) -> String {
+        match self {
+            Self::Rest(_) => {
+                panic!("`app.theme_overrides` has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.effective_accent_hex(),
+        }
+    }
+
+    pub fn follows_system_theme(&self) -> bool {
+        match self {
+            Self::Rest(_) => {
+                panic!("`app.theme_overrides` has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.follows_system_theme(),
+        }
+    }
+
     // -- documents.cover_display --
 
     pub async fn seed_cover_document(&self) -> (String, String, String) {

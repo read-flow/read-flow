@@ -30,6 +30,7 @@ use read_flow_widgets::NavTree;
 use crate::ApplicationModule;
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
+use crate::app_theme;
 use crate::component::check_missing::CheckMissingComponent;
 use crate::component::check_missing::CheckMissingMessage;
 use crate::component::check_missing::CheckMissingOutput;
@@ -119,6 +120,8 @@ pub enum Message {
     ActivePageRemoved(PageSelector),
     SwitchLanguage(LanguageIdentifier),
     ExpireDocumentProvider,
+    ReassertInterfaceFont,
+    Noop,
     Scan,
     CheckMissing,
     CheckMissingComponent(CheckMissingMessage),
@@ -538,6 +541,12 @@ impl cosmic::Application for ReadFlow {
 
                     Message::UpdateConfig(update.config)
                 }),
+            // Watch the system toolkit config: libcosmic overwrites the
+            // in-process CosmicTk global on change, which would drop our
+            // per-app interface-font override. @feature: app.theme_overrides
+            self.core()
+                .watch_config::<cosmic::config::CosmicTk>(cosmic::config::ID)
+                .map(|_update| Message::ReassertInterfaceFont),
             // Forward keyboard events to the active page
             event::listen_with(filter_keyboard_events),
         ];
@@ -668,11 +677,43 @@ impl cosmic::Application for ReadFlow {
             }
             Message::ExpireDocumentProvider => {
                 let document_provider = self.pages.document_provider.clone();
-                task::future(async move {
-                    document_provider.set_expired().await;
-                    Message::Page(Box::new(PageMessage::Refresh))
-                })
+                // Settings changed on disk (save here or from another
+                // instance): re-assert the per-app theme override so it
+                // matches the file. @feature: app.theme_overrides
+                let theme_settings = read_flow_core::settings::Settings::extract_from(
+                    self.application_module.config_path(),
+                )
+                .map(|s| s.ui.theme().clone())
+                .unwrap_or_default();
+                app_theme::apply_interface_font(&theme_settings);
+                Task::batch([
+                    task::future(async move {
+                        document_provider.set_expired().await;
+                        Message::Page(Box::new(PageMessage::Refresh))
+                    }),
+                    cosmic::command::set_theme(app_theme::effective_theme(&theme_settings)),
+                ])
             }
+            Message::ReassertInterfaceFont => {
+                // The system CosmicTk config changed; libcosmic overwrites the
+                // in-process CosmicTk global with the on-disk values in its
+                // own handler. Re-apply our font override from a task so it
+                // runs after that overwrite. @feature: app.theme_overrides
+                let theme_settings = read_flow_core::settings::Settings::extract_from(
+                    self.application_module.config_path(),
+                )
+                .map(|s| s.ui.theme().clone())
+                .unwrap_or_default();
+                if theme_settings.enabled && theme_settings.interface_font.is_some() {
+                    task::future(async move {
+                        app_theme::apply_interface_font(&theme_settings);
+                        Message::Noop
+                    })
+                } else {
+                    Task::none()
+                }
+            }
+            Message::Noop => Task::none(),
             Message::ServerStart => {
                 if matches!(
                     self.server,

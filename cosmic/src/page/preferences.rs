@@ -14,12 +14,16 @@ use cosmic::Theme;
 use cosmic::cosmic_config;
 use cosmic::cosmic_config::CosmicConfigEntry;
 use cosmic::cosmic_theme;
+use cosmic::iced::Color;
 use cosmic::iced::Length;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
+use cosmic::widget::color_picker::ColorPickerModel;
+use cosmic::widget::color_picker::ColorPickerUpdate;
+use cosmic::widget::color_picker::color_button;
 use cosmic::widget::container;
 use cosmic::widget::icon;
 use cosmic::widget::settings;
@@ -35,9 +39,15 @@ use read_flow_core::db::models::NewRemote;
 use read_flow_core::db::models::Remote;
 use read_flow_core::scan::DirectorySettings;
 use read_flow_core::scan::DocumentType;
+use read_flow_core::settings::FrostedStrength;
 use read_flow_core::settings::Settings;
+use read_flow_core::settings::ThemeDensity;
+use read_flow_core::settings::ThemeRoundness;
+use read_flow_core::settings::ThemeSettings;
+use read_flow_core::settings::ThemeVariant;
 use read_flow_core::settings::TlsSettings;
 use read_flow_core::settings::UserEntry;
+use read_flow_widgets::FontPicker;
 use rfd::AsyncFileDialog;
 use rfd::FileHandle;
 use url::Url;
@@ -45,6 +55,7 @@ use url::Url;
 use crate::ApplicationModule;
 use crate::ICON_SIZE;
 use crate::app::ContextView;
+use crate::app_theme;
 use crate::component::provided_state::ProvidedState;
 use crate::component::provided_state::ProvidedStateMessage;
 use crate::component::tag_editor::Orientation;
@@ -125,6 +136,14 @@ pub struct PreferencesPage {
     authorized_user_form: Option<AuthorizedUserForm>,
     // appearance (cosmic_config-backed)
     config: Config,
+    // theme overrides (TOML-backed, live-previewed)
+    accent_picker: ColorPickerModel,
+    background_picker: ColorPickerModel,
+    container_picker: ColorPickerModel,
+    active_color_picker: Option<ThemeColorPicker>,
+    theme_font_options: Vec<&'static str>,
+    theme_font_query: String,
+    theme_font_focused: bool,
     // sources (DB-backed)
     remotes_state: ProvidedState<RemotesProvider, Vec<Remote>>,
     add_source_form: Option<AddSourceForm>,
@@ -142,6 +161,16 @@ pub enum PreferencesOutput {
     SourceEdited(Url, Url, String, String),
     SourceDeleted(Url),
     RestartServer,
+    OpenContext,
+    CloseContext,
+}
+
+/// Which theme color picker is shown in the context drawer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeColorPicker {
+    Accent,
+    Background,
+    Container,
 }
 
 #[derive(Debug, Clone)]
@@ -150,6 +179,27 @@ pub enum PreferencesMessage {
 
     // appearance
     SetEpubViewer(EpubViewerConfig),
+
+    // theme overrides (TOML, live-previewed)
+    ToggleCustomTheme(bool),
+    SetThemeVariant(ThemeVariant),
+    SetThemeAccent(Option<String>),
+    AccentPicker(ColorPickerUpdate),
+    SetThemeDensity(usize),
+    SetThemeRoundness(usize),
+    ToggleFrosted(bool),
+    SetFrostedStrength(usize),
+    ThemeFontOptionsLoaded(Vec<&'static str>),
+    SetInterfaceFont(String),
+    ClearInterfaceFont,
+    ThemeFontQuery(String),
+    ThemeFontOpen,
+    ThemeFontClose,
+    InterfaceFontSizeChanged(String),
+    BackgroundPicker(ColorPickerUpdate),
+    ContainerPicker(ColorPickerUpdate),
+    ResetBackgroundColor,
+    ResetContainerColor,
 
     // settings (TOML)
     ToggleDryRun(bool),
@@ -267,10 +317,23 @@ impl PreferencesPage {
         let (remotes_state, init_remotes) =
             ProvidedState::new(RemotesProvider(application_module.clone()));
 
+        // Font enumeration shells out and is slow on first use — load the
+        // options asynchronously so the page opens without blocking.
+        let load_fonts = task::future(async {
+            tokio::task::spawn_blocking(crate::fonts::fonts)
+                .await
+                .map(PreferencesMessage::ThemeFontOptionsLoaded)
+                .unwrap_or(PreferencesMessage::Noop)
+        });
+
         let tasks = task::batch([
             tag_editor_task.map(ActionExt::map_into),
             init_remotes.map(ActionExt::map_into),
+            load_fonts,
         ]);
+
+        let (accent_picker, background_picker, container_picker) =
+            Self::theme_pickers(settings.ui.theme());
 
         (
             Self {
@@ -284,6 +347,13 @@ impl PreferencesPage {
                 directory_settings_form: None,
                 authorized_user_form: None,
                 config,
+                accent_picker,
+                background_picker,
+                container_picker,
+                active_color_picker: None,
+                theme_font_options: Vec::new(),
+                theme_font_query: String::new(),
+                theme_font_focused: false,
                 remotes_state,
                 add_source_form: None,
                 operation_error: None,
@@ -299,9 +369,68 @@ impl PreferencesPage {
         self.config = config;
     }
 
+    fn theme_pickers(
+        theme: &ThemeSettings,
+    ) -> (ColorPickerModel, ColorPickerModel, ColorPickerModel) {
+        let color_of = |hex: &Option<String>| {
+            hex.as_deref()
+                .and_then(app_theme::parse_hex)
+                .map(|c| Color::from_rgba(c.red, c.green, c.blue, c.alpha))
+        };
+        let picker = |initial: Option<Color>| {
+            ColorPickerModel::new(
+                fl!("color-picker-hex"),
+                fl!("color-picker-rgb"),
+                None,
+                initial,
+            )
+        };
+        (
+            picker(color_of(&theme.accent)),
+            picker(color_of(&theme.background)),
+            picker(color_of(&theme.container_background)),
+        )
+    }
+
+    /// Reset the color-picker models to the current settings (used on revert).
+    fn sync_theme_pickers(&mut self) {
+        let (accent, background, container) = Self::theme_pickers(self.settings.ui.theme());
+        self.accent_picker = accent;
+        self.background_picker = background;
+        self.container_picker = container;
+    }
+
+    /// Apply the current (possibly unsaved) theme overrides to this app only.
+    fn apply_theme_preview(&self) -> Task<Action<PreferencesMessage>> {
+        cosmic::command::set_theme(app_theme::effective_theme(self.settings.ui.theme()))
+    }
+
+    /// Open or close the context drawer to match a color picker's active
+    /// state (the pickers render in the context drawer, not inline).
+    fn sync_picker_context(
+        &mut self,
+        picker: ThemeColorPicker,
+        active: bool,
+    ) -> Task<Action<PreferencesMessage>> {
+        if active {
+            self.active_color_picker = Some(picker);
+            task::message(PreferencesMessage::Out(PreferencesOutput::OpenContext))
+        } else if self.active_color_picker == Some(picker) {
+            self.active_color_picker = None;
+            task::message(PreferencesMessage::Out(PreferencesOutput::CloseContext))
+        } else {
+            Task::none()
+        }
+    }
+
     #[cfg(test)]
     pub fn epub_viewer(&self) -> EpubViewerConfig {
         self.config.epub_viewer
+    }
+
+    #[cfg(test)]
+    pub fn theme_settings(&self) -> &ThemeSettings {
+        self.settings.ui.theme()
     }
 
     pub fn current_private_mode(&self) -> bool {
@@ -460,10 +589,268 @@ impl PreferencesPage {
                     ),
             );
 
-        vec![
+        let mut items = vec![
             widget::text::title2(fl!("preferences-appearance-section")).into(),
             viewer_section.into(),
-        ]
+        ];
+        items.extend(self.view_section_theme());
+        items
+    }
+
+    /// @feature: app.theme_overrides
+    fn view_section_theme(&self) -> Vec<Element<'_, PreferencesMessage>> {
+        let cosmic_theme::Spacing {
+            space_xxs,
+            space_xs,
+            ..
+        } = theme::active().cosmic().spacing;
+        let t = self.settings.ui.theme();
+
+        let mut section = widget::settings::section()
+            .title(fl!("settings-theme-section"))
+            .add(
+                widget::settings::item::builder(fl!("settings-theme-custom"))
+                    .description(fl!("settings-theme-custom-description"))
+                    .icon(widget::icon::from_name("applications-graphics-symbolic").size(ICON_SIZE))
+                    .toggler(t.enabled, PreferencesMessage::ToggleCustomTheme),
+            );
+
+        if !t.enabled {
+            return vec![section.into()];
+        }
+
+        // Simple tier: appearance, accent, density, roundness, frosted, font.
+        section = section
+            .add(
+                widget::settings::item::builder(fl!("settings-theme-variant"))
+                    .description(fl!("settings-theme-variant-description"))
+                    .icon(widget::icon::from_name("weather-clear-night-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::Column::from_vec(vec![
+                            widget::radio(
+                                widget::text::body(fl!("settings-theme-light")),
+                                ThemeVariant::Light,
+                                Some(t.variant),
+                                PreferencesMessage::SetThemeVariant,
+                            )
+                            .into(),
+                            widget::radio(
+                                widget::text::body(fl!("settings-theme-dark")),
+                                ThemeVariant::Dark,
+                                Some(t.variant),
+                                PreferencesMessage::SetThemeVariant,
+                            )
+                            .into(),
+                        ])
+                        .spacing(space_xs)
+                        .align_x(Horizontal::Left),
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-theme-accent"))
+                    .description(fl!("settings-theme-accent-description"))
+                    .control(self.view_accent_row(space_xxs)),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-theme-background"))
+                    .description(fl!("settings-theme-background-description"))
+                    .control(
+                        widget::Row::new()
+                            .push(
+                                self.background_picker
+                                    .picker_button(PreferencesMessage::BackgroundPicker, None)
+                                    .width(Length::Fixed(48.0))
+                                    .height(Length::Fixed(32.0)),
+                            )
+                            .push_maybe(t.background.is_some().then(|| {
+                                widget::button::text(fl!("settings-theme-accent-default"))
+                                    .on_press(PreferencesMessage::ResetBackgroundColor)
+                            }))
+                            .spacing(space_xxs)
+                            .align_y(Vertical::Center),
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-theme-container-background"))
+                    .description(fl!("settings-theme-container-background-description"))
+                    .control(
+                        widget::Row::new()
+                            .push(
+                                self.container_picker
+                                    .picker_button(PreferencesMessage::ContainerPicker, None)
+                                    .width(Length::Fixed(48.0))
+                                    .height(Length::Fixed(32.0)),
+                            )
+                            .push_maybe(t.container_background.is_some().then(|| {
+                                widget::button::text(fl!("settings-theme-accent-default"))
+                                    .on_press(PreferencesMessage::ResetContainerColor)
+                            }))
+                            .spacing(space_xxs)
+                            .align_y(Vertical::Center),
+                    ),
+            );
+
+        // Warn (icon + text, never color alone) when the custom background
+        // fails WCAG AA contrast against the theme's derived text color.
+        if let Some(bg) = t.background.as_deref().and_then(app_theme::parse_hex) {
+            let effective = app_theme::effective_theme(t);
+            if app_theme::contrast_warning(bg, app_theme::theme_on_bg(&effective)) {
+                section = section.add(
+                    widget::Row::new()
+                        .push(widget::icon::from_name("dialog-warning-symbolic").size(ICON_SIZE))
+                        .push(widget::text::body(fl!("settings-theme-contrast-warning")))
+                        .spacing(space_xxs)
+                        .align_y(Vertical::Center),
+                );
+            }
+        }
+
+        section = section
+            .add(
+                widget::settings::item::builder(fl!("settings-theme-density"))
+                    .description(fl!("settings-theme-density-description"))
+                    .control(widget::dropdown(
+                        vec![
+                            fl!("settings-theme-density-compact"),
+                            fl!("settings-theme-density-standard"),
+                            fl!("settings-theme-density-spacious"),
+                        ],
+                        Some(match t.density {
+                            ThemeDensity::Compact => 0,
+                            ThemeDensity::Standard => 1,
+                            ThemeDensity::Spacious => 2,
+                        }),
+                        PreferencesMessage::SetThemeDensity,
+                    )),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-theme-roundness"))
+                    .description(fl!("settings-theme-roundness-description"))
+                    .control(widget::dropdown(
+                        vec![
+                            fl!("settings-theme-roundness-round"),
+                            fl!("settings-theme-roundness-slightly-round"),
+                            fl!("settings-theme-roundness-square"),
+                        ],
+                        Some(match t.roundness {
+                            ThemeRoundness::Round => 0,
+                            ThemeRoundness::SlightlyRound => 1,
+                            ThemeRoundness::Square => 2,
+                        }),
+                        PreferencesMessage::SetThemeRoundness,
+                    )),
+            );
+
+        // Frosted glass needs compositor blur (COSMIC on Wayland) — hide the
+        // controls entirely on other platforms.
+        if cfg!(target_os = "linux") {
+            section = section.add(
+                widget::settings::item::builder(fl!("settings-theme-frosted"))
+                    .description(fl!("settings-theme-frosted-description"))
+                    .toggler(t.frosted, PreferencesMessage::ToggleFrosted),
+            );
+
+            if t.frosted {
+                section = section.add(
+                    widget::settings::item::builder(fl!("settings-theme-frosted-strength"))
+                        .control(widget::dropdown(
+                            vec![
+                                fl!("settings-theme-frosted-strength-low"),
+                                fl!("settings-theme-frosted-strength-medium"),
+                                fl!("settings-theme-frosted-strength-high"),
+                            ],
+                            Some(match t.frosted_strength {
+                                FrostedStrength::Low => 0,
+                                FrostedStrength::Medium => 1,
+                                FrostedStrength::High => 2,
+                            }),
+                            PreferencesMessage::SetFrostedStrength,
+                        )),
+                );
+            }
+        }
+
+        let selected_font = t
+            .interface_font
+            .as_deref()
+            .and_then(|f| self.theme_font_options.iter().copied().find(|o| *o == f));
+        let mut font_picker = FontPicker::new(
+            &self.theme_font_options,
+            fl!("settings-theme-font-placeholder"),
+            &self.theme_font_query,
+            PreferencesMessage::ThemeFontQuery,
+        )
+        .on_select(PreferencesMessage::SetInterfaceFont)
+        .on_open(PreferencesMessage::ThemeFontOpen)
+        .on_close(PreferencesMessage::ThemeFontClose)
+        .on_clear(PreferencesMessage::ClearInterfaceFont)
+        .focused(self.theme_font_focused)
+        .width(Length::Fixed(240.0));
+        if let Some(selected) = selected_font {
+            font_picker = font_picker.selected(selected);
+        }
+
+        section = section
+            .add(
+                widget::settings::item::builder(fl!("settings-theme-font"))
+                    .description(fl!("settings-theme-font-description"))
+                    .control(font_picker.view()),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-theme-font-size"))
+                    .description(fl!("settings-theme-font-size-description"))
+                    .control(
+                        widget::text_input(
+                            fl!("settings-theme-font-placeholder"),
+                            t.interface_font_size
+                                .map(|s| s.to_string())
+                                .unwrap_or_default(),
+                        )
+                        .on_input(PreferencesMessage::InterfaceFontSizeChanged)
+                        .width(Length::Fixed(120.0)),
+                    ),
+            );
+
+        vec![section.into()]
+    }
+
+    /// The accent control: named preset swatches, a custom color picker, and
+    /// a reset-to-default button. Swatch names are exposed via tooltips.
+    fn view_accent_row(&self, spacing: u16) -> Element<'_, PreferencesMessage> {
+        let t = self.settings.ui.theme();
+        let mut row = widget::Row::new().spacing(spacing);
+
+        for (key, srgba) in app_theme::accent_presets(t.variant) {
+            let color = Color::from_rgba(srgba.red, srgba.green, srgba.blue, srgba.alpha);
+            let hex = app_theme::color_to_hex(color);
+            row = row.push(widget::tooltip::tooltip(
+                color_button(
+                    Some(PreferencesMessage::SetThemeAccent(Some(hex))),
+                    Some(color),
+                    Length::FillPortion(12),
+                )
+                .width(Length::Fixed(32.0))
+                .height(Length::Fixed(32.0)),
+                widget::text(accent_color_name(key)),
+                widget::tooltip::Position::Top,
+            ));
+        }
+
+        row = row.push(widget::tooltip::tooltip(
+            self.accent_picker
+                .picker_button(PreferencesMessage::AccentPicker, None)
+                .width(Length::Fixed(32.0))
+                .height(Length::Fixed(32.0)),
+            widget::text(fl!("settings-theme-accent-custom")),
+            widget::tooltip::Position::Top,
+        ));
+
+        row = row.push(
+            widget::button::text(fl!("settings-theme-accent-default"))
+                .on_press(PreferencesMessage::SetThemeAccent(None)),
+        );
+
+        row.into()
     }
 
     fn view_section_library(&self) -> Vec<Element<'_, PreferencesMessage>> {
@@ -1074,7 +1461,8 @@ impl Page for PreferencesPage {
 
         let needs_save_row = matches!(
             self.selected_section,
-            PreferencesSection::Library
+            PreferencesSection::Appearance
+                | PreferencesSection::Library
                 | PreferencesSection::Downloads
                 | PreferencesSection::Scanning
                 | PreferencesSection::Server
@@ -1095,7 +1483,43 @@ impl Page for PreferencesPage {
             .into()
     }
 
+    /// @feature: app.theme_overrides
     fn view_context(&self) -> ContextView<'_, PreferencesMessage> {
+        if let Some(picker) = self.active_color_picker {
+            let (title, model, message): (
+                String,
+                &ColorPickerModel,
+                fn(ColorPickerUpdate) -> PreferencesMessage,
+            ) = match picker {
+                ThemeColorPicker::Accent => (
+                    fl!("settings-theme-accent"),
+                    &self.accent_picker,
+                    PreferencesMessage::AccentPicker,
+                ),
+                ThemeColorPicker::Background => (
+                    fl!("settings-theme-background"),
+                    &self.background_picker,
+                    PreferencesMessage::BackgroundPicker,
+                ),
+                ThemeColorPicker::Container => (
+                    fl!("settings-theme-container-background"),
+                    &self.container_picker,
+                    PreferencesMessage::ContainerPicker,
+                ),
+            };
+            return ContextView {
+                title,
+                content: model
+                    .builder(message)
+                    .build(
+                        fl!("color-picker-recent"),
+                        fl!("color-picker-copy"),
+                        fl!("color-picker-copied"),
+                    )
+                    .into(),
+            };
+        }
+
         ContextView {
             title: fl!("preferences-page-title"),
             content: widget::text("").into(),
@@ -1159,6 +1583,186 @@ impl Page for PreferencesPage {
                     let _ = self.config.write_entry(&ctx);
                 }
                 Task::none()
+            }
+            PreferencesMessage::ToggleCustomTheme(enabled) => {
+                if enabled {
+                    // First enable on a pristine config: seed the variant from
+                    // the current system theme so the look doesn't jump.
+                    let pristine = ThemeSettings {
+                        enabled: true,
+                        ..self.settings.ui.theme().clone()
+                    } == ThemeSettings {
+                        enabled: true,
+                        ..ThemeSettings::default()
+                    };
+                    if pristine {
+                        self.settings.ui.theme_mut().variant = if theme::is_dark() {
+                            ThemeVariant::Dark
+                        } else {
+                            ThemeVariant::Light
+                        };
+                    }
+                }
+                self.settings.ui.theme_mut().enabled = enabled;
+                self.save_state = SaveState::Idle;
+                // The custom-theme toggle gates the font override too.
+                app_theme::apply_interface_font(self.settings.ui.theme());
+                self.apply_theme_preview()
+            }
+            PreferencesMessage::SetThemeVariant(variant) => {
+                self.settings.ui.theme_mut().variant = variant;
+                self.save_state = SaveState::Idle;
+                self.apply_theme_preview()
+            }
+            PreferencesMessage::SetThemeAccent(accent) => {
+                self.settings.ui.theme_mut().accent = accent;
+                self.save_state = SaveState::Idle;
+                self.apply_theme_preview()
+            }
+            PreferencesMessage::AccentPicker(update) => {
+                let applied = matches!(
+                    update,
+                    ColorPickerUpdate::AppliedColor | ColorPickerUpdate::ActionFinished
+                );
+                let mut tasks = vec![self.accent_picker.update(update)];
+                if applied {
+                    self.settings.ui.theme_mut().accent = self
+                        .accent_picker
+                        .get_applied_color()
+                        .map(app_theme::color_to_hex);
+                    self.save_state = SaveState::Idle;
+                    tasks.push(self.apply_theme_preview());
+                }
+                let active = self.accent_picker.get_is_active();
+                tasks.push(self.sync_picker_context(ThemeColorPicker::Accent, active));
+                Task::batch(tasks)
+            }
+            PreferencesMessage::SetThemeDensity(index) => {
+                self.settings.ui.theme_mut().density = match index {
+                    0 => ThemeDensity::Compact,
+                    2 => ThemeDensity::Spacious,
+                    _ => ThemeDensity::Standard,
+                };
+                self.save_state = SaveState::Idle;
+                self.apply_theme_preview()
+            }
+            PreferencesMessage::SetThemeRoundness(index) => {
+                self.settings.ui.theme_mut().roundness = match index {
+                    1 => ThemeRoundness::SlightlyRound,
+                    2 => ThemeRoundness::Square,
+                    _ => ThemeRoundness::Round,
+                };
+                self.save_state = SaveState::Idle;
+                self.apply_theme_preview()
+            }
+            PreferencesMessage::ToggleFrosted(frosted) => {
+                self.settings.ui.theme_mut().frosted = frosted;
+                self.save_state = SaveState::Idle;
+                self.apply_theme_preview()
+            }
+            PreferencesMessage::SetFrostedStrength(index) => {
+                self.settings.ui.theme_mut().frosted_strength = match index {
+                    0 => FrostedStrength::Low,
+                    2 => FrostedStrength::High,
+                    _ => FrostedStrength::Medium,
+                };
+                self.save_state = SaveState::Idle;
+                self.apply_theme_preview()
+            }
+            PreferencesMessage::ThemeFontOptionsLoaded(options) => {
+                self.theme_font_options = options;
+                Task::none()
+            }
+            PreferencesMessage::SetInterfaceFont(family) => {
+                self.settings.ui.theme_mut().interface_font = Some(family);
+                self.theme_font_query = String::new();
+                self.theme_font_focused = false;
+                self.save_state = SaveState::Idle;
+                app_theme::apply_interface_font(self.settings.ui.theme());
+                Task::none()
+            }
+            PreferencesMessage::ClearInterfaceFont => {
+                self.settings.ui.theme_mut().interface_font = None;
+                self.theme_font_query = String::new();
+                self.theme_font_focused = false;
+                self.save_state = SaveState::Idle;
+                app_theme::apply_interface_font(self.settings.ui.theme());
+                Task::none()
+            }
+            PreferencesMessage::ThemeFontQuery(query) => {
+                self.theme_font_query = query;
+                Task::none()
+            }
+            PreferencesMessage::ThemeFontOpen => {
+                self.theme_font_focused = true;
+                Task::none()
+            }
+            PreferencesMessage::ThemeFontClose => {
+                self.theme_font_query = String::new();
+                self.theme_font_focused = false;
+                Task::none()
+            }
+            PreferencesMessage::InterfaceFontSizeChanged(value) => {
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    self.settings.ui.theme_mut().interface_font_size = None;
+                    self.save_state = SaveState::Idle;
+                } else if let Ok(size) = trimmed.parse::<u16>()
+                    && (6..=72).contains(&size)
+                {
+                    self.settings.ui.theme_mut().interface_font_size = Some(size);
+                    self.save_state = SaveState::Idle;
+                }
+                // Ignore non-numeric input (keeps the previous value).
+                Task::none()
+            }
+            PreferencesMessage::BackgroundPicker(update) => {
+                let applied = matches!(
+                    update,
+                    ColorPickerUpdate::AppliedColor | ColorPickerUpdate::ActionFinished
+                );
+                let mut tasks = vec![self.background_picker.update(update)];
+                if applied {
+                    self.settings.ui.theme_mut().background = self
+                        .background_picker
+                        .get_applied_color()
+                        .map(app_theme::color_to_hex);
+                    self.save_state = SaveState::Idle;
+                    tasks.push(self.apply_theme_preview());
+                }
+                let active = self.background_picker.get_is_active();
+                tasks.push(self.sync_picker_context(ThemeColorPicker::Background, active));
+                Task::batch(tasks)
+            }
+            PreferencesMessage::ContainerPicker(update) => {
+                let applied = matches!(
+                    update,
+                    ColorPickerUpdate::AppliedColor | ColorPickerUpdate::ActionFinished
+                );
+                let mut tasks = vec![self.container_picker.update(update)];
+                if applied {
+                    self.settings.ui.theme_mut().container_background = self
+                        .container_picker
+                        .get_applied_color()
+                        .map(app_theme::color_to_hex);
+                    self.save_state = SaveState::Idle;
+                    tasks.push(self.apply_theme_preview());
+                }
+                let active = self.container_picker.get_is_active();
+                tasks.push(self.sync_picker_context(ThemeColorPicker::Container, active));
+                Task::batch(tasks)
+            }
+            PreferencesMessage::ResetBackgroundColor => {
+                self.settings.ui.theme_mut().background = None;
+                self.sync_theme_pickers();
+                self.save_state = SaveState::Idle;
+                self.apply_theme_preview()
+            }
+            PreferencesMessage::ResetContainerColor => {
+                self.settings.ui.theme_mut().container_background = None;
+                self.sync_theme_pickers();
+                self.save_state = SaveState::Idle;
+                self.apply_theme_preview()
             }
             PreferencesMessage::ToggleDryRun(value) => {
                 self.settings.scan.set_dry_run(value);
@@ -1493,11 +2097,16 @@ impl Page for PreferencesPage {
             PreferencesMessage::Revert => {
                 self.settings = (*self.original_settings).clone();
                 self.save_state = SaveState::Idle;
-                self.tag_editor
-                    .update(TagEditorMessage::SetTags(
-                        self.original_settings.ui.private_tags().to_vec(),
-                    ))
-                    .map(ActionExt::map_into)
+                self.sync_theme_pickers();
+                app_theme::apply_interface_font(self.settings.ui.theme());
+                Task::batch([
+                    self.tag_editor
+                        .update(TagEditorMessage::SetTags(
+                            self.original_settings.ui.private_tags().to_vec(),
+                        ))
+                        .map(ActionExt::map_into),
+                    self.apply_theme_preview(),
+                ])
             }
             PreferencesMessage::AddAuthorizedUser => {
                 let (authorized_user_form, init) = AuthorizedUserForm::new(None, vec![]);
@@ -1877,4 +2486,21 @@ fn view_directory<'a>(
             .into(),
         controls.width(Length::FillPortion(1)).into(),
     ])
+}
+
+/// Localized name for a named accent preset key from
+/// [`app_theme::accent_presets`].
+fn accent_color_name(key: &'static str) -> String {
+    match key {
+        "blue" => fl!("settings-theme-accent-blue"),
+        "indigo" => fl!("settings-theme-accent-indigo"),
+        "purple" => fl!("settings-theme-accent-purple"),
+        "pink" => fl!("settings-theme-accent-pink"),
+        "red" => fl!("settings-theme-accent-red"),
+        "orange" => fl!("settings-theme-accent-orange"),
+        "yellow" => fl!("settings-theme-accent-yellow"),
+        "green" => fl!("settings-theme-accent-green"),
+        "warm-grey" => fl!("settings-theme-accent-warm-grey"),
+        other => other.to_string(),
+    }
 }

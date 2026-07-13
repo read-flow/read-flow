@@ -412,6 +412,75 @@ pub struct UiSettings {
     private_mode: bool,
     #[serde(default)]
     private_tags: Vec<String>,
+    #[serde(default)]
+    theme: ThemeSettings,
+}
+
+/// Per-app theme overrides (`[ui.theme]`). When `enabled` is false the app
+/// follows the system COSMIC theme; all other fields are ignored.
+/// Consumed by the COSMIC app's `app_theme` module (feature
+/// `app.theme_overrides`); no REST surface.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ThemeSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub variant: ThemeVariant,
+    /// Accent color as `#RRGGBB`; `None` keeps the palette default.
+    #[serde(default)]
+    pub accent: Option<String>,
+    #[serde(default)]
+    pub density: ThemeDensity,
+    #[serde(default)]
+    pub roundness: ThemeRoundness,
+    #[serde(default)]
+    pub frosted: bool,
+    #[serde(default)]
+    pub frosted_strength: FrostedStrength,
+    /// Interface font family name; `None` keeps the system font.
+    /// Applied at startup only (restart required).
+    #[serde(default)]
+    pub interface_font: Option<String>,
+    /// Interface font size in points; `None` keeps the system size.
+    #[serde(default)]
+    pub interface_font_size: Option<u16>,
+    /// Advanced: window background as `#RRGGBB` or `#RRGGBBAA`.
+    #[serde(default)]
+    pub background: Option<String>,
+    /// Advanced: container background as `#RRGGBB` or `#RRGGBBAA`.
+    #[serde(default)]
+    pub container_background: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub enum ThemeVariant {
+    Dark,
+    #[default]
+    Light,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub enum ThemeDensity {
+    Compact,
+    #[default]
+    Standard,
+    Spacious,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub enum ThemeRoundness {
+    #[default]
+    Round,
+    SlightlyRound,
+    Square,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub enum FrostedStrength {
+    Low,
+    #[default]
+    Medium,
+    High,
 }
 
 impl From<(bool, Vec<String>)> for UiSettings {
@@ -425,7 +494,16 @@ impl UiSettings {
         Self {
             private_mode,
             private_tags,
+            theme: ThemeSettings::default(),
         }
+    }
+
+    pub fn theme(&self) -> &ThemeSettings {
+        &self.theme
+    }
+
+    pub fn theme_mut(&mut self) -> &mut ThemeSettings {
+        &mut self.theme
     }
 
     pub fn private_mode(&self) -> bool {
@@ -463,6 +541,8 @@ impl UiSettings {
     pub fn merge_in(&mut self, other: Self) {
         self.private_mode |= other.private_mode;
         self.private_tags.extend(other.private_tags);
+        // `other` comes from CLI parameters, which never carry theme
+        // overrides — deliberately keep the file's theme untouched.
     }
 }
 
@@ -499,6 +579,58 @@ alice = { password = "$pbkdf2-sha256$i=100000,l=32$abc$def", roles = ["owner"] }
         let entry = settings.server.authorized_users.get("alice").unwrap();
         assert!(entry.has_role("owner"));
         assert!(!entry.has_role("admin"));
+    }
+
+    #[test]
+    fn ui_settings_without_theme_table_parses_to_defaults() {
+        let toml = r#"
+[ui]
+private_mode = true
+"#;
+        let settings: Settings = toml::from_str(toml).unwrap();
+        assert_eq!(settings.ui.theme(), &ThemeSettings::default());
+        assert!(!settings.ui.theme().enabled);
+        assert_eq!(settings.ui.theme().variant, ThemeVariant::Light);
+        assert_eq!(settings.ui.theme().density, ThemeDensity::Standard);
+        assert_eq!(settings.ui.theme().roundness, ThemeRoundness::Round);
+        assert_eq!(
+            settings.ui.theme().frosted_strength,
+            FrostedStrength::Medium
+        );
+    }
+
+    #[test]
+    fn theme_settings_round_trips_through_toml() {
+        let mut settings = Settings::default();
+        *settings.ui.theme_mut() = ThemeSettings {
+            enabled: true,
+            variant: ThemeVariant::Dark,
+            accent: Some("#ff8800".into()),
+            density: ThemeDensity::Compact,
+            roundness: ThemeRoundness::Square,
+            frosted: true,
+            frosted_strength: FrostedStrength::High,
+            interface_font: Some("Fira Sans".into()),
+            interface_font_size: Some(14),
+            background: Some("#101020".into()),
+            container_background: Some("#20203080".into()),
+        };
+        let serialized = toml::to_string_pretty(&settings).unwrap();
+        let deserialized: Settings = toml::from_str(&serialized).unwrap();
+        assert_eq!(settings, deserialized);
+    }
+
+    #[test]
+    fn ui_settings_merge_in_keeps_theme_untouched() {
+        let mut base = UiSettings::default();
+        base.theme_mut().enabled = true;
+        base.theme_mut().accent = Some("#112233".into());
+
+        base.merge_in(UiSettings::new(true, vec!["secret".into()]));
+
+        assert!(base.theme().enabled);
+        assert_eq!(base.theme().accent.as_deref(), Some("#112233"));
+        assert!(base.private_mode());
     }
 
     #[test]

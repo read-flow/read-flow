@@ -103,6 +103,7 @@ features = [
 # cosmic-theme = { path = "../libcosmic/cosmic-theme" }
 
 [dev-dependencies]
+assert4rs.workspace = true
 cosmic-golden.workspace = true
 cucumber.workspace = true
 read-flow-core = { path = "../core", features = ["server", "test-support"] }

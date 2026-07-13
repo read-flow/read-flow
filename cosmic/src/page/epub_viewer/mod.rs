@@ -406,6 +406,8 @@ pub enum EpubViewerMessage {
     CopyCodeBlock(String),
     /// Open the image viewer page for the given image.
     OpenImageViewer(ViewerImage),
+    /// Installed font families finished loading (slow, done off-thread).
+    FontOptionsLoaded(Vec<&'static str>),
     /// Font picker opened (dropdown now visible).
     FontPickerOpen,
     /// Font picker closed without selection.
@@ -545,7 +547,7 @@ impl EpubViewer {
             pending_block_index: None,
             pending_node_path: Vec::new(),
             font_family: saved_prefs.font_family,
-            font_picker_options: FontFamily::all().into_iter().map(|f| f.label()).collect(),
+            font_picker_options: Vec::new(),
             font_picker_query: String::new(),
             font_picker_focused: false,
             nav_entries: Vec::new(),
@@ -604,6 +606,19 @@ impl EpubViewer {
                 }
             },
             |pos| cosmic::action::app(EpubViewerMessage::ReadingProgressLoaded(pos)),
+        ));
+
+        // Font enumeration shells out and is slow on first use — load the
+        // picker options asynchronously so opening a book doesn't block.
+        tasks.push(Task::perform(
+            async {
+                tokio::task::spawn_blocking(|| {
+                    FontFamily::all().into_iter().map(|f| f.label()).collect()
+                })
+                .await
+                .unwrap_or_default()
+            },
+            |options| cosmic::action::app(EpubViewerMessage::FontOptionsLoaded(options)),
         ));
 
         (viewer, Task::batch(tasks))
@@ -1820,6 +1835,10 @@ impl Page for EpubViewer {
                 self.block_heights_cache.clear();
                 self.maybe_repaginate();
                 self.save_current_prefs();
+                Task::none()
+            }
+            EpubViewerMessage::FontOptionsLoaded(options) => {
+                self.font_picker_options = options;
                 Task::none()
             }
             EpubViewerMessage::FontPickerOpen => {

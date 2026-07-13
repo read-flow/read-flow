@@ -4,6 +4,7 @@ mod admin_scan;
 mod admin_scan_directories;
 mod admin_server_settings;
 mod app_epub_viewer_choice;
+mod app_theme_overrides;
 mod documents_batch_tag;
 mod documents_cover_display;
 mod documents_detail_view;

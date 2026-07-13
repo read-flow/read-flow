@@ -754,6 +754,60 @@ impl CosmicDriver {
         }
     }
 
+    // -- app.theme_overrides --
+
+    pub async fn set_custom_theme_enabled(&mut self, enabled: bool) {
+        drain(
+            self.preferences_page
+                .update(PreferencesMessage::ToggleCustomTheme(enabled)),
+        )
+        .await;
+    }
+
+    pub async fn set_theme_variant(&mut self, variant: &str) {
+        let variant = match variant {
+            "Dark" => read_flow_core::settings::ThemeVariant::Dark,
+            _ => read_flow_core::settings::ThemeVariant::Light,
+        };
+        drain(
+            self.preferences_page
+                .update(PreferencesMessage::SetThemeVariant(variant)),
+        )
+        .await;
+    }
+
+    pub async fn set_theme_accent(&mut self, hex: &str) {
+        drain(
+            self.preferences_page
+                .update(PreferencesMessage::SetThemeAccent(Some(hex.to_string()))),
+        )
+        .await;
+    }
+
+    /// `true` when the custom theme is active and builds dark.
+    pub fn effective_theme_is_dark(&self) -> bool {
+        crate::app_theme::build_theme(self.preferences_page.theme_settings())
+            .is_some_and(|theme| theme.cosmic().is_dark)
+    }
+
+    /// The effective accent color as `#rrggbb`, from the built custom theme.
+    pub fn effective_accent_hex(&self) -> String {
+        let theme = crate::app_theme::build_theme(self.preferences_page.theme_settings())
+            .expect("custom theme is enabled");
+        let accent = theme.cosmic().accent_color();
+        crate::app_theme::color_to_hex(cosmic::iced::Color::from_rgba(
+            accent.red,
+            accent.green,
+            accent.blue,
+            accent.alpha,
+        ))
+    }
+
+    /// `true` when no custom theme is built (app follows the system theme).
+    pub fn follows_system_theme(&self) -> bool {
+        crate::app_theme::build_theme(self.preferences_page.theme_settings()).is_none()
+    }
+
     // -- documents.cover_display --
 
     async fn scan_fixture_cover(&self) -> read_flow_core::db::models::File {

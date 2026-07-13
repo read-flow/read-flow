@@ -71,3 +71,12 @@ fn load_fonts() -> Vec<String> {
 pub fn fonts() -> Vec<&'static str> {
     FONT_CACHE.iter().map(|s| s.as_str()).collect()
 }
+
+/// Warm the font cache off the UI thread. Listing families shells out to
+/// `fc-list`/`system_profiler`, which can take seconds on first use — start
+/// it early so pages needing the list don't block when first opened.
+pub fn preload() {
+    std::thread::spawn(|| {
+        let _ = fonts();
+    });
+}
