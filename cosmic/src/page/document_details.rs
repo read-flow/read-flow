@@ -221,18 +221,78 @@ impl DocumentDetails {
         })
     }
 
-    fn hero_section(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
-        let cosmic_theme::Spacing {
-            space_xs, space_m, ..
-        } = theme::active().cosmic().spacing;
-
-        let meta = &self.document.user_meta;
-
-        let cover = meta
+    /// Cover to show in the hero: the document's selected cover, falling back to
+    /// the first content's own cover. Shared by the read-only hero and the
+    /// edit-mode hero row so the thumbnail stays visible while editing.
+    fn selected_cover(&self) -> Option<(&cosmic::widget::image::Handle, String)> {
+        self.document
+            .user_meta
             .selected_cover_fingerprint
             .as_ref()
             .or_else(|| self.document.contents.first().map(|c| &c.fingerprint))
-            .and_then(|fp| self.covers.get(fp).map(|(h, _)| (h, fp.clone())));
+            .and_then(|fp| self.covers.get(fp).map(|(h, _)| (h, fp.clone())))
+    }
+
+    /// Cover image (if any) alongside arbitrary right-hand content. Used both for
+    /// the read-only hero (title/subtitle/authors/description) and, in edit mode,
+    /// for the cover paired with the metadata edit form.
+    fn hero_row<'a>(
+        cover: Option<(&'a cosmic::widget::image::Handle, String)>,
+        cover_size: (f32, f32),
+        right: Element<'a, DocumentDetailsMessage>,
+    ) -> Element<'a, DocumentDetailsMessage> {
+        let cosmic_theme::Spacing { space_m, .. } = theme::active().cosmic().spacing;
+
+        let mut hero_row = Row::new().spacing(space_m).align_y(Vertical::Top);
+
+        if let Some((handle, fp)) = cover {
+            let (width, height) = cover_size;
+            let img = widget::image(handle.clone())
+                .width(Length::Fixed(width))
+                .height(Length::Fixed(height))
+                .content_fit(ContentFit::Contain);
+            hero_row = hero_row.push(
+                widget::button::custom(img)
+                    .on_press(DocumentDetailsMessage::OpenCover(fp))
+                    .padding(0),
+            );
+        }
+
+        hero_row = hero_row.push(widget::container(right).width(Length::Fill));
+
+        widget::container(hero_row)
+            .padding(space_m)
+            .width(Length::Fill)
+            .into()
+    }
+
+    /// An edit-mode field: a compact icon+label line above a full-width control,
+    /// instead of a label/control row that would split the row 50/50.
+    fn stacked_field<'a>(
+        icon: &'static str,
+        label: impl Into<std::borrow::Cow<'a, str>> + 'a,
+        control: Element<'a, DocumentDetailsMessage>,
+    ) -> Element<'a, DocumentDetailsMessage> {
+        let cosmic_theme::Spacing { space_xxxs, .. } = theme::active().cosmic().spacing;
+
+        widget::settings::item_row(vec![
+            widget::icon::from_name(icon).size(ICON_SIZE).into(),
+            Column::new()
+                .spacing(space_xxxs)
+                .push(text::caption(label))
+                .push(control)
+                .width(Length::Fill)
+                .into(),
+        ])
+        .align_y(Vertical::Top)
+        .into()
+    }
+
+    fn hero_section(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
+        let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
+
+        let meta = &self.document.user_meta;
+        let cover = self.selected_cover();
 
         let has_text = meta.title.is_some()
             || meta.subtitle.is_some()
@@ -260,28 +320,7 @@ impl DocumentDetails {
                 .push(text::body(desc).wrapping(Wrapping::Word));
         }
 
-        let mut hero_row = Row::new().spacing(space_m).align_y(Vertical::Top);
-
-        if let Some((handle, fp)) = cover {
-            let img = widget::image(handle.clone())
-                .width(Length::Fixed(200.0))
-                .height(Length::Fixed(300.0))
-                .content_fit(ContentFit::Contain);
-            hero_row = hero_row.push(
-                widget::button::custom(img)
-                    .on_press(DocumentDetailsMessage::OpenCover(fp.clone()))
-                    .padding(0),
-            );
-        }
-
-        hero_row = hero_row.push(text_col.width(Length::Fill));
-
-        Some(
-            widget::container(hero_row)
-                .padding(space_m)
-                .width(Length::Fill)
-                .into(),
-        )
+        Some(Self::hero_row(cover, (200.0, 300.0), text_col.into()))
     }
 
     /// @feature: tags.add
@@ -432,16 +471,29 @@ impl DocumentDetails {
         };
 
         // Conditionally add each field row.
+        //
+        // `item::builder(..).control(..)` gives the label and the control equal
+        // `Length::Fill` shares of the row, which is fine when the control is a
+        // short, naturally-sized widget (a pick_list or a value label in view
+        // mode) but starves text inputs down to half the row width. In edit
+        // mode, where every control is a full-width text_input/text_editor, we
+        // stack a compact label above the control instead: the control then
+        // owns the entire row width, and the extra vertical line per field is
+        // paid for by the cover having grown so there's more room beside it.
         let mut section = section;
 
         macro_rules! add_row {
             ($control:expr, $label:expr, $icon:expr) => {
                 if let Some(control) = $control {
-                    section = section.add(
+                    let row = if editing {
+                        Self::stacked_field($icon, $label, control)
+                    } else {
                         widget::settings::item::builder($label)
                             .icon(widget::icon::from_name($icon).size(ICON_SIZE))
-                            .control(control),
-                    );
+                            .control(control)
+                            .into()
+                    };
+                    section = section.add(row);
                 }
             };
         }
@@ -470,17 +522,14 @@ impl DocumentDetails {
             "system-users-symbolic"
         );
         if editing {
-            section = section.add(
-                widget::settings::item::builder(fl!("document-details-user-meta-description"))
-                    .icon(
-                        widget::icon::from_name("accessories-text-editor-symbolic").size(ICON_SIZE),
-                    )
-                    .control(
-                        widget::text_editor(&self.description_content)
-                            .on_action(DocumentDetailsMessage::DescriptionAction)
-                            .height(Length::Fixed(120.0)),
-                    ),
-            );
+            section = section.add(Self::stacked_field(
+                "accessories-text-editor-symbolic",
+                fl!("document-details-user-meta-description"),
+                widget::text_editor(&self.description_content)
+                    .on_action(DocumentDetailsMessage::DescriptionAction)
+                    .height(Length::Fixed(120.0))
+                    .into(),
+            ));
         }
         add_row!(
             opt_field!(
@@ -790,12 +839,21 @@ impl Page for DocumentDetails {
             ]));
 
         let mut sections: Vec<Element<'_, DocumentDetailsMessage>> = Vec::new();
-        if !self.editing_user_meta
-            && let Some(hero) = self.hero_section()
-        {
-            sections.push(hero);
+        if self.editing_user_meta {
+            // Keep the cover visible next to the edit form instead of hiding the
+            // whole hero while editing.
+            let form = self.user_meta_section_view();
+            // Larger cover while editing: the stacked label/input fields no longer
+            // need half the row, so there's width to spare.
+            sections.push(Self::hero_row(self.selected_cover(), (240.0, 360.0), form));
+            sections.push(status_section.into());
+        } else {
+            if let Some(hero) = self.hero_section() {
+                sections.push(hero);
+            }
+            sections.push(status_section.into());
+            sections.push(self.user_meta_section_view());
         }
-        sections.extend([status_section.into(), self.user_meta_section_view()]);
         sections.push(tags_section.into());
         sections.extend(self.sources_view());
 

@@ -22,6 +22,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 - PWA document details: the cover thumbnail now stays visible while editing metadata, sitting
   beside the edit form on wide screens instead of disappearing.
+- COSMIC document details: the cover thumbnail now stays visible (and grows) while editing
+  metadata, and edit fields stack label-above-input instead of splitting the row in half.
 
 ### Fixed
 
