@@ -20,6 +20,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Changed
 
+- PWA document details: the cover thumbnail now stays visible while editing metadata, sitting
+  beside the edit form on wide screens instead of disappearing.
+
 ### Fixed
 
 ## [0.1.1] - 2026-07-12

@@ -265,7 +265,7 @@
 	}
 </script>
 
-<div class="px-4 py-5 md:px-5 space-y-5">
+<div class="@container px-4 py-5 md:px-5 space-y-5">
 	{#if onclose}
 		<!-- Sidebar close button (title lives in the hero below) -->
 		<div class="flex justify-end">
@@ -292,20 +292,153 @@
 	{:else}
 		{@const docMeta = doc.document_guid ? $documentMetaMap.get(doc.document_guid) : undefined}
 
-		<!-- Hero: cover alongside title / subtitle / authors / description.
-		     Stacks vertically when narrow, side-by-side when wide. -->
-		{#if !editingMeta}
-			<div class="flex flex-col sm:flex-row gap-5">
-				{#if doc.has_cover}
-					<CoverImage
-						sourceGuids={doc.sourceGuids}
-						documentGuid={doc.document_guid ?? undefined}
-						hasCover={true}
-						alt={docMeta?.title ?? basename(doc.path)}
-						class="w-full max-w-[160px] sm:w-40 sm:shrink-0 h-[240px] rounded-lg shadow mx-auto sm:mx-0"
-					/>
-				{/if}
-				<div class="min-w-0 flex-1 space-y-2">
+		<!-- Hero: cover alongside title / subtitle / authors / description (view mode)
+		     or the metadata edit form (edit mode). Stacks vertically when narrow,
+		     side-by-side when wide; cover stays pinned while the form scrolls past it. -->
+		<div class="flex flex-col @lg:flex-row gap-5">
+			{#if doc.has_cover}
+				<CoverImage
+					sourceGuids={doc.sourceGuids}
+					documentGuid={doc.document_guid ?? undefined}
+					hasCover={true}
+					alt={docMeta?.title ?? basename(doc.path)}
+					class="w-full max-w-[160px] @lg:w-40 @lg:shrink-0 h-[240px] rounded-lg shadow mx-auto @lg:mx-0 @lg:sticky @lg:top-5 @lg:self-start"
+				/>
+			{/if}
+			<div class="min-w-0 flex-1 space-y-2">
+				{#if editingMeta}
+					<div class="flex items-center justify-between mb-2">
+						<h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Document Info</h2>
+						<div class="flex gap-2">
+							<button
+								onclick={saveMeta}
+								disabled={metaSaving}
+								class="text-xs px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors disabled:opacity-40"
+							>
+								{metaSaving ? 'Saving…' : 'Save'}
+							</button>
+							<button
+								onclick={cancelEditMeta}
+								disabled={metaSaving}
+								class="text-xs px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-40"
+							>
+								Cancel
+							</button>
+						</div>
+					</div>
+					<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
+						<!-- Document type -->
+						<div class="flex items-center justify-between px-4 py-3">
+							<label for="meta-type-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Type</label>
+							<select
+								id="meta-type-{fingerprint}"
+								bind:value={metaDraft.document_type}
+								class="ml-3 flex-1 min-w-0 bg-transparent text-right focus:outline-none"
+							>
+								<option value={null}>Not set</option>
+								{#each DOC_TYPES as t}
+									<option value={t}>{t}</option>
+								{/each}
+							</select>
+						</div>
+						<!-- Title -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-title-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Title</label>
+							<input
+								id="meta-title-{fingerprint}"
+								type="text"
+								bind:value={metaDraft.title}
+								placeholder={basename(doc.path)}
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none"
+							/>
+						</div>
+						<!-- Subtitle -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-subtitle-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Subtitle</label>
+							<input
+								id="meta-subtitle-{fingerprint}"
+								type="text"
+								bind:value={metaDraft.subtitle}
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none"
+							/>
+						</div>
+						<!-- Authors -->
+						<div class="px-4 py-3">
+							<p class="text-slate-500 dark:text-slate-400 text-sm mb-2">Authors</p>
+							<div class="flex flex-col gap-2">
+								{#each authorsList as author, idx}
+									<div class="flex items-center gap-2">
+										<input
+											type="text"
+											bind:value={authorsList[idx]}
+											placeholder="Author name"
+											class="flex-1 min-w-0 bg-transparent placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none border-b border-slate-200 dark:border-slate-600 py-0.5"
+										/>
+										<button
+											type="button"
+											onclick={() => { authorsList = authorsList.filter((_, i) => i !== idx); }}
+											class="shrink-0 p-1 rounded text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+											aria-label="Remove author"
+										>
+											<Icon name="x" class="w-3.5 h-3.5" />
+										</button>
+									</div>
+								{/each}
+								<button
+									type="button"
+									onclick={() => { authorsList = [...authorsList, '']; }}
+									class="self-start text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors flex items-center gap-1 mt-1"
+								>
+									<Icon name="plus" class="w-3.5 h-3.5" />
+									Add author
+								</button>
+							</div>
+						</div>
+						<!-- Description -->
+						<div class="flex items-start px-4 py-3 gap-3">
+							<label for="meta-desc-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0 pt-0.5">Description</label>
+							<textarea
+								id="meta-desc-{fingerprint}"
+								bind:value={metaDraft.description}
+								rows="2"
+								class="flex-1 min-w-0 bg-transparent text-right resize-none focus:outline-none"
+							></textarea>
+						</div>
+						<!-- Language -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-lang-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Language</label>
+							<input id="meta-lang-{fingerprint}" type="text" bind:value={metaDraft.language}
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+						</div>
+						<!-- Publisher -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-pub-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Publisher</label>
+							<input id="meta-pub-{fingerprint}" type="text" bind:value={metaDraft.publisher}
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+						</div>
+						<!-- Identifier -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-id-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Identifier</label>
+							<input id="meta-id-{fingerprint}" type="text" bind:value={metaDraft.identifier}
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+						</div>
+						<!-- Date -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-date-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Date</label>
+							<input id="meta-date-{fingerprint}" type="text" bind:value={metaDraft.date}
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+						</div>
+						<!-- Subject -->
+						<div class="flex items-center px-4 py-3 gap-3">
+							<label for="meta-subj-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Subject</label>
+							<input id="meta-subj-{fingerprint}" type="text" bind:value={metaDraft.subject}
+								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
+						</div>
+					</div>
+					{#if metaError}
+						<p class="mt-2 text-xs text-red-500 dark:text-red-400">{metaError}</p>
+					{/if}
+				{:else}
 					<h1 class="text-xl font-semibold break-words leading-tight">
 						{docMeta?.title ?? basename(doc.path)}
 					</h1>
@@ -319,9 +452,9 @@
 						<hr class="border-slate-200 dark:border-slate-700" />
 						<p class="text-sm text-slate-600 dark:text-slate-400 break-words whitespace-pre-line">{docMeta.description}</p>
 					{/if}
-				</div>
+				{/if}
 			</div>
-		{/if}
+		</div>
 
 		<!-- Cover selection (only when more than one format has a cover) -->
 		{#if !editingMeta}
@@ -480,152 +613,20 @@
 			{/if}
 		</div>
 
-		<!-- User-editable metadata -->
+		<!-- User-editable metadata (view mode only; edit form lives in the hero above) -->
+		{#if !editingMeta}
 		<div>
 			<div class="flex items-center justify-between mb-2">
 					<h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Document Info</h2>
-					{#if editingMeta}
-						<div class="flex gap-2">
-							<button
-								onclick={saveMeta}
-								disabled={metaSaving}
-								class="text-xs px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors disabled:opacity-40"
-							>
-								{metaSaving ? 'Saving…' : 'Save'}
-							</button>
-							<button
-								onclick={cancelEditMeta}
-								disabled={metaSaving}
-								class="text-xs px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-40"
-							>
-								Cancel
-							</button>
-						</div>
-					{:else}
-						<button
-							onclick={startEditMeta}
-							class="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
-							aria-label="Edit document info"
-						>
-							<Icon name="edit" class="w-3.5 h-3.5" />
-						</button>
-					{/if}
+					<button
+						onclick={startEditMeta}
+						class="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+						aria-label="Edit document info"
+					>
+						<Icon name="edit" class="w-3.5 h-3.5" />
+					</button>
 				</div>
 
-				{#if editingMeta}
-					<div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
-						<!-- Document type -->
-						<div class="flex items-center justify-between px-4 py-3">
-							<label for="meta-type-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Type</label>
-							<select
-								id="meta-type-{fingerprint}"
-								bind:value={metaDraft.document_type}
-								class="ml-3 flex-1 min-w-0 bg-transparent text-right focus:outline-none"
-							>
-								<option value={null}>Not set</option>
-								{#each DOC_TYPES as t}
-									<option value={t}>{t}</option>
-								{/each}
-							</select>
-						</div>
-						<!-- Title -->
-						<div class="flex items-center px-4 py-3 gap-3">
-							<label for="meta-title-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Title</label>
-							<input
-								id="meta-title-{fingerprint}"
-								type="text"
-								bind:value={metaDraft.title}
-								placeholder={basename(doc.path)}
-								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none"
-							/>
-						</div>
-						<!-- Subtitle -->
-						<div class="flex items-center px-4 py-3 gap-3">
-							<label for="meta-subtitle-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Subtitle</label>
-							<input
-								id="meta-subtitle-{fingerprint}"
-								type="text"
-								bind:value={metaDraft.subtitle}
-								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none"
-							/>
-						</div>
-						<!-- Authors -->
-						<div class="px-4 py-3">
-							<p class="text-slate-500 dark:text-slate-400 text-sm mb-2">Authors</p>
-							<div class="flex flex-col gap-2">
-								{#each authorsList as author, idx}
-									<div class="flex items-center gap-2">
-										<input
-											type="text"
-											bind:value={authorsList[idx]}
-											placeholder="Author name"
-											class="flex-1 min-w-0 bg-transparent placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none border-b border-slate-200 dark:border-slate-600 py-0.5"
-										/>
-										<button
-											type="button"
-											onclick={() => { authorsList = authorsList.filter((_, i) => i !== idx); }}
-											class="shrink-0 p-1 rounded text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-											aria-label="Remove author"
-										>
-											<Icon name="x" class="w-3.5 h-3.5" />
-										</button>
-									</div>
-								{/each}
-								<button
-									type="button"
-									onclick={() => { authorsList = [...authorsList, '']; }}
-									class="self-start text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors flex items-center gap-1 mt-1"
-								>
-									<Icon name="plus" class="w-3.5 h-3.5" />
-									Add author
-								</button>
-							</div>
-						</div>
-						<!-- Description -->
-						<div class="flex items-start px-4 py-3 gap-3">
-							<label for="meta-desc-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0 pt-0.5">Description</label>
-							<textarea
-								id="meta-desc-{fingerprint}"
-								bind:value={metaDraft.description}
-								rows="2"
-								class="flex-1 min-w-0 bg-transparent text-right resize-none focus:outline-none"
-							></textarea>
-						</div>
-						<!-- Language -->
-						<div class="flex items-center px-4 py-3 gap-3">
-							<label for="meta-lang-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Language</label>
-							<input id="meta-lang-{fingerprint}" type="text" bind:value={metaDraft.language}
-								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
-						</div>
-						<!-- Publisher -->
-						<div class="flex items-center px-4 py-3 gap-3">
-							<label for="meta-pub-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Publisher</label>
-							<input id="meta-pub-{fingerprint}" type="text" bind:value={metaDraft.publisher}
-								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
-						</div>
-						<!-- Identifier -->
-						<div class="flex items-center px-4 py-3 gap-3">
-							<label for="meta-id-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Identifier</label>
-							<input id="meta-id-{fingerprint}" type="text" bind:value={metaDraft.identifier}
-								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
-						</div>
-						<!-- Date -->
-						<div class="flex items-center px-4 py-3 gap-3">
-							<label for="meta-date-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Date</label>
-							<input id="meta-date-{fingerprint}" type="text" bind:value={metaDraft.date}
-								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
-						</div>
-						<!-- Subject -->
-						<div class="flex items-center px-4 py-3 gap-3">
-							<label for="meta-subj-{fingerprint}" class="text-slate-500 dark:text-slate-400 shrink-0">Subject</label>
-							<input id="meta-subj-{fingerprint}" type="text" bind:value={metaDraft.subject}
-								class="flex-1 min-w-0 bg-transparent text-right placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none" />
-						</div>
-					</div>
-					{#if metaError}
-						<p class="mt-2 text-xs text-red-500 dark:text-red-400">{metaError}</p>
-					{/if}
-				{:else}
 					<dl class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 divide-y divide-slate-100 dark:divide-slate-700/50 text-sm">
 						{#if docMeta?.document_type}
 							<div class="flex items-center justify-between px-4 py-3">
@@ -669,8 +670,8 @@
 							</div>
 						{/if}
 					</dl>
-				{/if}
 			</div>
+			{/if}
 
 		<!-- Tags -->
 		<div>
