@@ -26,8 +26,8 @@ use strum::IntoEnumIterator;
 use crate::ApplicationModule;
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
+use crate::aggregator::DocumentMeta;
 use crate::aggregator::DocumentSource;
-use crate::aggregator::UserMeta;
 use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::component::provided_state::ProvidedState;
@@ -53,8 +53,8 @@ pub struct DocumentDetails {
     editing_sources: bool,
     pending_source_deletion: Option<DocumentSource>,
     show_open_picker: bool,
-    editing_user_meta: bool,
-    user_meta_draft: UserMeta,
+    editing_document_meta: bool,
+    document_meta_draft: DocumentMeta,
     /// Covers keyed by content fingerprint (all contents loaded on open).
     covers: std::collections::HashMap<String, (cosmic::widget::image::Handle, Vec<u8>)>,
     description_content: text_editor::Content,
@@ -97,23 +97,23 @@ pub enum DocumentDetailsMessage {
     SyncToAllSources,
     SyncedToAllSources(Result<(), String>),
 
-    EditUserMeta,
-    CancelUserMeta,
+    EditDocumentMeta,
+    CancelDocumentMeta,
     /// @feature: documents.edit_metadata
-    SaveUserMeta,
-    UserMetaSaved(Result<(), String>),
-    UserMetaTitleChanged(String),
-    UserMetaSubtitleChanged(String),
-    UserMetaDocTypeChanged(Option<DocumentType>),
+    SaveDocumentMeta,
+    DocumentMetaSaved(Result<(), String>),
+    DocumentMetaTitleChanged(String),
+    DocumentMetaSubtitleChanged(String),
+    DocumentMetaDocTypeChanged(Option<DocumentType>),
     DescriptionAction(text_editor::Action),
-    UserMetaAuthorChanged(usize, String),
-    UserMetaAuthorRemoved(usize),
-    UserMetaAuthorAdded,
-    UserMetaLanguageChanged(String),
-    UserMetaPublisherChanged(String),
-    UserMetaIdentifierChanged(String),
-    UserMetaDateChanged(String),
-    UserMetaSubjectChanged(String),
+    DocumentMetaAuthorChanged(usize, String),
+    DocumentMetaAuthorRemoved(usize),
+    DocumentMetaAuthorAdded,
+    DocumentMetaLanguageChanged(String),
+    DocumentMetaPublisherChanged(String),
+    DocumentMetaIdentifierChanged(String),
+    DocumentMetaDateChanged(String),
+    DocumentMetaSubjectChanged(String),
 
     CoversLoaded(std::collections::HashMap<String, (cosmic::widget::image::Handle, Vec<u8>)>),
     /// @feature: documents.cover_display
@@ -155,7 +155,7 @@ impl DocumentDetails {
         );
 
         let (all_clients, init_all_clients) = ProvidedState::new(document_provider.clone());
-        let initial_user_meta = document.user_meta.clone();
+        let initial_document_meta = document.document_meta.clone();
 
         // Load covers for ALL contents so the selection grid can show each one.
         let fingerprints: Vec<String> = document
@@ -188,8 +188,8 @@ impl DocumentDetails {
             editing_sources: false,
             pending_source_deletion: None,
             show_open_picker: false,
-            editing_user_meta: false,
-            user_meta_draft: initial_user_meta,
+            editing_document_meta: false,
+            document_meta_draft: initial_document_meta,
             covers: std::collections::HashMap::new(),
             description_content: text_editor::Content::new(),
         };
@@ -205,20 +205,24 @@ impl DocumentDetails {
     }
 
     pub fn display_name(&self) -> String {
-        self.document.user_meta.title.clone().unwrap_or_else(|| {
-            let path = self
-                .document
-                .contents
-                .first()
-                .and_then(|c| c.sources.first())
-                .map(|s| s.path.as_str())
-                .unwrap_or("Unknown");
-            Path::new(path)
-                .file_stem()
-                .and_then(|name| name.to_str())
-                .unwrap_or("Unknown")
-                .to_string()
-        })
+        self.document
+            .document_meta
+            .title
+            .clone()
+            .unwrap_or_else(|| {
+                let path = self
+                    .document
+                    .contents
+                    .first()
+                    .and_then(|c| c.sources.first())
+                    .map(|s| s.path.as_str())
+                    .unwrap_or("Unknown");
+                Path::new(path)
+                    .file_stem()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("Unknown")
+                    .to_string()
+            })
     }
 
     /// Cover to show in the hero: the document's selected cover, falling back to
@@ -226,7 +230,7 @@ impl DocumentDetails {
     /// edit-mode hero row so the thumbnail stays visible while editing.
     fn selected_cover(&self) -> Option<(&cosmic::widget::image::Handle, String)> {
         self.document
-            .user_meta
+            .document_meta
             .selected_cover_fingerprint
             .as_ref()
             .or_else(|| self.document.contents.first().map(|c| &c.fingerprint))
@@ -249,7 +253,7 @@ impl DocumentDetails {
         } = theme::active().cosmic().spacing;
 
         // No spacing and padding in edit mode
-        if self.editing_user_meta {
+        if self.editing_document_meta {
             space_m = 0;
         }
 
@@ -269,7 +273,7 @@ impl DocumentDetails {
         }
 
         hero_row = hero_row.push_maybe(
-            self.editing_user_meta
+            self.editing_document_meta
                 .then_some(widget::space().width(Length::Fixed(space_s.into()))),
         );
 
@@ -306,7 +310,7 @@ impl DocumentDetails {
     fn hero_section(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
         let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
 
-        let meta = &self.document.user_meta;
+        let meta = &self.document.document_meta;
         let cover = self.selected_cover();
 
         let has_text = meta.title.is_some()
@@ -369,41 +373,41 @@ impl DocumentDetails {
 }
 
 impl DocumentDetails {
-    fn user_meta_section_view(&self) -> Element<'_, DocumentDetailsMessage> {
+    fn document_meta_section_view(&self) -> Element<'_, DocumentDetailsMessage> {
         let cosmic_theme::Spacing {
             space_xs, space_s, ..
         } = theme::active().cosmic().spacing;
 
-        let edit_button = if self.editing_user_meta {
+        let edit_button = if self.editing_document_meta {
             Row::new()
                 .spacing(space_s)
                 .push(
-                    widget::button::standard(fl!("document-details-user-meta-save"))
-                        .on_press(DocumentDetailsMessage::SaveUserMeta),
+                    widget::button::standard(fl!("document-details-document-meta-save"))
+                        .on_press(DocumentDetailsMessage::SaveDocumentMeta),
                 )
                 .push(
-                    widget::button::standard(fl!("document-details-user-meta-cancel"))
-                        .on_press(DocumentDetailsMessage::CancelUserMeta),
+                    widget::button::standard(fl!("document-details-document-meta-cancel"))
+                        .on_press(DocumentDetailsMessage::CancelDocumentMeta),
                 )
         } else {
             Row::new().push(
                 widget::button::icon(widget::icon::from_name("edit-symbolic").size(ICON_SIZE))
-                    .on_press(DocumentDetailsMessage::EditUserMeta)
-                    .tooltip(fl!("document-details-user-meta-edit")),
+                    .on_press(DocumentDetailsMessage::EditDocumentMeta)
+                    .tooltip(fl!("document-details-document-meta-edit")),
             )
         };
 
         let section = widget::settings::section().header(widget::settings::item_row(vec![
-            text::heading(fl!("document-details-user-meta-section")).into(),
+            text::heading(fl!("document-details-document-meta-section")).into(),
             widget::space::horizontal().into(),
             edit_button.into(),
         ]));
 
-        let editing = self.editing_user_meta;
+        let editing = self.editing_document_meta;
         let meta = if editing {
-            &self.user_meta_draft
+            &self.document_meta_draft
         } else {
-            &self.document.user_meta
+            &self.document.document_meta
         };
 
         // In edit mode: always show a text_input.
@@ -442,9 +446,9 @@ impl DocumentDetails {
                 cosmic::iced::widget::pick_list(
                     doc_type_options,
                     meta.document_type,
-                    |t: DocumentType| DocumentDetailsMessage::UserMetaDocTypeChanged(Some(t)),
+                    |t: DocumentType| DocumentDetailsMessage::DocumentMetaDocTypeChanged(Some(t)),
                 )
-                .placeholder(fl!("document-details-user-meta-type-none"))
+                .placeholder(fl!("document-details-document-meta-type-none"))
                 .into(),
             )
         } else {
@@ -454,7 +458,7 @@ impl DocumentDetails {
 
         // Authors: free-text inputs in edit mode; hidden in view mode (shown in hero section).
         let authors_control: Option<Element<'_, DocumentDetailsMessage>> = if editing {
-            let draft_authors = self.user_meta_draft.authors.as_deref().unwrap_or(&[]);
+            let draft_authors = self.document_meta_draft.authors.as_deref().unwrap_or(&[]);
             let mut col = Column::new().spacing(space_xs);
             for (idx, author) in draft_authors.iter().enumerate() {
                 col = col.push(
@@ -464,7 +468,7 @@ impl DocumentDetails {
                         .push(
                             widget::text_input("", author.as_str())
                                 .on_input(move |v| {
-                                    DocumentDetailsMessage::UserMetaAuthorChanged(idx, v)
+                                    DocumentDetailsMessage::DocumentMetaAuthorChanged(idx, v)
                                 })
                                 .width(Length::Fill),
                         )
@@ -472,13 +476,13 @@ impl DocumentDetails {
                             widget::button::icon(
                                 widget::icon::from_name("list-remove-symbolic").size(ICON_SIZE),
                             )
-                            .on_press(DocumentDetailsMessage::UserMetaAuthorRemoved(idx)),
+                            .on_press(DocumentDetailsMessage::DocumentMetaAuthorRemoved(idx)),
                         ),
                 );
             }
             col = col.push(
-                widget::button::standard(fl!("document-details-user-meta-authors-add"))
-                    .on_press(DocumentDetailsMessage::UserMetaAuthorAdded),
+                widget::button::standard(fl!("document-details-document-meta-authors-add"))
+                    .on_press(DocumentDetailsMessage::DocumentMetaAuthorAdded),
             );
             Some(col.into())
         } else {
@@ -515,31 +519,31 @@ impl DocumentDetails {
 
         add_row!(
             type_control,
-            fl!("document-details-user-meta-type"),
+            fl!("document-details-document-meta-type"),
             "document-properties-symbolic"
         );
         add_row!(
-            editing_only_field!(meta.title, DocumentDetailsMessage::UserMetaTitleChanged),
-            fl!("document-details-user-meta-title"),
+            editing_only_field!(meta.title, DocumentDetailsMessage::DocumentMetaTitleChanged),
+            fl!("document-details-document-meta-title"),
             "text-x-generic-symbolic"
         );
         add_row!(
             editing_only_field!(
                 meta.subtitle,
-                DocumentDetailsMessage::UserMetaSubtitleChanged
+                DocumentDetailsMessage::DocumentMetaSubtitleChanged
             ),
-            fl!("document-details-user-meta-subtitle"),
+            fl!("document-details-document-meta-subtitle"),
             "text-x-generic-symbolic"
         );
         add_row!(
             authors_control,
-            fl!("document-details-user-meta-authors"),
+            fl!("document-details-document-meta-authors"),
             "system-users-symbolic"
         );
         if editing {
             section = section.add(Self::stacked_field(
                 "accessories-text-editor-symbolic",
-                fl!("document-details-user-meta-description"),
+                fl!("document-details-document-meta-description"),
                 widget::text_editor(&self.description_content)
                     .on_action(DocumentDetailsMessage::DescriptionAction)
                     .height(Length::Fixed(120.0))
@@ -549,7 +553,7 @@ impl DocumentDetails {
         add_row!(
             opt_field!(
                 meta.language,
-                DocumentDetailsMessage::UserMetaLanguageChanged
+                DocumentDetailsMessage::DocumentMetaLanguageChanged
             ),
             fl!("document-details-metadata-language"),
             "preferences-desktop-locale-symbolic"
@@ -557,7 +561,7 @@ impl DocumentDetails {
         add_row!(
             opt_field!(
                 meta.publisher,
-                DocumentDetailsMessage::UserMetaPublisherChanged
+                DocumentDetailsMessage::DocumentMetaPublisherChanged
             ),
             fl!("document-details-metadata-publisher"),
             "x-office-address-book-symbolic"
@@ -565,18 +569,21 @@ impl DocumentDetails {
         add_row!(
             opt_field!(
                 meta.identifier,
-                DocumentDetailsMessage::UserMetaIdentifierChanged
+                DocumentDetailsMessage::DocumentMetaIdentifierChanged
             ),
             fl!("document-details-metadata-identifier"),
             "dialog-information-symbolic"
         );
         add_row!(
-            opt_field!(meta.date, DocumentDetailsMessage::UserMetaDateChanged),
+            opt_field!(meta.date, DocumentDetailsMessage::DocumentMetaDateChanged),
             fl!("document-details-metadata-date"),
             "x-office-calendar-symbolic"
         );
         add_row!(
-            opt_field!(meta.subject, DocumentDetailsMessage::UserMetaSubjectChanged),
+            opt_field!(
+                meta.subject,
+                DocumentDetailsMessage::DocumentMetaSubjectChanged
+            ),
             fl!("document-details-metadata-subject"),
             "edit-find-symbolic"
         );
@@ -854,10 +861,10 @@ impl Page for DocumentDetails {
             ]));
 
         let mut sections: Vec<Element<'_, DocumentDetailsMessage>> = Vec::new();
-        if self.editing_user_meta {
+        if self.editing_document_meta {
             // Keep the cover visible next to the edit form instead of hiding the
             // whole hero while editing.
-            let form = self.user_meta_section_view();
+            let form = self.document_meta_section_view();
             // Larger cover while editing: the stacked label/input fields no longer
             // need half the row, so there's width to spare.
             sections.push(self.hero_row(self.selected_cover(), (300.0, 450.0), form));
@@ -865,7 +872,7 @@ impl Page for DocumentDetails {
             if let Some(hero) = self.hero_section() {
                 sections.push(hero);
             }
-            sections.push(self.user_meta_section_view());
+            sections.push(self.document_meta_section_view());
         }
         sections.push(status_section.into());
         sections.push(tags_section.into());
@@ -939,12 +946,17 @@ impl Page for DocumentDetails {
             .and_then(|c| c.sources.first())
             .map(|s| s.path.as_str())
             .unwrap_or("Unknown");
-        let header_title = self.document.user_meta.title.as_deref().unwrap_or_else(|| {
-            Path::new(first_path)
-                .file_stem()
-                .and_then(|name| name.to_str())
-                .unwrap_or("Unknown")
-        });
+        let header_title = self
+            .document
+            .document_meta
+            .title
+            .as_deref()
+            .unwrap_or_else(|| {
+                Path::new(first_path)
+                    .file_stem()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("Unknown")
+            });
 
         vec![
             text::heading(header_title)
@@ -989,7 +1001,7 @@ impl Page for DocumentDetails {
         } else {
             let selected_fp = self
                 .document
-                .user_meta
+                .document_meta
                 .selected_cover_fingerprint
                 .as_deref();
             let cover_buttons: Vec<Element<'_, DocumentDetailsMessage>> = self
@@ -1064,9 +1076,9 @@ impl Page for DocumentDetails {
                 Task::none()
             }
             DocumentDetailsMessage::SelectCover(fingerprint) => {
-                self.document.user_meta.selected_cover_fingerprint = Some(fingerprint.clone());
-                self.user_meta_draft.selected_cover_fingerprint = Some(fingerprint);
-                let draft = self.user_meta_draft.clone();
+                self.document.document_meta.selected_cover_fingerprint = Some(fingerprint.clone());
+                self.document_meta_draft.selected_cover_fingerprint = Some(fingerprint);
+                let draft = self.document_meta_draft.clone();
                 let document = self.document.clone();
                 let document_provider = self.document_provider.clone();
                 task::future(async move {
@@ -1329,112 +1341,115 @@ impl Page for DocumentDetails {
                     Task::none()
                 }
             },
-            DocumentDetailsMessage::EditUserMeta => {
-                self.user_meta_draft = self.document.user_meta.clone();
+            DocumentDetailsMessage::EditDocumentMeta => {
+                self.document_meta_draft = self.document.document_meta.clone();
                 self.description_content = text_editor::Content::with_text(
-                    self.user_meta_draft.description.as_deref().unwrap_or(""),
+                    self.document_meta_draft
+                        .description
+                        .as_deref()
+                        .unwrap_or(""),
                 );
-                self.editing_user_meta = true;
+                self.editing_document_meta = true;
                 Task::none()
             }
-            DocumentDetailsMessage::CancelUserMeta => {
-                self.editing_user_meta = false;
+            DocumentDetailsMessage::CancelDocumentMeta => {
+                self.editing_document_meta = false;
                 Task::none()
             }
-            DocumentDetailsMessage::SaveUserMeta => {
+            DocumentDetailsMessage::SaveDocumentMeta => {
                 // Drop empty author entries before saving.
-                if let Some(authors) = &mut self.user_meta_draft.authors {
+                if let Some(authors) = &mut self.document_meta_draft.authors {
                     authors.retain(|a| !a.trim().is_empty());
                     if authors.is_empty() {
-                        self.user_meta_draft.authors = None;
+                        self.document_meta_draft.authors = None;
                     }
                 }
-                let draft = self.user_meta_draft.clone();
+                let draft = self.document_meta_draft.clone();
                 let document = self.document.clone();
                 let document_provider = self.document_provider.clone();
-                self.editing_user_meta = false;
+                self.editing_document_meta = false;
                 task::future(async move {
                     let result = document_provider
                         .update_document_metadata(&document, draft)
                         .await
                         .map_err(|e| format!("{e}"));
-                    DocumentDetailsMessage::UserMetaSaved(result)
+                    DocumentDetailsMessage::DocumentMetaSaved(result)
                 })
             }
-            DocumentDetailsMessage::UserMetaSaved(result) => match result {
+            DocumentDetailsMessage::DocumentMetaSaved(result) => match result {
                 Ok(()) => task::message(DocumentDetailsMessage::RefreshDocument),
                 Err(err) => {
                     tracing::error!("Failed to save document metadata: {err}");
                     Task::none()
                 }
             },
-            DocumentDetailsMessage::UserMetaTitleChanged(val) => {
-                self.user_meta_draft.title = if val.is_empty() { None } else { Some(val) };
+            DocumentDetailsMessage::DocumentMetaTitleChanged(val) => {
+                self.document_meta_draft.title = if val.is_empty() { None } else { Some(val) };
                 Task::none()
             }
-            DocumentDetailsMessage::UserMetaSubtitleChanged(val) => {
-                self.user_meta_draft.subtitle = if val.is_empty() { None } else { Some(val) };
+            DocumentDetailsMessage::DocumentMetaSubtitleChanged(val) => {
+                self.document_meta_draft.subtitle = if val.is_empty() { None } else { Some(val) };
                 Task::none()
             }
-            DocumentDetailsMessage::UserMetaDocTypeChanged(val) => {
-                self.user_meta_draft.document_type = val;
+            DocumentDetailsMessage::DocumentMetaDocTypeChanged(val) => {
+                self.document_meta_draft.document_type = val;
                 Task::none()
             }
             DocumentDetailsMessage::DescriptionAction(action) => {
                 self.description_content.perform(action);
                 let text = self.description_content.text();
                 let trimmed = text.trim_end_matches('\n');
-                self.user_meta_draft.description = if trimmed.is_empty() {
+                self.document_meta_draft.description = if trimmed.is_empty() {
                     None
                 } else {
                     Some(trimmed.to_string())
                 };
                 Task::none()
             }
-            DocumentDetailsMessage::UserMetaAuthorChanged(idx, val) => {
-                if let Some(authors) = &mut self.user_meta_draft.authors
+            DocumentDetailsMessage::DocumentMetaAuthorChanged(idx, val) => {
+                if let Some(authors) = &mut self.document_meta_draft.authors
                     && let Some(author) = authors.get_mut(idx)
                 {
                     *author = val;
                 }
                 Task::none()
             }
-            DocumentDetailsMessage::UserMetaAuthorRemoved(idx) => {
-                if let Some(authors) = &mut self.user_meta_draft.authors {
+            DocumentDetailsMessage::DocumentMetaAuthorRemoved(idx) => {
+                if let Some(authors) = &mut self.document_meta_draft.authors {
                     if idx < authors.len() {
                         authors.remove(idx);
                     }
                     if authors.is_empty() {
-                        self.user_meta_draft.authors = None;
+                        self.document_meta_draft.authors = None;
                     }
                 }
                 Task::none()
             }
-            DocumentDetailsMessage::UserMetaAuthorAdded => {
-                self.user_meta_draft
+            DocumentDetailsMessage::DocumentMetaAuthorAdded => {
+                self.document_meta_draft
                     .authors
                     .get_or_insert_with(Vec::new)
                     .push(String::new());
                 Task::none()
             }
-            DocumentDetailsMessage::UserMetaLanguageChanged(val) => {
-                self.user_meta_draft.language = if val.is_empty() { None } else { Some(val) };
+            DocumentDetailsMessage::DocumentMetaLanguageChanged(val) => {
+                self.document_meta_draft.language = if val.is_empty() { None } else { Some(val) };
                 Task::none()
             }
-            DocumentDetailsMessage::UserMetaPublisherChanged(val) => {
-                self.user_meta_draft.publisher = if val.is_empty() { None } else { Some(val) };
+            DocumentDetailsMessage::DocumentMetaPublisherChanged(val) => {
+                self.document_meta_draft.publisher = if val.is_empty() { None } else { Some(val) };
                 Task::none()
             }
-            DocumentDetailsMessage::UserMetaIdentifierChanged(val) => {
-                self.user_meta_draft.identifier = if val.is_empty() { None } else { Some(val) };
+            DocumentDetailsMessage::DocumentMetaIdentifierChanged(val) => {
+                self.document_meta_draft.identifier = if val.is_empty() { None } else { Some(val) };
                 Task::none()
             }
-            DocumentDetailsMessage::UserMetaDateChanged(val) => {
-                self.user_meta_draft.date = if val.is_empty() { None } else { Some(val) };
+            DocumentDetailsMessage::DocumentMetaDateChanged(val) => {
+                self.document_meta_draft.date = if val.is_empty() { None } else { Some(val) };
                 Task::none()
             }
-            DocumentDetailsMessage::UserMetaSubjectChanged(val) => {
-                self.user_meta_draft.subject = if val.is_empty() { None } else { Some(val) };
+            DocumentDetailsMessage::DocumentMetaSubjectChanged(val) => {
+                self.document_meta_draft.subject = if val.is_empty() { None } else { Some(val) };
                 Task::none()
             }
         }

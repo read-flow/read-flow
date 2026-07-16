@@ -63,17 +63,17 @@ document-details-status = Status
 document-details-tags = Tags
 
 # User-edited document metadata
-document-details-user-meta-section = Document Info
-document-details-user-meta-edit = Edit document info
-document-details-user-meta-save = Save
-document-details-user-meta-cancel = Cancel
-document-details-user-meta-type = Type
-document-details-user-meta-type-none = Not set
-document-details-user-meta-title = Title
-document-details-user-meta-subtitle = Subtitle
-document-details-user-meta-authors = Authors
-document-details-user-meta-authors-add = Add author
-document-details-user-meta-description = Description
+document-details-document-meta-section = Document Info
+document-details-document-meta-edit = Edit document info
+document-details-document-meta-save = Save
+document-details-document-meta-cancel = Cancel
+document-details-document-meta-type = Type
+document-details-document-meta-type-none = Not set
+document-details-document-meta-title = Title
+document-details-document-meta-subtitle = Subtitle
+document-details-document-meta-authors = Authors
+document-details-document-meta-authors-add = Add author
+document-details-document-meta-description = Description
 
 # Tag editor
 tag-editor-add = Add

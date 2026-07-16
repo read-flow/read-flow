@@ -554,7 +554,7 @@ impl DashboardPage {
 
         let title = entry
             .document
-            .user_meta
+            .document_meta
             .title
             .as_deref()
             .or_else(|| {
@@ -569,14 +569,14 @@ impl DashboardPage {
 
         let authors = entry
             .document
-            .user_meta
+            .document_meta
             .authors
             .as_ref()
             .map(|a| a.join(", "));
 
         let cover_key = entry
             .document
-            .user_meta
+            .document_meta
             .selected_cover_fingerprint
             .as_ref()
             .unwrap_or(&entry.fingerprint);
@@ -712,7 +712,9 @@ impl Page for DashboardPage {
                         .iter()
                         .flat_map(|e| {
                             let mut fps = vec![e.fingerprint.clone()];
-                            if let Some(ref fp) = e.document.user_meta.selected_cover_fingerprint {
+                            if let Some(ref fp) =
+                                e.document.document_meta.selected_cover_fingerprint
+                            {
                                 fps.push(fp.clone());
                             }
                             fps
@@ -836,7 +838,7 @@ impl Page for DashboardPage {
     fn dialog(&self) -> Option<Element<'_, Self::Message>> {
         let document = self.pending_format_pick.as_ref()?;
 
-        let title = document.user_meta.title.clone().unwrap_or_else(|| {
+        let title = document.document_meta.title.clone().unwrap_or_else(|| {
             document
                 .local_or_any_source()
                 .and_then(|(_, s)| std::path::Path::new(&s.path).file_stem()?.to_str())

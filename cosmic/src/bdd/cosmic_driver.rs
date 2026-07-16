@@ -585,8 +585,13 @@ impl CosmicDriver {
             .expect("get documents");
         let q = query.to_lowercase();
         docs.into_iter().any(|doc| {
-            let doc_title = doc.user_meta.title.as_deref().unwrap_or("").to_lowercase();
-            doc_title.contains(&q) && doc.user_meta.title.as_deref() == Some(title)
+            let doc_title = doc
+                .document_meta
+                .title
+                .as_deref()
+                .unwrap_or("")
+                .to_lowercase();
+            doc_title.contains(&q) && doc.document_meta.title.as_deref() == Some(title)
         })
     }
 
@@ -601,7 +606,7 @@ impl CosmicDriver {
             .await
             .expect("get documents");
         docs.into_iter().any(|doc| {
-            doc.user_meta.title.as_deref() == Some(title)
+            doc.document_meta.title.as_deref() == Some(title)
                 && doc.contents.iter().any(|c| c.status == status)
         })
     }
@@ -616,7 +621,7 @@ impl CosmicDriver {
             .await
             .expect("get documents");
         docs.into_iter().any(|doc| {
-            doc.user_meta.title.as_deref() == Some(title)
+            doc.document_meta.title.as_deref() == Some(title)
                 && doc
                     .contents
                     .iter()
@@ -639,7 +644,7 @@ impl CosmicDriver {
         let pagination = crate::component::pagination::Pagination::new(docs.len());
         pagination
             .filter_visible(&docs)
-            .any(|doc| doc.user_meta.title.as_deref() == Some(title))
+            .any(|doc| doc.document_meta.title.as_deref() == Some(title))
     }
 
     // -- documents.filter_by_source --
@@ -659,7 +664,7 @@ impl CosmicDriver {
             .await
             .expect("get documents");
         docs.into_iter().any(|doc| {
-            doc.user_meta.title.as_deref() == Some(title)
+            doc.document_meta.title.as_deref() == Some(title)
                 && doc
                     .contents
                     .iter()
@@ -699,7 +704,7 @@ impl CosmicDriver {
             .expect("get documents");
         let mut titles: Vec<String> = docs
             .into_iter()
-            .filter_map(|d| d.user_meta.title.clone())
+            .filter_map(|d| d.document_meta.title.clone())
             .collect();
         titles.sort();
         titles

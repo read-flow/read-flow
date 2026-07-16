@@ -249,7 +249,7 @@ impl DocumentsComponent {
             .fold(files_section, |section, file| {
                 let is_selected = self.selected_documents.contains(&file.document_guid);
                 let cover = file
-                    .user_meta
+                    .document_meta
                     .selected_cover_fingerprint
                     .as_ref()
                     .and_then(|fp| self.covers.get(fp))
@@ -516,12 +516,12 @@ fn display_document_title<'a>(document: &'a Document) -> Element<'a, DocumentsMe
     let path: Option<&Path> = document.local_or_any_source().map(|(_, s)| s.path.as_ref());
 
     let primary = document
-        .user_meta
+        .document_meta
         .title
         .as_deref()
         .unwrap_or_else(|| path.and_then(|p| p.file_name()?.to_str()).unwrap_or(""));
 
-    let secondary: String = if let Some(authors) = document.user_meta.authors.as_deref() {
+    let secondary: String = if let Some(authors) = document.document_meta.authors.as_deref() {
         if !authors.is_empty() {
             authors.join(", ")
         } else {
@@ -573,7 +573,7 @@ fn display_pills<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
     }
 
     // Document type pill (if set)
-    if let Some(doc_type) = &document.user_meta.document_type {
+    if let Some(doc_type) = &document.document_meta.document_type {
         row = row.push(pill(doc_type.to_string()));
     }
 

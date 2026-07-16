@@ -8,7 +8,7 @@ use std::sync::Arc;
 use futures_util::stream;
 use futures_util::stream::StreamExt;
 use provider::r#async::Provider;
-use read_flow_core::api::DocumentMeta;
+pub use read_flow_core::api::DocumentMeta;
 use read_flow_core::api::File;
 use read_flow_core::api::FileDataSource;
 use read_flow_core::api::ReadingState;
@@ -137,7 +137,7 @@ impl Aggregator {
             .collect();
         for doc in documents.values_mut() {
             if let Some(meta) = all_meta.get(&doc.document_guid) {
-                doc.user_meta = meta.clone();
+                doc.document_meta = meta.clone();
             }
         }
 
@@ -322,7 +322,7 @@ impl Aggregator {
             .collect();
         let client_count = clients.len();
 
-        type ClientResult = (ClientSelector, Vec<File>, Option<UserMeta>);
+        type ClientResult = (ClientSelector, Vec<File>, Option<DocumentMeta>);
         let results: Vec<Result<ClientResult, FilesClientError>> = stream::iter(clients)
             .map(|(selector, client)| async move {
                 match client.get_document(document_guid).await? {
@@ -373,7 +373,7 @@ impl Aggregator {
         }
 
         let mut documents = Documents::default();
-        let mut final_meta: Option<UserMeta> = None;
+        let mut final_meta: Option<DocumentMeta> = None;
         for (selector, files, meta) in all {
             for file in files {
                 let guid = file
@@ -389,7 +389,7 @@ impl Aggregator {
 
         Ok(documents.get(document_guid).cloned().map(|mut doc| {
             if let Some(meta) = final_meta {
-                doc.user_meta = meta;
+                doc.document_meta = meta;
             }
             doc
         }))
@@ -684,8 +684,6 @@ impl Provider<Documents> for Aggregator {
     }
 }
 
-pub use read_flow_core::api::DocumentMeta as UserMeta;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentSource {
     pub guid: String,
@@ -737,7 +735,7 @@ pub struct Document {
     /// Primary identity — corresponds to a `documents.guid` row (or a synthetic
     /// fingerprint-based id for files that have no document row yet).
     pub document_guid: String,
-    pub user_meta: UserMeta,
+    pub document_meta: DocumentMeta,
     pub contents: Vec<DocumentContent>,
 }
 
@@ -764,7 +762,7 @@ impl Document {
             .unwrap_or(DocumentType::Other);
         Some(Document {
             document_guid: fingerprint.clone(), // synthetic
-            user_meta: UserMeta::default(),
+            document_meta: DocumentMeta::default(),
             contents: vec![DocumentContent {
                 fingerprint: fingerprint.clone(),
                 type_: doc_type,
@@ -838,7 +836,7 @@ impl Document {
             if let Some(source) = content.sources.iter().find(|s| s.guid == guid) {
                 return Some(Document {
                     document_guid: self.document_guid.clone(),
-                    user_meta: self.user_meta.clone(),
+                    document_meta: self.document_meta.clone(),
                     contents: vec![DocumentContent {
                         fingerprint: content.fingerprint.clone(),
                         type_: content.type_,
@@ -865,7 +863,7 @@ impl Document {
         }
         Some(Document {
             document_guid: self.document_guid.clone(),
-            user_meta: self.user_meta.clone(),
+            document_meta: self.document_meta.clone(),
             contents: matching,
         })
     }
@@ -925,7 +923,7 @@ impl Documents {
                 .insert(file.fingerprint.clone(), document_guid.clone());
             let doc = Document {
                 document_guid: document_guid.clone(),
-                user_meta: UserMeta::default(),
+                document_meta: DocumentMeta::default(),
                 contents: vec![DocumentContent {
                     fingerprint: file.fingerprint,
                     type_,

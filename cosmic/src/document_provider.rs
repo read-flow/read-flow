@@ -17,9 +17,9 @@ use tokio::sync::broadcast;
 use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
 use crate::aggregator::DocumentContent;
+use crate::aggregator::DocumentMeta;
 use crate::aggregator::DocumentSource;
 use crate::aggregator::Documents;
-use crate::aggregator::UserMeta;
 use crate::client::Client;
 use crate::client::ClientSelector;
 use crate::client::FilesClientError;
@@ -195,7 +195,7 @@ impl DocumentProvider {
     pub async fn update_document_metadata(
         &self,
         document: &Document,
-        meta: UserMeta,
+        meta: DocumentMeta,
     ) -> Result<(), FilesClientError> {
         let result = self
             .aggregator

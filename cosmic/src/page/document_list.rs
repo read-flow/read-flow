@@ -446,7 +446,7 @@ impl DocumentList {
             .enumerate()
             .map(|(idx, doc)| {
                 let label = doc
-                    .user_meta
+                    .document_meta
                     .title
                     .as_deref()
                     .map(str::to_owned)
@@ -562,7 +562,7 @@ fn get_filename(doc: &Document) -> &str {
 
 /// Get the display title: user-edited title if set, otherwise the filename.
 fn get_display_title(doc: &Document) -> &str {
-    doc.user_meta
+    doc.document_meta
         .title
         .as_deref()
         .unwrap_or_else(|| get_filename(doc))
@@ -642,13 +642,13 @@ fn filter_document(
                     .count();
                 let tags_lower = all_tags.join(" ").to_lowercase();
                 let title_lower = document
-                    .user_meta
+                    .document_meta
                     .title
                     .as_deref()
                     .unwrap_or("")
                     .to_lowercase();
                 let authors_lower = document
-                    .user_meta
+                    .document_meta
                     .authors
                     .as_deref()
                     .unwrap_or(&[])
@@ -667,9 +667,9 @@ fn filter_document(
                         .flat_map(|c| c.sources.iter())
                         .any(|source| re.is_match(&source.path));
                     let tags = all_tags.join(" ");
-                    let title = document.user_meta.title.as_deref().unwrap_or("");
+                    let title = document.document_meta.title.as_deref().unwrap_or("");
                     let authors = document
-                        .user_meta
+                        .document_meta
                         .authors
                         .as_deref()
                         .unwrap_or(&[])
@@ -728,7 +728,7 @@ impl Page for DocumentList {
 
         let document = self.pending_format_pick.as_ref()?;
 
-        let title = document.user_meta.title.clone().unwrap_or_else(|| {
+        let title = document.document_meta.title.clone().unwrap_or_else(|| {
             document
                 .local_or_any_source()
                 .and_then(|(_, s)| std::path::Path::new(&s.path).file_stem()?.to_str())
