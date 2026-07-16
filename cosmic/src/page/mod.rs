@@ -50,7 +50,6 @@ use crate::aggregator::DocumentType;
 use crate::app::ContextView;
 use crate::client::ClientSelector;
 use crate::config::Config;
-use crate::config::EpubViewerConfig;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
@@ -86,7 +85,6 @@ pub struct Pages {
     pub(crate) document_provider: Arc<DocumentProvider>,
     application_module: Arc<ApplicationModule>,
 
-    epub_viewer_config: EpubViewerConfig,
     dashboard: DashboardPage,
     preferences: PreferencesPage,
     online_library: OnlineLibraryPage,
@@ -141,6 +139,8 @@ pub enum PageMessage {
     DocumentDetails(Fingerprint, DocumentDetailsMessage),
     OpenDocumentDetails(Document),
     CloseDocumentDetails(Fingerprint),
+    OpenInMuPdfViewer(Document),
+    OpenInExternalViewer(Document),
     EpubViewer(Fingerprint, EpubViewerMessage),
     OpenDocument(Document),
     CloseEpubViewer(Fingerprint, Option<(String, f64)>),
@@ -242,8 +242,6 @@ impl Pages {
         config: Config,
         log_bus: LogBus,
     ) -> (Self, Task<Action<PageMessage>>) {
-        let epub_viewer_config = config.epub_viewer;
-
         let clients = vec![application_module.clone().into()];
 
         let document_provider = Arc::new(DocumentProvider::new(Aggregator::new(
@@ -273,7 +271,6 @@ impl Pages {
             Self {
                 document_provider,
                 application_module,
-                epub_viewer_config,
                 dashboard,
                 preferences,
                 online_library,
@@ -292,7 +289,6 @@ impl Pages {
     }
 
     pub fn update_app_config(&mut self, config: &Config) {
-        self.epub_viewer_config = config.epub_viewer;
         self.preferences.update_config(config.clone());
     }
 
@@ -677,6 +673,7 @@ impl Pages {
                     tasks.push(save_reading_state_task(
                         self.document_provider.clone(),
                         fingerprint,
+                        crate::reading_progress::Viewer::MuPdf,
                         format!("{{\"page\":{page}}}"),
                         percentage,
                     ));
@@ -720,15 +717,13 @@ impl Pages {
                     .map(|c| c.type_)
                     .unwrap_or(DocumentType::Other);
                 match type_ {
-                    DocumentType::Epub => match self.epub_viewer_config {
-                        EpubViewerConfig::NativeEpub => self.open_epub_viewer(document),
-                        EpubViewerConfig::MuPdf => self.open_mupdf_viewer(document),
-                        EpubViewerConfig::ExternalViewer => self.open_in_external_viewer(document),
-                    },
+                    DocumentType::Epub => self.open_epub_viewer(document),
                     DocumentType::Other => self.open_in_external_viewer(document),
                     _ => self.open_mupdf_viewer(document),
                 }
             }
+            PageMessage::OpenInMuPdfViewer(document) => self.open_mupdf_viewer(document),
+            PageMessage::OpenInExternalViewer(document) => self.open_in_external_viewer(document),
             PageMessage::CloseEpubViewer(fingerprint, progress_info) => {
                 let selector = PageSelector::EpubViewer(fingerprint.clone());
                 let _ = self.epub_viewers.swap_remove(&fingerprint);
@@ -742,6 +737,7 @@ impl Pages {
                     tasks.push(save_reading_state_task(
                         self.document_provider.clone(),
                         fingerprint,
+                        crate::reading_progress::Viewer::Epub,
                         position_json,
                         percentage,
                     ));
@@ -960,6 +956,12 @@ fn map_epub_viewer_message(fingerprint: Fingerprint, msg: EpubViewerMessage) -> 
             EpubViewerOutput::OpenDocumentDetails(document) => {
                 PageMessage::OpenDocumentDetails(*document)
             }
+            EpubViewerOutput::OpenInMuPdfViewer(document) => {
+                PageMessage::OpenInMuPdfViewer(*document)
+            }
+            EpubViewerOutput::OpenInExternalViewer(document) => {
+                PageMessage::OpenInExternalViewer(*document)
+            }
         },
         msg => PageMessage::EpubViewer(fingerprint, msg),
     }
@@ -977,15 +979,30 @@ fn map_image_viewer_message(id: u64, msg: ImageViewerMessage) -> PageMessage {
 fn save_reading_state_task(
     document_provider: Arc<DocumentProvider>,
     fingerprint: Fingerprint,
+    viewer: crate::reading_progress::Viewer,
     position: String,
     percentage: f64,
 ) -> Task<Action<PageMessage>> {
     task::future(async move {
+        let existing = {
+            let aggregator = document_provider.aggregator.read().await;
+            aggregator
+                .get_reading_state(&fingerprint)
+                .await
+                .ok()
+                .flatten()
+        };
+        let merged_position = crate::reading_progress::merge(
+            existing.as_ref().map(|s| s.position.as_str()),
+            viewer,
+            &position,
+        );
+
         let now = iso8601_now();
         let state = read_flow_core::api::ReadingState {
             fingerprint,
             status: 0,
-            position,
+            position: merged_position,
             percentage,
             last_updated: now,
             status_updated_at: "1970-01-01T00:00:00Z".to_string(),
@@ -1039,4 +1056,45 @@ where
     let receiver = application_module.subscribe();
 
     Subscription::run_with(SubscriberState::new(receiver, f), SubscriberState::run)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_document() -> Document {
+        Document {
+            document_guid: "doc-guid".into(),
+            document_meta: Default::default(),
+            contents: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn open_in_mupdf_viewer_maps_to_page_message() {
+        let document = sample_document();
+        let mapped = map_epub_viewer_message(
+            "fp".into(),
+            EpubViewerMessage::Out(EpubViewerOutput::OpenInMuPdfViewer(Box::new(
+                document.clone(),
+            ))),
+        );
+        assert!(
+            matches!(mapped, PageMessage::OpenInMuPdfViewer(d) if d.document_guid == document.document_guid)
+        );
+    }
+
+    #[test]
+    fn open_in_external_viewer_maps_to_page_message() {
+        let document = sample_document();
+        let mapped = map_epub_viewer_message(
+            "fp".into(),
+            EpubViewerMessage::Out(EpubViewerOutput::OpenInExternalViewer(Box::new(
+                document.clone(),
+            ))),
+        );
+        assert!(
+            matches!(mapped, PageMessage::OpenInExternalViewer(d) if d.document_guid == document.document_guid)
+        );
+    }
 }

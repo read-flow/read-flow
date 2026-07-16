@@ -26,6 +26,12 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   beside the edit form on wide screens instead of disappearing.
 - COSMIC document details: the cover thumbnail now stays visible (and grows) while editing
   metadata, and edit fields stack label-above-input instead of splitting the row in half.
+- COSMIC: removed the global "EPUB viewer preference" setting from Preferences → Appearance.
+  The EPUB viewer's context pane now offers "Open in MuPDF viewer" and "Open in external
+  viewer" actions for the current document instead, since the native viewer handles most
+  EPUBs well enough that a global switch is no longer necessary. Reading progress for each
+  viewer is now stored side by side per document, so switching between them resumes each one
+  from its own last position instead of one overwriting the other's.
 
 ### Fixed
 

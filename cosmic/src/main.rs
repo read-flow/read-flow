@@ -17,6 +17,7 @@ mod iter;
 mod layout;
 mod logging;
 mod page;
+mod reading_progress;
 mod render_blocks;
 mod state;
 mod subscription;

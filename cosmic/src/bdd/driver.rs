@@ -527,26 +527,6 @@ impl Driver {
         }
     }
 
-    // -- app.epub_viewer_choice --
-
-    pub async fn set_epub_viewer_choice(&mut self, choice: &str) {
-        match self {
-            Self::Rest(_) => {
-                panic!("`app.epub_viewer_choice` has no REST surface — run with BDD_DRIVER=cosmic")
-            }
-            Self::Cosmic(driver) => driver.set_epub_viewer_choice(choice).await,
-        }
-    }
-
-    pub fn epub_viewer_choice(&self) -> &str {
-        match self {
-            Self::Rest(_) => {
-                panic!("`app.epub_viewer_choice` has no REST surface — run with BDD_DRIVER=cosmic")
-            }
-            Self::Cosmic(driver) => driver.epub_viewer_choice(),
-        }
-    }
-
     // -- app.theme_overrides --
 
     pub async fn set_custom_theme_enabled(&mut self, enabled: bool) {

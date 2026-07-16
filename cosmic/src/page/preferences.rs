@@ -63,7 +63,6 @@ use crate::component::tag_editor::TagEditor;
 use crate::component::tag_editor::TagEditorMessage;
 use crate::component::tag_editor::TagEditorOutput;
 use crate::config::Config;
-use crate::config::EpubViewerConfig;
 use crate::cosmic_ext::ActionExt;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
@@ -180,9 +179,6 @@ pub enum ThemeColorPicker {
 #[derive(Debug, Clone)]
 pub enum PreferencesMessage {
     SectionChanged(PreferencesSection),
-
-    // appearance
-    SetEpubViewer(EpubViewerConfig),
 
     // theme overrides (TOML, live-previewed)
     ToggleCustomTheme(bool),
@@ -438,11 +434,6 @@ impl PreferencesPage {
     }
 
     #[cfg(test)]
-    pub fn epub_viewer(&self) -> EpubViewerConfig {
-        self.config.epub_viewer
-    }
-
-    #[cfg(test)]
     pub fn theme_settings(&self) -> &ThemeSettings {
         self.settings.ui.theme()
     }
@@ -564,49 +555,8 @@ impl PreferencesPage {
             .into()
     }
 
-    /// @feature: app.epub_viewer_choice
     fn view_section_appearance(&self) -> Vec<Element<'_, PreferencesMessage>> {
-        let cosmic_theme::Spacing { space_xs, .. } = theme::active().cosmic().spacing;
-
-        let viewer_section = widget::settings::section()
-            .title(fl!("settings-viewer-section"))
-            .add(
-                widget::settings::item::builder(fl!("settings-epub-viewer"))
-                    .description(fl!("settings-epub-viewer-description"))
-                    .icon(widget::icon::from_name("application-epub+zip").size(ICON_SIZE))
-                    .control(
-                        widget::Column::from_vec(vec![
-                            widget::radio(
-                                widget::text::body(fl!("settings-epub-viewer-native")),
-                                EpubViewerConfig::NativeEpub,
-                                Some(self.config.epub_viewer),
-                                PreferencesMessage::SetEpubViewer,
-                            )
-                            .into(),
-                            widget::radio(
-                                widget::text::body(fl!("settings-epub-viewer-mupdf")),
-                                EpubViewerConfig::MuPdf,
-                                Some(self.config.epub_viewer),
-                                PreferencesMessage::SetEpubViewer,
-                            )
-                            .into(),
-                            widget::radio(
-                                widget::text::body(fl!("settings-epub-viewer-external")),
-                                EpubViewerConfig::ExternalViewer,
-                                Some(self.config.epub_viewer),
-                                PreferencesMessage::SetEpubViewer,
-                            )
-                            .into(),
-                        ])
-                        .spacing(space_xs)
-                        .align_x(Horizontal::Left),
-                    ),
-            );
-
-        let mut items = vec![
-            widget::text::title2(fl!("preferences-appearance-section")).into(),
-            viewer_section.into(),
-        ];
+        let mut items = vec![widget::text::title2(fl!("preferences-appearance-section")).into()];
         items.extend(self.view_section_theme());
         items
     }
@@ -1598,15 +1548,6 @@ impl Page for PreferencesPage {
                 self.editing_directory = EditState::Idle;
                 self.authorized_user_form = None;
                 self.add_source_form = None;
-                Task::none()
-            }
-            PreferencesMessage::SetEpubViewer(epub_viewer) => {
-                self.config.epub_viewer = epub_viewer;
-                if let Ok(ctx) =
-                    cosmic_config::Config::new(crate::app::ReadFlow::APP_ID, Config::VERSION)
-                {
-                    let _ = self.config.write_entry(&ctx);
-                }
                 Task::none()
             }
             PreferencesMessage::ToggleCustomTheme(enabled) => {

@@ -350,6 +350,10 @@ pub enum EpubViewerOutput {
     /// Request the App to navigate to (activate) this viewer's page.
     Activate,
     OpenDocumentDetails(Box<Document>),
+    /// Open the current document in the MuPDF viewer, as a separate page.
+    OpenInMuPdfViewer(Box<Document>),
+    /// Open the current document in the system's default application.
+    OpenInExternalViewer(Box<Document>),
 }
 
 #[derive(Debug, Clone)]
@@ -597,7 +601,15 @@ impl EpubViewer {
             async move {
                 let aggregator = document_provider.aggregator.read().await;
                 match aggregator.get_reading_state(&fp).await {
-                    Ok(Some(state)) => parse_reading_progress(&state.position),
+                    Ok(Some(state)) => {
+                        match crate::reading_progress::extract(
+                            &state.position,
+                            crate::reading_progress::Viewer::Epub,
+                        ) {
+                            Some(own) => parse_reading_progress(&own),
+                            None => ReadingPosition::default(),
+                        }
+                    }
                     Ok(None) => ReadingPosition::default(),
                     Err(e) => {
                         tracing::warn!("failed to load reading state: {e}");
@@ -1200,7 +1212,29 @@ impl Page for EpubViewer {
         ]
     }
 
+    /// @feature: app.epub_viewer_choice
     fn view_context(&self) -> ContextView<'_, EpubViewerMessage> {
+        let open_in_section = widget::settings::section()
+            .title(fl!("epub-viewer-open-in-section"))
+            .add(
+                widget::settings::item::builder(fl!("epub-viewer-open-in-mupdf")).control(
+                    widget::button::standard(fl!("epub-viewer-open-in-action")).on_press(
+                        EpubViewerMessage::Out(EpubViewerOutput::OpenInMuPdfViewer(Box::new(
+                            self.document.clone(),
+                        ))),
+                    ),
+                ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("epub-viewer-open-in-external")).control(
+                    widget::button::standard(fl!("epub-viewer-open-in-action")).on_press(
+                        EpubViewerMessage::Out(EpubViewerOutput::OpenInExternalViewer(Box::new(
+                            self.document.clone(),
+                        ))),
+                    ),
+                ),
+            );
+
         let mut display_section = widget::settings::section().title(fl!("epub-viewer-display"));
 
         display_section = display_section.add(
@@ -1326,6 +1360,7 @@ impl Page for EpubViewer {
         ContextView {
             title: fl!("epub-viewer"),
             content: widget::settings::view_column(vec![
+                open_in_section.into(),
                 display_section.into(),
                 shortcuts_section.into(),
             ])

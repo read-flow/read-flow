@@ -311,7 +311,11 @@ impl MuPdfViewer {
             async move {
                 let aggregator = document_provider.aggregator.read().await;
                 match aggregator.get_reading_state(&fp).await {
-                    Ok(Some(state)) => parse_page_from_progress(&state.position),
+                    Ok(Some(state)) => crate::reading_progress::extract(
+                        &state.position,
+                        crate::reading_progress::Viewer::MuPdf,
+                    )
+                    .and_then(|own| parse_page_from_progress(&own)),
                     Ok(None) => None,
                     Err(e) => {
                         tracing::warn!("failed to load reading state: {e}");

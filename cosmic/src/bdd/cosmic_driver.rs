@@ -41,7 +41,6 @@ use crate::aggregator::Aggregator;
 use crate::bdd::fixtures;
 use crate::bdd::rest_driver;
 use crate::client::ClientSelector;
-use crate::config::EpubViewerConfig;
 use crate::document_provider::DocumentProvider;
 use crate::page::Page;
 use crate::page::PreferencesMessage;
@@ -739,29 +738,6 @@ impl CosmicDriver {
         };
         let _viewer = crate::page::image_viewer::ImageViewer::new(0, image);
         true
-    }
-
-    // -- app.epub_viewer_choice --
-
-    pub async fn set_epub_viewer_choice(&mut self, choice: &str) {
-        let config = match choice {
-            "MuPdf" => EpubViewerConfig::MuPdf,
-            "ExternalViewer" => EpubViewerConfig::ExternalViewer,
-            _ => EpubViewerConfig::NativeEpub,
-        };
-        drain(
-            self.preferences_page
-                .update(PreferencesMessage::SetEpubViewer(config)),
-        )
-        .await;
-    }
-
-    pub fn epub_viewer_choice(&self) -> &str {
-        match self.preferences_page.epub_viewer() {
-            EpubViewerConfig::NativeEpub => "NativeEpub",
-            EpubViewerConfig::MuPdf => "MuPdf",
-            EpubViewerConfig::ExternalViewer => "ExternalViewer",
-        }
     }
 
     // -- app.theme_overrides --

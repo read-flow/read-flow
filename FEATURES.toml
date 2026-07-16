@@ -231,7 +231,7 @@ surfaces = ["pwa"]
 
 [[feature]]
 id = "app.epub_viewer_choice"
-description = "Choose EPUB viewer backend (native/mupdf/external)"
+description = "Open the current EPUB in the MuPDF viewer or an external application, from the viewer's context pane"
 surfaces = ["cosmic"]
 
 [[feature]]

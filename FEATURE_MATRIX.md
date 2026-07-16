@@ -43,7 +43,7 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `online_library.search` | ✅ | ✅ | ✅ | Search OPDS catalogs |
 | `online_library.download_import` | ✅ | ✅ | ✅ | Download and import a book from an OPDS catalog |
 | `theme.editor` |  | ✅ |  | Customizable theme editor (modes, schemes, custom colors) |
-| `app.epub_viewer_choice` | ✅ |  |  | Choose EPUB viewer backend (native/mupdf/external) |
+| `app.epub_viewer_choice` | ✅ |  |  | Open the current EPUB in the MuPDF viewer or an external application, from the viewer's context pane |
 | `app.theme_overrides` | ✅ |  |  | Per-app theme overrides (dark/light, accent, density, roundness, frosted glass, interface font) without changing global COSMIC settings |
 
 _39 features tracked._
