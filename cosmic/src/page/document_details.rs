@@ -237,11 +237,21 @@ impl DocumentDetails {
     /// the read-only hero (title/subtitle/authors/description) and, in edit mode,
     /// for the cover paired with the metadata edit form.
     fn hero_row<'a>(
+        &'a self,
         cover: Option<(&'a cosmic::widget::image::Handle, String)>,
         cover_size: (f32, f32),
         right: Element<'a, DocumentDetailsMessage>,
     ) -> Element<'a, DocumentDetailsMessage> {
-        let cosmic_theme::Spacing { space_m, .. } = theme::active().cosmic().spacing;
+        let cosmic_theme::Spacing {
+            mut space_m,
+            space_s,
+            ..
+        } = theme::active().cosmic().spacing;
+
+        // No spacing and padding in edit mode
+        if self.editing_user_meta {
+            space_m = 0;
+        }
 
         let mut hero_row = Row::new().spacing(space_m).align_y(Vertical::Top);
 
@@ -257,6 +267,11 @@ impl DocumentDetails {
                     .padding(0),
             );
         }
+
+        hero_row = hero_row.push_maybe(
+            self.editing_user_meta
+                .then_some(widget::space().width(Length::Fixed(space_s.into()))),
+        );
 
         hero_row = hero_row.push(widget::container(right).width(Length::Fill));
 
@@ -320,7 +335,7 @@ impl DocumentDetails {
                 .push(text::body(desc).wrapping(Wrapping::Word));
         }
 
-        Some(Self::hero_row(cover, (200.0, 300.0), text_col.into()))
+        Some(self.hero_row(cover, (200.0, 300.0), text_col.into()))
     }
 
     /// @feature: tags.add
@@ -845,15 +860,14 @@ impl Page for DocumentDetails {
             let form = self.user_meta_section_view();
             // Larger cover while editing: the stacked label/input fields no longer
             // need half the row, so there's width to spare.
-            sections.push(Self::hero_row(self.selected_cover(), (240.0, 360.0), form));
-            sections.push(status_section.into());
+            sections.push(self.hero_row(self.selected_cover(), (300.0, 450.0), form));
         } else {
             if let Some(hero) = self.hero_section() {
                 sections.push(hero);
             }
-            sections.push(status_section.into());
             sections.push(self.user_meta_section_view());
         }
+        sections.push(status_section.into());
         sections.push(tags_section.into());
         sections.extend(self.sources_view());
 
