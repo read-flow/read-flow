@@ -247,17 +247,20 @@ impl DocumentDetails {
         right: Element<'a, DocumentDetailsMessage>,
     ) -> Element<'a, DocumentDetailsMessage> {
         let cosmic_theme::Spacing {
-            mut space_m,
+            space_m,
             space_s,
+            space_xl,
             ..
         } = theme::active().cosmic().spacing;
 
-        // No spacing and padding in edit mode
-        if self.editing_document_meta {
-            space_m = 0;
-        }
+        let spacing = if self.editing_document_meta {
+            // No spacing and padding in edit mode
+            0
+        } else {
+            space_m
+        };
 
-        let mut hero_row = Row::new().spacing(space_m).align_y(Vertical::Top);
+        let mut hero_row = Row::new().spacing(spacing).align_y(Vertical::Top);
 
         if let Some((handle, fp)) = cover {
             let (width, height) = cover_size;
@@ -266,9 +269,11 @@ impl DocumentDetails {
                 .height(Length::Fixed(height))
                 .content_fit(ContentFit::Contain);
             hero_row = hero_row.push(
-                widget::button::custom(img)
-                    .on_press(DocumentDetailsMessage::OpenCover(fp))
-                    .padding(0),
+                Column::new().push(widget::space().height(space_xl)).push(
+                    widget::button::custom(img)
+                        .on_press(DocumentDetailsMessage::OpenCover(fp))
+                        .padding(0),
+                ),
             );
         }
 
@@ -280,7 +285,7 @@ impl DocumentDetails {
         hero_row = hero_row.push(widget::container(right).width(Length::Fill));
 
         widget::container(hero_row)
-            .padding(space_m)
+            .padding(spacing)
             .width(Length::Fill)
             .into()
     }
