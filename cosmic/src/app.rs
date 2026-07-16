@@ -121,6 +121,7 @@ pub enum Message {
     SwitchLanguage(LanguageIdentifier),
     ExpireDocumentProvider,
     ReassertInterfaceFont,
+    SystemThemeModeChanged,
     Noop,
     Scan,
     CheckMissing,
@@ -547,6 +548,17 @@ impl cosmic::Application for ReadFlow {
             self.core()
                 .watch_config::<cosmic::config::CosmicTk>(cosmic::config::ID)
                 .map(|_update| Message::ReassertInterfaceFont),
+            // Watch the system dark/light mode: when the custom theme is
+            // enabled we build a `Custom` theme once, so libcosmic's own
+            // system-preference tracking never touches it again — without
+            // this we'd stay pinned to whichever variant was active at
+            // startup instead of switching with the system.
+            // @feature: app.theme_overrides
+            self.core()
+                .watch_config::<cosmic::cosmic_theme::ThemeMode>(
+                    cosmic::cosmic_theme::THEME_MODE_ID,
+                )
+                .map(|_update| Message::SystemThemeModeChanged),
             // Forward keyboard events to the active page
             event::listen_with(filter_keyboard_events),
         ];
@@ -691,8 +703,26 @@ impl cosmic::Application for ReadFlow {
                         document_provider.set_expired().await;
                         Message::Page(Box::new(PageMessage::Refresh))
                     }),
-                    cosmic::command::set_theme(app_theme::effective_theme(&theme_settings)),
+                    cosmic::command::set_theme(app_theme::effective_theme(
+                        &theme_settings,
+                        app_theme::current_system_variant(),
+                    )),
                 ])
+            }
+            Message::SystemThemeModeChanged => {
+                // The system switched between dark and light: re-derive the
+                // effective theme so a custom theme follows it instead of
+                // staying pinned to whichever variant was active before.
+                // @feature: app.theme_overrides
+                let theme_settings = read_flow_core::settings::Settings::extract_from(
+                    self.application_module.config_path(),
+                )
+                .map(|s| s.ui.theme().clone())
+                .unwrap_or_default();
+                cosmic::command::set_theme(app_theme::effective_theme(
+                    &theme_settings,
+                    app_theme::current_system_variant(),
+                ))
             }
             Message::ReassertInterfaceFont => {
                 // The system CosmicTk config changed; libcosmic overwrites the

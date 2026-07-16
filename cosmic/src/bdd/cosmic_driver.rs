@@ -61,6 +61,10 @@ pub struct CosmicDriver {
     /// Set by `register_remote` (`remotes_manage`), consumed by
     /// `remove_registered_remote`.
     registered_remote: Option<Remote>,
+    /// Simulates the system's current dark/light mode for
+    /// `app.theme_overrides` scenarios (there's no live `cosmic::Core` here
+    /// to read a real system preference from).
+    system_theme_variant: read_flow_core::settings::ThemeVariant,
 }
 
 impl CosmicDriver {
@@ -101,6 +105,7 @@ impl CosmicDriver {
             server,
             _temp_dir: temp_dir,
             registered_remote: None,
+            system_theme_variant: read_flow_core::settings::ThemeVariant::Light,
         }
     }
 
@@ -769,19 +774,23 @@ impl CosmicDriver {
         .await;
     }
 
-    pub async fn set_theme_variant(&mut self, variant: &str) {
-        let variant = match variant {
+    fn parse_variant(variant: &str) -> read_flow_core::settings::ThemeVariant {
+        match variant {
             "Dark" => read_flow_core::settings::ThemeVariant::Dark,
             _ => read_flow_core::settings::ThemeVariant::Light,
-        };
-        drain(
-            self.preferences_page
-                .update(PreferencesMessage::SetThemeVariant(variant)),
-        )
-        .await;
+        }
     }
 
-    pub async fn set_theme_accent(&mut self, hex: &str) {
+    /// Sets the accent color for one variant's saved profile (light and dark
+    /// are configured independently and both persist at once).
+    pub async fn set_theme_accent_for(&mut self, variant: &str, hex: &str) {
+        drain(
+            self.preferences_page
+                .update(PreferencesMessage::SetThemeVariant(Self::parse_variant(
+                    variant,
+                ))),
+        )
+        .await;
         drain(
             self.preferences_page
                 .update(PreferencesMessage::SetThemeAccent(Some(hex.to_string()))),
@@ -789,16 +798,30 @@ impl CosmicDriver {
         .await;
     }
 
-    /// `true` when the custom theme is active and builds dark.
-    pub fn effective_theme_is_dark(&self) -> bool {
-        crate::app_theme::build_theme(self.preferences_page.theme_settings())
-            .is_some_and(|theme| theme.cosmic().is_dark)
+    /// Simulates the system switching to `variant`'s dark/light mode — there
+    /// is no live `cosmic::Core` here to read a real preference from.
+    pub fn set_system_theme_preference(&mut self, variant: &str) {
+        self.system_theme_variant = Self::parse_variant(variant);
     }
 
-    /// The effective accent color as `#rrggbb`, from the built custom theme.
+    /// `true` when the custom theme is active and builds dark for the
+    /// simulated system preference.
+    pub fn effective_theme_is_dark(&self) -> bool {
+        crate::app_theme::build_theme(
+            self.preferences_page.theme_settings(),
+            self.system_theme_variant,
+        )
+        .is_some_and(|theme| theme.cosmic().is_dark)
+    }
+
+    /// The effective accent color as `#rrggbb`, from the custom theme built
+    /// for the simulated system preference.
     pub fn effective_accent_hex(&self) -> String {
-        let theme = crate::app_theme::build_theme(self.preferences_page.theme_settings())
-            .expect("custom theme is enabled");
+        let theme = crate::app_theme::build_theme(
+            self.preferences_page.theme_settings(),
+            self.system_theme_variant,
+        )
+        .expect("custom theme is enabled");
         let accent = theme.cosmic().accent_color();
         crate::app_theme::color_to_hex(cosmic::iced::Color::from_rgba(
             accent.red,
@@ -810,7 +833,11 @@ impl CosmicDriver {
 
     /// `true` when no custom theme is built (app follows the system theme).
     pub fn follows_system_theme(&self) -> bool {
-        crate::app_theme::build_theme(self.preferences_page.theme_settings()).is_none()
+        crate::app_theme::build_theme(
+            self.preferences_page.theme_settings(),
+            self.system_theme_variant,
+        )
+        .is_none()
     }
 
     // -- documents.cover_display --

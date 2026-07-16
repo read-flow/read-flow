@@ -418,17 +418,18 @@ pub struct UiSettings {
 
 /// Per-app theme overrides (`[ui.theme]`). When `enabled` is false the app
 /// follows the system COSMIC theme; all other fields are ignored.
-/// Consumed by the COSMIC app's `app_theme` module (feature
-/// `app.theme_overrides`); no REST surface.
+/// Both a light and a dark color profile are kept at all times, so the app
+/// can switch between them live to match the system's current dark/light
+/// mode instead of being pinned to one. Consumed by the COSMIC app's
+/// `app_theme` module (feature `app.theme_overrides`); no REST surface.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ThemeSettings {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
-    pub variant: ThemeVariant,
-    /// Accent color as `#RRGGBB`; `None` keeps the palette default.
+    pub light: ThemeVariantSettings,
     #[serde(default)]
-    pub accent: Option<String>,
+    pub dark: ThemeVariantSettings,
     #[serde(default)]
     pub density: ThemeDensity,
     #[serde(default)]
@@ -444,6 +445,30 @@ pub struct ThemeSettings {
     /// Interface font size in points; `None` keeps the system size.
     #[serde(default)]
     pub interface_font_size: Option<u16>,
+}
+
+impl ThemeSettings {
+    pub fn variant(&self, variant: ThemeVariant) -> &ThemeVariantSettings {
+        match variant {
+            ThemeVariant::Light => &self.light,
+            ThemeVariant::Dark => &self.dark,
+        }
+    }
+
+    pub fn variant_mut(&mut self, variant: ThemeVariant) -> &mut ThemeVariantSettings {
+        match variant {
+            ThemeVariant::Light => &mut self.light,
+            ThemeVariant::Dark => &mut self.dark,
+        }
+    }
+}
+
+/// Color overrides for one light/dark variant of the custom theme.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ThemeVariantSettings {
+    /// Accent color as `#RRGGBB`; `None` keeps the palette default.
+    #[serde(default)]
+    pub accent: Option<String>,
     /// Advanced: window background as `#RRGGBB` or `#RRGGBBAA`.
     #[serde(default)]
     pub background: Option<String>,
@@ -590,7 +615,8 @@ private_mode = true
         let settings: Settings = toml::from_str(toml).unwrap();
         assert_eq!(settings.ui.theme(), &ThemeSettings::default());
         assert!(!settings.ui.theme().enabled);
-        assert_eq!(settings.ui.theme().variant, ThemeVariant::Light);
+        assert_eq!(settings.ui.theme().light, ThemeVariantSettings::default());
+        assert_eq!(settings.ui.theme().dark, ThemeVariantSettings::default());
         assert_eq!(settings.ui.theme().density, ThemeDensity::Standard);
         assert_eq!(settings.ui.theme().roundness, ThemeRoundness::Round);
         assert_eq!(
@@ -604,16 +630,22 @@ private_mode = true
         let mut settings = Settings::default();
         *settings.ui.theme_mut() = ThemeSettings {
             enabled: true,
-            variant: ThemeVariant::Dark,
-            accent: Some("#ff8800".into()),
+            light: ThemeVariantSettings {
+                accent: Some("#ff8800".into()),
+                background: Some("#101020".into()),
+                container_background: Some("#20203080".into()),
+            },
+            dark: ThemeVariantSettings {
+                accent: Some("#00ff88".into()),
+                background: Some("#202030".into()),
+                container_background: Some("#30304080".into()),
+            },
             density: ThemeDensity::Compact,
             roundness: ThemeRoundness::Square,
             frosted: true,
             frosted_strength: FrostedStrength::High,
             interface_font: Some("Fira Sans".into()),
             interface_font_size: Some(14),
-            background: Some("#101020".into()),
-            container_background: Some("#20203080".into()),
         };
         let serialized = toml::to_string_pretty(&settings).unwrap();
         let deserialized: Settings = toml::from_str(&serialized).unwrap();
@@ -621,15 +653,34 @@ private_mode = true
     }
 
     #[test]
+    fn theme_settings_variant_accessors_pick_light_or_dark() {
+        let mut theme = ThemeSettings::default();
+        theme.variant_mut(ThemeVariant::Light).accent = Some("#111111".into());
+        theme.variant_mut(ThemeVariant::Dark).accent = Some("#eeeeee".into());
+
+        assert_eq!(
+            theme.variant(ThemeVariant::Light).accent.as_deref(),
+            Some("#111111")
+        );
+        assert_eq!(
+            theme.variant(ThemeVariant::Dark).accent.as_deref(),
+            Some("#eeeeee")
+        );
+    }
+
+    #[test]
     fn ui_settings_merge_in_keeps_theme_untouched() {
         let mut base = UiSettings::default();
         base.theme_mut().enabled = true;
-        base.theme_mut().accent = Some("#112233".into());
+        base.theme_mut().variant_mut(ThemeVariant::Light).accent = Some("#112233".into());
 
         base.merge_in(UiSettings::new(true, vec!["secret".into()]));
 
         assert!(base.theme().enabled);
-        assert_eq!(base.theme().accent.as_deref(), Some("#112233"));
+        assert_eq!(
+            base.theme().variant(ThemeVariant::Light).accent.as_deref(),
+            Some("#112233")
+        );
         assert!(base.private_mode());
     }
 

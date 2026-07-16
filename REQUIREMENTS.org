@@ -648,9 +648,14 @@ colors) — the desktop app inherits the COSMIC system theme instead.
 ** DONE Desktop per-app theme overrides
 Preferences → Appearance lets users theme the COSMIC app (dark/light,
 accent, density, roundness, frosted glass, interface font, advanced
-background colours) without changing global COSMIC settings. Stored in
-=[ui.theme]= of read-flow.toml; applies live (font family via the
-in-process CosmicTk global) except font size (restart). Frosted glass
-is Linux-only (=cfg(target_os = "linux")=; needs compositor blur) —
-controls hidden and mapping skipped elsewhere.
+background colours) without changing global COSMIC settings. A light
+and a dark colour profile (accent, background, container background)
+are both configured and stored at once, in =[ui.theme.light]= and
+=[ui.theme.dark]= of read-flow.toml; the app switches between them
+live to match whichever mode the system is currently in, rather than
+being pinned to one. Density, roundness, frosted glass, and interface
+font are shared across both variants. Applies live (font family via
+the in-process CosmicTk global) except font size (restart). Frosted
+glass is Linux-only (=cfg(target_os = "linux")=; needs compositor
+blur) — controls hidden and mapping skipped elsewhere.
 Feature id =app.theme_overrides=.

@@ -29,24 +29,27 @@ use read_flow_core::settings::ThemeVariant;
 /// Minimum WCAG 2.1 relative contrast for normal text (AA).
 const MIN_CONTRAST: f32 = 4.5;
 
-/// Build the custom app theme, or `None` when overrides are disabled.
-pub fn build_theme(t: &ThemeSettings) -> Option<cosmic::Theme> {
+/// Build the custom app theme for the given variant, or `None` when
+/// overrides are disabled. Density, roundness, and frosted glass are shared
+/// across variants; accent and background colors are per-variant.
+pub fn build_theme(t: &ThemeSettings, variant: ThemeVariant) -> Option<cosmic::Theme> {
     if !t.enabled {
         return None;
     }
 
-    let mut builder = match t.variant {
+    let profile = t.variant(variant);
+    let mut builder = match variant {
         ThemeVariant::Dark => ThemeBuilder::dark(),
         ThemeVariant::Light => ThemeBuilder::light(),
     };
 
-    if let Some(accent) = t.accent.as_deref().and_then(parse_hex) {
+    if let Some(accent) = profile.accent.as_deref().and_then(parse_hex) {
         builder = builder.accent(accent.color);
     }
-    if let Some(bg) = t.background.as_deref().and_then(parse_hex) {
+    if let Some(bg) = profile.background.as_deref().and_then(parse_hex) {
         builder = builder.bg_color(bg);
     }
-    if let Some(container) = t.container_background.as_deref().and_then(parse_hex) {
+    if let Some(container) = profile.container_background.as_deref().and_then(parse_hex) {
         builder = builder.primary_container_bg(container);
     }
 
@@ -64,10 +67,19 @@ pub fn build_theme(t: &ThemeSettings) -> Option<cosmic::Theme> {
     Some(cosmic::Theme::custom(Arc::new(builder.build())))
 }
 
-/// The theme the app should use right now: the custom theme when enabled,
-/// otherwise the system preference.
-pub fn effective_theme(t: &ThemeSettings) -> cosmic::Theme {
-    build_theme(t).unwrap_or_else(cosmic::theme::system_preference)
+/// The variant (light or dark) the system is currently in.
+pub fn current_system_variant() -> ThemeVariant {
+    if cosmic::theme::is_dark() {
+        ThemeVariant::Dark
+    } else {
+        ThemeVariant::Light
+    }
+}
+
+/// The theme the app should use right now for `variant`: the custom theme
+/// when enabled, otherwise the system preference.
+pub fn effective_theme(t: &ThemeSettings, variant: ThemeVariant) -> cosmic::Theme {
+    build_theme(t, variant).unwrap_or_else(cosmic::theme::system_preference)
 }
 
 fn map_density(density: ThemeDensity) -> cosmic_theme::Density {
@@ -218,63 +230,86 @@ mod tests {
 
     #[test]
     fn disabled_settings_build_no_theme() {
-        Assert::that(build_theme(&ThemeSettings::default()).is_none()).is(true);
+        Assert::that(build_theme(&ThemeSettings::default(), ThemeVariant::Light).is_none())
+            .is(true);
+        Assert::that(build_theme(&ThemeSettings::default(), ThemeVariant::Dark).is_none()).is(true);
     }
 
     #[test]
     fn dark_variant_builds_a_dark_theme() {
-        let theme = build_theme(&ThemeSettings {
-            variant: ThemeVariant::Dark,
-            ..enabled()
-        })
-        .unwrap();
+        let theme = build_theme(&enabled(), ThemeVariant::Dark).unwrap();
         Assert::that(theme.cosmic().is_dark).is(true);
     }
 
     #[test]
     fn light_variant_builds_a_light_theme() {
-        let theme = build_theme(&enabled()).unwrap();
+        let theme = build_theme(&enabled(), ThemeVariant::Light).unwrap();
         Assert::that(theme.cosmic().is_dark).is(false);
     }
 
     #[test]
     fn accent_hex_is_applied() {
-        let theme = build_theme(&ThemeSettings {
-            accent: Some("#ff0000".into()),
-            ..enabled()
-        })
-        .unwrap();
+        let mut settings = enabled();
+        settings.variant_mut(ThemeVariant::Light).accent = Some("#ff0000".into());
+        let theme = build_theme(&settings, ThemeVariant::Light).unwrap();
         let accent = theme.cosmic().accent_color();
         Assert::that(accent.red > 0.8 && accent.green < 0.4 && accent.blue < 0.4).is(true);
     }
 
     #[test]
+    fn light_and_dark_accents_are_independent() {
+        let mut settings = enabled();
+        settings.variant_mut(ThemeVariant::Light).accent = Some("#ff0000".into());
+        settings.variant_mut(ThemeVariant::Dark).accent = Some("#00ff00".into());
+
+        let light = build_theme(&settings, ThemeVariant::Light)
+            .unwrap()
+            .cosmic()
+            .accent_color();
+        let dark = build_theme(&settings, ThemeVariant::Dark)
+            .unwrap()
+            .cosmic()
+            .accent_color();
+        Assert::that(light.red > 0.8 && light.green < 0.4).is(true);
+        Assert::that(dark.green > 0.8 && dark.red < 0.4).is(true);
+    }
+
+    #[test]
     fn compact_density_shrinks_spacing() {
-        let theme = build_theme(&ThemeSettings {
-            density: ThemeDensity::Compact,
-            ..enabled()
-        })
+        let theme = build_theme(
+            &ThemeSettings {
+                density: ThemeDensity::Compact,
+                ..enabled()
+            },
+            ThemeVariant::Light,
+        )
         .unwrap();
         Assert::that(theme.cosmic().spacing.space_m).is(16);
     }
 
     #[test]
     fn square_roundness_flattens_corners() {
-        let theme = build_theme(&ThemeSettings {
-            roundness: ThemeRoundness::Square,
-            ..enabled()
-        })
+        let theme = build_theme(
+            &ThemeSettings {
+                roundness: ThemeRoundness::Square,
+                ..enabled()
+            },
+            ThemeVariant::Light,
+        )
         .unwrap();
         Assert::that(theme.cosmic().corner_radii.radius_s).is([2.0; 4]);
     }
 
     #[test]
     fn frosted_toggle_sets_frosted_windows_on_linux_only() {
-        let theme = build_theme(&ThemeSettings {
-            frosted: true,
-            frosted_strength: FrostedStrength::High,
-            ..enabled()
-        })
+        let theme = build_theme(
+            &ThemeSettings {
+                frosted: true,
+                frosted_strength: FrostedStrength::High,
+                ..enabled()
+            },
+            ThemeVariant::Light,
+        )
         .unwrap();
         Assert::that(theme.cosmic().frosted_windows).is(cfg!(target_os = "linux"));
         if cfg!(target_os = "linux") {

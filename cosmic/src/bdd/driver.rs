@@ -558,21 +558,21 @@ impl Driver {
         }
     }
 
-    pub async fn set_theme_variant(&mut self, variant: &str) {
+    pub async fn set_theme_accent_for(&mut self, variant: &str, hex: &str) {
         match self {
             Self::Rest(_) => {
                 panic!("`app.theme_overrides` has no REST surface — run with BDD_DRIVER=cosmic")
             }
-            Self::Cosmic(driver) => driver.set_theme_variant(variant).await,
+            Self::Cosmic(driver) => driver.set_theme_accent_for(variant, hex).await,
         }
     }
 
-    pub async fn set_theme_accent(&mut self, hex: &str) {
+    pub fn set_system_theme_preference(&mut self, variant: &str) {
         match self {
             Self::Rest(_) => {
                 panic!("`app.theme_overrides` has no REST surface — run with BDD_DRIVER=cosmic")
             }
-            Self::Cosmic(driver) => driver.set_theme_accent(hex).await,
+            Self::Cosmic(driver) => driver.set_system_theme_preference(variant),
         }
     }
 

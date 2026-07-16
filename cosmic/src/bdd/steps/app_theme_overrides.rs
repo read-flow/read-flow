@@ -14,14 +14,14 @@ async fn disable_custom_theme(world: &mut BddWorld) {
     world.driver.set_custom_theme_enabled(false).await;
 }
 
-#[when(regex = r#"^I set the app theme variant to "([^"]+)"$"#)]
-async fn set_theme_variant(world: &mut BddWorld, variant: String) {
-    world.driver.set_theme_variant(&variant).await;
+#[when(regex = r#"^I set the app accent color for "([^"]+)" to "([^"]+)"$"#)]
+async fn set_accent_color_for(world: &mut BddWorld, variant: String, hex: String) {
+    world.driver.set_theme_accent_for(&variant, &hex).await;
 }
 
-#[when(regex = r#"^I set the app accent color to "([^"]+)"$"#)]
-async fn set_accent_color(world: &mut BddWorld, hex: String) {
-    world.driver.set_theme_accent(&hex).await;
+#[when(regex = r#"^the system theme preference is "([^"]+)"$"#)]
+async fn set_system_theme_preference(world: &mut BddWorld, variant: String) {
+    world.driver.set_system_theme_preference(&variant);
 }
 
 #[then("the effective app theme is dark")]
@@ -29,6 +29,14 @@ async fn effective_theme_is_dark(world: &mut BddWorld) {
     assert!(
         world.driver.effective_theme_is_dark(),
         "expected the effective app theme to be dark"
+    );
+}
+
+#[then("the effective app theme is light")]
+async fn effective_theme_is_light(world: &mut BddWorld) {
+    assert!(
+        !world.driver.effective_theme_is_dark(),
+        "expected the effective app theme to be light"
     );
 }
 

@@ -137,6 +137,10 @@ pub struct PreferencesPage {
     // appearance (cosmic_config-backed)
     config: Config,
     // theme overrides (TOML-backed, live-previewed)
+    /// Which variant's colors the pickers/preview below currently show.
+    /// Purely a UI concern — not persisted; the app always uses whichever
+    /// variant the system is actually in.
+    editing_variant: ThemeVariant,
     accent_picker: ColorPickerModel,
     background_picker: ColorPickerModel,
     container_picker: ColorPickerModel,
@@ -332,8 +336,9 @@ impl PreferencesPage {
             load_fonts,
         ]);
 
+        let editing_variant = app_theme::current_system_variant();
         let (accent_picker, background_picker, container_picker) =
-            Self::theme_pickers(settings.ui.theme());
+            Self::theme_pickers(settings.ui.theme(), editing_variant);
 
         (
             Self {
@@ -347,6 +352,7 @@ impl PreferencesPage {
                 directory_settings_form: None,
                 authorized_user_form: None,
                 config,
+                editing_variant,
                 accent_picker,
                 background_picker,
                 container_picker,
@@ -371,6 +377,7 @@ impl PreferencesPage {
 
     fn theme_pickers(
         theme: &ThemeSettings,
+        variant: ThemeVariant,
     ) -> (ColorPickerModel, ColorPickerModel, ColorPickerModel) {
         let color_of = |hex: &Option<String>| {
             hex.as_deref()
@@ -385,24 +392,31 @@ impl PreferencesPage {
                 initial,
             )
         };
+        let profile = theme.variant(variant);
         (
-            picker(color_of(&theme.accent)),
-            picker(color_of(&theme.background)),
-            picker(color_of(&theme.container_background)),
+            picker(color_of(&profile.accent)),
+            picker(color_of(&profile.background)),
+            picker(color_of(&profile.container_background)),
         )
     }
 
-    /// Reset the color-picker models to the current settings (used on revert).
+    /// Reset the color-picker models to the current settings (used on revert
+    /// and when switching which variant is being edited).
     fn sync_theme_pickers(&mut self) {
-        let (accent, background, container) = Self::theme_pickers(self.settings.ui.theme());
+        let (accent, background, container) =
+            Self::theme_pickers(self.settings.ui.theme(), self.editing_variant);
         self.accent_picker = accent;
         self.background_picker = background;
         self.container_picker = container;
     }
 
-    /// Apply the current (possibly unsaved) theme overrides to this app only.
+    /// Apply the current (possibly unsaved) theme overrides to this app only,
+    /// previewing whichever variant is currently being edited.
     fn apply_theme_preview(&self) -> Task<Action<PreferencesMessage>> {
-        cosmic::command::set_theme(app_theme::effective_theme(self.settings.ui.theme()))
+        cosmic::command::set_theme(app_theme::effective_theme(
+            self.settings.ui.theme(),
+            self.editing_variant,
+        ))
     }
 
     /// Open or close the context drawer to match a color picker's active
@@ -630,14 +644,14 @@ impl PreferencesPage {
                             widget::radio(
                                 widget::text::body(fl!("settings-theme-light")),
                                 ThemeVariant::Light,
-                                Some(t.variant),
+                                Some(self.editing_variant),
                                 PreferencesMessage::SetThemeVariant,
                             )
                             .into(),
                             widget::radio(
                                 widget::text::body(fl!("settings-theme-dark")),
                                 ThemeVariant::Dark,
-                                Some(t.variant),
+                                Some(self.editing_variant),
                                 PreferencesMessage::SetThemeVariant,
                             )
                             .into(),
@@ -662,10 +676,12 @@ impl PreferencesPage {
                                     .width(Length::Fixed(48.0))
                                     .height(Length::Fixed(32.0)),
                             )
-                            .push_maybe(t.background.is_some().then(|| {
-                                widget::button::text(fl!("settings-theme-accent-default"))
-                                    .on_press(PreferencesMessage::ResetBackgroundColor)
-                            }))
+                            .push_maybe(t.variant(self.editing_variant).background.is_some().then(
+                                || {
+                                    widget::button::text(fl!("settings-theme-accent-default"))
+                                        .on_press(PreferencesMessage::ResetBackgroundColor)
+                                },
+                            ))
                             .spacing(space_xxs)
                             .align_y(Vertical::Center),
                     ),
@@ -681,10 +697,15 @@ impl PreferencesPage {
                                     .width(Length::Fixed(48.0))
                                     .height(Length::Fixed(32.0)),
                             )
-                            .push_maybe(t.container_background.is_some().then(|| {
-                                widget::button::text(fl!("settings-theme-accent-default"))
-                                    .on_press(PreferencesMessage::ResetContainerColor)
-                            }))
+                            .push_maybe(
+                                t.variant(self.editing_variant)
+                                    .container_background
+                                    .is_some()
+                                    .then(|| {
+                                        widget::button::text(fl!("settings-theme-accent-default"))
+                                            .on_press(PreferencesMessage::ResetContainerColor)
+                                    }),
+                            )
                             .spacing(space_xxs)
                             .align_y(Vertical::Center),
                     ),
@@ -692,8 +713,13 @@ impl PreferencesPage {
 
         // Warn (icon + text, never color alone) when the custom background
         // fails WCAG AA contrast against the theme's derived text color.
-        if let Some(bg) = t.background.as_deref().and_then(app_theme::parse_hex) {
-            let effective = app_theme::effective_theme(t);
+        if let Some(bg) = t
+            .variant(self.editing_variant)
+            .background
+            .as_deref()
+            .and_then(app_theme::parse_hex)
+        {
+            let effective = app_theme::effective_theme(t, self.editing_variant);
             if app_theme::contrast_warning(bg, app_theme::theme_on_bg(&effective)) {
                 section = section.add(
                     widget::Row::new()
@@ -817,10 +843,9 @@ impl PreferencesPage {
     /// The accent control: named preset swatches, a custom color picker, and
     /// a reset-to-default button. Swatch names are exposed via tooltips.
     fn view_accent_row(&self, spacing: u16) -> Element<'_, PreferencesMessage> {
-        let t = self.settings.ui.theme();
         let mut row = widget::Row::new().spacing(spacing);
 
-        for (key, srgba) in app_theme::accent_presets(t.variant) {
+        for (key, srgba) in app_theme::accent_presets(self.editing_variant) {
             let color = Color::from_rgba(srgba.red, srgba.green, srgba.blue, srgba.alpha);
             let hex = app_theme::color_to_hex(color);
             row = row.push(widget::tooltip::tooltip(
@@ -1585,24 +1610,6 @@ impl Page for PreferencesPage {
                 Task::none()
             }
             PreferencesMessage::ToggleCustomTheme(enabled) => {
-                if enabled {
-                    // First enable on a pristine config: seed the variant from
-                    // the current system theme so the look doesn't jump.
-                    let pristine = ThemeSettings {
-                        enabled: true,
-                        ..self.settings.ui.theme().clone()
-                    } == ThemeSettings {
-                        enabled: true,
-                        ..ThemeSettings::default()
-                    };
-                    if pristine {
-                        self.settings.ui.theme_mut().variant = if theme::is_dark() {
-                            ThemeVariant::Dark
-                        } else {
-                            ThemeVariant::Light
-                        };
-                    }
-                }
                 self.settings.ui.theme_mut().enabled = enabled;
                 self.save_state = SaveState::Idle;
                 // The custom-theme toggle gates the font override too.
@@ -1610,12 +1617,16 @@ impl Page for PreferencesPage {
                 self.apply_theme_preview()
             }
             PreferencesMessage::SetThemeVariant(variant) => {
-                self.settings.ui.theme_mut().variant = variant;
-                self.save_state = SaveState::Idle;
+                self.editing_variant = variant;
+                self.sync_theme_pickers();
                 self.apply_theme_preview()
             }
             PreferencesMessage::SetThemeAccent(accent) => {
-                self.settings.ui.theme_mut().accent = accent;
+                self.settings
+                    .ui
+                    .theme_mut()
+                    .variant_mut(self.editing_variant)
+                    .accent = accent;
                 self.save_state = SaveState::Idle;
                 self.apply_theme_preview()
             }
@@ -1626,7 +1637,11 @@ impl Page for PreferencesPage {
                 );
                 let mut tasks = vec![self.accent_picker.update(update)];
                 if applied {
-                    self.settings.ui.theme_mut().accent = self
+                    self.settings
+                        .ui
+                        .theme_mut()
+                        .variant_mut(self.editing_variant)
+                        .accent = self
                         .accent_picker
                         .get_applied_color()
                         .map(app_theme::color_to_hex);
@@ -1723,7 +1738,11 @@ impl Page for PreferencesPage {
                 );
                 let mut tasks = vec![self.background_picker.update(update)];
                 if applied {
-                    self.settings.ui.theme_mut().background = self
+                    self.settings
+                        .ui
+                        .theme_mut()
+                        .variant_mut(self.editing_variant)
+                        .background = self
                         .background_picker
                         .get_applied_color()
                         .map(app_theme::color_to_hex);
@@ -1741,7 +1760,11 @@ impl Page for PreferencesPage {
                 );
                 let mut tasks = vec![self.container_picker.update(update)];
                 if applied {
-                    self.settings.ui.theme_mut().container_background = self
+                    self.settings
+                        .ui
+                        .theme_mut()
+                        .variant_mut(self.editing_variant)
+                        .container_background = self
                         .container_picker
                         .get_applied_color()
                         .map(app_theme::color_to_hex);
@@ -1753,13 +1776,21 @@ impl Page for PreferencesPage {
                 Task::batch(tasks)
             }
             PreferencesMessage::ResetBackgroundColor => {
-                self.settings.ui.theme_mut().background = None;
+                self.settings
+                    .ui
+                    .theme_mut()
+                    .variant_mut(self.editing_variant)
+                    .background = None;
                 self.sync_theme_pickers();
                 self.save_state = SaveState::Idle;
                 self.apply_theme_preview()
             }
             PreferencesMessage::ResetContainerColor => {
-                self.settings.ui.theme_mut().container_background = None;
+                self.settings
+                    .ui
+                    .theme_mut()
+                    .variant_mut(self.editing_variant)
+                    .container_background = None;
                 self.sync_theme_pickers();
                 self.save_state = SaveState::Idle;
                 self.apply_theme_preview()

@@ -14,9 +14,11 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
-- Per-app theme overrides in Preferences → Appearance: dark/light, accent color, density, roundness,
+- Per-app theme overrides in Preferences → Appearance: accent color, density, roundness,
   frosted glass (Linux/COSMIC only), interface font, and advanced background colors — without
-  changing the global COSMIC settings (`[ui.theme]` in read-flow.toml).
+  changing the global COSMIC settings (`[ui.theme]` in read-flow.toml). Light and dark are
+  configured independently and both saved at once, so the app switches between them live to
+  match the system's current dark/light mode instead of being pinned to one.
 
 ### Changed
 

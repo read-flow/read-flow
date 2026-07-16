@@ -151,7 +151,10 @@ fn main() -> anyhow::Result<()> {
                 .min_width(360.0)
                 .min_height(180.0),
         )
-        .theme(app_theme::effective_theme(&theme_settings));
+        .theme(app_theme::effective_theme(
+            &theme_settings,
+            app_theme::current_system_variant(),
+        ));
     if let Some(font) = app_theme::interface_font(&theme_settings) {
         settings = settings.default_font(font);
     }
