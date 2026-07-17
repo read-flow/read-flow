@@ -22,6 +22,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Changed
 
+- COSMIC Preferences → Appearance: added row icons to theme settings (accent, background,
+  density, roundness, frosted glass, font, font size) for easier scanning.
 - PWA document details: the cover thumbnail now stays visible while editing metadata, sitting
   beside the edit form on wide screens instead of disappearing.
 - COSMIC document details: the cover thumbnail now stays visible (and grows) while editing

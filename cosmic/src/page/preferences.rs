@@ -613,11 +613,16 @@ impl PreferencesPage {
             .add(
                 widget::settings::item::builder(fl!("settings-theme-accent"))
                     .description(fl!("settings-theme-accent-description"))
+                    .icon(widget::icon::from_name("color-select-symbolic").size(ICON_SIZE))
                     .control(self.view_accent_row(space_xxs)),
             )
             .add(
                 widget::settings::item::builder(fl!("settings-theme-background"))
                     .description(fl!("settings-theme-background-description"))
+                    .icon(
+                        widget::icon::from_name("preferences-desktop-wallpaper-symbolic")
+                            .size(ICON_SIZE),
+                    )
                     .control(
                         widget::Row::new()
                             .push(
@@ -639,6 +644,7 @@ impl PreferencesPage {
             .add(
                 widget::settings::item::builder(fl!("settings-theme-container-background"))
                     .description(fl!("settings-theme-container-background-description"))
+                    .icon(widget::icon::from_name("view-grid-symbolic").size(ICON_SIZE))
                     .control(
                         widget::Row::new()
                             .push(
@@ -685,6 +691,7 @@ impl PreferencesPage {
             .add(
                 widget::settings::item::builder(fl!("settings-theme-density"))
                     .description(fl!("settings-theme-density-description"))
+                    .icon(widget::icon::from_name("view-list-symbolic").size(ICON_SIZE))
                     .control(widget::dropdown(
                         vec![
                             fl!("settings-theme-density-compact"),
@@ -702,6 +709,7 @@ impl PreferencesPage {
             .add(
                 widget::settings::item::builder(fl!("settings-theme-roundness"))
                     .description(fl!("settings-theme-roundness-description"))
+                    .icon(widget::icon::from_name("object-select-symbolic").size(ICON_SIZE))
                     .control(widget::dropdown(
                         vec![
                             fl!("settings-theme-roundness-round"),
@@ -723,12 +731,16 @@ impl PreferencesPage {
             section = section.add(
                 widget::settings::item::builder(fl!("settings-theme-frosted"))
                     .description(fl!("settings-theme-frosted-description"))
+                    .icon(widget::icon::from_name("window-symbolic").size(ICON_SIZE))
                     .toggler(t.frosted, PreferencesMessage::ToggleFrosted),
             );
 
             if t.frosted {
                 section = section.add(
                     widget::settings::item::builder(fl!("settings-theme-frosted-strength"))
+                        .icon(
+                            widget::icon::from_name("weather-few-clouds-symbolic").size(ICON_SIZE),
+                        )
                         .control(widget::dropdown(
                             vec![
                                 fl!("settings-theme-frosted-strength-low"),
@@ -770,11 +782,13 @@ impl PreferencesPage {
             .add(
                 widget::settings::item::builder(fl!("settings-theme-font"))
                     .description(fl!("settings-theme-font-description"))
+                    .icon(widget::icon::from_name("font-x-generic-symbolic").size(ICON_SIZE))
                     .control(font_picker.view()),
             )
             .add(
                 widget::settings::item::builder(fl!("settings-theme-font-size"))
                     .description(fl!("settings-theme-font-size-description"))
+                    .icon(widget::icon::from_name("zoom-in-symbolic").size(ICON_SIZE))
                     .control(
                         widget::text_input(
                             fl!("settings-theme-font-placeholder"),
