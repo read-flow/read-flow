@@ -42,7 +42,8 @@ This is a tool to help discover and organize files locally and on remote servers
   - Done: ~server/authn.rs~ authenticates users (config entries or token claims) with roles; write endpoints require the =owner= role and return 403 ~Forbidden~ otherwise, reads only require authentication.
   - [X] Update cosmic settings editor
     - Done: Preferences has an authorized-users editor (~AuthorizedUserForm~) managing user id, passphrase and roles.
-- [ ] Investigate/use ~pdfium_render~ crate to render PDFs.
+- [X] Investigate/use ~pdfium_render~ crate to render PDFs.
+  - Investigated, not adopted: goal was dropping the AGPL-3.0-only ~mupdf~ dependency (see NOTICE, ~deny.toml~). ~pdfium_render~ wraps Google's PDFium, BSD-3-Clause/permissive, so it would help license-wise — but two blockers make it not a drop-in replacement. (1) PDFium is bitmap-render only: no vector ~DisplayList~/SVG export, and ~mu_pdf_viewer.rs~'s SVG render mode (~display_list.to_svg~, used for sharp vector text at arbitrary zoom) has no PDFium equivalent — only bitmap re-rasterization at each zoom level, a real feature regression. (2) ~mupdf~ is also the fallback cover/metadata extractor for non-PDF formats (epub/mobi/azw in ~core/src/scan/cover.rs~); PDFium only handles PDF, so it wouldn't fully remove the ~mupdf~ dependency (and thus not the AGPL obligation) without separately replacing those fallback paths. Packaging is also heavier: PDFium ships as a prebuilt native binary per platform (no source build), needing vendored ~.so~/~.dylib~/~.dll~ blobs for Linux/macOS/Windows. Revisit if the SVG render mode is dropped and a non-mupdf fallback exists for epub/mobi covers.
 
 ** Tier 5 — Refactoring / Technical Debt [3/3]
 
