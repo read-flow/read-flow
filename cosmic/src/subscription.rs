@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use cosmic::iced::Subscription;
 use futures::SinkExt;
 use futures::channel::mpsc;
 use futures::stream::BoxStream;
@@ -7,6 +8,8 @@ use rand::TryRng;
 use rand::rngs::SysRng;
 use tokio::sync::Mutex;
 use tokio::sync::broadcast;
+
+use crate::ApplicationModule;
 
 pub struct SubscriberState<E, F> {
     id: u64,
@@ -65,4 +68,19 @@ where
             },
         ))
     }
+}
+
+/// Emits `f()` whenever `application_module`'s settings/document data changes.
+pub fn settings_invalidation_subscription<M, F>(
+    application_module: Arc<ApplicationModule>,
+    f: F,
+) -> Subscription<M>
+where
+    M: Send + 'static,
+    F: Fn() -> M + Send + 'static,
+    F: Send + Sync + 'static,
+{
+    let receiver = application_module.subscribe();
+
+    Subscription::run_with(SubscriberState::new(receiver, f), SubscriberState::run)
 }

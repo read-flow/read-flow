@@ -18,7 +18,6 @@ use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::Task;
-use cosmic::iced::Subscription;
 use cosmic::iced::core::SmolStr;
 use cosmic::iced::keyboard::Key;
 use cosmic::iced::keyboard::Modifiers;
@@ -44,7 +43,6 @@ pub use traits::Page;
 use url::Url;
 
 use crate::ApplicationModule;
-use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
 use crate::aggregator::DocumentType;
 use crate::app::ContextView;
@@ -71,7 +69,6 @@ pub use crate::page::image_viewer::ViewerImage;
 use crate::page::mu_pdf_viewer::MuPdfViewer;
 use crate::page::mu_pdf_viewer::MuPdfViewerMessage;
 use crate::page::mu_pdf_viewer::MuPdfViewerOutput;
-use crate::subscription::SubscriberState;
 
 type Fingerprint = String;
 
@@ -82,7 +79,7 @@ pub struct PageInfo {
 }
 
 pub struct Pages {
-    pub(crate) document_provider: Arc<DocumentProvider>,
+    document_provider: Arc<DocumentProvider>,
     application_module: Arc<ApplicationModule>,
 
     dashboard: DashboardPage,
@@ -239,16 +236,10 @@ fn page_not_found<'a, M: 'a>() -> Element<'a, M> {
 impl Pages {
     pub fn new(
         application_module: Arc<ApplicationModule>,
+        document_provider: Arc<DocumentProvider>,
         config: Config,
         log_bus: LogBus,
     ) -> (Self, Task<Action<PageMessage>>) {
-        let clients = vec![application_module.clone().into()];
-
-        let document_provider = Arc::new(DocumentProvider::new(Aggregator::new(
-            clients,
-            application_module.clone(),
-        )));
-
         let (preferences, init_preferences) = PreferencesPage::new(
             application_module.clone(),
             config,
@@ -1042,20 +1033,6 @@ fn iso8601_now() -> String {
     let y = if m <= 2 { y + 1 } else { y };
 
     format!("{y:04}-{m:02}-{d:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
-}
-
-pub fn settings_invalidation_subscription<M, F>(
-    application_module: Arc<ApplicationModule>,
-    f: F,
-) -> Subscription<M>
-where
-    M: Send + 'static,
-    F: Fn() -> M + Send + 'static,
-    F: Send + Sync + 'static,
-{
-    let receiver = application_module.subscribe();
-
-    Subscription::run_with(SubscriberState::new(receiver, f), SubscriberState::run)
 }
 
 #[cfg(test)]

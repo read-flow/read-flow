@@ -29,6 +29,7 @@ use read_flow_widgets::NavTree;
 
 use crate::ApplicationModule;
 use crate::ICON_SIZE;
+use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
 use crate::app_theme;
 use crate::component::check_missing::CheckMissingComponent;
@@ -39,6 +40,7 @@ use crate::component::scan_progress::ScanProgressMessage;
 use crate::component::scan_progress::ScanProgressOutput;
 use crate::config::Config;
 use crate::cosmic_ext::ActionExt;
+use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::logging::LogBus;
 use crate::page::DocumentListMessage;
@@ -49,8 +51,8 @@ use crate::page::Pages;
 use crate::page::PreferencesMessage;
 use crate::page::ServerLogMessage;
 use crate::page::ServerStatus;
-use crate::page::settings_invalidation_subscription;
 use crate::subscription::SubscriberState;
+use crate::subscription::settings_invalidation_subscription;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 pub(crate) const APP_ICON: &[u8] =
@@ -79,6 +81,10 @@ pub struct ReadFlow {
     config: Config,
     /// Application Module
     application_module: Arc<ApplicationModule>,
+    /// Owns the aggregated view over all configured document sources. Held
+    /// here (not just inside `pages`) because app-level flows (settings
+    /// invalidation, scan, check-missing) need it independent of any page.
+    document_provider: Arc<DocumentProvider>,
     /// Pages
     pages: Pages,
     /// Scan progress component, present while scanning or showing the last result.
@@ -214,8 +220,18 @@ impl cosmic::Application for ReadFlow {
             })
             .unwrap_or_default();
 
-        let (mut pages, page_action) =
-            Pages::new(application_module.clone(), config.clone(), log_bus.clone());
+        let clients = vec![application_module.clone().into()];
+        let document_provider = Arc::new(DocumentProvider::new(Aggregator::new(
+            clients,
+            application_module.clone(),
+        )));
+
+        let (mut pages, page_action) = Pages::new(
+            application_module.clone(),
+            document_provider.clone(),
+            config.clone(),
+            log_bus.clone(),
+        );
 
         let label = pages.display_name(&PageSelector::Dashboard);
         pages.register_page(PageSelector::Dashboard, "go-home-symbolic", label, None);
@@ -268,6 +284,7 @@ impl cosmic::Application for ReadFlow {
             key_binds: HashMap::new(),
             config,
             application_module,
+            document_provider,
             pages,
             scan_component: None,
             check_missing_component: None,
@@ -517,8 +534,7 @@ impl cosmic::Application for ReadFlow {
     fn subscription(&self) -> Subscription<Self::Message> {
         let mut subs = vec![
             // Subscribe to document provider cache invalidation events
-            self.pages
-                .document_provider
+            self.document_provider
                 .invalidation_subscription(|| Message::Page(Box::new(PageMessage::Refresh))),
             settings_invalidation_subscription(self.application_module.clone(), || {
                 Message::ExpireDocumentProvider
@@ -688,7 +704,7 @@ impl cosmic::Application for ReadFlow {
                 self.update_title()
             }
             Message::ExpireDocumentProvider => {
-                let document_provider = self.pages.document_provider.clone();
+                let document_provider = self.document_provider.clone();
                 // Settings changed on disk (save here or from another
                 // instance): re-assert the per-app theme override so it
                 // matches the file. @feature: app.theme_overrides
@@ -829,7 +845,7 @@ impl cosmic::Application for ReadFlow {
                         }
                         CheckMissingOutput::Purged => {
                             self.check_missing_component = None;
-                            let document_provider = self.pages.document_provider.clone();
+                            let document_provider = self.document_provider.clone();
                             task::future(async move {
                                 document_provider.set_expired().await;
                                 Message::Page(Box::new(PageMessage::Refresh))
@@ -894,7 +910,7 @@ impl cosmic::Application for ReadFlow {
                             Task::none()
                         }
                         ScanProgressOutput::Completed => {
-                            let document_provider = self.pages.document_provider.clone();
+                            let document_provider = self.document_provider.clone();
                             task::future(async move {
                                 document_provider.set_expired().await;
                                 Message::Page(Box::new(PageMessage::Refresh))
