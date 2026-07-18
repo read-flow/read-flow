@@ -80,6 +80,8 @@ enum DownloadBookState {
 #[derive(Debug, Clone)]
 /// @feature: online_library.download_import
 pub enum OnlineLibraryMessage {
+    LoadCatalogs,
+    CatalogsLoaded(Vec<OnlineCatalog>),
     SearchChanged(String),
     SearchSubmitted,
     ClearSearch,
@@ -111,23 +113,28 @@ pub enum OnlineLibraryOutput {
 // ─── Page Implementation ──────────────────────────────────────────────────────
 
 impl OnlineLibraryPage {
-    pub fn new(application_module: Arc<ApplicationModule>) -> Self {
-        Self {
-            application_module,
-            search_query: String::new(),
-            search_input_id: widget::Id::unique(),
-            search_state: LoadedState::New,
-            catalogs: Vec::new(),
-            selected_catalog_index: None,
-            download_state: HashMap::new(),
-            cover_images: HashMap::new(),
-            next_urls: HashMap::new(),
-            fetching_more: false,
-            selected_book: None,
-            selected_book_blocks: Vec::new(),
-            results_layout: ResultsLayout::default(),
-            pagination: Pagination::default(),
-        }
+    pub fn new(
+        application_module: Arc<ApplicationModule>,
+    ) -> (Self, Task<Action<OnlineLibraryMessage>>) {
+        (
+            Self {
+                application_module,
+                search_query: String::new(),
+                search_input_id: widget::Id::unique(),
+                search_state: LoadedState::New,
+                catalogs: Vec::new(),
+                selected_catalog_index: None,
+                download_state: HashMap::new(),
+                cover_images: HashMap::new(),
+                next_urls: HashMap::new(),
+                fetching_more: false,
+                selected_book: None,
+                selected_book_blocks: Vec::new(),
+                results_layout: ResultsLayout::default(),
+                pagination: Pagination::default(),
+            },
+            task::message(OnlineLibraryMessage::LoadCatalogs),
+        )
     }
 
     fn search_bar(&self) -> widget::TextInput<'_, OnlineLibraryMessage> {
@@ -218,6 +225,26 @@ impl Page for OnlineLibraryPage {
 
     fn update(&mut self, message: OnlineLibraryMessage) -> Task<Action<OnlineLibraryMessage>> {
         match message {
+            OnlineLibraryMessage::LoadCatalogs => {
+                let am = self.application_module.clone();
+                task::future(async move {
+                    let settings = am.settings().await;
+                    let catalogs: Vec<OnlineCatalog> = settings
+                        .online_library
+                        .catalogs
+                        .iter()
+                        .filter(|c| c.enabled())
+                        .map(read_flow_core::online_library::Catalog::resolve)
+                        .collect();
+                    OnlineLibraryMessage::CatalogsLoaded(catalogs)
+                })
+            }
+
+            OnlineLibraryMessage::CatalogsLoaded(catalogs) => {
+                self.catalogs = catalogs;
+                Task::none()
+            }
+
             OnlineLibraryMessage::SearchChanged(query) => {
                 self.search_query = query;
                 Task::none()

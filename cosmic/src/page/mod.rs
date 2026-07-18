@@ -248,14 +248,16 @@ impl Pages {
 
         let (documents, init_documents) = DocumentList::new(document_provider.clone());
         let (dashboard, init_dashboard) = DashboardPage::new(document_provider.clone());
+        let (online_library, init_online_library) =
+            OnlineLibraryPage::new(application_module.clone());
 
         let tasks = vec![
             init_preferences.map(ActionExt::map_into),
             init_documents.map(ActionExt::map_into),
             init_dashboard.map(|action| action.map(map_dashboard_message)),
+            init_online_library.map(|action| action.map(map_online_library_message)),
         ];
 
-        let online_library = OnlineLibraryPage::new(application_module.clone());
         let server_log = ServerLogPage::new(log_bus);
 
         (
