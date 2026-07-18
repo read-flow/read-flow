@@ -44,6 +44,7 @@ use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::logging::LogBus;
 use crate::page::DocumentListMessage;
+use crate::page::OnlineLibraryMessage;
 use crate::page::PageMessage;
 use crate::page::PageOutput;
 use crate::page::PageSelector;
@@ -538,6 +539,12 @@ impl cosmic::Application for ReadFlow {
                 .invalidation_subscription(|| Message::Page(Box::new(PageMessage::Refresh))),
             settings_invalidation_subscription(self.application_module.clone(), || {
                 Message::ExpireDocumentProvider
+            }),
+            // Reload the online library's catalog list whenever settings change.
+            settings_invalidation_subscription(self.application_module.clone(), || {
+                Message::Page(Box::new(PageMessage::OnlineLibrary(
+                    OnlineLibraryMessage::LoadCatalogs,
+                )))
             }),
             // Re-render the server log page whenever a log line is captured.
             Subscription::run_with(

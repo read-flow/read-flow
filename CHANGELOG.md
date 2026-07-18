@@ -60,8 +60,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 - COSMIC online library: the catalog filter list in the context pane was empty until the first
   search completed, since the page only populated its catalog list as a side effect of a search
-  response. The page now loads and resolves configured catalogs on its own when opened, so all
-  enabled catalogs show up in the filter list immediately.
+  response. The page now loads and resolves configured catalogs on its own when opened, and
+  reloads them whenever settings change, so the filter list is populated immediately and stays
+  in sync without needing another search.
 
 ## [0.1.1] - 2026-07-12
 

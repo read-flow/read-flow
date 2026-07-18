@@ -16,6 +16,8 @@ use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
 use cosmic::widget::Column;
+use provider::r#async::Provider;
+use read_flow_core::online_library::Catalog;
 use read_flow_core::online_library::DownloadFormat;
 use read_flow_core::online_library::OnlineBook;
 use read_flow_core::online_library::OnlineCatalog;
@@ -41,6 +43,29 @@ pub(crate) enum ResultsLayout {
     #[default]
     Cards,
     Compact,
+}
+
+/// Resolves the enabled catalogs from the current settings. Reads through
+/// `ApplicationModule::settings`, which is itself cache-backed and
+/// invalidated whenever settings change on disk — so re-running this after
+/// an invalidation always reflects the latest configuration.
+struct CatalogsProvider {
+    application_module: Arc<ApplicationModule>,
+}
+
+impl Provider<Vec<OnlineCatalog>> for CatalogsProvider {
+    type Error = std::convert::Infallible;
+
+    async fn provide(&self) -> Result<Vec<OnlineCatalog>, Self::Error> {
+        let settings = self.application_module.settings().await;
+        Ok(settings
+            .online_library
+            .catalogs
+            .iter()
+            .filter(|c| c.enabled())
+            .map(Catalog::resolve)
+            .collect())
+    }
 }
 
 /// @feature: online_library.search
@@ -86,7 +111,7 @@ pub enum OnlineLibraryMessage {
     SearchSubmitted,
     ClearSearch,
     SearchStarted,
-    SearchCompleted(Vec<OnlineBook>, Vec<OnlineCatalog>, HashMap<usize, String>),
+    SearchCompleted(Vec<OnlineBook>, HashMap<usize, String>),
     /// Selects the catalog at index `i`; `None` means "all catalogs".
     CatalogFilterChanged(Option<usize>),
     LayoutChanged(ResultsLayout),
@@ -226,16 +251,11 @@ impl Page for OnlineLibraryPage {
     fn update(&mut self, message: OnlineLibraryMessage) -> Task<Action<OnlineLibraryMessage>> {
         match message {
             OnlineLibraryMessage::LoadCatalogs => {
-                let am = self.application_module.clone();
+                let provider = CatalogsProvider {
+                    application_module: self.application_module.clone(),
+                };
                 task::future(async move {
-                    let settings = am.settings().await;
-                    let catalogs: Vec<OnlineCatalog> = settings
-                        .online_library
-                        .catalogs
-                        .iter()
-                        .filter(|c| c.enabled())
-                        .map(read_flow_core::online_library::Catalog::resolve)
-                        .collect();
+                    let Ok(catalogs) = provider.provide().await;
                     OnlineLibraryMessage::CatalogsLoaded(catalogs)
                 })
             }
@@ -280,20 +300,14 @@ impl Page for OnlineLibraryPage {
                 self.pagination.has_more = false;
                 self.selected_book = None;
                 self.selected_book_blocks.clear();
-                let am = self.application_module.clone();
                 let query = self.search_query.clone();
                 let catalog_index = self.selected_catalog_index;
+                // Catalogs are kept fresh by the reactive `LoadCatalogs`
+                // reload (triggered on settings invalidation), so search
+                // reuses the cached list instead of re-fetching settings.
+                let all_catalogs = self.catalogs.clone();
 
                 task::future(async move {
-                    let settings = am.settings().await;
-                    let all_catalogs: Vec<OnlineCatalog> = settings
-                        .online_library
-                        .catalogs
-                        .iter()
-                        .filter(|c| c.enabled())
-                        .map(read_flow_core::online_library::Catalog::resolve)
-                        .collect();
-
                     let to_search: Vec<(usize, OnlineCatalog)> = match catalog_index {
                         None => all_catalogs.iter().cloned().enumerate().collect(),
                         Some(i) => all_catalogs
@@ -328,12 +342,11 @@ impl Page for OnlineLibraryPage {
                         }
                     }
 
-                    OnlineLibraryMessage::SearchCompleted(all_results, all_catalogs, next_urls)
+                    OnlineLibraryMessage::SearchCompleted(all_results, next_urls)
                 })
             }
 
-            OnlineLibraryMessage::SearchCompleted(books, catalogs, next_urls) => {
-                self.catalogs = catalogs;
+            OnlineLibraryMessage::SearchCompleted(books, next_urls) => {
                 self.pagination.collection_size = books.len();
                 self.pagination.index = 0;
                 self.cover_images.clear();
