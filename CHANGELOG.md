@@ -34,11 +34,27 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   EPUBs well enough that a global switch is no longer necessary. Reading progress for each
   viewer is now stored side by side per document, so switching between them resumes each one
   from its own last position instead of one overwriting the other's.
-- Online library: built-in catalogs (Project Gutenberg, Standard Ebooks) are no longer stored by
-  name/URL in `read-flow.toml` — only their id and enabled state are, so their search URLs are
-  always the current code default and can never go stale. `read-flow.toml` files from older
-  versions are upgraded automatically on first load (and rewritten in the new format); catalogs
-  you added yourself keep their name and URL as before.
+- **Breaking:** Online library: built-in catalogs (Project Gutenberg, Standard Ebooks) are no
+  longer stored by name/URL in `read-flow.toml` — only their id and enabled state are, so their
+  search URLs are always the current code default and can never go stale. The
+  `[[online_library.catalogs]]` table shape changed to a tagged format and **there is no
+  automatic migration** — a `read-flow.toml` from before this change will fail to load. If you
+  have an existing `read-flow.toml`, remove its `online_library.catalogs` entries (or the whole
+  `[online_library]` section) before upgrading; the app recreates the default built-in catalogs
+  (both enabled) on next start. Any catalog you'd added yourself needs to be re-added by hand in
+  the new format:
+  ```toml
+  [[online_library.catalogs]]
+  type = "builtin"
+  id = "project_gutenberg" # or "standard_ebooks"
+  enabled = true
+
+  [[online_library.catalogs]]
+  type = "configured"
+  name = "My Library"
+  search_url = "https://example.com/opds?q={searchTerms}"
+  enabled = true
+  ```
 
 ### Fixed
 

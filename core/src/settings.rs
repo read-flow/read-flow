@@ -46,10 +46,6 @@ pub struct Settings {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct OnlineLibrarySettings {
-    // TODO(remove): `deserialize_with` is part of the one-time legacy catalog
-    // migration — see the TODO banner in online_library/mod.rs above
-    // `LegacyCatalog`. Once removed, a plain `Vec<Catalog>` needs no attribute.
-    #[serde(deserialize_with = "crate::online_library::deserialize_catalogs")]
     pub catalogs: Vec<Catalog>,
 }
 
@@ -66,14 +62,16 @@ impl Default for OnlineLibrarySettings {
 
 impl Settings {
     pub fn extract() -> Result<Self, SettingsError> {
-        let path = config_path();
-        let figment = decorate_with(Figment::new(), path.clone());
-        Self::from_figment(figment, &path)
+        let figment = {
+            let figment = Figment::new();
+            decorate_with(figment, config_path())
+        };
+        Self::from_figment(figment)
     }
 
     pub fn extract_from(path: &Path) -> Result<Self, SettingsError> {
         let figment = decorate_with(Figment::new(), path.to_path_buf());
-        Self::from_figment(figment, path)
+        Self::from_figment(figment)
     }
 
     /// Save settings to the configuration file
@@ -83,36 +81,10 @@ impl Settings {
         Ok(())
     }
 
-    fn from_figment(figment: Figment, path: &Path) -> Result<Settings, SettingsError> {
-        // TODO(remove): legacy catalog-format migration — see the TODO banner
-        // in online_library/mod.rs above `LegacyCatalog`. Once removed, this
-        // becomes: `let Some(settings) = figment.extract()? else { return
-        // Ok(Settings::default()) }; Ok(settings)`.
-        let has_legacy_catalogs = figment
-            .find_value("online_library.catalogs")
-            .map(|v| catalogs_value_has_legacy_entries(&v))
-            .unwrap_or(false);
+    fn from_figment(figment: Figment) -> Result<Settings, SettingsError> {
         let settings: Option<Settings> = figment.extract()?;
-        let Some(settings) = settings else {
-            return Ok(Settings::default());
-        };
-        if has_legacy_catalogs && let Err(e) = settings.save(path) {
-            tracing::warn!("failed to persist migrated catalog config: {e}");
-        }
-        Ok(settings)
+        Ok(settings.unwrap_or_default())
     }
-}
-
-// TODO(remove): part of the legacy catalog migration, see above.
-/// Detects catalog entries still in the pre-[`Catalog`] flat format, i.e.
-/// tables lacking the `type` discriminant.
-fn catalogs_value_has_legacy_entries(value: &figment::value::Value) -> bool {
-    let figment::value::Value::Array(_, entries) = value else {
-        return false;
-    };
-    entries.iter().any(|entry| {
-        matches!(entry, figment::value::Value::Dict(_, fields) if !fields.contains_key("type"))
-    })
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -762,89 +734,5 @@ private_mode = true
         );
         assert!(legacy.verify("password").is_ok());
         assert!(legacy.verify("nope").is_err());
-    }
-
-    // TODO(remove): these two tests cover the legacy catalog migration itself
-    // — delete along with it. `extract_from_leaves_already_tagged_catalogs_file_untouched`
-    // below is unrelated (guards against gratuitous rewrites in general) and should stay.
-
-    #[test]
-    fn extract_from_upgrades_legacy_builtin_catalog_and_persists() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("read-flow.toml");
-        fs::write(
-            &path,
-            r#"
-[[online_library.catalogs]]
-name = "Project Gutenberg"
-search_url = "https://old.example/stale"
-enabled = false
-"#,
-        )
-        .unwrap();
-
-        let loaded = Settings::extract_from(&path).unwrap();
-
-        assert_eq!(
-            loaded.online_library.catalogs,
-            vec![Catalog::Builtin(BuiltinCatalog {
-                id: BuiltinCatalogId::ProjectGutenberg,
-                enabled: false,
-            })]
-        );
-        let after = fs::read_to_string(&path).unwrap();
-        assert!(
-            after.contains("type = \"builtin\""),
-            "legacy entry should be rewritten in the tagged format, got:\n{after}"
-        );
-        assert!(
-            !after.contains("old.example"),
-            "stale URL should not survive the rewrite, got:\n{after}"
-        );
-    }
-
-    #[test]
-    fn extract_from_upgrades_legacy_custom_catalog_keeping_its_url() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("read-flow.toml");
-        fs::write(
-            &path,
-            r#"
-[[online_library.catalogs]]
-name = "My Library"
-search_url = "https://example.com/opds?q={searchTerms}"
-enabled = true
-"#,
-        )
-        .unwrap();
-
-        let loaded = Settings::extract_from(&path).unwrap();
-
-        assert_eq!(
-            loaded.online_library.catalogs,
-            vec![Catalog::Configured(
-                crate::online_library::ConfiguredCatalog {
-                    name: "My Library".to_string(),
-                    search_url: "https://example.com/opds?q={searchTerms}".to_string(),
-                    enabled: true,
-                }
-            )]
-        );
-    }
-
-    #[test]
-    fn extract_from_leaves_already_tagged_catalogs_file_untouched() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("read-flow.toml");
-        Settings::default().save(&path).unwrap();
-        let before = fs::read_to_string(&path).unwrap();
-
-        Settings::extract_from(&path).unwrap();
-
-        let after = fs::read_to_string(&path).unwrap();
-        assert_eq!(
-            before, after,
-            "load without a legacy shape should not rewrite the file"
-        );
     }
 }
