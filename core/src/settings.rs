@@ -20,6 +20,7 @@ use rand::TryRng;
 use rand::rngs::SysRng;
 use serde::Deserialize;
 use serde::Serialize;
+use strum::IntoEnumIterator;
 
 use crate::ExpandedPath;
 use crate::db::DbSettings;
@@ -52,8 +53,7 @@ pub struct OnlineLibrarySettings {
 impl Default for OnlineLibrarySettings {
     fn default() -> Self {
         Self {
-            catalogs: BuiltinCatalogId::all()
-                .into_iter()
+            catalogs: BuiltinCatalogId::iter()
                 .map(|id| Catalog::Builtin(BuiltinCatalog { id, enabled: true }))
                 .collect(),
         }

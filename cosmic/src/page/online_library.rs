@@ -55,8 +55,11 @@ pub struct OnlineLibraryPage {
     selected_catalog_index: Option<usize>,
     download_state: HashMap<String, DownloadBookState>,
     cover_images: HashMap<String, widget::image::Handle>,
-    /// catalog_name → next OPDS page URL, when the server has more pages.
-    next_urls: HashMap<String, String>,
+    /// Index into `catalogs` → next OPDS page URL, when the server has more
+    /// pages. Keyed by index rather than catalog name so two catalogs that
+    /// happen to share a name (e.g. a custom catalog named like a built-in)
+    /// can't collide and silently drop each other's pagination state.
+    next_urls: HashMap<usize, String>,
     fetching_more: bool,
     selected_book: Option<OnlineBook>,
     /// Parsed HTML blocks for `selected_book.summary_html`, cached on selection.
@@ -81,7 +84,7 @@ pub enum OnlineLibraryMessage {
     SearchSubmitted,
     ClearSearch,
     SearchStarted,
-    SearchCompleted(Vec<OnlineBook>, Vec<OnlineCatalog>, HashMap<String, String>),
+    SearchCompleted(Vec<OnlineBook>, Vec<OnlineCatalog>, HashMap<usize, String>),
     /// Selects the catalog at index `i`; `None` means "all catalogs".
     CatalogFilterChanged(Option<usize>),
     LayoutChanged(ResultsLayout),
@@ -95,7 +98,7 @@ pub enum OnlineLibraryMessage {
     ImportFailed(String, String),
     CoverImageLoaded(String, Vec<u8>),
     FetchMore,
-    MoreResultsCompleted(Vec<OnlineBook>, HashMap<String, String>),
+    MoreResultsCompleted(Vec<OnlineBook>, HashMap<usize, String>),
     Out(OnlineLibraryOutput),
 }
 
@@ -256,29 +259,33 @@ impl Page for OnlineLibraryPage {
 
                 task::future(async move {
                     let settings = am.settings().await;
-                    let all_catalogs: Vec<OnlineCatalog> =
-                        read_flow_core::online_library::resolve_catalogs(
-                            &settings.online_library.catalogs,
-                        )
-                        .into_iter()
-                        .filter(|c| c.enabled)
+                    let all_catalogs: Vec<OnlineCatalog> = settings
+                        .online_library
+                        .catalogs
+                        .iter()
+                        .filter(|c| c.enabled())
+                        .map(read_flow_core::online_library::Catalog::resolve)
                         .collect();
 
-                    let to_search: Vec<OnlineCatalog> = match catalog_index {
-                        None => all_catalogs.clone(),
-                        Some(i) => all_catalogs.get(i).cloned().into_iter().collect(),
+                    let to_search: Vec<(usize, OnlineCatalog)> = match catalog_index {
+                        None => all_catalogs.iter().cloned().enumerate().collect(),
+                        Some(i) => all_catalogs
+                            .get(i)
+                            .cloned()
+                            .into_iter()
+                            .map(|c| (i, c))
+                            .collect(),
                     };
 
-                    let searches = to_search.into_iter().map(|catalog| {
+                    let searches = to_search.into_iter().map(|(idx, catalog)| {
                         let q = query.clone();
                         async move {
-                            let catalog_name = catalog.name.clone();
                             let client = OpdsClient::new(catalog);
                             match client.search_with_next(&q).await {
-                                Ok((books, next_url)) => (catalog_name, books, next_url),
+                                Ok((books, next_url)) => (idx, books, next_url),
                                 Err(e) => {
                                     tracing::warn!("OPDS search failed: {e}");
-                                    (catalog_name, vec![], None)
+                                    (idx, vec![], None)
                                 }
                             }
                         }
@@ -286,11 +293,11 @@ impl Page for OnlineLibraryPage {
 
                     let results = futures::future::join_all(searches).await;
                     let mut all_results: Vec<OnlineBook> = Vec::new();
-                    let mut next_urls: HashMap<String, String> = HashMap::new();
-                    for (catalog_name, mut books, next_url) in results {
+                    let mut next_urls: HashMap<usize, String> = HashMap::new();
+                    for (idx, mut books, next_url) in results {
                         all_results.append(&mut books);
                         if let Some(url) = next_url {
-                            next_urls.insert(catalog_name, url);
+                            next_urls.insert(idx, url);
                         }
                     }
 
@@ -452,27 +459,18 @@ impl Page for OnlineLibraryPage {
                 }
                 self.fetching_more = true;
                 self.pagination.has_more = false;
-                let am = self.application_module.clone();
                 let next_urls = self.next_urls.clone();
+                let catalogs = self.catalogs.clone();
                 task::future(async move {
-                    let settings = am.settings().await;
-                    let catalogs: HashMap<String, OnlineCatalog> =
-                        read_flow_core::online_library::resolve_catalogs(
-                            &settings.online_library.catalogs,
-                        )
-                        .into_iter()
-                        .map(|c| (c.name.clone(), c))
-                        .collect();
-
-                    let fetches = next_urls.into_iter().filter_map(|(catalog_name, url)| {
-                        let catalog = catalogs.get(&catalog_name)?.clone();
+                    let fetches = next_urls.into_iter().filter_map(|(idx, url)| {
+                        let catalog = catalogs.get(idx).cloned()?;
                         Some(async move {
                             let client = OpdsClient::new(catalog);
                             match client.fetch_next_page(&url).await {
-                                Ok((books, next_url)) => (catalog_name, books, next_url),
+                                Ok((books, next_url)) => (idx, books, next_url),
                                 Err(e) => {
                                     tracing::warn!("OPDS next-page fetch failed: {e}");
-                                    (catalog_name, vec![], None)
+                                    (idx, vec![], None)
                                 }
                             }
                         })
@@ -480,11 +478,11 @@ impl Page for OnlineLibraryPage {
 
                     let results = futures::future::join_all(fetches).await;
                     let mut new_books: Vec<OnlineBook> = Vec::new();
-                    let mut new_next_urls: HashMap<String, String> = HashMap::new();
-                    for (catalog_name, mut books, next_url) in results {
+                    let mut new_next_urls: HashMap<usize, String> = HashMap::new();
+                    for (idx, mut books, next_url) in results {
                         new_books.append(&mut books);
                         if let Some(url) = next_url {
-                            new_next_urls.insert(catalog_name, url);
+                            new_next_urls.insert(idx, url);
                         }
                     }
 

@@ -65,6 +65,7 @@ use crate::api::Status;
 use crate::db::ConnectionPool;
 use crate::db::dao;
 use crate::db::datasource::DbClient;
+use crate::online_library::Catalog;
 use crate::online_library::DownloadFormat;
 use crate::online_library::OnlineBook;
 use crate::online_library::OnlineCatalog;
@@ -1619,11 +1620,13 @@ async fn search_online_library(
     Query(SearchQuery { q }): Query<SearchQuery>,
 ) -> Result<Json<OnlineLibrarySearchResponse>> {
     let settings = application_module.settings().await;
-    let catalogs: Vec<OnlineCatalog> =
-        crate::online_library::resolve_catalogs(&settings.online_library.catalogs)
-            .into_iter()
-            .filter(|catalog| catalog.enabled)
-            .collect();
+    let catalogs: Vec<OnlineCatalog> = settings
+        .online_library
+        .catalogs
+        .iter()
+        .filter(|c| c.enabled())
+        .map(Catalog::resolve)
+        .collect();
 
     let searches = catalogs.iter().cloned().map(|catalog| {
         let q = q.clone();

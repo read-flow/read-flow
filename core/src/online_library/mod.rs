@@ -130,7 +130,7 @@ impl OnlineCatalog {
 /// Identifies a built-in catalog. Code owns its display name and search URL —
 /// they are never read from or written to `read-flow.toml`, so a built-in's
 /// URL can never go stale in a user's config.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, strum::EnumIter)]
 #[serde(rename_all = "snake_case")]
 pub enum BuiltinCatalogId {
     ProjectGutenberg,
@@ -138,10 +138,6 @@ pub enum BuiltinCatalogId {
 }
 
 impl BuiltinCatalogId {
-    pub fn all() -> [Self; 2] {
-        [Self::ProjectGutenberg, Self::StandardEbooks]
-    }
-
     fn display_name(self) -> &'static str {
         match self {
             Self::ProjectGutenberg => "Project Gutenberg",
@@ -200,6 +196,13 @@ impl Catalog {
                 search_url: c.search_url.clone(),
                 enabled: c.enabled,
             },
+        }
+    }
+
+    pub fn enabled(&self) -> bool {
+        match self {
+            Catalog::Builtin(b) => b.enabled,
+            Catalog::Configured(c) => c.enabled,
         }
     }
 }
