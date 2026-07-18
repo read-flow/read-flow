@@ -256,9 +256,10 @@ impl Page for OnlineLibraryPage {
 
                 task::future(async move {
                     let settings = am.settings().await;
-                    let all_catalogs: Vec<OnlineCatalog> = settings
-                        .online_library
-                        .catalogs
+                    let all_catalogs: Vec<OnlineCatalog> =
+                        read_flow_core::online_library::resolve_catalogs(
+                            &settings.online_library.catalogs,
+                        )
                         .into_iter()
                         .filter(|c| c.enabled)
                         .collect();
@@ -455,9 +456,10 @@ impl Page for OnlineLibraryPage {
                 let next_urls = self.next_urls.clone();
                 task::future(async move {
                     let settings = am.settings().await;
-                    let catalogs: HashMap<String, OnlineCatalog> = settings
-                        .online_library
-                        .catalogs
+                    let catalogs: HashMap<String, OnlineCatalog> =
+                        read_flow_core::online_library::resolve_catalogs(
+                            &settings.online_library.catalogs,
+                        )
                         .into_iter()
                         .map(|c| (c.name.clone(), c))
                         .collect();

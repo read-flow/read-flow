@@ -34,6 +34,11 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   EPUBs well enough that a global switch is no longer necessary. Reading progress for each
   viewer is now stored side by side per document, so switching between them resumes each one
   from its own last position instead of one overwriting the other's.
+- Online library: built-in catalogs (Project Gutenberg, Standard Ebooks) are no longer stored by
+  name/URL in `read-flow.toml` — only their id and enabled state are, so their search URLs are
+  always the current code default and can never go stale. `read-flow.toml` files from older
+  versions are upgraded automatically on first load (and rewritten in the new format); catalogs
+  you added yourself keep their name and URL as before.
 
 ### Fixed
 

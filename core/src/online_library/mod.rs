@@ -106,6 +106,9 @@ fn html_to_plain_text(html: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// A resolved, ready-to-use catalog — what [`OpdsClient`] and the REST API
+/// consume, regardless of whether it originated from a built-in or a
+/// user-configured [`Catalog`].
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct OnlineCatalog {
     pub name: String,
@@ -116,21 +119,161 @@ pub struct OnlineCatalog {
 
 impl OnlineCatalog {
     pub fn project_gutenberg() -> Self {
-        Self {
-            name: "Project Gutenberg".to_string(),
-            search_url: "https://www.gutenberg.org/ebooks/search.opds/?query={searchTerms}"
-                .to_string(),
-            enabled: true,
-        }
+        BuiltinCatalogId::ProjectGutenberg.resolve(true)
     }
 
     pub fn standard_ebooks() -> Self {
-        Self {
-            name: "Standard Ebooks".to_string(),
-            search_url: "https://standardebooks.org/feeds/opds/all?query={searchTerms}".to_string(),
-            enabled: true,
+        BuiltinCatalogId::StandardEbooks.resolve(true)
+    }
+}
+
+/// Identifies a built-in catalog. Code owns its display name and search URL —
+/// they are never read from or written to `read-flow.toml`, so a built-in's
+/// URL can never go stale in a user's config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BuiltinCatalogId {
+    ProjectGutenberg,
+    StandardEbooks,
+}
+
+impl BuiltinCatalogId {
+    pub fn all() -> [Self; 2] {
+        [Self::ProjectGutenberg, Self::StandardEbooks]
+    }
+
+    fn display_name(self) -> &'static str {
+        match self {
+            Self::ProjectGutenberg => "Project Gutenberg",
+            Self::StandardEbooks => "Standard Ebooks",
         }
     }
+
+    fn search_url(self) -> &'static str {
+        match self {
+            Self::ProjectGutenberg => {
+                "https://www.gutenberg.org/ebooks/search.opds/?query={searchTerms}"
+            }
+            Self::StandardEbooks => "https://standardebooks.org/feeds/opds/all?query={searchTerms}",
+        }
+    }
+
+    pub fn resolve(self, enabled: bool) -> OnlineCatalog {
+        OnlineCatalog {
+            name: self.display_name().to_string(),
+            search_url: self.search_url().to_string(),
+            enabled,
+        }
+    }
+}
+
+/// A built-in catalog as stored in config — just an id and whether the user
+/// has enabled it. Name and URL are resolved from [`BuiltinCatalogId`].
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct BuiltinCatalog {
+    pub id: BuiltinCatalogId,
+    pub enabled: bool,
+}
+
+/// A user-added OPDS catalog, fully owned by config.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ConfiguredCatalog {
+    pub name: String,
+    pub search_url: String,
+    pub enabled: bool,
+}
+
+/// A catalog entry as stored in `read-flow.toml`.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Catalog {
+    Builtin(BuiltinCatalog),
+    Configured(ConfiguredCatalog),
+}
+
+impl Catalog {
+    pub fn resolve(&self) -> OnlineCatalog {
+        match self {
+            Catalog::Builtin(b) => b.id.resolve(b.enabled),
+            Catalog::Configured(c) => OnlineCatalog {
+                name: c.name.clone(),
+                search_url: c.search_url.clone(),
+                enabled: c.enabled,
+            },
+        }
+    }
+}
+
+/// Resolves stored catalog entries into ready-to-use [`OnlineCatalog`]s.
+pub fn resolve_catalogs(catalogs: &[Catalog]) -> Vec<OnlineCatalog> {
+    catalogs.iter().map(Catalog::resolve).collect()
+}
+
+// TODO(remove): one-time config-format migration, safe to delete once any
+// user's `read-flow.toml` has been loaded at least once post-upgrade — i.e.
+// as soon as we have public users on a release that includes this. Covers
+// `LegacyCatalog`, `CatalogEntry`, `deserialize_catalogs`, their `impl From`s,
+// their tests below, and the `has_legacy_catalogs` check + `catalogs_value_has_legacy_entries`
+// in `settings.rs`. After removal, `#[serde(deserialize_with = "...")]` on
+// `OnlineLibrarySettings::catalogs` in settings.rs can go too — plain
+// `#[derive(Deserialize)]` on `Vec<Catalog>` is enough.
+
+/// A catalog entry in the pre-[`Catalog`] `read-flow.toml` format: a flat
+/// `{ name, search_url, enabled }` table with no `type` discriminant.
+#[derive(Debug, Deserialize)]
+struct LegacyCatalog {
+    name: String,
+    search_url: String,
+    #[serde(default)]
+    enabled: bool,
+}
+
+impl From<LegacyCatalog> for Catalog {
+    /// Matches by name against known built-ins (healing the URL permanently,
+    /// discarding whatever was stored); anything else becomes a user's real
+    /// custom catalog.
+    fn from(legacy: LegacyCatalog) -> Self {
+        match BuiltinCatalogId::all()
+            .into_iter()
+            .find(|id| id.display_name() == legacy.name)
+        {
+            Some(id) => Catalog::Builtin(BuiltinCatalog {
+                id,
+                enabled: legacy.enabled,
+            }),
+            None => Catalog::Configured(ConfiguredCatalog {
+                name: legacy.name,
+                search_url: legacy.search_url,
+                enabled: legacy.enabled,
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum CatalogEntry {
+    Current(Catalog),
+    Legacy(LegacyCatalog),
+}
+
+impl From<CatalogEntry> for Catalog {
+    fn from(entry: CatalogEntry) -> Self {
+        match entry {
+            CatalogEntry::Current(catalog) => catalog,
+            CatalogEntry::Legacy(legacy) => legacy.into(),
+        }
+    }
+}
+
+/// Deserializes `catalogs`, transparently upgrading any pre-[`Catalog`]
+/// flat-shaped entries left over from an older `read-flow.toml`.
+pub fn deserialize_catalogs<'de, D>(deserializer: D) -> Result<Vec<Catalog>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let entries = Vec::<CatalogEntry>::deserialize(deserializer)?;
+    Ok(entries.into_iter().map(Catalog::from).collect())
 }
 
 // ─── Error Type ──────────────────────────────────────────────────────────────
@@ -1700,6 +1843,157 @@ mod tests {
         assert!(
             result.next_url.is_none(),
             "entry-level 'next' link must not set feed_next_url"
+        );
+    }
+
+    // ── Catalog / BuiltinCatalogId ───────────────────────────────────────────
+
+    #[test]
+    fn catalog_resolve_builtin_uses_current_id_name_and_url() {
+        let catalog = Catalog::Builtin(BuiltinCatalog {
+            id: BuiltinCatalogId::StandardEbooks,
+            enabled: false,
+        });
+
+        let resolved = catalog.resolve();
+
+        assert_eq!(resolved.name, "Standard Ebooks");
+        assert_eq!(
+            resolved.search_url,
+            BuiltinCatalogId::StandardEbooks.search_url()
+        );
+        assert!(!resolved.enabled);
+    }
+
+    #[test]
+    fn catalog_resolve_configured_passes_through_unchanged() {
+        let catalog = Catalog::Configured(ConfiguredCatalog {
+            name: "My Library".to_string(),
+            search_url: "https://example.com/opds?q={searchTerms}".to_string(),
+            enabled: true,
+        });
+
+        let resolved = catalog.resolve();
+
+        assert_eq!(resolved.name, "My Library");
+        assert_eq!(
+            resolved.search_url,
+            "https://example.com/opds?q={searchTerms}"
+        );
+        assert!(resolved.enabled);
+    }
+
+    #[test]
+    fn resolve_catalogs_maps_each_entry() {
+        let catalogs = vec![
+            Catalog::Builtin(BuiltinCatalog {
+                id: BuiltinCatalogId::ProjectGutenberg,
+                enabled: true,
+            }),
+            Catalog::Configured(ConfiguredCatalog {
+                name: "My Library".to_string(),
+                search_url: "https://example.com/opds".to_string(),
+                enabled: false,
+            }),
+        ];
+
+        let resolved = resolve_catalogs(&catalogs);
+
+        assert_eq!(resolved.len(), 2);
+        assert_eq!(resolved[0].name, "Project Gutenberg");
+        assert_eq!(resolved[1].name, "My Library");
+    }
+
+    // ── legacy catalog upgrade ───────────────────────────────────────────────
+    // TODO(remove): delete this whole section along with the migration code
+    // it tests (see the TODO banner above `LegacyCatalog`).
+
+    #[test]
+    fn legacy_catalog_matching_builtin_name_becomes_builtin() {
+        let legacy = LegacyCatalog {
+            name: "Standard Ebooks".to_string(),
+            search_url: "https://stale.example/whatever".to_string(),
+            enabled: false,
+        };
+
+        let catalog: Catalog = legacy.into();
+
+        assert_eq!(
+            catalog,
+            Catalog::Builtin(BuiltinCatalog {
+                id: BuiltinCatalogId::StandardEbooks,
+                enabled: false,
+            })
+        );
+    }
+
+    #[test]
+    fn legacy_catalog_with_unknown_name_becomes_configured() {
+        let legacy = LegacyCatalog {
+            name: "My Library".to_string(),
+            search_url: "https://example.com/opds?q={searchTerms}".to_string(),
+            enabled: true,
+        };
+
+        let catalog: Catalog = legacy.into();
+
+        assert_eq!(
+            catalog,
+            Catalog::Configured(ConfiguredCatalog {
+                name: "My Library".to_string(),
+                search_url: "https://example.com/opds?q={searchTerms}".to_string(),
+                enabled: true,
+            })
+        );
+    }
+
+    #[derive(Deserialize)]
+    struct CatalogsWrapper {
+        #[serde(deserialize_with = "deserialize_catalogs")]
+        catalogs: Vec<Catalog>,
+    }
+
+    #[test]
+    fn deserialize_catalogs_upgrades_legacy_flat_entries() {
+        let toml = r#"
+catalogs = [
+    { name = "Project Gutenberg", search_url = "https://stale.example", enabled = true },
+    { name = "My Library", search_url = "https://example.com/opds", enabled = false },
+]
+"#;
+        let wrapper: CatalogsWrapper = toml::from_str(toml).unwrap();
+
+        assert_eq!(
+            wrapper.catalogs,
+            vec![
+                Catalog::Builtin(BuiltinCatalog {
+                    id: BuiltinCatalogId::ProjectGutenberg,
+                    enabled: true,
+                }),
+                Catalog::Configured(ConfiguredCatalog {
+                    name: "My Library".to_string(),
+                    search_url: "https://example.com/opds".to_string(),
+                    enabled: false,
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn deserialize_catalogs_leaves_tagged_entries_as_is() {
+        let toml = r#"
+catalogs = [
+    { type = "builtin", id = "standard_ebooks", enabled = false },
+]
+"#;
+        let wrapper: CatalogsWrapper = toml::from_str(toml).unwrap();
+
+        assert_eq!(
+            wrapper.catalogs,
+            vec![Catalog::Builtin(BuiltinCatalog {
+                id: BuiltinCatalogId::StandardEbooks,
+                enabled: false,
+            })]
         );
     }
 }

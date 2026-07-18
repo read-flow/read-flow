@@ -1619,13 +1619,11 @@ async fn search_online_library(
     Query(SearchQuery { q }): Query<SearchQuery>,
 ) -> Result<Json<OnlineLibrarySearchResponse>> {
     let settings = application_module.settings().await;
-    let catalogs: Vec<OnlineCatalog> = settings
-        .online_library
-        .catalogs
-        .iter()
-        .filter(|catalog| catalog.enabled)
-        .cloned()
-        .collect();
+    let catalogs: Vec<OnlineCatalog> =
+        crate::online_library::resolve_catalogs(&settings.online_library.catalogs)
+            .into_iter()
+            .filter(|catalog| catalog.enabled)
+            .collect();
 
     let searches = catalogs.iter().cloned().map(|catalog| {
         let q = q.clone();

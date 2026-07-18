@@ -9,7 +9,7 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] ~read-flow::EpubViewer~: Make nav pane resizeable
 - [X] ~read-flow::EpubViewer~: Use `widget::search_input` for search box.
 
-** Tier 2 — High Impact, Moderate Effort [5/7]
+** Tier 2 — High Impact, Moderate Effort [7/7]
 
 - [X] ~read-flow-core~: HTTP response code & error handling in ~client~ module
   - Done: ~client.rs~ checks status codes throughout — 401 triggers token refresh, expected 404s map to ~None~, everything else goes through ~error_for_status_ref~.
@@ -20,8 +20,8 @@ This is a tool to help discover and organize files locally and on remote servers
 - [X] ~read-flow~: Sync document to all sources simultaneously — ~Aggregator::update_document~ and ~DocumentProvider::update_document~ are implemented but unused. They push the file content to every configured source at once (unlike ~SendToClient~, which targets a single client). Wire these up to a "sync to all remotes" action in the Document Details context pane or library toolbar.
 - [X] ~read-flow::OnlineLibrary~: Display cover images in book cards (~cover_url~ is already parsed from OPDS feeds but not yet rendered).
 - [X] ~read-flow::OnlineLibrary~: Support paginated OPDS results — fetch and display subsequent pages ("load more") when the feed contains an ~rel="next"~ link.
-- [ ] ~read-flow::OnlineLibrary~: Auto-migrate user config when catalog defaults change (e.g. updated search URL for Standard Ebooks) instead of silently falling back to the stale value in ~read-flow.toml~.
-  - Moved from Tier 3: scope is small — detect a stored value equal to an old default and replace it with the new default on load.
+- [X] ~read-flow::OnlineLibrary~: Auto-migrate user config when catalog defaults change (e.g. updated search URL for Standard Ebooks) instead of silently falling back to the stale value in ~read-flow.toml~.
+  - Done differently than originally scoped: rather than migrating stale URLs, built-in catalogs no longer store name/URL in config at all. ~online_library::Catalog~ is `Builtin(BuiltinCatalog { id: BuiltinCatalogId, enabled })` or `Configured(ConfiguredCatalog { name, search_url, enabled })`; ~BuiltinCatalogId::resolve~ is the single source of truth for a built-in's name/URL, so it can never go stale. ~Catalog::resolve~/~resolve_catalogs~ produce the flat ~OnlineCatalog~ view consumers (~OpdsClient~, REST response) still use. Old flat-shaped `read-flow.toml` entries are upgraded transparently on load (~deserialize_catalogs~, matching by name against known built-ins) and the file is rewritten once via ~Settings::from_figment~.
 
 ** Tier 3 — Significant Features [3/3]
 
