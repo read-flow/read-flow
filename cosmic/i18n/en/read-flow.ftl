@@ -33,6 +33,8 @@ preferences-sources-section = Document Sources
 preferences-sources-section-description = Remote servers to sync documents from
 preferences-server-section = Server
 preferences-server-section-description = Server access and authorized users
+preferences-online-library-section = Online Library
+preferences-online-library-section-description = Manage built-in and custom OPDS catalogs
 preferences-privacy-section = Privacy
 preferences-privacy-section-description = Private mode and hidden tags
 
@@ -212,6 +214,16 @@ settings-edit-directory = Edit Directory
 settings-failed-to-load-tags = Failed to load tags
 settings-no-directory-tags = No tags configured
 settings-no-private-tags = No private tags configured
+settings-online-library-add-catalog = Add Catalog
+settings-online-library-add-catalog-title = New Catalog
+settings-online-library-builtin-catalogs = Built-in Catalogs
+settings-online-library-catalog-name = Name
+settings-online-library-catalog-name-placeholder = Enter catalog name...
+settings-online-library-catalog-search-url = Search URL
+settings-online-library-catalog-search-url-placeholder = https://example.com/opds/search?q=<search terms>
+settings-online-library-custom-catalogs = Custom Catalogs
+settings-online-library-custom-catalogs-description = Add your own OPDS catalogs to search alongside the built-in ones.
+settings-online-library-edit-catalog = Edit Catalog
 settings-page-title = Library Settings
 settings-remove-directory = Remove Directory
 settings-remove-directory-tag = Remove tag

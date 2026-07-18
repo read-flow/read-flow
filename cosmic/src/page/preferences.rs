@@ -37,6 +37,10 @@ use read_flow_core::db;
 use read_flow_core::db::dao;
 use read_flow_core::db::models::NewRemote;
 use read_flow_core::db::models::Remote;
+use read_flow_core::online_library::BuiltinCatalog;
+use read_flow_core::online_library::BuiltinCatalogId;
+use read_flow_core::online_library::Catalog;
+use read_flow_core::online_library::ConfiguredCatalog;
 use read_flow_core::scan::DirectorySettings;
 use read_flow_core::scan::DocumentType;
 use read_flow_core::settings::FrostedStrength;
@@ -50,6 +54,7 @@ use read_flow_core::settings::UserEntry;
 use read_flow_widgets::FontPicker;
 use rfd::AsyncFileDialog;
 use rfd::FileHandle;
+use strum::IntoEnumIterator;
 use url::Url;
 
 use crate::ApplicationModule;
@@ -69,6 +74,9 @@ use crate::fl;
 use crate::forms::settings::authorized_user::AuthorizedUserForm;
 use crate::forms::settings::authorized_user::AuthorizedUserFormMessage;
 use crate::forms::settings::authorized_user::AuthorizedUserFormOutput;
+use crate::forms::settings::catalog::CatalogForm;
+use crate::forms::settings::catalog::CatalogFormMessage;
+use crate::forms::settings::catalog::CatalogFormOutput;
 use crate::forms::settings::directory_settings::DirectorySettingsForm;
 use crate::forms::settings::directory_settings::DirectorySettingsFormMessage;
 use crate::forms::settings::directory_settings::DirectorySettingsFormOutput;
@@ -119,6 +127,7 @@ pub enum PreferencesSection {
     Scanning,
     Sources,
     Server,
+    OnlineLibrary,
     Privacy,
 }
 
@@ -133,6 +142,7 @@ pub struct PreferencesPage {
     editing_directory: EditState<PathBuf>,
     directory_settings_form: Option<DirectorySettingsForm>,
     authorized_user_form: Option<AuthorizedUserForm>,
+    catalog_form: Option<CatalogForm>,
     // appearance (cosmic_config-backed)
     config: Config,
     // theme overrides (TOML-backed, live-previewed)
@@ -228,6 +238,12 @@ pub enum PreferencesMessage {
     AddAuthorizedUser,
     EditAuthorizedUser(String),
     DeleteAuthorizedUser(String),
+    ToggleBuiltinCatalog(BuiltinCatalogId, bool),
+    AddCatalog,
+    EditCatalog(String),
+    DeleteCatalog(String),
+    ToggleConfiguredCatalog(String, bool),
+    CatalogForm(CatalogFormMessage),
     Save,
     SaveComplete,
     SaveError(String),
@@ -280,6 +296,12 @@ impl From<DirectorySettingsFormMessage> for PreferencesMessage {
 impl From<AuthorizedUserFormMessage> for PreferencesMessage {
     fn from(v: AuthorizedUserFormMessage) -> Self {
         Self::AuthorizedUserForm(v)
+    }
+}
+
+impl From<CatalogFormMessage> for PreferencesMessage {
+    fn from(v: CatalogFormMessage) -> Self {
+        Self::CatalogForm(v)
     }
 }
 
@@ -347,6 +369,7 @@ impl PreferencesPage {
                 editing_directory: EditState::Idle,
                 directory_settings_form: None,
                 authorized_user_form: None,
+                catalog_form: None,
                 config,
                 editing_variant,
                 accent_picker,
@@ -447,7 +470,9 @@ impl PreferencesPage {
     }
 
     fn can_be_saved(&self) -> bool {
-        self.authorized_user_form.is_none() && self.directory_settings_form.is_none()
+        self.authorized_user_form.is_none()
+            && self.directory_settings_form.is_none()
+            && self.catalog_form.is_none()
     }
 
     fn view_save_row(&self) -> Element<'_, PreferencesMessage> {
@@ -523,6 +548,12 @@ impl PreferencesPage {
                 fl!("preferences-server-section"),
                 fl!("preferences-server-section-description"),
                 "network-server-symbolic",
+            ),
+            (
+                PreferencesSection::OnlineLibrary,
+                fl!("preferences-online-library-section"),
+                fl!("preferences-online-library-section-description"),
+                "web-browser-symbolic",
             ),
             (
                 PreferencesSection::Privacy,
@@ -1345,6 +1376,128 @@ impl PreferencesPage {
         items
     }
 
+    /// @feature: online_library.manage_catalogs
+    fn view_section_online_library(&self) -> Vec<Element<'_, PreferencesMessage>> {
+        let builtin_section = BuiltinCatalogId::iter().fold(
+            widget::settings::section().title(fl!("settings-online-library-builtin-catalogs")),
+            |acc, id| {
+                let enabled = self.builtin_catalog_enabled(id);
+                // `enabled` here only picks which OnlineCatalog::enabled comes
+                // back out — resolve() needs *some* bool, but only `.name` is used.
+                let name = id.resolve(enabled).name;
+                acc.add(
+                    widget::settings::item::builder(name)
+                        .icon(widget::icon::from_name("web-browser-symbolic").size(ICON_SIZE))
+                        .toggler(enabled, move |value| {
+                            PreferencesMessage::ToggleBuiltinCatalog(id, value)
+                        }),
+                )
+            },
+        );
+
+        let configured: Vec<&ConfiguredCatalog> = self
+            .settings
+            .online_library
+            .catalogs
+            .iter()
+            .filter_map(|c| match c {
+                Catalog::Configured(cc) => Some(cc),
+                Catalog::Builtin(_) => None,
+            })
+            .collect();
+
+        let custom_section = configured
+            .iter()
+            .fold(
+                widget::settings::section()
+                    .title(fl!("settings-online-library-custom-catalogs"))
+                    .add(
+                        widget::text::body(fl!(
+                            "settings-online-library-custom-catalogs-description"
+                        ))
+                        .width(Length::Fill),
+                    ),
+                |acc, catalog| acc.add(self.view_catalog_input(catalog)),
+            )
+            .add(crate::component::section_helpers::section_add_button(
+                fl!("settings-online-library-add-catalog"),
+                Some(PreferencesMessage::AddCatalog),
+            ));
+
+        let mut items: Vec<Element<'_, PreferencesMessage>> = vec![
+            widget::text::title2(fl!("preferences-online-library-section")).into(),
+            builtin_section.into(),
+            custom_section.into(),
+        ];
+
+        if let Some(form) = self.catalog_form.as_ref() {
+            let other_names: Vec<String> = BuiltinCatalogId::iter()
+                .map(|id| id.resolve(true).name)
+                .chain(configured.iter().map(|c| c.name.clone()))
+                .filter(|name| Some(name) != form.original_name.as_ref())
+                .collect();
+            items.push(form.view(&other_names).map(Into::into));
+        }
+
+        items
+    }
+
+    fn builtin_catalog_enabled(&self, id: BuiltinCatalogId) -> bool {
+        self.settings
+            .online_library
+            .catalogs
+            .iter()
+            .find_map(|c| match c {
+                Catalog::Builtin(b) if b.id == id => Some(b.enabled),
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
+    fn view_catalog_input<'a>(
+        &'a self,
+        catalog: &'a ConfiguredCatalog,
+    ) -> Element<'a, PreferencesMessage> {
+        let is_editing = self.is_editing_catalog(&catalog.name);
+        let name = catalog.name.clone();
+        let name_for_toggle = catalog.name.clone();
+        let name_for_delete = catalog.name.clone();
+
+        widget::settings::item::builder(&catalog.name)
+            .icon(widget::icon::from_name("web-browser-symbolic").size(ICON_SIZE))
+            .control(widget::settings::item_row(vec![
+                widget::toggler(catalog.enabled)
+                    .on_toggle(move |value| {
+                        PreferencesMessage::ToggleConfiguredCatalog(name_for_toggle.clone(), value)
+                    })
+                    .into(),
+                widget::button::icon(
+                    widget::icon::from_name(if is_editing {
+                        "edit-clear-symbolic"
+                    } else {
+                        "edit-symbolic"
+                    })
+                    .size(ICON_SIZE),
+                )
+                .apply_if(!is_editing, |button| {
+                    button.on_press(PreferencesMessage::EditCatalog(name.clone()))
+                })
+                .into(),
+                widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
+                    .on_press(PreferencesMessage::DeleteCatalog(name_for_delete))
+                    .class(widget::button::ButtonClass::Destructive)
+                    .into(),
+            ]))
+            .into()
+    }
+
+    fn is_editing_catalog(&self, name: &str) -> bool {
+        self.catalog_form
+            .as_ref()
+            .and_then(|f| f.original_name.as_deref())
+            == Some(name)
+    }
+
     /// @feature: remotes.private_mode
     fn view_section_privacy(&self) -> Vec<Element<'_, PreferencesMessage>> {
         let privacy_section = widget::settings::section()
@@ -1441,6 +1594,7 @@ impl Page for PreferencesPage {
                     PreferencesSection::Scanning => self.view_section_scanning(),
                     PreferencesSection::Sources => self.view_section_sources(),
                     PreferencesSection::Server => self.view_section_server(),
+                    PreferencesSection::OnlineLibrary => self.view_section_online_library(),
                     PreferencesSection::Privacy => self.view_section_privacy(),
                     PreferencesSection::Overview => unreachable!(),
                 });
@@ -2148,6 +2302,112 @@ impl Page for PreferencesPage {
                     task::none()
                 }
                 _ => match self.authorized_user_form.as_mut() {
+                    Some(form) => form.update(message).map(ActionExt::map_into),
+                    None => task::none(),
+                },
+            },
+            PreferencesMessage::ToggleBuiltinCatalog(id, enabled) => {
+                let existing =
+                    self.settings
+                        .online_library
+                        .catalogs
+                        .iter_mut()
+                        .find_map(|c| match c {
+                            Catalog::Builtin(b) if b.id == id => Some(b),
+                            _ => None,
+                        });
+                match existing {
+                    Some(b) => b.enabled = enabled,
+                    None => self
+                        .settings
+                        .online_library
+                        .catalogs
+                        .push(Catalog::Builtin(BuiltinCatalog { id, enabled })),
+                }
+                Task::none()
+            }
+            PreferencesMessage::AddCatalog => {
+                let (catalog_form, init) = CatalogForm::new(None);
+                self.catalog_form = Some(catalog_form);
+                init.map(ActionExt::map_into)
+            }
+            PreferencesMessage::EditCatalog(name) => {
+                let search_url = self
+                    .settings
+                    .online_library
+                    .catalogs
+                    .iter()
+                    .find_map(|c| match c {
+                        Catalog::Configured(cc) if cc.name == name => Some(cc.search_url.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                let (catalog_form, init) = CatalogForm::new(Some((name, search_url)));
+                self.catalog_form = Some(catalog_form);
+                init.map(ActionExt::map_into)
+            }
+            PreferencesMessage::DeleteCatalog(name) => {
+                self.settings
+                    .online_library
+                    .catalogs
+                    .retain(|c| !matches!(c, Catalog::Configured(cc) if cc.name == name));
+                if self.is_editing_catalog(&name) {
+                    self.catalog_form = None;
+                }
+                Task::none()
+            }
+            PreferencesMessage::ToggleConfiguredCatalog(name, enabled) => {
+                if let Some(cc) = self
+                    .settings
+                    .online_library
+                    .catalogs
+                    .iter_mut()
+                    .find_map(|c| match c {
+                        Catalog::Configured(cc) if cc.name == name => Some(cc),
+                        _ => None,
+                    })
+                {
+                    cc.enabled = enabled;
+                }
+                Task::none()
+            }
+            PreferencesMessage::CatalogForm(message) => match message {
+                CatalogFormMessage::Out(output) => {
+                    match output {
+                        CatalogFormOutput::Submit(original_name, name, search_url) => {
+                            let enabled = original_name
+                                .as_ref()
+                                .and_then(|orig| {
+                                    self.settings.online_library.catalogs.iter().find_map(|c| {
+                                        match c {
+                                            Catalog::Configured(cc) if &cc.name == orig => {
+                                                Some(cc.enabled)
+                                            }
+                                            _ => None,
+                                        }
+                                    })
+                                })
+                                .unwrap_or(true);
+                            if let Some(orig) = &original_name {
+                                self.settings.online_library.catalogs.retain(
+                                    |c| !matches!(c, Catalog::Configured(cc) if &cc.name == orig),
+                                );
+                            }
+                            self.settings
+                                .online_library
+                                .catalogs
+                                .push(Catalog::Configured(ConfiguredCatalog {
+                                    name,
+                                    search_url,
+                                    enabled,
+                                }));
+                        }
+                        CatalogFormOutput::Cancel => {}
+                    };
+                    self.catalog_form = None;
+                    task::none()
+                }
+                _ => match self.catalog_form.as_mut() {
                     Some(form) => form.update(message).map(ActionExt::map_into),
                     None => task::none(),
                 },

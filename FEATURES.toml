@@ -216,6 +216,12 @@ id = "online_library.download_import"
 description = "Download and import a book from an OPDS catalog"
 surfaces = ["cosmic", "pwa", "rest"]
 
+[[feature]]
+id = "online_library.manage_catalogs"
+description = "Add/edit/remove custom OPDS catalogs and toggle built-ins, from Preferences"
+surfaces = ["cosmic", "pwa", "rest"]
+gaps = ["pwa", "rest"]
+
 # ── Theme ───────────────────────────────────────────────────────────────────
 # PWA-only by design: browsers don't theme web apps, so the PWA ships its own
 # editor (CSS-variable schemes + custom colors). COSMIC apps inherit the

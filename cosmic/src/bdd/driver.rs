@@ -164,6 +164,46 @@ impl Driver {
         }
     }
 
+    // -- online_library_manage_catalogs --
+    // COSMIC-only: catalog management has no REST/PWA surface yet (see
+    // `online_library.manage_catalogs`'s `gaps` in FEATURES.toml).
+
+    pub async fn add_catalog(&self, name: &str, search_url: &str) {
+        match self {
+            Self::Rest(_) => panic!(
+                "`online_library.manage_catalogs` has no REST surface — run with BDD_DRIVER=cosmic"
+            ),
+            Self::Cosmic(driver) => driver.add_catalog(name, search_url).await,
+        }
+    }
+
+    pub async fn catalog_is_listed(&self, name: &str) -> bool {
+        match self {
+            Self::Rest(_) => panic!(
+                "`online_library.manage_catalogs` has no REST surface — run with BDD_DRIVER=cosmic"
+            ),
+            Self::Cosmic(driver) => driver.catalog_is_listed(name).await,
+        }
+    }
+
+    pub async fn disable_builtin_catalog(&self, id: &str) {
+        match self {
+            Self::Rest(_) => panic!(
+                "`online_library.manage_catalogs` has no REST surface — run with BDD_DRIVER=cosmic"
+            ),
+            Self::Cosmic(driver) => driver.disable_builtin_catalog(id).await,
+        }
+    }
+
+    pub async fn enabled_catalog_is_listed(&self, name: &str) -> bool {
+        match self {
+            Self::Rest(_) => panic!(
+                "`online_library.manage_catalogs` has no REST surface — run with BDD_DRIVER=cosmic"
+            ),
+            Self::Cosmic(driver) => driver.enabled_catalog_is_listed(name).await,
+        }
+    }
+
     // -- tags_list --
     // First scenario needing a seeded document — both drivers upload/scan the
     // shared `features/fixtures/sample.epub` and tag it; see each driver's

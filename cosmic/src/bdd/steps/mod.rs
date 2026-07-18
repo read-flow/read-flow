@@ -19,6 +19,7 @@ mod documents_search;
 mod documents_select_cover;
 mod documents_sort;
 mod online_library_download_import;
+mod online_library_manage_catalogs;
 mod online_library_search;
 mod reading_epub_viewer;
 mod reading_image_viewer;

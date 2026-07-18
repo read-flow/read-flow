@@ -42,8 +42,9 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `admin.server_settings` | ✅ | ✅ | ✅ | Server settings (db path, file types, dry-run, private) |
 | `online_library.search` | ✅ | ✅ | ✅ | Search OPDS catalogs |
 | `online_library.download_import` | ✅ | ✅ | ✅ | Download and import a book from an OPDS catalog |
+| `online_library.manage_catalogs` | ✅ | 🟡 | 🟡 | Add/edit/remove custom OPDS catalogs and toggle built-ins, from Preferences |
 | `theme.editor` |  | ✅ |  | Customizable theme editor (modes, schemes, custom colors) |
 | `app.epub_viewer_choice` | ✅ |  |  | Open the current EPUB in the MuPDF viewer or an external application, from the viewer's context pane |
 | `app.theme_overrides` | ✅ |  |  | Per-app theme overrides (dark/light, accent, density, roundness, frosted glass, interface font) without changing global COSMIC settings |
 
-_39 features tracked._
+_40 features tracked._

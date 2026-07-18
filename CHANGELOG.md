@@ -19,6 +19,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   changing the global COSMIC settings (`[ui.theme]` in read-flow.toml). Light and dark are
   configured independently and both saved at once, so the app switches between them live to
   match the system's current dark/light mode instead of being pinned to one.
+- COSMIC Preferences → Online Library: add/edit/remove custom OPDS catalogs, and enable/disable
+  the built-in ones (Project Gutenberg, Standard Ebooks). Previously the only way to change
+  catalog configuration was hand-editing `read-flow.toml`.
 
 ### Changed
 

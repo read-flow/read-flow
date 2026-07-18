@@ -33,6 +33,8 @@ preferences-sources-section = Documentbronnen
 preferences-sources-section-description = Externe servers om documenten van te synchroniseren
 preferences-server-section = Server
 preferences-server-section-description = Servertoegang en geautoriseerde gebruikers
+preferences-online-library-section = Online Bibliotheek
+preferences-online-library-section-description = Beheer ingebouwde en aangepaste OPDS-catalogi
 preferences-privacy-section = Privacy
 preferences-privacy-section-description = Privémodus en verborgen tags
 
@@ -210,6 +212,16 @@ settings-edit-directory = Map Bewerken
 settings-failed-to-load-tags = Tags laden mislukt
 settings-no-directory-tags = Geen tags geconfigureerd
 settings-no-private-tags = Geen privé tags geconfigureerd
+settings-online-library-add-catalog = Catalogus Toevoegen
+settings-online-library-add-catalog-title = Nieuwe Catalogus
+settings-online-library-builtin-catalogs = Ingebouwde Catalogi
+settings-online-library-catalog-name = Naam
+settings-online-library-catalog-name-placeholder = Voer catalogusnaam in...
+settings-online-library-catalog-search-url = Zoek-URL
+settings-online-library-catalog-search-url-placeholder = https://voorbeeld.nl/opds/search?q=<zoektermen>
+settings-online-library-custom-catalogs = Aangepaste Catalogi
+settings-online-library-custom-catalogs-description = Voeg je eigen OPDS-catalogi toe om samen met de ingebouwde catalogi te doorzoeken.
+settings-online-library-edit-catalog = Catalogus Bewerken
 settings-page-title = Bibliotheekinstellingen
 settings-remove-directory = Map Verwijderen
 settings-remove-directory-tag = Tag verwijderen

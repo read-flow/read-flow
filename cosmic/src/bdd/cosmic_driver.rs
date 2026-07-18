@@ -28,6 +28,10 @@ use read_flow_core::db::dao;
 use read_flow_core::db::models::ContentTag;
 use read_flow_core::db::models::NewRemote;
 use read_flow_core::db::models::Remote;
+use read_flow_core::online_library::BuiltinCatalog;
+use read_flow_core::online_library::BuiltinCatalogId;
+use read_flow_core::online_library::Catalog;
+use read_flow_core::online_library::ConfiguredCatalog;
 use read_flow_core::scan::DirectorySettings;
 use read_flow_core::settings::HashedPassword;
 use read_flow_core::settings::Settings;
@@ -268,6 +272,61 @@ impl CosmicDriver {
             .server
             .authorized_users
             .contains_key(user_id)
+    }
+
+    /// `AddCatalog`'s real path spawns a `CatalogForm` — same multi-hop-form
+    /// bypass as `add_user`. `update_settings` is exactly what the form's
+    /// `Submit` handler ends up calling.
+    pub async fn add_catalog(&self, name: &str, search_url: &str) {
+        let catalog = Catalog::Configured(ConfiguredCatalog {
+            name: name.to_string(),
+            search_url: search_url.to_string(),
+            enabled: true,
+        });
+        self.application_module
+            .update_settings(move |settings| {
+                settings.online_library.catalogs.push(catalog);
+            })
+            .await
+            .expect("update settings");
+    }
+
+    pub async fn catalog_is_listed(&self, name: &str) -> bool {
+        Settings::extract_from(self.application_module.config_path())
+            .expect("read persisted settings")
+            .online_library
+            .catalogs
+            .iter()
+            .any(|c| matches!(c, Catalog::Configured(cc) if cc.name == name))
+    }
+
+    pub async fn disable_builtin_catalog(&self, id: &str) {
+        let id = match id {
+            "project_gutenberg" => BuiltinCatalogId::ProjectGutenberg,
+            "standard_ebooks" => BuiltinCatalogId::StandardEbooks,
+            other => panic!("unknown built-in catalog id {other:?}"),
+        };
+        self.application_module
+            .update_settings(move |settings| {
+                let catalogs = &mut settings.online_library.catalogs;
+                match catalogs.iter_mut().find_map(|c| match c {
+                    Catalog::Builtin(b) if b.id == id => Some(b),
+                    _ => None,
+                }) {
+                    Some(b) => b.enabled = false,
+                    None => catalogs.push(Catalog::Builtin(BuiltinCatalog { id, enabled: false })),
+                }
+            })
+            .await
+            .expect("update settings");
+    }
+
+    pub async fn enabled_catalog_is_listed(&self, name: &str) -> bool {
+        let settings = Settings::extract_from(self.application_module.config_path())
+            .expect("read persisted settings");
+        read_flow_core::online_library::resolve_catalogs(&settings.online_library.catalogs)
+            .into_iter()
+            .any(|c| c.enabled && c.name == name)
     }
 
     /// Copies the shared `sample.epub` fixture into a fresh temp dir and
