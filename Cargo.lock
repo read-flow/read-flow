@@ -2259,7 +2259,7 @@ dependencies = [
 
 [[package]]
 name = "epub"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "assert4rs",
  "base64",
@@ -5738,7 +5738,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "provider"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "tokio",
  "tracing",
@@ -5996,7 +5996,7 @@ dependencies = [
 
 [[package]]
 name = "read-flow"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert4rs",
@@ -6040,7 +6040,7 @@ dependencies = [
 
 [[package]]
 name = "read-flow-core"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -6099,7 +6099,7 @@ dependencies = [
 
 [[package]]
 name = "read-flow-widgets"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "cosmic-golden",
  "libcosmic",

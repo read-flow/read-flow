@@ -14,6 +14,14 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.2.0] - 2026-07-18
+
+### Added
+
 - Per-app theme overrides in Preferences → Appearance: accent color, density, roundness,
   frosted glass (Linux/COSMIC only), interface font, and advanced background colors — without
   changing the global COSMIC settings (`[ui.theme]` in read-flow.toml). Light and dark are
@@ -112,6 +120,7 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/read-flow/read-flow/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/read-flow/read-flow/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/read-flow/read-flow/releases/tag/v0.1.0
