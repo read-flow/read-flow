@@ -143,6 +143,7 @@ document-list-shortcut-last-page = Go to last page
 document-list-shortcut-next-page = Go to next page
 document-list-shortcut-previous-page = Go to previous page
 document-list-shortcut-toggle-search-mode = Toggle search mode (Fuzzy / Regex)
+document-list-sort-added = Date Added
 document-list-sort-by = Sort by
 document-list-sort-filename = Name
 document-list-sort-size = Size

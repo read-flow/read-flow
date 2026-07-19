@@ -140,6 +140,7 @@ document-list-shortcut-last-page = Aller à la dernière page
 document-list-shortcut-next-page = Aller à la page suivante
 document-list-shortcut-previous-page = Aller à la page précédente
 document-list-shortcut-toggle-search-mode = Basculer le mode de recherche (Flou / Regex)
+document-list-sort-added = Date d'ajout
 document-list-sort-by = Trier par
 document-list-sort-filename = Nom
 document-list-sort-size = Taille

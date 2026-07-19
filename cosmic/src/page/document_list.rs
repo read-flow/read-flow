@@ -86,6 +86,7 @@ fn load_document_list_prefs() -> (SortSubject, SortDirection, SearchMode) {
             "size" => SortSubject::Size,
             "type" => SortSubject::Type,
             "status" => SortSubject::Status,
+            "added" => SortSubject::Added,
             _ => SortSubject::default(),
         }
     } else {
@@ -124,6 +125,7 @@ fn save_document_list_prefs(
         SortSubject::Size => "size",
         SortSubject::Type => "type",
         SortSubject::Status => "status",
+        SortSubject::Added => "added",
     };
     let _ = ctx.set(KEY_SORT_SUBJECT, subject_str);
     let direction_str = match sort_direction {
@@ -147,6 +149,7 @@ pub enum SortSubject {
     Size,
     Type,
     Status,
+    Added,
 }
 
 impl SortSubject {
@@ -156,6 +159,7 @@ impl SortSubject {
         Self::Size,
         Self::Type,
         Self::Status,
+        Self::Added,
     ];
 }
 
@@ -167,6 +171,7 @@ impl fmt::Display for SortSubject {
             Self::Size => fl!("document-list-sort-size"),
             Self::Type => fl!("document-list-sort-type"),
             Self::Status => fl!("document-list-sort-status"),
+            Self::Added => fl!("document-list-sort-added"),
         };
         write!(f, "{}", label)
     }
@@ -543,6 +548,7 @@ fn compare_documents(
                 .unwrap_or(ReadingStatus::Unread);
             status_order(&a_status).cmp(&status_order(&b_status))
         }
+        SortSubject::Added => document_max_imported_at(a).cmp(document_max_imported_at(b)),
     };
 
     match sort_direction {
@@ -566,6 +572,19 @@ fn get_display_title(doc: &Document) -> &str {
         .title
         .as_deref()
         .unwrap_or_else(|| get_filename(doc))
+}
+
+/// Most recent `imported_at` across all of a document's sources (all
+/// contents/formats) — RFC3339 strings compare correctly as plain strings.
+/// A document with no sources at all (shouldn't normally happen) sorts as
+/// oldest, same as a source with an unknown/empty imported_at.
+fn document_max_imported_at(doc: &Document) -> &str {
+    doc.contents
+        .iter()
+        .flat_map(|c| c.sources.iter())
+        .map(|s| s.imported_at.as_str())
+        .max()
+        .unwrap_or("")
 }
 
 /// Convert reading status to a sortable order (Unread=0, Reading=1, Read=2)
@@ -1310,7 +1329,17 @@ impl Page for DocumentList {
 mod tests {
     use rstest::rstest;
 
+    use super::Document;
+    use super::DocumentType;
+    use super::ReadingStatus;
+    use super::SortDirection;
+    use super::SortSubject;
+    use super::compare_documents;
+    use super::document_max_imported_at;
     use super::fuzzy_match;
+    use crate::aggregator::DocumentContent;
+    use crate::aggregator::DocumentSource;
+    use crate::client::ClientSelector;
 
     #[rstest]
     #[case("rust", "rust-programming", true)]
@@ -1322,5 +1351,86 @@ mod tests {
     #[case("RUST", "rust-programming", false)] // case-sensitive: caller lowercases both
     fn test_fuzzy_match(#[case] query: &str, #[case] text: &str, #[case] expected: bool) {
         assert_eq!(fuzzy_match(query, text), expected);
+    }
+
+    fn source(imported_at: &str) -> DocumentSource {
+        DocumentSource {
+            guid: String::new(),
+            path: "/x.epub".to_string(),
+            client: ClientSelector::Local,
+            size: 0,
+            archive_path: None,
+            archive_inner_path: None,
+            imported_at: imported_at.to_string(),
+        }
+    }
+
+    fn content(sources: Vec<DocumentSource>) -> DocumentContent {
+        DocumentContent {
+            fingerprint: "fp".to_string(),
+            type_: DocumentType::Epub,
+            size: 0,
+            tags: vec![],
+            status: ReadingStatus::Unread,
+            sources,
+        }
+    }
+
+    fn doc(contents: Vec<DocumentContent>) -> Document {
+        Document {
+            document_guid: "doc".to_string(),
+            document_meta: Default::default(),
+            contents,
+        }
+    }
+
+    #[test]
+    fn document_max_imported_at_picks_latest_across_sources_in_one_content() {
+        let d = doc(vec![content(vec![
+            source("2026-07-01T00:00:00Z"),
+            source("2026-07-15T00:00:00Z"),
+            source("2026-07-10T00:00:00Z"),
+        ])]);
+        assert_eq!(document_max_imported_at(&d), "2026-07-15T00:00:00Z");
+    }
+
+    #[test]
+    fn document_max_imported_at_picks_latest_across_multiple_contents() {
+        let d = doc(vec![
+            content(vec![source("2026-07-01T00:00:00Z")]),
+            content(vec![source("2026-07-20T00:00:00Z")]),
+        ]);
+        assert_eq!(document_max_imported_at(&d), "2026-07-20T00:00:00Z");
+    }
+
+    #[test]
+    fn document_max_imported_at_is_empty_for_no_sources() {
+        let d = doc(vec![]);
+        assert_eq!(document_max_imported_at(&d), "");
+    }
+
+    #[test]
+    fn compare_documents_by_added_ascending_orders_oldest_first() {
+        let older = doc(vec![content(vec![source("2026-07-01T00:00:00Z")])]);
+        let newer = doc(vec![content(vec![source("2026-07-15T00:00:00Z")])]);
+        assert_eq!(
+            compare_documents(&older, &newer, SortSubject::Added, SortDirection::Ascending),
+            std::cmp::Ordering::Less
+        );
+    }
+
+    #[test]
+    fn compare_documents_by_added_descending_orders_newest_first() {
+        let older = doc(vec![content(vec![source("2026-07-01T00:00:00Z")])]);
+        let newer = doc(vec![content(vec![source("2026-07-15T00:00:00Z")])]);
+        assert_eq!(
+            compare_documents(
+                &older,
+                &newer,
+                SortSubject::Added,
+                SortDirection::Descending
+            ),
+            std::cmp::Ordering::Greater
+        );
     }
 }

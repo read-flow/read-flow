@@ -141,6 +141,7 @@ document-list-shortcut-last-page = Ga naar de laatste pagina
 document-list-shortcut-next-page = Ga naar de volgende pagina
 document-list-shortcut-previous-page = Ga naar de vorige pagina
 document-list-shortcut-toggle-search-mode = Zoekmodus wisselen (Vaag / Regex)
+document-list-sort-added = Datum Toegevoegd
 document-list-sort-by = Sorteren op
 document-list-sort-filename = Naam
 document-list-sort-size = Grootte
