@@ -119,7 +119,7 @@ fn render_block<'a, M: Clone + 'static>(block: &'a ContentBlock, font_size: f32)
                     .width(Length::Fill)
                     .into()
             } else {
-                render_spans(spans, font_size, font::Family::Monospace)
+                render_spans(spans, font_size, cosmic::font::mono().family)
             };
             widget::container(inner)
                 .padding([space_xxs, space_s])

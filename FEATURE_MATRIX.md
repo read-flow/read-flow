@@ -45,6 +45,6 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `online_library.manage_catalogs` | ✅ | 🟡 | 🟡 | Add/edit/remove custom OPDS catalogs and toggle built-ins, from Preferences |
 | `theme.editor` |  | ✅ |  | Customizable theme editor (modes, schemes, custom colors) |
 | `app.epub_viewer_choice` | ✅ |  |  | Open the current EPUB in the MuPDF viewer or an external application, from the viewer's context pane |
-| `app.theme_overrides` | ✅ |  |  | Per-app theme overrides (dark/light, accent, density, roundness, frosted glass, interface font) without changing global COSMIC settings |
+| `app.theme_overrides` | ✅ |  |  | Per-app theme overrides (dark/light, accent, density, roundness, frosted glass, interface font, monospace font) without changing global COSMIC settings |
 
 _40 features tracked._

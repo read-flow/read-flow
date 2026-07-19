@@ -157,6 +157,8 @@ pub struct PreferencesPage {
     theme_font_options: Vec<&'static str>,
     theme_font_query: String,
     theme_font_focused: bool,
+    monospace_font_query: String,
+    monospace_font_focused: bool,
     // sources (DB-backed)
     remotes_state: ProvidedState<RemotesProvider, Vec<Remote>>,
     add_source_form: Option<AddSourceForm>,
@@ -206,6 +208,11 @@ pub enum PreferencesMessage {
     ThemeFontOpen,
     ThemeFontClose,
     InterfaceFontSizeChanged(String),
+    SetMonospaceFont(String),
+    ClearMonospaceFont,
+    MonospaceFontQuery(String),
+    MonospaceFontOpen,
+    MonospaceFontClose,
     BackgroundPicker(ColorPickerUpdate),
     ContainerPicker(ColorPickerUpdate),
     ResetBackgroundColor,
@@ -379,6 +386,8 @@ impl PreferencesPage {
                 theme_font_options: Vec::new(),
                 theme_font_query: String::new(),
                 theme_font_focused: false,
+                monospace_font_query: String::new(),
+                monospace_font_focused: false,
                 remotes_state,
                 add_source_form: None,
                 operation_error: None,
@@ -831,6 +840,33 @@ impl PreferencesPage {
                         .width(Length::Fixed(120.0)),
                     ),
             );
+
+        let selected_monospace_font = t
+            .monospace_font
+            .as_deref()
+            .and_then(|f| self.theme_font_options.iter().copied().find(|o| *o == f));
+        let mut monospace_font_picker = FontPicker::new(
+            &self.theme_font_options,
+            fl!("settings-theme-monospace-font-placeholder"),
+            &self.monospace_font_query,
+            PreferencesMessage::MonospaceFontQuery,
+        )
+        .on_select(PreferencesMessage::SetMonospaceFont)
+        .on_open(PreferencesMessage::MonospaceFontOpen)
+        .on_close(PreferencesMessage::MonospaceFontClose)
+        .on_clear(PreferencesMessage::ClearMonospaceFont)
+        .focused(self.monospace_font_focused)
+        .width(Length::Fixed(240.0));
+        if let Some(selected) = selected_monospace_font {
+            monospace_font_picker = monospace_font_picker.selected(selected);
+        }
+
+        section = section.add(
+            widget::settings::item::builder(fl!("settings-theme-monospace-font"))
+                .description(fl!("settings-theme-monospace-font-description"))
+                .icon(widget::icon::from_name("font-x-generic-symbolic").size(ICON_SIZE))
+                .control(monospace_font_picker.view()),
+        );
 
         vec![section.into()]
     }
@@ -1721,8 +1757,9 @@ impl Page for PreferencesPage {
             PreferencesMessage::ToggleCustomTheme(enabled) => {
                 self.settings.ui.theme_mut().enabled = enabled;
                 self.save_state = SaveState::Idle;
-                // The custom-theme toggle gates the font override too.
+                // The custom-theme toggle gates the font overrides too.
                 app_theme::apply_interface_font(self.settings.ui.theme());
+                app_theme::apply_monospace_font(self.settings.ui.theme());
                 self.apply_theme_preview()
             }
             PreferencesMessage::SetThemeVariant(variant) => {
@@ -1838,6 +1875,35 @@ impl Page for PreferencesPage {
                     self.save_state = SaveState::Idle;
                 }
                 // Ignore non-numeric input (keeps the previous value).
+                Task::none()
+            }
+            PreferencesMessage::SetMonospaceFont(family) => {
+                self.settings.ui.theme_mut().monospace_font = Some(family);
+                self.monospace_font_query = String::new();
+                self.monospace_font_focused = false;
+                self.save_state = SaveState::Idle;
+                app_theme::apply_monospace_font(self.settings.ui.theme());
+                Task::none()
+            }
+            PreferencesMessage::ClearMonospaceFont => {
+                self.settings.ui.theme_mut().monospace_font = None;
+                self.monospace_font_query = String::new();
+                self.monospace_font_focused = false;
+                self.save_state = SaveState::Idle;
+                app_theme::apply_monospace_font(self.settings.ui.theme());
+                Task::none()
+            }
+            PreferencesMessage::MonospaceFontQuery(query) => {
+                self.monospace_font_query = query;
+                Task::none()
+            }
+            PreferencesMessage::MonospaceFontOpen => {
+                self.monospace_font_focused = true;
+                Task::none()
+            }
+            PreferencesMessage::MonospaceFontClose => {
+                self.monospace_font_query = String::new();
+                self.monospace_font_focused = false;
                 Task::none()
             }
             PreferencesMessage::BackgroundPicker(update) => {
@@ -2239,6 +2305,7 @@ impl Page for PreferencesPage {
                 self.save_state = SaveState::Idle;
                 self.sync_theme_pickers();
                 app_theme::apply_interface_font(self.settings.ui.theme());
+                app_theme::apply_monospace_font(self.settings.ui.theme());
                 Task::batch([
                     self.tag_editor
                         .update(TagEditorMessage::SetTags(

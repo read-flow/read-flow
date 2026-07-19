@@ -447,6 +447,11 @@ pub struct ThemeSettings {
     /// Interface font size in points; `None` keeps the system size.
     #[serde(default)]
     pub interface_font_size: Option<u16>,
+    /// Monospace font family (code blocks, preformatted text); `None` keeps
+    /// the system monospace font. Applied live via the in-process CosmicTk
+    /// global, no restart required.
+    #[serde(default)]
+    pub monospace_font: Option<String>,
 }
 
 impl ThemeSettings {
@@ -648,6 +653,7 @@ private_mode = true
             frosted_strength: FrostedStrength::High,
             interface_font: Some("Fira Sans".into()),
             interface_font_size: Some(14),
+            monospace_font: Some("Fira Mono".into()),
         };
         let serialized = toml::to_string_pretty(&settings).unwrap();
         let deserialized: Settings = toml::from_str(&serialized).unwrap();

@@ -726,6 +726,7 @@ impl cosmic::Application for ReadFlow {
                 .map(|s| s.ui.theme().clone())
                 .unwrap_or_default();
                 app_theme::apply_interface_font(&theme_settings);
+                app_theme::apply_monospace_font(&theme_settings);
                 Task::batch([
                     task::future(async move {
                         document_provider.set_expired().await;
@@ -762,9 +763,13 @@ impl cosmic::Application for ReadFlow {
                 )
                 .map(|s| s.ui.theme().clone())
                 .unwrap_or_default();
-                if theme_settings.enabled && theme_settings.interface_font.is_some() {
+                if theme_settings.enabled
+                    && (theme_settings.interface_font.is_some()
+                        || theme_settings.monospace_font.is_some())
+                {
                     task::future(async move {
                         app_theme::apply_interface_font(&theme_settings);
+                        app_theme::apply_monospace_font(&theme_settings);
                         Message::Noop
                     })
                 } else {

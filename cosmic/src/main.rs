@@ -146,6 +146,7 @@ fn main() -> anyhow::Result<()> {
         .map(|s| s.ui.theme().clone())
         .unwrap_or_default();
     app_theme::apply_interface_font(&theme_settings);
+    app_theme::apply_monospace_font(&theme_settings);
     let mut settings = cosmic::app::Settings::default()
         .size_limits(
             cosmic::iced::Limits::NONE

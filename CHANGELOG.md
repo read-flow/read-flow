@@ -26,6 +26,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 - COSMIC PDF viewer: context pane now offers an "Open in another viewer" → "External viewer
   (system default)" action for the current document, matching the EPUB viewer's existing
   open-in-external option.
+- COSMIC Preferences → Appearance: new "Monospace font" picker, applied live to code blocks and
+  preformatted text (EPUB viewer, OPDS description rendering), alongside the existing interface
+  font picker.
 
 ### Changed
 

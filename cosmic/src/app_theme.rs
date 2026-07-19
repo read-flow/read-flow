@@ -204,6 +204,40 @@ pub fn apply_interface_font(t: &ThemeSettings) {
     }
 }
 
+/// The configured monospace font family, validated against the installed
+/// families. `None` when overrides are disabled, unset, or not installed.
+fn resolve_monospace_font_family(t: &ThemeSettings) -> Option<&'static str> {
+    if !t.enabled {
+        return None;
+    }
+    let wanted = t.monospace_font.as_deref()?;
+    crate::fonts::fonts()
+        .into_iter()
+        .find(|family| *family == wanted)
+}
+
+/// The system's monospace font from the on-disk CosmicTk config, ignoring
+/// any in-process override.
+fn system_monospace_font() -> cosmic::config::FontConfig {
+    CosmicTk::config()
+        .map(|ctx| CosmicTk::get_entry(&ctx).unwrap_or_else(|(_errors, tk)| tk))
+        .unwrap_or_default()
+        .monospace_font
+}
+
+/// Apply (or clear) the per-app monospace font override, live. Same
+/// mechanism as [`apply_interface_font`], but for `CosmicTk::monospace_font`
+/// — read by `cosmic::font::mono()`, used for code blocks and preformatted
+/// text.
+pub fn apply_monospace_font(t: &ThemeSettings) {
+    let family = resolve_monospace_font_family(t);
+    let mut tk = COSMIC_TK.write().expect("CosmicTk global poisoned");
+    match family {
+        Some(name) => tk.monospace_font.family = name.to_string(),
+        None => tk.monospace_font = system_monospace_font(),
+    }
+}
+
 /// True when the two colors fail WCAG 2.1 AA contrast for normal text.
 pub fn contrast_warning(bg: Srgba, fg: Srgba) -> bool {
     bg.color.relative_contrast(fg.color) < MIN_CONTRAST
@@ -230,9 +264,8 @@ mod tests {
 
     #[test]
     fn disabled_settings_build_no_theme() {
-        Assert::that(build_theme(&ThemeSettings::default(), ThemeVariant::Light).is_none())
-            .is(true);
-        Assert::that(build_theme(&ThemeSettings::default(), ThemeVariant::Dark).is_none()).is(true);
+        Assert::that(build_theme(&ThemeSettings::default(), ThemeVariant::Light)).is_none();
+        Assert::that(build_theme(&ThemeSettings::default(), ThemeVariant::Dark)).is_none();
     }
 
     #[test]
@@ -329,9 +362,9 @@ mod tests {
 
     #[test]
     fn parse_hex_rejects_invalid_input() {
-        Assert::that(parse_hex("ff8800").is_none()).is(true);
-        Assert::that(parse_hex("#ff88").is_none()).is(true);
-        Assert::that(parse_hex("#zzxxyy").is_none()).is(true);
+        Assert::that(parse_hex("ff8800")).is_none();
+        Assert::that(parse_hex("#ff88")).is_none();
+        Assert::that(parse_hex("#zzxxyy")).is_none();
     }
 
     #[test]
@@ -366,12 +399,12 @@ mod tests {
             interface_font: Some("No Such Font Family 12345".into()),
             ..enabled()
         };
-        Assert::that(interface_font(&settings).is_none()).is(true);
+        Assert::that(interface_font(&settings)).is_none();
     }
 
     #[test]
     fn unset_interface_font_resolves_to_none() {
-        Assert::that(interface_font(&enabled()).is_none()).is(true);
+        Assert::that(interface_font(&enabled())).is_none();
     }
 
     #[test]
@@ -385,7 +418,7 @@ mod tests {
             interface_font: Some(family.to_string()),
             ..ThemeSettings::default()
         };
-        Assert::that(interface_font(&settings).is_none()).is(true);
+        Assert::that(interface_font(&settings)).is_none();
     }
 
     #[test]
@@ -407,5 +440,40 @@ mod tests {
 
         apply_interface_font(&ThemeSettings::default());
         Assert::that(COSMIC_TK.read().unwrap().interface_font.family == system_family).is(true);
+    }
+
+    #[test]
+    fn unknown_monospace_font_resolves_to_none() {
+        let settings = ThemeSettings {
+            monospace_font: Some("No Such Font Family 12345".into()),
+            ..enabled()
+        };
+        Assert::that(resolve_monospace_font_family(&settings)).is_none();
+    }
+
+    #[test]
+    fn unset_monospace_font_resolves_to_none() {
+        Assert::that(resolve_monospace_font_family(&enabled())).is_none();
+    }
+
+    #[test]
+    fn apply_monospace_font_overrides_and_restores_cosmic_tk() {
+        // nextest runs each test in its own process, so mutating the
+        // process-global CosmicTk override is safe here.
+        let installed = crate::fonts::fonts();
+        let Some(family) = installed.first().copied() else {
+            return; // no fonts installed in this environment
+        };
+        let system_family = system_monospace_font().family;
+
+        let settings = ThemeSettings {
+            monospace_font: Some(family.to_string()),
+            ..enabled()
+        };
+        apply_monospace_font(&settings);
+        Assert::that(COSMIC_TK.read().unwrap().monospace_font.family.as_str()).is(family);
+
+        apply_monospace_font(&ThemeSettings::default());
+        Assert::that(COSMIC_TK.read().unwrap().monospace_font.family == system_family).is(true);
     }
 }

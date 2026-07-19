@@ -100,7 +100,7 @@ pub(super) fn render_partial_preformatted(
     } else {
         let iced_spans: Vec<_> = spans
             .into_iter()
-            .map(|s| owned_styled_span(s, font::Family::Monospace, font_size))
+            .map(|s| owned_styled_span(s, cosmic::font::mono().family, font_size))
             .collect();
         rich_text(iced_spans)
             .on_link_click(|m| m)
@@ -259,7 +259,12 @@ impl<'a> RenderContext<'a> {
                 let inner: Element<'a, EpubViewerMessage> = if spans.is_empty() {
                     widget::text::monotext(text).width(Length::Fill).into()
                 } else {
-                    render_spans(spans, font_size, font::Family::Monospace, Horizontal::Left)
+                    render_spans(
+                        spans,
+                        font_size,
+                        cosmic::font::mono().family,
+                        Horizontal::Left,
+                    )
                 };
                 let code_block = widget::container(inner)
                     .padding([space_xxs, space_s])
