@@ -93,6 +93,7 @@ document-details-done-editing-sources = Klaar met bewerken
 document-details-download-to-local = Downloaden naar lokaal
 document-details-edit-sources = Bronnen bewerken
 document-details-send-to-missing = Verzenden naar
+document-details-source-added = Toegevoegd op { $date }
 document-details-source-local = Lokaal
 document-details-sources = Formaten
 document-details-sync-to-all-sources = Synchroniseren met alle bronnen

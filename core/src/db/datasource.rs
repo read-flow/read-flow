@@ -137,6 +137,7 @@ impl FileDataSource for DbClient {
             fingerprint: file.fingerprint.clone(),
             archive_path: existing.archive_path.clone(),
             archive_inner_path: existing.archive_inner_path.clone(),
+            imported_at: existing.imported_at.clone(),
             status: existing.status,
             document_guid: existing.document_guid.clone(),
         };

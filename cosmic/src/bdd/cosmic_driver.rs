@@ -516,6 +516,21 @@ impl CosmicDriver {
             .expect("document has no title")
     }
 
+    pub async fn document_first_file_imported_at(&self, doc_api_guid: &str) -> String {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        let doc = dao::select_api_document_by_guid(&mut conn, doc_api_guid)
+            .await
+            .expect("select document by guid")
+            .expect("document not found");
+        let file_guid = doc.file_guids.first().expect("document has no files");
+        dao::select_file_by_guid(&mut conn, file_guid)
+            .await
+            .expect("select file by guid")
+            .expect("file not found")
+            .imported_at
+    }
+
     pub async fn set_document_title(&self, doc_api_guid: &str, title: &str) {
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");

@@ -107,6 +107,10 @@ pub struct File {
     /// `#[serde(default)]` for backward compat with older clients.
     #[serde(default)]
     pub archive_inner_path: Option<String>,
+    /// When this file was first imported into the library (RFC3339).
+    /// `#[serde(default)]` for backward compat with older remote servers.
+    #[serde(default)]
+    pub imported_at: String,
 }
 
 impl From<(DbFile, Vec<ContentTag>)> for File {
@@ -120,6 +124,7 @@ impl From<(DbFile, Vec<ContentTag>)> for File {
             fingerprint,
             archive_path,
             archive_inner_path,
+            imported_at,
             status,
             document_guid,
             ..
@@ -136,6 +141,7 @@ impl From<(DbFile, Vec<ContentTag>)> for File {
             has_cover: false,
             archive_path,
             archive_inner_path,
+            imported_at,
         }
     }
 }

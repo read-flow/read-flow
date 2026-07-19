@@ -59,7 +59,7 @@ tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["std", "fmt", "json", "env-filter", "ansi"] }
 serde_json.workspace = true
-time = { workspace = true, features = ["formatting", "macros", "std"] }
+time = { workspace = true, features = ["formatting", "macros", "parsing", "std"] }
 url.workspace = true
 
 epub = { path = "../epub" }

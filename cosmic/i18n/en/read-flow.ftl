@@ -95,6 +95,7 @@ document-details-done-editing-sources = Done editing sources
 document-details-download-to-local = Download to Local
 document-details-edit-sources = Edit sources
 document-details-send-to-missing = Send to
+document-details-source-added = Added { $date }
 document-details-source-local = Local
 document-details-sources = Formats
 document-details-sync-to-all-sources = Sync to all sources

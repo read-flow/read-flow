@@ -48,7 +48,7 @@ impl From<io::Error> for Error {
 /// Status is derived from reading_state (defaults to 0/Unread when no row exists).
 const FILE_SELECT: &str = r#"
     SELECT f.id, f.guid, f.path, f.type, f.size, f.fingerprint,
-           f.archive_path, f.archive_inner_path,
+           f.archive_path, f.archive_inner_path, f.imported_at,
            COALESCE(rs.status, 0) AS status,
            d.guid AS document_guid
     FROM files f
@@ -58,8 +58,8 @@ const FILE_SELECT: &str = r#"
 
 pub async fn insert_file(conn: &mut SqliteConnection, file: NewFile) -> Result<File, Error> {
     sqlx::query(
-        r#"INSERT INTO files (guid, path, "type", size, fingerprint, archive_path, archive_inner_path)
-           VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+        r#"INSERT INTO files (guid, path, "type", size, fingerprint, archive_path, archive_inner_path, imported_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))"#,
     )
     .bind(&file.guid)
     .bind(&file.path)
@@ -78,8 +78,8 @@ pub async fn insert_file(conn: &mut SqliteConnection, file: NewFile) -> Result<F
 
 pub async fn upsert_file(conn: &mut SqliteConnection, file: NewFile) -> Result<(), Error> {
     sqlx::query(
-        r#"INSERT OR IGNORE INTO files (guid, path, "type", size, fingerprint, archive_path, archive_inner_path)
-           VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+        r#"INSERT OR IGNORE INTO files (guid, path, "type", size, fingerprint, archive_path, archive_inner_path, imported_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))"#,
     )
     .bind(&file.guid)
     .bind(&file.path)
@@ -1488,6 +1488,45 @@ mod tests {
         assert_eq!(file.path, "/books/a.epub");
         assert_eq!(file.fingerprint, "fp-rt1");
         assert_eq!(file.type_, "epub");
+    }
+
+    #[tokio::test]
+    async fn insert_file_sets_imported_at() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let file = make_file(&mut conn, "/books/imported.epub", "fp-imported1").await;
+        assert!(
+            !file.imported_at.is_empty(),
+            "imported_at should be set on insert"
+        );
+    }
+
+    #[tokio::test]
+    async fn write_scanned_file_update_preserves_original_imported_at() {
+        let pool = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        write_scanned_file(&mut conn, "/c.epub", "epub", 100, "fp-preserve1", &[], None)
+            .await
+            .unwrap();
+        let original = select_file_by_path(&mut conn, "/c.epub")
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Re-scan with a changed fingerprint — triggers the update path.
+        upsert_content(&mut conn, "fp-preserve2").await.unwrap();
+        write_scanned_file(&mut conn, "/c.epub", "epub", 150, "fp-preserve2", &[], None)
+            .await
+            .unwrap();
+        let updated = select_file_by_path(&mut conn, "/c.epub")
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            updated.imported_at, original.imported_at,
+            "re-scanning an existing file must not change its original imported_at"
+        );
     }
 
     #[tokio::test]

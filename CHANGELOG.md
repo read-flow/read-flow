@@ -14,6 +14,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+- COSMIC Document Details: each source now shows when it was first imported into the library
+  (e.g. "Added Jul 15, 2026"), next to the source's file path.
+
 ### Changed
 
 ### Fixed

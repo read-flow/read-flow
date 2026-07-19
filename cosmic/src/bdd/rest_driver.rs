@@ -417,6 +417,37 @@ impl RestDriver {
             .to_string()
     }
 
+    pub async fn document_first_file_imported_at(&self, doc_api_guid: &str) -> String {
+        let doc: serde_json::Value = self
+            .client
+            .get(format!(
+                "{}/documents/{}",
+                self.server.base_url, doc_api_guid
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /documents/<guid>")
+            .json()
+            .await
+            .expect("parse document JSON");
+        let file_guid = doc["file_guids"][0].as_str().expect("file_guids[0]");
+        let file: serde_json::Value = self
+            .client
+            .get(format!("{}/files/{}", self.server.base_url, file_guid))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /files/<guid>")
+            .json()
+            .await
+            .expect("parse file JSON");
+        file["imported_at"]
+            .as_str()
+            .expect("imported_at field")
+            .to_string()
+    }
+
     pub async fn set_document_title(&self, doc_api_guid: &str, title: &str) {
         let response = self
             .client

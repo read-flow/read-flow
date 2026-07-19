@@ -65,6 +65,9 @@ pub struct File {
     pub archive_path: Option<String>,
     /// Path of this file inside the containing archive.
     pub archive_inner_path: Option<String>,
+    /// When this row was first inserted (RFC3339). Not touched by later
+    /// updates to the same file, so it reflects the original import time.
+    pub imported_at: String,
     /// Joined from contents.status
     pub status: i32,
     /// Joined from documents.guid via contents.document_id (NULL when ungrouped)

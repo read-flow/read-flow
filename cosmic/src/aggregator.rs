@@ -694,6 +694,9 @@ pub struct DocumentSource {
     pub archive_path: Option<String>,
     /// Path of this source inside the containing archive.
     pub archive_inner_path: Option<String>,
+    /// When this source was first imported into the library (RFC3339), empty
+    /// if unknown (e.g. a synthetic source not yet scanned into the DB).
+    pub imported_at: String,
 }
 
 impl DocumentSource {
@@ -776,6 +779,7 @@ impl Document {
                     size: 0,
                     archive_path: None,
                     archive_inner_path: None,
+                    imported_at: String::new(),
                 }],
             }],
         })
@@ -897,6 +901,7 @@ impl Documents {
             size: file.size,
             archive_path: file.archive_path,
             archive_inner_path: file.archive_inner_path,
+            imported_at: file.imported_at,
         };
 
         if let Some(doc) = self.by_document_guid.get_mut(&document_guid) {
@@ -977,6 +982,7 @@ impl From<Document> for Vec<(ClientSelector, File)> {
                         has_cover: false,
                         archive_path: source.archive_path,
                         archive_inner_path: source.archive_inner_path,
+                        imported_at: source.imported_at,
                     };
                     (selector, file)
                 })
@@ -998,5 +1004,6 @@ fn content_source_to_file(content: DocumentContent, source: DocumentSource) -> F
         has_cover: false,
         archive_path: source.archive_path,
         archive_inner_path: source.archive_inner_path,
+        imported_at: source.imported_at,
     }
 }

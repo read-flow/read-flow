@@ -19,9 +19,13 @@ use cosmic::widget::Column;
 use cosmic::widget::Row;
 use cosmic::widget::text;
 use cosmic::widget::text_editor;
+use read_flow_core::Builder;
 use read_flow_core::api::ReadingStatus;
 use read_flow_core::db::models::DocumentType;
 use strum::IntoEnumIterator;
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
+use time::macros::format_description;
 
 use crate::ApplicationModule;
 use crate::ICON_SIZE;
@@ -43,6 +47,20 @@ use crate::layout::layout;
 use crate::page::Page;
 use crate::page::image_viewer::ViewerImage;
 use crate::state::LoadedState;
+
+/// Formats a source's stored `imported_at` (RFC3339, e.g. from `strftime`) for
+/// display. Returns `None` for an empty/unparseable value — sources without a
+/// known import time (synthetic, or from a remote predating this field)
+/// simply don't show a caption rather than showing a bogus date.
+fn format_imported_at(imported_at: &str) -> Option<String> {
+    if imported_at.is_empty() {
+        return None;
+    }
+    OffsetDateTime::parse(imported_at, &Rfc3339)
+        .ok()?
+        .format(format_description!("[month repr:short] [day], [year]"))
+        .ok()
+}
 
 /// @feature: documents.detail_view
 pub struct DocumentDetails {
@@ -741,6 +759,15 @@ impl DocumentDetails {
                                         .push(text(filename).width(Length::Fill)),
                                 )
                                 .push(text(folder).size(12))
+                                .apply_maybe(
+                                    format_imported_at(&source.imported_at),
+                                    |col, date| {
+                                        col.push(
+                                            text(fl!("document-details-source-added", date = date))
+                                                .size(12),
+                                        )
+                                    },
+                                )
                                 .width(Length::Fill),
                         )
                         .push(
@@ -1458,5 +1485,28 @@ impl Page for DocumentDetails {
                 Task::none()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_imported_at_formats_valid_rfc3339() {
+        assert_eq!(
+            format_imported_at("2026-07-15T10:30:00Z"),
+            Some("Jul 15, 2026".to_string())
+        );
+    }
+
+    #[test]
+    fn format_imported_at_returns_none_for_empty_string() {
+        assert_eq!(format_imported_at(""), None);
+    }
+
+    #[test]
+    fn format_imported_at_returns_none_for_unparseable_string() {
+        assert_eq!(format_imported_at("not-a-date"), None);
     }
 }

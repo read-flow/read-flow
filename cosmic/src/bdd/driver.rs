@@ -384,6 +384,13 @@ impl Driver {
         }
     }
 
+    pub async fn document_first_file_imported_at(&self, doc_api_guid: &str) -> String {
+        match self {
+            Self::Rest(driver) => driver.document_first_file_imported_at(doc_api_guid).await,
+            Self::Cosmic(driver) => driver.document_first_file_imported_at(doc_api_guid).await,
+        }
+    }
+
     pub async fn set_document_title(&self, doc_api_guid: &str, title: &str) {
         match self {
             Self::Rest(driver) => driver.set_document_title(doc_api_guid, title).await,

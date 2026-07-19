@@ -21,3 +21,16 @@ async fn document_title_is(world: &mut BddWorld, expected: String) {
         "expected document title {expected:?}, got {actual:?}"
     );
 }
+
+#[then("the document's source shows an import timestamp")]
+async fn document_source_shows_import_timestamp(world: &mut BddWorld) {
+    let guid = world
+        .current_document_api_guid
+        .as_deref()
+        .expect("seed step must run first");
+    let imported_at = world.driver.document_first_file_imported_at(guid).await;
+    assert!(
+        !imported_at.is_empty(),
+        "expected a non-empty imported_at, got {imported_at:?}"
+    );
+}

@@ -92,6 +92,7 @@ document-details-done-editing-sources = Terminer la modification
 document-details-download-to-local = Télécharger en local
 document-details-edit-sources = Modifier les sources
 document-details-send-to-missing = Envoyer vers
+document-details-source-added = Ajouté le { $date }
 document-details-source-local = Local
 document-details-sources = Formats
 document-details-sync-to-all-sources = Synchroniser avec toutes les sources
