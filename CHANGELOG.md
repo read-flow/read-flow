@@ -34,6 +34,12 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Fixed
 
+### Removed
+
+- COSMIC Preferences → Appearance: removed the "Interface font size" field. It never had any
+  visible effect — COSMIC's own text widgets hardcode their point sizes and ignore the renderer
+  default this setting controlled — so it was a dead control rather than a working one.
+
 ## [0.2.0] - 2026-07-18
 
 ### Added

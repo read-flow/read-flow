@@ -138,10 +138,9 @@ fn main() -> anyhow::Result<()> {
     };
 
     // Settings for configuring the application window and iced runtime.
-    // Theme and interface font come from the `[ui.theme]` overrides so the
-    // first frame already matches. The font family is written into the
-    // in-process CosmicTk global (live-updatable); the size is a renderer
-    // setting and only applies at startup.
+    // Theme and interface/monospace fonts come from the `[ui.theme]`
+    // overrides so the first frame already matches. The font families are
+    // written into the in-process CosmicTk global (live-updatable).
     let theme_settings = Settings::extract_from(application_module.config_path())
         .map(|s| s.ui.theme().clone())
         .unwrap_or_default();
@@ -159,9 +158,6 @@ fn main() -> anyhow::Result<()> {
         ));
     if let Some(font) = app_theme::interface_font(&theme_settings) {
         settings = settings.default_font(font);
-    }
-    if let Some(size) = theme_settings.interface_font_size {
-        settings = settings.default_text_size(f32::from(size));
     }
 
     // Starts the application's event loop.

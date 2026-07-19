@@ -207,7 +207,6 @@ pub enum PreferencesMessage {
     ThemeFontQuery(String),
     ThemeFontOpen,
     ThemeFontClose,
-    InterfaceFontSizeChanged(String),
     SetMonospaceFont(String),
     ClearMonospaceFont,
     MonospaceFontQuery(String),
@@ -818,28 +817,12 @@ impl PreferencesPage {
             font_picker = font_picker.selected(selected);
         }
 
-        section = section
-            .add(
-                widget::settings::item::builder(fl!("settings-theme-font"))
-                    .description(fl!("settings-theme-font-description"))
-                    .icon(widget::icon::from_name("font-x-generic-symbolic").size(ICON_SIZE))
-                    .control(font_picker.view()),
-            )
-            .add(
-                widget::settings::item::builder(fl!("settings-theme-font-size"))
-                    .description(fl!("settings-theme-font-size-description"))
-                    .icon(widget::icon::from_name("zoom-in-symbolic").size(ICON_SIZE))
-                    .control(
-                        widget::text_input(
-                            fl!("settings-theme-font-placeholder"),
-                            t.interface_font_size
-                                .map(|s| s.to_string())
-                                .unwrap_or_default(),
-                        )
-                        .on_input(PreferencesMessage::InterfaceFontSizeChanged)
-                        .width(Length::Fixed(120.0)),
-                    ),
-            );
+        section = section.add(
+            widget::settings::item::builder(fl!("settings-theme-font"))
+                .description(fl!("settings-theme-font-description"))
+                .icon(widget::icon::from_name("font-x-generic-symbolic").size(ICON_SIZE))
+                .control(font_picker.view()),
+        );
 
         let selected_monospace_font = t
             .monospace_font
@@ -1861,20 +1844,6 @@ impl Page for PreferencesPage {
             PreferencesMessage::ThemeFontClose => {
                 self.theme_font_query = String::new();
                 self.theme_font_focused = false;
-                Task::none()
-            }
-            PreferencesMessage::InterfaceFontSizeChanged(value) => {
-                let trimmed = value.trim();
-                if trimmed.is_empty() {
-                    self.settings.ui.theme_mut().interface_font_size = None;
-                    self.save_state = SaveState::Idle;
-                } else if let Ok(size) = trimmed.parse::<u16>()
-                    && (6..=72).contains(&size)
-                {
-                    self.settings.ui.theme_mut().interface_font_size = Some(size);
-                    self.save_state = SaveState::Idle;
-                }
-                // Ignore non-numeric input (keeps the previous value).
                 Task::none()
             }
             PreferencesMessage::SetMonospaceFont(family) => {
