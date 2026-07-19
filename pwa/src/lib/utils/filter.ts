@@ -2,7 +2,7 @@ import Fuse from 'fuse.js';
 import type { AggregatedFile } from '$lib/api/merge';
 import type { DocumentMeta, ReadingStatus } from '$lib/api/client';
 
-export type SortSubject = 'filename' | 'title' | 'size' | 'type' | 'status';
+export type SortSubject = 'filename' | 'title' | 'size' | 'type' | 'status' | 'added';
 export type SortDirection = 'asc' | 'desc';
 
 export interface ListOptions {
@@ -34,6 +34,19 @@ function titleOf(doc: AggregatedFile, metaMap?: Map<string, DocumentMeta>): stri
 	return t ?? basename(doc.path);
 }
 
+/**
+ * Most recent `imported_at` across all of a document's formats (the primary
+ * file plus `otherFormats`) — RFC3339 strings compare correctly as plain
+ * strings. A format with an unknown/absent `imported_at` (e.g. from a server
+ * predating this field) sorts as oldest, same as `''`.
+ */
+function documentMaxImportedAt(doc: AggregatedFile): string {
+	return [doc, ...doc.otherFormats].reduce(
+		(max, f) => (f.imported_at && f.imported_at > max ? f.imported_at : max),
+		'',
+	);
+}
+
 function compareDocs(
 	a: AggregatedFile,
 	b: AggregatedFile,
@@ -49,6 +62,8 @@ function compareDocs(
 			return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
 		case 'title':
 			return titleOf(a, metaMap).localeCompare(titleOf(b, metaMap));
+		case 'added':
+			return documentMaxImportedAt(a).localeCompare(documentMaxImportedAt(b));
 		case 'filename':
 		default:
 			return basename(a.path).localeCompare(basename(b.path));

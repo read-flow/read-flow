@@ -20,8 +20,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   dialog showing how many files were added/updated, plus a list of any files that failed with
   their error message. The REST `POST /scan` response also carries these new `added`/`updated`/
   `error_details` fields alongside the existing counts.
-- COSMIC document list: new "Date Added" sort option, so recently-imported documents (including
-  a document that just had a new format added to an existing one) can be found quickly.
+- COSMIC and PWA document list: new "Date Added" sort option, so recently-imported documents
+  (including a document that just had a new format added to an existing one) can be found
+  quickly.
 
 ### Changed
 

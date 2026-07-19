@@ -231,4 +231,28 @@ describe('filterDocuments — sorting', () => {
 		const result = filterDocuments(lib, new Set(), new Set(), 'alpha', undefined, { sortSubject: 'size' });
 		expect(result.map((d) => d.fingerprint)).toContain('b');
 	});
+
+	it('sorts by date added ascending', () => {
+		const byAdded = [
+			makeDoc({ fingerprint: 'old', imported_at: '2026-07-01T00:00:00Z' }),
+			makeDoc({ fingerprint: 'new', imported_at: '2026-07-15T00:00:00Z' }),
+			makeDoc({ fingerprint: 'mid', imported_at: '2026-07-10T00:00:00Z' }),
+		];
+		const result = filterDocuments(byAdded, new Set(), new Set(), '', undefined, { sortSubject: 'added' });
+		expect(result.map((d) => d.fingerprint)).toEqual(['old', 'mid', 'new']);
+	});
+
+	it('sorts by date added using the newest format when a document has multiple', () => {
+		const byAdded = [
+			makeDoc({
+				fingerprint: 'a',
+				imported_at: '2026-07-01T00:00:00Z',
+				otherFormats: [makeDoc({ fingerprint: 'a-pdf', imported_at: '2026-07-20T00:00:00Z' })],
+			}),
+			makeDoc({ fingerprint: 'b', imported_at: '2026-07-10T00:00:00Z' }),
+		];
+		// 'a's primary format is older, but its otherFormats has a newer one — 'a' should sort after 'b'.
+		const result = filterDocuments(byAdded, new Set(), new Set(), '', undefined, { sortSubject: 'added' });
+		expect(result.map((d) => d.fingerprint)).toEqual(['b', 'a']);
+	});
 });

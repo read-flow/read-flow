@@ -48,6 +48,7 @@
 
 	const SORT_LABELS: Record<SortSubject, string> = {
 		filename: 'Filename', title: 'Title', size: 'Size', type: 'Type', status: 'Status',
+		added: 'Date Added',
 	};
 
 	const selectedDocs = $derived(

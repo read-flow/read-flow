@@ -49,6 +49,8 @@ export interface RemoteFile {
 	document_guid: string | null;
 	/** True when a cover image is stored server-side for this file. */
 	has_cover?: boolean;
+	/** When this file was first imported into the library (RFC3339). Absent on older servers. */
+	imported_at?: string;
 }
 
 export interface RemoteReadingState {
