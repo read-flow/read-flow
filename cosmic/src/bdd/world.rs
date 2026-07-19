@@ -2,6 +2,8 @@
 //! Holds the selected `Driver` plus whatever a scenario needs to remember
 //! between its `Given`/`When`/`Then` steps.
 
+use read_flow_core::scan::ScanSummary;
+
 use crate::bdd::driver::Driver;
 
 #[derive(cucumber::World)]
@@ -21,8 +23,8 @@ pub struct BddWorld {
     /// Temp directory created by an `admin.scan` seed step — kept here so
     /// it outlives the step and is cleaned up when the scenario ends.
     pub _scan_dir: Option<tempfile::TempDir>,
-    /// Document count returned by the most recent scan trigger.
-    pub _scan_processed: Option<u64>,
+    /// Full summary returned by the most recent scan trigger.
+    pub _scan_summary: Option<ScanSummary>,
     /// Result of the most recent check-missing operation.
     pub _check_missing_result: Option<Vec<String>>,
     /// Search query set by a `When I search for …` step.
@@ -49,7 +51,7 @@ impl BddWorld {
             current_document_api_guid: None,
             second_document_api_guid: None,
             _scan_dir: None,
-            _scan_processed: None,
+            _scan_summary: None,
             _check_missing_result: None,
             search_query: None,
             status_filter: None,

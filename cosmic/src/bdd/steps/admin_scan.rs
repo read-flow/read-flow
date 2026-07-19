@@ -11,15 +11,35 @@ async fn prepare_scan_dir(world: &mut BddWorld) {
 
 #[when("I trigger a library scan")]
 async fn trigger_scan(world: &mut BddWorld) {
-    let processed = world.driver.scan_configured().await;
-    world._scan_processed = Some(processed);
+    let summary = world.driver.scan_configured().await;
+    world._scan_summary = Some(summary);
 }
 
 #[then("the scan reports at least 1 document processed")]
 async fn scan_processed_at_least_one(world: &mut BddWorld) {
-    let processed = world._scan_processed.expect("scan must have run first");
+    let summary = world
+        ._scan_summary
+        .as_ref()
+        .expect("scan must have run first");
     assert!(
-        processed >= 1,
-        "expected at least 1 document processed, got {processed}"
+        summary.processed >= 1,
+        "expected at least 1 document processed, got {}",
+        summary.processed
+    );
+}
+
+#[then(regex = r"^the scan report shows (\d+) file added, (\d+) updated, and (\d+) errors$")]
+async fn scan_report_shows_counts(world: &mut BddWorld, added: u64, updated: u64, errors: u64) {
+    let summary = world
+        ._scan_summary
+        .as_ref()
+        .expect("scan must have run first");
+    assert_eq!(
+        (summary.added, summary.updated, summary.errors),
+        (added, updated, errors),
+        "expected (added, updated, errors) = ({added}, {updated}, {errors}), got ({}, {}, {})",
+        summary.added,
+        summary.updated,
+        summary.errors
     );
 }

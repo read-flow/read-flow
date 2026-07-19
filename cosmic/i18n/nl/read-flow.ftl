@@ -14,6 +14,9 @@ check-missing-purge = Verwijderen
 check-missing-cancel = Annuleren
 scan-progress-scanning = Bezig met scannen… { $discovered } gevonden, { $processed } verwerkt
 scan-progress-completed = Laatste scan: { $discovered } gevonden, { $processed } verwerkt, { $errors } fouten
+scan-report-title = Scanrapport
+scan-report-summary = { $added } toegevoegd, { $updated } bijgewerkt, { $errors } fouten
+scan-report-close = Sluiten
 view = Weergave
 
 view-options = Weergaveopties

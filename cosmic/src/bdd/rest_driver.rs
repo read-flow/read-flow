@@ -383,9 +383,8 @@ impl RestDriver {
         dir
     }
 
-    pub async fn scan_configured(&self) -> u64 {
-        let summary: serde_json::Value = self
-            .client
+    pub async fn scan_configured(&self) -> read_flow_core::scan::ScanSummary {
+        self.client
             .post(format!("{}/scan", self.server.base_url))
             .basic_auth(&self.server.user, Some(&self.server.password))
             .send()
@@ -393,8 +392,7 @@ impl RestDriver {
             .expect("POST /scan")
             .json()
             .await
-            .expect("parse scan summary JSON");
-        summary["processed"].as_u64().expect("processed field")
+            .expect("parse scan summary JSON")
     }
 
     pub async fn get_document_title(&self, doc_api_guid: &str) -> String {

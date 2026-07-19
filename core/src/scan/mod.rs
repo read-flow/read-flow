@@ -15,26 +15,57 @@ pub use pipeline::ScanProgress;
 use provider::r#async::Provider;
 pub use scanner::Scanner;
 
+/// A single file that failed during a scan.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScanFileError {
+    pub path: String,
+    pub message: String,
+}
+
 /// Aggregated outcome of one or more scans.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScanSummary {
     pub discovered: u64,
     pub processed: u64,
     pub errors: u64,
+    pub added: u64,
+    pub updated: u64,
+    pub error_details: Vec<ScanFileError>,
 }
 
 impl ScanSummary {
-    /// Fold a progress event into the running summary (only `Completed` counts).
+    /// Fold a progress event into the running summary. `Completed` folds the
+    /// discovered/processed/errors totals; `FileProcessed`/`FileError` fold
+    /// the added/updated counts and per-file error detail.
     pub fn add_event(&mut self, event: &ScanProgress) {
-        if let ScanProgress::Completed {
-            discovered,
-            processed,
-            errors,
-        } = event
-        {
-            self.discovered += discovered;
-            self.processed += processed;
-            self.errors += errors;
+        match event {
+            ScanProgress::Completed {
+                discovered,
+                processed,
+                errors,
+            } => {
+                self.discovered += discovered;
+                self.processed += processed;
+                self.errors += errors;
+            }
+            ScanProgress::FileProcessed {
+                was_new,
+                was_updated,
+                ..
+            } => {
+                if *was_new {
+                    self.added += 1;
+                } else if *was_updated {
+                    self.updated += 1;
+                }
+            }
+            ScanProgress::FileError { path, error } => {
+                self.error_details.push(ScanFileError {
+                    path: path.display().to_string(),
+                    message: error.clone(),
+                });
+            }
+            ScanProgress::FileDiscovered => {}
         }
     }
 }
@@ -347,7 +378,7 @@ mod tests {
     #[test]
     fn scan_summary_aggregates_completed_events() {
         let mut summary = ScanSummary::default();
-        // Non-Completed events are ignored.
+        // FileDiscovered carries no aggregate data and is ignored.
         summary.add_event(&ScanProgress::FileDiscovered);
         summary.add_event(&ScanProgress::Completed {
             discovered: 3,
@@ -365,7 +396,62 @@ mod tests {
                 discovered: 7,
                 processed: 6,
                 errors: 1,
+                added: 0,
+                updated: 0,
+                error_details: vec![],
             }
+        );
+    }
+
+    #[test]
+    fn scan_summary_counts_new_files_as_added() {
+        let mut summary = ScanSummary::default();
+        summary.add_event(&ScanProgress::FileProcessed {
+            path: "/a.epub".into(),
+            was_new: true,
+            was_updated: false,
+        });
+        assert_eq!(summary.added, 1);
+        assert_eq!(summary.updated, 0);
+    }
+
+    #[test]
+    fn scan_summary_counts_changed_existing_files_as_updated() {
+        let mut summary = ScanSummary::default();
+        summary.add_event(&ScanProgress::FileProcessed {
+            path: "/a.epub".into(),
+            was_new: false,
+            was_updated: true,
+        });
+        assert_eq!(summary.added, 0);
+        assert_eq!(summary.updated, 1);
+    }
+
+    #[test]
+    fn scan_summary_ignores_unchanged_existing_files() {
+        let mut summary = ScanSummary::default();
+        summary.add_event(&ScanProgress::FileProcessed {
+            path: "/a.epub".into(),
+            was_new: false,
+            was_updated: false,
+        });
+        assert_eq!(summary.added, 0);
+        assert_eq!(summary.updated, 0);
+    }
+
+    #[test]
+    fn scan_summary_collects_file_error_details() {
+        let mut summary = ScanSummary::default();
+        summary.add_event(&ScanProgress::FileError {
+            path: "/broken.epub".into(),
+            error: "corrupt archive".to_string(),
+        });
+        assert_eq!(
+            summary.error_details,
+            vec![ScanFileError {
+                path: "/broken.epub".to_string(),
+                message: "corrupt archive".to_string(),
+            }]
         );
     }
 

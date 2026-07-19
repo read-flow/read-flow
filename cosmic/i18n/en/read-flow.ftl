@@ -14,6 +14,9 @@ check-missing-purge = Purge
 check-missing-cancel = Cancel
 scan-progress-scanning = Scanning… { $discovered } discovered, { $processed } processed
 scan-progress-completed = Last scan: { $discovered } discovered, { $processed } processed, { $errors } errors
+scan-report-title = Scan Report
+scan-report-summary = { $added } added, { $updated } updated, { $errors } errors
+scan-report-close = Close
 view = View
 
 view-options = View Options

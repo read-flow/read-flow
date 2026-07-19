@@ -499,6 +499,11 @@ impl cosmic::Application for ReadFlow {
                 .dialog()
                 .map(|e| e.map(Message::CheckMissingComponent));
         }
+        if let Some(ref component) = self.scan_component
+            && let Some(dialog) = component.dialog()
+        {
+            return Some(dialog.map(Message::ScanComponent));
+        }
         self.pages
             .dialog(self.pages.active_page())
             .map(|e| e.map(Into::into))

@@ -11,3 +11,10 @@ Feature: Library scan
     And a document is available in a configured scan directory
     When I trigger a library scan
     Then the scan reports at least 1 document processed
+
+  @rest @cosmic
+  Scenario: Scanning a new file reports it as added
+    Given a read-flow server is running with user "alice" and passphrase "correct-horse"
+    And a document is available in a configured scan directory
+    When I trigger a library scan
+    Then the scan report shows 1 file added, 0 updated, and 0 errors

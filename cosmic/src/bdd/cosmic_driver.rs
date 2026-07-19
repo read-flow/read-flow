@@ -496,12 +496,11 @@ impl CosmicDriver {
         dir
     }
 
-    pub async fn scan_configured(&self) -> u64 {
+    pub async fn scan_configured(&self) -> read_flow_core::scan::ScanSummary {
         self.application_module
             .scan_configured()
             .await
             .expect("scan_configured")
-            .processed
     }
 
     pub async fn get_document_title(&self, doc_api_guid: &str) -> String {

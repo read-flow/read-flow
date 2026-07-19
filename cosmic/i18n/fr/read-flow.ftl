@@ -35,6 +35,9 @@ check-missing-purge = Purger
 check-missing-cancel = Annuler
 scan-progress-scanning = Analyse en cours… { $discovered } trouvés, { $processed } traités
 scan-progress-completed = Dernière analyse : { $discovered } trouvés, { $processed } traités, { $errors } erreurs
+scan-report-title = Rapport d'analyse
+scan-report-summary = { $added } ajoutés, { $updated } mis à jour, { $errors } erreurs
+scan-report-close = Fermer
 view = Affichage
 
 # Generic messages

@@ -301,9 +301,9 @@ impl Driver {
         }
     }
 
-    /// Triggers a full scan of all configured directories. Returns the number
-    /// of documents processed (to be asserted in `Then` steps).
-    pub async fn scan_configured(&self) -> u64 {
+    /// Triggers a full scan of all configured directories. Returns the full
+    /// summary (to be asserted in `Then` steps).
+    pub async fn scan_configured(&self) -> read_flow_core::scan::ScanSummary {
         match self {
             Self::Rest(driver) => driver.scan_configured().await,
             Self::Cosmic(driver) => driver.scan_configured().await,

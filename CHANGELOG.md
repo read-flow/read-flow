@@ -16,6 +16,10 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 - COSMIC Document Details: each source now shows when it was first imported into the library
   (e.g. "Added Jul 15, 2026"), next to the source's file path.
+- COSMIC: after a library scan finishes, clicking the "Last scan: …" footer opens a report
+  dialog showing how many files were added/updated, plus a list of any files that failed with
+  their error message. The REST `POST /scan` response also carries these new `added`/`updated`/
+  `error_details` fields alongside the existing counts.
 
 ### Changed
 
