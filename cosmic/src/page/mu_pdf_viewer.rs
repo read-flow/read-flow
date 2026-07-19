@@ -176,6 +176,7 @@ pub enum MuPdfViewerOutput {
     /// (fingerprint, page, total_pages) — None when pages not yet loaded.
     Close(Fingerprint, Option<(usize, usize)>),
     OpenDocumentDetails(Box<Document>),
+    OpenInExternalViewer(Box<Document>),
 }
 
 #[derive(Clone, Debug)]
@@ -930,6 +931,18 @@ impl Page for MuPdfViewer {
     }
 
     fn view_context(&self) -> ContextView<'_, MuPdfViewerMessage> {
+        let open_in_section = widget::settings::section()
+            .title(fl!("pdf-viewer-open-in-section"))
+            .add(
+                widget::settings::item::builder(fl!("pdf-viewer-open-in-external")).control(
+                    widget::button::standard(fl!("pdf-viewer-open-in-action")).on_press(
+                        MuPdfViewerMessage::Out(MuPdfViewerOutput::OpenInExternalViewer(Box::new(
+                            self.document.clone(),
+                        ))),
+                    ),
+                ),
+            );
+
         let zoom_base = widget::settings::section()
             .title(fl!("pdf-viewer-zoom"))
             .add(
@@ -1015,6 +1028,7 @@ impl Page for MuPdfViewer {
         ContextView {
             title: fl!("pdf-viewer"),
             content: widget::settings::view_column(vec![
+                open_in_section.into(),
                 zoom_section.into(),
                 shortcuts_section.into(),
             ])

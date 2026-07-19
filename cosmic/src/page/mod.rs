@@ -931,6 +931,9 @@ fn map_mu_pdf_viewer_message(fingerprint: Fingerprint, msg: MuPdfViewerMessage) 
             MuPdfViewerOutput::OpenDocumentDetails(document) => {
                 PageMessage::OpenDocumentDetails(*document)
             }
+            MuPdfViewerOutput::OpenInExternalViewer(document) => {
+                PageMessage::OpenInExternalViewer(*document)
+            }
         },
         msg => PageMessage::MuPdfViewer(fingerprint, msg),
     }
@@ -1069,6 +1072,20 @@ mod tests {
         let mapped = map_epub_viewer_message(
             "fp".into(),
             EpubViewerMessage::Out(EpubViewerOutput::OpenInExternalViewer(Box::new(
+                document.clone(),
+            ))),
+        );
+        assert!(
+            matches!(mapped, PageMessage::OpenInExternalViewer(d) if d.document_guid == document.document_guid)
+        );
+    }
+
+    #[test]
+    fn mu_pdf_viewer_open_in_external_viewer_maps_to_page_message() {
+        let document = sample_document();
+        let mapped = map_mu_pdf_viewer_message(
+            "fp".into(),
+            MuPdfViewerMessage::Out(MuPdfViewerOutput::OpenInExternalViewer(Box::new(
                 document.clone(),
             ))),
         );

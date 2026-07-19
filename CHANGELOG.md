@@ -23,6 +23,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 - COSMIC and PWA document list: new "Date Added" sort option, so recently-imported documents
   (including a document that just had a new format added to an existing one) can be found
   quickly.
+- COSMIC PDF viewer: context pane now offers an "Open in another viewer" → "External viewer
+  (system default)" action for the current document, matching the EPUB viewer's existing
+  open-in-external option.
 
 ### Changed
 
