@@ -501,14 +501,19 @@ default). Parses Atom feed XML into a list of books with formats and authors.
 Select a format (EPUB preferred, PDF fallback); download to the configured
 client folder; auto-import into the local database.
 
-*** TODO Internet Archive catalog
-Investigate the Internet Archive OPDS endpoint and add it as a catalog if
-usable. (Other candidates are ruled out: Feedbooks shut down in 2024;
-Manybooks' OPDS endpoint 403s on bots; Open Library has no searchable
-OPDS feed, only per-book entries.) Integration test infrastructure
-already exists (=core/tests/online_library.rs=, =online_tests= feature).
+*** DONE Internet Archive catalog
+Investigated, ruled out: the Internet Archive's OPDS Bookserver
+(=bookserver.archive.org=, aliasing =books-opds0.us.archive.org=) DNS-resolves
+but the connection times out — the service is dead, not just slow (verified
+against known-good hosts to rule out a local network issue). No modern
+replacement OPDS endpoint was found. (Other ruled-out candidates: Feedbooks
+shut down in 2024; Manybooks' OPDS endpoint 403s on bots; Open Library has no
+searchable OPDS feed, only per-edition =.opds= entries.) Integration test
+infrastructure remains in place (=core/tests/online_library.rs=,
+=online_tests= feature) for the two working catalogs and any future
+candidate.
 
-*** TODO Catalog management UI
+*** DONE Catalog management UI
 A settings panel to add, remove, enable/disable, and edit name/URL for
 OPDS catalogs, persisted to =read-flow.toml= via the existing
 =OnlineLibrarySettings= — a self-contained CRUD form, same pattern as the
