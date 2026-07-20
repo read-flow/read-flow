@@ -32,6 +32,10 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Changed
 
+- COSMIC EPUB viewer: the left/right click-to-turn-page zones now use the main content
+  background instead of the surrounding "desk" background, so they blend with the page area —
+  looks better with COSMIC's frosted glass effect (Linux).
+
 ### Fixed
 
 ### Removed
