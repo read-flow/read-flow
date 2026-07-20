@@ -14,6 +14,16 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+## [0.3.0] - 2026-07-20
+
+### Added
+
 - COSMIC Document Details: each source now shows when it was first imported into the library
   (e.g. "Added Jul 15, 2026"), next to the source's file path.
 - COSMIC: after a library scan finishes, clicking the "Last scan: …" footer opens a report
@@ -146,7 +156,8 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/read-flow/read-flow/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/read-flow/read-flow/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/read-flow/read-flow/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/read-flow/read-flow/releases/tag/v0.1.0
