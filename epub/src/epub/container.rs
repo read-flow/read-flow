@@ -56,6 +56,8 @@ impl Container {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::*;
 
     const VALID_CONTAINER: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
@@ -68,7 +70,7 @@ mod tests {
     #[test]
     fn parses_rootfile_path() {
         let container = Container::from_xml(VALID_CONTAINER).unwrap();
-        assert_eq!(container.rootfile_path, "OEBPS/content.opf");
+        Assert::that(container.rootfile_path).is("OEBPS/content.opf");
     }
 
     #[test]

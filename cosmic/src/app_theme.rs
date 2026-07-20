@@ -264,8 +264,12 @@ mod tests {
 
     #[test]
     fn disabled_settings_build_no_theme() {
-        Assert::that(build_theme(&ThemeSettings::default(), ThemeVariant::Light)).is_none();
-        Assert::that(build_theme(&ThemeSettings::default(), ThemeVariant::Dark)).is_none();
+        Assert::that(build_theme(&ThemeSettings::default(), ThemeVariant::Light))
+            .named("light")
+            .is_none();
+        Assert::that(build_theme(&ThemeSettings::default(), ThemeVariant::Dark))
+            .named("dark")
+            .is_none();
     }
 
     #[test]
@@ -330,7 +334,7 @@ mod tests {
             ThemeVariant::Light,
         )
         .unwrap();
-        Assert::that(theme.cosmic().corner_radii.radius_s).is([2.0; 4]);
+        Assert::that(theme.cosmic().corner_radii.radius_s).is_eq_to([2.0; 4]);
     }
 
     #[test]
@@ -380,7 +384,7 @@ mod tests {
     #[test]
     fn accent_presets_expose_nine_named_colors() {
         let presets = accent_presets(ThemeVariant::Dark);
-        Assert::that(presets.len()).is(9);
+        Assert::that(&presets).has_length(9);
         Assert::that(presets[0].0).is("blue");
     }
 

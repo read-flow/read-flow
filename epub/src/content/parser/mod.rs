@@ -331,6 +331,8 @@ fn resolve_images<F>(
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::util::normalize_html_whitespace;
     use super::util::parse_css_color;
     use super::util::parse_css_length_as_em;
@@ -366,7 +368,7 @@ mod tests {
             "<html><head><title>T</title></head><body><p>A</p><p>B</p></body></html>",
         );
         // body is html's 2nd element child (index 1); first paragraph is body's 1st (index 0)
-        assert_eq!(_blocks.len(), 2);
+        Assert::that(&_blocks).has_length(2);
         assert_eq!(paths[0], vec![1, 0], "first paragraph: body=1, p=0");
         assert_eq!(paths[1], vec![1, 1], "second paragraph: body=1, p=1");
     }
@@ -409,105 +411,103 @@ mod tests {
     #[test]
     fn parses_paragraph() {
         let blocks = parse("<html><body><p>Hello world</p></body></html>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, spans, .. } => {
-                assert_eq!(text, "Hello world");
-                assert_eq!(spans.len(), 1);
-                assert_eq!(spans[0].text, "Hello world");
-                assert_eq!(spans[0].style, InlineStyle::default());
+                Assert::that(text).is("Hello world");
+                Assert::that(spans).has_length(1);
+                Assert::that(spans[0].text.clone()).is("Hello world");
+                Assert::that(spans[0].style.clone()).is(InlineStyle::default());
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn parses_headings() {
         let blocks = parse("<h1>Title</h1><h2>Subtitle</h2><h3>Section</h3>");
-        assert_eq!(blocks.len(), 3);
+        Assert::that(&blocks).has_length(3);
         match &blocks[0] {
-            ContentBlock::Heading { level: 1, text, .. } => assert_eq!(text, "Title"),
+            ContentBlock::Heading { level: 1, text, .. } => Assert::that(text).is("Title"),
             other => panic!("expected Heading h1, got {other:?}"),
-        }
+        };
         match &blocks[1] {
-            ContentBlock::Heading { level: 2, text, .. } => assert_eq!(text, "Subtitle"),
+            ContentBlock::Heading { level: 2, text, .. } => Assert::that(text).is("Subtitle"),
             other => panic!("expected Heading h2, got {other:?}"),
-        }
+        };
         match &blocks[2] {
-            ContentBlock::Heading { level: 3, text, .. } => assert_eq!(text, "Section"),
+            ContentBlock::Heading { level: 3, text, .. } => Assert::that(text).is("Section"),
             other => panic!("expected Heading h3, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn skips_empty_paragraphs() {
         let blocks = parse("<p></p><p>  </p><p>content</p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "content"),
+            ContentBlock::Paragraph { text, .. } => Assert::that(text).is("content"),
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn condense_white_space() {
         let blocks = parse("<p></p><p>  </p><p>content</p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "content"),
+            ContentBlock::Paragraph { text, .. } => Assert::that(text).is("content"),
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn parses_unordered_list() {
         let blocks = parse("<ul><li>one</li><li>two</li><li>three</li></ul>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::UnorderedList { items } => {
-                assert_eq!(items.len(), 3);
-                assert_eq!(items[0].text, "one");
-                assert_eq!(items[1].text, "two");
-                assert_eq!(items[2].text, "three");
+                let texts: Vec<&str> = items.iter().map(|i| i.text.as_str()).collect();
+                Assert::that(texts).is_eq_to(vec!["one", "two", "three"]);
             }
             other => panic!("expected UnorderedList, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn parses_ordered_list() {
         let blocks = parse("<ol start=\"5\"><li>a</li><li>b</li></ol>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::OrderedList { start, items } => {
-                assert_eq!(*start, 5);
-                assert_eq!(items.len(), 2);
-                assert_eq!(items[0].text, "a");
+                Assert::that(*start).is(5);
+                Assert::that(items).has_length(2);
+                Assert::that(items[0].text.clone()).is("a");
             }
             other => panic!("expected OrderedList, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn parses_blockquote() {
         let blocks = parse("<blockquote><p>Quoted text</p></blockquote>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::BlockQuote { children } => {
-                assert_eq!(children.len(), 1);
+                Assert::that(children).has_length(1);
                 match &children[0] {
-                    ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Quoted text"),
+                    ContentBlock::Paragraph { text, .. } => Assert::that(text).is("Quoted text"),
                     other => panic!("expected Paragraph inside blockquote, got {other:?}"),
-                }
+                };
             }
             other => panic!("expected BlockQuote, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn parses_preformatted() {
         let blocks = parse("<pre>  code here\n  indented</pre>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Preformatted { text, .. } => {
                 assert!(
@@ -517,99 +517,101 @@ mod tests {
                 assert!(text.contains("\n  indented"));
             }
             other => panic!("expected Preformatted, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn parses_horizontal_rule() {
         let blocks = parse("<p>before</p><hr/><p>after</p>");
-        assert_eq!(blocks.len(), 3);
+        Assert::that(&blocks).has_length(3);
         assert!(matches!(blocks[1], ContentBlock::HorizontalRule));
     }
 
     #[test]
     fn inline_bold_produces_styled_spans() {
         let blocks = parse("<p>This is <strong>bold</strong> text</p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, spans, .. } => {
-                assert_eq!(text, "This is bold text");
-                assert_eq!(spans.len(), 3);
-                assert_eq!(spans[0].text, "This is ");
-                assert!(!spans[0].style.bold);
-                assert_eq!(spans[1].text, "bold");
-                assert!(spans[1].style.bold);
-                assert_eq!(spans[2].text, " text");
-                assert!(!spans[2].style.bold);
+                Assert::that(text).is("This is bold text");
+                let got: Vec<(&str, bool)> = spans
+                    .iter()
+                    .map(|s| (s.text.as_str(), s.style.bold))
+                    .collect();
+                Assert::that(got).is_eq_to(vec![
+                    ("This is ", false),
+                    ("bold", true),
+                    (" text", false),
+                ]);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn inline_italic_produces_styled_spans() {
         let blocks = parse("<p>This is <em>italic</em> text</p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, spans, .. } => {
-                assert_eq!(text, "This is italic text");
+                Assert::that(text).is("This is italic text");
                 assert!(spans[1].style.italic);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn nested_bold_italic_produces_combined_style() {
         let blocks = parse("<p><strong><em>bold italic</em></strong></p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, spans, .. } => {
-                assert_eq!(text, "bold italic");
-                assert_eq!(spans.len(), 1);
+                Assert::that(text).is("bold italic");
+                Assert::that(spans).has_length(1);
                 assert!(spans[0].style.bold);
                 assert!(spans[0].style.italic);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn underline_and_strikethrough() {
         let blocks = parse("<p><u>underlined</u> and <del>deleted</del></p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
                 assert!(spans[0].style.underline);
                 assert!(spans[2].style.strikethrough);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn inline_styling_in_list_items() {
         let blocks = parse("<ul><li>normal <strong>bold</strong> text</li></ul>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::UnorderedList { items } => {
-                assert_eq!(items.len(), 1);
-                assert_eq!(items[0].text, "normal bold text");
-                assert_eq!(items[0].spans.len(), 3);
+                Assert::that(items).has_length(1);
+                Assert::that(items[0].text.clone()).is("normal bold text");
+                Assert::that(&items[0].spans).has_length(3);
                 assert!(items[0].spans[1].style.bold);
             }
             other => panic!("expected UnorderedList, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn transparent_containers_promote_children() {
         let blocks = parse("<div><p>inside div</p></div><section><p>inside section</p></section>");
-        assert_eq!(blocks.len(), 2);
+        Assert::that(&blocks).has_length(2);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "inside div"),
+            ContentBlock::Paragraph { text, .. } => Assert::that(text).is("inside div"),
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -618,28 +620,28 @@ mod tests {
             r#"<div class="part">Part One</div>"#,
             "div.part { text-align: center; font-size: 0.7em; }",
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, style, .. } => {
-                assert_eq!(text, "Part One");
-                assert_eq!(style.text_align, Some(TextAlign::Center));
-                assert_eq!(style.font_size_em, Some(0.7));
+                Assert::that(text).is("Part One");
+                Assert::that(style.text_align.clone()).is_some(TextAlign::Center);
+                Assert::that(style.font_size_em).is_some(0.7);
             }
             other => panic!("expected styled Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn unstyled_div_direct_text_promotes_without_style() {
         let blocks = parse("<div>plain text</div>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, style, .. } => {
-                assert_eq!(text, "plain text");
-                assert_eq!(*style, BlockStyle::default());
+                Assert::that(text).is("plain text");
+                Assert::that(style.clone()).is(BlockStyle::default());
             }
             other => panic!("expected plain Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -649,11 +651,11 @@ mod tests {
             r#"<div class="part"><p>Inner paragraph</p></div>"#,
             "div.part { text-align: center; }",
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Inner paragraph"),
+            ContentBlock::Paragraph { text, .. } => Assert::that(text).is("Inner paragraph"),
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -672,7 +674,7 @@ mod tests {
                 }
             },
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Image {
                 alt,
@@ -680,22 +682,22 @@ mod tests {
                 media_type,
                 ..
             } => {
-                assert_eq!(alt, "Cover");
-                assert_eq!(data, &png_data);
-                assert_eq!(media_type, "image/png");
+                Assert::that(alt).is("Cover");
+                Assert::that(data).is(&png_data);
+                Assert::that(media_type).is("image/png");
             }
             other => panic!("expected Image, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn image_fallback_to_alt_text() {
         let blocks = parse("<img src=\"missing.png\" alt=\"A picture\"/>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "[A picture]"),
+            ContentBlock::Paragraph { text, .. } => Assert::that(text).is("[A picture]"),
             other => panic!("expected fallback Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -703,11 +705,11 @@ mod tests {
         let blocks = parse(
             "<html><head><title>Skip</title><style>body{}</style></head><body><p>Keep</p><script>alert(1)</script></body></html>",
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Keep"),
+            ContentBlock::Paragraph { text, .. } => Assert::that(text).is("Keep"),
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -733,19 +735,19 @@ mod tests {
             blocks.len()
         );
         match &blocks[0] {
-            ContentBlock::Heading { level: 1, text, .. } => assert_eq!(text, "Chapter One"),
+            ContentBlock::Heading { level: 1, text, .. } => Assert::that(text).is("Chapter One"),
             other => panic!("expected Heading h1, got {other:?}"),
-        }
+        };
         match &blocks[1] {
-            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Body text here."),
+            ContentBlock::Paragraph { text, .. } => Assert::that(text).is("Body text here."),
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn br_inserts_newline() {
         let blocks = parse("<p>line one<br/>line two</p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, .. } => {
                 assert!(text.contains("line one"));
@@ -753,47 +755,47 @@ mod tests {
                 assert!(text.contains('\n'));
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn link_text_not_duplicated() {
         // Regression: <a> was transparent — its text must appear exactly once.
         let blocks = parse("<p>Click <a href=\"ch2.xhtml\">here</a> for more.</p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, spans, .. } => {
-                assert_eq!(text, "Click here for more.");
+                Assert::that(text).is("Click here for more.");
                 let here_count = spans.iter().filter(|s| s.text.contains("here")).count();
                 assert_eq!(here_count, 1, "link text duplicated in spans: {spans:?}");
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn link_href_captured_on_span() {
         let blocks = parse("<p>Go to <a href=\"ch2.xhtml\">chapter two</a>.</p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
                 let linked: Vec<_> = spans.iter().filter(|s| s.link.is_some()).collect();
-                assert_eq!(linked.len(), 1);
-                assert_eq!(linked[0].text, "chapter two");
-                assert_eq!(linked[0].link.as_deref(), Some("ch2.xhtml"));
+                Assert::that(&linked).has_length(1);
+                Assert::that(linked[0].text.clone()).is("chapter two");
+                Assert::that(linked[0].link.as_deref()).is_some("ch2.xhtml");
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn link_with_styled_content_not_duplicated() {
         // Link containing bold text must not duplicate either the bold span or the plain text.
         let blocks = parse("<p>See <a href=\"ch2.xhtml\"><strong>bold link</strong></a> here.</p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, spans, .. } => {
-                assert_eq!(text, "See bold link here.");
+                Assert::that(text).is("See bold link here.");
                 let bold_link_count = spans
                     .iter()
                     .filter(|s| s.text.contains("bold link"))
@@ -802,22 +804,22 @@ mod tests {
                 // The bold span must also carry the link
                 let bold_span = spans.iter().find(|s| s.text.contains("bold link")).unwrap();
                 assert!(bold_span.style.bold);
-                assert_eq!(bold_span.link.as_deref(), Some("ch2.xhtml"));
+                Assert::that(bold_span.link.as_deref()).is_some("ch2.xhtml");
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn plain_spans_have_no_link() {
         let blocks = parse("<p>No links here.</p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
                 assert!(spans.iter().all(|s| s.link.is_none()));
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -828,68 +830,68 @@ mod tests {
                <tbody><tr><td>Foo</td><td>42</td></tr></tbody>\
              </table>",
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Table { rows } => {
-                assert_eq!(rows.len(), 2);
-                assert_eq!(rows[0].len(), 2);
+                Assert::that(rows).has_length(2);
+                Assert::that(&rows[0]).has_length(2);
                 assert!(rows[0][0].is_header);
-                assert_eq!(rows[0][0].text, "Name");
+                Assert::that(rows[0][0].text.clone()).is("Name");
                 assert!(rows[0][1].is_header);
-                assert_eq!(rows[0][1].text, "Value");
+                Assert::that(rows[0][1].text.clone()).is("Value");
                 assert!(!rows[1][0].is_header);
-                assert_eq!(rows[1][0].text, "Foo");
+                Assert::that(rows[1][0].text.clone()).is("Foo");
                 assert!(!rows[1][1].is_header);
-                assert_eq!(rows[1][1].text, "42");
+                Assert::that(rows[1][1].text.clone()).is("42");
             }
             other => panic!("expected Table, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn parses_table_without_thead() {
         let blocks =
             parse("<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Table { rows } => {
-                assert_eq!(rows.len(), 2);
-                assert_eq!(rows[0][0].text, "A");
-                assert_eq!(rows[0][1].text, "B");
-                assert_eq!(rows[1][0].text, "C");
+                Assert::that(rows).has_length(2);
+                Assert::that(rows[0][0].text.clone()).is("A");
+                Assert::that(rows[0][1].text.clone()).is("B");
+                Assert::that(rows[1][0].text.clone()).is("C");
             }
             other => panic!("expected Table, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn table_cell_with_inline_styles() {
         let blocks = parse("<table><tr><td>plain</td><td><strong>bold</strong></td></tr></table>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Table { rows } => {
-                assert_eq!(rows[0].len(), 2);
-                assert_eq!(rows[0][0].text, "plain");
-                assert_eq!(rows[0][1].text, "bold");
-                assert_eq!(rows[0][1].spans.len(), 1);
+                Assert::that(&rows[0]).has_length(2);
+                Assert::that(rows[0][0].text.clone()).is("plain");
+                Assert::that(rows[0][1].text.clone()).is("bold");
+                Assert::that(&rows[0][1].spans).has_length(1);
                 assert!(rows[0][1].spans[0].style.bold);
             }
             other => panic!("expected Table, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn table_cell_with_paragraph_child() {
         // <p> inside <td> — content should be extracted from children
         let blocks = parse("<table><tr><td><p>Cell content</p></td></tr></table>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Table { rows } => {
-                assert_eq!(rows[0].len(), 1);
-                assert_eq!(rows[0][0].text, "Cell content");
+                Assert::that(&rows[0]).has_length(1);
+                Assert::that(rows[0][0].text.clone()).is("Cell content");
             }
             other => panic!("expected Table, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -899,18 +901,18 @@ mod tests {
                <aside epub:type="footnote" id="fn1"><p>Footnote text.</p></aside>"##,
         );
         // Should have a Paragraph and a Footnote
-        assert_eq!(blocks.len(), 2);
+        Assert::that(&blocks).has_length(2);
         match &blocks[1] {
             ContentBlock::Footnote { id, blocks } => {
-                assert_eq!(id, "fn1");
-                assert_eq!(blocks.len(), 1);
+                Assert::that(id).is("fn1");
+                Assert::that(blocks).has_length(1);
                 match &blocks[0] {
-                    ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Footnote text."),
+                    ContentBlock::Paragraph { text, .. } => Assert::that(text).is("Footnote text."),
                     other => panic!("expected Paragraph inside Footnote, got {other:?}"),
-                }
+                };
             }
             other => panic!("expected Footnote, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -929,46 +931,46 @@ mod tests {
             .iter()
             .filter(|b| matches!(b, ContentBlock::Footnote { .. }))
             .collect();
-        assert_eq!(footnotes.len(), 2);
+        Assert::that(&footnotes).has_length(2);
         match &footnotes[0] {
             ContentBlock::Footnote { id, blocks } => {
-                assert_eq!(id, "fn1");
+                Assert::that(id).is("fn1");
                 match &blocks[0] {
-                    ContentBlock::Paragraph { text, .. } => assert_eq!(text, "First note."),
+                    ContentBlock::Paragraph { text, .. } => Assert::that(text).is("First note."),
                     other => panic!("expected Paragraph, got {other:?}"),
-                }
+                };
             }
             other => panic!("expected Footnote, got {other:?}"),
-        }
+        };
         match &footnotes[1] {
-            ContentBlock::Footnote { id, .. } => assert_eq!(id, "fn2"),
+            ContentBlock::Footnote { id, .. } => Assert::that(id).is("fn2"),
             other => panic!("expected Footnote, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn aside_without_footnote_type_is_transparent() {
         // A plain <aside> with no epub:type should promote its children normally
         let blocks = parse("<aside><p>Side content</p></aside>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Side content"),
+            ContentBlock::Paragraph { text, .. } => Assert::that(text).is("Side content"),
             other => panic!("expected transparent aside → Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn fragment_only_link_does_not_create_footnote() {
         // A pure #anchor link in the text body should still render as a linked span
         let blocks = parse(r##"<p>See <a href="#fn1">note 1</a>.</p>"##);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
                 let linked = spans.iter().find(|s| s.link.is_some()).unwrap();
-                assert_eq!(linked.link.as_deref(), Some("#fn1"));
+                Assert::that(linked.link.as_deref()).is_some("#fn1");
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -984,16 +986,16 @@ mod tests {
             "expected Anchor + Paragraph, got {blocks:?}"
         );
         match &blocks[0] {
-            ContentBlock::Anchor { id } => assert_eq!(id, "fnref1"),
+            ContentBlock::Anchor { id } => Assert::that(id).is("fnref1"),
             other => panic!("expected Anchor, got {other:?}"),
-        }
+        };
         match &blocks[1] {
             ContentBlock::Paragraph { spans, .. } => {
                 let linked = spans.iter().find(|s| s.link.is_some()).unwrap();
-                assert_eq!(linked.link.as_deref(), Some("#fn1"));
+                Assert::that(linked.link.as_deref()).is_some("#fn1");
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1032,22 +1034,22 @@ mod tests {
 
     #[test]
     fn normalize_collapses_spaces() {
-        assert_eq!(normalize_html_whitespace("a  b   c", false), "a b c");
+        Assert::that(normalize_html_whitespace("a  b   c", false)).is("a b c");
     }
 
     #[test]
     fn normalize_collapses_tabs_and_newlines() {
-        assert_eq!(normalize_html_whitespace("a\t\nb", false), "a b");
+        Assert::that(normalize_html_whitespace("a\t\nb", false)).is("a b");
     }
 
     #[test]
     fn normalize_suppresses_leading_space_when_prev_ends_with_space() {
-        assert_eq!(normalize_html_whitespace(" world", true), "world");
+        Assert::that(normalize_html_whitespace(" world", true)).is("world");
     }
 
     #[test]
     fn normalize_keeps_leading_space_when_prev_does_not_end_with_space() {
-        assert_eq!(normalize_html_whitespace(" world", false), " world");
+        Assert::that(normalize_html_whitespace(" world", false)).is(" world");
     }
 
     // --- Integration-level whitespace tests ---
@@ -1056,17 +1058,17 @@ mod tests {
     fn inline_whitespace_collapsed_in_paragraph() {
         // Multi-line source like EPUB XML often has newlines and extra spaces
         let blocks = parse("<p>Hello\n  world</p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Hello world"),
+            ContentBlock::Paragraph { text, .. } => Assert::that(text).is("Hello world"),
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn whitespace_preserved_inside_pre() {
         let blocks = parse("<pre>line one\n  indented\nline three</pre>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Preformatted { text, .. } => {
                 assert!(text.contains('\n'), "newlines must be kept in <pre>");
@@ -1076,7 +1078,7 @@ mod tests {
                 );
             }
             other => panic!("expected Preformatted, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1094,7 +1096,7 @@ mod tests {
             &stylesheet,
             &mut |_| None,
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Preformatted { spans, .. } => {
                 let kw = spans.iter().find(|s| s.text == "fn").expect("kw span");
@@ -1108,7 +1110,7 @@ mod tests {
                 assert!(co.style.italic, "comment italic");
             }
             other => panic!("expected Preformatted, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1116,24 +1118,24 @@ mod tests {
         // <span> is a TRANSPARENT_TAG and goes through block-level handling.
         // Whitespace inside spans nested in <pre> must NOT be trimmed.
         let blocks = parse("<pre>  <span class=\"kw\">function</span> foo()</pre>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Preformatted { text, spans, .. } => {
-                assert_eq!(text, "  function foo()");
+                Assert::that(text).is("  function foo()");
                 // Verify span ordering: whitespace before "function" is preserved
                 assert!(spans.len() >= 2, "expected multiple spans, got {spans:?}");
                 assert_eq!(spans[0].text, "  ", "leading whitespace span: {spans:?}");
                 assert_eq!(spans[1].text, "function", "styled span: {spans:?}");
             }
             other => panic!("expected Preformatted, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn pre_with_code_child_preserves_indentation() {
         // <code> is an INLINE_STYLE_TAG (handled via the inline path).
         let blocks = parse("<pre>  <code>indented code</code>\n  <code>more</code></pre>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Preformatted { text, .. } => {
                 assert!(
@@ -1146,74 +1148,74 @@ mod tests {
                 );
             }
             other => panic!("expected Preformatted, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn pre_with_multiple_styled_spans_preserves_whitespace() {
         // Multiple styled inline elements with significant whitespace between them.
         let blocks = parse("<pre>  <em>keyword</em> <strong>name</strong>(arg)</pre>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Preformatted { text, .. } => {
-                assert_eq!(text, "  keyword name(arg)");
+                Assert::that(text).is("  keyword name(arg)");
             }
             other => panic!("expected Preformatted, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn whitespace_between_inline_elements_normalised() {
         // Typical EPUB: "word <em>emphasis</em> word" with surrounding whitespace nodes
         let blocks = parse("<p>plain <em>italic</em> text</p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, .. } => {
                 // Must not have double spaces around the italic word
                 assert!(!text.contains("  "), "double space found: {text:?}");
-                assert_eq!(text, "plain italic text");
+                Assert::that(text).is("plain italic text");
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     // --- parse_css_color unit tests ---
 
     #[test]
     fn css_color_hex6() {
-        assert_eq!(parse_css_color("#ff8800"), Some([0xff, 0x88, 0x00]));
+        Assert::that(parse_css_color("#ff8800")).is_some([0xff, 0x88, 0x00]);
     }
 
     #[test]
     fn css_color_hex3() {
-        assert_eq!(parse_css_color("#f80"), Some([0xff, 0x88, 0x00]));
+        Assert::that(parse_css_color("#f80")).is_some([0xff, 0x88, 0x00]);
     }
 
     #[test]
     fn css_color_rgb_fn() {
-        assert_eq!(parse_css_color("rgb(255, 136, 0)"), Some([255, 136, 0]));
+        Assert::that(parse_css_color("rgb(255, 136, 0)")).is_some([255, 136, 0]);
     }
 
     #[test]
     fn css_color_unknown_returns_none() {
-        assert_eq!(parse_css_color("red"), None);
+        Assert::that(parse_css_color("red")).is(None);
     }
 
     // --- parse_css_length_as_em unit tests ---
 
     #[test]
     fn css_length_em() {
-        assert_eq!(parse_css_length_as_em("1.5em"), Some(1.5));
+        Assert::that(parse_css_length_as_em("1.5em")).is_some(1.5);
     }
 
     #[test]
     fn css_length_px() {
-        assert_eq!(parse_css_length_as_em("32px"), Some(2.0));
+        Assert::that(parse_css_length_as_em("32px")).is_some(2.0);
     }
 
     #[test]
     fn css_length_percent() {
-        assert_eq!(parse_css_length_as_em("200%"), Some(2.0));
+        Assert::that(parse_css_length_as_em("200%")).is_some(2.0);
     }
 
     // --- parse_inline_style unit tests ---
@@ -1221,40 +1223,40 @@ mod tests {
     #[test]
     fn inline_style_text_align_center() {
         let s = parse_inline_style("text-align: center");
-        assert_eq!(s.block.text_align, Some(TextAlign::Center));
+        Assert::that(s.block.text_align).is_some(TextAlign::Center);
     }
 
     #[test]
     fn inline_style_text_align_right() {
         let s = parse_inline_style("text-align:right");
-        assert_eq!(s.block.text_align, Some(TextAlign::Right));
+        Assert::that(s.block.text_align).is_some(TextAlign::Right);
     }
 
     #[test]
     fn inline_style_font_size_em() {
         let s = parse_inline_style("font-size: 2em");
-        assert_eq!(s.font_size_em, Some(2.0));
+        Assert::that(s.font_size_em).is_some(2.0);
     }
 
     #[test]
     fn inline_style_color_hex() {
         let s = parse_inline_style("color: #336699");
-        assert_eq!(s.color, Some([0x33, 0x66, 0x99]));
+        Assert::that(s.color).is_some([0x33, 0x66, 0x99]);
     }
 
     #[test]
     fn inline_style_multiple_properties() {
         let s = parse_inline_style("text-align:center; font-size:1.2em; color:#ff0000");
-        assert_eq!(s.block.text_align, Some(TextAlign::Center));
-        assert_eq!(s.font_size_em, Some(1.2));
-        assert_eq!(s.color, Some([255, 0, 0]));
+        Assert::that(s.block.text_align).is_some(TextAlign::Center);
+        Assert::that(s.font_size_em).is_some(1.2);
+        Assert::that(s.color).is_some([255, 0, 0]);
     }
 
     #[test]
     fn inline_style_unknown_property_ignored() {
         let s = parse_inline_style("display:block; text-align:center");
-        assert_eq!(s.block.text_align, Some(TextAlign::Center));
-        assert_eq!(s.font_size_em, None);
+        Assert::that(s.block.text_align).is_some(TextAlign::Center);
+        Assert::that(s.font_size_em).is(None);
     }
 
     // --- Integration-level block style tests ---
@@ -1262,37 +1264,37 @@ mod tests {
     #[test]
     fn paragraph_style_text_align_center() {
         let blocks = parse(r#"<p style="text-align:center">Centered</p>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { style, .. } => {
-                assert_eq!(style.text_align, Some(TextAlign::Center));
+                Assert::that(style.text_align.clone()).is_some(TextAlign::Center);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn heading_style_font_size() {
         let blocks = parse(r#"<h1 style="font-size:2em">Title</h1>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Heading { style, .. } => {
-                assert_eq!(style.font_size_em, Some(2.0));
+                Assert::that(style.font_size_em).is_some(2.0);
             }
             other => panic!("expected Heading, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn paragraph_without_style_has_default_block_style() {
         let blocks = parse("<p>No style</p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { style, .. } => {
-                assert_eq!(*style, BlockStyle::default());
+                Assert::that(style.clone()).is(BlockStyle::default());
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     // --- Span-level style= attribute tests ---
@@ -1300,11 +1302,11 @@ mod tests {
     #[test]
     fn span_style_font_weight_bold() {
         let blocks = parse(r#"<p>normal <span style="font-weight:bold">bold</span> normal</p>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, spans, .. } => {
-                assert_eq!(text, "normal bold normal");
-                assert_eq!(spans.len(), 3);
+                Assert::that(text).is("normal bold normal");
+                Assert::that(spans).has_length(3);
                 assert!(!spans[0].style.bold);
                 assert!(
                     spans[1].style.bold,
@@ -1313,67 +1315,67 @@ mod tests {
                 assert!(!spans[2].style.bold);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn span_style_font_style_italic() {
         let blocks = parse(r#"<p><span style="font-style:italic">ital</span></p>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
                 assert!(spans[0].style.italic);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn span_style_text_decoration_underline() {
         let blocks = parse(r#"<p><span style="text-decoration:underline">u</span></p>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
                 assert!(spans[0].style.underline);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn span_style_text_decoration_line_through() {
         let blocks = parse(r#"<p><span style="text-decoration:line-through">s</span></p>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
                 assert!(spans[0].style.strikethrough);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn span_style_color() {
         let blocks = parse(r#"<p><span style="color:#ff0000">red</span></p>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
-                assert_eq!(spans[0].color, Some([255, 0, 0]));
+                Assert::that(spans[0].color).is_some([255, 0, 0]);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn span_style_font_size() {
         let blocks = parse(r#"<p><span style="font-size:1.5em">big</span></p>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
-                assert_eq!(spans[0].font_size_em, Some(1.5));
+                Assert::that(spans[0].font_size_em).is_some(1.5);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1381,58 +1383,58 @@ mod tests {
         let blocks = parse(
             r#"<p><span style="font-weight:bold;font-style:italic;color:#00ff00">styled</span></p>"#,
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
                 assert!(spans[0].style.bold);
                 assert!(spans[0].style.italic);
-                assert_eq!(spans[0].color, Some([0, 255, 0]));
+                Assert::that(spans[0].color).is_some([0, 255, 0]);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn em_style_override() {
         // <em> gives italic from the tag; style= adds underline
         let blocks = parse(r#"<p><em style="text-decoration:underline">both</em></p>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
                 assert!(spans[0].style.italic, "italic from <em> tag");
                 assert!(spans[0].style.underline, "underline from style=");
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn unstyled_span_still_transparent() {
         // Plain <span> without style= should produce a single span, no extra boundary
         let blocks = parse("<p><span>text</span></p>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, spans, .. } => {
-                assert_eq!(text, "text");
-                assert_eq!(spans.len(), 1);
+                Assert::that(text).is("text");
+                Assert::that(spans).has_length(1);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn span_style_in_pre_preserves_whitespace() {
         let blocks = parse(r#"<pre>  <span style="color:#ff0000">red code</span>  more</pre>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Preformatted { text, spans, .. } => {
-                assert_eq!(text, "  red code  more");
+                Assert::that(text).is("  red code  more");
                 // The styled span should carry the color
                 let red_span = spans.iter().find(|s| s.text == "red code").unwrap();
-                assert_eq!(red_span.color, Some([255, 0, 0]));
+                Assert::that(red_span.color).is_some([255, 0, 0]);
             }
             other => panic!("expected Preformatted, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1466,25 +1468,25 @@ mod tests {
             r#"<p class="verse">text</p>"#,
             ".verse { text-align: center; }",
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { style, .. } => {
-                assert_eq!(style.text_align, Some(TextAlign::Center));
+                Assert::that(style.text_align.clone()).is_some(TextAlign::Center);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn stylesheet_tag_applies_style() {
         let blocks = parse_with_css("<p>text</p>", "p { text-align: center; }");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { style, .. } => {
-                assert_eq!(style.text_align, Some(TextAlign::Center));
+                Assert::that(style.text_align.clone()).is_some(TextAlign::Center);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1493,13 +1495,13 @@ mod tests {
             r#"<p class="indent">text</p>"#,
             "p.indent { margin-top: 0.5em; }",
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { style, .. } => {
-                assert_eq!(style.margin_top_em, Some(0.5));
+                Assert::that(style.margin_top_em).is_some(0.5);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1508,7 +1510,7 @@ mod tests {
             r#"<p class="verse" style="text-align:left">text</p>"#,
             ".verse { text-align: center; }",
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { style, .. } => {
                 assert_eq!(
@@ -1518,19 +1520,19 @@ mod tests {
                 );
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn stylesheet_justify_falls_back_to_left() {
         let blocks = parse_with_css("<p>text</p>", "p { text-align: justify; }");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { style, .. } => {
-                assert_eq!(style.text_align, Some(TextAlign::Left));
+                Assert::that(style.text_align.clone()).is_some(TextAlign::Left);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1539,7 +1541,7 @@ mod tests {
             r#"<p><span class="bold">text</span></p>"#,
             ".bold { font-weight: bold; }",
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
                 assert!(
@@ -1548,7 +1550,7 @@ mod tests {
                 );
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1557,20 +1559,20 @@ mod tests {
             r#"<h1 class="chapter-heading">Title</h1>"#,
             ".chapter-heading { text-align: center; }",
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Heading { style, .. } => {
-                assert_eq!(style.text_align, Some(TextAlign::Center));
+                Assert::that(style.text_align.clone()).is_some(TextAlign::Center);
             }
             other => panic!("expected Heading, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn empty_stylesheet_identical_to_no_stylesheet() {
         let with_empty = parse_with_css("<p>text</p>", "");
         let without = parse("<p>text</p>");
-        assert_eq!(with_empty.len(), without.len());
+        Assert::that(&with_empty).has_length(without.len());
         match (&with_empty[0], &without[0]) {
             (
                 ContentBlock::Paragraph {
@@ -1584,8 +1586,8 @@ mod tests {
                     ..
                 },
             ) => {
-                assert_eq!(t1, t2);
-                assert_eq!(s1, s2);
+                Assert::that(t1).is(t2);
+                Assert::that(s1).is(s2);
             }
             _ => panic!("expected matching Paragraphs"),
         }
@@ -1597,13 +1599,13 @@ mod tests {
             r#"<p><span class="red">text</span></p>"#,
             ".red { color: #ff0000; }",
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
-                assert_eq!(spans[0].color, Some([255, 0, 0]));
+                Assert::that(spans[0].color).is_some([255, 0, 0]);
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1612,20 +1614,20 @@ mod tests {
             r#"<p><em class="special">text</em></p>"#,
             ".special { text-decoration: underline; }",
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { spans, .. } => {
                 assert!(spans[0].style.italic, "italic from <em> tag");
                 assert!(spans[0].style.underline, "underline from stylesheet class");
             }
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn parses_inline_svg() {
         let blocks = parse("<svg><circle cx=\"50\" cy=\"50\" r=\"40\" fill=\"red\"/></svg>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Svg {
                 content,
@@ -1637,17 +1639,17 @@ mod tests {
                 assert!(content.contains("<circle"));
                 assert!(content.contains("cx=\"50\""));
                 assert!(content.contains("fill=\"red\""));
-                assert_eq!(alt, "");
-                assert_eq!(*style, BlockStyle::default());
+                Assert::that(alt).is("");
+                Assert::that(style.clone()).is(BlockStyle::default());
             }
             other => panic!("expected Svg, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn parses_inline_svg_with_text_content() {
         let blocks = parse("<svg><text x=\"10\" y=\"20\">Hello SVG</text></svg>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Svg { content, .. } => {
                 assert!(content.contains("<text"));
@@ -1656,33 +1658,33 @@ mod tests {
                 assert!(content.contains("y=\"20\""));
             }
             other => panic!("expected Svg, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn parses_svg_image_placeholder() {
         let blocks = parse("<img src=\"diagram.svg\" alt=\"Diagram\">");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, .. } => {
                 // Image placeholder gets converted to fallback paragraph when resolution fails
-                assert_eq!(text, "[Diagram]");
+                Assert::that(text).is("[Diagram]");
             }
             other => panic!("expected fallback Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn parses_raster_image_placeholder() {
         let blocks = parse("<img src=\"photo.jpg\" alt=\"Photo\">");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { text, .. } => {
                 // Image placeholder gets converted to fallback paragraph when resolution fails
-                assert_eq!(text, "[Photo]");
+                Assert::that(text).is("[Photo]");
             }
             other => panic!("expected fallback Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1690,7 +1692,7 @@ mod tests {
         let blocks = parse(
             "<svg><circle r=\"10\"/></svg><img src=\"icon.svg\" alt=\"Icon\"><img src=\"photo.jpg\" alt=\"Photo\">",
         );
-        assert_eq!(blocks.len(), 3);
+        Assert::that(&blocks).has_length(3);
 
         // First should be inline SVG
         match &blocks[0] {
@@ -1699,23 +1701,23 @@ mod tests {
                 assert!(content.contains("<circle"));
             }
             other => panic!("expected inline Svg, got {other:?}"),
-        }
+        };
 
         // Second should be fallback paragraph for SVG image
         match &blocks[1] {
             ContentBlock::Paragraph { text, .. } => {
-                assert_eq!(text, "[Icon]");
+                Assert::that(text).is("[Icon]");
             }
             other => panic!("expected fallback Paragraph for SVG image, got {other:?}"),
-        }
+        };
 
         // Third should be fallback paragraph for raster image
         match &blocks[2] {
             ContentBlock::Paragraph { text, .. } => {
-                assert_eq!(text, "[Photo]");
+                Assert::that(text).is("[Photo]");
             }
             other => panic!("expected fallback Paragraph for raster image, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1724,33 +1726,33 @@ mod tests {
             r#"<svg class="centered"><rect x="0" y="0" width="50" height="50"/></svg>"#,
             ".centered { text-align: center; }",
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Svg { content, style, .. } => {
                 assert!(content.contains("<rect"));
-                assert_eq!(style.text_align, Some(TextAlign::Center));
+                Assert::that(style.text_align.clone()).is_some(TextAlign::Center);
             }
             other => panic!("expected Svg with styling, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn svg_with_inline_style() {
         let blocks = parse("<svg style=\"text-align: right\"><circle r=\"20\"/></svg>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Svg { content, style, .. } => {
                 assert!(content.contains("<circle"));
-                assert_eq!(style.text_align, Some(TextAlign::Right));
+                Assert::that(style.text_align.clone()).is_some(TextAlign::Right);
             }
             other => panic!("expected Svg with inline style, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn svg_viewbox_aspect_ratio_square() {
         let blocks = parse(r#"<svg viewBox="0 0 100 100"><circle r="40"/></svg>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Svg { aspect_ratio, .. } => {
                 assert!(
@@ -1759,14 +1761,14 @@ mod tests {
                 );
             }
             other => panic!("expected Svg, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn svg_viewbox_aspect_ratio_wide() {
         // viewBox="0 0 200 100" → w=200, h=100, ratio=2.0
         let blocks = parse(r#"<svg viewBox="0 0 200 100"><rect width="200" height="100"/></svg>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Svg { aspect_ratio, .. } => {
                 assert!(
@@ -1775,13 +1777,13 @@ mod tests {
                 );
             }
             other => panic!("expected Svg, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn svg_without_viewbox_has_no_aspect_ratio() {
         let blocks = parse(r#"<svg width="100" height="100"><circle r="40"/></svg>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Svg { aspect_ratio, .. } => {
                 assert!(
@@ -1790,7 +1792,7 @@ mod tests {
                 );
             }
             other => panic!("expected Svg, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1800,7 +1802,7 @@ mod tests {
   <image width="200" height="200" xlink:href="../media/Cover.png"/>
 </svg>"#,
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Svg { content, .. } => {
                 assert!(content.contains("../media/Cover.png"));
@@ -1945,7 +1947,7 @@ mod tests {
   <image width="200" height="200" xlink:href="image.svg"/>
 </svg>"#,
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Svg { content, .. } => {
                 assert!(content.contains("<svg"));
@@ -1956,38 +1958,38 @@ mod tests {
                 assert!(content.contains("</svg>"));
             }
             other => panic!("expected Svg, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn empty_svg_is_ignored() {
         let blocks = parse("<svg></svg>");
-        assert_eq!(blocks.len(), 0); // Empty SVG should be filtered out
+        Assert::that(&blocks).has_length(0); // Empty SVG should be filtered out
     }
 
     #[test]
     fn heading_with_id_emits_anchor_before_heading() {
         let blocks = parse(r#"<h2 id="section-1">Section One</h2>"#);
         // Anchor precedes the Heading
-        assert_eq!(blocks.len(), 2);
+        Assert::that(&blocks).has_length(2);
         match &blocks[0] {
-            ContentBlock::Anchor { id } => assert_eq!(id, "section-1"),
+            ContentBlock::Anchor { id } => Assert::that(id).is("section-1"),
             other => panic!("expected Anchor, got {other:?}"),
-        }
+        };
         match &blocks[1] {
-            ContentBlock::Heading { level: 2, text, .. } => assert_eq!(text, "Section One"),
+            ContentBlock::Heading { level: 2, text, .. } => Assert::that(text).is("Section One"),
             other => panic!("expected Heading h2, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn heading_without_id_emits_no_anchor() {
         let blocks = parse("<h2>Section One</h2>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Heading { level: 2, .. } => {}
             other => panic!("expected Heading h2, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -1997,17 +1999,17 @@ mod tests {
         // Anchor, then Heading, then Paragraph
         assert_eq!(blocks.len(), 3, "blocks: {blocks:?}");
         match &blocks[0] {
-            ContentBlock::Anchor { id } => assert_eq!(id, "ch1"),
+            ContentBlock::Anchor { id } => Assert::that(id).is("ch1"),
             other => panic!("expected Anchor, got {other:?}"),
-        }
+        };
         match &blocks[1] {
             ContentBlock::Heading { level: 2, .. } => {}
             other => panic!("expected Heading h2, got {other:?}"),
-        }
+        };
         match &blocks[2] {
-            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Body text."),
+            ContentBlock::Paragraph { text, .. } => Assert::that(text).is("Body text."),
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -2015,7 +2017,7 @@ mod tests {
         let blocks = parse(
             r#"<figure><img src="photo.jpg" alt="A cat"/><figcaption>A sleeping cat.</figcaption></figure>"#,
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Figure {
                 blocks,
@@ -2027,30 +2029,30 @@ mod tests {
                     1,
                     "expected one inner block (image placeholder)"
                 );
-                assert_eq!(caption_text, "A sleeping cat.");
+                Assert::that(caption_text).is("A sleeping cat.");
                 assert!(!caption.is_empty(), "caption spans should be non-empty");
-                assert_eq!(caption[0].text, "A sleeping cat.");
+                Assert::that(caption[0].text.clone()).is("A sleeping cat.");
             }
             other => panic!("expected Figure, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn figure_without_caption() {
         let blocks = parse(r#"<figure><img src="photo.jpg" alt="An image"/></figure>"#);
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Figure {
                 blocks,
                 caption,
                 caption_text,
             } => {
-                assert_eq!(blocks.len(), 1);
+                Assert::that(blocks).has_length(1);
                 assert!(caption.is_empty());
                 assert!(caption_text.is_empty());
             }
             other => panic!("expected Figure, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -2058,36 +2060,37 @@ mod tests {
         let blocks = parse(
             r#"<figure><img src="x.jpg"/><figcaption>See <em>figure one</em>.</figcaption></figure>"#,
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Figure {
                 caption,
                 caption_text,
                 ..
             } => {
-                assert_eq!(caption_text, "See figure one.");
-                // Three spans: "See ", "figure one" (italic), "."
-                assert_eq!(caption.len(), 3);
-                assert!(!caption[0].style.italic);
-                assert_eq!(caption[0].text, "See ");
-                assert!(caption[1].style.italic);
-                assert_eq!(caption[1].text, "figure one");
-                assert!(!caption[2].style.italic);
-                assert_eq!(caption[2].text, ".");
+                Assert::that(caption_text).is("See figure one.");
+                let got: Vec<(&str, bool)> = caption
+                    .iter()
+                    .map(|s| (s.text.as_str(), s.style.italic))
+                    .collect();
+                Assert::that(got).is_eq_to(vec![
+                    ("See ", false),
+                    ("figure one", true),
+                    (".", false),
+                ]);
             }
             other => panic!("expected Figure, got {other:?}"),
-        }
+        };
     }
 
     #[test]
     fn figcaption_outside_figure_becomes_paragraph() {
         // Malformed HTML: figcaption not inside a figure — fallback to paragraph
         let blocks = parse("<figcaption>Orphan caption.</figcaption>");
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
-            ContentBlock::Paragraph { text, .. } => assert_eq!(text, "Orphan caption."),
+            ContentBlock::Paragraph { text, .. } => Assert::that(text).is("Orphan caption."),
             other => panic!("expected Paragraph, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -2107,25 +2110,25 @@ mod tests {
                 }
             },
         );
-        assert_eq!(blocks.len(), 1);
+        Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Figure {
                 blocks,
                 caption_text,
                 ..
             } => {
-                assert_eq!(caption_text, "Caption");
-                assert_eq!(blocks.len(), 1);
+                Assert::that(caption_text).is("Caption");
+                Assert::that(blocks).has_length(1);
                 match &blocks[0] {
                     ContentBlock::Image { alt, data, .. } => {
-                        assert_eq!(alt, "A photo");
-                        assert_eq!(data, &png_data);
+                        Assert::that(alt).is("A photo");
+                        Assert::that(data).is(&png_data);
                     }
                     other => panic!("expected Image inside Figure, got {other:?}"),
-                }
+                };
             }
             other => panic!("expected Figure, got {other:?}"),
-        }
+        };
     }
 
     #[test]
@@ -2142,11 +2145,11 @@ mod tests {
         );
         match &blocks[1] {
             ContentBlock::Paragraph { text, spans, .. } => {
-                assert_eq!(text, "Follow for extended description");
-                assert_eq!(spans.len(), 1);
-                assert_eq!(spans[0].link.as_deref(), Some("desc.xhtml"));
+                Assert::that(text).is("Follow for extended description");
+                Assert::that(spans).has_length(1);
+                Assert::that(spans[0].link.as_deref()).is_some("desc.xhtml");
             }
             other => panic!("expected Paragraph for anchor, got {other:?}"),
-        }
+        };
     }
 }

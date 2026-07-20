@@ -298,49 +298,51 @@ fn strip_at_rules(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::*;
 
     #[test]
     fn parse_tag_selector() {
         let sheet = parse_css("p { text-align: center; }");
-        assert_eq!(sheet.rules.len(), 1);
-        assert_eq!(sheet.rules[0].0, CssSelector::Tag("p".into()));
-        assert_eq!(sheet.rules[0].1.block.text_align, Some(TextAlign::Center));
+        Assert::that(&sheet.rules).has_length(1);
+        Assert::that(sheet.rules[0].0.clone()).is(CssSelector::Tag("p".into()));
+        Assert::that(sheet.rules[0].1.block.text_align.clone()).is_some(TextAlign::Center);
     }
 
     #[test]
     fn parse_class_selector() {
         let sheet = parse_css(".verse { font-style: italic; }");
-        assert_eq!(sheet.rules.len(), 1);
-        assert_eq!(sheet.rules[0].0, CssSelector::Class("verse".into()));
+        Assert::that(&sheet.rules).has_length(1);
+        Assert::that(sheet.rules[0].0.clone()).is(CssSelector::Class("verse".into()));
         assert!(sheet.rules[0].1.inline.italic);
     }
 
     #[test]
     fn parse_tag_and_class_selector() {
         let sheet = parse_css("p.indent { margin-top: 0.5em; }");
-        assert_eq!(sheet.rules.len(), 1);
-        assert_eq!(
-            sheet.rules[0].0,
-            CssSelector::TagAndClass("p".into(), "indent".into())
-        );
-        assert_eq!(sheet.rules[0].1.block.margin_top_em, Some(0.5));
+        Assert::that(&sheet.rules).has_length(1);
+        Assert::that(sheet.rules[0].0.clone())
+            .is(CssSelector::TagAndClass("p".into(), "indent".into()));
+        Assert::that(sheet.rules[0].1.block.margin_top_em).is_some(0.5);
     }
 
     #[test]
     fn parse_justify_fallback_to_left() {
         let sheet = parse_css("p { text-align: justify; }");
-        assert_eq!(sheet.rules.len(), 1);
-        assert_eq!(sheet.rules[0].1.block.text_align, Some(TextAlign::Left));
+        Assert::that(&sheet.rules).has_length(1);
+        Assert::that(sheet.rules[0].1.block.text_align.clone()).is_some(TextAlign::Left);
     }
 
     #[test]
     fn parse_multiple_selectors_comma_separated() {
         let sheet = parse_css("h1, h2, h3 { text-align: center; }");
-        assert_eq!(sheet.rules.len(), 3);
-        assert_eq!(sheet.rules[0].0, CssSelector::Tag("h1".into()));
-        assert_eq!(sheet.rules[1].0, CssSelector::Tag("h2".into()));
-        assert_eq!(sheet.rules[2].0, CssSelector::Tag("h3".into()));
+        let selectors: Vec<CssSelector> = sheet.rules.iter().map(|(sel, _)| sel.clone()).collect();
+        Assert::that(selectors).is_eq_to(vec![
+            CssSelector::Tag("h1".into()),
+            CssSelector::Tag("h2".into()),
+            CssSelector::Tag("h3".into()),
+        ]);
     }
 
     #[test]
@@ -350,14 +352,14 @@ mod tests {
              .verse { font-style: italic; }
              h1 { text-align: center; font-size: 2em; }",
         );
-        assert_eq!(sheet.rules.len(), 3);
+        Assert::that(&sheet.rules).has_length(3);
     }
 
     #[test]
     fn comments_stripped() {
         let sheet = parse_css("/* heading styles */ h1 { text-align: center; } /* end */");
-        assert_eq!(sheet.rules.len(), 1);
-        assert_eq!(sheet.rules[0].0, CssSelector::Tag("h1".into()));
+        Assert::that(&sheet.rules).has_length(1);
+        Assert::that(sheet.rules[0].0.clone()).is(CssSelector::Tag("h1".into()));
     }
 
     #[test]
@@ -379,12 +381,10 @@ mod tests {
         // should be treated as `span.kw { color: green; }`.
         let sheet = parse_css("code span.kw { color: #007020; font-weight: bold; }");
         assert_eq!(sheet.rules.len(), 1, "should parse one rule");
-        assert_eq!(
-            sheet.rules[0].0,
-            CssSelector::TagAndClass("span".into(), "kw".into())
-        );
+        Assert::that(sheet.rules[0].0.clone())
+            .is(CssSelector::TagAndClass("span".into(), "kw".into()));
         let resolved = sheet.resolve("span", "kw");
-        assert_eq!(resolved.color, Some([0x00, 0x70, 0x20]));
+        Assert::that(resolved.color).is_some([0x00, 0x70, 0x20]);
         assert!(resolved.inline.bold);
     }
 
@@ -404,79 +404,70 @@ mod tests {
     fn id_scoped_descendant_produces_id_descendant_selector() {
         let sheet = parse_css("#titlepage h2 { text-align: center; }");
         assert_eq!(sheet.rules.len(), 1, "should parse one rule");
-        assert_eq!(
-            sheet.rules[0].0,
-            CssSelector::IdDescendant {
-                ancestor_id: "titlepage".into(),
-                inner: Box::new(CssSelector::Tag("h2".into())),
-            }
-        );
+        Assert::that(sheet.rules[0].0.clone()).is(CssSelector::IdDescendant {
+            ancestor_id: "titlepage".into(),
+            inner: Box::new(CssSelector::Tag("h2".into())),
+        });
         // Without ancestor context: no match
         let no_ctx = sheet.resolve("h2", "");
-        assert_eq!(no_ctx.block.text_align, None);
+        Assert::that(no_ctx.block.text_align).is(None);
         // With ancestor context: matches
         let with_ctx = sheet.resolve_with_ancestors("h2", "", &["titlepage"]);
-        assert_eq!(with_ctx.block.text_align, Some(TextAlign::Center));
+        Assert::that(with_ctx.block.text_align).is_some(TextAlign::Center);
         // Wrong ancestor ID: no match
         let wrong_ctx = sheet.resolve_with_ancestors("h2", "", &["other"]);
-        assert_eq!(wrong_ctx.block.text_align, None);
+        Assert::that(wrong_ctx.block.text_align).is(None);
     }
 
     #[test]
     fn id_scoped_class_descendant_produces_id_descendant_selector() {
         let sheet = parse_css("#titlepage h2.special { text-align: center; }");
-        assert_eq!(sheet.rules.len(), 1);
-        assert_eq!(
-            sheet.rules[0].0,
-            CssSelector::IdDescendant {
-                ancestor_id: "titlepage".into(),
-                inner: Box::new(CssSelector::TagAndClass("h2".into(), "special".into())),
-            }
-        );
+        Assert::that(&sheet.rules).has_length(1);
+        Assert::that(sheet.rules[0].0.clone()).is(CssSelector::IdDescendant {
+            ancestor_id: "titlepage".into(),
+            inner: Box::new(CssSelector::TagAndClass("h2".into(), "special".into())),
+        });
         let resolved = sheet.resolve_with_ancestors("h2", "special", &["titlepage"]);
-        assert_eq!(resolved.block.text_align, Some(TextAlign::Center));
+        Assert::that(resolved.block.text_align).is_some(TextAlign::Center);
         // Tag without class: no match
         let no_class = sheet.resolve_with_ancestors("h2", "", &["titlepage"]);
-        assert_eq!(no_class.block.text_align, None);
+        Assert::that(no_class.block.text_align).is(None);
     }
 
     #[test]
     fn id_scoped_class_only_descendant() {
         let sheet = parse_css("#titlepage .centered { text-align: center; }");
-        assert_eq!(sheet.rules.len(), 1);
-        assert_eq!(
-            sheet.rules[0].0,
-            CssSelector::IdDescendant {
-                ancestor_id: "titlepage".into(),
-                inner: Box::new(CssSelector::Class("centered".into())),
-            }
-        );
+        Assert::that(&sheet.rules).has_length(1);
+        Assert::that(sheet.rules[0].0.clone()).is(CssSelector::IdDescendant {
+            ancestor_id: "titlepage".into(),
+            inner: Box::new(CssSelector::Class("centered".into())),
+        });
         let resolved = sheet.resolve_with_ancestors("p", "centered", &["titlepage"]);
-        assert_eq!(resolved.block.text_align, Some(TextAlign::Center));
+        Assert::that(resolved.block.text_align).is_some(TextAlign::Center);
     }
 
     #[test]
     fn resolve_tag_match() {
         let sheet = parse_css("p { text-align: center; }");
         let resolved = sheet.resolve("p", "");
-        assert_eq!(resolved.block.text_align, Some(TextAlign::Center));
+        Assert::that(resolved.block.text_align).is_some(TextAlign::Center);
     }
 
     #[test]
     fn resolve_class_match() {
         let sheet = parse_css(".verse { text-align: center; }");
         let resolved = sheet.resolve("p", "verse");
-        assert_eq!(resolved.block.text_align, Some(TextAlign::Center));
+        Assert::that(resolved.block.text_align).is_some(TextAlign::Center);
     }
 
     #[test]
     fn resolve_tag_and_class_match() {
         let sheet = parse_css("p.indent { margin-top: 0.5em; }");
         let resolved = sheet.resolve("p", "indent");
-        assert_eq!(resolved.block.margin_top_em, Some(0.5));
+        Assert::that(resolved.block.margin_top_em).is_some(0.5);
         // Should not match other tags
         let resolved = sheet.resolve("div", "indent");
-        assert_eq!(resolved.block.margin_top_em, None);
+        Assert::that(resolved.block.margin_top_em).is(None);
     }
 
     #[test]
@@ -494,7 +485,7 @@ mod tests {
     fn resolve_no_match() {
         let sheet = parse_css("h1 { text-align: center; }");
         let resolved = sheet.resolve("p", "");
-        assert_eq!(resolved.block.text_align, None);
+        Assert::that(resolved.block.text_align).is(None);
     }
 
     #[test]
@@ -504,14 +495,14 @@ mod tests {
              p { text-align: center; }",
         );
         let resolved = sheet.resolve("p", "");
-        assert_eq!(resolved.block.text_align, Some(TextAlign::Center));
+        Assert::that(resolved.block.text_align).is_some(TextAlign::Center);
     }
 
     #[test]
     fn empty_stylesheet() {
         let sheet = StyleSheet::empty();
         let resolved = sheet.resolve("p", "verse");
-        assert_eq!(resolved.block, BlockStyle::default());
+        Assert::that(resolved.block).is(BlockStyle::default());
     }
 
     #[test]
@@ -519,9 +510,9 @@ mod tests {
         let mut a = parse_css("p { text-align: left; }");
         let b = parse_css(".verse { text-align: center; }");
         a.merge(b);
-        assert_eq!(a.rules.len(), 2);
+        Assert::that(&a.rules).has_length(2);
         let resolved = a.resolve("p", "verse");
-        assert_eq!(resolved.block.text_align, Some(TextAlign::Center));
+        Assert::that(resolved.block.text_align).is_some(TextAlign::Center);
     }
 
     #[test]
@@ -531,23 +522,23 @@ mod tests {
              @font-face { font-family: 'Custom'; src: url('font.woff'); }
              p { text-align: center; }",
         );
-        assert_eq!(sheet.rules.len(), 1);
-        assert_eq!(sheet.rules[0].0, CssSelector::Tag("p".into()));
+        Assert::that(&sheet.rules).has_length(1);
+        Assert::that(sheet.rules[0].0.clone()).is(CssSelector::Tag("p".into()));
     }
 
     #[test]
     fn css_color_in_stylesheet() {
         let sheet = parse_css(".red { color: #ff0000; }");
         let resolved = sheet.resolve("span", "red");
-        assert_eq!(resolved.color, Some([255, 0, 0]));
-        assert_eq!(resolved.block.color, Some([255, 0, 0]));
+        Assert::that(resolved.color).is_some([255, 0, 0]);
+        Assert::that(resolved.block.color).is_some([255, 0, 0]);
     }
 
     #[test]
     fn css_font_size_in_stylesheet() {
         let sheet = parse_css(".big { font-size: 1.5em; }");
         let resolved = sheet.resolve("span", "big");
-        assert_eq!(resolved.font_size_em, Some(1.5));
-        assert_eq!(resolved.block.font_size_em, Some(1.5));
+        Assert::that(resolved.font_size_em).is_some(1.5);
+        Assert::that(resolved.block.font_size_em).is_some(1.5);
     }
 }

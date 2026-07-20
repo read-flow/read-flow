@@ -525,6 +525,7 @@ pub fn force_create_all_parents(path: &Path) {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
     use indexmap::IndexMap;
     use rstest::rstest;
 
@@ -539,17 +540,17 @@ mod tests {
 
     #[test]
     fn expand_tilde_alone_returns_home() {
-        assert_eq!(expand_tilde("~").unwrap(), home());
+        Assert::that(expand_tilde("~").unwrap()).is(home());
     }
 
     #[test]
     fn expand_tilde_slash_subdir_returns_home_joined() {
-        assert_eq!(expand_tilde("~/docs").unwrap(), home().join("docs"));
+        Assert::that(expand_tilde("~/docs").unwrap()).is(home().join("docs"));
     }
 
     #[test]
     fn expand_tilde_backslash_subdir_returns_home_joined() {
-        assert_eq!(expand_tilde("~\\docs").unwrap(), home().join("docs"));
+        Assert::that(expand_tilde("~\\docs").unwrap()).is(home().join("docs"));
     }
 
     #[rstest]
@@ -558,7 +559,7 @@ mod tests {
     #[case("~alice/docs")]
     #[case("notilde")]
     fn expand_tilde_non_tilde_paths_returned_as_is(#[case] input: &str) {
-        assert_eq!(expand_tilde(input).unwrap(), PathBuf::from(input));
+        Assert::that(expand_tilde(input).unwrap()).is(PathBuf::from(input));
     }
 
     #[test]
@@ -578,7 +579,7 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        assert_eq!(actual, expected);
+        Assert::that(actual.clone()).is(expected);
 
         let actual: IndexMap<i32, Vec<i32>> = actual
             .into_iter()
@@ -588,6 +589,6 @@ mod tests {
             vec![(2, vec![2, 2]), (5, vec![5, 5, 5]), (6, vec![6, 6])]
                 .into_iter()
                 .collect();
-        assert_eq!(actual, expected);
+        Assert::that(actual).is(expected);
     }
 }

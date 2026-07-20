@@ -200,6 +200,8 @@ mod tests {
     use std::sync::atomic::AtomicU8;
     use std::sync::atomic::Ordering;
 
+    use assert4rs::Assert;
+
     use super::*;
 
     #[derive(Default)]
@@ -266,54 +268,54 @@ mod tests {
     #[tokio::test]
     async fn test_value_provider() {
         let actual = Value::from("Hello World!");
-        assert_eq!(actual.provide().await.unwrap(), "Hello World!");
+        Assert::that(actual.provide().await.unwrap()).is("Hello World!");
     }
 
     #[tokio::test]
     async fn test_counter() {
         let counter = Counter::default();
-        assert_eq!(counter.provide().await.unwrap(), 1);
-        assert_eq!(counter.provide().await.unwrap(), 2);
-        assert_eq!(counter.provide().await.unwrap(), 3);
-        assert_eq!(counter.provide().await.unwrap(), 4);
+        Assert::that(counter.provide().await.unwrap()).is(1);
+        Assert::that(counter.provide().await.unwrap()).is(2);
+        Assert::that(counter.provide().await.unwrap()).is(3);
+        Assert::that(counter.provide().await.unwrap()).is(4);
     }
 
     #[tokio::test]
     async fn test_counter_double() {
         let counter = Arc::new(Counter::default()).map(|x| x * 2);
-        assert_eq!(counter.provide().await.unwrap(), 2);
-        assert_eq!(counter.provide().await.unwrap(), 4);
-        assert_eq!(counter.provide().await.unwrap(), 6);
-        assert_eq!(counter.provide().await.unwrap(), 8);
+        Assert::that(counter.provide().await.unwrap()).is(2);
+        Assert::that(counter.provide().await.unwrap()).is(4);
+        Assert::that(counter.provide().await.unwrap()).is(6);
+        Assert::that(counter.provide().await.unwrap()).is(8);
     }
 
     #[tokio::test]
     async fn test_cached_provider() {
         let provider = Counter::default().cache();
-        assert_eq!(provider.provide().await.unwrap(), 1);
-        assert_eq!(provider.provide().await.unwrap(), 1);
+        Assert::that(provider.provide().await.unwrap()).is(1);
+        Assert::that(provider.provide().await.unwrap()).is(1);
         provider.set_expired().await;
-        assert_eq!(provider.provide().await.unwrap(), 2);
-        assert_eq!(provider.provide().await.unwrap(), 2);
+        Assert::that(provider.provide().await.unwrap()).is(2);
+        Assert::that(provider.provide().await.unwrap()).is(2);
     }
 
     #[tokio::test]
     async fn test_expiring_cache_provider() {
         let (counter, expired_flag) = ExpiringCounter::new();
         let provider = counter.expiring_item_cache();
-        assert_eq!(provider.provide().await.unwrap().value, 1);
-        assert_eq!(provider.provide().await.unwrap().value, 1);
+        Assert::that(provider.provide().await.unwrap().value).is(1);
+        Assert::that(provider.provide().await.unwrap().value).is(1);
 
         expired_flag.store(true, Ordering::Release);
 
-        assert_eq!(provider.provide().await.unwrap().value, 2);
-        assert_eq!(provider.provide().await.unwrap().value, 2);
+        Assert::that(provider.provide().await.unwrap().value).is(2);
+        Assert::that(provider.provide().await.unwrap().value).is(2);
     }
 
     #[tokio::test]
     async fn test_and_then_transforms_value() {
         let provider = Value::from(6u8).and_then(|x: u8| -> Result<u8, Infallible> { Ok(x * 7) });
-        assert_eq!(provider.provide().await.unwrap(), 42u8);
+        Assert::that(provider.provide().await.unwrap()).is(42u8);
     }
 
     #[tokio::test]
@@ -322,15 +324,15 @@ mod tests {
         let provider = Arc::new(Counter::default())
             .map(|x: u8| x * 2)
             .and_then(|x: u8| -> Result<u8, Infallible> { Ok(x + 1) });
-        assert_eq!(provider.provide().await.unwrap(), 3); // (1*2)+1
-        assert_eq!(provider.provide().await.unwrap(), 5); // (2*2)+1
+        Assert::that(provider.provide().await.unwrap()).is(3); // (1*2)+1
+        Assert::that(provider.provide().await.unwrap()).is(5); // (2*2)+1
     }
 
     #[tokio::test]
     async fn test_observable_cache_caches_value() {
         let provider = Counter::default().observable_cache();
-        assert_eq!(provider.provide().await.unwrap(), 1);
-        assert_eq!(provider.provide().await.unwrap(), 1); // cached, no second call
+        Assert::that(provider.provide().await.unwrap()).is(1);
+        Assert::that(provider.provide().await.unwrap()).is(1); // cached, no second call
     }
 
     #[tokio::test]
@@ -339,39 +341,39 @@ mod tests {
         let mut rx = provider.subscribe();
         provider.set_expired().await;
         let msg = rx.try_recv().expect("should receive Invalidated");
-        assert_eq!(msg, Invalidated);
+        Assert::that(msg).is(Invalidated);
     }
 
     #[tokio::test]
     async fn test_observable_cache_refetches_after_invalidation() {
         let provider = Counter::default().observable_cache();
-        assert_eq!(provider.provide().await.unwrap(), 1);
+        Assert::that(provider.provide().await.unwrap()).is(1);
         provider.set_expired().await;
-        assert_eq!(provider.provide().await.unwrap(), 2); // new value after invalidation
+        Assert::that(provider.provide().await.unwrap()).is(2); // new value after invalidation
     }
 
     #[tokio::test]
     async fn test_observable_cache_is_expired_after_invalidation() {
         let provider = Counter::default().observable_cache();
         provider.provide().await.unwrap(); // populate cache
-        assert!(!provider.is_expired().await);
+        Assert::that(provider.is_expired().await).is(false);
         provider.set_expired().await;
-        assert!(provider.is_expired().await);
+        Assert::that(provider.is_expired().await).is(true);
     }
 
     #[tokio::test]
     async fn test_observable_cache_with_transform() {
         let provider = Counter::default().observable_cache_with_transform(|x: u8| x * 10);
-        assert_eq!(provider.provide().await.unwrap(), 10);
-        assert_eq!(provider.provide().await.unwrap(), 10); // cached
+        Assert::that(provider.provide().await.unwrap()).is(10);
+        Assert::that(provider.provide().await.unwrap()).is(10); // cached
         provider.set_expired().await;
-        assert_eq!(provider.provide().await.unwrap(), 20); // re-fetched and transformed
+        Assert::that(provider.provide().await.unwrap()).is(20); // re-fetched and transformed
     }
 
     #[tokio::test]
     async fn test_arc_provider_delegates() {
         let provider = Arc::new(Counter::default());
-        assert_eq!(provider.provide().await.unwrap(), 1);
-        assert_eq!(provider.provide().await.unwrap(), 2);
+        Assert::that(provider.provide().await.unwrap()).is(1);
+        Assert::that(provider.provide().await.unwrap()).is(2);
     }
 }

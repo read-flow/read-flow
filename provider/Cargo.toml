@@ -9,3 +9,6 @@ license = "MIT"
 tokio = { workspace = true, features = ["rt", "test-util", "macros"] }
 tracing.workspace = true
 trait-variant.workspace = true
+
+[dev-dependencies]
+assert4rs.workspace = true

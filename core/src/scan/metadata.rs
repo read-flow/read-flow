@@ -112,6 +112,8 @@ pub fn format_pdf_date(raw: String) -> String {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::*;
 
     #[test]
@@ -197,16 +199,16 @@ mod tests {
 
     #[test]
     fn format_pdf_date_converts_pdf_format() {
-        assert_eq!(format_pdf_date("D:20240315120000".to_owned()), "2024-03-15");
+        Assert::that(format_pdf_date("D:20240315120000".to_owned())).is("2024-03-15");
     }
 
     #[test]
     fn format_pdf_date_falls_back_on_short_input() {
-        assert_eq!(format_pdf_date("D:2024".to_owned()), "D:2024");
+        Assert::that(format_pdf_date("D:2024".to_owned())).is("D:2024");
     }
 
     #[test]
     fn format_pdf_date_without_prefix() {
-        assert_eq!(format_pdf_date("20240315".to_owned()), "2024-03-15");
+        Assert::that(format_pdf_date("20240315".to_owned())).is("2024-03-15");
     }
 }

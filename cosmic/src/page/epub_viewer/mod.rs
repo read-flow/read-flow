@@ -3798,6 +3798,7 @@ mod height_tests {
 
 #[cfg(test)]
 mod split_tests {
+    use assert4rs::Assert;
     use cosmic_text::FontSystem;
     use rstest::rstest;
 
@@ -3817,28 +3818,33 @@ mod split_tests {
     #[test]
     fn empty_text_returns_none() {
         let mut fs = make_font_system();
-        assert_eq!(
-            find_split_char_offset("", WIDTH, FONT_SIZE, 100.0, &mut fs),
-            None
-        );
+        Assert::that(find_split_char_offset("", WIDTH, FONT_SIZE, 100.0, &mut fs)).is(None);
     }
 
     #[test]
     fn zero_height_returns_none() {
         let mut fs = make_font_system();
-        assert_eq!(
-            find_split_char_offset("some text", WIDTH, FONT_SIZE, 0.0, &mut fs),
-            None
-        );
+        Assert::that(find_split_char_offset(
+            "some text",
+            WIDTH,
+            FONT_SIZE,
+            0.0,
+            &mut fs,
+        ))
+        .is(None);
     }
 
     #[test]
     fn negative_height_returns_none() {
         let mut fs = make_font_system();
-        assert_eq!(
-            find_split_char_offset("some text", WIDTH, FONT_SIZE, -1.0, &mut fs),
-            None
-        );
+        Assert::that(find_split_char_offset(
+            "some text",
+            WIDTH,
+            FONT_SIZE,
+            -1.0,
+            &mut fs,
+        ))
+        .is(None);
     }
 
     /// The function returns `None` only when *zero* lines fit (height is too
@@ -3850,10 +3856,14 @@ mod split_tests {
         let mut fs = make_font_system();
         // 1 px is less than any realistic line height, so the very first layout
         // run exceeds it and we break immediately with last_byte_end = None.
-        assert_eq!(
-            find_split_char_offset("Short text.", WIDTH, FONT_SIZE, 1.0, &mut fs),
-            None
-        );
+        Assert::that(find_split_char_offset(
+            "Short text.",
+            WIDTH,
+            FONT_SIZE,
+            1.0,
+            &mut fs,
+        ))
+        .is(None);
     }
 
     #[test]

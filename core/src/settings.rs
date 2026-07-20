@@ -330,6 +330,7 @@ fn resolve_bind_addr(
 mod bind_addr_tests {
     use std::net::SocketAddr;
 
+    use assert4rs::Assert;
     use rstest::rstest;
 
     use super::resolve_bind_addr;
@@ -359,10 +360,7 @@ mod bind_addr_tests {
         #[case] expected: &str,
     ) {
         let expected: SocketAddr = expected.parse().unwrap();
-        assert_eq!(
-            resolve_bind_addr(cfg_addr, cfg_port, env_addr, env_port),
-            expected
-        );
+        Assert::that(resolve_bind_addr(cfg_addr, cfg_port, env_addr, env_port)).is(expected);
     }
 }
 
@@ -577,6 +575,8 @@ impl UiSettings {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::*;
 
     #[test]
@@ -591,7 +591,7 @@ guest = "$pbkdf2-sha256$i=100000,l=32$abc$def"
         let settings: Settings = toml::from_str(toml).unwrap();
         let entry = settings.server.authorized_users.get("guest").unwrap();
         assert!(matches!(entry, UserEntry::Simple(_)));
-        assert_eq!(entry.roles(), &[] as &[String]);
+        Assert::that(entry.roles()).is(&[] as &[String]);
         assert!(!entry.has_role("owner"));
     }
 
@@ -617,16 +617,13 @@ alice = { password = "$pbkdf2-sha256$i=100000,l=32$abc$def", roles = ["owner"] }
 private_mode = true
 "#;
         let settings: Settings = toml::from_str(toml).unwrap();
-        assert_eq!(settings.ui.theme(), &ThemeSettings::default());
+        Assert::that(settings.ui.theme()).is(&ThemeSettings::default());
         assert!(!settings.ui.theme().enabled);
-        assert_eq!(settings.ui.theme().light, ThemeVariantSettings::default());
-        assert_eq!(settings.ui.theme().dark, ThemeVariantSettings::default());
-        assert_eq!(settings.ui.theme().density, ThemeDensity::Standard);
-        assert_eq!(settings.ui.theme().roundness, ThemeRoundness::Round);
-        assert_eq!(
-            settings.ui.theme().frosted_strength,
-            FrostedStrength::Medium
-        );
+        Assert::that(settings.ui.theme().light.clone()).is(ThemeVariantSettings::default());
+        Assert::that(settings.ui.theme().dark.clone()).is(ThemeVariantSettings::default());
+        Assert::that(settings.ui.theme().density).is(ThemeDensity::Standard);
+        Assert::that(settings.ui.theme().roundness).is(ThemeRoundness::Round);
+        Assert::that(settings.ui.theme().frosted_strength).is(FrostedStrength::Medium);
     }
 
     #[test]
@@ -653,7 +650,7 @@ private_mode = true
         };
         let serialized = toml::to_string_pretty(&settings).unwrap();
         let deserialized: Settings = toml::from_str(&serialized).unwrap();
-        assert_eq!(settings, deserialized);
+        Assert::that(settings).is(deserialized);
     }
 
     #[test]
@@ -662,14 +659,8 @@ private_mode = true
         theme.variant_mut(ThemeVariant::Light).accent = Some("#111111".into());
         theme.variant_mut(ThemeVariant::Dark).accent = Some("#eeeeee".into());
 
-        assert_eq!(
-            theme.variant(ThemeVariant::Light).accent.as_deref(),
-            Some("#111111")
-        );
-        assert_eq!(
-            theme.variant(ThemeVariant::Dark).accent.as_deref(),
-            Some("#eeeeee")
-        );
+        Assert::that(theme.variant(ThemeVariant::Light).accent.as_deref()).is_some("#111111");
+        Assert::that(theme.variant(ThemeVariant::Dark).accent.as_deref()).is_some("#eeeeee");
     }
 
     #[test]
@@ -681,10 +672,8 @@ private_mode = true
         base.merge_in(UiSettings::new(true, vec!["secret".into()]));
 
         assert!(base.theme().enabled);
-        assert_eq!(
-            base.theme().variant(ThemeVariant::Light).accent.as_deref(),
-            Some("#112233")
-        );
+        Assert::that(base.theme().variant(ThemeVariant::Light).accent.as_deref())
+            .is_some("#112233");
         assert!(base.private_mode());
     }
 
@@ -693,7 +682,7 @@ private_mode = true
         let original = OnlineLibrarySettings::default();
         let serialized = toml::to_string(&original).unwrap();
         let deserialized: OnlineLibrarySettings = toml::from_str(&serialized).unwrap();
-        assert_eq!(original, deserialized);
+        Assert::that(original).is(deserialized);
     }
 
     #[test]

@@ -379,9 +379,9 @@ dependencies = [
 
 [[package]]
 name = "assert4rs"
-version = "0.2.1"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "490cf0df03c0eed2763cc565e85bd3f2058cc4bbcc9b53f94454533811d0ef3a"
+checksum = "9e34105d75c47b1b370c811922da627235f820985f1d1bbd7a5a99a7a1ab078b"
 
 [[package]]
 name = "async-broadcast"
@@ -5774,6 +5774,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 name = "provider"
 version = "0.2.0"
 dependencies = [
+ "assert4rs",
  "tokio",
  "tracing",
  "trait-variant",

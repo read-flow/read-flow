@@ -15,7 +15,7 @@ rust-version = "1.96"
 
 [workspace.dependencies]
 anyhow = "1.0.104"
-assert4rs = "0.2.1"
+assert4rs = "0.3.1"
 async-trait = "0.1.91"
 base64 = "0.22.1"
 clap = "4.6.2"

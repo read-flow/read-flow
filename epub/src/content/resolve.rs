@@ -72,6 +72,7 @@ pub fn guess_media_type(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
     use rstest::rstest;
 
     use super::*;
@@ -82,7 +83,7 @@ mod tests {
     #[case("OEBPS/content.opf", "OEBPS")]
     #[case("a/b/c/d.html", "a/b/c")]
     fn test_base_dir(#[case] href: &str, #[case] expected: &str) {
-        assert_eq!(base_dir(href), expected);
+        Assert::that(base_dir(href)).is(expected);
     }
 
     #[rstest]
@@ -99,7 +100,7 @@ mod tests {
     )]
     #[case("", "data:image/svg+xml;base64,xyz", "data:image/svg+xml;base64,xyz")]
     fn test_resolve_href(#[case] base: &str, #[case] relative: &str, #[case] expected: &str) {
-        assert_eq!(resolve_href(base, relative), expected);
+        Assert::that(resolve_href(base, relative)).is(expected);
     }
 
     #[rstest]
@@ -113,6 +114,6 @@ mod tests {
     #[case("data:image/svg+xml;base64,xyz", "image/svg+xml")]
     #[case("data:image/jpeg;base64,xxx", "image/jpeg")]
     fn test_guess_media_type(#[case] path: &str, #[case] expected: &str) {
-        assert_eq!(guess_media_type(path), expected);
+        Assert::that(guess_media_type(path)).is(expected);
     }
 }

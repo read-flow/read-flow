@@ -1490,23 +1490,23 @@ impl Page for DocumentDetails {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::*;
 
     #[test]
     fn format_imported_at_formats_valid_rfc3339() {
-        assert_eq!(
-            format_imported_at("2026-07-15T10:30:00Z"),
-            Some("Jul 15, 2026".to_string())
-        );
+        Assert::that(format_imported_at("2026-07-15T10:30:00Z"))
+            .is_some("Jul 15, 2026".to_string());
     }
 
     #[test]
     fn format_imported_at_returns_none_for_empty_string() {
-        assert_eq!(format_imported_at(""), None);
+        Assert::that(format_imported_at("")).is(None);
     }
 
     #[test]
     fn format_imported_at_returns_none_for_unparseable_string() {
-        assert_eq!(format_imported_at("not-a-date"), None);
+        Assert::that(format_imported_at("not-a-date")).is(None);
     }
 }

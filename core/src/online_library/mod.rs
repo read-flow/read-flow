@@ -1175,6 +1175,8 @@ fn serialize_attrs_to_html(e: &quick_xml::events::BytesStart<'_>, out: &mut Stri
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::*;
 
     // ── parse_opds_feed ──────────────────────────────────────────────────────
@@ -1195,13 +1197,13 @@ mod tests {
   </entry>
 </feed>"#;
         let books = parse_opds_feed(xml, "Test").unwrap();
-        assert_eq!(books.len(), 1);
-        assert_eq!(books[0].title, "Pride and Prejudice");
-        assert_eq!(books[0].authors, vec!["Austen, Jane"]);
-        assert_eq!(books[0].formats.len(), 2);
-        assert_eq!(books[0].cover_url.as_deref(), Some("/covers/1342.jpg"));
-        assert_eq!(books[0].catalog_name, "Test");
-        assert_eq!(books[0].summary.as_deref(), Some("A classic novel."));
+        Assert::that(&books).has_length(1);
+        Assert::that(books[0].title.clone()).is("Pride and Prejudice");
+        Assert::that(books[0].authors.clone()).is(vec!["Austen, Jane"]);
+        Assert::that(&books[0].formats).has_length(2);
+        Assert::that(books[0].cover_url.as_deref()).is_some("/covers/1342.jpg");
+        Assert::that(books[0].catalog_name.clone()).is("Test");
+        Assert::that(books[0].summary.as_deref()).is_some("A classic novel.");
     }
 
     #[test]
@@ -1239,8 +1241,8 @@ mod tests {
   </entry>
 </feed>"#;
         let books = parse_opds_feed(xml, "Test").unwrap();
-        assert_eq!(books.len(), 1);
-        assert_eq!(books[0].authors, vec!["Smith, Alice", "Jones, Bob"]);
+        Assert::that(&books).has_length(1);
+        Assert::that(books[0].authors.clone()).is(vec!["Smith, Alice", "Jones, Bob"]);
     }
 
     #[test]
@@ -1263,8 +1265,8 @@ mod tests {
   </atom:entry>
 </atom:feed>"#;
         let books = parse_opds_feed(xml, "Test").unwrap();
-        assert_eq!(books.len(), 1);
-        assert_eq!(books[0].title, "Prefixed Title");
+        Assert::that(&books).has_length(1);
+        Assert::that(books[0].title.clone()).is("Prefixed Title");
     }
 
     #[test]
@@ -1278,8 +1280,8 @@ mod tests {
   </entry>
 </feed>"#;
         let books = parse_opds_feed(xml, "Test").unwrap();
-        assert_eq!(books.len(), 1);
-        assert_eq!(books[0].formats.len(), 1);
+        Assert::that(&books).has_length(1);
+        Assert::that(&books[0].formats).has_length(1);
     }
 
     #[test]
@@ -1295,7 +1297,7 @@ mod tests {
   </entry>
 </feed>"#;
         let books = parse_opds_feed(xml, "Test").unwrap();
-        assert_eq!(books[0].summary.as_deref(), Some("Short plain summary."));
+        Assert::that(books[0].summary.as_deref()).is_some("Short plain summary.");
     }
 
     #[test]
@@ -1311,11 +1313,8 @@ mod tests {
   </entry>
 </feed>"#;
         let books = parse_opds_feed(xml, "Test").unwrap();
-        assert_eq!(books[0].summary, None);
-        assert_eq!(
-            books[0].summary_html.as_deref(),
-            Some("<p>A <i>classic</i> novel.</p>")
-        );
+        Assert::that(books[0].summary.clone()).is(None);
+        Assert::that(books[0].summary_html.as_deref()).is_some("<p>A <i>classic</i> novel.</p>");
     }
 
     #[test]
@@ -1332,11 +1331,9 @@ mod tests {
   </entry>
 </feed>"#;
         let books = parse_opds_feed(xml, "Test").unwrap();
-        assert_eq!(books[0].summary, None);
-        assert_eq!(
-            books[0].summary_html.as_deref(),
-            Some("<div><p>First.</p><p>Second.</p></div>")
-        );
+        Assert::that(books[0].summary.clone()).is(None);
+        Assert::that(books[0].summary_html.as_deref())
+            .is_some("<div><p>First.</p><p>Second.</p></div>");
     }
 
     #[test]
@@ -1359,15 +1356,15 @@ mod tests {
   </entry>
 </feed>"#;
         let books = parse_opds_feed(xml, "Test").unwrap();
-        assert_eq!(books.len(), 1);
+        Assert::that(&books).has_length(1);
         let b = &books[0];
-        assert_eq!(b.language.as_deref(), Some("en"));
-        assert_eq!(b.publisher.as_deref(), Some("Penguin Classics"));
-        assert_eq!(b.identifier.as_deref(), Some("isbn:9780142437247"));
-        assert_eq!(b.published.as_deref(), Some("1851-10-18"));
-        assert_eq!(b.rights.as_deref(), Some("Public domain"));
-        assert_eq!(b.subject.as_deref(), Some("Fiction"));
-        assert_eq!(b.contributors, vec!["Penguin Classics"]);
+        Assert::that(b.language.as_deref()).is_some("en");
+        Assert::that(b.publisher.as_deref()).is_some("Penguin Classics");
+        Assert::that(b.identifier.as_deref()).is_some("isbn:9780142437247");
+        Assert::that(b.published.as_deref()).is_some("1851-10-18");
+        Assert::that(b.rights.as_deref()).is_some("Public domain");
+        Assert::that(b.subject.as_deref()).is_some("Fiction");
+        Assert::that(b.contributors.clone()).is(vec!["Penguin Classics"]);
     }
 
     #[test]
@@ -1382,7 +1379,7 @@ mod tests {
   </entry>
 </feed>"#;
         let books = parse_opds_feed(xml, "Test").unwrap();
-        assert_eq!(books[0].subtitle.as_deref(), Some("Or, The Whale"));
+        Assert::that(books[0].subtitle.as_deref()).is_some("Or, The Whale");
     }
 
     #[test]
@@ -1406,15 +1403,15 @@ mod tests {
             catalog_name: "Test".into(),
         };
         let meta = book.to_extracted_metadata();
-        assert_eq!(meta.title.as_deref(), Some("Moby Dick"));
-        assert_eq!(meta.subtitle.as_deref(), Some("Or, The Whale"));
-        assert_eq!(meta.authors, vec!["Melville, Herman"]);
-        assert_eq!(meta.description.as_deref(), Some("A seafaring tale."));
-        assert_eq!(meta.language.as_deref(), Some("en"));
-        assert_eq!(meta.publisher.as_deref(), Some("Penguin"));
-        assert_eq!(meta.identifier.as_deref(), Some("isbn:123"));
-        assert_eq!(meta.date.as_deref(), Some("1851-10-18"));
-        assert_eq!(meta.subject.as_deref(), Some("Fiction"));
+        Assert::that(meta.title.as_deref()).is_some("Moby Dick");
+        Assert::that(meta.subtitle.as_deref()).is_some("Or, The Whale");
+        Assert::that(meta.authors).is(vec!["Melville, Herman"]);
+        Assert::that(meta.description.as_deref()).is_some("A seafaring tale.");
+        Assert::that(meta.language.as_deref()).is_some("en");
+        Assert::that(meta.publisher.as_deref()).is_some("Penguin");
+        Assert::that(meta.identifier.as_deref()).is_some("isbn:123");
+        Assert::that(meta.date.as_deref()).is_some("1851-10-18");
+        Assert::that(meta.subject.as_deref()).is_some("Fiction");
     }
 
     #[test]
@@ -1438,7 +1435,7 @@ mod tests {
             catalog_name: "Test".into(),
         };
         let meta = book.to_extracted_metadata();
-        assert_eq!(meta.publisher.as_deref(), Some("Publisher Co"));
+        Assert::that(meta.publisher.as_deref()).is_some("Publisher Co");
     }
 
     #[test]
@@ -1454,8 +1451,8 @@ mod tests {
 </feed>"#;
         let result = parse_opds_feed_full(xml, "Test").unwrap();
         assert!(result.books.is_empty(), "no acquisition links → no book");
-        assert_eq!(result.stubs.len(), 1);
-        assert_eq!(result.stubs[0].subsection_url, "/ebooks/2701.opds");
+        Assert::that(&result.stubs).has_length(1);
+        Assert::that(result.stubs[0].subsection_url.clone()).is("/ebooks/2701.opds");
     }
 
     #[test]
@@ -1465,14 +1462,14 @@ mod tests {
             "/ebooks/2701.opds",
         )
         .unwrap();
-        assert_eq!(resolved, "https://www.gutenberg.org/ebooks/2701.opds");
+        Assert::that(resolved).is("https://www.gutenberg.org/ebooks/2701.opds");
     }
 
     #[test]
     fn resolve_url_leaves_absolute_unchanged() {
         let href = "https://example.com/book.opds";
         let resolved = resolve_url("https://base.example.com/feed", href).unwrap();
-        assert_eq!(resolved, href);
+        Assert::that(resolved).is(href);
     }
 
     // ── build_search_url ─────────────────────────────────────────────────────
@@ -1514,55 +1511,49 @@ mod tests {
     fn build_search_url_empty_query_returns_template_unchanged() {
         let template = "https://example.com/search?q={searchTerms}";
         let url = build_search_url(template, "").unwrap();
-        assert_eq!(url, template);
+        Assert::that(url).is(template);
     }
 
     // ── DownloadFormat::label_from_mime ──────────────────────────────────────
 
     #[test]
     fn label_from_known_mimes() {
-        assert_eq!(
-            DownloadFormat::label_from_mime("application/epub+zip"),
-            "EPUB"
-        );
-        assert_eq!(DownloadFormat::label_from_mime("application/pdf"), "PDF");
-        assert_eq!(
-            DownloadFormat::label_from_mime("application/x-mobipocket-ebook"),
-            "MOBI"
-        );
-        assert_eq!(DownloadFormat::label_from_mime("text/plain"), "TXT");
+        Assert::that(DownloadFormat::label_from_mime("application/epub+zip")).is("EPUB");
+        Assert::that(DownloadFormat::label_from_mime("application/pdf")).is("PDF");
+        Assert::that(DownloadFormat::label_from_mime(
+            "application/x-mobipocket-ebook",
+        ))
+        .is("MOBI");
+        Assert::that(DownloadFormat::label_from_mime("text/plain")).is("TXT");
     }
 
     #[test]
     fn label_from_unknown_mime_returns_mime_itself() {
         let mime = "application/x-custom-format";
-        assert_eq!(DownloadFormat::label_from_mime(mime), mime);
+        Assert::that(DownloadFormat::label_from_mime(mime)).is(mime);
     }
 
     // ── sanitize_title ───────────────────────────────────────────────────────
 
     #[test]
     fn sanitize_title_basic() {
-        assert_eq!(sanitize_title("Moby Dick"), "moby-dick");
+        Assert::that(sanitize_title("Moby Dick")).is("moby-dick");
     }
 
     #[test]
     fn sanitize_title_with_punctuation() {
-        assert_eq!(
-            sanitize_title("Moby Dick; Or, The Whale"),
-            "moby-dick-or-the-whale"
-        );
+        Assert::that(sanitize_title("Moby Dick; Or, The Whale")).is("moby-dick-or-the-whale");
     }
 
     #[test]
     fn sanitize_title_collapses_consecutive_separators() {
-        assert_eq!(sanitize_title("A  Book -- Title"), "a-book-title");
+        Assert::that(sanitize_title("A  Book -- Title")).is("a-book-title");
     }
 
     #[test]
     fn sanitize_title_empty_falls_back_to_book() {
-        assert_eq!(sanitize_title(""), "book");
-        assert_eq!(sanitize_title("---"), "book");
+        Assert::that(sanitize_title("")).is("book");
+        Assert::that(sanitize_title("---")).is("book");
     }
 
     // ── merge_gutenberg_editions ─────────────────────────────────────────────
@@ -1613,16 +1604,13 @@ mod tests {
             )],
         );
         let merged = merge_gutenberg_editions(vec![no_images, with_images]);
-        assert_eq!(merged.len(), 1);
-        assert_eq!(merged[0].id, "urn:gutenberg:2701");
+        Assert::that(&merged).has_length(1);
+        Assert::that(merged[0].id.clone()).is("urn:gutenberg:2701");
         let labels: Vec<&str> = merged[0].formats.iter().map(|f| f.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            vec![
-                "EPUB (no images, older E-readers)",
-                "EPUB3 (E-readers incl. Send-to-Kindle)"
-            ]
-        );
+        Assert::that(labels).is_eq_to(vec![
+            "EPUB (no images, older E-readers)",
+            "EPUB3 (E-readers incl. Send-to-Kindle)",
+        ]);
     }
 
     #[test]
@@ -1630,7 +1618,7 @@ mod tests {
         let a = book("urn:gutenberg:2701:2", vec![format("EPUB", "/2701.epub")]);
         let b = book("urn:gutenberg:2489:2", vec![format("EPUB", "/2489.epub")]);
         let merged = merge_gutenberg_editions(vec![a, b]);
-        assert_eq!(merged.len(), 2);
+        Assert::that(merged).has_length(2);
     }
 
     #[test]
@@ -1654,8 +1642,8 @@ mod tests {
         second.cover_url = Some("/cover.jpg".into());
         second.language = Some("en".into());
         let merged = merge_gutenberg_editions(vec![first, second]);
-        assert_eq!(merged[0].cover_url.as_deref(), Some("/cover.jpg"));
-        assert_eq!(merged[0].language.as_deref(), Some("en"));
+        Assert::that(merged[0].cover_url.as_deref()).is_some("/cover.jpg");
+        Assert::that(merged[0].language.as_deref()).is_some("en");
     }
 
     #[test]
@@ -1663,7 +1651,7 @@ mod tests {
         let a = book("urn:gutenberg:2701:2", vec![format("EPUB", "/same.epub")]);
         let b = book("urn:gutenberg:2701:3", vec![format("EPUB", "/same.epub")]);
         let merged = merge_gutenberg_editions(vec![a, b]);
-        assert_eq!(merged[0].formats.len(), 1);
+        Assert::that(&merged[0].formats).has_length(1);
     }
 
     #[test]
@@ -1676,10 +1664,7 @@ mod tests {
         with_images.summary_html =
             Some("<div><p>This edition has images.</p><p>A whale tale.</p></div>".into());
         let merged = merge_gutenberg_editions(vec![no_images, with_images]);
-        assert_eq!(
-            merged[0].summary_html.as_deref(),
-            Some("<div><p>A whale tale.</p></div>")
-        );
+        Assert::that(merged[0].summary_html.as_deref()).is_some("<div><p>A whale tale.</p></div>");
     }
 
     #[test]
@@ -1687,7 +1672,7 @@ mod tests {
         let mut variant = book("urn:gutenberg:2701:2", vec![format("EPUB", "/a.epub")]);
         variant.summary = Some("This edition had all images removed. A whale tale.".into());
         let merged = merge_gutenberg_editions(vec![variant]);
-        assert_eq!(merged[0].summary.as_deref(), Some("A whale tale."));
+        Assert::that(merged[0].summary.as_deref()).is_some("A whale tale.");
     }
 
     #[test]
@@ -1696,7 +1681,7 @@ mod tests {
         variant.summary = Some("This edition has images.".into());
         variant.summary_html = Some("<div><p>This edition has images.</p></div>".into());
         let merged = merge_gutenberg_editions(vec![variant]);
-        assert_eq!(merged[0].summary, None);
+        Assert::that(merged[0].summary.clone()).is(None);
         assert_eq!(
             merged[0].summary_html, None,
             "html reduced to empty markup should be dropped"
@@ -1711,22 +1696,18 @@ mod tests {
         );
         other.summary = Some("This edition has images. But a real description.".into());
         let merged = merge_gutenberg_editions(vec![other]);
-        assert_eq!(
-            merged[0].summary.as_deref(),
-            Some("This edition has images. But a real description.")
-        );
+        Assert::that(merged[0].summary.as_deref())
+            .is_some("This edition has images. But a real description.");
     }
 
     #[test]
     fn gutenberg_base_id_parses_variant_ids_only() {
-        assert_eq!(
-            gutenberg_base_id("urn:gutenberg:2701:3").as_deref(),
-            Some("urn:gutenberg:2701")
-        );
-        assert_eq!(gutenberg_base_id("urn:gutenberg:2701"), None);
-        assert_eq!(gutenberg_base_id("urn:gutenberg:2701:3:4"), None);
-        assert_eq!(gutenberg_base_id("urn:gutenberg:abc:3"), None);
-        assert_eq!(gutenberg_base_id("urn:isbn:123:4"), None);
+        Assert::that(gutenberg_base_id("urn:gutenberg:2701:3").as_deref())
+            .is_some("urn:gutenberg:2701");
+        Assert::that(gutenberg_base_id("urn:gutenberg:2701")).is(None);
+        Assert::that(gutenberg_base_id("urn:gutenberg:2701:3:4")).is(None);
+        Assert::that(gutenberg_base_id("urn:gutenberg:abc:3")).is(None);
+        Assert::that(gutenberg_base_id("urn:isbn:123:4")).is(None);
     }
 
     // ── rel="next" pagination ────────────────────────────────────────────────
@@ -1744,8 +1725,8 @@ mod tests {
   </entry>
 </feed>"#;
         let result = parse_opds_feed_full(xml, "Test").unwrap();
-        assert_eq!(result.books.len(), 1);
-        assert_eq!(result.next_url.as_deref(), Some("/feeds/page/2"));
+        Assert::that(result.books).has_length(1);
+        Assert::that(result.next_url.as_deref()).is_some("/feeds/page/2");
     }
 
     #[test]
@@ -1793,11 +1774,8 @@ mod tests {
 
         let resolved = catalog.resolve();
 
-        assert_eq!(resolved.name, "Standard Ebooks");
-        assert_eq!(
-            resolved.search_url,
-            BuiltinCatalogId::StandardEbooks.search_url()
-        );
+        Assert::that(resolved.name).is("Standard Ebooks");
+        Assert::that(resolved.search_url).is(BuiltinCatalogId::StandardEbooks.search_url());
         assert!(!resolved.enabled);
     }
 
@@ -1811,11 +1789,8 @@ mod tests {
 
         let resolved = catalog.resolve();
 
-        assert_eq!(resolved.name, "My Library");
-        assert_eq!(
-            resolved.search_url,
-            "https://example.com/opds?q={searchTerms}"
-        );
+        Assert::that(resolved.name).is("My Library");
+        Assert::that(resolved.search_url).is("https://example.com/opds?q={searchTerms}");
         assert!(resolved.enabled);
     }
 
@@ -1835,8 +1810,7 @@ mod tests {
 
         let resolved = resolve_catalogs(&catalogs);
 
-        assert_eq!(resolved.len(), 2);
-        assert_eq!(resolved[0].name, "Project Gutenberg");
-        assert_eq!(resolved[1].name, "My Library");
+        let names: Vec<&str> = resolved.iter().map(|c| c.name.as_str()).collect();
+        Assert::that(names).is_eq_to(vec!["Project Gutenberg", "My Library"]);
     }
 }

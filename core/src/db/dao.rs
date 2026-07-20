@@ -1222,6 +1222,8 @@ pub async fn cover_exists(conn: &mut SqliteConnection, fingerprint: &str) -> Res
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::*;
 
     async fn test_pool() -> sqlx::SqlitePool {
@@ -1259,11 +1261,11 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(row.document_id, doc.id);
-        assert_eq!(row.title.as_deref(), Some("My Title"));
-        assert_eq!(row.document_type.as_deref(), Some("Book"));
-        assert_eq!(row.authors.as_deref(), Some(r#"["Alice","Bob"]"#));
-        assert_eq!(row.language.as_deref(), Some("en"));
+        Assert::that(row.document_id).is(doc.id);
+        Assert::that(row.title.as_deref()).is_some("My Title");
+        Assert::that(row.document_type.as_deref()).is_some("Book");
+        Assert::that(row.authors.as_deref()).is_some(r#"["Alice","Bob"]"#);
+        Assert::that(row.language.as_deref()).is_some("en");
 
         // Second call must overwrite.
         let updated = upsert_document_user_metadata(
@@ -1283,8 +1285,8 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(updated.document_type.as_deref(), Some("Article"));
-        assert_eq!(updated.title.as_deref(), Some("Updated Title"));
+        Assert::that(updated.document_type.as_deref()).is_some("Article");
+        Assert::that(updated.title.as_deref()).is_some("Updated Title");
     }
 
     #[tokio::test]
@@ -1321,10 +1323,10 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(row.title.as_deref(), Some("The Book"));
-        assert_eq!(row.language.as_deref(), Some("en"));
+        Assert::that(row.title.as_deref()).is_some("The Book");
+        Assert::that(row.language.as_deref()).is_some("en");
         let authors: Vec<String> = serde_json::from_str(row.authors.as_deref().unwrap()).unwrap();
-        assert_eq!(authors, vec!["Alice"]);
+        Assert::that(authors).is(vec!["Alice"]);
     }
 
     #[tokio::test]
@@ -1387,7 +1389,7 @@ mod tests {
                 .fetch_one(&mut *conn)
                 .await
                 .unwrap();
-        assert_eq!(doc_id, Some(winner.id));
+        Assert::that(doc_id).is_some(winner.id);
 
         // Loser document row must be gone.
         let loser_exists: bool =
@@ -1403,7 +1405,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(meta.title.as_deref(), Some("Loser Title"));
+        Assert::that(meta.title.as_deref()).is_some("Loser Title");
     }
 
     #[tokio::test]
@@ -1458,16 +1460,16 @@ mod tests {
             .unwrap()
             .unwrap();
         // Scalar fields: first value wins.
-        assert_eq!(row.title.as_deref(), Some("The Book"));
-        assert_eq!(row.language.as_deref(), Some("en"));
-        assert_eq!(row.publisher.as_deref(), Some("Pub A"));
+        Assert::that(row.title.as_deref()).is_some("The Book");
+        Assert::that(row.language.as_deref()).is_some("en");
+        Assert::that(row.publisher.as_deref()).is_some("Pub A");
         // New scalar that was absent in first merge gets filled.
-        assert_eq!(row.identifier.as_deref(), Some("isbn-123"));
+        Assert::that(row.identifier.as_deref()).is_some("isbn-123");
         // Authors: extended with new unique entries.
         let authors: Vec<String> = serde_json::from_str(row.authors.as_deref().unwrap()).unwrap();
         assert!(authors.contains(&"Alice".to_string()));
         assert!(authors.contains(&"Bob".to_string()));
-        assert_eq!(authors.len(), 2); // "Alice" not duplicated
+        Assert::that(authors).has_length(2); // "Alice" not duplicated
     }
 
     // ── File CRUD ─────────────────────────────────────────────────────────────
@@ -1485,9 +1487,9 @@ mod tests {
         let pool = test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         let file = make_file(&mut conn, "/books/a.epub", "fp-rt1").await;
-        assert_eq!(file.path, "/books/a.epub");
-        assert_eq!(file.fingerprint, "fp-rt1");
-        assert_eq!(file.type_, "epub");
+        Assert::that(file.path).is("/books/a.epub");
+        Assert::that(file.fingerprint).is("fp-rt1");
+        Assert::that(file.type_).is("epub");
     }
 
     #[tokio::test]
@@ -1547,7 +1549,7 @@ mod tests {
         upsert_file(&mut conn, make()).await.unwrap(); // must not error
 
         let all = select_all_files(&mut conn).await.unwrap();
-        assert_eq!(all.len(), 1);
+        Assert::that(all).has_length(1);
     }
 
     #[tokio::test]
@@ -1563,7 +1565,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(by_id, by_guid);
+        Assert::that(by_id).is(by_guid);
     }
 
     #[tokio::test]
@@ -1604,8 +1606,8 @@ mod tests {
         let tags = select_content_tags_by_fingerprint(&mut conn, "fp-wsf1")
             .await
             .unwrap();
-        assert_eq!(tags.len(), 1);
-        assert_eq!(tags[0].tag, "fiction");
+        Assert::that(&tags).has_length(1);
+        Assert::that(tags[0].tag.clone()).is("fiction");
     }
 
     #[tokio::test]
@@ -1640,7 +1642,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(file.fingerprint, "fp-wsf3b");
+        Assert::that(file.fingerprint).is("fp-wsf3b");
     }
 
     // ── Content tags ──────────────────────────────────────────────────────────
@@ -1656,7 +1658,7 @@ mod tests {
         let tags = select_content_tags_by_fingerprint(&mut conn, "fp-tag1")
             .await
             .unwrap();
-        assert_eq!(tags.len(), 1);
+        Assert::that(tags).has_length(1);
     }
 
     #[tokio::test]
@@ -1680,8 +1682,8 @@ mod tests {
         let remaining = select_content_tags_by_fingerprint(&mut conn, "fp-dtag")
             .await
             .unwrap();
-        assert_eq!(remaining.len(), 1);
-        assert_eq!(remaining[0].tag, "b");
+        Assert::that(&remaining).has_length(1);
+        Assert::that(remaining[0].tag.clone()).is("b");
     }
 
     #[tokio::test]
@@ -1701,7 +1703,7 @@ mod tests {
         .await
         .unwrap();
         let tags = select_all_distinct_tags(&mut conn).await.unwrap();
-        assert_eq!(tags, vec!["a", "z"]);
+        Assert::that(tags).is(vec!["a", "z"]);
     }
 
     #[tokio::test]
@@ -1756,8 +1758,8 @@ mod tests {
         let files = select_all_files_excluding_tags(&mut conn, &["excluded".into()])
             .await
             .unwrap();
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].path, "/keep.epub");
+        Assert::that(&files).has_length(1);
+        Assert::that(files[0].path.clone()).is("/keep.epub");
     }
 
     // ── Reading state ─────────────────────────────────────────────────────────
@@ -1784,7 +1786,7 @@ mod tests {
             status_updated_at: "2024-01-01T12:00:00Z".into(),
         };
         let result = upsert_reading_state(&mut conn, state).await.unwrap();
-        assert_eq!(result.status, 1); // auto-promoted to Reading
+        Assert::that(result.status).is(1); // auto-promoted to Reading
     }
 
     #[tokio::test]
@@ -1812,7 +1814,7 @@ mod tests {
             status_updated_at: "2024-01-01T11:00:00Z".into(),
         };
         let result = upsert_reading_state(&mut conn, state2).await.unwrap();
-        assert_eq!(result.status, 2);
+        Assert::that(result.status).is(2);
     }
 
     #[tokio::test]
@@ -1843,8 +1845,8 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(result.status, 1); // original Reading status preserved
-        assert_eq!(result.percentage, 0.5); // original percentage preserved
+        Assert::that(result.status).is(1); // original Reading status preserved
+        Assert::that(result.percentage).is(0.5); // original percentage preserved
     }
 
     #[tokio::test]
@@ -1860,7 +1862,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(result.status, 2);
+        Assert::that(result.status).is(2);
     }
 
     // ── Remotes ───────────────────────────────────────────────────────────────
@@ -1879,11 +1881,11 @@ mod tests {
         let pool = test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         let remote = insert_remote(&mut conn, new_remote(0, "a")).await.unwrap();
-        assert_eq!(remote.base_url, "https://example.com/a");
-        assert_eq!(remote.order, 0);
+        Assert::that(remote.base_url).is("https://example.com/a");
+        Assert::that(remote.order).is(0);
         let all = select_all_remotes(&mut conn).await.unwrap();
-        assert_eq!(all.len(), 1);
-        assert_eq!(all[0].id, remote.id);
+        Assert::that(&all).has_length(1);
+        Assert::that(all[0].id).is(remote.id);
     }
 
     #[tokio::test]
@@ -1901,9 +1903,9 @@ mod tests {
         .await
         .unwrap();
         let all = select_all_remotes(&mut conn).await.unwrap();
-        assert_eq!(all[0].base_url, "https://new.example.com");
-        assert_eq!(all[0].user_id, "new-user");
-        assert_eq!(all[0].passphrase, "new-pass");
+        Assert::that(all[0].base_url.clone()).is("https://new.example.com");
+        Assert::that(all[0].user_id.clone()).is("new-user");
+        Assert::that(all[0].passphrase.clone()).is("new-pass");
     }
 
     #[tokio::test]
@@ -1917,12 +1919,12 @@ mod tests {
         delete_remote_by_id(&pool, r1.id).await.unwrap();
         let mut conn = pool.acquire().await.unwrap();
         let remaining = select_all_remotes(&mut conn).await.unwrap();
-        assert_eq!(remaining.len(), 2);
+        Assert::that(&remaining).has_length(2);
         // Orders must be compact 0,1 with no gaps
         let orders: Vec<i32> = remaining.iter().map(|r| r.order).collect();
-        assert_eq!(orders, vec![0, 1]);
+        Assert::that(orders).is_eq_to(vec![0, 1]);
         // r0 should still be first
-        assert_eq!(remaining[0].id, r0.id);
+        Assert::that(remaining[0].id).is(r0.id);
     }
 
     #[tokio::test]
@@ -1936,8 +1938,8 @@ mod tests {
         let mut conn = pool.acquire().await.unwrap();
         let all = select_all_remotes(&mut conn).await.unwrap();
         // After swap, r1's original url now appears first
-        assert_eq!(all[0].base_url, r1.base_url);
-        assert_eq!(all[1].base_url, r0.base_url);
+        let urls: Vec<String> = all.iter().map(|r| r.base_url.clone()).collect();
+        Assert::that(urls).is_eq_to(vec![r1.base_url, r0.base_url]);
     }
 
     // ── Covers ────────────────────────────────────────────────────────────────
@@ -1951,8 +1953,8 @@ mod tests {
             .await
             .unwrap();
         let result = get_cover(&mut conn, "fp-cov1").await.unwrap().unwrap();
-        assert_eq!(result.0, b"image-data");
-        assert_eq!(result.1, "image/webp");
+        Assert::that(result.0).is(b"image-data");
+        Assert::that(result.1).is("image/webp");
     }
 
     #[tokio::test]
@@ -1967,8 +1969,8 @@ mod tests {
             .await
             .unwrap();
         let result = get_cover(&mut conn, "fp-cov2").await.unwrap().unwrap();
-        assert_eq!(result.0, b"new-data");
-        assert_eq!(result.1, "image/webp");
+        Assert::that(result.0).is(b"new-data");
+        Assert::that(result.1).is("image/webp");
     }
 
     #[tokio::test]
@@ -2012,7 +2014,7 @@ mod tests {
         let doc2 = ensure_document_for_fingerprint(&mut conn, "fp-edf1")
             .await
             .unwrap();
-        assert_eq!(doc.guid, doc2.guid);
+        Assert::that(doc.guid).is(doc2.guid);
     }
 
     #[tokio::test]
@@ -2030,7 +2032,7 @@ mod tests {
         let api_doc = ensure_document_for_fingerprint(&mut conn, "fp-edf2")
             .await
             .unwrap();
-        assert_eq!(api_doc.guid, "preset-doc-guid");
+        Assert::that(api_doc.guid).is("preset-doc-guid");
     }
 
     // ── auto_link_documents ───────────────────────────────────────────────────
@@ -2075,7 +2077,7 @@ mod tests {
             .unwrap();
         // Both files should now belong to the same document
         assert!(f1.document_guid.is_some());
-        assert_eq!(f1.document_guid, f2.document_guid);
+        Assert::that(f1.document_guid).is(f2.document_guid);
     }
 
     #[tokio::test]
@@ -2150,12 +2152,12 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(f1.document_guid, f2.document_guid);
+        Assert::that(f1.document_guid).is(f2.document_guid);
         // Count documents — must still be exactly 1
         let doc_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM documents")
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-        assert_eq!(doc_count, 1);
+        Assert::that(doc_count).is(1);
     }
 }

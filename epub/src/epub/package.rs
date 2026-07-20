@@ -286,6 +286,8 @@ fn parse_spine_ref(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<(Stri
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::*;
 
     const OPF: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
@@ -313,39 +315,36 @@ mod tests {
     #[test]
     fn parses_metadata() {
         let pkg = Package::parse(OPF, "OEBPS").unwrap();
-        assert_eq!(pkg.metadata.title.as_deref(), Some("Test Book"));
-        assert_eq!(pkg.metadata.authors.len(), 2);
-        assert_eq!(pkg.metadata.authors[0], "Author One");
-        assert_eq!(pkg.metadata.authors[1], "Author Two");
-        assert_eq!(pkg.metadata.language.as_deref(), Some("en"));
-        assert_eq!(pkg.metadata.publisher.as_deref(), Some("Test Publisher"));
-        assert_eq!(
-            pkg.metadata.identifier.as_deref(),
-            Some("urn:isbn:1234567890")
-        );
-        assert_eq!(pkg.metadata.date.as_deref(), Some("2024-01-15"));
+        Assert::that(pkg.metadata.title.as_deref()).is_some("Test Book");
+        Assert::that(&pkg.metadata.authors).has_length(2);
+        Assert::that(<String as Clone>::clone(&pkg.metadata.authors[0])).is("Author One");
+        Assert::that(<String as Clone>::clone(&pkg.metadata.authors[1])).is("Author Two");
+        Assert::that(pkg.metadata.language.as_deref()).is_some("en");
+        Assert::that(pkg.metadata.publisher.as_deref()).is_some("Test Publisher");
+        Assert::that(pkg.metadata.identifier.as_deref()).is_some("urn:isbn:1234567890");
+        Assert::that(pkg.metadata.date.as_deref()).is_some("2024-01-15");
     }
 
     #[test]
     fn parses_manifest_with_base_path() {
         let pkg = Package::parse(OPF, "OEBPS").unwrap();
-        assert_eq!(pkg.manifest.len(), 3);
+        Assert::that(&pkg.manifest).has_length(3);
         let c1 = pkg.manifest.get("c1").unwrap();
-        assert_eq!(c1.href, "OEBPS/chapter1.xhtml");
-        assert_eq!(c1.media_type, "application/xhtml+xml");
+        Assert::that(c1.href.clone()).is("OEBPS/chapter1.xhtml");
+        Assert::that(c1.media_type.clone()).is("application/xhtml+xml");
     }
 
     #[test]
     fn parses_spine_order_and_linearity() {
         let pkg = Package::parse(OPF, "OEBPS").unwrap();
-        assert_eq!(pkg.spine.len(), 2);
+        Assert::that(&pkg.spine).has_length(2);
 
-        assert_eq!(pkg.spine[0].index, 0);
-        assert_eq!(pkg.spine[0].id, "c1");
-        assert_eq!(pkg.spine[0].href, "OEBPS/chapter1.xhtml");
+        Assert::that(pkg.spine[0].index).is(0);
+        Assert::that(pkg.spine[0].id.clone()).is("c1");
+        Assert::that(pkg.spine[0].href.clone()).is("OEBPS/chapter1.xhtml");
         assert!(pkg.spine[0].linear);
 
-        assert_eq!(pkg.spine[1].index, 1);
+        Assert::that(pkg.spine[1].index).is(1);
         assert!(!pkg.spine[1].linear);
     }
 
@@ -353,7 +352,7 @@ mod tests {
     fn empty_base_path_leaves_href_unchanged() {
         let pkg = Package::parse(OPF, "").unwrap();
         let c1 = pkg.manifest.get("c1").unwrap();
-        assert_eq!(c1.href, "chapter1.xhtml");
+        Assert::that(c1.href.clone()).is("chapter1.xhtml");
     }
 
     #[test]
@@ -370,8 +369,8 @@ mod tests {
   <spine><itemref idref="c1"/></spine>
 </package>"#;
         let pkg = Package::parse(opf, "OEBPS").unwrap();
-        assert_eq!(pkg.nav_href.as_deref(), Some("OEBPS/nav.xhtml"));
-        assert_eq!(pkg.ncx_href, None);
+        Assert::that(pkg.nav_href.as_deref()).is_some("OEBPS/nav.xhtml");
+        Assert::that(pkg.ncx_href).is(None);
     }
 
     #[test]
@@ -388,8 +387,8 @@ mod tests {
   <spine toc="ncx"><itemref idref="c1"/></spine>
 </package>"#;
         let pkg = Package::parse(opf, "OEBPS").unwrap();
-        assert_eq!(pkg.ncx_href.as_deref(), Some("OEBPS/toc.ncx"));
-        assert_eq!(pkg.nav_href, None);
+        Assert::that(pkg.ncx_href.as_deref()).is_some("OEBPS/toc.ncx");
+        Assert::that(pkg.nav_href).is(None);
     }
 
     #[test]
@@ -413,10 +412,10 @@ mod tests {
 
         // Check that relative paths were resolved correctly
         let chapter1 = pkg.manifest.get("chapter1").unwrap();
-        assert_eq!(chapter1.href, "Text/chapter1.xhtml"); // ../Text -> Text
+        Assert::that(chapter1.href.clone()).is("Text/chapter1.xhtml"); // ../Text -> Text
 
         let style1 = pkg.manifest.get("style1").unwrap();
-        assert_eq!(style1.href, "Styles/style.css"); // ../Styles -> Styles
+        Assert::that(style1.href.clone()).is("Styles/style.css"); // ../Styles -> Styles
     }
 
     #[test]
@@ -438,7 +437,7 @@ mod tests {
 
         let style1 = pkg.manifest.get("style1").unwrap();
         // Absolute paths should have the leading / stripped
-        assert_eq!(style1.href, "absolute/path.css");
+        Assert::that(style1.href.clone()).is("absolute/path.css");
     }
 
     #[test]
@@ -461,6 +460,6 @@ mod tests {
 
         let chapter1 = pkg.manifest.get("chapter1").unwrap();
         // Should remain unchanged when no base is provided
-        assert_eq!(chapter1.href, "chapter1.xhtml");
+        Assert::that(chapter1.href.clone()).is("chapter1.xhtml");
     }
 }

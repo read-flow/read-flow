@@ -251,6 +251,7 @@ mod tests {
     use std::io::Write as _;
     use std::path::PathBuf;
 
+    use assert4rs::Assert;
     use rstest::rstest;
     use tempfile::TempDir;
 
@@ -321,13 +322,13 @@ mod tests {
     #[case("archive.rar", false)]
     #[case("noextension", false)]
     fn detects_archive_paths(#[case] name: &str, #[case] expected: bool) {
-        assert_eq!(is_archive_path(Path::new(name)), expected);
+        Assert::that(is_archive_path(Path::new(name))).is(expected);
     }
 
     #[test]
     fn joined_archive_path_uses_separator() {
         let joined = joined_archive_path(Path::new("/data/lib.zip"), "books/novel.epub");
-        assert_eq!(joined, "/data/lib.zip::books/novel.epub");
+        Assert::that(joined).is("/data/lib.zip::books/novel.epub");
     }
 
     #[test]
@@ -341,7 +342,7 @@ mod tests {
 
         let mut members = enumerate_archive_members(&zip).unwrap();
         members.sort();
-        assert_eq!(members, vec!["b.pdf", "books/a.epub"]);
+        Assert::that(members).is(vec!["b.pdf", "books/a.epub"]);
     }
 
     #[test]
@@ -355,7 +356,7 @@ mod tests {
 
         let mut members = enumerate_archive_members(&tarball).unwrap();
         members.sort();
-        assert_eq!(members, vec!["b.pdf", "books/a.epub"]);
+        Assert::that(members).is(vec!["b.pdf", "books/a.epub"]);
     }
 
     #[test]
@@ -369,7 +370,7 @@ mod tests {
 
         let mut members = enumerate_archive_members(&tarball).unwrap();
         members.sort();
-        assert_eq!(members, vec!["b.pdf", "books/a.epub"]);
+        Assert::that(members).is(vec!["b.pdf", "books/a.epub"]);
     }
 
     #[test]
@@ -378,7 +379,7 @@ mod tests {
         let zip = make_zip(tmp.path(), "lib.zip", &[("books/a.epub", b"epub-bytes")]);
 
         let bytes = extract_archive_member(&zip, "books/a.epub").unwrap();
-        assert_eq!(bytes, b"epub-bytes");
+        Assert::that(bytes).is(b"epub-bytes");
     }
 
     #[test]
@@ -387,7 +388,7 @@ mod tests {
         let tarball = make_tar_gz(tmp.path(), "lib.tar.gz", &[("b.pdf", b"pdf-bytes")]);
 
         let bytes = extract_archive_member(&tarball, "b.pdf").unwrap();
-        assert_eq!(bytes, b"pdf-bytes");
+        Assert::that(bytes).is(b"pdf-bytes");
     }
 
     #[test]
@@ -396,7 +397,7 @@ mod tests {
         let tarball = make_tar_zst(tmp.path(), "lib.tar.zst", &[("b.pdf", b"pdf-bytes")]);
 
         let bytes = extract_archive_member(&tarball, "b.pdf").unwrap();
-        assert_eq!(bytes, b"pdf-bytes");
+        Assert::that(bytes).is(b"pdf-bytes");
     }
 
     #[test]
@@ -405,7 +406,7 @@ mod tests {
         let zip = make_zip(tmp.path(), "lib.zip", &[("a.epub", b"x")]);
 
         let err = extract_archive_member(&zip, "missing.pdf").unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::NotFound);
+        Assert::that(err.kind()).is(io::ErrorKind::NotFound);
     }
 
     #[test]
@@ -415,13 +416,13 @@ mod tests {
         let key = format!("test-cache-{}", std::process::id());
 
         let target = extract_member_to_cache(&zip, "a.epub", &key, "epub").unwrap();
-        assert_eq!(std::fs::read(&target).unwrap(), b"first");
+        Assert::that(std::fs::read(&target).unwrap()).is(b"first");
 
         // Second call reuses the cached copy even if the archive changed.
         let zip = make_zip(tmp.path(), "lib.zip", &[("a.epub", b"second")]);
         let again = extract_member_to_cache(&zip, "a.epub", &key, "epub").unwrap();
-        assert_eq!(again, target);
-        assert_eq!(std::fs::read(&again).unwrap(), b"first");
+        Assert::that(again.clone()).is(target.clone());
+        Assert::that(std::fs::read(&again).unwrap()).is(b"first");
 
         std::fs::remove_file(target).unwrap();
     }
@@ -434,7 +435,7 @@ mod tests {
     #[case("library.zip", false)]
     #[case("book.pdf", false)]
     fn detects_tar_archive_paths(#[case] name: &str, #[case] expected: bool) {
-        assert_eq!(is_tar_archive_path(Path::new(name)), expected);
+        Assert::that(is_tar_archive_path(Path::new(name))).is(expected);
     }
 
     #[test]
@@ -453,14 +454,11 @@ mod tests {
         let wanted: HashSet<String> = ["books/a.epub".to_string(), "b.pdf".to_string()].into();
         let spooled = spool_tar_archive(&tarball, &wanted).unwrap();
 
-        assert_eq!(spooled.len(), 2);
-        assert_eq!(
-            std::fs::read(&spooled["books/a.epub"].path).unwrap(),
-            b"epub-a"
-        );
-        assert_eq!(std::fs::read(&spooled["b.pdf"].path).unwrap(), b"pdf-b");
+        Assert::that(&spooled).has_length(2);
+        Assert::that(std::fs::read(&spooled["books/a.epub"].path).unwrap()).is(b"epub-a");
+        Assert::that(std::fs::read(&spooled["b.pdf"].path).unwrap()).is(b"pdf-b");
         // Spooled files keep the member extension for format sniffing.
-        assert_eq!(spooled["books/a.epub"].path.extension().unwrap(), "epub");
+        Assert::that(spooled["books/a.epub"].path.extension().unwrap()).is("epub");
     }
 
     #[test]
@@ -470,7 +468,7 @@ mod tests {
 
         let wanted: HashSet<String> = ["a.epub".to_string(), "missing.pdf".to_string()].into();
         let spooled = spool_tar_archive(&tarball, &wanted).unwrap();
-        assert_eq!(spooled.len(), 1);
+        Assert::that(&spooled).has_length(1);
         assert!(spooled.contains_key("a.epub"));
     }
 
@@ -495,12 +493,12 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let zip = make_zip(tmp.path(), "lib.zip", &[("a.epub", b"x")]);
         let err = spool_tar_archive(&zip, &HashSet::new()).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        Assert::that(err.kind()).is(io::ErrorKind::InvalidInput);
     }
 
     #[test]
     fn enumerate_non_archive_is_invalid_input() {
         let err = enumerate_archive_members(Path::new("/tmp/book.pdf")).unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        Assert::that(err.kind()).is(io::ErrorKind::InvalidInput);
     }
 }

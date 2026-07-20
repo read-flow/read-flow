@@ -58,6 +58,7 @@ fn looks_like_file(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
     use rstest::rstest;
 
     use super::looks_like_file;
@@ -70,6 +71,6 @@ mod tests {
     #[case("documents/some-guid", false)]
     #[case("", false)]
     fn classifies_paths(#[case] path: &str, #[case] expected: bool) {
-        assert_eq!(looks_like_file(path), expected);
+        Assert::that(looks_like_file(path)).is(expected);
     }
 }

@@ -752,6 +752,7 @@ async fn extract_member_to_temp_file(
 mod tests {
     use std::fs;
 
+    use assert4rs::Assert;
     use tempfile::TempDir;
 
     use super::*;
@@ -827,7 +828,7 @@ mod tests {
             .collect();
         paths.sort();
 
-        assert_eq!(paths, vec!["book.epub", "book.mobi", "book.pdf"]);
+        Assert::that(paths).is(vec!["book.epub", "book.mobi", "book.pdf"]);
     }
 
     #[tokio::test]
@@ -837,11 +838,8 @@ mod tests {
         make_file(tmp.path(), "visible.pdf");
 
         let items = collect_traversal(tmp.path().to_path_buf(), default_settings()).await;
-        assert_eq!(items.len(), 1);
-        assert_eq!(
-            items[0].path.file_name().unwrap().to_str().unwrap(),
-            "visible.pdf"
-        );
+        Assert::that(&items).has_length(1);
+        Assert::that(items[0].path.file_name().unwrap().to_str().unwrap()).is("visible.pdf");
     }
 
     #[tokio::test]
@@ -852,7 +850,7 @@ mod tests {
         make_file(tmp.path(), "visible.pdf");
 
         let items = collect_traversal(tmp.path().to_path_buf(), default_settings()).await;
-        assert_eq!(items.len(), 1);
+        Assert::that(&items).has_length(1);
     }
 
     #[tokio::test]
@@ -893,8 +891,8 @@ mod tests {
         make_file(&sub, "book.pdf");
 
         let items = collect_traversal(tmp.path().to_path_buf(), default_settings()).await;
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path, sub.join("book.pdf"));
+        Assert::that(&items).has_length(1);
+        Assert::that(items[0].path.clone()).is(sub.join("book.pdf"));
     }
 
     #[tokio::test]
@@ -925,8 +923,8 @@ mod tests {
         )
         .await;
 
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].tags, vec!["fiction", "2024"]);
+        Assert::that(&items).has_length(1);
+        Assert::that(items[0].tags.clone()).is(vec!["fiction", "2024"]);
     }
 
     #[tokio::test]
@@ -935,7 +933,7 @@ mod tests {
         make_file(tmp.path(), "book.pdf");
 
         let items = collect_traversal(tmp.path().to_path_buf(), default_settings()).await;
-        assert_eq!(items.len(), 1);
+        Assert::that(&items).has_length(1);
         assert!(items[0].tags.is_empty());
     }
 
@@ -951,11 +949,8 @@ mod tests {
         };
 
         let items = collect_traversal(tmp.path().to_path_buf(), settings).await;
-        assert_eq!(items.len(), 1);
-        assert_eq!(
-            items[0].path.file_name().unwrap().to_str().unwrap(),
-            "comic.cbz"
-        );
+        Assert::that(&items).has_length(1);
+        Assert::that(items[0].path.file_name().unwrap().to_str().unwrap()).is("comic.cbz");
     }
 
     #[tokio::test]
@@ -976,7 +971,7 @@ mod tests {
         assert!(rx.try_recv().is_err());
         // but a FileDiscovered progress event must have been emitted
         let ev = progress_rx.try_recv().unwrap();
-        assert_eq!(ev, ScanProgress::FileDiscovered);
+        Assert::that(ev).is(ScanProgress::FileDiscovered);
     }
 
     fn make_zip(dir: &Path, name: &str, members: &[(&str, &[u8])]) -> PathBuf {
@@ -1008,12 +1003,9 @@ mod tests {
         );
 
         let items = collect_traversal(tmp.path().to_path_buf(), default_settings()).await;
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path, zip);
-        assert_eq!(
-            items[0].archive_inner_path.as_deref(),
-            Some("books/novel.epub")
-        );
+        Assert::that(&items).has_length(1);
+        Assert::that(items[0].path.clone()).is(zip);
+        Assert::that(items[0].archive_inner_path.as_deref()).is_some("books/novel.epub");
     }
 
     #[tokio::test]
@@ -1026,8 +1018,8 @@ mod tests {
             settings_with_tags(tmp.path(), vec!["fiction".into()]),
         )
         .await;
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].tags, vec!["fiction"]);
+        Assert::that(&items).has_length(1);
+        Assert::that(items[0].tags.clone()).is(vec!["fiction"]);
     }
 
     #[tokio::test]
@@ -1047,8 +1039,8 @@ mod tests {
         let zip = make_zip(tmp.path(), "library.zip", &[("novel.epub", b"x")]);
 
         let items = collect_traversal(zip.clone(), default_settings()).await;
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path, zip);
+        Assert::that(&items).has_length(1);
+        Assert::that(items[0].path.clone()).is(zip);
     }
 
     fn make_tar_gz(dir: &Path, name: &str, members: &[(&str, &[u8])]) -> PathBuf {
@@ -1077,7 +1069,7 @@ mod tests {
         );
 
         let items = collect_traversal(tmp.path().to_path_buf(), default_settings()).await;
-        assert_eq!(items.len(), 2);
+        Assert::that(&items).has_length(2);
         for item in &items {
             let spool = item.spool.as_ref().expect("tar member must be spooled");
             assert!(spool.path.exists());
@@ -1094,7 +1086,7 @@ mod tests {
             ..ScanSettings::default()
         };
         let items = collect_traversal(tmp.path().to_path_buf(), settings).await;
-        assert_eq!(items.len(), 1);
+        Assert::that(&items).has_length(1);
         assert!(items[0].spool.is_none());
     }
 
@@ -1104,7 +1096,7 @@ mod tests {
         make_zip(tmp.path(), "lib.zip", &[("a.epub", b"epub-a")]);
 
         let items = collect_traversal(tmp.path().to_path_buf(), default_settings()).await;
-        assert_eq!(items.len(), 1);
+        Assert::that(&items).has_length(1);
         assert!(items[0].spool.is_none(), "zip has random access, no spool");
     }
 
@@ -1117,7 +1109,7 @@ mod tests {
         make_tar_gz(tmp.path(), "lib.tar.gz", &[("books/novel.epub", content)]);
 
         let items = collect_traversal(tmp.path().to_path_buf(), default_settings()).await;
-        assert_eq!(items.len(), 1);
+        Assert::that(&items).has_length(1);
         assert!(items[0].spool.is_some());
 
         let scanned = fingerprint_file(items.into_iter().next().unwrap())
@@ -1127,8 +1119,8 @@ mod tests {
             .iter()
             .map(|b| format!("{:02x}", b))
             .collect();
-        assert_eq!(scanned.fingerprint, expected);
-        assert_eq!(scanned.size, content.len() as i64);
+        Assert::that(scanned.fingerprint).is(expected);
+        Assert::that(scanned.size).is(content.len() as i64);
         assert!(scanned.spool.is_some(), "spool must flow to stage 3");
     }
 
@@ -1152,15 +1144,12 @@ mod tests {
             .iter()
             .map(|b| format!("{:02x}", b))
             .collect();
-        assert_eq!(scanned.fingerprint, expected);
-        assert_eq!(scanned.size, content.len() as i64);
-        assert_eq!(scanned.extension, "epub");
-        assert_eq!(scanned.path, zip);
-        assert_eq!(
-            scanned.archive_inner_path.as_deref(),
-            Some("books/novel.epub")
-        );
-        assert_eq!(scanned.tags, vec!["fiction"]);
+        Assert::that(scanned.fingerprint).is(expected);
+        Assert::that(scanned.size).is(content.len() as i64);
+        Assert::that(scanned.extension).is("epub");
+        Assert::that(scanned.path).is(zip);
+        Assert::that(scanned.archive_inner_path.as_deref()).is_some("books/novel.epub");
+        Assert::that(scanned.tags).is(vec!["fiction"]);
     }
 
     #[tokio::test]
@@ -1177,11 +1166,11 @@ mod tests {
         };
         let scanned = fingerprint_file(item).await.unwrap();
 
-        assert_eq!(scanned.extension, "pdf");
-        assert_eq!(scanned.size, 11); // "hello world" is 11 bytes
-        assert_eq!(scanned.fingerprint.len(), 64); // SHA-256 hex is 64 chars
+        Assert::that(scanned.extension).is("pdf");
+        Assert::that(scanned.size).is(11); // "hello world" is 11 bytes
+        Assert::that(scanned.fingerprint.len()).is(64); // SHA-256 hex is 64 chars
         assert!(scanned.fingerprint.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(scanned.path, path);
+        Assert::that(scanned.path).is(path);
     }
 
     #[tokio::test]
@@ -1197,7 +1186,7 @@ mod tests {
             spool: None,
         };
         let scanned = fingerprint_file(item).await.unwrap();
-        assert_eq!(scanned.extension, "pdf");
+        Assert::that(scanned.extension).is("pdf");
     }
 
     // -----------------------------------------------------------------------
@@ -1262,10 +1251,10 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        assert_eq!(row.0, "/tmp/book.pdf");
-        assert_eq!(row.1, "pdf");
-        assert_eq!(row.2, 100);
-        assert_eq!(row.3, "abc123");
+        Assert::that(row.0).is("/tmp/book.pdf");
+        Assert::that(row.1).is("pdf");
+        Assert::that(row.2).is(100);
+        Assert::that(row.3).is("abc123");
     }
 
     #[tokio::test]
@@ -1308,7 +1297,7 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        assert_eq!(size.0, 200);
+        Assert::that(size.0).is(200);
     }
 
     #[tokio::test]
@@ -1348,7 +1337,7 @@ mod tests {
             .fetch_all(&pool)
             .await
             .unwrap();
-        assert_eq!(tags, vec!["2024", "fiction"]);
+        Assert::that(tags).is(vec!["2024", "fiction"]);
     }
 
     #[tokio::test]
@@ -1372,7 +1361,7 @@ mod tests {
             .await
             .unwrap();
         tags.sort();
-        assert_eq!(tags, vec!["a", "b", "c"]);
+        Assert::that(tags).is(vec!["a", "b", "c"]);
     }
 
     #[tokio::test]
@@ -1396,8 +1385,8 @@ mod tests {
         )
         .await;
 
-        assert_eq!(processed, 2);
-        assert_eq!(errors, 0);
+        Assert::that(processed).is(2);
+        Assert::that(errors).is(0);
         assert!(batch.is_empty());
 
         let ev1 = progress_rx.try_recv().unwrap();
@@ -1413,7 +1402,7 @@ mod tests {
                 }
             })
             .collect();
-        assert_eq!(paths.len(), 2);
+        Assert::that(paths).has_length(2);
     }
 
     #[tokio::test]
@@ -1442,15 +1431,15 @@ mod tests {
         )
         .await;
 
-        assert_eq!(errors, 0);
+        Assert::that(errors).is(0);
         let row: (String, Option<String>, Option<String>) =
             sqlx::query_as("SELECT path, archive_path, archive_inner_path FROM files")
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        assert_eq!(row.0, "/data/library.zip::books/novel.epub");
-        assert_eq!(row.1.as_deref(), Some("/data/library.zip"));
-        assert_eq!(row.2.as_deref(), Some("books/novel.epub"));
+        Assert::that(row.0).is("/data/library.zip::books/novel.epub");
+        Assert::that(row.1.as_deref()).is_some("/data/library.zip");
+        Assert::that(row.2.as_deref()).is_some("books/novel.epub");
     }
 
     #[tokio::test]
@@ -1484,12 +1473,12 @@ mod tests {
         )
         .await;
 
-        assert_eq!(errors, 0);
+        Assert::that(errors).is(0);
         let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM files")
             .fetch_one(&pool)
             .await
             .unwrap();
-        assert_eq!(count.0, 1);
+        Assert::that(count.0).is(1);
     }
 
     #[tokio::test]
@@ -1536,7 +1525,7 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        assert_eq!(doc_count.0, 1);
+        Assert::that(doc_count.0).is(1);
 
         // Running again is idempotent — still exactly one document.
         dao::auto_link_documents(&pool).await.unwrap();
@@ -1544,7 +1533,7 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        assert_eq!(doc_count2.0, 1);
+        Assert::that(doc_count2.0).is(1);
     }
 
     #[tokio::test]
@@ -1634,6 +1623,6 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        assert_eq!(doc_count.0, 1);
+        Assert::that(doc_count.0).is(1);
     }
 }

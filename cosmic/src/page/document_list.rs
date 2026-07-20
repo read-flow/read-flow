@@ -1327,6 +1327,7 @@ impl Page for DocumentList {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
     use rstest::rstest;
 
     use super::Document;
@@ -1350,7 +1351,7 @@ mod tests {
     #[case("rust", "", false)]
     #[case("RUST", "rust-programming", false)] // case-sensitive: caller lowercases both
     fn test_fuzzy_match(#[case] query: &str, #[case] text: &str, #[case] expected: bool) {
-        assert_eq!(fuzzy_match(query, text), expected);
+        Assert::that(fuzzy_match(query, text)).is(expected);
     }
 
     fn source(imported_at: &str) -> DocumentSource {
@@ -1391,7 +1392,7 @@ mod tests {
             source("2026-07-15T00:00:00Z"),
             source("2026-07-10T00:00:00Z"),
         ])]);
-        assert_eq!(document_max_imported_at(&d), "2026-07-15T00:00:00Z");
+        Assert::that(document_max_imported_at(&d)).is("2026-07-15T00:00:00Z");
     }
 
     #[test]
@@ -1400,37 +1401,38 @@ mod tests {
             content(vec![source("2026-07-01T00:00:00Z")]),
             content(vec![source("2026-07-20T00:00:00Z")]),
         ]);
-        assert_eq!(document_max_imported_at(&d), "2026-07-20T00:00:00Z");
+        Assert::that(document_max_imported_at(&d)).is("2026-07-20T00:00:00Z");
     }
 
     #[test]
     fn document_max_imported_at_is_empty_for_no_sources() {
         let d = doc(vec![]);
-        assert_eq!(document_max_imported_at(&d), "");
+        Assert::that(document_max_imported_at(&d)).is("");
     }
 
     #[test]
     fn compare_documents_by_added_ascending_orders_oldest_first() {
         let older = doc(vec![content(vec![source("2026-07-01T00:00:00Z")])]);
         let newer = doc(vec![content(vec![source("2026-07-15T00:00:00Z")])]);
-        assert_eq!(
-            compare_documents(&older, &newer, SortSubject::Added, SortDirection::Ascending),
-            std::cmp::Ordering::Less
-        );
+        Assert::that(compare_documents(
+            &older,
+            &newer,
+            SortSubject::Added,
+            SortDirection::Ascending,
+        ))
+        .is(std::cmp::Ordering::Less);
     }
 
     #[test]
     fn compare_documents_by_added_descending_orders_newest_first() {
         let older = doc(vec![content(vec![source("2026-07-01T00:00:00Z")])]);
         let newer = doc(vec![content(vec![source("2026-07-15T00:00:00Z")])]);
-        assert_eq!(
-            compare_documents(
-                &older,
-                &newer,
-                SortSubject::Added,
-                SortDirection::Descending
-            ),
-            std::cmp::Ordering::Greater
-        );
+        Assert::that(compare_documents(
+            &older,
+            &newer,
+            SortSubject::Added,
+            SortDirection::Descending,
+        ))
+        .is(std::cmp::Ordering::Greater);
     }
 }

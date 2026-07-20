@@ -53,6 +53,8 @@ pub enum ScanProgress {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::*;
 
     #[test]
@@ -70,9 +72,9 @@ mod tests {
         else {
             panic!("wrong variant");
         };
-        assert_eq!(discovered, 10);
-        assert_eq!(processed, 9);
-        assert_eq!(errors, 1);
+        Assert::that(discovered).is(10);
+        Assert::that(processed).is(9);
+        Assert::that(errors).is(1);
     }
 
     #[test]
@@ -91,7 +93,7 @@ mod tests {
         else {
             panic!("wrong variant");
         };
-        assert_eq!(p, path);
+        Assert::that(p).is(path);
         assert!(was_new);
         assert!(!was_updated);
     }
@@ -106,7 +108,7 @@ mod tests {
         let ScanProgress::FileError { path: p, error } = ev else {
             panic!("wrong variant");
         };
-        assert_eq!(p, path);
-        assert_eq!(error, "permission denied");
+        Assert::that(p).is(path);
+        Assert::that(error).is("permission denied");
     }
 }

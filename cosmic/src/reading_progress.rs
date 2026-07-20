@@ -111,15 +111,15 @@ pub fn merge(existing: Option<&str>, viewer: Viewer, own_position: &str) -> Stri
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::*;
 
     #[test]
     fn merge_then_extract_round_trips_own_position() {
         let stored = merge(None, Viewer::Epub, r#"{"cfi":"epubcfi(/6/4)"}"#);
-        assert_eq!(
-            extract(&stored, Viewer::Epub).as_deref(),
-            Some(r#"{"cfi":"epubcfi(/6/4)"}"#)
-        );
+        Assert::that(extract(&stored, Viewer::Epub).as_deref())
+            .is_some(r#"{"cfi":"epubcfi(/6/4)"}"#);
     }
 
     #[test]
@@ -127,14 +127,9 @@ mod tests {
         let stored = merge(None, Viewer::Epub, r#"{"cfi":"epubcfi(/6/4)"}"#);
         let stored = merge(Some(&stored), Viewer::MuPdf, r#"{"page":42}"#);
 
-        assert_eq!(
-            extract(&stored, Viewer::Epub).as_deref(),
-            Some(r#"{"cfi":"epubcfi(/6/4)"}"#)
-        );
-        assert_eq!(
-            extract(&stored, Viewer::MuPdf).as_deref(),
-            Some(r#"{"page":42}"#)
-        );
+        Assert::that(extract(&stored, Viewer::Epub).as_deref())
+            .is_some(r#"{"cfi":"epubcfi(/6/4)"}"#);
+        Assert::that(extract(&stored, Viewer::MuPdf).as_deref()).is_some(r#"{"page":42}"#);
     }
 
     #[test]
@@ -144,60 +139,48 @@ mod tests {
         let stored = merge(Some(&stored), Viewer::Epub, r#"{"cfi":"b"}"#);
         let stored = merge(Some(&stored), Viewer::MuPdf, r#"{"page":2}"#);
 
-        assert_eq!(
-            extract(&stored, Viewer::Epub).as_deref(),
-            Some(r#"{"cfi":"b"}"#)
-        );
-        assert_eq!(
-            extract(&stored, Viewer::MuPdf).as_deref(),
-            Some(r#"{"page":2}"#)
-        );
+        Assert::that(extract(&stored, Viewer::Epub).as_deref()).is_some(r#"{"cfi":"b"}"#);
+        Assert::that(extract(&stored, Viewer::MuPdf).as_deref()).is_some(r#"{"page":2}"#);
     }
 
     #[test]
     fn extract_returns_none_when_viewer_never_saved() {
         let stored = merge(None, Viewer::Epub, r#"{"cfi":"a"}"#);
-        assert_eq!(extract(&stored, Viewer::MuPdf), None);
+        Assert::that(extract(&stored, Viewer::MuPdf)).is(None);
     }
 
     #[test]
     fn extract_returns_none_for_absent_or_garbage_input() {
-        assert_eq!(extract("", Viewer::Epub), None);
-        assert_eq!(extract("not json", Viewer::MuPdf), None);
+        Assert::that(extract("", Viewer::Epub)).is(None);
+        Assert::that(extract("not json", Viewer::MuPdf)).is(None);
     }
 
     #[test]
     fn legacy_untagged_mupdf_position_migrates_into_mupdf_slot() {
         let legacy = r#"{"page":7}"#;
-        assert_eq!(extract(legacy, Viewer::MuPdf).as_deref(), Some(legacy));
-        assert_eq!(extract(legacy, Viewer::Epub), None);
+        Assert::that(extract(legacy, Viewer::MuPdf).as_deref()).is_some(legacy);
+        Assert::that(extract(legacy, Viewer::Epub)).is(None);
 
         let stored = merge(Some(legacy), Viewer::Epub, r#"{"cfi":"a"}"#);
-        assert_eq!(extract(&stored, Viewer::MuPdf).as_deref(), Some(legacy));
-        assert_eq!(
-            extract(&stored, Viewer::Epub).as_deref(),
-            Some(r#"{"cfi":"a"}"#)
-        );
+        Assert::that(extract(&stored, Viewer::MuPdf).as_deref()).is_some(legacy);
+        Assert::that(extract(&stored, Viewer::Epub).as_deref()).is_some(r#"{"cfi":"a"}"#);
     }
 
     #[test]
     fn legacy_untagged_epub_cfi_position_migrates_into_epub_slot() {
         let legacy = r#"{"cfi":"epubcfi(/6/4)"}"#;
-        assert_eq!(extract(legacy, Viewer::Epub).as_deref(), Some(legacy));
-        assert_eq!(extract(legacy, Viewer::MuPdf), None);
+        Assert::that(extract(legacy, Viewer::Epub).as_deref()).is_some(legacy);
+        Assert::that(extract(legacy, Viewer::MuPdf)).is(None);
 
         let stored = merge(Some(legacy), Viewer::MuPdf, r#"{"page":3}"#);
-        assert_eq!(extract(&stored, Viewer::Epub).as_deref(), Some(legacy));
-        assert_eq!(
-            extract(&stored, Viewer::MuPdf).as_deref(),
-            Some(r#"{"page":3}"#)
-        );
+        Assert::that(extract(&stored, Viewer::Epub).as_deref()).is_some(legacy);
+        Assert::that(extract(&stored, Viewer::MuPdf).as_deref()).is_some(r#"{"page":3}"#);
     }
 
     #[test]
     fn legacy_untagged_epub_chapter_position_migrates_into_epub_slot() {
         let legacy = r#"{"chapter":2,"block":5}"#;
-        assert_eq!(extract(legacy, Viewer::Epub).as_deref(), Some(legacy));
-        assert_eq!(extract(legacy, Viewer::MuPdf), None);
+        Assert::that(extract(legacy, Viewer::Epub).as_deref()).is_some(legacy);
+        Assert::that(extract(legacy, Viewer::MuPdf)).is(None);
     }
 }

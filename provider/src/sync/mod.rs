@@ -208,6 +208,8 @@ mod tests {
     use std::sync::atomic::AtomicU8;
     use std::sync::atomic::Ordering;
 
+    use assert4rs::Assert;
+
     use super::*;
 
     #[derive(Default)]
@@ -274,47 +276,47 @@ mod tests {
     #[test]
     fn test_value_provider() {
         let actual = Value::from("Hello World!");
-        assert_eq!(actual.provide().unwrap(), "Hello World!");
+        Assert::that(actual.provide().unwrap()).is("Hello World!");
     }
 
     #[test]
     fn test_counter() {
         let counter = Counter::default();
-        assert_eq!(counter.provide().unwrap(), 1);
-        assert_eq!(counter.provide().unwrap(), 2);
-        assert_eq!(counter.provide().unwrap(), 3);
-        assert_eq!(counter.provide().unwrap(), 4);
+        Assert::that(counter.provide().unwrap()).is(1);
+        Assert::that(counter.provide().unwrap()).is(2);
+        Assert::that(counter.provide().unwrap()).is(3);
+        Assert::that(counter.provide().unwrap()).is(4);
     }
 
     #[test]
     fn test_counter_double() {
         let counter = Arc::new(Counter::default()).map(|x| x * 2);
-        assert_eq!(counter.provide().unwrap(), 2);
-        assert_eq!(counter.provide().unwrap(), 4);
-        assert_eq!(counter.provide().unwrap(), 6);
-        assert_eq!(counter.provide().unwrap(), 8);
+        Assert::that(counter.provide().unwrap()).is(2);
+        Assert::that(counter.provide().unwrap()).is(4);
+        Assert::that(counter.provide().unwrap()).is(6);
+        Assert::that(counter.provide().unwrap()).is(8);
     }
 
     #[test]
     fn test_cached_provider() {
         let provider = Counter::default().cache();
-        assert_eq!(provider.provide().unwrap(), 1);
-        assert_eq!(provider.provide().unwrap(), 1);
+        Assert::that(provider.provide().unwrap()).is(1);
+        Assert::that(provider.provide().unwrap()).is(1);
         provider.set_expired();
-        assert_eq!(provider.provide().unwrap(), 2);
-        assert_eq!(provider.provide().unwrap(), 2);
+        Assert::that(provider.provide().unwrap()).is(2);
+        Assert::that(provider.provide().unwrap()).is(2);
     }
 
     #[test]
     fn test_expiring_cache_provider() {
         let (counter, expired_flag) = ExpiringCounter::new();
         let provider = counter.expiring_item_cache();
-        assert_eq!(provider.provide().unwrap().value, 1);
-        assert_eq!(provider.provide().unwrap().value, 1);
+        Assert::that(provider.provide().unwrap().value).is(1);
+        Assert::that(provider.provide().unwrap().value).is(1);
 
         expired_flag.store(true, Ordering::Release);
 
-        assert_eq!(provider.provide().unwrap().value, 2);
-        assert_eq!(provider.provide().unwrap().value, 2);
+        Assert::that(provider.provide().unwrap().value).is(2);
+        Assert::that(provider.provide().unwrap().value).is(2);
     }
 }

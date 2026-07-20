@@ -135,6 +135,7 @@ impl Locator {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
     use rstest::rstest;
 
     use super::*;
@@ -151,7 +152,7 @@ mod tests {
         "rf://doc/abc123/spine/0/node//char/0"
     )]
     fn test_to_uri(#[case] locator: Locator, #[case] hash: &str, #[case] expected: &str) {
-        assert_eq!(locator.to_uri(hash), expected);
+        Assert::that(locator.to_uri(hash)).is(expected);
     }
 
     #[rstest]
@@ -166,7 +167,7 @@ mod tests {
     #[case("not-a-valid-uri", None)]
     #[case("rf://doc/hash/spine/notanum/node/0/char/0", None)]
     fn test_from_uri(#[case] uri: &str, #[case] expected: Option<Locator>) {
-        assert_eq!(Locator::from_uri(uri), expected);
+        Assert::that(Locator::from_uri(uri)).is(expected);
     }
 
     #[test]
@@ -179,7 +180,7 @@ mod tests {
         let hash = "sha256:deadbeef";
         let uri = locator.to_uri(hash);
         let parsed = Locator::from_uri(&uri).expect("should parse");
-        assert_eq!(parsed, locator);
+        Assert::that(parsed).is(locator);
     }
 
     #[rstest]
@@ -203,7 +204,7 @@ mod tests {
         #[case] spine_id: Option<&str>,
         #[case] expected: &str,
     ) {
-        assert_eq!(locator.to_cfi(spine_id), expected);
+        Assert::that(locator.to_cfi(spine_id)).is(expected);
     }
 
     #[rstest]
@@ -214,7 +215,7 @@ mod tests {
     #[case("not-a-cfi", None)]
     #[case("epubcfi(/6/3!/4/6:0)", None)] // odd spine step
     fn test_from_cfi(#[case] cfi: &str, #[case] expected: Option<Locator>) {
-        assert_eq!(Locator::from_cfi(cfi), expected);
+        Assert::that(Locator::from_cfi(cfi)).is(expected);
     }
 
     #[test]
@@ -226,6 +227,6 @@ mod tests {
         };
         let cfi = locator.to_cfi(None);
         let parsed = Locator::from_cfi(&cfi).expect("should parse");
-        assert_eq!(parsed, locator);
+        Assert::that(parsed).is(locator);
     }
 }

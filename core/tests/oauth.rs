@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 
+use assert4rs::Assert;
 use axum::Router;
 use axum::body::Body;
 use axum::body::to_bytes;
@@ -76,7 +77,7 @@ async fn obtain_token(router: &Router, user: &str, password: &str) -> String {
     let (status, body) = send(router, request).await;
     assert_eq!(status, StatusCode::OK, "token exchange body: {body}");
     let json: serde_json::Value = serde_json::from_str(&body).expect("json");
-    assert_eq!(json["token_type"], "Bearer");
+    Assert::that(json["token_type"].clone()).is("Bearer");
     json["access_token"]
         .as_str()
         .expect("access_token")
@@ -102,7 +103,7 @@ async fn token_grants_access_and_encodes_roles() {
 
     // Bearer token is accepted on a protected endpoint.
     let (status, _) = send(&router, get_status(Some(&token), None)).await;
-    assert_eq!(status, StatusCode::OK);
+    Assert::that(status).is(StatusCode::OK);
 
     // Owner-only endpoint works with the token — roles came from the JWT.
     let users = Request::builder()
@@ -110,7 +111,7 @@ async fn token_grants_access_and_encodes_roles() {
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
-    assert_eq!(send(&router, users).await.0, StatusCode::OK);
+    Assert::that(send(&router, users).await.0).is(StatusCode::OK);
 }
 
 #[tokio::test]
@@ -124,7 +125,7 @@ async fn non_owner_token_is_forbidden_on_admin_endpoint() {
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap();
-    assert_eq!(send(&router, users).await.0, StatusCode::FORBIDDEN);
+    Assert::that(send(&router, users).await.0).is(StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
@@ -133,7 +134,7 @@ async fn basic_still_works_and_bad_token_is_rejected() {
 
     // Basic auth remains accepted (additive change).
     let (status, _) = send(&router, get_status(None, Some(basic("owner", "password")))).await;
-    assert_eq!(status, StatusCode::OK);
+    Assert::that(status).is(StatusCode::OK);
 
     // A garbage bearer token → 401 with a Bearer challenge.
     let response = router
@@ -141,18 +142,18 @@ async fn basic_still_works_and_bad_token_is_rejected() {
         .oneshot(get_status(Some("not-a-jwt"), None))
         .await
         .expect("response");
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(
+    Assert::that(response.status()).is(StatusCode::UNAUTHORIZED);
+    Assert::that(
         response
             .headers()
             .get(header::WWW_AUTHENTICATE)
             .and_then(|v| v.to_str().ok()),
-        Some("Bearer error=\"invalid_token\""),
-    );
+    )
+    .is_some("Bearer error=\"invalid_token\"");
 
     // No credentials at all → 401.
     let (status, _) = send(&router, get_status(None, None)).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    Assert::that(status).is(StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -187,7 +188,7 @@ async fn oversized_upload_is_rejected() {
         .body(Body::from(vec![0u8; 1024]))
         .unwrap();
     let (status, _) = send(&router, request).await;
-    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    Assert::that(status).is(StatusCode::PAYLOAD_TOO_LARGE);
 }
 
 #[tokio::test]
@@ -212,7 +213,7 @@ async fn bad_credentials_yield_invalid_grant() {
         .body(Body::from("grant_type=password"))
         .unwrap();
     let (status, body) = send(&router, request).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
+    Assert::that(status).is(StatusCode::BAD_REQUEST);
     let json: serde_json::Value = serde_json::from_str(&body).expect("json");
-    assert_eq!(json["error"], "invalid_grant");
+    Assert::that(json["error"].clone()).is("invalid_grant");
 }

@@ -128,6 +128,8 @@ fn unix_now() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::*;
 
     #[test]
@@ -137,10 +139,10 @@ mod tests {
             .issue("alice", &["owner".to_string()])
             .expect("issue");
         let claims = service.verify(&token).expect("verify");
-        assert_eq!(claims.sub, "alice");
-        assert_eq!(claims.roles, vec!["owner".to_string()]);
-        assert_eq!(claims.scope, "owner");
-        assert_eq!(claims.iss, ISSUER);
+        Assert::that(claims.sub).is("alice");
+        Assert::that(claims.roles).is_eq_to(vec!["owner".to_string()]);
+        Assert::that(claims.scope).is("owner");
+        Assert::that(claims.iss).is(ISSUER);
     }
 
     #[test]

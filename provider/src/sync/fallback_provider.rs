@@ -75,6 +75,8 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
 
+    use assert4rs::Assert;
+
     use super::*;
 
     struct FailingProvider {
@@ -137,9 +139,9 @@ mod tests {
         let provider = FallbackProvider::with_fallback(primary.clone(), fallback.clone());
 
         let result = provider.provide().unwrap();
-        assert_eq!(result, "primary");
-        assert_eq!(primary.calls(), 1);
-        assert_eq!(fallback.calls(), 0); // Fallback should not be called
+        Assert::that(result).is("primary");
+        Assert::that(primary.calls()).is(1);
+        Assert::that(fallback.calls()).is(0); // Fallback should not be called
     }
 
     #[test]
@@ -150,9 +152,9 @@ mod tests {
         let provider = FallbackProvider::with_fallback(primary.clone(), fallback.clone());
 
         let result = provider.provide().unwrap();
-        assert_eq!(result, "fallback");
-        assert_eq!(primary.calls(), 1);
-        assert_eq!(fallback.calls(), 1);
+        Assert::that(result).is("fallback");
+        Assert::that(primary.calls()).is(1);
+        Assert::that(fallback.calls()).is(1);
     }
 
     #[test]
@@ -163,10 +165,9 @@ mod tests {
         let provider = FallbackProvider::with_fallback(primary.clone(), fallback.clone());
 
         let result = provider.provide();
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "always fails");
-        assert_eq!(primary.calls(), 1);
-        assert_eq!(fallback.calls(), 1);
+        Assert::that(result).unwrap_err().is("always fails");
+        Assert::that(primary.calls()).is(1);
+        Assert::that(fallback.calls()).is(1);
     }
 
     #[test]
@@ -179,9 +180,9 @@ mod tests {
         let provider = p1.clone().or_fallback(p2.clone()).or_fallback(p3.clone());
 
         let result = provider.provide().unwrap();
-        assert_eq!(result, "third");
-        assert_eq!(p1.calls(), 1);
-        assert_eq!(p2.calls(), 1);
-        assert_eq!(p3.calls(), 1);
+        Assert::that(result).is("third");
+        Assert::that(p1.calls()).is(1);
+        Assert::that(p2.calls()).is(1);
+        Assert::that(p3.calls()).is(1);
     }
 }

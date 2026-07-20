@@ -182,6 +182,8 @@ fn read_nav_entries(archive: &mut ZipArchive<BufReader<File>>, package: &Package
 mod tests {
     use std::io::Write;
 
+    use assert4rs::Assert;
+
     use super::*;
 
     fn create_test_epub(dir: &Path) -> std::path::PathBuf {
@@ -240,9 +242,9 @@ mod tests {
         let path = create_test_epub(&dir);
 
         let doc = EpubDocument::open(&path).unwrap();
-        assert_eq!(doc.id(), "test-id-123");
-        assert_eq!(doc.metadata().title.as_deref(), Some("Test EPUB"));
-        assert_eq!(doc.metadata().authors, vec!["Test Author"]);
+        Assert::that(doc.id()).is("test-id-123");
+        Assert::that(doc.metadata().title.as_deref()).is_some("Test EPUB");
+        Assert::that(doc.metadata().authors.clone()).is(vec!["Test Author"]);
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -254,8 +256,8 @@ mod tests {
         let path = create_test_epub(&dir);
 
         let doc = EpubDocument::open(&path).unwrap();
-        assert_eq!(doc.spine().len(), 1);
-        assert_eq!(doc.spine()[0].href, "OEBPS/chapter1.xhtml");
+        Assert::that(doc.spine().len()).is(1);
+        Assert::that(doc.spine()[0].href.clone()).is("OEBPS/chapter1.xhtml");
 
         std::fs::remove_dir_all(&dir).ok();
     }

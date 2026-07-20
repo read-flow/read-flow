@@ -298,7 +298,16 @@ fn local_name(name: &[u8]) -> &[u8] {
 
 #[cfg(test)]
 mod tests {
+    use assert4rs::Assert;
+
     use super::*;
+
+    fn entries_as_tuples(entries: &[NavEntry]) -> Vec<(&str, &str, usize)> {
+        entries
+            .iter()
+            .map(|e| (e.href.as_str(), e.label.as_str(), e.depth))
+            .collect()
+    }
 
     #[test]
     fn parses_epub3_nav() {
@@ -315,13 +324,10 @@ mod tests {
 </body>
 </html>"#;
         let entries = parse_epub3_nav(nav, "OEBPS/nav.xhtml");
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].href, "OEBPS/chapter1.xhtml");
-        assert_eq!(entries[0].label, "Chapter One");
-        assert_eq!(entries[0].depth, 0);
-        assert_eq!(entries[1].href, "OEBPS/chapter2.xhtml");
-        assert_eq!(entries[1].label, "Chapter Two");
-        assert_eq!(entries[1].depth, 0);
+        Assert::that(entries_as_tuples(&entries)).is_eq_to(vec![
+            ("OEBPS/chapter1.xhtml", "Chapter One", 0),
+            ("OEBPS/chapter2.xhtml", "Chapter Two", 0),
+        ]);
     }
 
     #[test]
@@ -331,8 +337,8 @@ mod tests {
   <li><a href="ch1.xhtml#start">First Chapter</a></li>
 </ol></nav></body></html>"#;
         let entries = parse_epub3_nav(nav, "OEBPS/nav.xhtml");
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].href, "OEBPS/ch1.xhtml#start");
+        Assert::that(&entries).has_length(1);
+        Assert::that(entries[0].href.clone()).is("OEBPS/ch1.xhtml#start");
     }
 
     #[test]
@@ -351,16 +357,17 @@ mod tests {
   </ol>
 </nav></body></html>"#;
         let entries = parse_epub3_nav(nav, "OEBPS/nav.xhtml");
-        assert_eq!(entries.len(), 4);
-        assert_eq!(entries[0].label, "Chapter 1");
-        assert_eq!(entries[0].depth, 0);
-        assert_eq!(entries[1].label, "Section 1.1");
-        assert_eq!(entries[1].depth, 1);
-        assert_eq!(entries[1].href, "OEBPS/ch1.xhtml#sec1");
-        assert_eq!(entries[2].label, "Section 1.2");
-        assert_eq!(entries[2].depth, 1);
-        assert_eq!(entries[3].label, "Chapter 2");
-        assert_eq!(entries[3].depth, 0);
+        let got: Vec<(&str, usize)> = entries
+            .iter()
+            .map(|e| (e.label.as_str(), e.depth))
+            .collect();
+        Assert::that(got).is_eq_to(vec![
+            ("Chapter 1", 0),
+            ("Section 1.1", 1),
+            ("Section 1.2", 1),
+            ("Chapter 2", 0),
+        ]);
+        Assert::that(entries[1].href.clone()).is("OEBPS/ch1.xhtml#sec1");
     }
 
     #[test]
@@ -379,13 +386,10 @@ mod tests {
   </navMap>
 </ncx>"#;
         let entries = parse_epub2_ncx(ncx, "OEBPS/toc.ncx");
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].href, "OEBPS/intro.xhtml");
-        assert_eq!(entries[0].label, "Introduction");
-        assert_eq!(entries[0].depth, 0);
-        assert_eq!(entries[1].href, "OEBPS/part1.xhtml#ch1");
-        assert_eq!(entries[1].label, "Part One");
-        assert_eq!(entries[1].depth, 0);
+        Assert::that(entries_as_tuples(&entries)).is_eq_to(vec![
+            ("OEBPS/intro.xhtml", "Introduction", 0),
+            ("OEBPS/part1.xhtml#ch1", "Part One", 0),
+        ]);
     }
 
     #[test]
@@ -404,12 +408,12 @@ mod tests {
   </navMap>
 </ncx>"#;
         let entries = parse_epub2_ncx(ncx, "OEBPS/toc.ncx");
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].label, "Part One");
-        assert_eq!(entries[0].depth, 0);
-        assert_eq!(entries[1].label, "Chapter 1");
-        assert_eq!(entries[1].depth, 1);
-        assert_eq!(entries[1].href, "OEBPS/ch1.xhtml#intro");
+        let got: Vec<(&str, usize)> = entries
+            .iter()
+            .map(|e| (e.label.as_str(), e.depth))
+            .collect();
+        Assert::that(got).is_eq_to(vec![("Part One", 0), ("Chapter 1", 1)]);
+        Assert::that(entries[1].href.clone()).is("OEBPS/ch1.xhtml#intro");
     }
 
     #[test]
@@ -421,7 +425,7 @@ mod tests {
   <li><a href="ch1.xhtml#sec2"><span>1.2</span><span>Section Title</span></a></li>
 </ol></nav></body></html>"#;
         let entries = parse_epub3_nav(nav, "OEBPS/nav.xhtml");
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].label, "1.2 Section Title");
+        Assert::that(&entries).has_length(1);
+        Assert::that(entries[0].label.clone()).is("1.2 Section Title");
     }
 }
