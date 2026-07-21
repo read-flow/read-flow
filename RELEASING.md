@@ -29,8 +29,8 @@ Git tag (`vX.Y.Z`) and attaches them to a **draft** GitHub Release:
 - **macOS arm64** (Apple Silicon): a zipped `.app` bundle. **Unsigned** — users bypass Gatekeeper on
   first launch (documented in the README). _(decide: signing + notarization — see open questions.)_
 - **Flatpak**: a single-file `.flatpak` bundle, built from
-  [`flatpak/io.github.read-flow.yml`](flatpak/io.github.read-flow.yml) — confirmed green
-  end-to-end on v0.1.1 (see "Application stores" below).
+  [`flatpak/io.github.read-flow.yml`](flatpak/io.github.read-flow.yml) (see "Application stores"
+  below).
 - **Checksums**: `SHA256SUMS` covering every artifact, generated in the workflow.
 
 The **PWA** is not shipped as a separate artifact: the packaging recipes (`just deb`, `just bundle`)
@@ -91,35 +91,35 @@ git push github vX.Y.Z          # pushing the tag triggers the release workflow
 - macOS with `rsvg-convert` (`brew install librsvg`) for the `.app` icon, if building locally.
 - Push access to the GitHub repository.
 
-## Open questions to iterate on
+## Open questions
 
-- [x] Version unification (`[workspace.package]`) — **done**; single version in root `Cargo.toml`.
-- [x] Prebuilt binaries — **yes**, automated in `release.yml` (Linux x86_64/arm64 `.deb`+tarball, macOS arm64 `.app`).
-- [x] Linux artifact set — **deb + portable tarball** for now.
-- [ ] macOS signing & notarization (currently unsigned; README documents the Gatekeeper workaround).
-  Needs a paid Apple Developer Program membership before `notarytool` can be wired into
-  `release.yml`. Matters for Homebrew Cask trust too, not just direct downloads.
-- [x] PWA hosting — **embedded in the server** (`embed-pwa` feature); packaged builds serve it at `/`.
-- [x] More targets/formats — **decided**: Flathub and a personal Homebrew tap are the priorities
-  (see "Application stores" below); AppImage and Snap are deprioritized/skipped for now; macOS
-  Intel stays open (no current plan).
-- [ ] Optionally also host the PWA standalone (GitHub Pages) — needs server HTTPS; deferred.
-- [x] Changelog automation — **decided**: stay hand-maintained (solo maintainer; `git-cliff` adds
-  ceremony without enough payoff at this scale).
-- [ ] Publishing library crates (`read-flow-core`, `provider`, `epub`) to crates.io — low priority,
-  not required for app-store distribution; revisit if/when `provider`/`epub` get extracted to their
-  own repos.
-- [ ] Announce channel (README badge, GitHub Discussions, elsewhere) — deferred, low stakes.
+- **macOS signing & notarization**: currently unsigned; README documents the Gatekeeper
+  workaround. Needs a paid Apple Developer Program membership before `notarytool` can be wired
+  into `release.yml`. Matters for Homebrew Cask trust too, not just direct downloads.
+- **Standalone PWA hosting** (e.g. GitHub Pages), separate from the embedded copy: needs server
+  HTTPS; deferred.
+- **Publishing library crates** (`read-flow-core`, `provider`, `epub`) to crates.io: low priority,
+  not required for app-store distribution; revisit if/when `provider`/`epub` get extracted to
+  their own repos.
+- **Announce channel** (README badge, GitHub Discussions, elsewhere): deferred, low stakes.
+
+## Current decisions
+
+- **Changelog**: hand-maintained (solo maintainer; `git-cliff` adds ceremony without enough
+  payoff at this scale).
+- **Linux artifact set**: `.deb` + portable tarball.
+- **App-store priority**: Flathub and a personal Homebrew tap; AppImage and Snap are
+  deprioritized/skipped; macOS Intel stays open (no current plan) — see "Application stores"
+  below.
 
 ## Application stores
 
-Priority order, decided 2026-07-10:
+Priority order:
 
 1. **Flathub** — best fit technically: Flatpak's portal-based file access (native folder picker
    crossing the sandbox) matches Read Flow's "scan user-configured directories" model better than
    Snap's static plugs. No cost, no publisher account beyond GitHub.
-   - Prerequisite (done): app ID renamed `com.github.read-flow.read-flow` →
-     `io.github.read-flow` — Flathub requires the `io.github.<owner>.<repo>` convention
+   - App ID is `io.github.read-flow` — Flathub requires the `io.github.<owner>.<repo>` convention
      for GitHub-hosted apps; `com.github.*` is not accepted.
    - Manifest: [`flatpak/io.github.read-flow.yml`](flatpak/io.github.read-flow.yml). File-access
      model: `--filesystem=home:rw` for the first submission (simple, well-precedented for
@@ -129,8 +129,8 @@ Priority order, decided 2026-07-10:
    - CI: `.github/workflows/release.yml` job `build-flatpak` builds a `.flatpak` bundle on every
      tagged release and attaches it to the GitHub Release, using the official
      `flatpak/flatpak-github-actions` action + `flatpak-builder-tools` generators for offline
-     cargo/npm sources. **Confirmed working**: green end-to-end on v0.1.1, including mupdf's full
-     C/C++ compile and the entire libcosmic/wgpu/sqlx stack (run 29185080376).
+     cargo/npm sources, including mupdf's full C/C++ compile and the entire libcosmic/wgpu/sqlx
+     stack.
    - Standalone submission repo: [`read-flow/io.github.read-flow`](https://github.com/read-flow/io.github.read-flow)
      — the manifest adapted for Flathub's build infrastructure (`type: git` source pinned to a
      release tag/commit instead of the local checkout CI uses), with `cargo-sources.json` /
@@ -142,8 +142,8 @@ Priority order, decided 2026-07-10:
 2. **Homebrew**: own tap, [`read-flow/homebrew-read-flow`](https://github.com/read-flow/homebrew-read-flow)
    — not homebrew-core (which requires "notability" — stars/forks this project doesn't have yet).
    Ships a Cask (`Casks/read-flow.rb`) for the macOS `.app`, installing via
-   `brew install --cask read-flow/read-flow/read-flow`. **Confirmed working**: `brew style`/`brew
-   audit --online` clean, `brew install` verified the download/sha256 and resolved to the correct
+   `brew install --cask read-flow/read-flow/read-flow`. `brew style`/`brew audit --online` pass,
+   and `brew install` verifies the download/sha256 and resolves to the correct
    `/Applications/Read Flow.app` path. No Formula for `read-flow --headless` server use — the
    binary needs the full GUI dependency tree either way, so a Formula would just be a heavier
    build-from-source path to the same thing the Cask already covers.
