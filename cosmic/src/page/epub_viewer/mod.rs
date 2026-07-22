@@ -1047,7 +1047,6 @@ impl EpubViewer {
             // Outer "desk" with click-to-turn zones.
             let left_zone = widget::mouse_area(
                 widget::container(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
-                    .style(paper_background)
                     .width(zone_length)
                     .height(Length::Fill)
                     .align_x(Horizontal::Center)
@@ -1061,7 +1060,6 @@ impl EpubViewer {
 
             let right_zone = widget::mouse_area(
                 widget::container(widget::icon::from_name("go-next-symbolic").size(ICON_SIZE))
-                    .style(paper_background)
                     .width(zone_length)
                     .height(Length::Fill)
                     .align_x(Horizontal::Center)
@@ -1081,7 +1079,6 @@ impl EpubViewer {
             .height(Length::Fill);
 
             widget::container(inner)
-                .style(desk_background)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .align_x(Horizontal::Center)
