@@ -16,6 +16,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Changed
 
+- Enable link time optimization (LTO) for release builds.
+
 ### Fixed
 
 ### Removed

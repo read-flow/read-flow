@@ -79,4 +79,4 @@ tempfile = "3"
 zip = { version = "8.6.0", default-features = false }
 
 [profile.release]
-# lto = true
+lto = true
