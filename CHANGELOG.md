@@ -18,6 +18,10 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Fixed
 
+- COSMIC EPUB viewer: make the left/right click-to-turn-page zones transparant instead of using
+  the main content background. This aligns the look and feel with the MuPDF viewer and looks
+  better with COSMIC's frosted glass effect (Linux).
+
 ### Removed
 
 ## [0.3.0] - 2026-07-20
