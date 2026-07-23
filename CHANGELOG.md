@@ -18,11 +18,15 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Fixed
 
+### Removed
+
+## [0.3.1] - 2026-07-23
+
+### Fixed
+
 - COSMIC EPUB viewer: make the left/right click-to-turn-page zones transparant instead of using
   the main content background. This aligns the look and feel with the MuPDF viewer and looks
   better with COSMIC's frosted glass effect (Linux).
-
-### Removed
 
 ## [0.3.0] - 2026-07-20
 
@@ -160,7 +164,8 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/read-flow/read-flow/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/read-flow/read-flow/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/read-flow/read-flow/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/read-flow/read-flow/compare/v0.1.0...v0.1.1
