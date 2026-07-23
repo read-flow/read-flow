@@ -16,11 +16,15 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Changed
 
-- Enable link time optimization (LTO) for release builds.
-
 ### Fixed
 
 ### Removed
+
+## [0.3.2] - 2026-07-23
+
+### Changed
+
+- Enable link time optimization (LTO) for release builds.
 
 ## [0.3.1] - 2026-07-23
 
@@ -166,7 +170,8 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/read-flow/read-flow/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/read-flow/read-flow/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/read-flow/read-flow/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/read-flow/read-flow/compare/v0.1.1...v0.2.0
