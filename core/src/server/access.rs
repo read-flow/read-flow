@@ -29,12 +29,20 @@ use crate::server::authn::PrivateModeHeader;
 /// extractor impl; handlers use [`Visibility::can_see`] / [`Visibility::hidden_tags`]
 /// to filter content. Extraction authenticates the request (any valid user).
 pub struct Visibility {
+    /// The authenticated user this request acts as. Reading state is stored
+    /// per user id.
+    user_id: String,
     /// Tags whose content is hidden from this request. Empty means full
     /// visibility (owner in private mode, or no private tags configured).
     hidden_tags: Vec<String>,
 }
 
 impl Visibility {
+    /// The authenticated user id for this request.
+    pub fn user_id(&self) -> &str {
+        &self.user_id
+    }
+
     /// Tags hidden from this request, for SQL-side exclusion.
     pub fn hidden_tags(&self) -> &[String] {
         &self.hidden_tags
@@ -71,12 +79,14 @@ impl FromRequestParts<AppState> for Visibility {
                     .into_response());
             }
             return Ok(Self {
+                user_id: user.user_id,
                 hidden_tags: Vec::new(),
             });
         }
 
         let settings = state.settings().await;
         Ok(Self {
+            user_id: user.user_id,
             hidden_tags: settings.ui.private_tags().to_vec(),
         })
     }

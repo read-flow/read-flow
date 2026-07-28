@@ -6,6 +6,7 @@ use assert4rs::Assert;
 use sqlx::SqliteConnection;
 
 use super::*;
+use crate::db::LOCAL_USER_ID;
 use crate::db::models::ContentTag;
 use crate::db::models::File;
 use crate::db::models::NewFile;
@@ -266,7 +267,10 @@ async fn make_file(conn: &mut SqliteConnection, path: &str, fingerprint: &str) -
     write_scanned_file(conn, path, "epub", 1000, fingerprint, &[], None)
         .await
         .unwrap();
-    select_file_by_path(conn, path).await.unwrap().unwrap()
+    select_file_by_path(conn, LOCAL_USER_ID, path)
+        .await
+        .unwrap()
+        .unwrap()
 }
 
 #[tokio::test]
@@ -297,7 +301,7 @@ async fn write_scanned_file_update_preserves_original_imported_at() {
     write_scanned_file(&mut conn, "/c.epub", "epub", 100, "fp-preserve1", &[], None)
         .await
         .unwrap();
-    let original = select_file_by_path(&mut conn, "/c.epub")
+    let original = select_file_by_path(&mut conn, LOCAL_USER_ID, "/c.epub")
         .await
         .unwrap()
         .unwrap();
@@ -307,7 +311,7 @@ async fn write_scanned_file_update_preserves_original_imported_at() {
     write_scanned_file(&mut conn, "/c.epub", "epub", 150, "fp-preserve2", &[], None)
         .await
         .unwrap();
-    let updated = select_file_by_path(&mut conn, "/c.epub")
+    let updated = select_file_by_path(&mut conn, LOCAL_USER_ID, "/c.epub")
         .await
         .unwrap()
         .unwrap();
@@ -335,7 +339,7 @@ async fn upsert_file_is_idempotent() {
     upsert_file(&mut conn, make()).await.unwrap();
     upsert_file(&mut conn, make()).await.unwrap(); // must not error
 
-    let all = select_all_files(&mut conn).await.unwrap();
+    let all = select_all_files(&mut conn, LOCAL_USER_ID).await.unwrap();
     Assert::that(all).has_length(1);
 }
 
@@ -344,11 +348,11 @@ async fn select_file_by_id_and_guid_return_same_row() {
     let pool = test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let file = make_file(&mut conn, "/books/b.epub", "fp-sel").await;
-    let by_id = select_file_by_id(&mut conn, file.id)
+    let by_id = select_file_by_id(&mut conn, LOCAL_USER_ID, file.id)
         .await
         .unwrap()
         .unwrap();
-    let by_guid = select_file_by_guid(&mut conn, &file.guid)
+    let by_guid = select_file_by_guid(&mut conn, LOCAL_USER_ID, &file.guid)
         .await
         .unwrap()
         .unwrap();
@@ -362,7 +366,7 @@ async fn delete_file_record_removes_row() {
     let file = make_file(&mut conn, "/books/del.epub", "fp-del").await;
     delete_file_record(&mut conn, file.id).await.unwrap();
     assert!(
-        select_file_by_id(&mut conn, file.id)
+        select_file_by_id(&mut conn, LOCAL_USER_ID, file.id)
             .await
             .unwrap()
             .is_none()
@@ -423,7 +427,7 @@ async fn write_scanned_file_changed_fingerprint_returns_false_true() {
             .unwrap();
     assert!(!was_new);
     assert!(was_updated);
-    let file = select_file_by_path(&mut conn, "/c.epub")
+    let file = select_file_by_path(&mut conn, LOCAL_USER_ID, "/c.epub")
         .await
         .unwrap()
         .unwrap();
@@ -540,7 +544,7 @@ async fn select_files_excluding_tags_filters_correctly() {
     )
     .await
     .unwrap();
-    let files = select_all_files_excluding_tags(&mut conn, &["excluded".into()])
+    let files = select_all_files_excluding_tags(&mut conn, LOCAL_USER_ID, &["excluded".into()])
         .await
         .unwrap();
     Assert::that(&files).has_length(1);
@@ -553,7 +557,9 @@ async fn select_files_excluding_tags_filters_correctly() {
 async fn get_reading_state_returns_none_when_absent() {
     let pool = test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let result = get_reading_state(&mut conn, "no-such-fp").await.unwrap();
+    let result = get_reading_state(&mut conn, LOCAL_USER_ID, "no-such-fp")
+        .await
+        .unwrap();
     assert!(result.is_none());
 }
 
@@ -570,7 +576,9 @@ async fn upsert_reading_state_auto_transitions_unread_to_reading() {
         last_updated: "2024-01-01T12:00:00Z".into(),
         status_updated_at: "2024-01-01T12:00:00Z".into(),
     };
-    let result = upsert_reading_state(&mut conn, state).await.unwrap();
+    let result = upsert_reading_state(&mut conn, LOCAL_USER_ID, state)
+        .await
+        .unwrap();
     Assert::that(result.status).is(1); // auto-promoted to Reading
 }
 
@@ -588,7 +596,9 @@ async fn upsert_reading_state_auto_transitions_reading_to_read() {
         last_updated: "2024-01-01T10:00:00Z".into(),
         status_updated_at: "2024-01-01T10:00:00Z".into(),
     };
-    upsert_reading_state(&mut conn, state).await.unwrap();
+    upsert_reading_state(&mut conn, LOCAL_USER_ID, state)
+        .await
+        .unwrap();
     // Second: advance to 99% → should become Read
     let state2 = ReadingState {
         fingerprint: "fp-rs2".into(),
@@ -598,7 +608,9 @@ async fn upsert_reading_state_auto_transitions_reading_to_read() {
         last_updated: "2024-01-01T11:00:00Z".into(),
         status_updated_at: "2024-01-01T11:00:00Z".into(),
     };
-    let result = upsert_reading_state(&mut conn, state2).await.unwrap();
+    let result = upsert_reading_state(&mut conn, LOCAL_USER_ID, state2)
+        .await
+        .unwrap();
     Assert::that(result.status).is(2);
 }
 
@@ -615,7 +627,9 @@ async fn upsert_reading_state_stale_timestamp_not_applied() {
         last_updated: "2024-06-01T12:00:00Z".into(),
         status_updated_at: "2024-06-01T12:00:00Z".into(),
     };
-    upsert_reading_state(&mut conn, fresh).await.unwrap();
+    upsert_reading_state(&mut conn, LOCAL_USER_ID, fresh)
+        .await
+        .unwrap();
     // Stale update (older timestamp) — must not overwrite
     let stale = ReadingState {
         fingerprint: "fp-rs3".into(),
@@ -625,8 +639,10 @@ async fn upsert_reading_state_stale_timestamp_not_applied() {
         last_updated: "2024-01-01T00:00:00Z".into(),
         status_updated_at: "2024-01-01T00:00:00Z".into(),
     };
-    upsert_reading_state(&mut conn, stale).await.unwrap();
-    let result = get_reading_state(&mut conn, "fp-rs3")
+    upsert_reading_state(&mut conn, LOCAL_USER_ID, stale)
+        .await
+        .unwrap();
+    let result = get_reading_state(&mut conn, LOCAL_USER_ID, "fp-rs3")
         .await
         .unwrap()
         .unwrap();
@@ -640,10 +656,10 @@ async fn update_reading_status_only_bypasses_transitions() {
     let mut conn = pool.acquire().await.unwrap();
     upsert_content(&mut conn, "fp-rs4").await.unwrap();
     // Mark as Read directly (status=2), even with 0% progress
-    update_reading_status_only(&mut conn, "fp-rs4", 2)
+    update_reading_status_only(&mut conn, LOCAL_USER_ID, "fp-rs4", 2)
         .await
         .unwrap();
-    let result = get_reading_state(&mut conn, "fp-rs4")
+    let result = get_reading_state(&mut conn, LOCAL_USER_ID, "fp-rs4")
         .await
         .unwrap()
         .unwrap();
@@ -852,11 +868,11 @@ async fn auto_link_documents_links_same_stem_different_fingerprints() {
     drop(conn);
     auto_link_documents(&pool).await.unwrap();
     let mut conn = pool.acquire().await.unwrap();
-    let f1 = select_file_by_path(&mut conn, "/books/mybook.epub")
+    let f1 = select_file_by_path(&mut conn, LOCAL_USER_ID, "/books/mybook.epub")
         .await
         .unwrap()
         .unwrap();
-    let f2 = select_file_by_path(&mut conn, "/books/mybook.pdf")
+    let f2 = select_file_by_path(&mut conn, LOCAL_USER_ID, "/books/mybook.pdf")
         .await
         .unwrap()
         .unwrap();
@@ -894,11 +910,11 @@ async fn auto_link_documents_does_not_link_different_stems() {
     drop(conn);
     auto_link_documents(&pool).await.unwrap();
     let mut conn = pool.acquire().await.unwrap();
-    let f1 = select_file_by_path(&mut conn, "/books/alpha.epub")
+    let f1 = select_file_by_path(&mut conn, LOCAL_USER_ID, "/books/alpha.epub")
         .await
         .unwrap()
         .unwrap();
-    let f2 = select_file_by_path(&mut conn, "/books/beta.epub")
+    let f2 = select_file_by_path(&mut conn, LOCAL_USER_ID, "/books/beta.epub")
         .await
         .unwrap()
         .unwrap();
@@ -929,11 +945,11 @@ async fn auto_link_documents_already_linked_is_no_op() {
     auto_link_documents(&pool).await.unwrap();
     auto_link_documents(&pool).await.unwrap(); // second run must be a no-op
     let mut conn = pool.acquire().await.unwrap();
-    let f1 = select_file_by_path(&mut conn, "/books/same.epub")
+    let f1 = select_file_by_path(&mut conn, LOCAL_USER_ID, "/books/same.epub")
         .await
         .unwrap()
         .unwrap();
-    let f2 = select_file_by_path(&mut conn, "/books/same.pdf")
+    let f2 = select_file_by_path(&mut conn, LOCAL_USER_ID, "/books/same.pdf")
         .await
         .unwrap()
         .unwrap();

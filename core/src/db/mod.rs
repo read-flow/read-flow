@@ -4,6 +4,11 @@ pub mod dao;
 pub mod datasource;
 pub mod models;
 
+/// Reserved user id for local (non-authenticated) database access: the desktop
+/// GUI and the CLI operate on their own database without logging in. Migrated
+/// pre-multi-user reading-state rows were assigned to this user.
+pub const LOCAL_USER_ID: &str = "local";
+
 use std::str::FromStr;
 use std::time::Duration;
 

@@ -24,6 +24,7 @@ use futures::StreamExt;
 use provider::r#async::HasSetExpired;
 use read_flow_core::ExpandedPath;
 use read_flow_core::api::ReadingStatus;
+use read_flow_core::db::LOCAL_USER_ID;
 use read_flow_core::db::dao;
 use read_flow_core::db::models::ContentTag;
 use read_flow_core::db::models::NewRemote;
@@ -365,7 +366,7 @@ impl CosmicDriver {
         let stored = dest.canonicalize().unwrap_or(dest);
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");
-        dao::select_file_by_path(&mut conn, &stored.to_string_lossy())
+        dao::select_file_by_path(&mut conn, LOCAL_USER_ID, &stored.to_string_lossy())
             .await
             .expect("select file by path")
             .expect("scanned file is in the DB")
@@ -374,7 +375,7 @@ impl CosmicDriver {
     pub async fn add_tag_to_document(&self, guid: &str, tag: &str) {
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");
-        let file = dao::select_file_by_guid(&mut conn, guid)
+        let file = dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, guid)
             .await
             .expect("select file by guid")
             .unwrap_or_else(|| panic!("file {guid} not found"));
@@ -389,7 +390,7 @@ impl CosmicDriver {
     pub async fn remove_tag_from_document(&self, guid: &str, tag: &str) {
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");
-        let file = dao::select_file_by_guid(&mut conn, guid)
+        let file = dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, guid)
             .await
             .expect("select file by guid")
             .unwrap_or_else(|| panic!("file {guid} not found"));
@@ -401,7 +402,7 @@ impl CosmicDriver {
     pub async fn document_has_tag(&self, guid: &str, tag: &str) -> bool {
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");
-        let file = dao::select_file_by_guid(&mut conn, guid)
+        let file = dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, guid)
             .await
             .expect("select file by guid")
             .unwrap_or_else(|| panic!("file {guid} not found"));
@@ -416,7 +417,7 @@ impl CosmicDriver {
         let status: ReadingStatus = status.parse().expect("valid reading status");
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");
-        let file = dao::select_file_by_guid(&mut conn, guid)
+        let file = dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, guid)
             .await
             .expect("select file by guid")
             .unwrap_or_else(|| panic!("file {guid} not found"));
@@ -428,7 +429,7 @@ impl CosmicDriver {
     pub async fn get_reading_status(&self, guid: &str) -> String {
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");
-        let file = dao::select_file_by_guid(&mut conn, guid)
+        let file = dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, guid)
             .await
             .expect("select file by guid")
             .unwrap_or_else(|| panic!("file {guid} not found"));
@@ -523,7 +524,7 @@ impl CosmicDriver {
             .expect("select document by guid")
             .expect("document not found");
         let file_guid = doc.file_guids.first().expect("document has no files");
-        dao::select_file_by_guid(&mut conn, file_guid)
+        dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, file_guid)
             .await
             .expect("select file by guid")
             .expect("file not found")
@@ -585,7 +586,7 @@ impl CosmicDriver {
     pub async fn delete_document(&self, guid: &str) {
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");
-        let file = dao::select_file_by_guid(&mut conn, guid)
+        let file = dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, guid)
             .await
             .expect("select file by guid")
             .expect("file not found");
@@ -597,7 +598,7 @@ impl CosmicDriver {
     pub async fn file_is_listed(&self, guid: &str) -> bool {
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");
-        dao::select_file_by_guid(&mut conn, guid)
+        dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, guid)
             .await
             .expect("select file by guid")
             .is_some()

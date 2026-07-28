@@ -672,7 +672,8 @@ async fn get_files(
 ) -> Result<Json<Vec<File>>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let db_files = dao::select_all_files_excluding_tags(&mut conn, vis.hidden_tags()).await?;
+    let db_files =
+        dao::select_all_files_excluding_tags(&mut conn, vis.user_id(), vis.hidden_tags()).await?;
     let all_tags = dao::select_all_content_tags(&mut conn).await?;
     let mut tags_by_fp: std::collections::HashMap<String, Vec<crate::db::models::ContentTag>> =
         std::collections::HashMap::new();
@@ -892,7 +893,7 @@ async fn delete_file(
 #[tracing::instrument(skip_all)]
 async fn upload_file(
     State(application_module): State<AppState>,
-    _user: AuthorizedUser,
+    user: AuthorizedUser,
     mut multipart: Multipart,
 ) -> Result<Json<File>> {
     let field = multipart
@@ -951,11 +952,15 @@ async fn upload_file(
 
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let result = dao::select_file_by_path(&mut conn, &canonical_path_string(&target_file))
-        .await?
-        .ok_or_else(|| {
-            Error::Scan("file not recorded after scan; server may be in dry-run mode".to_string())
-        })?;
+    let result = dao::select_file_by_path(
+        &mut conn,
+        &user.user_id,
+        &canonical_path_string(&target_file),
+    )
+    .await?
+    .ok_or_else(|| {
+        Error::Scan("file not recorded after scan; server may be in dry-run mode".to_string())
+    })?;
     Ok(Json((result, vec![]).into()))
 }
 
@@ -970,7 +975,7 @@ async fn get_reading_state(
     if !fingerprint_visible(&mut conn, &vis, &fingerprint).await? {
         return Ok(StatusCode::NOT_FOUND.into_response());
     }
-    let state = dao::get_reading_state(&mut conn, &fingerprint).await?;
+    let state = dao::get_reading_state(&mut conn, vis.user_id(), &fingerprint).await?;
     Ok(match state {
         Some(state) => Json(state).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
@@ -989,7 +994,7 @@ async fn put_reading_state(
     if !fingerprint_visible(&mut conn, &vis, &state.fingerprint).await? {
         return Err(Error::FileNotFound(state.fingerprint.clone()));
     }
-    let result = dao::upsert_reading_state(&mut conn, state).await?;
+    let result = dao::upsert_reading_state(&mut conn, vis.user_id(), state).await?;
     Ok(Json(result))
 }
 
@@ -1011,7 +1016,8 @@ async fn put_reading_status(
     if !fingerprint_visible(&mut conn, &vis, &fingerprint).await? {
         return Err(Error::FileNotFound(fingerprint.clone()));
     }
-    dao::update_reading_status_only(&mut conn, &fingerprint, req.status.into()).await?;
+    dao::update_reading_status_only(&mut conn, vis.user_id(), &fingerprint, req.status.into())
+        .await?;
     Ok(())
 }
 
@@ -1155,7 +1161,7 @@ async fn visible_file(
     vis: &Visibility,
     guid: &str,
 ) -> Result<Option<(crate::db::models::File, Vec<crate::db::models::ContentTag>)>> {
-    let Some(file) = dao::select_file_by_guid(conn, guid).await? else {
+    let Some(file) = dao::select_file_by_guid(conn, vis.user_id(), guid).await? else {
         return Ok(None);
     };
     let tags = dao::select_content_tags_by_fingerprint(conn, &file.fingerprint).await?;
@@ -1624,7 +1630,7 @@ struct ImportOnlineBookRequest {
 #[tracing::instrument(skip_all)]
 async fn import_online_book(
     State(application_module): State<AppState>,
-    _user: AuthorizedUser,
+    user: AuthorizedUser,
     Json(req): Json<ImportOnlineBookRequest>,
 ) -> Result<Json<File>> {
     let download_folder = application_module.settings().await.server.download_folder;
@@ -1634,7 +1640,7 @@ async fn import_online_book(
     application_module.scan(path.clone()).await?;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let result = dao::select_file_by_path(&mut conn, &canonical_path_string(&path))
+    let result = dao::select_file_by_path(&mut conn, &user.user_id, &canonical_path_string(&path))
         .await?
         .ok_or_else(|| Error::FileNotFound(path.display().to_string()))?;
     Ok(Json((result, vec![]).into()))

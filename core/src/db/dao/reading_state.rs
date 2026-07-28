@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Reading progress and status (`reading_state` table).
+//!
+//! Rows are keyed by `(user_id, fingerprint)`: every authorized user has
+//! independent progress and status. Local (non-authenticated) access — the
+//! desktop GUI and CLI operating directly on the database — uses the reserved
+//! [`crate::db::LOCAL_USER_ID`].
 
 use std::sync::Arc;
 
@@ -13,12 +18,14 @@ use crate::db::models::ReadingState;
 
 pub async fn get_reading_state(
     conn: &mut SqliteConnection,
+    user_id: &str,
     fingerprint: &str,
 ) -> Result<Option<ReadingState>, Error> {
     sqlx::query_as::<_, ReadingState>(
         "SELECT fingerprint, status, position, percentage, last_updated, status_updated_at \
-         FROM reading_state WHERE fingerprint = ?",
+         FROM reading_state WHERE user_id = ? AND fingerprint = ?",
     )
+    .bind(user_id)
     .bind(fingerprint)
     .fetch_optional(&mut *conn)
     .await
@@ -33,6 +40,7 @@ pub async fn get_reading_state(
 /// Returns the resulting state (after any transitions).
 pub async fn upsert_reading_state(
     conn: &mut SqliteConnection,
+    user_id: &str,
     state: ReadingState,
 ) -> Result<ReadingState, Error> {
     // For the INSERT (new row) path, compute initial status from percentage.
@@ -45,9 +53,9 @@ pub async fn upsert_reading_state(
 
     sqlx::query(
         r#"INSERT INTO reading_state
-               (fingerprint, status, position, percentage, last_updated, status_updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(fingerprint) DO UPDATE
+               (user_id, fingerprint, status, position, percentage, last_updated, status_updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, fingerprint) DO UPDATE
            SET position          = excluded.position,
                percentage        = excluded.percentage,
                last_updated      = excluded.last_updated,
@@ -64,6 +72,7 @@ pub async fn upsert_reading_state(
                END
            WHERE excluded.last_updated > reading_state.last_updated"#,
     )
+    .bind(user_id)
     .bind(&state.fingerprint)
     .bind(initial_status)
     .bind(&state.position)
@@ -73,7 +82,7 @@ pub async fn upsert_reading_state(
     .execute(&mut *conn)
     .await?;
 
-    get_reading_state(conn, &state.fingerprint)
+    get_reading_state(conn, user_id, &state.fingerprint)
         .await?
         .ok_or_else(|| Error::Sqlx(Arc::new(sqlx::Error::RowNotFound)))
 }
@@ -82,16 +91,18 @@ pub async fn upsert_reading_state(
 /// Creates a reading_state row if none exists.
 pub async fn update_reading_status_only(
     conn: &mut SqliteConnection,
+    user_id: &str,
     fingerprint: &str,
     status: i32,
 ) -> Result<(), Error> {
     sqlx::query(
-        r#"INSERT INTO reading_state (fingerprint, status, status_updated_at, last_updated)
-           VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
-           ON CONFLICT(fingerprint) DO UPDATE
+        r#"INSERT INTO reading_state (user_id, fingerprint, status, status_updated_at, last_updated)
+           VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+           ON CONFLICT(user_id, fingerprint) DO UPDATE
            SET status            = excluded.status,
                status_updated_at = excluded.status_updated_at"#,
     )
+    .bind(user_id)
     .bind(fingerprint)
     .bind(status)
     .execute(&mut *conn)

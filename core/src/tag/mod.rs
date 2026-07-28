@@ -5,6 +5,7 @@ use itertools::concat;
 use provider::r#async::Provider;
 
 use crate::ApplicationModule;
+use crate::db::LOCAL_USER_ID;
 use crate::db::dao;
 use crate::db::dao::Error;
 use crate::db::models::ContentTag;
@@ -28,7 +29,7 @@ where
         let mut tags_to_add: Vec<Vec<ContentTag>> = Vec::new();
 
         for (path, tags) in &scan_settings.auto_tags {
-            let files = dao::select_all_files_by_path_like(&mut conn, path).await?;
+            let files = dao::select_all_files_by_path_like(&mut conn, LOCAL_USER_ID, path).await?;
             if scan_settings.dry_run {
                 for file in files.iter() {
                     println!("{}: {:?}", file.path, tags);

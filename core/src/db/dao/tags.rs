@@ -6,6 +6,7 @@ use sqlx::SqliteConnection;
 
 use super::Error;
 use super::files::FILE_SELECT;
+use super::files::bind_file_select;
 use super::files::select_all_files;
 use crate::db::models::ContentTag;
 use crate::db::models::File;
@@ -88,10 +89,11 @@ pub async fn select_all_distinct_tags(conn: &mut SqliteConnection) -> Result<Vec
 
 pub async fn select_all_files_excluding_tags(
     conn: &mut SqliteConnection,
+    user_id: &str,
     excluded: &[String],
 ) -> Result<Vec<File>, Error> {
     if excluded.is_empty() {
-        return select_all_files(conn).await;
+        return select_all_files(conn, user_id).await;
     }
     let placeholders = excluded.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
     let query = format!(
@@ -101,7 +103,7 @@ pub async fn select_all_files_excluding_tags(
             AND ct.tag IN ({placeholders})
         )"
     );
-    let mut q = sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(query));
+    let mut q = bind_file_select(query, user_id);
     for tag in excluded {
         q = q.bind(tag);
     }
