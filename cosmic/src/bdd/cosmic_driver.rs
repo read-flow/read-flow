@@ -421,7 +421,7 @@ impl CosmicDriver {
             .await
             .expect("select file by guid")
             .unwrap_or_else(|| panic!("file {guid} not found"));
-        dao::update_reading_status_only(&mut conn, &file.fingerprint, status.into())
+        dao::update_reading_status_only(&mut conn, LOCAL_USER_ID, &file.fingerprint, status.into())
             .await
             .expect("update reading status");
     }
@@ -609,6 +609,7 @@ impl CosmicDriver {
         let mut conn = pool.acquire().await.expect("acquire connection");
         dao::upsert_reading_state(
             &mut conn,
+            LOCAL_USER_ID,
             read_flow_core::db::models::ReadingState {
                 fingerprint: fingerprint.to_string(),
                 status: 1,
@@ -625,7 +626,7 @@ impl CosmicDriver {
     pub async fn get_reading_progress(&self, fingerprint: &str) -> (String, f64) {
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");
-        let state = dao::get_reading_state(&mut conn, fingerprint)
+        let state = dao::get_reading_state(&mut conn, LOCAL_USER_ID, fingerprint)
             .await
             .expect("get reading state")
             .expect("reading state not found");
