@@ -44,14 +44,19 @@ impl FromStr for ReadingStatus {
     }
 }
 
-// TODO: should be TryFrom
 impl From<i32> for ReadingStatus {
+    /// Total conversion: the database CHECKs 0/1/2, but a corrupted or
+    /// future-schema value must not panic request handlers. Unknown values
+    /// degrade to `Unread` with a warning.
     fn from(value: i32) -> Self {
         match value {
             0 => Self::Unread,
             1 => Self::Reading,
             2 => Self::Read,
-            _ => panic!("Invalid file status"),
+            other => {
+                tracing::warn!("invalid reading status {other} in database, treating as Unread");
+                Self::Unread
+            }
         }
     }
 }

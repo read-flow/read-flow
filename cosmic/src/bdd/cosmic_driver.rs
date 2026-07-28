@@ -589,7 +589,7 @@ impl CosmicDriver {
             .await
             .expect("select file by guid")
             .expect("file not found");
-        dao::delete_file_record(&pool, file.id)
+        dao::delete_file_record(&mut conn, file.id)
             .await
             .expect("delete file record");
     }

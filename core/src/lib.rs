@@ -235,7 +235,7 @@ where
             // Archive members exist as long as their containing archive does.
             let fs_path = file.archive_path.as_ref().unwrap_or(&file.path);
             if !tokio::fs::try_exists(fs_path).await.unwrap_or(false) {
-                if purge && let Err(e) = dao::delete_file_record(&connection_pool, file.id).await {
+                if purge && let Err(e) = dao::delete_file_record(&mut conn, file.id).await {
                     tracing::warn!("Failed to delete record for {}: {e}", file.path);
                 }
                 missing.push(file.path);

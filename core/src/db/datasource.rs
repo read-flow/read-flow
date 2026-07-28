@@ -214,13 +214,31 @@ impl FileDataSource for DbClient {
     }
 
     async fn delete_file(&self, file: File) -> Result<(), Self::Error> {
-        if let Err(e) = tokio::fs::remove_file(&file.path).await {
-            tracing::warn!("Failed to delete file from filesystem: {}", e);
-            return Err(Error::IO(Arc::new(e)));
+        // Archive members: the `path` column holds the synthetic
+        // "{archive}::{inner}" form, and removing a single member from an
+        // archive would require rewriting it (and would affect sibling
+        // documents). Delete only the database record.
+        let is_archive_member = file.archive_path.is_some();
+        if !is_archive_member {
+            match tokio::fs::remove_file(&file.path).await {
+                Ok(()) => {}
+                // Already gone on disk: still remove the record, otherwise a
+                // missing file can never be deleted through the API.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    tracing::warn!(
+                        "file already missing on disk, removing record: {}",
+                        file.path
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to delete file from filesystem: {}", e);
+                    return Err(Error::IO(Arc::new(e)));
+                }
+            }
         }
         let mut conn = self.connection_pool.acquire().await?;
         if let Some(db_file) = dao::select_file_by_guid(&mut conn, &file.guid).await? {
-            dao::delete_file_record(&self.connection_pool, db_file.id).await?;
+            dao::delete_file_record(&mut conn, db_file.id).await?;
         }
         Ok(())
     }
