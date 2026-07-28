@@ -2248,9 +2248,11 @@ impl Page for PreferencesPage {
             PreferencesMessage::Save => {
                 self.save_state = SaveState::Saving;
                 let settings = self.settings.clone();
-                let config_path = self.application_module.config_path().to_owned();
+                let am = Arc::clone(&self.application_module);
                 task::future(async move {
-                    match settings.save(&config_path) {
+                    // Serialized with all other settings writers (REST admin
+                    // endpoints, embedded server) via the module's write lock.
+                    match am.save_settings(&settings).await {
                         Ok(()) => PreferencesMessage::SaveComplete,
                         Err(e) => PreferencesMessage::SaveError(e.to_string()),
                     }

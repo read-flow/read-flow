@@ -77,7 +77,12 @@ impl Settings {
     /// Save settings to the configuration file
     pub fn save(&self, path: &Path) -> Result<(), SettingsError> {
         let toml_string = toml::to_string_pretty(self)?;
-        fs::write(path, toml_string)?;
+        // Atomic replace: write a sibling temp file, then rename over the
+        // target. A crash mid-write can no longer truncate or tear the
+        // configuration (which also holds the user database).
+        let tmp = path.with_extension("toml.tmp");
+        fs::write(&tmp, toml_string)?;
+        fs::rename(&tmp, path)?;
         Ok(())
     }
 

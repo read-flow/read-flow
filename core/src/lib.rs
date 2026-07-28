@@ -82,6 +82,11 @@ pub struct ApplicationModule<P> {
     settings: Arc<SettingsCache<P>>,
     connection_pool: Arc<ConnectionPoolCache<P>>,
     db_client: Arc<ClientCache<P>>,
+    /// Serializes every read-mutate-write cycle on the configuration file.
+    /// All writers (REST admin endpoints, GUI preferences) must go through
+    /// [`Self::update_settings`] or [`Self::save_settings`] so concurrent
+    /// updates cannot silently drop each other's changes.
+    settings_write_lock: tokio::sync::Mutex<()>,
 }
 
 pub struct SettingsProvider {
@@ -145,6 +150,7 @@ where
             settings,
             connection_pool,
             db_client,
+            settings_write_lock: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -159,12 +165,30 @@ where
     /// Mutate the settings in memory, persist them to the configuration file,
     /// and invalidate the settings cache so subsequent reads observe the change.
     /// Used by the admin REST endpoints (scan directories, users, server settings).
+    ///
+    /// The whole read-mutate-write cycle runs under [`Self::settings_write_lock`]
+    /// with a fresh read of the file, so concurrent updates apply sequentially
+    /// instead of overwriting each other (lost update).
     pub async fn update_settings<F>(&self, mutate: F) -> Result<(), SettingsError>
     where
         F: FnOnce(&mut Settings),
     {
-        let mut settings = self.settings().await;
+        let _guard = self.settings_write_lock.lock().await;
+        // Re-read from disk inside the lock: the cache may predate another
+        // writer's save.
+        let mut settings = Settings::extract_from(self.config_path())?;
         mutate(&mut settings);
+        settings.save(self.config_path())?;
+        self.settings.set_expired().await;
+        Ok(())
+    }
+
+    /// Persist a fully-formed [`Settings`] value (e.g. the GUI preferences
+    /// form) under the same write lock as [`Self::update_settings`], then
+    /// invalidate the cache. Last-writer-wins for the fields the caller
+    /// edited, but the save cannot interleave with another writer's cycle.
+    pub async fn save_settings(&self, settings: &Settings) -> Result<(), SettingsError> {
+        let _guard = self.settings_write_lock.lock().await;
         settings.save(self.config_path())?;
         self.settings.set_expired().await;
         Ok(())
