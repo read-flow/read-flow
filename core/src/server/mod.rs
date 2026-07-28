@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+mod access;
 mod authn;
 mod token;
 
@@ -10,8 +11,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use access::Visibility;
 use authn::AuthorizedUser;
-use authn::PrivateModeHeader;
 use axum::Json;
 use axum::Router;
 use axum::extract::Form;
@@ -653,24 +654,11 @@ async fn status(
 #[tracing::instrument(skip_all)]
 async fn get_files(
     State(application_module): State<AppState>,
-    user: AuthorizedUser,
-    private_mode: PrivateModeHeader,
+    vis: Visibility,
 ) -> Result<Json<Vec<File>>> {
-    if private_mode.0 {
-        if !user.has_role("owner") {
-            return Err(Error::Forbidden(
-                "private mode access requires owner role".into(),
-            ));
-        }
-        let files = application_module.db_client().await.get_files().await?;
-        return Ok(Json(files));
-    }
-
-    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let excluded = settings.ui.private_tags().to_vec();
-    let db_files = dao::select_all_files_excluding_tags(&mut conn, &excluded).await?;
+    let db_files = dao::select_all_files_excluding_tags(&mut conn, vis.hidden_tags()).await?;
     let all_tags = dao::select_all_content_tags(&mut conn).await?;
     let mut tags_by_fp: std::collections::HashMap<String, Vec<crate::db::models::ContentTag>> =
         std::collections::HashMap::new();
@@ -697,9 +685,17 @@ async fn get_files(
 #[tracing::instrument(skip_all)]
 async fn update_file(
     State(application_module): State<AppState>,
-    _user: AuthorizedUser,
+    vis: Visibility,
     Json(file): Json<File>,
 ) -> Result<Json<File>> {
+    // The *stored* file must be visible to this request before any mutation;
+    // hidden files 404 like missing ones.
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    if visible_file(&mut conn, &vis, &file.guid).await?.is_none() {
+        return Err(Error::FileNotFound(file.guid.clone()));
+    }
+    drop(conn);
     application_module
         .db_client()
         .await
@@ -712,25 +708,11 @@ async fn update_file(
 #[tracing::instrument(skip_all)]
 async fn get_files_tags(
     State(application_module): State<AppState>,
-    user: AuthorizedUser,
-    private_mode: PrivateModeHeader,
+    vis: Visibility,
 ) -> Result<Json<Vec<String>>> {
-    if private_mode.0 {
-        if !user.has_role("owner") {
-            return Err(Error::Forbidden(
-                "private mode access requires owner role".into(),
-            ));
-        }
-        let pool = application_module.connection_pool().await;
-        let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-        let tags = dao::select_all_distinct_tags(&mut conn).await?;
-        return Ok(Json(tags));
-    }
-    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let excluded = settings.ui.private_tags().to_vec();
-    let tags = dao::select_all_distinct_tags_excluding(&mut conn, &excluded).await?;
+    let tags = dao::select_all_distinct_tags_excluding(&mut conn, vis.hidden_tags()).await?;
     Ok(Json(tags))
 }
 
@@ -738,29 +720,13 @@ async fn get_files_tags(
 async fn get_file(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
-    user: AuthorizedUser,
-    private_mode: PrivateModeHeader,
+    vis: Visibility,
 ) -> Result<Response> {
-    let guid = guid.as_str();
-    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+    let Some((file, tags)) = visible_file(&mut conn, &vis, &guid).await? else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
-    let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
-    if private_mode.0 {
-        if !user.has_role("owner") {
-            return Err(Error::Forbidden(
-                "private mode access requires owner role".into(),
-            ));
-        }
-    } else if settings
-        .ui
-        .contains_hidden_tag(&tags.iter().map(|t| t.tag.clone()).collect::<Vec<_>>())
-    {
-        return Ok(StatusCode::NOT_FOUND.into_response());
-    }
     let has_cover = dao::cover_exists(&mut conn, &file.fingerprint).await?;
     let mut api_file: File = (file, tags).into();
     api_file.has_cover = has_cover;
@@ -771,29 +737,14 @@ async fn get_file(
 async fn get_file_tags(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
-    user: AuthorizedUser,
-    private_mode: PrivateModeHeader,
+    vis: Visibility,
 ) -> Result<Json<Vec<String>>> {
-    let guid = guid.as_str();
-    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+    let Some((_, tags)) = visible_file(&mut conn, &vis, &guid).await? else {
         return Ok(Json(vec![]));
     };
-    let content_tags =
-        dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
-    let tag_strings: Vec<String> = content_tags.iter().map(|t| t.tag.clone()).collect();
-    if private_mode.0 {
-        if !user.has_role("owner") {
-            return Err(Error::Forbidden(
-                "private mode access requires owner role".into(),
-            ));
-        }
-    } else if settings.ui.contains_hidden_tag(&tag_strings) {
-        return Ok(Json(vec![]));
-    }
-    Ok(Json(tag_strings))
+    Ok(Json(tags.into_iter().map(|t| t.tag).collect()))
 }
 
 /// @feature: tags.add
@@ -801,43 +752,21 @@ async fn get_file_tags(
 async fn post_file_tags(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
-    user: AuthorizedUser,
-    private_mode: PrivateModeHeader,
+    vis: Visibility,
     Json(tags): Json<Vec<String>>,
 ) -> Result<Json<Vec<String>>> {
-    let guid = guid.as_str();
-    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+    let Some((file, _)) = visible_file(&mut conn, &vis, &guid).await? else {
         return Ok(Json(vec![]));
     };
-    let existing_tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
-        .await?
-        .iter()
-        .map(|t| t.tag.clone())
-        .collect::<Vec<_>>();
-    if private_mode.0 {
-        if !user.has_role("owner") {
-            return Err(Error::Forbidden(
-                "private mode access requires owner role".into(),
-            ));
-        }
-    } else if settings.ui.contains_hidden_tag(&existing_tags) {
-        return Ok(Json(vec![]));
-    }
     let content_tags = tags
         .into_iter()
         .map(|tag| crate::db::models::ContentTag::new(file.fingerprint.clone(), tag))
         .collect();
     dao::upsert_many_content_tags(&mut conn, content_tags).await?;
-    get_file_tags(
-        AxumPath(guid.to_string()),
-        State(application_module),
-        user,
-        private_mode,
-    )
-    .await
+    let updated = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
+    Ok(Json(updated.into_iter().map(|t| t.tag).collect()))
 }
 
 /// @feature: tags.remove
@@ -845,71 +774,30 @@ async fn post_file_tags(
 async fn delete_file_tags(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
-    user: AuthorizedUser,
-    private_mode: PrivateModeHeader,
+    vis: Visibility,
     Json(tags): Json<Vec<String>>,
 ) -> Result<Json<Vec<String>>> {
-    let guid = guid.as_str();
-    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let Some(file) = dao::select_file_by_guid(&mut conn, guid).await? else {
+    let Some((file, _)) = visible_file(&mut conn, &vis, &guid).await? else {
         return Ok(Json(vec![]));
     };
-    let existing_tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
-        .await?
-        .iter()
-        .map(|t| t.tag.clone())
-        .collect::<Vec<_>>();
-    if private_mode.0 {
-        if !user.has_role("owner") {
-            return Err(Error::Forbidden(
-                "private mode access requires owner role".into(),
-            ));
-        }
-    } else if settings.ui.contains_hidden_tag(&existing_tags) {
-        return Ok(Json(vec![]));
-    }
     dao::delete_content_tags(&mut conn, &file.fingerprint, tags).await?;
-    get_file_tags(
-        AxumPath(guid.to_string()),
-        State(application_module),
-        user,
-        private_mode,
-    )
-    .await
+    let updated = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
+    Ok(Json(updated.into_iter().map(|t| t.tag).collect()))
 }
 
 #[tracing::instrument(skip_all)]
 async fn download_file(
     AxumPath((guid, file_name)): AxumPath<(String, String)>,
     State(application_module): State<AppState>,
-    user: AuthorizedUser,
-    private_mode: PrivateModeHeader,
+    vis: Visibility,
 ) -> Result<Response> {
-    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let file = dao::select_file_by_guid(&mut conn, &guid).await?;
-
-    let Some(file) = file else {
+    let Some((file, _)) = visible_file(&mut conn, &vis, &guid).await? else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
-
-    let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
-        .await?
-        .iter()
-        .map(|t| t.tag.clone())
-        .collect::<Vec<_>>();
-    if private_mode.0 {
-        if !user.has_role("owner") {
-            return Err(Error::Forbidden(
-                "private mode access requires owner role".into(),
-            ));
-        }
-    } else if settings.ui.contains_hidden_tag(&tags) {
-        return Ok(StatusCode::NOT_FOUND.into_response());
-    }
     if !file_name.ends_with(&file.type_.to_lowercase()) {
         tracing::error!(
             "Incorrect file extension on `{file_name}`, expected `{}`",
@@ -949,31 +837,13 @@ async fn download_file(
 async fn get_file_cover(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
-    user: AuthorizedUser,
-    private_mode: PrivateModeHeader,
+    vis: Visibility,
 ) -> Result<Response> {
-    let settings = application_module.settings().await;
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    let Some(file) = dao::select_file_by_guid(&mut conn, &guid).await? else {
+    let Some((file, _)) = visible_file(&mut conn, &vis, &guid).await? else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
-    if private_mode.0 {
-        if !user.has_role("owner") {
-            return Err(Error::Forbidden(
-                "private mode access requires owner role".into(),
-            ));
-        }
-    } else {
-        let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
-            .await?
-            .iter()
-            .map(|t| t.tag.clone())
-            .collect::<Vec<_>>();
-        if settings.ui.contains_hidden_tag(&tags) {
-            return Ok(StatusCode::NOT_FOUND.into_response());
-        }
-    }
     let Some((data, mime)) = dao::get_cover(&mut conn, &file.fingerprint).await? else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
@@ -985,24 +855,18 @@ async fn get_file_cover(
 async fn delete_file(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
-    user: AuthorizedUser,
-    private_mode: PrivateModeHeader,
+    vis: Visibility,
 ) -> Result<()> {
     let guid = guid.as_str();
-    let settings = application_module.settings().await;
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    if visible_file(&mut conn, &vis, guid).await?.is_none() {
+        return Err(Error::FileNotFound(guid.to_string()));
+    }
+    drop(conn);
     let db_client = application_module.db_client().await;
     let file = db_client.get_file(guid).await?;
-
     if let Some(ref file) = file {
-        if private_mode.0 {
-            if !user.has_role("owner") {
-                return Err(Error::Forbidden(
-                    "private mode access requires owner role".into(),
-                ));
-            }
-        } else if settings.ui.contains_hidden_tag(&file.tags) {
-            return Err(Error::FileNotFound(guid.to_string()));
-        }
         db_client.delete_file(file.clone()).await?;
         Ok(())
     } else {
@@ -1085,10 +949,13 @@ async fn upload_file(
 async fn get_reading_state(
     AxumPath(fingerprint): AxumPath<String>,
     State(application_module): State<AppState>,
-    _user: AuthorizedUser,
+    vis: Visibility,
 ) -> Result<Response> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    if !fingerprint_visible(&mut conn, &vis, &fingerprint).await? {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    }
     let state = dao::get_reading_state(&mut conn, &fingerprint).await?;
     Ok(match state {
         Some(state) => Json(state).into_response(),
@@ -1100,11 +967,14 @@ async fn get_reading_state(
 #[tracing::instrument(skip_all)]
 async fn put_reading_state(
     State(application_module): State<AppState>,
-    _user: AuthorizedUser,
+    vis: Visibility,
     Json(state): Json<ReadingState>,
 ) -> Result<Json<ReadingState>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    if !fingerprint_visible(&mut conn, &vis, &state.fingerprint).await? {
+        return Err(Error::FileNotFound(state.fingerprint.clone()));
+    }
     let result = dao::upsert_reading_state(&mut conn, state).await?;
     Ok(Json(result))
 }
@@ -1119,11 +989,14 @@ struct ReadingStatusRequest {
 async fn put_reading_status(
     AxumPath(fingerprint): AxumPath<String>,
     State(application_module): State<AppState>,
-    _user: AuthorizedUser,
+    vis: Visibility,
     Json(req): Json<ReadingStatusRequest>,
 ) -> Result<()> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    if !fingerprint_visible(&mut conn, &vis, &fingerprint).await? {
+        return Err(Error::FileNotFound(fingerprint.clone()));
+    }
     dao::update_reading_status_only(&mut conn, &fingerprint, req.status.into()).await?;
     Ok(())
 }
@@ -1134,12 +1007,18 @@ async fn put_reading_status(
 #[tracing::instrument(skip_all)]
 async fn get_documents(
     State(application_module): State<AppState>,
-    _user: AuthorizedUser,
+    vis: Visibility,
 ) -> Result<Json<Vec<ApiDocument>>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let docs = dao::select_all_api_documents(&mut conn).await?;
-    Ok(Json(docs))
+    let mut visible = Vec::with_capacity(docs.len());
+    for doc in docs {
+        if document_visible(&mut conn, &vis, &doc).await? {
+            visible.push(doc);
+        }
+    }
+    Ok(Json(visible))
 }
 
 /// @feature: documents.detail_view
@@ -1147,14 +1026,14 @@ async fn get_documents(
 async fn get_document(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
-    _user: AuthorizedUser,
+    vis: Visibility,
 ) -> Result<Response> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let doc = dao::select_api_document_by_guid(&mut conn, &guid).await?;
     Ok(match doc {
-        Some(doc) => Json(doc).into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
+        Some(doc) if document_visible(&mut conn, &vis, &doc).await? => Json(doc).into_response(),
+        _ => StatusCode::NOT_FOUND.into_response(),
     })
 }
 
@@ -1163,10 +1042,16 @@ async fn get_document(
 async fn get_document_cover(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
-    _user: AuthorizedUser,
+    vis: Visibility,
 ) -> Result<Response> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let Some(api_doc) = dao::select_api_document_by_guid(&mut conn, &guid).await? else {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    };
+    if !document_visible(&mut conn, &vis, &api_doc).await? {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    }
     let Some(doc) = dao::select_document_by_guid(&mut conn, &guid).await? else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
@@ -1182,13 +1067,19 @@ async fn get_document_cover(
 async fn put_document_metadata(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
-    _user: AuthorizedUser,
+    vis: Visibility,
     Json(meta): Json<DocumentMeta>,
 ) -> Result<Json<ApiDocument>> {
     let guid = guid.as_str();
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
 
+    let api_doc = dao::select_api_document_by_guid(&mut conn, guid)
+        .await?
+        .ok_or_else(|| Error::FileNotFound(guid.to_string()))?;
+    if !document_visible(&mut conn, &vis, &api_doc).await? {
+        return Err(Error::FileNotFound(guid.to_string()));
+    }
     let doc_row = dao::select_document_by_guid(&mut conn, guid)
         .await?
         .ok_or_else(|| Error::FileNotFound(guid.to_string()))?;
@@ -1222,10 +1113,13 @@ async fn put_document_metadata(
 async fn ensure_document_for_file(
     AxumPath(guid): AxumPath<String>,
     State(application_module): State<AppState>,
-    _user: AuthorizedUser,
+    vis: Visibility,
 ) -> Result<Json<ApiDocument>> {
     let pool = application_module.connection_pool().await;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    if visible_file(&mut conn, &vis, &guid).await?.is_none() {
+        return Err(Error::FileNotFound(guid.clone()));
+    }
     let doc = dao::ensure_document_for_file_guid(&mut conn, &guid).await?;
     Ok(Json(doc))
 }
@@ -1237,6 +1131,54 @@ fn require_owner(user: &AuthorizedUser) -> Result<()> {
     } else {
         Err(Error::Forbidden("admin actions require owner role".into()))
     }
+}
+
+/// Look up a file by guid and apply the request's visibility policy. Hidden
+/// files are indistinguishable from missing ones (`None`), so responses do not
+/// reveal that a private file exists.
+async fn visible_file(
+    conn: &mut sqlx::SqliteConnection,
+    vis: &Visibility,
+    guid: &str,
+) -> Result<Option<(crate::db::models::File, Vec<crate::db::models::ContentTag>)>> {
+    let Some(file) = dao::select_file_by_guid(conn, guid).await? else {
+        return Ok(None);
+    };
+    let tags = dao::select_content_tags_by_fingerprint(conn, &file.fingerprint).await?;
+    let tag_names: Vec<&str> = tags.iter().map(|t| t.tag.as_str()).collect();
+    if !vis.can_see(&tag_names) {
+        return Ok(None);
+    }
+    Ok(Some((file, tags)))
+}
+
+/// Whether the content behind `fingerprint` is visible to this request.
+async fn fingerprint_visible(
+    conn: &mut sqlx::SqliteConnection,
+    vis: &Visibility,
+    fingerprint: &str,
+) -> Result<bool> {
+    let tags = dao::select_content_tags_by_fingerprint(conn, fingerprint).await?;
+    let tag_names: Vec<&str> = tags.iter().map(|t| t.tag.as_str()).collect();
+    Ok(vis.can_see(&tag_names))
+}
+
+/// Whether a document is visible: it has no files, or at least one of its
+/// files is visible to this request.
+async fn document_visible(
+    conn: &mut sqlx::SqliteConnection,
+    vis: &Visibility,
+    doc: &ApiDocument,
+) -> Result<bool> {
+    if doc.file_guids.is_empty() {
+        return Ok(true);
+    }
+    for guid in &doc.file_guids {
+        if visible_file(conn, vis, guid).await?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// @feature: admin.scan
@@ -1589,10 +1531,21 @@ async fn delete_user(
 #[tracing::instrument(skip_all)]
 async fn post_merge_documents(
     State(application_module): State<AppState>,
-    _user: AuthorizedUser,
+    vis: Visibility,
     Json(req): Json<MergeDocumentsRequest>,
 ) -> Result<Json<ApiDocument>> {
     let pool = application_module.connection_pool().await;
+    {
+        // Every involved document must be visible to this request.
+        let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+        for guid in std::iter::once(&req.winner_guid).chain(req.loser_guids.iter()) {
+            if let Some(doc) = dao::select_api_document_by_guid(&mut conn, guid).await?
+                && !document_visible(&mut conn, &vis, &doc).await?
+            {
+                return Err(Error::FileNotFound(guid.clone()));
+            }
+        }
+    }
     dao::merge_documents(&pool, &req.winner_guid, &req.loser_guids).await?;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let doc = dao::select_api_document_by_guid(&mut conn, &req.winner_guid)
