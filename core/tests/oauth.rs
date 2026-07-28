@@ -217,3 +217,32 @@ async fn bad_credentials_yield_invalid_grant() {
     let json: serde_json::Value = serde_json::from_str(&body).expect("json");
     Assert::that(json["error"].clone()).is("invalid_grant");
 }
+
+#[tokio::test]
+async fn repeated_basic_failures_are_rate_limited() {
+    let (router, _dir) = test_router().await;
+
+    // Burn through the failure budget with wrong passwords.
+    let mut saw_too_many = false;
+    for _ in 0..15 {
+        let (status, _) = send(&router, get_status(None, Some(basic("owner", "wrong")))).await;
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            saw_too_many = true;
+            break;
+        }
+        Assert::that(status).is(StatusCode::FORBIDDEN);
+    }
+    Assert::that(saw_too_many).is(true);
+
+    // A subsequent attempt with *correct* credentials is also rejected while
+    // the budget is exhausted (global failure window), with 429 not 403.
+    let (status, _) = send(&router, get_status(None, Some(basic("owner", "password")))).await;
+    Assert::that(status).is(StatusCode::TOO_MANY_REQUESTS);
+
+    // Bearer tokens are unaffected by the Basic limiter: token verification is
+    // a cheap HMAC, no hashing involved.
+    // (Token obtained before exhausting the budget would be normal; here we
+    // just confirm an invalid token still yields 401, not 429.)
+    let (status, _) = send(&router, get_status(Some("not-a-jwt"), None)).await;
+    Assert::that(status).is(StatusCode::UNAUTHORIZED);
+}

@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+use std::collections::VecDeque;
+use std::sync::Mutex;
+use std::time::Duration;
+use std::time::Instant;
+
 use axum::extract::FromRequestParts;
 use axum::http::HeaderValue;
 use axum::http::StatusCode;
@@ -10,6 +15,53 @@ use axum::response::Response;
 use base64::Engine;
 
 use crate::server::AppState;
+
+/// Rejects Basic-auth attempts once too many *failures* accumulated recently.
+///
+/// Every endpoint accepts Basic credentials, and each verification costs an
+/// Argon2/PBKDF2 hash — so an attacker can brute-force passwords (and burn
+/// CPU) against any route, not just `/oauth/token`. Successful logins are
+/// never throttled; only a global budget of recent failures gates further
+/// attempts, which are rejected *before* the expensive hash runs.
+///
+/// The key is global, like the `/oauth/token` governor: per-IP keying needs
+/// `ConnectInfo`, and a reverse proxy is the recommended per-IP path.
+pub struct BasicAuthLimiter {
+    window: Duration,
+    max_failures: usize,
+    failures: Mutex<VecDeque<Instant>>,
+}
+
+impl Default for BasicAuthLimiter {
+    fn default() -> Self {
+        Self {
+            window: Duration::from_secs(60),
+            max_failures: 10,
+            failures: Mutex::new(VecDeque::new()),
+        }
+    }
+}
+
+impl BasicAuthLimiter {
+    /// Whether another Basic-auth attempt may proceed right now.
+    fn check(&self) -> bool {
+        let mut failures = self.failures.lock().expect("limiter lock");
+        let cutoff = Instant::now() - self.window;
+        while failures.front().is_some_and(|t| *t < cutoff) {
+            failures.pop_front();
+        }
+        failures.len() < self.max_failures
+    }
+
+    fn record_failure(&self) {
+        let mut failures = self.failures.lock().expect("limiter lock");
+        failures.push_back(Instant::now());
+        // Bound memory: entries beyond the budget are irrelevant.
+        while failures.len() > self.max_failures {
+            failures.pop_front();
+        }
+    }
+}
 
 pub struct AuthorizedUser {
     pub user_id: String,
@@ -56,12 +108,15 @@ pub enum Error {
     InvalidCredentials,
     #[error("the bearer token is invalid or expired")]
     InvalidToken,
+    #[error("too many failed authentication attempts, try again later")]
+    TooManyAttempts,
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let status = match &self {
             Error::TooManyAuthorizationHeaders(_) => StatusCode::BAD_REQUEST,
+            Error::TooManyAttempts => StatusCode::TOO_MANY_REQUESTS,
             Error::MissingAuthorization
             | Error::InvalidAuthType
             | Error::InvalidBasicAuth
@@ -134,21 +189,37 @@ impl FromRequestParts<AppState> for AuthorizedUser {
             many => return Err(Error::TooManyAuthorizationHeaders(many.len())),
         };
 
-        // Try Basic authentication first (user_id:passphrase). This is the slow
-        // path (PBKDF2) — used for `/oauth/token` and simple clients.
+        // Try Basic authentication first (user_id:passphrase). This is the
+        // slow path (Argon2/PBKDF2) — used for `/oauth/token` and simple
+        // clients. The hash runs on the blocking pool so it cannot stall
+        // tokio's async workers, and a failure budget rejects brute-force
+        // storms before the hash is even attempted.
         if authorization_header.to_lowercase().starts_with("basic ") {
+            if !state.basic_limiter().check() {
+                return Err(Error::TooManyAttempts);
+            }
             let settings = state.settings().await;
             let (user_id, passphrase) = Self::extract_basic_auth(authorization_header)?;
-            match settings.server.authorized_users.get(&user_id) {
-                Some(entry) if entry.password().verify(&passphrase).is_ok() => Ok(AuthorizedUser {
-                    user_id,
-                    roles: entry.roles().to_vec(),
-                }),
-                Some(_) => Err(Error::InvalidCredentials),
+            let entry = settings.server.authorized_users.get(&user_id).cloned();
+            let verified = tokio::task::spawn_blocking(move || match entry {
+                Some(entry) => entry
+                    .password()
+                    .verify(&passphrase)
+                    .is_ok()
+                    .then(|| entry.roles().to_vec()),
                 None => {
                     // Spend the same time as a real verify so timing doesn't
                     // reveal which usernames exist.
                     crate::settings::verify_dummy(&passphrase);
+                    None
+                }
+            })
+            .await
+            .map_err(|_| Error::InvalidCredentials)?;
+            match verified {
+                Some(roles) => Ok(AuthorizedUser { user_id, roles }),
+                None => {
+                    state.basic_limiter().record_failure();
                     Err(Error::InvalidCredentials)
                 }
             }

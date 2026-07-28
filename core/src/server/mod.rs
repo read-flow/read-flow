@@ -209,6 +209,7 @@ where
 pub struct AppState {
     module: Arc<dyn ServerModule>,
     tokens: Arc<TokenService>,
+    basic_limiter: Arc<authn::BasicAuthLimiter>,
 }
 
 impl AppState {
@@ -216,12 +217,18 @@ impl AppState {
         Self {
             module,
             tokens: Arc::new(TokenService::generate()),
+            basic_limiter: Arc::new(authn::BasicAuthLimiter::default()),
         }
     }
 
     /// The token issuer/verifier for this server instance.
     pub(crate) fn tokens(&self) -> &TokenService {
         &self.tokens
+    }
+
+    /// Failure-budget limiter shared by all Basic-auth verification paths.
+    pub(crate) fn basic_limiter(&self) -> &authn::BasicAuthLimiter {
+        &self.basic_limiter
     }
 }
 
@@ -592,24 +599,31 @@ async fn oauth_token(
     };
 
     let settings = state.settings().await;
-    let Some(entry) = settings.server.authorized_users.get(&user_id) else {
-        // Match the timing of a real verify (anti username-enumeration).
-        settings::verify_dummy(&password);
+    // Verify on the blocking pool: Argon2/PBKDF2 must not stall async workers.
+    let entry = settings.server.authorized_users.get(&user_id).cloned();
+    let verified = tokio::task::spawn_blocking(move || match entry {
+        Some(entry) => entry
+            .password()
+            .verify(&password)
+            .is_ok()
+            .then(|| entry.roles().to_vec()),
+        None => {
+            // Match the timing of a real verify (anti username-enumeration).
+            settings::verify_dummy(&password);
+            None
+        }
+    })
+    .await
+    .ok()
+    .flatten();
+    let Some(roles) = verified else {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "invalid username or password",
         );
     };
-    if entry.password().verify(&password).is_err() {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "invalid username or password",
-        );
-    }
 
-    let roles = entry.roles().to_vec();
     match state.tokens().issue(&user_id, &roles) {
         Ok(access_token) => {
             let body = TokenResponse {
