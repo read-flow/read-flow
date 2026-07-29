@@ -172,6 +172,70 @@ async fn local_writes_stay_private_without_local_user_id_configured() {
     Assert::that(status).is(StatusCode::NOT_FOUND);
 }
 
+/// Configuring `server.local_user_id` on a *running* app (e.g. via COSMIC's
+/// Preferences → Server → Local Identity "Save" button, which calls
+/// `save_settings`) must take effect for local writes made afterwards,
+/// without requiring an app restart. `db_client()` bakes in the resolved
+/// user id at cache-build time, so `save_settings`/`update_settings` must
+/// invalidate that cache too — not just the settings cache — or local
+/// access keeps acting as the stale (previously resolved) user until
+/// something calls `reload_settings` (e.g. a restart).
+#[tokio::test]
+async fn changing_local_user_id_via_save_settings_takes_effect_without_restart() {
+    let (router, _dir, config_path, _guid, fingerprint) = test_setup(false).await;
+
+    let module = ApplicationModule::instantiate(config_path)
+        .await
+        .expect("instantiate module");
+
+    // Before configuring local_user_id: local writes go under the reserved
+    // `local` id, invisible to alice (today's default behaviour).
+    module
+        .db_client()
+        .await
+        .upsert_reading_state(ReadingState {
+            fingerprint: fingerprint.clone(),
+            status: 0,
+            position: "chapter-1".to_string(),
+            percentage: 0.1,
+            last_updated: "2026-01-02T00:00:00Z".to_string(),
+            status_updated_at: "2026-01-02T00:00:00Z".to_string(),
+        })
+        .await
+        .expect("upsert reading state locally, before configuring local_user_id");
+
+    // Configure local_user_id = "alice" on the *live* module, exactly like
+    // the GUI Preferences Save button does — no restart, no fresh
+    // `ApplicationModule::instantiate`.
+    let mut settings = module.settings().await;
+    settings.server.local_user_id = Some("alice".to_string());
+    module
+        .save_settings(&settings)
+        .await
+        .expect("save updated settings");
+
+    // A local write made *after* the save should now be recorded under
+    // alice, and visible to her over REST — without restarting the app.
+    module
+        .db_client()
+        .await
+        .upsert_reading_state(ReadingState {
+            fingerprint: fingerprint.clone(),
+            status: 0,
+            position: "chapter-9".to_string(),
+            percentage: 0.9,
+            last_updated: "2026-01-03T00:00:00Z".to_string(),
+            status_updated_at: "2026-01-03T00:00:00Z".to_string(),
+        })
+        .await
+        .expect("upsert reading state locally, after configuring local_user_id");
+
+    let (status, body) = get_reading_state_as(&router, "alice", "password", &fingerprint).await;
+    Assert::that(status).is(StatusCode::OK);
+    let json: serde_json::Value = serde_json::from_str(&body).expect("json");
+    Assert::that(json["position"].as_str()).is_some("chapter-9");
+}
+
 /// A `local_user_id` naming a user that no longer exists in
 /// `authorized_users` falls back to the reserved local id rather than
 /// erroring, so deleting that user doesn't brick local access.

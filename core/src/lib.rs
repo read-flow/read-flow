@@ -186,8 +186,10 @@ where
     }
 
     /// Mutate the settings in memory, persist them to the configuration file,
-    /// and invalidate the settings cache so subsequent reads observe the change.
-    /// Used by the admin REST endpoints (scan directories, users, server settings).
+    /// and invalidate the settings cache (and everything derived from it —
+    /// e.g. `db_client`'s resolved local user id) so subsequent reads observe
+    /// the change. Used by the admin REST endpoints (scan directories, users,
+    /// server settings).
     ///
     /// The whole read-mutate-write cycle runs under [`Self::settings_write_lock`]
     /// with a fresh read of the file, so concurrent updates apply sequentially
@@ -202,26 +204,34 @@ where
         let mut settings = Settings::extract_from(self.config_path())?;
         mutate(&mut settings);
         settings.save(self.config_path())?;
-        self.settings.set_expired().await;
+        self.invalidate_caches().await;
         Ok(())
     }
 
     /// Persist a fully-formed [`Settings`] value (e.g. the GUI preferences
     /// form) under the same write lock as [`Self::update_settings`], then
-    /// invalidate the cache. Last-writer-wins for the fields the caller
-    /// edited, but the save cannot interleave with another writer's cycle.
+    /// invalidate the settings cache and everything derived from it.
+    /// Last-writer-wins for the fields the caller edited, but the save
+    /// cannot interleave with another writer's cycle.
     pub async fn save_settings(&self, settings: &Settings) -> Result<(), SettingsError> {
         let _guard = self.settings_write_lock.lock().await;
         settings.save(self.config_path())?;
-        self.settings.set_expired().await;
+        self.invalidate_caches().await;
         Ok(())
     }
 
-    /// Invalidate the cached settings (and the caches derived from them) so the
-    /// next access re-reads the configuration file. Unlike [`update_settings`],
-    /// this makes no change of its own — it is the "reload config" hook for
-    /// picking up edits made outside the running process.
+    /// Invalidate the cached settings and the caches derived from them
+    /// (connection pool, local `db_client` — whose resolved local user id
+    /// depends on settings) so the next access re-reads/re-resolves from the
+    /// just-saved configuration file. Unlike [`update_settings`]/
+    /// [`save_settings`], this makes no change of its own — it is also the
+    /// "reload config" hook for picking up edits made outside the running
+    /// process.
     pub async fn reload_settings(&self) {
+        self.invalidate_caches().await;
+    }
+
+    async fn invalidate_caches(&self) {
         self.settings.set_expired().await;
         self.connection_pool.set_expired().await;
         self.db_client.set_expired().await;

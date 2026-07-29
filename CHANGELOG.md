@@ -28,6 +28,7 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 - Deleting a document whose file lives inside an archive (e.g. a `.zip`/`.tar` member) no longer fails, and deleting a document whose underlying file is already missing on disk now succeeds instead of being blocked.
 - Fixed a crash on an invalid stored reading-status value (now degrades to Unread with a warning) and on certain file/document write paths reading back their own row (now surfaces as an error instead of panicking).
 - PWA: reading progress saved by COSMIC's PDF or EPUB viewer no longer gets ignored when opening the same document in the PWA (it always restarted from the beginning). The PWA readers now understand COSMIC's combined per-viewer position format, and preserve it when saving their own progress.
+- COSMIC: configuring `server.local_user_id` from Preferences → Server → Local Identity now takes effect immediately for local reading progress/tags, instead of only after restarting the app. Saving settings (from the GUI or the REST admin API) previously left the cached local database client bound to the old resolved user, so local writes kept landing under the previous identity until the process restarted.
 
 ### Removed
 
