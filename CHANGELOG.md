@@ -14,22 +14,46 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
-- Server: `server.local_user_id` setting binds the desktop app's local database access to a designated authorized user, so reading progress and tags recorded on the desktop are shared with that user's remote (REST/PWA) sessions. Configurable from COSMIC Preferences → Server → Local Identity.
+- Server: `server.local_user_id` setting binds the desktop app's local database access to a
+  designated authorized user, so reading progress and tags recorded on the desktop are shared with
+  that user's remote (REST/PWA) sessions. Configurable from COSMIC Preferences → Server → Local
+  Identity.
 
 ### Changed
 
-- Server: the `ui.private_mode` toggle no longer disables private-tag filtering for remote API requests; it now only controls the local GUI. Remote/PWA clients must request private content explicitly via the `x-private-mode` header (and must own that content).
+- Server: the `ui.private_mode` toggle no longer disables private-tag filtering for remote API
+  requests; it now only controls the local GUI. Remote/PWA clients must request private content
+  explicitly via the `x-private-mode` header (and must own that content).
 
 ### Fixed
 
-- Server: fixed several endpoints (file update; reading-state get/put/status; document list/get/cover/metadata/merge/ensure) that skipped private-content filtering, letting any authenticated user read or mutate documents hidden by a private tag. All content endpoints now go through one shared visibility check.
-- Server: Basic-auth password verification (Argon2/PBKDF2) now runs off the async worker threads instead of blocking them, and failed Basic-auth attempts are rate-limited (10 failures/60s) on every endpoint, not just `/oauth/token`, closing a brute-force bypass.
-- Settings (`read-flow.toml`) writes from the REST admin API, COSMIC preferences, and the embedded server are now serialized and atomic, so concurrent saves can no longer silently overwrite each other's changes, and a crash mid-write can no longer truncate the config.
-- Deleting a document whose file lives inside an archive (e.g. a `.zip`/`.tar` member) no longer fails, and deleting a document whose underlying file is already missing on disk now succeeds instead of being blocked.
-- Fixed a crash on an invalid stored reading-status value (now degrades to Unread with a warning) and on certain file/document write paths reading back their own row (now surfaces as an error instead of panicking).
-- PWA: reading progress saved by COSMIC's PDF or EPUB viewer no longer gets ignored when opening the same document in the PWA (it always restarted from the beginning). The PWA readers now understand COSMIC's combined per-viewer position format, and preserve it when saving their own progress.
-- COSMIC: configuring `server.local_user_id` from Preferences → Server → Local Identity now takes effect immediately for local reading progress/tags, instead of only after restarting the app. Saving settings (from the GUI or the REST admin API) previously left the cached local database client bound to the old resolved user, so local writes kept landing under the previous identity until the process restarted.
-- PDF reading progress saved by COSMIC and opened in the PWA (or vice versa) was off by one page, since COSMIC stored its 0-based page index directly while the PWA stores/reads a 1-based page number. Both now agree on a 1-based page number on the wire.
+- Server: fixed several endpoints (file update; reading-state get/put/status; document
+  list/get/cover/metadata/merge/ensure) that skipped private-content filtering, letting any
+  authenticated user read or mutate documents hidden by a private tag. All content endpoints now go
+  through one shared visibility check.
+- Server: Basic-auth password verification (Argon2/PBKDF2) now runs off the async worker threads
+  instead of blocking them, and failed Basic-auth attempts are rate-limited (10 failures/60s) on
+  every endpoint, not just `/oauth/token`, closing a brute-force bypass.
+- Settings (`read-flow.toml`) writes from the REST admin API, COSMIC preferences, and the embedded
+  server are now serialized and atomic, so concurrent saves can no longer silently overwrite each
+  other's changes, and a crash mid-write can no longer truncate the config.
+- Deleting a document whose file lives inside an archive (e.g. a `.zip`/`.tar` member) no longer
+  fails, and deleting a document whose underlying file is already missing on disk now succeeds
+  instead of being blocked.
+- Fixed a crash on an invalid stored reading-status value (now degrades to Unread with a warning)
+  and on certain file/document write paths reading back their own row (now surfaces as an error
+  instead of panicking).
+- PWA: reading progress saved by COSMIC's PDF or EPUB viewer no longer gets ignored when opening the
+  same document in the PWA (it always restarted from the beginning). The PWA readers now understand
+  COSMIC's combined per-viewer position format, and preserve it when saving their own progress.
+- COSMIC: configuring `server.local_user_id` from Preferences → Server → Local Identity now takes
+  effect immediately for local reading progress/tags, instead of only after restarting the
+  app. Saving settings (from the GUI or the REST admin API) previously left the cached local
+  database client bound to the old resolved user, so local writes kept landing under the previous
+  identity until the process restarted.
+- PDF reading progress saved by COSMIC and opened in the PWA (or vice versa) was off by one page,
+  since COSMIC stored its 0-based page index directly while the PWA stores/reads a 1-based page
+  number. Both now agree on a 1-based page number on the wire.
 
 ### Removed
 
