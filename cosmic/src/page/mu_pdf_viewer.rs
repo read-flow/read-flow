@@ -316,7 +316,9 @@ impl MuPdfViewer {
                         &state.position,
                         crate::reading_progress::Viewer::MuPdf,
                     )
-                    .and_then(|own| parse_page_from_progress(&own)),
+                    .and_then(|own| parse_page_from_progress(&own))
+                    // Wire format is 1-based; convert to the 0-based active_page index.
+                    .map(|wire_page| wire_page.saturating_sub(1)),
                     Ok(None) => None,
                     Err(e) => {
                         tracing::warn!("failed to load reading state: {e}");
@@ -1291,7 +1293,19 @@ fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, MuPdfView
         .into()
 }
 
-/// Parse the page number from a progress JSON string like `{"page":5}`.
+/// Build the `{"page":N}` MuPDF progress JSON for `active_page` (the 0-based
+/// index into `self.pages`). The wire format is 1-based — the human-visible
+/// page number, matching the PWA's own `currentPage` — so it round-trips
+/// through [`parse_page_from_progress`] with a `+1`/`-1` pair at each end
+/// rather than leaking the internal 0-based index onto the wire, where the
+/// PWA reads and writes the same field as a 1-based page number directly.
+pub(super) fn page_to_progress_json(active_page: usize) -> String {
+    format!("{{\"page\":{}}}", active_page + 1)
+}
+
+/// Parse the wire (1-based) page number from a progress JSON string like
+/// `{"page":5}`. Callers must subtract 1 to get the internal 0-based
+/// `active_page` index (see [`page_to_progress_json`]).
 fn parse_page_from_progress(progress: &str) -> Option<usize> {
     // Simple parser to avoid serde_json dependency.
     let progress = progress.trim();
@@ -1304,4 +1318,34 @@ fn parse_page_from_progress(progress: &str) -> Option<usize> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod progress_json_tests {
+    use assert4rs::Assert;
+
+    use super::*;
+
+    #[test]
+    fn page_to_progress_json_is_one_based() {
+        // active_page 0 (the first, 0-based page) is wire page 1.
+        Assert::that(page_to_progress_json(0).as_str()).is(r#"{"page":1}"#);
+        Assert::that(page_to_progress_json(41).as_str()).is(r#"{"page":42}"#);
+    }
+
+    #[test]
+    fn parse_page_from_progress_reads_the_wire_value_verbatim() {
+        Assert::that(parse_page_from_progress(r#"{"page":42}"#)).is(Some(42));
+        Assert::that(parse_page_from_progress("not json")).is(None);
+    }
+
+    #[test]
+    fn active_page_round_trips_through_the_wire_format() {
+        for active_page in [0usize, 1, 41, 999] {
+            let wire = page_to_progress_json(active_page);
+            let parsed = parse_page_from_progress(&wire).expect("parses");
+            // The call site subtracts 1 to recover the 0-based active_page.
+            Assert::that(parsed - 1).is(active_page);
+        }
+    }
 }

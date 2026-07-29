@@ -29,6 +29,7 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 - Fixed a crash on an invalid stored reading-status value (now degrades to Unread with a warning) and on certain file/document write paths reading back their own row (now surfaces as an error instead of panicking).
 - PWA: reading progress saved by COSMIC's PDF or EPUB viewer no longer gets ignored when opening the same document in the PWA (it always restarted from the beginning). The PWA readers now understand COSMIC's combined per-viewer position format, and preserve it when saving their own progress.
 - COSMIC: configuring `server.local_user_id` from Preferences → Server → Local Identity now takes effect immediately for local reading progress/tags, instead of only after restarting the app. Saving settings (from the GUI or the REST admin API) previously left the cached local database client bound to the old resolved user, so local writes kept landing under the previous identity until the process restarted.
+- PDF reading progress saved by COSMIC and opened in the PWA (or vice versa) was off by one page, since COSMIC stored its 0-based page index directly while the PWA stores/reads a 1-based page number. Both now agree on a 1-based page number on the wire.
 
 ### Removed
 

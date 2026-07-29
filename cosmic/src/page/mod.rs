@@ -667,7 +667,7 @@ impl Pages {
                         self.document_provider.clone(),
                         fingerprint,
                         crate::reading_progress::Viewer::MuPdf,
-                        format!("{{\"page\":{page}}}"),
+                        mu_pdf_viewer::page_to_progress_json(page),
                         percentage,
                     ));
                 }
