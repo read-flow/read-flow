@@ -13,7 +13,6 @@ use super::Error;
 use super::files::select_file_by_guid;
 use crate::api::ApiDocument;
 use crate::api::DocumentMeta;
-use crate::db::LOCAL_USER_ID;
 use crate::db::models::Document;
 use crate::db::models::DocumentUserMetadata;
 use crate::scan::metadata::ExtractedMetadata;
@@ -462,9 +461,10 @@ pub async fn ensure_document_for_fingerprint(
 /// Get or create a `documents` row for the file identified by `file_guid`.
 pub async fn ensure_document_for_file_guid(
     conn: &mut SqliteConnection,
+    user_id: &str,
     file_guid: &str,
 ) -> Result<ApiDocument, Error> {
-    let file = select_file_by_guid(&mut *conn, LOCAL_USER_ID, file_guid)
+    let file = select_file_by_guid(&mut *conn, user_id, file_guid)
         .await?
         .ok_or_else(|| Error::Sqlx(Arc::new(sqlx::Error::RowNotFound)))?;
     ensure_document_for_fingerprint(&mut *conn, &file.fingerprint).await

@@ -1140,7 +1140,7 @@ async fn ensure_document_for_file(
     if visible_file(&mut conn, &vis, &guid).await?.is_none() {
         return Err(Error::FileNotFound(guid.clone()));
     }
-    let doc = dao::ensure_document_for_file_guid(&mut conn, &guid).await?;
+    let doc = dao::ensure_document_for_file_guid(&mut conn, vis.user_id(), &guid).await?;
     Ok(Json(doc))
 }
 

@@ -5,7 +5,6 @@ use itertools::concat;
 use provider::r#async::Provider;
 
 use crate::ApplicationModule;
-use crate::db::LOCAL_USER_ID;
 use crate::db::dao;
 use crate::db::dao::Error;
 use crate::db::models::ContentTag;
@@ -20,16 +19,22 @@ where
 {
     pub async fn apply_tags(&self) -> Result<(), Error> {
         let settings = self.settings().await;
-        self.apply_tags_from_settings(&settings.scan).await
+        let user_id = settings.server.resolve_local_user_id().to_string();
+        self.apply_tags_from_settings(&settings.scan, &user_id)
+            .await
     }
 
-    async fn apply_tags_from_settings(&self, scan_settings: &ScanSettings) -> Result<(), Error> {
+    async fn apply_tags_from_settings(
+        &self,
+        scan_settings: &ScanSettings,
+        user_id: &str,
+    ) -> Result<(), Error> {
         let pool = self.connection_pool().await;
         let mut conn = pool.acquire().await?;
         let mut tags_to_add: Vec<Vec<ContentTag>> = Vec::new();
 
         for (path, tags) in &scan_settings.auto_tags {
-            let files = dao::select_all_files_by_path_like(&mut conn, LOCAL_USER_ID, path).await?;
+            let files = dao::select_all_files_by_path_like(&mut conn, user_id, path).await?;
             if scan_settings.dry_run {
                 for file in files.iter() {
                     println!("{}: {:?}", file.path, tags);

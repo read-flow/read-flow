@@ -14,6 +14,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+- Server: `server.local_user_id` setting binds the desktop app's local database access to a designated authorized user, so reading progress and tags recorded on the desktop are shared with that user's remote (REST/PWA) sessions. Configurable from COSMIC Preferences → Server → Local Identity.
+
 ### Changed
 
 ### Fixed

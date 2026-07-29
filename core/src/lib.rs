@@ -53,12 +53,8 @@ type ConnectionPoolCache<P> = ObservableCache<
     ConnectionPool,
     ConnectionPool,
 >;
-type ClientCache<P> = ObservableCache<
-    Arc<ConnectionPoolCache<P>>,
-    fn(ConnectionPool) -> DbClient,
-    ConnectionPool,
-    DbClient,
->;
+type ClientCache<P> =
+    ObservableCache<DbClientProvider<P>, fn(DbClient) -> DbClient, DbClient, DbClient>;
 
 /// Async bridge: fetches Settings from the cache and creates a fresh ConnectionPool.
 struct ConnectionPoolProvider<P> {
@@ -73,6 +69,31 @@ where
     async fn provide(&self) -> Result<ConnectionPool, Self::Error> {
         let settings = self.settings_cache.provide().await?;
         Ok(db::get_connection_pool(&settings.database).await)
+    }
+}
+
+/// Async bridge: builds a [`DbClient`] bound to the user id the desktop
+/// app/CLI acts as locally ([`settings::ServerSettings::resolve_local_user_id`]),
+/// re-resolved from settings on every cache rebuild so editing
+/// `server.local_user_id` and invalidating settings takes effect without a
+/// restart.
+struct DbClientProvider<P> {
+    settings_cache: Arc<SettingsCache<P>>,
+    connection_pool_cache: Arc<ConnectionPoolCache<P>>,
+}
+
+impl<P> Provider<DbClient> for DbClientProvider<P>
+where
+    P: Provider<Settings, Error = SettingsError> + Send + Sync,
+{
+    type Error = SettingsError;
+    async fn provide(&self) -> Result<DbClient, Self::Error> {
+        let settings = self.settings_cache.provide().await?;
+        let pool = self.connection_pool_cache.provide().await?;
+        Ok(DbClient::new(
+            pool,
+            settings.server.resolve_local_user_id().to_string(),
+        ))
     }
 }
 
@@ -137,10 +158,12 @@ where
         }
         .observable_cache()
         .arc();
-        let db_client = connection_pool
-            .clone()
-            .observable_cache_with_fn(DbClient::new)
-            .arc();
+        let db_client = DbClientProvider {
+            settings_cache: settings.clone(),
+            connection_pool_cache: connection_pool.clone(),
+        }
+        .observable_cache()
+        .arc();
 
         // Force whole provider chain, to capture errors eagerly.
         db_client.provide().await?;
@@ -224,9 +247,15 @@ where
     /// Find all local files in the database whose path no longer exists on disk.
     /// If `purge` is true, also removes those stale records from the database.
     pub async fn check_missing(&self, purge: bool) -> Vec<String> {
+        let user_id = self
+            .settings()
+            .await
+            .server
+            .resolve_local_user_id()
+            .to_string();
         let connection_pool = self.connection_pool().await;
         let mut conn = connection_pool.acquire().await.expect("database available");
-        let files = dao::select_all_files(&mut conn, crate::db::LOCAL_USER_ID)
+        let files = dao::select_all_files(&mut conn, &user_id)
             .await
             .expect("database available");
 

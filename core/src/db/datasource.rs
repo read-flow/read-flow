@@ -5,7 +5,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::ConnectionPool;
-use super::LOCAL_USER_ID;
 use super::dao;
 use super::dao::Error;
 use crate::api::ApiDocument;
@@ -48,11 +47,20 @@ async fn extract_member_to_cache(
 #[derive(Clone)]
 pub struct DbClient {
     connection_pool: ConnectionPool,
+    /// The user id local (COSMIC GUI/CLI) access is recorded under. Resolved
+    /// from [`crate::settings::ServerSettings::resolve_local_user_id`] —
+    /// [`crate::db::LOCAL_USER_ID`] by default, or a designated authorized
+    /// user when `server.local_user_id` is configured, so local reading
+    /// state/tags are shared with that user's REST/PWA sessions.
+    user_id: String,
 }
 
 impl DbClient {
-    pub fn new(connection_pool: ConnectionPool) -> Self {
-        Self { connection_pool }
+    pub fn new(connection_pool: ConnectionPool, user_id: String) -> Self {
+        Self {
+            connection_pool,
+            user_id,
+        }
     }
 }
 
@@ -75,7 +83,7 @@ impl FileDataSource for DbClient {
 
     async fn get_files(&self) -> Result<Vec<File>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        let files = dao::select_all_files(&mut conn, LOCAL_USER_ID).await?;
+        let files = dao::select_all_files(&mut conn, &self.user_id).await?;
         let all_tags = dao::select_all_content_tags(&mut conn).await?;
         let cover_fps = dao::select_fingerprints_with_covers(&mut conn).await?;
 
@@ -106,7 +114,7 @@ impl FileDataSource for DbClient {
 
     async fn get_file(&self, guid: &str) -> Result<Option<File>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        let Some(file) = dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, guid).await? else {
+        let Some(file) = dao::select_file_by_guid(&mut conn, &self.user_id, guid).await? else {
             return Ok(None);
         };
         let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
@@ -119,7 +127,7 @@ impl FileDataSource for DbClient {
     async fn update_file(&self, file: File) -> Result<(), Self::Error> {
         let mut tx = self.connection_pool.begin().await?;
 
-        let Some(existing) = dao::select_file_by_guid(&mut tx, LOCAL_USER_ID, &file.guid).await?
+        let Some(existing) = dao::select_file_by_guid(&mut tx, &self.user_id, &file.guid).await?
         else {
             return Ok(());
         };
@@ -168,7 +176,7 @@ impl FileDataSource for DbClient {
 
     async fn get_file_tags(&self, guid: &str) -> Result<Vec<String>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        let Some(file) = dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, guid).await? else {
+        let Some(file) = dao::select_file_by_guid(&mut conn, &self.user_id, guid).await? else {
             return Ok(vec![]);
         };
         let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
@@ -181,7 +189,7 @@ impl FileDataSource for DbClient {
         tags: Vec<String>,
     ) -> Result<Vec<String>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        let Some(file) = dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, guid).await? else {
+        let Some(file) = dao::select_file_by_guid(&mut conn, &self.user_id, guid).await? else {
             return Ok(vec![]);
         };
         let content_tags: Vec<ContentTag> = tags
@@ -199,7 +207,7 @@ impl FileDataSource for DbClient {
 
     async fn delete_file_tags(&self, guid: &str, tags: Vec<String>) -> Result<(), Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        let Some(file) = dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, guid).await? else {
+        let Some(file) = dao::select_file_by_guid(&mut conn, &self.user_id, guid).await? else {
             return Ok(());
         };
         dao::delete_content_tags(&mut conn, &file.fingerprint, tags).await
@@ -240,7 +248,7 @@ impl FileDataSource for DbClient {
         }
         let mut conn = self.connection_pool.acquire().await?;
         if let Some(db_file) =
-            dao::select_file_by_guid(&mut conn, LOCAL_USER_ID, &file.guid).await?
+            dao::select_file_by_guid(&mut conn, &self.user_id, &file.guid).await?
         {
             dao::delete_file_record(&mut conn, db_file.id).await?;
         }
@@ -252,12 +260,12 @@ impl FileDataSource for DbClient {
         fingerprint: &str,
     ) -> Result<Option<ReadingState>, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::get_reading_state(&mut conn, LOCAL_USER_ID, fingerprint).await
+        dao::get_reading_state(&mut conn, &self.user_id, fingerprint).await
     }
 
     async fn upsert_reading_state(&self, state: ReadingState) -> Result<ReadingState, Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::upsert_reading_state(&mut conn, LOCAL_USER_ID, state).await
+        dao::upsert_reading_state(&mut conn, &self.user_id, state).await
     }
 
     async fn update_reading_status(
@@ -266,7 +274,7 @@ impl FileDataSource for DbClient {
         status: ReadingStatus,
     ) -> Result<(), Self::Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::update_reading_status_only(&mut conn, LOCAL_USER_ID, fingerprint, status.into()).await
+        dao::update_reading_status_only(&mut conn, &self.user_id, fingerprint, status.into()).await
     }
 
     async fn import_file(&self, path: &Path) -> Result<File, Self::Error> {
@@ -306,7 +314,7 @@ impl FileDataSource for DbClient {
         )
         .await?;
 
-        let db_file = dao::select_file_by_path(&mut conn, LOCAL_USER_ID, &path_str)
+        let db_file = dao::select_file_by_path(&mut conn, &self.user_id, &path_str)
             .await?
             .expect("file should exist after upsert");
         let tags = dao::select_content_tags_by_fingerprint(&mut conn, &db_file.fingerprint).await?;
@@ -412,7 +420,7 @@ impl DbClient {
 
     pub async fn ensure_document_for_file(&self, file_guid: &str) -> Result<ApiDocument, Error> {
         let mut conn = self.connection_pool.acquire().await?;
-        dao::ensure_document_for_file_guid(&mut conn, file_guid).await
+        dao::ensure_document_for_file_guid(&mut conn, &self.user_id, file_guid).await
     }
 
     pub async fn merge_documents(

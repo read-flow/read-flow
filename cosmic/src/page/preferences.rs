@@ -240,6 +240,7 @@ pub enum PreferencesMessage {
     GenerateTlsCert,
     GeneratedTlsCert(Result<(PathBuf, PathBuf), String>),
     ToggleServerStartOnLaunch(bool),
+    SetLocalUserId(usize),
     AuthorizedUserForm(AuthorizedUserFormMessage),
     AddAuthorizedUser,
     EditAuthorizedUser(String),
@@ -1188,6 +1189,7 @@ impl PreferencesPage {
         })
     }
 
+    /// @feature: admin.local_identity
     fn view_section_server(&self) -> Vec<Element<'_, PreferencesMessage>> {
         // Uniform width for every text input in the server sections.
         const INPUT_WIDTH: f32 = 240.0;
@@ -1358,6 +1360,40 @@ impl PreferencesPage {
                     ),
             );
 
+        // Local identity: which authorized user (if any) this desktop's local
+        // database access acts as, so reading progress recorded here is
+        // shared with that user's REST/PWA sessions.
+        let local_user_options: Vec<String> =
+            std::iter::once(fl!("settings-server-local-user-none"))
+                .chain(self.settings.server.authorized_users.keys().cloned())
+                .collect();
+        let local_user_selected = self
+            .settings
+            .server
+            .local_user_id
+            .as_ref()
+            .and_then(|id| {
+                self.settings
+                    .server
+                    .authorized_users
+                    .keys()
+                    .position(|k| k == id)
+                    .map(|i| i + 1)
+            })
+            .or(Some(0));
+        let local_identity_section = widget::settings::section()
+            .title(fl!("settings-server-local-identity"))
+            .add(
+                widget::settings::item::builder(fl!("settings-server-local-user"))
+                    .description(fl!("settings-server-local-user-description"))
+                    .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))
+                    .control(widget::dropdown(
+                        local_user_options,
+                        local_user_selected,
+                        PreferencesMessage::SetLocalUserId,
+                    )),
+            );
+
         let authorized_users_section = self
             .settings
             .server
@@ -1386,6 +1422,7 @@ impl PreferencesPage {
             network_section.into(),
             tls_section.into(),
             authorized_users_section.into(),
+            local_identity_section.into(),
         ];
 
         if let Some(form) = self.authorized_user_form.as_ref() {
@@ -2075,6 +2112,16 @@ impl Page for PreferencesPage {
                 {
                     let _ = self.config.write_entry(&ctx);
                 }
+                Task::none()
+            }
+            PreferencesMessage::SetLocalUserId(index) => {
+                // Index 0 is the "none" sentinel; 1.. maps to
+                // `authorized_users` in iteration order.
+                self.settings.server.local_user_id = (index > 0)
+                    .then(|| self.settings.server.authorized_users.keys().nth(index - 1))
+                    .flatten()
+                    .cloned();
+                self.save_state = SaveState::Idle;
                 Task::none()
             }
             PreferencesMessage::TagEditor(message) => match message {

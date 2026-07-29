@@ -241,6 +241,17 @@ pub struct ServerSettings {
 
     pub authorized_users: IndexMap<String, UserEntry>,
 
+    /// When set, the COSMIC desktop app (and the CLI) acts as this
+    /// authorized user for its local database access — reading state,
+    /// tags, and file ownership are recorded under this user id instead of
+    /// the reserved [`crate::db::LOCAL_USER_ID`]. This lets a desktop
+    /// install's reading progress be picked up by the same user logging in
+    /// from the PWA (or another desktop install pointed at the same
+    /// database) elsewhere. Must name a key present in `authorized_users`;
+    /// unset (the default) keeps today's purely-local behaviour.
+    #[serde(default)]
+    pub local_user_id: Option<String>,
+
     /// Address the HTTP server binds to. Defaults to `127.0.0.1`. Overridable
     /// at runtime by the `READ_FLOW_ADDRESS` environment variable.
     #[serde(default)]
@@ -280,6 +291,7 @@ impl Default for ServerSettings {
         Self {
             download_folder: std::env::temp_dir().try_into().unwrap(),
             authorized_users: Default::default(),
+            local_user_id: None,
             address: None,
             port: None,
             allowed_origins: Vec::new(),
@@ -308,6 +320,32 @@ impl ServerSettings {
             env_addr.as_deref(),
             env_port,
         )
+    }
+
+    /// The user id the desktop app/CLI should act as for local database
+    /// access: `local_user_id` when it's set *and* still names a configured
+    /// authorized user, otherwise the reserved `local` id. Falling back
+    /// (rather than erroring) means deleting the designated user doesn't
+    /// brick local access — it just reverts to the purely-local identity.
+    pub fn resolve_local_user_id(&self) -> &str {
+        resolve_local_user_id(
+            self.local_user_id.as_deref(),
+            &self.authorized_users,
+            crate::db::LOCAL_USER_ID,
+        )
+    }
+}
+
+/// Pure resolution of the effective local user id: the configured id if it's
+/// both present and still a known authorized user, otherwise `default`.
+fn resolve_local_user_id<'a>(
+    configured: Option<&'a str>,
+    authorized_users: &IndexMap<String, UserEntry>,
+    default: &'a str,
+) -> &'a str {
+    match configured {
+        Some(id) if authorized_users.contains_key(id) => id,
+        _ => default,
     }
 }
 
@@ -730,5 +768,47 @@ private_mode = true
         );
         assert!(legacy.verify("password").is_ok());
         assert!(legacy.verify("nope").is_err());
+    }
+
+    fn user_entry() -> UserEntry {
+        UserEntry::Simple(HashedPassword::from_phc(
+            "$pbkdf2-sha256$i=600000,l=32$lDfQV3ZLp9y84mZpRnhwBg$UTvTJJhP8dU/Cpy2t1o1v19gsOSzfq5qF1ifY/9rdbc",
+        ))
+    }
+
+    #[test]
+    fn resolve_local_user_id_uses_default_when_unset() {
+        let users: IndexMap<String, UserEntry> =
+            [("alice".to_string(), user_entry())].into_iter().collect();
+        Assert::that(resolve_local_user_id(None, &users, "local")).is("local");
+    }
+
+    #[test]
+    fn resolve_local_user_id_uses_configured_when_present() {
+        let users: IndexMap<String, UserEntry> =
+            [("alice".to_string(), user_entry())].into_iter().collect();
+        Assert::that(resolve_local_user_id(Some("alice"), &users, "local")).is("alice");
+    }
+
+    #[test]
+    fn resolve_local_user_id_falls_back_when_configured_user_removed() {
+        let users: IndexMap<String, UserEntry> =
+            [("alice".to_string(), user_entry())].into_iter().collect();
+        Assert::that(resolve_local_user_id(Some("deleted"), &users, "local")).is("local");
+    }
+
+    #[test]
+    fn server_settings_local_user_id_round_trips_through_toml() {
+        let toml = r#"
+[server]
+download_folder = "/tmp"
+local_user_id = "alice"
+
+[server.authorized_users]
+alice = { password = "$pbkdf2-sha256$i=100000,l=32$abc$def", roles = ["owner"] }
+"#;
+        let settings: Settings = toml::from_str(toml).unwrap();
+        Assert::that(settings.server.local_user_id.as_deref()).is_some("alice");
+        Assert::that(settings.server.resolve_local_user_id()).is("alice");
     }
 }

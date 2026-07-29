@@ -268,7 +268,7 @@ to configure client certificates.
 =read-flow.toml= (generated with defaults by the first-time setup wizard; not tracked in git):
 - =[database]= — SQLite path
 - =[client]= — download folder for remote files
-- =[server]= — upload folder, authorised users, optional =[server.tls]= cert/key
+- =[server]= — upload folder, authorised users, optional local-identity binding, optional =[server.tls]= cert/key
 - =[scan]= — directories, extensions, concurrency, auto-tag rules, dry-run
 - =[ui]= — private mode, private-tag list
 - =[online_library]= — enabled OPDS catalogs

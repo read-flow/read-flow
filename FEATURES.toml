@@ -204,6 +204,11 @@ id = "admin.server_settings"
 description = "Server settings (db path, file types, dry-run, private)"
 surfaces = ["cosmic", "pwa", "rest"]
 
+[[feature]]
+id = "admin.local_identity"
+description = "Bind the desktop app's local database access to an authorized user, so local reading progress/tags sync with that user's remote (REST/PWA) sessions"
+surfaces = ["cosmic"]
+
 # ── Online library (OPDS — needs REST extension) ───────────────────────────
 
 [[feature]]
