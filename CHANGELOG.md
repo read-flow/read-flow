@@ -54,6 +54,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 - PDF reading progress saved by COSMIC and opened in the PWA (or vice versa) was off by one page,
   since COSMIC stored its 0-based page index directly while the PWA stores/reads a 1-based page
   number. Both now agree on a 1-based page number on the wire.
+- COSMIC Dashboard: the "Continue Reading" row no longer stretches its cards to fill the whole
+  width when fewer than 4 documents are in progress. It's padded with invisible placeholders up to
+  4, so cards keep the same size regardless of how many are shown.
 
 ### Removed
 

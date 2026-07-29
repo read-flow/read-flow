@@ -362,11 +362,17 @@ impl DashboardPage {
 
         // --- Continue Reading section ---
         if !continue_reading.is_empty() {
-            let cards: Vec<Element<'_, DashboardMessage>> = continue_reading
+            let mut cards: Vec<Element<'_, DashboardMessage>> = continue_reading
                 .iter()
                 .take(4)
                 .map(|entry| self.view_continue_reading_card(entry))
                 .collect();
+
+            // Pad with invisible placeholders up to 4 so a Row of fewer cards
+            // keeps the same per-card width instead of stretching to fill.
+            while cards.len() < 4 {
+                cards.push(widget::Space::new().width(Length::FillPortion(1)).into());
+            }
 
             let cards_row = Row::with_children(cards)
                 .spacing(space_m)
