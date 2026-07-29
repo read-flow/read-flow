@@ -12,6 +12,7 @@
 	import { db } from '$lib/db';
 	import { get } from 'svelte/store';
 	import type { AggregatedFile } from '$lib/api/aggregator';
+	import { extractPosition, mergePosition } from '$lib/reading-progress';
 
 	const PREF_FONT_SIZE_KEY = 'epub-font-size';
 	const RESIZE_DEBOUNCE_MS = 100;
@@ -38,6 +39,10 @@
 	let fontSize = $state(100);   // CSS font-size percentage applied to the rendition
 	let isLoading = $state(true);
 	let loadError = $state<string | null>(null);
+	// Last-known stored position (raw, possibly combined-viewer JSON), so
+	// saves can merge in this viewer's own slot without clobbering a
+	// position saved by another viewer (see $lib/reading-progress).
+	let existingPosition: string | null = null;
 
 	// ── Toolbar visibility (mobile auto-hide) ──────────────────────────────────
 	let toolbarVisible = $state(true);
@@ -100,11 +105,13 @@
 		progressTimer = setTimeout(async () => {
 			const now = new Date().toISOString();
 			const fp = fingerprint;
+			const position = mergePosition(existingPosition, 'epub', JSON.stringify({ cfi }));
+			existingPosition = position;
 			try {
 				await saveReadingState({
 					fingerprint: fp,
 					status: 0,
-					position: JSON.stringify({ cfi }),
+					position,
 					percentage: pct,
 					last_updated: now,
 					status_updated_at: '1970-01-01T00:00:00Z',
@@ -252,8 +259,10 @@
 			let startTarget: string | undefined;
 			try {
 				const saved = await fetchReadingState(fingerprint);
-				if (saved?.position) {
-					const parsed = JSON.parse(saved.position) as { cfi?: string };
+				existingPosition = saved?.position ?? null;
+				const own = extractPosition(existingPosition, 'epub');
+				if (own) {
+					const parsed = JSON.parse(own) as { cfi?: string };
 					if (typeof parsed.cfi === 'string') startTarget = parsed.cfi;
 				}
 			} catch {

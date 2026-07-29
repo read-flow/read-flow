@@ -15,6 +15,7 @@
 	import { db } from '$lib/db';
 	import { get } from 'svelte/store';
 	import type { AggregatedFile } from '$lib/api/aggregator';
+	import { extractPosition, mergePosition } from '$lib/reading-progress';
 
 	// Set up the pdf.js worker once at module level.
 	// new URL(..., import.meta.url) is resolved by Vite at build time.
@@ -43,6 +44,10 @@
 	let isLoading = $state(true);
 	let loadError = $state<string | null>(null);
 	let isRendering = false;
+	// Last-known stored position (raw, possibly combined-viewer JSON), so
+	// saves can merge in this viewer's own slot without clobbering a
+	// position saved by another viewer (see $lib/reading-progress).
+	let existingPosition: string | null = null;
 
 	// ── Toolbar visibility (mobile auto-hide) ──────────────────────────────────
 	let toolbarVisible = $state(true);
@@ -124,10 +129,12 @@
 	async function saveProgress(): Promise<void> {
 		if (!doc || currentPage < 1 || totalPages < 1) return;
 		const percentage = currentPage / totalPages;
+		const position = mergePosition(existingPosition, 'mupdf', JSON.stringify({ page: currentPage }));
+		existingPosition = position;
 		await saveReadingState({
 			fingerprint: doc.fingerprint,
 			status: 0,
-			position: JSON.stringify({ page: currentPage }),
+			position,
 			percentage,
 			last_updated: new Date().toISOString(),
 			status_updated_at: '1970-01-01T00:00:00Z',
@@ -251,8 +258,10 @@
 		let startPage = 1;
 		try {
 			const saved = await fetchReadingState(fingerprint);
-			if (saved?.position) {
-				const parsed: unknown = JSON.parse(saved.position);
+			existingPosition = saved?.position ?? null;
+			const own = extractPosition(existingPosition, 'mupdf');
+			if (own) {
+				const parsed: unknown = JSON.parse(own);
 				if (parsed && typeof parsed === 'object' && 'page' in parsed) {
 					const p = (parsed as { page: unknown }).page;
 					if (typeof p === 'number' && Number.isInteger(p) && p >= 1) startPage = p;

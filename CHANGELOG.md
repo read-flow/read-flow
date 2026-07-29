@@ -27,6 +27,7 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 - Settings (`read-flow.toml`) writes from the REST admin API, COSMIC preferences, and the embedded server are now serialized and atomic, so concurrent saves can no longer silently overwrite each other's changes, and a crash mid-write can no longer truncate the config.
 - Deleting a document whose file lives inside an archive (e.g. a `.zip`/`.tar` member) no longer fails, and deleting a document whose underlying file is already missing on disk now succeeds instead of being blocked.
 - Fixed a crash on an invalid stored reading-status value (now degrades to Unread with a warning) and on certain file/document write paths reading back their own row (now surfaces as an error instead of panicking).
+- PWA: reading progress saved by COSMIC's PDF or EPUB viewer no longer gets ignored when opening the same document in the PWA (it always restarted from the beginning). The PWA readers now understand COSMIC's combined per-viewer position format, and preserve it when saving their own progress.
 
 ### Removed
 
