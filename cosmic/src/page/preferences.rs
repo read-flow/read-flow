@@ -1674,6 +1674,7 @@ impl Page for PreferencesPage {
                 | PreferencesSection::Downloads
                 | PreferencesSection::Scanning
                 | PreferencesSection::Server
+                | PreferencesSection::OnlineLibrary
                 | PreferencesSection::Privacy
         );
         if needs_save_row {

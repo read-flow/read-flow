@@ -38,6 +38,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Fixed
 
+- COSMIC Preferences: the Online Library section now shows the "Save Settings"/"Revert" row, so
+  catalog changes made there have a visible way to be saved instead of only persisting if you
+  happen to click Save from another section afterward.
 - Server: fixed several endpoints (file update; reading-state get/put/status; document
   list/get/cover/metadata/merge/ensure) that skipped private-content filtering, letting any
   authenticated user read or mutate documents hidden by a private tag. All content endpoints now go
