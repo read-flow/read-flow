@@ -78,9 +78,37 @@ impl AuthorizedUserForm {
         }
     }
 
+    /// Title for the dialog hosting this form.
+    pub fn title(&self) -> String {
+        fl!("settings-server-edit-authorized-user")
+    }
+
+    /// Cancel button for the dialog footer.
+    pub fn cancel_button(&self) -> Element<'_, AuthorizedUserFormMessage> {
+        widget::button::standard(fl!("settings-cancel-edit"))
+            .on_press(AuthorizedUserFormOutput::Cancel.into())
+            .into()
+    }
+
+    /// Submit button for the dialog footer.
+    pub fn submit_button(&self) -> Element<'_, AuthorizedUserFormMessage> {
+        widget::button::suggested(fl!("settings-server-submit-authorized-user"))
+            .apply_if(self.is_submittable(), |button| {
+                button.on_press(
+                    AuthorizedUserFormOutput::Submit(
+                        self.original_user_id.clone(),
+                        self.editing_user_id.clone(),
+                        self.editing_passphrase.clone(),
+                        self.current_roles(),
+                    )
+                    .into(),
+                )
+            })
+            .into()
+    }
+
     pub fn view(&self) -> Element<'_, AuthorizedUserFormMessage> {
         widget::settings::section()
-            .title(fl!("settings-server-edit-authorized-user"))
             .add(
                 widget::settings::item::builder(fl!("settings-server-user-id"))
                     .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))
@@ -123,37 +151,6 @@ impl AuthorizedUserForm {
                     .icon(widget::icon::from_name("security-high-symbolic").size(ICON_SIZE))
                     .toggler(self.owner_role, AuthorizedUserFormMessage::ToggleOwnerRole),
             )
-            .add(widget::settings::item_row(vec![
-                widget::space::horizontal().width(Length::Fill).into(),
-                // Cancel button
-                widget::button::icon(
-                    widget::icon::from_name("edit-clear-all-symbolic").size(ICON_SIZE),
-                )
-                .on_press(AuthorizedUserFormOutput::Cancel.into())
-                .into(),
-                // Submit button
-                widget::button::icon(
-                    widget::icon::from_name(if self.original_user_id.is_none() {
-                        "list-add-symbolic"
-                    } else {
-                        "edit-symbolic"
-                    })
-                    .size(ICON_SIZE),
-                )
-                .class(widget::button::ButtonClass::Suggested)
-                .apply_if(self.is_submittable(), |button| {
-                    button.on_press(
-                        AuthorizedUserFormOutput::Submit(
-                            self.original_user_id.clone(),
-                            self.editing_user_id.clone(),
-                            self.editing_passphrase.clone(),
-                            self.current_roles(),
-                        )
-                        .into(),
-                    )
-                })
-                .into(),
-            ]))
             .into()
     }
 

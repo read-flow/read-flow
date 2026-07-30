@@ -63,14 +63,40 @@ impl CatalogForm {
             && !other_names.contains(&self.editing_name)
     }
 
-    pub fn view(&self, other_names: &[String]) -> Element<'_, CatalogFormMessage> {
-        let is_adding = self.original_name.is_none();
-        widget::settings::section()
-            .title(if is_adding {
-                fl!("settings-online-library-add-catalog-title")
-            } else {
-                fl!("settings-online-library-edit-catalog")
+    /// Title for the dialog hosting this form ("New catalog" / "Edit catalog").
+    pub fn title(&self) -> String {
+        if self.original_name.is_none() {
+            fl!("settings-online-library-add-catalog-title")
+        } else {
+            fl!("settings-online-library-edit-catalog")
+        }
+    }
+
+    /// Cancel button for the dialog footer.
+    pub fn cancel_button(&self) -> Element<'_, CatalogFormMessage> {
+        widget::button::standard(fl!("settings-cancel-edit"))
+            .on_press(CatalogFormOutput::Cancel.into())
+            .into()
+    }
+
+    /// Submit button for the dialog footer.
+    pub fn submit_button(&self, other_names: &[String]) -> Element<'_, CatalogFormMessage> {
+        widget::button::suggested(fl!("settings-online-library-submit-catalog"))
+            .apply_if(self.is_submittable(other_names), |button| {
+                button.on_press(
+                    CatalogFormOutput::Submit(
+                        self.original_name.clone(),
+                        self.editing_name.clone(),
+                        self.editing_search_url.clone(),
+                    )
+                    .into(),
+                )
             })
+            .into()
+    }
+
+    pub fn view(&self) -> Element<'_, CatalogFormMessage> {
+        widget::settings::section()
             .add(
                 widget::settings::item::builder(fl!("settings-online-library-catalog-name"))
                     .icon(widget::icon::from_name("text-x-generic-symbolic").size(ICON_SIZE))
@@ -95,36 +121,6 @@ impl CatalogForm {
                         .width(Length::FillPortion(1)),
                     ),
             )
-            .add(widget::settings::item_row(vec![
-                widget::space::horizontal().width(Length::Fill).into(),
-                // Cancel button
-                widget::button::icon(
-                    widget::icon::from_name("edit-clear-all-symbolic").size(ICON_SIZE),
-                )
-                .on_press(CatalogFormOutput::Cancel.into())
-                .into(),
-                // Submit button
-                widget::button::icon(
-                    widget::icon::from_name(if is_adding {
-                        "list-add-symbolic"
-                    } else {
-                        "edit-symbolic"
-                    })
-                    .size(ICON_SIZE),
-                )
-                .class(widget::button::ButtonClass::Suggested)
-                .apply_if(self.is_submittable(other_names), |button| {
-                    button.on_press(
-                        CatalogFormOutput::Submit(
-                            self.original_name.clone(),
-                            self.editing_name.clone(),
-                            self.editing_search_url.clone(),
-                        )
-                        .into(),
-                    )
-                })
-                .into(),
-            ]))
             .into()
     }
 

@@ -483,6 +483,7 @@ impl PreferencesPage {
         self.authorized_user_form.is_none()
             && self.directory_settings_form.is_none()
             && self.catalog_form.is_none()
+            && self.add_source_form.is_none()
     }
 
     fn view_save_row(&self) -> Element<'_, PreferencesMessage> {
@@ -1059,10 +1060,6 @@ impl PreferencesPage {
             directories_section.into(),
         ];
 
-        if let Some(form) = self.directory_settings_form.as_ref() {
-            items.push(form.view().map(Into::into));
-        }
-
         items.push(file_types_section.into());
         items
     }
@@ -1110,14 +1107,10 @@ impl PreferencesPage {
             }
         };
 
-        let mut items: Vec<Element<'_, PreferencesMessage>> = vec![
+        let items: Vec<Element<'_, PreferencesMessage>> = vec![
             widget::text::title2(fl!("preferences-sources-section")).into(),
             sources_section,
         ];
-
-        if let Some(form) = &self.add_source_form {
-            items.push(form.view().map(PreferencesMessage::AddSourceForm));
-        }
 
         items
     }
@@ -1427,7 +1420,7 @@ impl PreferencesPage {
                 Some(PreferencesMessage::AddAuthorizedUser),
             ));
 
-        let mut items: Vec<Element<'_, PreferencesMessage>> = vec![
+        let items: Vec<Element<'_, PreferencesMessage>> = vec![
             widget::text::title2(fl!("preferences-server-section")).into(),
             server_section.into(),
             network_section.into(),
@@ -1435,10 +1428,6 @@ impl PreferencesPage {
             authorized_users_section.into(),
             local_identity_section.into(),
         ];
-
-        if let Some(form) = self.authorized_user_form.as_ref() {
-            items.push(form.view().map(Into::into));
-        }
 
         items
     }
@@ -1491,20 +1480,11 @@ impl PreferencesPage {
                 Some(PreferencesMessage::AddCatalog),
             ));
 
-        let mut items: Vec<Element<'_, PreferencesMessage>> = vec![
+        let items: Vec<Element<'_, PreferencesMessage>> = vec![
             widget::text::title2(fl!("preferences-online-library-section")).into(),
             builtin_section.into(),
             custom_section.into(),
         ];
-
-        if let Some(form) = self.catalog_form.as_ref() {
-            let other_names: Vec<String> = BuiltinCatalogId::iter()
-                .map(|id| id.resolve(true).name)
-                .chain(configured.iter().map(|c| c.name.clone()))
-                .filter(|name| Some(name) != form.original_name.as_ref())
-                .collect();
-            items.push(form.view(&other_names).map(Into::into));
-        }
 
         items
     }
@@ -1739,6 +1719,77 @@ impl Page for PreferencesPage {
     fn dialog(&self) -> Option<Element<'_, PreferencesMessage>> {
         let cosmic_theme::Spacing { space_s, .. } = theme::active().cosmic().spacing;
 
+        if let Some(form) = &self.directory_settings_form {
+            return Some(
+                widget::dialog()
+                    .title(form.title())
+                    .control(form.view().map(Into::into))
+                    .primary_action(
+                        widget::button::suggested(fl!("settings-save-directory")).on_press(
+                            PreferencesMessage::DirectorySettingsForm(
+                                DirectorySettingsFormMessage::SaveDirectory,
+                            ),
+                        ),
+                    )
+                    .secondary_action(
+                        widget::button::standard(fl!("settings-cancel-edit")).on_press(
+                            PreferencesMessage::DirectorySettingsForm(
+                                DirectorySettingsFormMessage::CancelEditDirectory,
+                            ),
+                        ),
+                    )
+                    .into(),
+            );
+        }
+
+        if let Some(form) = &self.add_source_form {
+            return Some(
+                widget::dialog()
+                    .title(form.title())
+                    .control(form.view().map(Into::into))
+                    .primary_action(form.submit_button().map(Into::into))
+                    .secondary_action(form.cancel_button().map(Into::into))
+                    .into(),
+            );
+        }
+
+        if let Some(form) = &self.authorized_user_form {
+            return Some(
+                widget::dialog()
+                    .title(form.title())
+                    .control(form.view().map(Into::into))
+                    .primary_action(form.submit_button().map(Into::into))
+                    .secondary_action(form.cancel_button().map(Into::into))
+                    .into(),
+            );
+        }
+
+        if let Some(form) = &self.catalog_form {
+            let configured: Vec<&ConfiguredCatalog> = self
+                .settings
+                .online_library
+                .catalogs
+                .iter()
+                .filter_map(|c| match c {
+                    Catalog::Configured(cc) => Some(cc),
+                    Catalog::Builtin(_) => None,
+                })
+                .collect();
+            let other_names: Vec<String> = BuiltinCatalogId::iter()
+                .map(|id| id.resolve(true).name)
+                .chain(configured.iter().map(|c| c.name.clone()))
+                .filter(|name| Some(name) != form.original_name.as_ref())
+                .collect();
+            return Some(
+                widget::dialog()
+                    .title(form.title())
+                    .control(form.view().map(Into::into))
+                    .primary_action(form.submit_button(&other_names).map(Into::into))
+                    .secondary_action(form.cancel_button().map(Into::into))
+                    .into(),
+            );
+        }
+
         if let Some(remote) = &self.pending_deletion {
             return Some(crate::component::confirm_dialog::confirm_delete_dialog(
                 fl!("sources-delete-confirm-title"),
@@ -1783,6 +1834,7 @@ impl Page for PreferencesPage {
                 self.editing_directory = EditState::Idle;
                 self.authorized_user_form = None;
                 self.add_source_form = None;
+                self.catalog_form = None;
                 Task::none()
             }
             PreferencesMessage::ToggleCustomTheme(enabled) => {

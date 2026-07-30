@@ -97,6 +97,40 @@ impl AddSourceForm {
         self.original.is_some()
     }
 
+    /// Title for the dialog hosting this form ("Add source" / "Edit source").
+    pub fn title(&self) -> String {
+        if self.is_editing() {
+            fl!("sources-edit-section-title")
+        } else {
+            fl!("sources-add-section-title")
+        }
+    }
+
+    fn can_submit(&self) -> bool {
+        !(self.entered_url.is_empty()
+            || self.entered_user_id.is_empty()
+            || self.entered_passphrase.is_empty()
+            || self.entered_url.parse::<Url>().is_err())
+            && (matches!(self.url_verification_state, LoadedState::Loaded(_))
+                || self.unavailable_acknowledged)
+    }
+
+    /// Cancel button for the dialog footer.
+    pub fn cancel_button(&self) -> Element<'_, AddSourceFormMessage> {
+        widget::button::standard(fl!("settings-cancel-edit"))
+            .on_press(AddSourceFormOutput::Cancel.into())
+            .into()
+    }
+
+    /// Submit button for the dialog footer.
+    pub fn submit_button(&self) -> Element<'_, AddSourceFormMessage> {
+        widget::button::suggested(fl!("sources-submit-button"))
+            .apply_if(self.can_submit(), |b| {
+                b.on_press(AddSourceFormMessage::RequestSubmit)
+            })
+            .into()
+    }
+
     fn start_debounce(&mut self, widget_id: widget::Id) -> Task<Action<AddSourceFormMessage>> {
         self.last_input_time = Instant::now();
         task::future(async move {
@@ -129,13 +163,6 @@ impl AddSourceForm {
     }
 
     pub fn view(&self) -> Element<'_, AddSourceFormMessage> {
-        let can_submit = !(self.entered_url.is_empty()
-            || self.entered_user_id.is_empty()
-            || self.entered_passphrase.is_empty()
-            || self.entered_url.parse::<Url>().is_err())
-            && (matches!(self.url_verification_state, LoadedState::Loaded(_))
-                || self.unavailable_acknowledged);
-
         let fields_filled = !self.entered_url.is_empty()
             && !self.entered_user_id.is_empty()
             && !self.entered_passphrase.is_empty();
@@ -144,20 +171,7 @@ impl AddSourceForm {
             LoadedState::Failed(_) | LoadedState::New | LoadedState::Loading
         );
 
-        let section_title = if self.is_editing() {
-            fl!("sources-edit-section-title")
-        } else {
-            fl!("sources-add-section-title")
-        };
-
-        let submit_icon = if self.is_editing() {
-            "edit-symbolic"
-        } else {
-            "list-add-symbolic"
-        };
-
         settings::section()
-            .title(section_title)
             .add(
                 widget::settings::item::builder(fl!("sources-url"))
                     .icon(icon::from_name("network-server-symbolic").size(ICON_SIZE))
@@ -228,18 +242,6 @@ impl AddSourceForm {
                             .on_toggle(|_| AddSourceFormMessage::ToggleUnavailableAcknowledged),
                     )
             }))
-            .add(widget::settings::item_row(vec![
-                widget::space::horizontal().width(Length::Fill).into(),
-                widget::button::icon(icon::from_name("edit-clear-all-symbolic").size(ICON_SIZE))
-                    .on_press(AddSourceFormOutput::Cancel.into())
-                    .into(),
-                widget::button::icon(icon::from_name(submit_icon).size(ICON_SIZE))
-                    .class(widget::button::ButtonClass::Suggested)
-                    .apply_if(can_submit, |b| {
-                        b.on_press(AddSourceFormMessage::RequestSubmit)
-                    })
-                    .into(),
-            ]))
             .into()
     }
 

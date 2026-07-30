@@ -231,28 +231,21 @@ impl DirectorySettingsForm {
                         DirectorySettingsFormMessage::UpdateDirectoryInherit,
                     ),
             )
-            .add(settings::item_row(vec![
-                widget::button::suggested(fl!("settings-save-directory"))
-                    .on_press(DirectorySettingsFormMessage::SaveDirectory)
-                    .into(),
-                widget::button::standard(fl!("settings-cancel-edit"))
-                    .on_press(DirectorySettingsFormMessage::CancelEditDirectory)
-                    .into(),
-            ]))
+    }
+
+    /// Title for the dialog hosting this form ("Add directory" / "Edit directory").
+    pub fn title(&self) -> String {
+        if self.original_settings.is_none() {
+            fl!("settings-add-directory")
+        } else {
+            fl!("settings-edit-directory")
+        }
     }
 
     pub fn view<'a>(&'a self) -> Element<'a, DirectorySettingsFormMessage> {
         let mut content = Vec::new();
 
-        let is_adding = self.original_settings.is_none();
-
-        let title = if is_adding {
-            fl!("settings-add-directory")
-        } else {
-            fl!("settings-edit-directory")
-        };
-
-        let editor_section = settings::section().title(title);
+        let editor_section = settings::section();
 
         content.push(self.directory_editor_view(editor_section).into());
 
