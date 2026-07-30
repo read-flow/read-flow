@@ -1528,6 +1528,7 @@ impl PreferencesPage {
         widget::settings::item::builder(&catalog.name)
             .icon(widget::icon::from_name("web-browser-symbolic").size(ICON_SIZE))
             .control(widget::settings::item_row(vec![
+                widget::space::horizontal().width(Length::Fill).into(),
                 widget::toggler(catalog.enabled)
                     .on_toggle(move |value| {
                         PreferencesMessage::ToggleConfiguredCatalog(name_for_toggle.clone(), value)
