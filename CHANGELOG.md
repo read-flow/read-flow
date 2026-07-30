@@ -18,6 +18,13 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   designated authorized user, so reading progress and tags recorded on the desktop are shared with
   that user's remote (REST/PWA) sessions. Configurable from COSMIC Preferences → Server → Local
   Identity.
+- COSMIC Preferences → Server → HTTPS: "Generate certificate" now issues a certificate signed by a
+  local certificate authority (generated once, reused after) instead of a plain self-signed one.
+  Trust that CA root once per client device — a new "Local CA certificate" action opens it with the
+  OS's own certificate-import flow (e.g. Keychain Access on macOS) — and every certificate generated
+  afterwards, including after regenerating one for a new bind address, is trusted automatically with
+  no further per-device action or browser warnings. Devices can also fetch the CA root directly from
+  a running server at `GET /ca.pem`.
 
 ### Changed
 

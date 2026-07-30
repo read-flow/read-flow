@@ -323,6 +323,7 @@ pub async fn build_router(state: AppState) -> Router {
 
     let routes = Router::new()
         .route("/status", get(status))
+        .route("/ca.pem", get(get_ca_cert))
         .route(
             "/files",
             get(get_files)
@@ -409,6 +410,39 @@ pub async fn build_app(config_path: PathBuf) -> anyhow::Result<Router> {
     Ok(build_router(build_state(config_path).await?).await)
 }
 
+/// Filename the local CA's certificate is always written/looked up under,
+/// within whatever directory generation was pointed at (the config file's
+/// parent directory in practice). Fixed and predictable so callers (the
+/// COSMIC preferences handler, the `/ca.pem` route) don't need to persist
+/// the path anywhere themselves — see [`ca_cert_path`].
+const CA_CERT_FILENAME: &str = "read-flow-ca-cert.pem";
+/// Counterpart to [`CA_CERT_FILENAME`] for the CA's private key.
+const CA_KEY_FILENAME: &str = "read-flow-ca-key.pem";
+
+/// The local CA cert path within `dir`, if [`generate_local_ca`] has been
+/// run there (callers should check [`Path::exists`]).
+pub fn ca_cert_path(dir: &Path) -> PathBuf {
+    dir.join(CA_CERT_FILENAME)
+}
+
+/// The local CA key path within `dir`, counterpart to [`ca_cert_path`].
+pub fn ca_key_path(dir: &Path) -> PathBuf {
+    dir.join(CA_KEY_FILENAME)
+}
+
+/// Best-effort local (LAN) IP address of this machine, for including in a
+/// generated cert's SANs when the server is bound to `0.0.0.0` (reachable
+/// from the LAN, not just loopback). Uses the "connect a UDP socket, read
+/// back the local address the OS picked" trick — no packets are actually
+/// sent (UDP `connect` only sets up local routing), so this works offline
+/// and doesn't depend on any extra crate. `None` if there's no route at all
+/// (e.g. no network interface up).
+pub fn detect_lan_ip() -> Option<std::net::IpAddr> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    socket.local_addr().ok().map(|addr| addr.ip())
+}
+
 /// Generate an ECDSA key pair and a self-signed certificate covering `sans`
 /// (DNS names; defaults to `localhost`), writing `read-flow-cert.pem` and
 /// `read-flow-key.pem` into `dir`. Returns `(cert_path, key_path)`.
@@ -462,11 +496,29 @@ pub fn generate_local_ca(dir: &Path) -> anyhow::Result<(PathBuf, PathBuf)> {
     let key_pair = rcgen::KeyPair::generate()?;
     let cert = params.self_signed(&key_pair)?;
 
-    let ca_cert_path = dir.join("read-flow-ca-cert.pem");
-    let ca_key_path = dir.join("read-flow-ca-key.pem");
-    std::fs::write(&ca_cert_path, cert.pem())?;
-    std::fs::write(&ca_key_path, key_pair.serialize_pem())?;
-    Ok((ca_cert_path, ca_key_path))
+    let cert_path = ca_cert_path(dir);
+    let key_path = ca_key_path(dir);
+    std::fs::write(&cert_path, cert.pem())?;
+    std::fs::write(&key_path, key_pair.serialize_pem())?;
+    Ok((cert_path, key_path))
+}
+
+/// Issue a leaf cert for `sans` using the local CA in `dir`, reusing it if
+/// [`generate_local_ca`] already ran there and generating one fresh
+/// otherwise. This is the entry point COSMIC's "Generate certificate"
+/// preferences action should use: regenerating a leaf (e.g. after the bind
+/// address changes) reuses the same CA, so devices that already trusted it
+/// never need to re-trust anything.
+pub fn generate_or_reuse_ca_signed_cert(
+    dir: &Path,
+    sans: Vec<String>,
+) -> anyhow::Result<(PathBuf, PathBuf)> {
+    let cert_path = ca_cert_path(dir);
+    let key_path = ca_key_path(dir);
+    if !cert_path.exists() || !key_path.exists() {
+        generate_local_ca(dir)?;
+    }
+    generate_ca_signed_cert(dir, &cert_path, &key_path, sans)
 }
 
 /// Issue a leaf certificate covering `sans` (DNS names/IPs; defaults to
@@ -655,6 +707,31 @@ fn resource_owner_credentials(headers: &HeaderMap, req: &TokenRequest) -> Option
     match (req.username.clone(), req.password.clone()) {
         (Some(username), Some(password)) => Some((username, password)),
         _ => None,
+    }
+}
+
+/// @feature: admin.local_ca
+/// `GET /ca.pem` — the local CA root certificate, if TLS is configured with
+/// one generated via [`generate_local_ca`]/[`generate_or_reuse_ca_signed_cert`].
+/// Deliberately unauthenticated: this is the bootstrap artifact a device
+/// needs to trust *before* it can make a trusted HTTPS connection at all
+/// (and often before it even has credentials), and a CA certificate — unlike
+/// its private key, which this never serves — isn't sensitive; every device
+/// gets the same public trust anchor.
+#[tracing::instrument(skip_all)]
+async fn get_ca_cert(State(state): State<AppState>) -> Response {
+    let settings = state.settings().await;
+    let Some(tls) = settings.server.tls else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let dir = tls
+        .cert
+        .as_path()
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    match tokio::fs::read_to_string(ca_cert_path(dir)).await {
+        Ok(pem) => ([(header::CONTENT_TYPE, "application/x-pem-file")], pem).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
@@ -1798,4 +1875,22 @@ fn content_type_to_extension(content_type: &str) -> Result<String> {
         _ => return Err(Error::UnsupportedContentType(content_type.to_string())),
     }
     .to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use assert4rs::Assert;
+
+    use super::*;
+
+    #[test]
+    fn detect_lan_ip_never_returns_loopback() {
+        // Environment-dependent (no network → None), but if it does return
+        // something, it must be a real LAN-routable address, not 127.0.0.1 —
+        // otherwise it'd be pointless to add as an extra SAN alongside
+        // `localhost`, which already covers loopback.
+        if let Some(ip) = detect_lan_ip() {
+            Assert::that(ip.is_loopback()).is(false);
+        }
+    }
 }

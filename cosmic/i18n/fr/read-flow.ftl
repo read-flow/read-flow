@@ -499,6 +499,9 @@ settings-server-tls-cert-placeholder = /chemin/vers/fullchain.pem
 settings-server-tls-key = Clé privée TLS
 settings-server-tls-key-placeholder = /chemin/vers/privkey.pem
 # Self-signed certificate generation
-settings-server-generate-cert = Certificat auto-signé
-settings-server-generate-cert-description = Générer une paire de clés et un certificat auto-signé (approuvé par l'application de bureau ; les navigateurs nécessitent un import manuel). Enregistrez pour appliquer.
+settings-server-generate-cert = Certificat TLS
+settings-server-generate-cert-description = Générer un certificat pour ce serveur, signé par une autorité de certification locale (générée une fois puis réutilisée). Faites confiance à cette autorité une fois par appareil (voir « Certificat de l'autorité locale » ci-dessous) et chaque certificat généré ensuite est approuvé automatiquement, sans avertissement. Enregistrez pour appliquer.
 settings-server-generate-cert-button = Générer
+settings-server-open-ca-cert = Certificat de l'autorité locale
+settings-server-open-ca-cert-description = Ouvrir le certificat racine de l'autorité de certification locale pour lui faire confiance sur cet appareil (par ex. l'importer dans Trousseau d'accès sur macOS). À faire une fois par appareil que vous souhaitez connecter sans avertissement de certificat.
+settings-server-open-ca-cert-button = Ouvrir

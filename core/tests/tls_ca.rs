@@ -51,8 +51,8 @@ fn generate_local_ca_writes_a_valid_ca_cert_and_key() {
     Assert::that(ca_key.exists()).is(true);
 }
 
-#[test]
-fn leaf_cert_signed_by_local_ca_chains_to_the_ca_for_its_sans() {
+#[tokio::test]
+async fn leaf_cert_signed_by_local_ca_chains_to_the_ca_for_its_sans() {
     ensure_crypto_provider();
     let dir = tempfile::tempdir().expect("temp dir");
     let (ca_cert_path, ca_key_path) = server::generate_local_ca(dir.path()).expect("generate ca");
@@ -69,11 +69,9 @@ fn leaf_cert_signed_by_local_ca_chains_to_the_ca_for_its_sans() {
 
     // The leaf/key pair must also be a valid rustls TLS config (same bar the
     // plain self-signed path is already held to).
-    tokio::runtime::Runtime::new().unwrap().block_on(async {
-        server::RustlsConfig::from_pem_file(&leaf_cert_path, &leaf_key_path)
-            .await
-            .expect("leaf cert/key load as a rustls config");
-    });
+    server::RustlsConfig::from_pem_file(&leaf_cert_path, &leaf_key_path)
+        .await
+        .expect("leaf cert/key load as a rustls config");
 
     // The real proof: a client that only trusts our CA root actually
     // validates the leaf as a genuine chain (signature + hostname), exactly
@@ -180,4 +178,142 @@ fn regenerating_a_leaf_cert_from_the_same_ca_does_not_require_re_trusting_the_ca
             UnixTime::now(),
         )
         .expect("second leaf (regenerated) trusted without re-trusting the CA");
+}
+
+#[test]
+fn generate_or_reuse_ca_signed_cert_reuses_an_existing_ca() {
+    ensure_crypto_provider();
+    let dir = tempfile::tempdir().expect("temp dir");
+
+    let (first_leaf, _) =
+        server::generate_or_reuse_ca_signed_cert(dir.path(), vec!["localhost".to_string()])
+            .expect("first call generates a CA + leaf");
+    let ca_pem_after_first = std::fs::read_to_string(server::ca_cert_path(dir.path())).unwrap();
+
+    let (second_leaf, _) = server::generate_or_reuse_ca_signed_cert(
+        dir.path(),
+        vec!["localhost".to_string(), "192.168.1.42".to_string()],
+    )
+    .expect("second call reuses the CA");
+    let ca_pem_after_second = std::fs::read_to_string(server::ca_cert_path(dir.path())).unwrap();
+
+    // The CA itself must be byte-for-byte untouched by the second call — if
+    // it were regenerated, every device that already trusted the first CA
+    // root would silently stop being able to connect.
+    Assert::that(ca_pem_after_second.as_str()).is(ca_pem_after_first.as_str());
+
+    // Both leaves still validate against that one CA root.
+    let mut roots = RootCertStore::empty();
+    roots
+        .add(read_der(&server::ca_cert_path(dir.path())))
+        .expect("add ca root");
+    let verifier = WebPkiServerVerifier::builder(Arc::new(roots))
+        .build()
+        .expect("build verifier");
+    let server_name = ServerName::try_from("localhost").expect("server name");
+    verifier
+        .verify_server_cert(
+            &read_der(&first_leaf),
+            &[],
+            &server_name,
+            &[],
+            UnixTime::now(),
+        )
+        .expect("first leaf trusted");
+    verifier
+        .verify_server_cert(
+            &read_der(&second_leaf),
+            &[],
+            &server_name,
+            &[],
+            UnixTime::now(),
+        )
+        .expect("second leaf trusted via the same reused CA");
+}
+
+/// Minimal `read-flow.toml` for the router-level `/ca.pem` tests below.
+/// `tls` is `None` when `cert_key` is `None`.
+fn write_test_config(
+    dir: &std::path::Path,
+    cert_key: Option<(&std::path::Path, &std::path::Path)>,
+) -> std::path::PathBuf {
+    let db_path = dir.join("test.db");
+    let download = dir.join("dl");
+    std::fs::create_dir_all(&download).expect("download dir");
+
+    let tls_section = match cert_key {
+        Some((cert, key)) => format!(
+            "\n[server.tls]\ncert = \"{}\"\nkey = \"{}\"\n",
+            cert.display(),
+            key.display()
+        ),
+        None => String::new(),
+    };
+    let config = format!(
+        "[database]\nurl = \"{db}\"\n\n[server]\ndownload_folder = \"{dl}\"\nauthorized_users = {{}}\n{tls_section}",
+        db = db_path.display(),
+        dl = download.display(),
+    );
+    let config_path = dir.join("read-flow.toml");
+    std::fs::write(&config_path, config).expect("write config");
+    config_path
+}
+
+#[tokio::test]
+async fn ca_pem_route_serves_the_ca_root_when_tls_is_configured() {
+    use axum::body::Body;
+    use axum::body::to_bytes;
+    use axum::http::Request;
+    use axum::http::StatusCode;
+    use tower::ServiceExt;
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let (leaf_cert, leaf_key) =
+        server::generate_or_reuse_ca_signed_cert(dir.path(), vec!["localhost".to_string()])
+            .expect("generate ca + leaf");
+    let config_path = write_test_config(dir.path(), Some((&leaf_cert, &leaf_key)));
+
+    let router = server::build_app(config_path).await.expect("build router");
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/ca.pem")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("response");
+
+    Assert::that(response.status()).is(StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let body = String::from_utf8(body.to_vec()).expect("utf8");
+    Assert::that(body.as_str()).is(std::fs::read_to_string(server::ca_cert_path(dir.path()))
+        .expect("read ca cert")
+        .as_str());
+}
+
+#[tokio::test]
+async fn ca_pem_route_404s_when_no_tls_is_configured() {
+    use axum::body::Body;
+    use axum::http::Request;
+    use axum::http::StatusCode;
+    use tower::ServiceExt;
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let config_path = write_test_config(dir.path(), None);
+
+    let router = server::build_app(config_path).await.expect("build router");
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/ca.pem")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("response");
+
+    Assert::that(response.status()).is(StatusCode::NOT_FOUND);
 }

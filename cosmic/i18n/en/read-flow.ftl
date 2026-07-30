@@ -502,6 +502,9 @@ settings-server-tls-cert-placeholder = /path/to/fullchain.pem
 settings-server-tls-key = TLS private key
 settings-server-tls-key-placeholder = /path/to/privkey.pem
 # Self-signed certificate generation
-settings-server-generate-cert = Self-signed certificate
-settings-server-generate-cert-description = Generate a key pair and self-signed certificate (trusted by the desktop app; browsers require manual import). Save to apply.
+settings-server-generate-cert = TLS certificate
+settings-server-generate-cert-description = Generate a certificate for this server, signed by a local certificate authority (generated once and reused). Trust that CA once per device (see "Local CA certificate" below) and every certificate generated afterwards is trusted automatically, with no more per-certificate warnings. Save to apply.
 settings-server-generate-cert-button = Generate
+settings-server-open-ca-cert = Local CA certificate
+settings-server-open-ca-cert-description = Open the local certificate authority's root certificate to trust it on this device (e.g. import it into Keychain Access on macOS). Do this once per device you want to connect from without a certificate warning.
+settings-server-open-ca-cert-button = Open

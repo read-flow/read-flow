@@ -209,6 +209,11 @@ id = "admin.local_identity"
 description = "Bind the desktop app's local database access to an authorized user, so local reading progress/tags sync with that user's remote (REST/PWA) sessions"
 surfaces = ["cosmic"]
 
+[[feature]]
+id = "admin.local_ca"
+description = "Local root CA for browser-trusted TLS without a public hostname: generate/reuse a CA-signed cert, and let client devices fetch the CA root to trust once"
+surfaces = ["cosmic", "rest"]
+
 # ── Online library (OPDS — needs REST extension) ───────────────────────────
 
 [[feature]]

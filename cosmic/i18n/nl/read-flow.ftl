@@ -500,6 +500,9 @@ settings-server-tls-cert-placeholder = /pad/naar/fullchain.pem
 settings-server-tls-key = TLS-privésleutel
 settings-server-tls-key-placeholder = /pad/naar/privkey.pem
 # Self-signed certificate generation
-settings-server-generate-cert = Zelfondertekend certificaat
-settings-server-generate-cert-description = Genereer een sleutelpaar en zelfondertekend certificaat (vertrouwd door de desktop-app; browsers vereisen handmatige import). Opslaan om toe te passen.
+settings-server-generate-cert = TLS-certificaat
+settings-server-generate-cert-description = Genereer een certificaat voor deze server, ondertekend door een lokale certificaatautoriteit (eenmalig gegenereerd en daarna hergebruikt). Vertrouw die CA eenmalig per apparaat (zie "Lokaal CA-certificaat" hieronder) en elk certificaat dat daarna wordt gegenereerd, wordt automatisch vertrouwd, zonder waarschuwingen. Opslaan om toe te passen.
 settings-server-generate-cert-button = Genereren
+settings-server-open-ca-cert = Lokaal CA-certificaat
+settings-server-open-ca-cert-description = Open het rootcertificaat van de lokale certificaatautoriteit om het op dit apparaat te vertrouwen (bijv. importeren in Sleutelhangertoegang op macOS). Doe dit eenmalig per apparaat waarmee u zonder certificaatwaarschuwing wilt verbinden.
+settings-server-open-ca-cert-button = Openen

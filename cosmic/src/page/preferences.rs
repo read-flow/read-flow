@@ -239,6 +239,7 @@ pub enum PreferencesMessage {
     ServerTlsKeyChanged(String),
     GenerateTlsCert,
     GeneratedTlsCert(Result<(PathBuf, PathBuf), String>),
+    OpenCaCertificate,
     ToggleServerStartOnLaunch(bool),
     SetLocalUserId(usize),
     AuthorizedUserForm(AuthorizedUserFormMessage),
@@ -1190,6 +1191,7 @@ impl PreferencesPage {
     }
 
     /// @feature: admin.local_identity
+    /// @feature: admin.local_ca
     fn view_section_server(&self) -> Vec<Element<'_, PreferencesMessage>> {
         // Uniform width for every text input in the server sections.
         const INPUT_WIDTH: f32 = 240.0;
@@ -1358,7 +1360,16 @@ impl PreferencesPage {
                         widget::button::standard(fl!("settings-server-generate-cert-button"))
                             .on_press(PreferencesMessage::GenerateTlsCert),
                     ),
-            );
+            )
+            .add_maybe(self.settings.server.tls.is_some().then(|| {
+                widget::settings::item::builder(fl!("settings-server-open-ca-cert"))
+                    .description(fl!("settings-server-open-ca-cert-description"))
+                    .icon(widget::icon::from_name("security-high-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::button::standard(fl!("settings-server-open-ca-cert-button"))
+                            .on_press(PreferencesMessage::OpenCaCertificate),
+                    )
+            }));
 
         // Local identity: which authorized user (if any) this desktop's local
         // database access acts as, so reading progress recorded here is
@@ -2069,18 +2080,28 @@ impl Page for PreferencesPage {
                     .parent()
                     .map(|p| p.to_path_buf())
                     .unwrap_or_else(|| PathBuf::from("."));
-                // Cover localhost plus the configured address if it's a real host.
-                let mut sans = vec!["localhost".to_string()];
+                // Cover localhost/loopback always, plus whatever makes the
+                // server reachable as configured: an explicit bind
+                // address/hostname if one is set, or — when bound to
+                // `0.0.0.0` (every interface, i.e. LAN-reachable) — this
+                // machine's actual LAN IP, so the generated cert is valid
+                // for the address clients will actually use, not just
+                // localhost.
+                let mut sans = vec!["localhost".to_string(), "127.0.0.1".to_string()];
                 if let Some(addr) = &self.settings.server.address
                     && !addr.is_empty()
                     && addr != "127.0.0.1"
                     && addr != "0.0.0.0"
                 {
                     sans.push(addr.clone());
+                } else if self.settings.server.address.as_deref() == Some("0.0.0.0")
+                    && let Some(ip) = read_flow_core::server::detect_lan_ip()
+                {
+                    sans.push(ip.to_string());
                 }
                 task::future(async move {
                     let result = tokio::task::spawn_blocking(move || {
-                        read_flow_core::server::generate_self_signed_cert(&dir, sans)
+                        read_flow_core::server::generate_or_reuse_ca_signed_cert(&dir, sans)
                     })
                     .await
                     .map_err(|e| e.to_string())
@@ -2103,6 +2124,22 @@ impl Page for PreferencesPage {
                         self.save_state = SaveState::Error(error);
                     }
                 }
+                Task::none()
+            }
+            PreferencesMessage::OpenCaCertificate => {
+                let dir = self
+                    .application_module
+                    .config_path()
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| PathBuf::from("."));
+                let ca_cert = read_flow_core::server::ca_cert_path(&dir);
+                // Opening the file with the OS default handler (Keychain
+                // Access on macOS, the equivalent cert-import flow
+                // elsewhere) is the whole point: it's the same, zero-extra-UI
+                // "trust this certificate" step every OS already knows how
+                // to do. Silently no-ops if no CA was ever generated here.
+                let _ = open::that_detached(&ca_cert);
                 Task::none()
             }
             PreferencesMessage::ToggleServerStartOnLaunch(value) => {

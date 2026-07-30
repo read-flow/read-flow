@@ -41,6 +41,7 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `admin.authorized_users` | ✅ | ✅ | ✅ | Manage authorized server users (CRUD) |
 | `admin.server_settings` | ✅ | ✅ | ✅ | Server settings (db path, file types, dry-run, private) |
 | `admin.local_identity` | ✅ |  |  | Bind the desktop app's local database access to an authorized user, so local reading progress/tags sync with that user's remote (REST/PWA) sessions |
+| `admin.local_ca` | ✅ |  | ✅ | Local root CA for browser-trusted TLS without a public hostname: generate/reuse a CA-signed cert, and let client devices fetch the CA root to trust once |
 | `online_library.search` | ✅ | ✅ | ✅ | Search OPDS catalogs |
 | `online_library.download_import` | ✅ | ✅ | ✅ | Download and import a book from an OPDS catalog |
 | `online_library.manage_catalogs` | ✅ | 🟡 | 🟡 | Add/edit/remove custom OPDS catalogs and toggle built-ins, from Preferences |
@@ -48,4 +49,4 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `app.epub_viewer_choice` | ✅ |  |  | Open the current EPUB in the MuPDF viewer or an external application, from the viewer's context pane |
 | `app.theme_overrides` | ✅ |  |  | Per-app theme overrides (dark/light, accent, density, roundness, frosted glass, interface font, monospace font) without changing global COSMIC settings |
 
-_41 features tracked._
+_42 features tracked._
