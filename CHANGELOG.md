@@ -30,6 +30,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 - COSMIC Preferences: adding/editing a scan directory, source, authorized user, or online-library
   catalog now opens a modal dialog instead of expanding an inline form below the list.
+- COSMIC Preferences: removing a scan directory, authorized user, or online-library catalog now
+  asks for confirmation first, matching the existing behavior for removing a source.
 - Server: the `ui.private_mode` toggle no longer disables private-tag filtering for remote API
   requests; it now only controls the local GUI. Remote/PWA clients must request private content
   explicitly via the `x-private-mode` header (and must own that content).

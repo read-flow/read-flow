@@ -141,8 +141,11 @@ pub struct PreferencesPage {
     save_state: SaveState,
     editing_directory: EditState<PathBuf>,
     directory_settings_form: Option<DirectorySettingsForm>,
+    pending_directory_deletion: Option<ExpandedPath>,
     authorized_user_form: Option<AuthorizedUserForm>,
+    pending_authorized_user_deletion: Option<String>,
     catalog_form: Option<CatalogForm>,
+    pending_catalog_deletion: Option<String>,
     // appearance (cosmic_config-backed)
     config: Config,
     // theme overrides (TOML-backed, live-previewed)
@@ -246,10 +249,16 @@ pub enum PreferencesMessage {
     AddAuthorizedUser,
     EditAuthorizedUser(String),
     DeleteAuthorizedUser(String),
+    RequestDeleteAuthorizedUser(String),
+    ConfirmDeleteAuthorizedUser,
+    CancelDeleteAuthorizedUser,
     ToggleBuiltinCatalog(BuiltinCatalogId, bool),
     AddCatalog,
     EditCatalog(String),
     DeleteCatalog(String),
+    RequestDeleteCatalog(String),
+    ConfirmDeleteCatalog,
+    CancelDeleteCatalog,
     ToggleConfiguredCatalog(String, bool),
     CatalogForm(CatalogFormMessage),
     Save,
@@ -260,6 +269,9 @@ pub enum PreferencesMessage {
     ToggleAllDocumentTypes(bool),
     AddDirectory,
     RemoveDirectory(PathBuf),
+    RequestRemoveDirectory(ExpandedPath),
+    ConfirmRemoveDirectory,
+    CancelRemoveDirectory,
     EditDirectory(PathBuf),
     SaveDirectory(ExpandedPath, DirectorySettings),
     CancelEditDirectory,
@@ -376,8 +388,11 @@ impl PreferencesPage {
                 save_state: SaveState::Idle,
                 editing_directory: EditState::Idle,
                 directory_settings_form: None,
+                pending_directory_deletion: None,
                 authorized_user_form: None,
+                pending_authorized_user_deletion: None,
                 catalog_form: None,
+                pending_catalog_deletion: None,
                 config,
                 editing_variant,
                 accent_picker,
@@ -1531,7 +1546,7 @@ impl PreferencesPage {
                 })
                 .into(),
                 widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
-                    .on_press(PreferencesMessage::DeleteCatalog(name_for_delete))
+                    .on_press(PreferencesMessage::RequestDeleteCatalog(name_for_delete))
                     .class(widget::button::ButtonClass::Destructive)
                     .into(),
             ]))
@@ -1603,7 +1618,9 @@ impl PreferencesPage {
                 })
                 .into(),
                 widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
-                    .on_press(PreferencesMessage::DeleteAuthorizedUser(user_id.clone()))
+                    .on_press(PreferencesMessage::RequestDeleteAuthorizedUser(
+                        user_id.clone(),
+                    ))
                     .class(widget::button::ButtonClass::Destructive)
                     .into(),
             ]))
@@ -1799,6 +1816,42 @@ impl Page for PreferencesPage {
                 fl!("sources-delete-confirm-cancel"),
                 PreferencesMessage::ConfirmDeleteSource,
                 PreferencesMessage::CancelDeleteSource,
+            ));
+        }
+
+        if let Some(path) = &self.pending_directory_deletion {
+            return Some(crate::component::confirm_dialog::confirm_delete_dialog(
+                fl!("settings-remove-directory"),
+                fl!("settings-remove-directory-confirm-body"),
+                path.to_str().unwrap_or_default(),
+                fl!("settings-remove-directory-confirm-remove"),
+                fl!("settings-cancel-edit"),
+                PreferencesMessage::ConfirmRemoveDirectory,
+                PreferencesMessage::CancelRemoveDirectory,
+            ));
+        }
+
+        if let Some(user_id) = &self.pending_authorized_user_deletion {
+            return Some(crate::component::confirm_dialog::confirm_delete_dialog(
+                fl!("settings-server-delete-authorized-user-confirm-title"),
+                fl!("settings-server-delete-authorized-user-confirm-body"),
+                user_id,
+                fl!("settings-server-delete-authorized-user-confirm-remove"),
+                fl!("settings-cancel-edit"),
+                PreferencesMessage::ConfirmDeleteAuthorizedUser,
+                PreferencesMessage::CancelDeleteAuthorizedUser,
+            ));
+        }
+
+        if let Some(name) = &self.pending_catalog_deletion {
+            return Some(crate::component::confirm_dialog::confirm_delete_dialog(
+                fl!("settings-online-library-delete-catalog-confirm-title"),
+                fl!("settings-online-library-delete-catalog-confirm-body"),
+                name,
+                fl!("settings-online-library-delete-catalog-confirm-remove"),
+                fl!("settings-cancel-edit"),
+                PreferencesMessage::ConfirmDeleteCatalog,
+                PreferencesMessage::CancelDeleteCatalog,
             ));
         }
 
@@ -2381,6 +2434,21 @@ impl Page for PreferencesPage {
                 }
                 Task::none()
             }
+            PreferencesMessage::RequestRemoveDirectory(path) => {
+                self.pending_directory_deletion = Some(path);
+                Task::none()
+            }
+            PreferencesMessage::ConfirmRemoveDirectory => {
+                if let Some(path) = self.pending_directory_deletion.take() {
+                    task::message(PreferencesMessage::RemoveDirectory(path.into()))
+                } else {
+                    task::none()
+                }
+            }
+            PreferencesMessage::CancelRemoveDirectory => {
+                self.pending_directory_deletion = None;
+                Task::none()
+            }
             PreferencesMessage::Save => {
                 self.save_state = SaveState::Saving;
                 let settings = self.settings.clone();
@@ -2432,6 +2500,21 @@ impl Page for PreferencesPage {
                 if self.is_editing_authorized_user(&user_id) {
                     self.authorized_user_form = None;
                 }
+                Task::none()
+            }
+            PreferencesMessage::RequestDeleteAuthorizedUser(user_id) => {
+                self.pending_authorized_user_deletion = Some(user_id);
+                Task::none()
+            }
+            PreferencesMessage::ConfirmDeleteAuthorizedUser => {
+                if let Some(user_id) = self.pending_authorized_user_deletion.take() {
+                    task::message(PreferencesMessage::DeleteAuthorizedUser(user_id))
+                } else {
+                    task::none()
+                }
+            }
+            PreferencesMessage::CancelDeleteAuthorizedUser => {
+                self.pending_authorized_user_deletion = None;
                 Task::none()
             }
             PreferencesMessage::EditAuthorizedUser(user_id) => {
@@ -2528,6 +2611,21 @@ impl Page for PreferencesPage {
                 if self.is_editing_catalog(&name) {
                     self.catalog_form = None;
                 }
+                Task::none()
+            }
+            PreferencesMessage::RequestDeleteCatalog(name) => {
+                self.pending_catalog_deletion = Some(name);
+                Task::none()
+            }
+            PreferencesMessage::ConfirmDeleteCatalog => {
+                if let Some(name) = self.pending_catalog_deletion.take() {
+                    task::message(PreferencesMessage::DeleteCatalog(name))
+                } else {
+                    task::none()
+                }
+            }
+            PreferencesMessage::CancelDeleteCatalog => {
+                self.pending_catalog_deletion = None;
                 Task::none()
             }
             PreferencesMessage::ToggleConfiguredCatalog(name, enabled) => {
@@ -2879,7 +2977,7 @@ fn view_directory<'a>(
     let remove_button =
         widget::button::icon(icon::from_name("list-remove-symbolic").size(ICON_SIZE))
             .class(widget::button::ButtonClass::Destructive)
-            .on_press(PreferencesMessage::RemoveDirectory(path.clone().into()))
+            .on_press(PreferencesMessage::RequestRemoveDirectory(path.clone()))
             .tooltip(fl!("settings-remove-directory"));
 
     let controls = widget::Row::new()
