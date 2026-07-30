@@ -4,6 +4,7 @@
 //! Playwright harness follows independently (see `pwa/e2e/support/server.ts`).
 
 use read_flow_core::test_support::TestServer;
+use tower::ServiceExt;
 
 use crate::bdd::fixtures::sample_cover_epub_path;
 use crate::bdd::fixtures::sample_epub_path;
@@ -161,6 +162,61 @@ impl RestDriver {
             .await
             .expect("parse users JSON");
         entries.iter().any(|entry| entry["user_id"] == user_id)
+    }
+
+    /// `admin.local_ca`: REST has no "generate certificate" action of its own
+    /// (that's COSMIC's Preferences button) — its role is passively *serving*
+    /// `/ca.pem` once TLS is configured. This calls the same library function
+    /// the button calls, persists the result into a fresh config, then builds
+    /// an in-process router over it (`build_app`, `.oneshot()`) to verify
+    /// `/ca.pem` serves exactly that CA root. Same pattern
+    /// `core/tests/tls_ca.rs` uses at the unit level; no live network bind
+    /// needed here since this is boot-time/config-file behavior, not a
+    /// runtime toggle on the already-running `self.server`.
+    pub async fn generate_local_ca_and_serve_it(&self) -> bool {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let (leaf_cert, leaf_key) = read_flow_core::server::generate_or_reuse_ca_signed_cert(
+            dir.path(),
+            vec!["localhost".to_string()],
+        )
+        .expect("generate ca + leaf");
+
+        let download = dir.path().join("dl");
+        std::fs::create_dir_all(&download).expect("download dir");
+        let config = format!(
+            "[database]\nurl = \"{db}\"\n\n\
+             [server]\ndownload_folder = \"{dl}\"\nauthorized_users = {{}}\n\
+             [server.tls]\ncert = \"{cert}\"\nkey = \"{key}\"\n",
+            db = dir.path().join("test.db").display(),
+            dl = download.display(),
+            cert = leaf_cert.display(),
+            key = leaf_key.display(),
+        );
+        let config_path = dir.path().join("read-flow.toml");
+        std::fs::write(&config_path, config).expect("write config");
+
+        let expected_ca = std::fs::read_to_string(read_flow_core::server::ca_cert_path(dir.path()))
+            .expect("read generated ca cert");
+
+        let router = read_flow_core::server::build_app(config_path)
+            .await
+            .expect("build router");
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/ca.pem")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("send /ca.pem request");
+        if response.status() != axum::http::StatusCode::OK {
+            return false;
+        }
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read /ca.pem body");
+        String::from_utf8(body.to_vec()).expect("utf8 body") == expected_ca
     }
 
     /// Uploads the shared `sample.epub` fixture via `POST /files` (multipart,

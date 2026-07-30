@@ -164,6 +164,66 @@ impl Driver {
         }
     }
 
+    // -- admin.local_identity --
+    // COSMIC-only: binds the desktop app's own local (unauthenticated)
+    // database access to an authorized user, so reading progress recorded
+    // locally becomes visible to that user's REST/PWA sessions. No REST/PWA
+    // surface — this only configures *this* desktop's own local-access
+    // identity (see `FEATURES.toml`).
+
+    pub async fn bind_local_identity(&self, user_id: &str) {
+        match self {
+            Self::Rest(_) => {
+                panic!("`admin.local_identity` has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.bind_local_identity(user_id).await,
+        }
+    }
+
+    pub async fn record_local_reading_progress(
+        &self,
+        fingerprint: &str,
+        position: &str,
+        percentage: f64,
+    ) {
+        match self {
+            Self::Rest(_) => {
+                panic!("`admin.local_identity` has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => {
+                driver
+                    .record_local_reading_progress(fingerprint, position, percentage)
+                    .await
+            }
+        }
+    }
+
+    pub async fn reading_progress_for_user(
+        &self,
+        user_id: &str,
+        fingerprint: &str,
+    ) -> Option<(String, f64)> {
+        match self {
+            Self::Rest(_) => {
+                panic!("`admin.local_identity` has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.reading_progress_for_user(user_id, fingerprint).await,
+        }
+    }
+
+    // -- admin.local_ca --
+    // REST has no "generate certificate" action of its own (that's COSMIC's
+    // Preferences button) — its role is passively serving `/ca.pem` once TLS
+    // is configured. Both branches verify the same observable: does
+    // generating produce a CA root that `/ca.pem` serves?
+
+    pub async fn generate_local_ca_and_serve_it(&mut self) -> bool {
+        match self {
+            Self::Rest(driver) => driver.generate_local_ca_and_serve_it().await,
+            Self::Cosmic(driver) => driver.generate_local_ca_and_serve_it().await,
+        }
+    }
+
     // -- online_library_manage_catalogs --
     // COSMIC-only: catalog management has no REST/PWA surface yet (see
     // `online_library.manage_catalogs`'s `gaps` in FEATURES.toml).

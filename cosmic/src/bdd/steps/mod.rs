@@ -1,5 +1,7 @@
 mod admin_authorized_users;
 mod admin_check_missing;
+mod admin_local_ca;
+mod admin_local_identity;
 mod admin_scan;
 mod admin_scan_directories;
 mod admin_server_settings;

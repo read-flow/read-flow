@@ -104,6 +104,9 @@ features = [
 
 [dev-dependencies]
 assert4rs.workspace = true
+# Only for BDD tests: build an in-process router to verify `/ca.pem` (see
+# `bdd/cosmic_driver.rs`'s `admin.local_ca` scenario support).
+axum = { workspace = true }
 cosmic-golden.workspace = true
 cucumber.workspace = true
 read-flow-core = { path = "../core", features = ["server", "test-support"] }
@@ -111,4 +114,5 @@ reqwest = { workspace = true, features = ["json", "multipart"] }
 rstest.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+tower = { workspace = true, features = ["util"] }
 zip.workspace = true

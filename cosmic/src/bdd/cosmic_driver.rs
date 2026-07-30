@@ -23,6 +23,7 @@ use cosmic::iced::runtime::task::into_stream;
 use futures::StreamExt;
 use provider::r#async::HasSetExpired;
 use read_flow_core::ExpandedPath;
+use read_flow_core::api::FileDataSource;
 use read_flow_core::api::ReadingStatus;
 use read_flow_core::db::LOCAL_USER_ID;
 use read_flow_core::db::dao;
@@ -38,6 +39,7 @@ use read_flow_core::settings::HashedPassword;
 use read_flow_core::settings::Settings;
 use read_flow_core::settings::UserEntry;
 use read_flow_core::test_support::TestServer;
+use tower::ServiceExt;
 
 use crate::AppSettings;
 use crate::ApplicationModule;
@@ -273,6 +275,125 @@ impl CosmicDriver {
             .server
             .authorized_users
             .contains_key(user_id)
+    }
+
+    /// `admin.local_identity`: binds the desktop's local (unauthenticated)
+    /// database access to `user_id`, directly via `update_settings` — same
+    /// bypass as `add_user`. Driving `preferences_page`'s own dropdown+`Save`
+    /// here instead would stomp whatever `add_user` just persisted, since
+    /// that page's in-memory settings were captured at driver construction,
+    /// before `add_user` ran.
+    pub async fn bind_local_identity(&self, user_id: &str) {
+        let id = user_id.to_string();
+        self.application_module
+            .update_settings(move |settings| {
+                settings.server.local_user_id = Some(id);
+            })
+            .await
+            .expect("update settings");
+    }
+
+    /// Writes reading progress through `db_client()` — the same
+    /// unauthenticated local-write path COSMIC's GUI uses, and the one
+    /// `local_user_id` resolution is meant to affect (see
+    /// `core/tests/local_user_id.rs`). Unlike `set_reading_progress` (which
+    /// writes via the DAO under the fixed reserved `LOCAL_USER_ID`),
+    /// `db_client()` bakes in whatever user `local_user_id` currently
+    /// resolves to.
+    pub async fn record_local_reading_progress(
+        &self,
+        fingerprint: &str,
+        position: &str,
+        percentage: f64,
+    ) {
+        self.application_module
+            .db_client()
+            .await
+            .upsert_reading_state(read_flow_core::api::ReadingState {
+                fingerprint: fingerprint.to_string(),
+                status: 0,
+                position: position.to_string(),
+                percentage,
+                last_updated: "2026-01-01T00:00:00Z".to_string(),
+                status_updated_at: "2026-01-01T00:00:00Z".to_string(),
+            })
+            .await
+            .expect("upsert reading state locally");
+    }
+
+    /// Reads reading progress back for a specific (real, non-`local`) user
+    /// id — the observable proof that a local write landed under that user
+    /// rather than the reserved `local` id.
+    pub async fn reading_progress_for_user(
+        &self,
+        user_id: &str,
+        fingerprint: &str,
+    ) -> Option<(String, f64)> {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        dao::get_reading_state(&mut conn, user_id, fingerprint)
+            .await
+            .expect("get reading state")
+            .map(|state| (state.position, state.percentage))
+    }
+
+    /// `admin.local_ca`: drives `GenerateTlsCert` → `GeneratedTlsCert` →
+    /// `Save` — COSMIC's actual "Generate Certificate" button flow (see
+    /// `PreferencesPage::update`) — then verifies the CA root this produced
+    /// is exactly what `/ca.pem` serves. The route is checked via an
+    /// in-process router (`server::build_app`, `.oneshot()`) over the same
+    /// persisted config, same pattern `core/tests/tls_ca.rs` uses: TLS is
+    /// boot-time/config-file behavior, not something reachable through this
+    /// driver's own (unrelated) `server: TestServer`.
+    pub async fn generate_local_ca_and_serve_it(&mut self) -> bool {
+        let generated = drain(
+            self.preferences_page
+                .update(PreferencesMessage::GenerateTlsCert),
+        )
+        .await;
+        // Feed the resulting `GeneratedTlsCert` back into `update()` — the
+        // same thing the live iced runtime does with a `Task`'s output
+        // message — so it actually applies `settings.server.tls`.
+        for message in generated {
+            drain(self.preferences_page.update(message)).await;
+        }
+        let saved = drain(self.preferences_page.update(PreferencesMessage::Save)).await;
+        assert!(
+            saved
+                .iter()
+                .any(|message| matches!(message, PreferencesMessage::SaveComplete)),
+            "Save did not complete"
+        );
+
+        let dir = self
+            .application_module
+            .config_path()
+            .parent()
+            .expect("config path has a parent")
+            .to_path_buf();
+        let expected_ca = std::fs::read_to_string(read_flow_core::server::ca_cert_path(&dir))
+            .expect("read generated ca cert");
+
+        let router =
+            read_flow_core::server::build_app(self.application_module.config_path().to_path_buf())
+                .await
+                .expect("build router");
+        let response = router
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/ca.pem")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("send /ca.pem request");
+        if response.status() != axum::http::StatusCode::OK {
+            return false;
+        }
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read /ca.pem body");
+        String::from_utf8(body.to_vec()).expect("utf8 body") == expected_ca
     }
 
     /// `AddCatalog`'s real path spawns a `CatalogForm` — same multi-hop-form
