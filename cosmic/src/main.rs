@@ -21,6 +21,8 @@ mod reading_progress;
 mod render_blocks;
 mod state;
 mod subscription;
+#[cfg(test)]
+mod test_support;
 
 use std::path::PathBuf;
 use std::sync::Arc;
