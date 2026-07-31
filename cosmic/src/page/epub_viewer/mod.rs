@@ -3411,7 +3411,7 @@ mod tests {
         let (mut viewer, init_task) = super::EpubViewer::new(document, document_provider);
         for message in crate::test_support::drain(init_task).await {
             if matches!(message, super::EpubViewerMessage::EpubLoaded(..)) {
-                viewer.update(message);
+                let _ = viewer.update(message);
             }
         }
 
