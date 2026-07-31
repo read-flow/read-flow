@@ -972,6 +972,41 @@ fn map_image_viewer_message(id: u64, msg: ImageViewerMessage) -> PageMessage {
     }
 }
 
+async fn save_reading_state(
+    document_provider: &DocumentProvider,
+    fingerprint: Fingerprint,
+    viewer: crate::reading_progress::Viewer,
+    position: String,
+    percentage: f64,
+) {
+    let existing = {
+        let aggregator = document_provider.aggregator.read().await;
+        aggregator
+            .get_reading_state(&fingerprint)
+            .await
+            .ok()
+            .flatten()
+    };
+    let merged_position = crate::reading_progress::merge(
+        existing.as_ref().map(|s| s.position.as_str()),
+        viewer,
+        &position,
+    );
+
+    let now = iso8601_now();
+    let state = read_flow_core::api::ReadingState {
+        fingerprint,
+        status: 0,
+        position: merged_position,
+        percentage,
+        last_updated: now,
+        status_updated_at: "1970-01-01T00:00:00Z".to_string(),
+    };
+    if let Err(e) = document_provider.upsert_reading_state(state).await {
+        tracing::warn!("failed to save reading state: {e}");
+    }
+}
+
 fn save_reading_state_task(
     document_provider: Arc<DocumentProvider>,
     fingerprint: Fingerprint,
@@ -980,32 +1015,14 @@ fn save_reading_state_task(
     percentage: f64,
 ) -> Task<Action<PageMessage>> {
     task::future(async move {
-        let existing = {
-            let aggregator = document_provider.aggregator.read().await;
-            aggregator
-                .get_reading_state(&fingerprint)
-                .await
-                .ok()
-                .flatten()
-        };
-        let merged_position = crate::reading_progress::merge(
-            existing.as_ref().map(|s| s.position.as_str()),
-            viewer,
-            &position,
-        );
-
-        let now = iso8601_now();
-        let state = read_flow_core::api::ReadingState {
+        save_reading_state(
+            &document_provider,
             fingerprint,
-            status: 0,
-            position: merged_position,
+            viewer,
+            position,
             percentage,
-            last_updated: now,
-            status_updated_at: "1970-01-01T00:00:00Z".to_string(),
-        };
-        if let Err(e) = document_provider.upsert_reading_state(state).await {
-            tracing::warn!("failed to save reading state: {e}");
-        }
+        )
+        .await;
         PageMessage::Noop
     })
 }
