@@ -1159,30 +1159,7 @@ impl Page for EpubViewer {
             widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
                 .on_press(EpubViewerMessage::Out(EpubViewerOutput::Close(
                     self.fingerprint.clone(),
-                    if self.chapters.is_empty() {
-                        None
-                    } else {
-                        // In paginated mode use the first block of the current page.
-                        // In scroll mode derive the block index from scroll_y so the
-                        // position can be accurately restored on any device regardless
-                        // of display dimensions.
-                        let first_block = match self.view_mode {
-                            ViewMode::Paginated => self
-                                .pagination_cache
-                                .get(&self.active_chapter)
-                                .and_then(|l| l.pages.get(self.current_page))
-                                .map(|p| p.start)
-                                .unwrap_or(0),
-                            ViewMode::Scroll => self
-                                .approximate_block_at_scroll_y(self.scroll_y)
-                                .unwrap_or(0),
-                        };
-                        Some(serialize_progress(
-                            &self.chapters,
-                            self.active_chapter,
-                            first_block,
-                        ))
-                    },
+                    self.current_progress(),
                 )))
                 .tooltip(fl!("epub-viewer-back"))
                 .padding(space_xxs)
@@ -3272,6 +3249,30 @@ impl EpubViewer {
         }
     }
 
+    /// Current reading position (EPUB CFI) and completion percentage, if a
+    /// chapter has loaded. `None` while the document is still opening.
+    pub(super) fn current_progress(&self) -> Option<(String, f64)> {
+        if self.chapters.is_empty() {
+            return None;
+        }
+        let first_block = match self.view_mode {
+            ViewMode::Paginated => self
+                .pagination_cache
+                .get(&self.active_chapter)
+                .and_then(|l| l.pages.get(self.current_page))
+                .map(|p| p.start)
+                .unwrap_or(0),
+            ViewMode::Scroll => self
+                .approximate_block_at_scroll_y(self.scroll_y)
+                .unwrap_or(0),
+        };
+        Some(serialize_progress(
+            &self.chapters,
+            self.active_chapter,
+            first_block,
+        ))
+    }
+
     /// Find the block index closest to a given scroll_y offset using the
     /// default 80-char estimation (no width info available).
     fn approximate_block_at_scroll_y(&self, target_y: f32) -> Option<usize> {
@@ -3377,9 +3378,50 @@ fn render_chapter_blocks(
 mod tests {
     use cosmic_golden::golden_test;
 
+    use super::Page;
     use super::load_epub_chapters;
     use super::render_chapter_blocks;
     use super::test_helper::EpubBuilder;
+
+    #[tokio::test]
+    async fn current_progress_is_none_before_chapters_load() {
+        let (_app, document_provider, _db_dir) = crate::test_support::document_provider().await;
+        let document = crate::aggregator::Document {
+            document_guid: "doc-guid".into(),
+            document_meta: Default::default(),
+            contents: Vec::new(),
+        };
+        let (viewer, _init) = super::EpubViewer::new(document, document_provider);
+        assert_eq!(viewer.current_progress(), None);
+    }
+
+    #[tokio::test]
+    async fn current_progress_reflects_the_loaded_chapter() {
+        let (application_module, document_provider, _db_dir) =
+            crate::test_support::document_provider().await;
+        let epub_file = EpubBuilder::new("Test").body("<p>Hello</p>").build();
+        let (document, _fixture_dir) = crate::test_support::scan_and_fetch_document(
+            &application_module,
+            &document_provider,
+            epub_file.path().to_path_buf(),
+            "test.epub",
+        )
+        .await;
+
+        let (mut viewer, init_task) = super::EpubViewer::new(document, document_provider);
+        for message in crate::test_support::drain(init_task).await {
+            if matches!(message, super::EpubViewerMessage::EpubLoaded(..)) {
+                viewer.update(message);
+            }
+        }
+
+        let (position, percentage) = viewer.current_progress().expect("chapters loaded");
+        assert!(
+            position.contains("cfi"),
+            "expected a CFI position, got {position:?}"
+        );
+        assert!(percentage > 0.0, "expected a nonzero percentage");
+    }
 
     #[golden_test(600, 150)]
     fn epub_plain_paragraph() -> cosmic::Element<'_, super::EpubViewerMessage> {
