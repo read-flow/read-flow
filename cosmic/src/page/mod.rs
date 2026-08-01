@@ -142,7 +142,7 @@ pub enum PageMessage {
     OpenDocument(Document),
     CloseEpubViewer(Fingerprint, Option<(String, f64)>),
     MuPdfViewer(Fingerprint, MuPdfViewerMessage),
-    CloseMuPdfViewer(Fingerprint, Option<(usize, usize)>),
+    CloseMuPdfViewer(Fingerprint, Option<(String, f64)>),
     ImageViewer(u64, ImageViewerMessage),
     OpenImageViewer(ViewerImage),
     CloseImageViewer(u64),
@@ -648,7 +648,7 @@ impl Pages {
                     action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
                 })
             }
-            PageMessage::CloseMuPdfViewer(fingerprint, page_info) => {
+            PageMessage::CloseMuPdfViewer(fingerprint, progress_info) => {
                 let selector = PageSelector::MuPdfViewer(fingerprint.clone());
                 let _ = self.mu_pdf_viewers.swap_remove(&fingerprint);
                 self.deactivate_page(&selector);
@@ -657,17 +657,12 @@ impl Pages {
                     selector,
                 )))];
 
-                if let Some((page, total)) = page_info {
-                    let percentage = if total > 0 {
-                        (page as f64 + 1.0) / total as f64
-                    } else {
-                        0.0
-                    };
+                if let Some((position_json, percentage)) = progress_info {
                     tasks.push(save_reading_state_task(
                         self.document_provider.clone(),
                         fingerprint,
                         crate::reading_progress::Viewer::MuPdf,
-                        mu_pdf_viewer::page_to_progress_json(page),
+                        position_json,
                         percentage,
                     ));
                 }

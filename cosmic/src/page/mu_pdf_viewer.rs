@@ -173,8 +173,8 @@ fn display_list_to_image_tinted(
 
 #[derive(Clone, Debug)]
 pub enum MuPdfViewerOutput {
-    /// (fingerprint, page, total_pages) — None when pages not yet loaded.
-    Close(Fingerprint, Option<(usize, usize)>),
+    /// (fingerprint, position, percentage) — None when pages not yet loaded.
+    Close(Fingerprint, Option<(String, f64)>),
     OpenDocumentDetails(Box<Document>),
     OpenInExternalViewer(Box<Document>),
 }
@@ -777,6 +777,16 @@ impl MuPdfViewer {
             vec![self.active_page]
         }
     }
+
+    /// Current page (as MuPDF progress JSON) and completion percentage, if
+    /// any pages have loaded. `None` while the document is still opening.
+    pub(super) fn current_progress(&self) -> Option<(String, f64)> {
+        if self.pages.is_empty() {
+            return None;
+        }
+        let percentage = (self.active_page as f64 + 1.0) / self.pages.len() as f64;
+        Some((page_to_progress_json(self.active_page), percentage))
+    }
 }
 
 impl Page for MuPdfViewer {
@@ -905,11 +915,7 @@ impl Page for MuPdfViewer {
             widget::button::icon(widget::icon::from_name("go-previous-symbolic").size(ICON_SIZE))
                 .on_press(MuPdfViewerMessage::Out(MuPdfViewerOutput::Close(
                     self.fingerprint.clone(),
-                    if self.pages.is_empty() {
-                        None
-                    } else {
-                        Some((self.active_page, self.pages.len()))
-                    },
+                    self.current_progress(),
                 )))
                 .tooltip(fl!("pdf-viewer-back"))
                 .padding(space_xxs)
@@ -1347,5 +1353,43 @@ mod progress_json_tests {
             // The call site subtracts 1 to recover the 0-based active_page.
             Assert::that(parsed - 1).is(active_page);
         }
+    }
+
+    #[tokio::test]
+    async fn current_progress_is_none_before_pages_load() {
+        let (_app, document_provider, _db_dir) = crate::test_support::document_provider().await;
+        let document = crate::aggregator::Document {
+            document_guid: "doc-guid".into(),
+            document_meta: Default::default(),
+            contents: Vec::new(),
+        };
+        let (viewer, _init) = super::MuPdfViewer::new(document, document_provider);
+        assert_eq!(viewer.current_progress(), None);
+    }
+
+    #[tokio::test]
+    async fn current_progress_reflects_the_loaded_page() {
+        let (application_module, document_provider, _db_dir) =
+            crate::test_support::document_provider().await;
+        let (document, _fixture_dir) = crate::test_support::scan_and_fetch_document(
+            &application_module,
+            &document_provider,
+            crate::bdd::fixtures::sample_pdf_path(),
+            "sample.pdf",
+        )
+        .await;
+
+        let (mut viewer, init_task) = super::MuPdfViewer::new(document, document_provider);
+        for message in crate::test_support::drain(init_task).await {
+            if matches!(message, super::MuPdfViewerMessage::PageDiscovered(..)) {
+                let _ = viewer.update(message);
+            }
+        }
+
+        // The fixture is a single-page PDF (see `sample_pdf_path`'s doc comment),
+        // so the loaded page is deterministically page 1 at 100%.
+        let (position, percentage) = viewer.current_progress().expect("pages loaded");
+        assert_eq!(position, "{\"page\":1}");
+        assert!((percentage - 1.0).abs() < 1e-9);
     }
 }
