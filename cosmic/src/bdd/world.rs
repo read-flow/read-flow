@@ -16,6 +16,10 @@ pub struct BddWorld {
     pub current_document_guid: Option<String>,
     /// Fingerprint of the most recently seeded document.
     pub current_document_fingerprint: Option<String>,
+    /// `(epub_fingerprint, pdf_fingerprint)` set by opening both documents
+    /// for reading in the app-exit-save scenario — two fingerprints must
+    /// coexist here, unlike `current_document_fingerprint`'s single-doc case.
+    pub open_reading_fingerprints: Option<(String, String)>,
     /// Document-record GUID of the most recently seeded document.
     pub current_document_api_guid: Option<String>,
     /// Document-record GUID of the second seeded document (for merge/sort/etc.).
@@ -48,6 +52,7 @@ impl BddWorld {
             last_check: None,
             current_document_guid: None,
             current_document_fingerprint: None,
+            open_reading_fingerprints: None,
             current_document_api_guid: None,
             second_document_api_guid: None,
             _scan_dir: None,
