@@ -18,7 +18,7 @@
 
 mod cosmic_driver;
 mod driver;
-mod fixtures;
+pub(crate) mod fixtures;
 mod rest_driver;
 mod steps;
 mod world;
