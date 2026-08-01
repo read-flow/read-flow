@@ -140,9 +140,15 @@ pub enum PageMessage {
     OpenInExternalViewer(Document),
     EpubViewer(Fingerprint, EpubViewerMessage),
     OpenDocument(Document),
-    CloseEpubViewer(Fingerprint, Option<(String, f64)>),
+    CloseEpubViewer(
+        Fingerprint,
+        Option<crate::reading_progress::ReadingProgress>,
+    ),
     MuPdfViewer(Fingerprint, MuPdfViewerMessage),
-    CloseMuPdfViewer(Fingerprint, Option<(String, f64)>),
+    CloseMuPdfViewer(
+        Fingerprint,
+        Option<crate::reading_progress::ReadingProgress>,
+    ),
     ImageViewer(u64, ImageViewerMessage),
     OpenImageViewer(ViewerImage),
     CloseImageViewer(u64),
@@ -445,31 +451,21 @@ impl Pages {
     /// `CloseMuPdfViewer`) get one last chance to persist.
     pub fn save_all_reading_progress(&self) -> Task<Action<PageMessage>> {
         let document_provider = self.document_provider.clone();
-        let saves: Vec<(Fingerprint, crate::reading_progress::Viewer, String, f64)> = self
+        let saves: Vec<(Fingerprint, crate::reading_progress::ReadingProgress)> = self
             .epub_viewers
             .iter()
             .filter_map(|(fingerprint, viewer)| {
-                viewer.current_progress().map(|(position, percentage)| {
-                    (
-                        fingerprint.clone(),
-                        crate::reading_progress::Viewer::Epub,
-                        position,
-                        percentage,
-                    )
-                })
+                viewer
+                    .current_progress()
+                    .map(|progress| (fingerprint.clone(), progress))
             })
             .chain(
                 self.mu_pdf_viewers
                     .iter()
                     .filter_map(|(fingerprint, viewer)| {
-                        viewer.current_progress().map(|(position, percentage)| {
-                            (
-                                fingerprint.clone(),
-                                crate::reading_progress::Viewer::MuPdf,
-                                position,
-                                percentage,
-                            )
-                        })
+                        viewer
+                            .current_progress()
+                            .map(|progress| (fingerprint.clone(), progress))
                     }),
             )
             .collect();
@@ -479,15 +475,8 @@ impl Pages {
         }
 
         task::future(async move {
-            for (fingerprint, viewer, position, percentage) in saves {
-                save_reading_state(
-                    &document_provider,
-                    fingerprint,
-                    viewer,
-                    position,
-                    percentage,
-                )
-                .await;
+            for (fingerprint, progress) in saves {
+                save_reading_state(&document_provider, fingerprint, progress).await;
             }
             PageMessage::Noop
         })
@@ -711,13 +700,11 @@ impl Pages {
                     selector,
                 )))];
 
-                if let Some((position_json, percentage)) = progress_info {
+                if let Some(progress) = progress_info {
                     tasks.push(save_reading_state_task(
                         self.document_provider.clone(),
                         fingerprint,
-                        crate::reading_progress::Viewer::MuPdf,
-                        position_json,
-                        percentage,
+                        progress,
                     ));
                 }
 
@@ -775,13 +762,11 @@ impl Pages {
                     selector,
                 )))];
 
-                if let Some((position_json, percentage)) = progress_info {
+                if let Some(progress) = progress_info {
                     tasks.push(save_reading_state_task(
                         self.document_provider.clone(),
                         fingerprint,
-                        crate::reading_progress::Viewer::Epub,
-                        position_json,
-                        percentage,
+                        progress,
                     ));
                 }
 
@@ -1024,9 +1009,7 @@ fn map_image_viewer_message(id: u64, msg: ImageViewerMessage) -> PageMessage {
 async fn save_reading_state(
     document_provider: &DocumentProvider,
     fingerprint: Fingerprint,
-    viewer: crate::reading_progress::Viewer,
-    position: String,
-    percentage: f64,
+    progress: crate::reading_progress::ReadingProgress,
 ) {
     let existing = {
         let aggregator = document_provider.aggregator.read().await;
@@ -1038,8 +1021,7 @@ async fn save_reading_state(
     };
     let merged_position = crate::reading_progress::merge(
         existing.as_ref().map(|s| s.position.as_str()),
-        viewer,
-        &position,
+        &progress.position,
     );
 
     let now = iso8601_now();
@@ -1047,7 +1029,7 @@ async fn save_reading_state(
         fingerprint,
         status: 0,
         position: merged_position,
-        percentage,
+        percentage: progress.percentage,
         last_updated: now,
         status_updated_at: "1970-01-01T00:00:00Z".to_string(),
     };
@@ -1059,19 +1041,10 @@ async fn save_reading_state(
 fn save_reading_state_task(
     document_provider: Arc<DocumentProvider>,
     fingerprint: Fingerprint,
-    viewer: crate::reading_progress::Viewer,
-    position: String,
-    percentage: f64,
+    progress: crate::reading_progress::ReadingProgress,
 ) -> Task<Action<PageMessage>> {
     task::future(async move {
-        save_reading_state(
-            &document_provider,
-            fingerprint,
-            viewer,
-            position,
-            percentage,
-        )
-        .await;
+        save_reading_state(&document_provider, fingerprint, progress).await;
         PageMessage::Noop
     })
 }
