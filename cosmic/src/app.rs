@@ -140,6 +140,7 @@ pub enum Message {
         Option<cosmic::iced::core::SmolStr>,
     ),
     ModifiersChanged(cosmic::iced::keyboard::Modifiers),
+    SaveReadingProgressAndExit,
     ServerStart,
     ServerStop,
     ServerRestart,
@@ -207,6 +208,10 @@ impl cosmic::Application for ReadFlow {
 
     fn core_mut(&mut self) -> &mut cosmic::Core {
         &mut self.core
+    }
+
+    fn on_app_exit(&mut self) -> Option<Self::Message> {
+        Some(Message::SaveReadingProgressAndExit)
     }
 
     /// Initializes the application with any given flags and startup commands.
@@ -951,6 +956,16 @@ impl cosmic::Application for ReadFlow {
                 self.pages
                     .update(PageMessage::ModifiersChanged(page, modifiers))
                     .map(ActionExt::map_into)
+            }
+            Message::SaveReadingProgressAndExit => {
+                let save_task = self
+                    .pages
+                    .save_all_reading_progress()
+                    .map(ActionExt::map_into);
+                match self.core().main_window_id() {
+                    Some(id) => save_task.chain(cosmic::iced::window::close(id)),
+                    None => save_task,
+                }
             }
         }
     }

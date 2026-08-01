@@ -71,6 +71,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 - COSMIC Dashboard: the "Continue Reading" row no longer stretches its cards to fill the whole
   width when fewer than 4 documents are in progress. It's padded with invisible placeholders up to
   4, so cards keep the same size regardless of how many are shown.
+- COSMIC: reading progress for open EPUB/PDF viewers is now saved when the application window is
+  closed, not just when each viewer tab is closed individually.
 
 ### Removed
 
