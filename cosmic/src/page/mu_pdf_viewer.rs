@@ -173,8 +173,11 @@ fn display_list_to_image_tinted(
 
 #[derive(Clone, Debug)]
 pub enum MuPdfViewerOutput {
-    /// (fingerprint, position, percentage) — None when pages not yet loaded.
-    Close(Fingerprint, Option<(String, f64)>),
+    /// (fingerprint, reading progress) — None when pages not yet loaded.
+    Close(
+        Fingerprint,
+        Option<crate::reading_progress::ReadingProgress>,
+    ),
     OpenDocumentDetails(Box<Document>),
     OpenInExternalViewer(Box<Document>),
 }
@@ -778,14 +781,17 @@ impl MuPdfViewer {
         }
     }
 
-    /// Current page (as MuPDF progress JSON) and completion percentage, if
-    /// any pages have loaded. `None` while the document is still opening.
-    pub(super) fn current_progress(&self) -> Option<(String, f64)> {
+    /// Current page and completion percentage, if any pages have loaded.
+    /// `None` while the document is still opening.
+    pub(super) fn current_progress(&self) -> Option<crate::reading_progress::ReadingProgress> {
         if self.pages.is_empty() {
             return None;
         }
         let percentage = (self.active_page as f64 + 1.0) / self.pages.len() as f64;
-        Some((page_to_progress_json(self.active_page), percentage))
+        Some(crate::reading_progress::ReadingProgress {
+            position: crate::reading_progress::ViewerPosition::Page(self.active_page),
+            percentage,
+        })
     }
 }
 
@@ -1387,9 +1393,12 @@ mod progress_json_tests {
         }
 
         // The fixture is a single-page PDF (see `sample_pdf_path`'s doc comment),
-        // so the loaded page is deterministically page 1 at 100%.
-        let (position, percentage) = viewer.current_progress().expect("pages loaded");
-        assert_eq!(position, "{\"page\":1}");
-        assert!((percentage - 1.0).abs() < 1e-9);
+        // so the loaded page is deterministically page 0 (0-based) at 100%.
+        let progress = viewer.current_progress().expect("pages loaded");
+        assert_eq!(
+            progress.position,
+            crate::reading_progress::ViewerPosition::Page(0)
+        );
+        assert!((progress.percentage - 1.0).abs() < 1e-9);
     }
 }

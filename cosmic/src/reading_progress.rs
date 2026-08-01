@@ -52,6 +52,45 @@ fn sniff_legacy_viewer(map: &serde_json::Map<String, Value>) -> Option<Viewer> {
     }
 }
 
+/// A single viewer's own reading position, typed by format instead of
+/// carried as an opaque JSON string.
+///
+/// TODO: the read path (`extract`, `ReadingProgressLoaded`, each viewer's
+/// own progress-loading task) still hands back/consumes raw JSON strings.
+/// It could follow `ViewerPosition` the same way the write path now does.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ViewerPosition {
+    Cfi(String),
+    /// 0-based page index.
+    Page(usize),
+}
+
+impl ViewerPosition {
+    pub fn viewer(&self) -> Viewer {
+        match self {
+            Self::Cfi(_) => Viewer::Epub,
+            Self::Page(_) => Viewer::MuPdf,
+        }
+    }
+
+    /// The wire-format JSON value for this position. Page numbers are
+    /// 1-based on the wire (the human-visible page number, matching the
+    /// PWA's own `currentPage`), hence the `+ 1`.
+    fn to_value(&self) -> Value {
+        match self {
+            Self::Cfi(cfi) => json!({ "cfi": cfi }),
+            Self::Page(page) => json!({ "page": page + 1 }),
+        }
+    }
+}
+
+/// A viewer's reading position and how far through the document it is.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadingProgress {
+    pub position: ViewerPosition,
+    pub percentage: f64,
+}
+
 /// Extract `viewer`'s own position from a stored position string, as a raw
 /// string ready to feed into that viewer's own parser. `None` means no
 /// saved position for this viewer (it should start from the beginning).
@@ -72,12 +111,11 @@ pub fn extract(stored: &str, viewer: Viewer) -> Option<String> {
     (sniff_legacy_viewer(&map) == Some(viewer)).then(|| stored.to_string())
 }
 
-/// Merge `own_position` (this viewer's own raw position string, in
-/// whatever format that viewer's own parser produces) into `existing` (the
+/// Merge `own_position` (this viewer's own position) into `existing` (the
 /// previously-stored combined or legacy position, if any), preserving the
 /// other viewer's position untouched. Returns the new combined string to
 /// persist.
-pub fn merge(existing: Option<&str>, viewer: Viewer, own_position: &str) -> String {
+pub fn merge(existing: Option<&str>, own_position: &ViewerPosition) -> String {
     let mut epub: Option<Value> = None;
     let mut mupdf: Option<Value> = None;
 
@@ -94,11 +132,10 @@ pub fn merge(existing: Option<&str>, viewer: Viewer, own_position: &str) -> Stri
         }
     }
 
-    let own_value = serde_json::from_str(own_position)
-        .unwrap_or_else(|_| Value::String(own_position.to_string()));
+    let viewer = own_position.viewer();
     match viewer {
-        Viewer::Epub => epub = Some(own_value),
-        Viewer::MuPdf => mupdf = Some(own_value),
+        Viewer::Epub => epub = Some(own_position.to_value()),
+        Viewer::MuPdf => mupdf = Some(own_position.to_value()),
     }
 
     json!({
@@ -117,15 +154,16 @@ mod tests {
 
     #[test]
     fn merge_then_extract_round_trips_own_position() {
-        let stored = merge(None, Viewer::Epub, r#"{"cfi":"epubcfi(/6/4)"}"#);
+        let stored = merge(None, &ViewerPosition::Cfi("epubcfi(/6/4)".to_string()));
         Assert::that(extract(&stored, Viewer::Epub).as_deref())
             .is_some(r#"{"cfi":"epubcfi(/6/4)"}"#);
     }
 
     #[test]
     fn merge_preserves_the_other_viewers_position() {
-        let stored = merge(None, Viewer::Epub, r#"{"cfi":"epubcfi(/6/4)"}"#);
-        let stored = merge(Some(&stored), Viewer::MuPdf, r#"{"page":42}"#);
+        let stored = merge(None, &ViewerPosition::Cfi("epubcfi(/6/4)".to_string()));
+        // Page(41) is the 0-based active_page; the wire format is 1-based ("page":42).
+        let stored = merge(Some(&stored), &ViewerPosition::Page(41));
 
         Assert::that(extract(&stored, Viewer::Epub).as_deref())
             .is_some(r#"{"cfi":"epubcfi(/6/4)"}"#);
@@ -134,10 +172,10 @@ mod tests {
 
     #[test]
     fn switching_back_and_forth_keeps_both_positions_current() {
-        let stored = merge(None, Viewer::Epub, r#"{"cfi":"a"}"#);
-        let stored = merge(Some(&stored), Viewer::MuPdf, r#"{"page":1}"#);
-        let stored = merge(Some(&stored), Viewer::Epub, r#"{"cfi":"b"}"#);
-        let stored = merge(Some(&stored), Viewer::MuPdf, r#"{"page":2}"#);
+        let stored = merge(None, &ViewerPosition::Cfi("a".to_string()));
+        let stored = merge(Some(&stored), &ViewerPosition::Page(0));
+        let stored = merge(Some(&stored), &ViewerPosition::Cfi("b".to_string()));
+        let stored = merge(Some(&stored), &ViewerPosition::Page(1));
 
         Assert::that(extract(&stored, Viewer::Epub).as_deref()).is_some(r#"{"cfi":"b"}"#);
         Assert::that(extract(&stored, Viewer::MuPdf).as_deref()).is_some(r#"{"page":2}"#);
@@ -145,7 +183,7 @@ mod tests {
 
     #[test]
     fn extract_returns_none_when_viewer_never_saved() {
-        let stored = merge(None, Viewer::Epub, r#"{"cfi":"a"}"#);
+        let stored = merge(None, &ViewerPosition::Cfi("a".to_string()));
         Assert::that(extract(&stored, Viewer::MuPdf)).is(None);
     }
 
@@ -161,7 +199,7 @@ mod tests {
         Assert::that(extract(legacy, Viewer::MuPdf).as_deref()).is_some(legacy);
         Assert::that(extract(legacy, Viewer::Epub)).is(None);
 
-        let stored = merge(Some(legacy), Viewer::Epub, r#"{"cfi":"a"}"#);
+        let stored = merge(Some(legacy), &ViewerPosition::Cfi("a".to_string()));
         Assert::that(extract(&stored, Viewer::MuPdf).as_deref()).is_some(legacy);
         Assert::that(extract(&stored, Viewer::Epub).as_deref()).is_some(r#"{"cfi":"a"}"#);
     }
@@ -172,7 +210,8 @@ mod tests {
         Assert::that(extract(legacy, Viewer::Epub).as_deref()).is_some(legacy);
         Assert::that(extract(legacy, Viewer::MuPdf)).is(None);
 
-        let stored = merge(Some(legacy), Viewer::MuPdf, r#"{"page":3}"#);
+        // Page(2) is 0-based; the wire format is 1-based ("page":3).
+        let stored = merge(Some(legacy), &ViewerPosition::Page(2));
         Assert::that(extract(&stored, Viewer::Epub).as_deref()).is_some(legacy);
         Assert::that(extract(&stored, Viewer::MuPdf).as_deref()).is_some(r#"{"page":3}"#);
     }
@@ -182,5 +221,27 @@ mod tests {
         let legacy = r#"{"chapter":2,"block":5}"#;
         Assert::that(extract(legacy, Viewer::Epub).as_deref()).is_some(legacy);
         Assert::that(extract(legacy, Viewer::MuPdf)).is(None);
+    }
+
+    #[test]
+    fn viewer_position_cfi_produces_the_cfi_wire_shape() {
+        assert_eq!(
+            ViewerPosition::Cfi("epubcfi(/6/4)".to_string()).to_value(),
+            serde_json::json!({"cfi": "epubcfi(/6/4)"})
+        );
+    }
+
+    #[test]
+    fn viewer_position_page_produces_one_based_wire_shape() {
+        assert_eq!(
+            ViewerPosition::Page(0).to_value(),
+            serde_json::json!({"page": 1})
+        );
+    }
+
+    #[test]
+    fn viewer_position_reports_its_own_viewer() {
+        assert_eq!(ViewerPosition::Cfi("a".to_string()).viewer(), Viewer::Epub);
+        assert_eq!(ViewerPosition::Page(0).viewer(), Viewer::MuPdf);
     }
 }

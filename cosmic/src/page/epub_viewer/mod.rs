@@ -343,8 +343,11 @@ impl From<EpubDocument> for CloneableEpubDocument {
 
 #[derive(Debug, Clone)]
 pub enum EpubViewerOutput {
-    /// Carries the fingerprint and (position_json, percentage) to persist, if any.
-    Close(Fingerprint, Option<(String, f64)>),
+    /// Carries the fingerprint and the reading progress to persist, if any.
+    Close(
+        Fingerprint,
+        Option<crate::reading_progress::ReadingProgress>,
+    ),
     /// Open the image viewer page for the given image.
     OpenImageViewer(ViewerImage),
     /// Request the App to navigate to (activate) this viewer's page.
@@ -2096,15 +2099,15 @@ fn block_index_for_path(chapter: &EpubChapter, target: &[u32]) -> usize {
         .unwrap_or(0)
 }
 
-/// Serialize reading progress as a JSON object containing an EPUB CFI.
+/// Serialize reading progress as an EPUB CFI position.
 fn serialize_progress(
     chapters: &[EpubChapter],
     chapter_idx: usize,
     first_block: usize,
-) -> (String, f64) {
+) -> (crate::reading_progress::ViewerPosition, f64) {
     let cfi = cfi_for_block(chapters, chapter_idx, first_block)
         .unwrap_or_else(|| format!("epubcfi(/6/{}!:0)", (chapter_idx as u32 + 1) * 2));
-    let position = format!("{{\"cfi\":\"{cfi}\"}}");
+    let position = crate::reading_progress::ViewerPosition::Cfi(cfi);
     let total = chapters.len();
     let percentage = if total > 0 {
         (chapter_idx as f64 + 1.0) / total as f64
@@ -3251,7 +3254,7 @@ impl EpubViewer {
 
     /// Current reading position (EPUB CFI) and completion percentage, if a
     /// chapter has loaded. `None` while the document is still opening.
-    pub(super) fn current_progress(&self) -> Option<(String, f64)> {
+    pub(super) fn current_progress(&self) -> Option<crate::reading_progress::ReadingProgress> {
         if self.chapters.is_empty() {
             return None;
         }
@@ -3266,11 +3269,12 @@ impl EpubViewer {
                 .approximate_block_at_scroll_y(self.scroll_y)
                 .unwrap_or(0),
         };
-        Some(serialize_progress(
-            &self.chapters,
-            self.active_chapter,
-            first_block,
-        ))
+        let (position, percentage) =
+            serialize_progress(&self.chapters, self.active_chapter, first_block);
+        Some(crate::reading_progress::ReadingProgress {
+            position,
+            percentage,
+        })
     }
 
     /// Find the block index closest to a given scroll_y offset using the
@@ -3415,12 +3419,16 @@ mod tests {
             }
         }
 
-        let (position, percentage) = viewer.current_progress().expect("chapters loaded");
+        let progress = viewer.current_progress().expect("chapters loaded");
         assert!(
-            position.contains("cfi"),
-            "expected a CFI position, got {position:?}"
+            matches!(
+                progress.position,
+                crate::reading_progress::ViewerPosition::Cfi(_)
+            ),
+            "expected a CFI position, got {:?}",
+            progress.position
         );
-        assert!(percentage > 0.0, "expected a nonzero percentage");
+        assert!(progress.percentage > 0.0, "expected a nonzero percentage");
     }
 
     #[golden_test(600, 150)]
