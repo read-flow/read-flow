@@ -1,6 +1,6 @@
 mod render;
 #[cfg(test)]
-mod test_helper;
+pub(crate) mod test_helper;
 
 use std::cell::Cell;
 use std::cell::RefCell;

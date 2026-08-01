@@ -11,6 +11,7 @@ use cosmic::Task;
 use cosmic::iced::runtime::Action as RuntimeAction;
 use cosmic::iced::runtime::task::into_stream;
 use futures::StreamExt as _;
+use provider::r#async::HasSetExpired;
 use read_flow_core::db::LOCAL_USER_ID;
 
 use crate::AppSettings;
@@ -78,6 +79,11 @@ pub(crate) async fn scan_and_fetch_document(
     std::fs::copy(&src, &dest).expect("copy fixture");
 
     application_module.scan(&dest).await.expect("scan fixture");
+    // The document provider caches `get_documents()` results until told
+    // otherwise; invalidate so the just-scanned document is visible below.
+    // (Callers that scan more than once per `document_provider` need this,
+    // since nothing else drives cache invalidation off a plain `scan()`.)
+    document_provider.set_expired().await;
 
     let stored = dest.canonicalize().unwrap_or(dest);
     let pool = application_module.connection_pool().await;

@@ -439,6 +439,60 @@ impl Pages {
         })
     }
 
+    /// Save reading progress for every currently open EPUB/MuPDF viewer.
+    /// Called when the application is closing — viewers that were never
+    /// individually closed (and so never hit `CloseEpubViewer`/
+    /// `CloseMuPdfViewer`) get one last chance to persist.
+    pub fn save_all_reading_progress(&self) -> Task<Action<PageMessage>> {
+        let document_provider = self.document_provider.clone();
+        let saves: Vec<(Fingerprint, crate::reading_progress::Viewer, String, f64)> = self
+            .epub_viewers
+            .iter()
+            .filter_map(|(fingerprint, viewer)| {
+                viewer.current_progress().map(|(position, percentage)| {
+                    (
+                        fingerprint.clone(),
+                        crate::reading_progress::Viewer::Epub,
+                        position,
+                        percentage,
+                    )
+                })
+            })
+            .chain(
+                self.mu_pdf_viewers
+                    .iter()
+                    .filter_map(|(fingerprint, viewer)| {
+                        viewer.current_progress().map(|(position, percentage)| {
+                            (
+                                fingerprint.clone(),
+                                crate::reading_progress::Viewer::MuPdf,
+                                position,
+                                percentage,
+                            )
+                        })
+                    }),
+            )
+            .collect();
+
+        if saves.is_empty() {
+            return Task::none();
+        }
+
+        task::future(async move {
+            for (fingerprint, viewer, position, percentage) in saves {
+                save_reading_state(
+                    &document_provider,
+                    fingerprint,
+                    viewer,
+                    position,
+                    percentage,
+                )
+                .await;
+            }
+            PageMessage::Noop
+        })
+    }
+
     pub fn update(&mut self, message: PageMessage) -> Task<Action<PageMessage>> {
         tracing::debug!("received: {message:?}");
         match message {
@@ -1104,5 +1158,82 @@ mod tests {
         assert!(
             matches!(mapped, PageMessage::OpenInExternalViewer(d) if d.document_guid == document.document_guid)
         );
+    }
+
+    #[tokio::test]
+    async fn save_all_reading_progress_saves_every_open_viewer() {
+        let (application_module, document_provider, _db_dir) =
+            crate::test_support::document_provider().await;
+        let (config, log_bus) = (Config::default(), crate::logging::init());
+
+        let (mut pages, init_task) = Pages::new(
+            application_module.clone(),
+            document_provider.clone(),
+            config,
+            log_bus,
+        );
+        crate::test_support::drain(init_task).await;
+
+        let epub_file = crate::page::epub_viewer::test_helper::EpubBuilder::new("Test")
+            .body("<p>Hello</p>")
+            .build();
+        let (epub_document, _epub_dir) = crate::test_support::scan_and_fetch_document(
+            &application_module,
+            &document_provider,
+            epub_file.path().to_path_buf(),
+            "test.epub",
+        )
+        .await;
+        let (pdf_document, _pdf_dir) = crate::test_support::scan_and_fetch_document(
+            &application_module,
+            &document_provider,
+            crate::bdd::fixtures::sample_pdf_path(),
+            "sample.pdf",
+        )
+        .await;
+        let epub_fingerprint = epub_document.contents[0].fingerprint.clone();
+        let pdf_fingerprint = pdf_document.contents[0].fingerprint.clone();
+
+        for document in [epub_document, pdf_document] {
+            let messages =
+                crate::test_support::drain(pages.update(PageMessage::OpenDocument(document))).await;
+            for message in messages {
+                if !matches!(message, PageMessage::Out(_)) {
+                    let _ = pages.update(message);
+                }
+            }
+        }
+
+        crate::test_support::drain(pages.save_all_reading_progress()).await;
+
+        let aggregator = document_provider.aggregator.read().await;
+        let epub_state = aggregator
+            .get_reading_state(&epub_fingerprint)
+            .await
+            .expect("query epub reading state")
+            .expect("epub reading state saved");
+        assert!(epub_state.position.contains("cfi"));
+        let pdf_state = aggregator
+            .get_reading_state(&pdf_fingerprint)
+            .await
+            .expect("query pdf reading state")
+            .expect("pdf reading state saved");
+        assert!(pdf_state.position.contains("\"page\":1"));
+    }
+
+    #[tokio::test]
+    async fn save_all_reading_progress_is_a_noop_with_no_open_viewers() {
+        let (application_module, document_provider, _db_dir) =
+            crate::test_support::document_provider().await;
+        let (pages, init_task) = Pages::new(
+            application_module,
+            document_provider,
+            Config::default(),
+            crate::logging::init(),
+        );
+        crate::test_support::drain(init_task).await;
+
+        let messages = crate::test_support::drain(pages.save_all_reading_progress()).await;
+        assert!(messages.is_empty());
     }
 }
