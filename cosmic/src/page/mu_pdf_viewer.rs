@@ -36,6 +36,10 @@ use crate::client::ClientSelector;
 use crate::document_provider::DocumentProvider;
 use crate::fl;
 use crate::page::Page;
+use crate::reading_progress::ReadingProgress;
+use crate::reading_progress::Viewer;
+use crate::reading_progress::ViewerPosition;
+use crate::reading_progress::extract;
 
 type Fingerprint = String;
 
@@ -174,10 +178,7 @@ fn display_list_to_image_tinted(
 #[derive(Clone, Debug)]
 pub enum MuPdfViewerOutput {
     /// (fingerprint, reading progress) — None when pages not yet loaded.
-    Close(
-        Fingerprint,
-        Option<crate::reading_progress::ReadingProgress>,
-    ),
+    Close(Fingerprint, Option<ReadingProgress>),
     OpenDocumentDetails(Box<Document>),
     OpenInExternalViewer(Box<Document>),
 }
@@ -315,13 +316,10 @@ impl MuPdfViewer {
             async move {
                 let aggregator = document_provider.aggregator.read().await;
                 match aggregator.get_reading_state(&fp).await {
-                    Ok(Some(state)) => crate::reading_progress::extract(
-                        &state.position,
-                        crate::reading_progress::Viewer::MuPdf,
-                    )
-                    .and_then(|own| parse_page_from_progress(&own))
-                    // Wire format is 1-based; convert to the 0-based active_page index.
-                    .map(|wire_page| wire_page.saturating_sub(1)),
+                    Ok(Some(state)) => extract(&state.position, Viewer::MuPdf)
+                        .and_then(|own| parse_page_from_progress(&own))
+                        // Wire format is 1-based; convert to the 0-based active_page index.
+                        .map(|wire_page| wire_page.saturating_sub(1)),
                     Ok(None) => None,
                     Err(e) => {
                         tracing::warn!("failed to load reading state: {e}");
@@ -783,13 +781,13 @@ impl MuPdfViewer {
 
     /// Current page and completion percentage, if any pages have loaded.
     /// `None` while the document is still opening.
-    pub(super) fn current_progress(&self) -> Option<crate::reading_progress::ReadingProgress> {
+    pub(super) fn current_progress(&self) -> Option<ReadingProgress> {
         if self.pages.is_empty() {
             return None;
         }
         let percentage = (self.active_page as f64 + 1.0) / self.pages.len() as f64;
-        Some(crate::reading_progress::ReadingProgress {
-            position: crate::reading_progress::ViewerPosition::Page(self.active_page),
+        Some(ReadingProgress {
+            position: ViewerPosition::Page(self.active_page),
             percentage,
         })
     }
@@ -1395,10 +1393,7 @@ mod progress_json_tests {
         // The fixture is a single-page PDF (see `sample_pdf_path`'s doc comment),
         // so the loaded page is deterministically page 0 (0-based) at 100%.
         let progress = viewer.current_progress().expect("pages loaded");
-        assert_eq!(
-            progress.position,
-            crate::reading_progress::ViewerPosition::Page(0)
-        );
+        assert_eq!(progress.position, ViewerPosition::Page(0));
         assert!((progress.percentage - 1.0).abs() < 1e-9);
     }
 }
