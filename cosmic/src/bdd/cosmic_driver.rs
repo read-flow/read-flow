@@ -49,9 +49,21 @@ use crate::bdd::fixtures;
 use crate::bdd::rest_driver;
 use crate::client::ClientSelector;
 use crate::document_provider::DocumentProvider;
+use crate::logging::LogBus;
 use crate::page::Page;
+use crate::page::PageMessage;
+use crate::page::Pages;
 use crate::page::PreferencesMessage;
 use crate::page::PreferencesPage;
+
+/// `Pages::new` needs a `LogBus`; its only constructor (`logging::init`)
+/// installs a process-global tracing subscriber, so it must run at most
+/// once across every scenario in this test binary.
+static LOG_BUS: std::sync::OnceLock<LogBus> = std::sync::OnceLock::new();
+
+fn log_bus() -> LogBus {
+    LOG_BUS.get_or_init(crate::logging::init).clone()
+}
 
 pub struct CosmicDriver {
     application_module: Arc<ApplicationModule>,
@@ -71,6 +83,15 @@ pub struct CosmicDriver {
     /// `app.theme_overrides` scenarios (there's no live `cosmic::Core` here
     /// to read a real system preference from).
     system_theme_variant: read_flow_core::settings::ThemeVariant,
+    /// `Pages` opened by `open_epub_and_pdf_for_reading`, held so
+    /// `close_application` can run the real exit-save path against it.
+    open_pages: Option<Pages>,
+    /// Temp dirs created by `scan_fixture_path` for each seeded fixture,
+    /// kept alive for the driver's lifetime so the copied file still exists
+    /// on disk if a later step (e.g. `open_epub_and_pdf_for_reading`) needs
+    /// to actually read it back — scanning only needs the file transiently,
+    /// but real viewer opens don't.
+    fixture_scan_dirs: std::cell::RefCell<Vec<tempfile::TempDir>>,
 }
 
 impl CosmicDriver {
@@ -112,6 +133,8 @@ impl CosmicDriver {
             _temp_dir: temp_dir,
             registered_remote: None,
             system_theme_variant: read_flow_core::settings::ThemeVariant::Light,
+            open_pages: None,
+            fixture_scan_dirs: std::cell::RefCell::new(Vec::new()),
         }
     }
 
@@ -475,6 +498,7 @@ impl CosmicDriver {
         let scan_dir = tempfile::tempdir().expect("temp scan dir");
         let dest = scan_dir.path().join(filename);
         std::fs::copy(src, &dest).expect("copy fixture epub");
+        self.fixture_scan_dirs.borrow_mut().push(scan_dir);
 
         self.application_module
             .scan(&dest)
@@ -1165,6 +1189,57 @@ impl CosmicDriver {
             .clone()
             .expect("pdf fixture must produce a document (check title in PDF metadata)");
         (file.guid, doc_api_guid, file.fingerprint)
+    }
+
+    /// -- reading.progress (app-exit save) --
+    /// Opens the EPUB and PDF fixtures for reading through a real `Pages`
+    /// instance — the same `PageMessage::OpenDocument` path production code
+    /// uses — so `close_application` exercises the real
+    /// `save_all_reading_progress`. Returns `(epub_fingerprint,
+    /// pdf_fingerprint)`.
+    pub async fn open_epub_and_pdf_for_reading(&mut self) -> (String, String) {
+        let (_, epub_api_guid, epub_fingerprint) = self.seed_document().await;
+        let (_, pdf_api_guid, pdf_fingerprint) = self.seed_pdf_document().await;
+
+        let (mut pages, init_task) = Pages::new(
+            self.application_module.clone(),
+            self.document_provider.clone(),
+            crate::config::Config::default(),
+            log_bus(),
+        );
+        drain(init_task).await;
+
+        let docs = self
+            .document_provider
+            .get_documents()
+            .await
+            .expect("get documents");
+        let epub_doc = docs.get(&epub_api_guid).cloned().expect("epub document");
+        let pdf_doc = docs.get(&pdf_api_guid).cloned().expect("pdf document");
+
+        // Drive each viewer's init task through `Pages::update` so `chapters`/
+        // `pages` populate for real, exactly like the live app does. `Out`
+        // messages (nav-tree bookkeeping) are dropped — there's no parent
+        // component here to route them to, and this test doesn't need them.
+        for doc in [epub_doc, pdf_doc] {
+            let messages = drain(pages.update(PageMessage::OpenDocument(doc))).await;
+            for message in messages {
+                if !matches!(message, PageMessage::Out(_)) {
+                    let _ = pages.update(message);
+                }
+            }
+        }
+
+        self.open_pages = Some(pages);
+        (epub_fingerprint, pdf_fingerprint)
+    }
+
+    pub async fn close_application(&mut self) {
+        let pages = self
+            .open_pages
+            .as_ref()
+            .expect("open_epub_and_pdf_for_reading must run first");
+        drain(pages.save_all_reading_progress()).await;
     }
 
     /// Returns `true` if MuPDF can open the PDF fixture (the main observable

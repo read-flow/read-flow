@@ -12,3 +12,10 @@ Feature: Reading progress
     And a document has been added to the library
     When I set the reading progress to 50% at position "chapter-2"
     Then the reading progress is 50% at "chapter-2"
+
+  @cosmic
+  Scenario: Closing the application saves progress for every open viewer
+    Given a read-flow server is running with user "alice" and passphrase "correct-horse"
+    When I open the EPUB and PDF documents for reading
+    And I close the application
+    Then reading progress was saved for both open documents

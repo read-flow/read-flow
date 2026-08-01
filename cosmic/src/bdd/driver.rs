@@ -435,6 +435,24 @@ impl Driver {
         }
     }
 
+    pub async fn open_epub_and_pdf_for_reading(&mut self) -> (String, String) {
+        match self {
+            Self::Rest(_) => {
+                panic!("app-exit save has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.open_epub_and_pdf_for_reading().await,
+        }
+    }
+
+    pub async fn close_application(&mut self) {
+        match self {
+            Self::Rest(_) => {
+                panic!("app-exit save has no REST surface — run with BDD_DRIVER=cosmic")
+            }
+            Self::Cosmic(driver) => driver.close_application().await,
+        }
+    }
+
     // -- documents.detail_view / documents.edit_metadata --
 
     pub async fn get_document_title(&self, doc_api_guid: &str) -> String {
