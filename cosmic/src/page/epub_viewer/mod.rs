@@ -57,6 +57,10 @@ use crate::page::epub_viewer::render::RenderContext;
 use crate::page::epub_viewer::render::render_partial_paragraph;
 use crate::page::epub_viewer::render::render_partial_preformatted;
 use crate::page::image_viewer::ViewerImage;
+use crate::reading_progress::ReadingProgress;
+use crate::reading_progress::Viewer;
+use crate::reading_progress::ViewerPosition;
+use crate::reading_progress::extract;
 
 // --- Block highlight ---
 
@@ -344,10 +348,7 @@ impl From<EpubDocument> for CloneableEpubDocument {
 #[derive(Debug, Clone)]
 pub enum EpubViewerOutput {
     /// Carries the fingerprint and the reading progress to persist, if any.
-    Close(
-        Fingerprint,
-        Option<crate::reading_progress::ReadingProgress>,
-    ),
+    Close(Fingerprint, Option<ReadingProgress>),
     /// Open the image viewer page for the given image.
     OpenImageViewer(ViewerImage),
     /// Request the App to navigate to (activate) this viewer's page.
@@ -604,15 +605,10 @@ impl EpubViewer {
             async move {
                 let aggregator = document_provider.aggregator.read().await;
                 match aggregator.get_reading_state(&fp).await {
-                    Ok(Some(state)) => {
-                        match crate::reading_progress::extract(
-                            &state.position,
-                            crate::reading_progress::Viewer::Epub,
-                        ) {
-                            Some(own) => parse_reading_progress(&own),
-                            None => ReadingPosition::default(),
-                        }
-                    }
+                    Ok(Some(state)) => match extract(&state.position, Viewer::Epub) {
+                        Some(own) => parse_reading_progress(&own),
+                        None => ReadingPosition::default(),
+                    },
                     Ok(None) => ReadingPosition::default(),
                     Err(e) => {
                         tracing::warn!("failed to load reading state: {e}");
@@ -2104,10 +2100,10 @@ fn serialize_progress(
     chapters: &[EpubChapter],
     chapter_idx: usize,
     first_block: usize,
-) -> (crate::reading_progress::ViewerPosition, f64) {
+) -> (ViewerPosition, f64) {
     let cfi = cfi_for_block(chapters, chapter_idx, first_block)
         .unwrap_or_else(|| format!("epubcfi(/6/{}!:0)", (chapter_idx as u32 + 1) * 2));
-    let position = crate::reading_progress::ViewerPosition::Cfi(cfi);
+    let position = ViewerPosition::Cfi(cfi);
     let total = chapters.len();
     let percentage = if total > 0 {
         (chapter_idx as f64 + 1.0) / total as f64
@@ -3254,7 +3250,7 @@ impl EpubViewer {
 
     /// Current reading position (EPUB CFI) and completion percentage, if a
     /// chapter has loaded. `None` while the document is still opening.
-    pub(super) fn current_progress(&self) -> Option<crate::reading_progress::ReadingProgress> {
+    pub(super) fn current_progress(&self) -> Option<ReadingProgress> {
         if self.chapters.is_empty() {
             return None;
         }
@@ -3271,7 +3267,7 @@ impl EpubViewer {
         };
         let (position, percentage) =
             serialize_progress(&self.chapters, self.active_chapter, first_block);
-        Some(crate::reading_progress::ReadingProgress {
+        Some(ReadingProgress {
             position,
             percentage,
         })
@@ -3383,6 +3379,7 @@ mod tests {
     use cosmic_golden::golden_test;
 
     use super::Page;
+    use super::ViewerPosition;
     use super::load_epub_chapters;
     use super::render_chapter_blocks;
     use super::test_helper::EpubBuilder;
@@ -3421,10 +3418,7 @@ mod tests {
 
         let progress = viewer.current_progress().expect("chapters loaded");
         assert!(
-            matches!(
-                progress.position,
-                crate::reading_progress::ViewerPosition::Cfi(_)
-            ),
+            matches!(progress.position, ViewerPosition::Cfi(_)),
             "expected a CFI position, got {:?}",
             progress.position
         );

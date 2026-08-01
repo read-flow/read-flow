@@ -69,6 +69,8 @@ pub use crate::page::image_viewer::ViewerImage;
 use crate::page::mu_pdf_viewer::MuPdfViewer;
 use crate::page::mu_pdf_viewer::MuPdfViewerMessage;
 use crate::page::mu_pdf_viewer::MuPdfViewerOutput;
+use crate::reading_progress::ReadingProgress;
+use crate::reading_progress::merge;
 
 type Fingerprint = String;
 
@@ -140,15 +142,9 @@ pub enum PageMessage {
     OpenInExternalViewer(Document),
     EpubViewer(Fingerprint, EpubViewerMessage),
     OpenDocument(Document),
-    CloseEpubViewer(
-        Fingerprint,
-        Option<crate::reading_progress::ReadingProgress>,
-    ),
+    CloseEpubViewer(Fingerprint, Option<ReadingProgress>),
     MuPdfViewer(Fingerprint, MuPdfViewerMessage),
-    CloseMuPdfViewer(
-        Fingerprint,
-        Option<crate::reading_progress::ReadingProgress>,
-    ),
+    CloseMuPdfViewer(Fingerprint, Option<ReadingProgress>),
     ImageViewer(u64, ImageViewerMessage),
     OpenImageViewer(ViewerImage),
     CloseImageViewer(u64),
@@ -451,7 +447,7 @@ impl Pages {
     /// `CloseMuPdfViewer`) get one last chance to persist.
     pub fn save_all_reading_progress(&self) -> Task<Action<PageMessage>> {
         let document_provider = self.document_provider.clone();
-        let saves: Vec<(Fingerprint, crate::reading_progress::ReadingProgress)> = self
+        let saves: Vec<(Fingerprint, ReadingProgress)> = self
             .epub_viewers
             .iter()
             .filter_map(|(fingerprint, viewer)| {
@@ -1009,7 +1005,7 @@ fn map_image_viewer_message(id: u64, msg: ImageViewerMessage) -> PageMessage {
 async fn save_reading_state(
     document_provider: &DocumentProvider,
     fingerprint: Fingerprint,
-    progress: crate::reading_progress::ReadingProgress,
+    progress: ReadingProgress,
 ) {
     let existing = {
         let aggregator = document_provider.aggregator.read().await;
@@ -1019,7 +1015,7 @@ async fn save_reading_state(
             .ok()
             .flatten()
     };
-    let merged_position = crate::reading_progress::merge(
+    let merged_position = merge(
         existing.as_ref().map(|s| s.position.as_str()),
         &progress.position,
     );
@@ -1041,7 +1037,7 @@ async fn save_reading_state(
 fn save_reading_state_task(
     document_provider: Arc<DocumentProvider>,
     fingerprint: Fingerprint,
-    progress: crate::reading_progress::ReadingProgress,
+    progress: ReadingProgress,
 ) -> Task<Action<PageMessage>> {
     task::future(async move {
         save_reading_state(&document_provider, fingerprint, progress).await;
