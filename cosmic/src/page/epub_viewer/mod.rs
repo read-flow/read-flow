@@ -2129,9 +2129,13 @@ pub(crate) struct ReadingPosition {
 }
 
 fn parse_reading_progress(progress: &str) -> ReadingPosition {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(progress) else {
+        return ReadingPosition::default();
+    };
+
     // Try new CFI format first.
-    if let Some(cfi_str) = extract_json_string(progress, "cfi")
-        && let Some(locator) = epub::Locator::from_cfi(&cfi_str)
+    if let Some(cfi_str) = value.get("cfi").and_then(|v| v.as_str())
+        && let Some(locator) = epub::Locator::from_cfi(cfi_str)
     {
         return ReadingPosition {
             chapter: Some(locator.spine_index as usize),
@@ -2139,38 +2143,62 @@ fn parse_reading_progress(progress: &str) -> ReadingPosition {
             block_index: None, // resolved in ReadingProgressLoaded when chapters available
         };
     }
+
     // Fall back to legacy format for graceful migration.
-    let mut chapter = None;
-    let mut block_index = None;
-    let progress = progress.trim();
-    if let Some(inner) = progress.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
-        for part in inner.split(',') {
-            if let Some((key, value)) = part.split_once(':') {
-                match key.trim().trim_matches('"') {
-                    "chapter" => chapter = value.trim().parse().ok(),
-                    "block" => block_index = value.trim().parse().ok(),
-                    _ => {}
-                }
-            }
-        }
-    }
     ReadingPosition {
-        chapter,
+        chapter: value
+            .get("chapter")
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize),
         node_path: vec![],
-        block_index,
+        block_index: value
+            .get("block")
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize),
     }
 }
 
-/// Extract the string value of a JSON key from a flat JSON object string.
-/// Only handles simple string values without escaped quotes.
-fn extract_json_string(json: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{}\"", key);
-    let after_key = json.find(&needle)? + needle.len();
-    let rest = json[after_key..].trim_start();
-    let rest = rest.strip_prefix(':')?;
-    let rest = rest.trim_start().strip_prefix('"')?;
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+#[cfg(test)]
+mod reading_progress_parse_tests {
+    use super::*;
+
+    #[test]
+    fn parses_cfi_format() {
+        let pos = parse_reading_progress(r#"{"cfi":"epubcfi(/6/4!/2:10)"}"#);
+        assert_eq!(pos.chapter, Some(1));
+        assert_eq!(pos.node_path, vec![0]);
+        assert!(pos.block_index.is_none());
+    }
+
+    #[test]
+    fn parses_legacy_chapter_block_format() {
+        let pos = parse_reading_progress(r#"{"chapter":2,"block":5}"#);
+        assert_eq!(pos.chapter, Some(2));
+        assert_eq!(pos.block_index, Some(5));
+        assert!(pos.node_path.is_empty());
+    }
+
+    #[test]
+    fn returns_default_for_garbage_input() {
+        let pos = parse_reading_progress("not json");
+        assert!(pos.chapter.is_none());
+        assert!(pos.block_index.is_none());
+    }
+
+    #[test]
+    fn returns_default_for_empty_object() {
+        let pos = parse_reading_progress("{}");
+        assert!(pos.chapter.is_none());
+        assert!(pos.block_index.is_none());
+    }
+
+    #[test]
+    fn invalid_cfi_falls_back_to_legacy_fields() {
+        // "cfi" present but unparseable — falls through to the (absent) legacy fields.
+        let pos = parse_reading_progress(r#"{"cfi":"not a cfi"}"#);
+        assert!(pos.chapter.is_none());
+        assert!(pos.block_index.is_none());
+    }
 }
 
 /// Resolve embedded SVG image references in-place at chapter load time, so that
