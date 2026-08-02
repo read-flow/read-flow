@@ -16,39 +16,63 @@
 //! ```
 //!
 //! Rows written before this format existed store one viewer's raw position
-//! directly, untagged. [`extract`] and [`merge`] recognize those by their
-//! distinctive keys (`page` for MuPDF; `cfi` for the EPUB viewer's own
-//! format) so they migrate into the right slot instead of being misread by
-//! the other viewer or dropped.
+//! directly, untagged (`{"cfi": "..."}` or `{"page": 42}`). [`StoredPosition`]
+//! carries both the nested and the top-level legacy fields as plain
+//! `Option`s — serde already treats an absent key as `None`, so no manual
+//! tagged/untagged dispatch is needed — and [`StoredPosition::epub`] /
+//! [`StoredPosition::mupdf`] fall back to the legacy field when the nested
+//! one is absent.
 
-use serde_json::Value;
-use serde_json::json;
+use serde::Deserialize;
+use serde::Serialize;
 
 /// Which viewer a position belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Viewer {
     Epub,
     MuPdf,
 }
 
-impl Viewer {
-    fn key(self) -> &'static str {
-        match self {
-            Viewer::Epub => "epub",
-            Viewer::MuPdf => "mupdf",
-        }
-    }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct EpubPosition {
+    cfi: String,
 }
 
-/// Which viewer an untagged (pre-combined-format) position belongs to,
-/// judging by its distinctive keys. `None` if it matches neither.
-fn sniff_legacy_viewer(map: &serde_json::Map<String, Value>) -> Option<Viewer> {
-    if map.contains_key("page") {
-        Some(Viewer::MuPdf)
-    } else if map.contains_key("cfi") {
-        Some(Viewer::Epub)
-    } else {
-        None
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct MuPdfPosition {
+    /// 1-based wire page number.
+    page: u64,
+}
+
+/// The on-disk shape of `ReadingState.position`. The `cfi`/`page` fields
+/// only ever appear on rows written before the combined `viewer`/`epub`/
+/// `mupdf` envelope existed — see the module docs.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct StoredPosition {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    viewer: Option<Viewer>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    epub: Option<EpubPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mupdf: Option<MuPdfPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cfi: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    page: Option<u64>,
+}
+
+impl StoredPosition {
+    fn epub(&self) -> Option<EpubPosition> {
+        self.epub
+            .clone()
+            .or_else(|| self.cfi.clone().map(|cfi| EpubPosition { cfi }))
+    }
+
+    fn mupdf(&self) -> Option<MuPdfPosition> {
+        self.mupdf
+            .clone()
+            .or_else(|| self.page.map(|page| MuPdfPosition { page }))
     }
 }
 
@@ -68,32 +92,6 @@ impl ViewerPosition {
             Self::Page(_) => Viewer::MuPdf,
         }
     }
-
-    /// The wire-format JSON value for this position. Page numbers are
-    /// 1-based on the wire (the human-visible page number, matching the
-    /// PWA's own `currentPage`), hence the `+ 1`.
-    fn to_value(&self) -> Value {
-        match self {
-            Self::Cfi(cfi) => json!({ "cfi": cfi }),
-            Self::Page(page) => json!({ "page": page + 1 }),
-        }
-    }
-
-    /// Build a `ViewerPosition` from `viewer`'s own JSON value (already
-    /// resolved out of the combined envelope by [`extract`]). `None` if
-    /// the value doesn't look like a position `viewer` recognizes.
-    fn from_value(viewer: Viewer, value: &Value) -> Option<Self> {
-        match viewer {
-            Viewer::MuPdf => {
-                let wire_page = value.get("page")?.as_u64()?;
-                Some(Self::Page((wire_page as usize).saturating_sub(1)))
-            }
-            Viewer::Epub => {
-                let cfi = value.get("cfi").and_then(|v| v.as_str())?;
-                Some(Self::Cfi(cfi.to_string()))
-            }
-        }
-    }
 }
 
 /// A viewer's reading position and how far through the document it is.
@@ -107,21 +105,13 @@ pub struct ReadingProgress {
 /// means no saved position for this viewer (it should start from the
 /// beginning).
 pub fn extract(stored: &str, viewer: Viewer) -> Option<ViewerPosition> {
-    let Ok(Value::Object(map)) = serde_json::from_str::<Value>(stored) else {
-        return None;
-    };
-
-    let value = if map.contains_key("viewer") {
-        map.get(viewer.key()).cloned().filter(|v| !v.is_null())?
-    } else if sniff_legacy_viewer(&map) == Some(viewer) {
-        // Untagged legacy row: only hand it back if it looks like this
-        // viewer's own format, otherwise it belongs to the other viewer.
-        Value::Object(map)
-    } else {
-        return None;
-    };
-
-    ViewerPosition::from_value(viewer, &value)
+    let parsed: StoredPosition = serde_json::from_str(stored).ok()?;
+    match viewer {
+        Viewer::Epub => parsed.epub().map(|e| ViewerPosition::Cfi(e.cfi)),
+        Viewer::MuPdf => parsed
+            .mupdf()
+            .map(|m| ViewerPosition::Page((m.page as usize).saturating_sub(1))),
+    }
 }
 
 /// Merge `own_position` (this viewer's own position) into `existing` (the
@@ -129,34 +119,30 @@ pub fn extract(stored: &str, viewer: Viewer) -> Option<ViewerPosition> {
 /// other viewer's position untouched. Returns the new combined string to
 /// persist.
 pub fn merge(existing: Option<&str>, own_position: &ViewerPosition) -> String {
-    let mut epub: Option<Value> = None;
-    let mut mupdf: Option<Value> = None;
+    let existing: StoredPosition = existing
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
 
-    if let Some(Value::Object(map)) = existing.and_then(|s| serde_json::from_str(s).ok()) {
-        if map.contains_key("viewer") {
-            epub = map.get("epub").cloned().filter(|v| !v.is_null());
-            mupdf = map.get("mupdf").cloned().filter(|v| !v.is_null());
-        } else {
-            match sniff_legacy_viewer(&map) {
-                Some(Viewer::Epub) => epub = Some(Value::Object(map)),
-                Some(Viewer::MuPdf) => mupdf = Some(Value::Object(map)),
-                None => {}
-            }
+    let mut epub = existing.epub();
+    let mut mupdf = existing.mupdf();
+
+    match own_position {
+        ViewerPosition::Cfi(cfi) => epub = Some(EpubPosition { cfi: cfi.clone() }),
+        ViewerPosition::Page(page) => {
+            mupdf = Some(MuPdfPosition {
+                page: (*page + 1) as u64,
+            })
         }
     }
 
-    let viewer = own_position.viewer();
-    match viewer {
-        Viewer::Epub => epub = Some(own_position.to_value()),
-        Viewer::MuPdf => mupdf = Some(own_position.to_value()),
-    }
-
-    json!({
-        "viewer": viewer.key(),
-        "epub": epub,
-        "mupdf": mupdf,
+    serde_json::to_string(&StoredPosition {
+        viewer: Some(own_position.viewer()),
+        epub,
+        mupdf,
+        cfi: None,
+        page: None,
     })
-    .to_string()
+    .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -240,40 +226,54 @@ mod tests {
     }
 
     #[test]
-    fn viewer_position_cfi_produces_the_cfi_wire_shape() {
-        assert_eq!(
-            ViewerPosition::Cfi("epubcfi(/6/4)".to_string()).to_value(),
-            serde_json::json!({"cfi": "epubcfi(/6/4)"})
-        );
-    }
-
-    #[test]
-    fn viewer_position_page_produces_one_based_wire_shape() {
-        assert_eq!(
-            ViewerPosition::Page(0).to_value(),
-            serde_json::json!({"page": 1})
-        );
-    }
-
-    #[test]
     fn viewer_position_reports_its_own_viewer() {
         assert_eq!(ViewerPosition::Cfi("a".to_string()).viewer(), Viewer::Epub);
         assert_eq!(ViewerPosition::Page(0).viewer(), Viewer::MuPdf);
     }
 
     #[test]
-    fn from_value_returns_none_for_a_value_the_viewer_does_not_recognize() {
+    fn stored_position_epub_falls_back_to_the_legacy_top_level_cfi_field() {
+        let stored = StoredPosition {
+            cfi: Some("a".to_string()),
+            ..Default::default()
+        };
         assert_eq!(
-            ViewerPosition::from_value(Viewer::MuPdf, &serde_json::json!({"cfi": "a"})),
-            None
+            stored.epub(),
+            Some(EpubPosition {
+                cfi: "a".to_string()
+            })
         );
     }
 
     #[test]
-    fn from_value_epub_returns_none_without_a_cfi_key() {
+    fn stored_position_mupdf_falls_back_to_the_legacy_top_level_page_field() {
+        let stored = StoredPosition {
+            page: Some(7),
+            ..Default::default()
+        };
+        assert_eq!(stored.mupdf(), Some(MuPdfPosition { page: 7 }));
+    }
+
+    #[test]
+    fn stored_position_prefers_the_nested_field_over_the_legacy_one() {
+        let stored = StoredPosition {
+            epub: Some(EpubPosition {
+                cfi: "nested".to_string(),
+            }),
+            cfi: Some("legacy".to_string()),
+            ..Default::default()
+        };
         assert_eq!(
-            ViewerPosition::from_value(Viewer::Epub, &serde_json::json!({"chapter": 2})),
-            None
+            stored.epub(),
+            Some(EpubPosition {
+                cfi: "nested".to_string()
+            })
         );
+    }
+
+    #[test]
+    fn viewer_serializes_as_a_lowercase_string() {
+        assert_eq!(serde_json::to_string(&Viewer::Epub).unwrap(), "\"epub\"");
+        assert_eq!(serde_json::to_string(&Viewer::MuPdf).unwrap(), "\"mupdf\"");
     }
 }
