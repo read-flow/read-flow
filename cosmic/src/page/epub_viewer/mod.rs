@@ -1446,7 +1446,6 @@ impl Page for EpubViewer {
                         .get(c)
                         .map(|ch| block_index_for_path(ch, &pos.node_path))
                         .unwrap_or(0);
-                    let block_idx = pos.block_index.unwrap_or(block_idx);
                     self.pending_block_index = Some(block_idx);
                     if self.view_mode == ViewMode::Scroll {
                         let content_w = 800.0;
@@ -1465,7 +1464,6 @@ impl Page for EpubViewer {
                 } else {
                     // Chapters not yet loaded — store for resolution in EpubLoaded.
                     self.pending_node_path = pos.node_path;
-                    self.pending_block_index = pos.block_index;
                 }
                 Task::none()
             }
@@ -2113,18 +2111,13 @@ fn serialize_progress(
 }
 
 /// Parsed reading position from a CFI-based progress JSON string.
-///
-/// Accepts both the new format `{"cfi":"epubcfi(...)"}` and falls back to
-/// the legacy format `{"chapter":N,"block":M,...}` for forward-compatibility.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct ReadingPosition {
     /// Parsed spine index from the CFI (used to select the chapter).
     chapter: Option<usize>,
     /// DOM node path extracted from the CFI; resolved to a block index once
-    /// chapters are available.  Empty when parsed from the legacy format.
+    /// chapters are available.
     node_path: Vec<u32>,
-    /// Flat block index from the legacy format (already resolved).
-    block_index: Option<usize>,
 }
 
 /// Resolve a typed reading position (already extracted from the stored
@@ -2136,14 +2129,8 @@ fn resolve_reading_position(position: ViewerPosition) -> ReadingPosition {
             Some(locator) => ReadingPosition {
                 chapter: Some(locator.spine_index as usize),
                 node_path: locator.node_path,
-                block_index: None, // resolved in ReadingProgressLoaded when chapters available
             },
             None => ReadingPosition::default(),
-        },
-        ViewerPosition::LegacyEpubChapterBlock { chapter, block } => ReadingPosition {
-            chapter,
-            node_path: vec![],
-            block_index: block,
         },
         // `extract(_, Viewer::Epub)` never returns `Page` — that variant is MuPDF-only.
         ViewerPosition::Page(_) => ReadingPosition::default(),
@@ -2159,25 +2146,13 @@ mod resolve_reading_position_tests {
         let pos = resolve_reading_position(ViewerPosition::Cfi("epubcfi(/6/4!/2:10)".to_string()));
         assert_eq!(pos.chapter, Some(1));
         assert_eq!(pos.node_path, vec![0]);
-        assert!(pos.block_index.is_none());
-    }
-
-    #[test]
-    fn resolves_legacy_chapter_block_format() {
-        let pos = resolve_reading_position(ViewerPosition::LegacyEpubChapterBlock {
-            chapter: Some(2),
-            block: Some(5),
-        });
-        assert_eq!(pos.chapter, Some(2));
-        assert_eq!(pos.block_index, Some(5));
-        assert!(pos.node_path.is_empty());
     }
 
     #[test]
     fn invalid_cfi_resolves_to_default() {
         let pos = resolve_reading_position(ViewerPosition::Cfi("not a cfi".to_string()));
         assert!(pos.chapter.is_none());
-        assert!(pos.block_index.is_none());
+        assert!(pos.node_path.is_empty());
     }
 }
 
