@@ -54,21 +54,26 @@ fn sniff_legacy_viewer(map: &serde_json::Map<String, Value>) -> Option<Viewer> {
 
 /// A single viewer's own reading position, typed by format instead of
 /// carried as an opaque JSON string.
-///
-/// TODO: the read path (`extract`, `ReadingProgressLoaded`, each viewer's
-/// own progress-loading task) still hands back/consumes raw JSON strings.
-/// It could follow `ViewerPosition` the same way the write path now does.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ViewerPosition {
     Cfi(String),
     /// 0-based page index.
     Page(usize),
+    /// Pre-CFI EPUB format: a flat chapter/block pair instead of a CFI.
+    /// Written only by versions of this app that predate the CFI format —
+    /// nothing writes this today (`current_progress()` always produces
+    /// `Cfi`), but `extract` still needs to hand old rows back as
+    /// *something* typed rather than falling back to a raw string.
+    LegacyEpubChapterBlock {
+        chapter: Option<usize>,
+        block: Option<usize>,
+    },
 }
 
 impl ViewerPosition {
     pub fn viewer(&self) -> Viewer {
         match self {
-            Self::Cfi(_) => Viewer::Epub,
+            Self::Cfi(_) | Self::LegacyEpubChapterBlock { .. } => Viewer::Epub,
             Self::Page(_) => Viewer::MuPdf,
         }
     }
@@ -80,6 +85,34 @@ impl ViewerPosition {
         match self {
             Self::Cfi(cfi) => json!({ "cfi": cfi }),
             Self::Page(page) => json!({ "page": page + 1 }),
+            Self::LegacyEpubChapterBlock { chapter, block } => {
+                json!({ "chapter": chapter, "block": block })
+            }
+        }
+    }
+
+    /// Build a `ViewerPosition` from `viewer`'s own JSON value (already
+    /// resolved out of the combined envelope by [`extract`]). `None` if
+    /// the value doesn't look like a position `viewer` recognizes.
+    fn from_value(viewer: Viewer, value: &Value) -> Option<Self> {
+        match viewer {
+            Viewer::MuPdf => {
+                let wire_page = value.get("page")?.as_u64()?;
+                Some(Self::Page((wire_page as usize).saturating_sub(1)))
+            }
+            Viewer::Epub => Some(match value.get("cfi").and_then(|v| v.as_str()) {
+                Some(cfi) => Self::Cfi(cfi.to_string()),
+                None => Self::LegacyEpubChapterBlock {
+                    chapter: value
+                        .get("chapter")
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as usize),
+                    block: value
+                        .get("block")
+                        .and_then(|v| v.as_u64())
+                        .map(|n| n as usize),
+                },
+            }),
         }
     }
 }
@@ -91,24 +124,25 @@ pub struct ReadingProgress {
     pub percentage: f64,
 }
 
-/// Extract `viewer`'s own position from a stored position string, as a raw
-/// string ready to feed into that viewer's own parser. `None` means no
-/// saved position for this viewer (it should start from the beginning).
-pub fn extract(stored: &str, viewer: Viewer) -> Option<String> {
+/// Extract `viewer`'s own position from a stored position string. `None`
+/// means no saved position for this viewer (it should start from the
+/// beginning).
+pub fn extract(stored: &str, viewer: Viewer) -> Option<ViewerPosition> {
     let Ok(Value::Object(map)) = serde_json::from_str::<Value>(stored) else {
         return None;
     };
 
-    if map.contains_key("viewer") {
-        return map
-            .get(viewer.key())
-            .filter(|v| !v.is_null())
-            .map(ToString::to_string);
-    }
+    let value = if map.contains_key("viewer") {
+        map.get(viewer.key()).cloned().filter(|v| !v.is_null())?
+    } else if sniff_legacy_viewer(&map) == Some(viewer) {
+        // Untagged legacy row: only hand it back if it looks like this
+        // viewer's own format, otherwise it belongs to the other viewer.
+        Value::Object(map)
+    } else {
+        return None;
+    };
 
-    // Untagged legacy row: only hand it back if it looks like this viewer's
-    // own format, otherwise it belongs to the other viewer.
-    (sniff_legacy_viewer(&map) == Some(viewer)).then(|| stored.to_string())
+    ViewerPosition::from_value(viewer, &value)
 }
 
 /// Merge `own_position` (this viewer's own position) into `existing` (the
@@ -155,19 +189,18 @@ mod tests {
     #[test]
     fn merge_then_extract_round_trips_own_position() {
         let stored = merge(None, &ViewerPosition::Cfi("epubcfi(/6/4)".to_string()));
-        Assert::that(extract(&stored, Viewer::Epub).as_deref())
-            .is_some(r#"{"cfi":"epubcfi(/6/4)"}"#);
+        Assert::that(extract(&stored, Viewer::Epub))
+            .is(Some(ViewerPosition::Cfi("epubcfi(/6/4)".to_string())));
     }
 
     #[test]
     fn merge_preserves_the_other_viewers_position() {
         let stored = merge(None, &ViewerPosition::Cfi("epubcfi(/6/4)".to_string()));
-        // Page(41) is the 0-based active_page; the wire format is 1-based ("page":42).
         let stored = merge(Some(&stored), &ViewerPosition::Page(41));
 
-        Assert::that(extract(&stored, Viewer::Epub).as_deref())
-            .is_some(r#"{"cfi":"epubcfi(/6/4)"}"#);
-        Assert::that(extract(&stored, Viewer::MuPdf).as_deref()).is_some(r#"{"page":42}"#);
+        Assert::that(extract(&stored, Viewer::Epub))
+            .is(Some(ViewerPosition::Cfi("epubcfi(/6/4)".to_string())));
+        Assert::that(extract(&stored, Viewer::MuPdf)).is(Some(ViewerPosition::Page(41)));
     }
 
     #[test]
@@ -177,8 +210,8 @@ mod tests {
         let stored = merge(Some(&stored), &ViewerPosition::Cfi("b".to_string()));
         let stored = merge(Some(&stored), &ViewerPosition::Page(1));
 
-        Assert::that(extract(&stored, Viewer::Epub).as_deref()).is_some(r#"{"cfi":"b"}"#);
-        Assert::that(extract(&stored, Viewer::MuPdf).as_deref()).is_some(r#"{"page":2}"#);
+        Assert::that(extract(&stored, Viewer::Epub)).is(Some(ViewerPosition::Cfi("b".to_string())));
+        Assert::that(extract(&stored, Viewer::MuPdf)).is(Some(ViewerPosition::Page(1)));
     }
 
     #[test]
@@ -195,32 +228,47 @@ mod tests {
 
     #[test]
     fn legacy_untagged_mupdf_position_migrates_into_mupdf_slot() {
+        // Wire "page":7 is 1-based; ViewerPosition::Page is 0-based.
         let legacy = r#"{"page":7}"#;
-        Assert::that(extract(legacy, Viewer::MuPdf).as_deref()).is_some(legacy);
+        Assert::that(extract(legacy, Viewer::MuPdf)).is(Some(ViewerPosition::Page(6)));
         Assert::that(extract(legacy, Viewer::Epub)).is(None);
 
         let stored = merge(Some(legacy), &ViewerPosition::Cfi("a".to_string()));
-        Assert::that(extract(&stored, Viewer::MuPdf).as_deref()).is_some(legacy);
-        Assert::that(extract(&stored, Viewer::Epub).as_deref()).is_some(r#"{"cfi":"a"}"#);
+        Assert::that(extract(&stored, Viewer::MuPdf)).is(Some(ViewerPosition::Page(6)));
+        Assert::that(extract(&stored, Viewer::Epub)).is(Some(ViewerPosition::Cfi("a".to_string())));
     }
 
     #[test]
     fn legacy_untagged_epub_cfi_position_migrates_into_epub_slot() {
         let legacy = r#"{"cfi":"epubcfi(/6/4)"}"#;
-        Assert::that(extract(legacy, Viewer::Epub).as_deref()).is_some(legacy);
+        Assert::that(extract(legacy, Viewer::Epub))
+            .is(Some(ViewerPosition::Cfi("epubcfi(/6/4)".to_string())));
         Assert::that(extract(legacy, Viewer::MuPdf)).is(None);
 
-        // Page(2) is 0-based; the wire format is 1-based ("page":3).
         let stored = merge(Some(legacy), &ViewerPosition::Page(2));
-        Assert::that(extract(&stored, Viewer::Epub).as_deref()).is_some(legacy);
-        Assert::that(extract(&stored, Viewer::MuPdf).as_deref()).is_some(r#"{"page":3}"#);
+        Assert::that(extract(&stored, Viewer::Epub))
+            .is(Some(ViewerPosition::Cfi("epubcfi(/6/4)".to_string())));
+        Assert::that(extract(&stored, Viewer::MuPdf)).is(Some(ViewerPosition::Page(2)));
     }
 
     #[test]
     fn legacy_untagged_epub_chapter_position_migrates_into_epub_slot() {
         let legacy = r#"{"chapter":2,"block":5}"#;
-        Assert::that(extract(legacy, Viewer::Epub).as_deref()).is_some(legacy);
+        Assert::that(extract(legacy, Viewer::Epub)).is(Some(
+            ViewerPosition::LegacyEpubChapterBlock {
+                chapter: Some(2),
+                block: Some(5),
+            },
+        ));
         Assert::that(extract(legacy, Viewer::MuPdf)).is(None);
+    }
+
+    #[test]
+    fn legacy_chapter_block_round_trips_through_merge_and_extract() {
+        let legacy = r#"{"chapter":2,"block":5}"#;
+        let position = extract(legacy, Viewer::Epub).expect("legacy epub position");
+        let stored = merge(None, &position);
+        Assert::that(extract(&stored, Viewer::Epub)).is(Some(position));
     }
 
     #[test]
@@ -243,5 +291,44 @@ mod tests {
     fn viewer_position_reports_its_own_viewer() {
         assert_eq!(ViewerPosition::Cfi("a".to_string()).viewer(), Viewer::Epub);
         assert_eq!(ViewerPosition::Page(0).viewer(), Viewer::MuPdf);
+        assert_eq!(
+            ViewerPosition::LegacyEpubChapterBlock {
+                chapter: None,
+                block: None
+            }
+            .viewer(),
+            Viewer::Epub
+        );
+    }
+
+    #[test]
+    fn viewer_position_legacy_chapter_block_produces_the_legacy_wire_shape() {
+        assert_eq!(
+            ViewerPosition::LegacyEpubChapterBlock {
+                chapter: Some(2),
+                block: Some(5)
+            }
+            .to_value(),
+            serde_json::json!({"chapter": 2, "block": 5})
+        );
+    }
+
+    #[test]
+    fn from_value_returns_none_for_a_value_the_viewer_does_not_recognize() {
+        assert_eq!(
+            ViewerPosition::from_value(Viewer::MuPdf, &serde_json::json!({"cfi": "a"})),
+            None
+        );
+    }
+
+    #[test]
+    fn from_value_epub_falls_back_to_legacy_chapter_block_without_a_cfi_key() {
+        assert_eq!(
+            ViewerPosition::from_value(Viewer::Epub, &serde_json::json!({})),
+            Some(ViewerPosition::LegacyEpubChapterBlock {
+                chapter: None,
+                block: None
+            })
+        );
     }
 }
