@@ -1317,17 +1317,11 @@ pub(super) fn page_to_progress_json(active_page: usize) -> String {
 /// `{"page":5}`. Callers must subtract 1 to get the internal 0-based
 /// `active_page` index (see [`page_to_progress_json`]).
 fn parse_page_from_progress(progress: &str) -> Option<usize> {
-    // Simple parser to avoid serde_json dependency.
-    let progress = progress.trim();
-    let inner = progress.strip_prefix('{')?.strip_suffix('}')?;
-    for part in inner.split(',') {
-        let (key, value) = part.split_once(':')?;
-        let key = key.trim().trim_matches('"');
-        if key == "page" {
-            return value.trim().parse::<usize>().ok();
-        }
-    }
-    None
+    serde_json::from_str::<serde_json::Value>(progress)
+        .ok()?
+        .get("page")?
+        .as_u64()
+        .map(|n| n as usize)
 }
 
 #[cfg(test)]
