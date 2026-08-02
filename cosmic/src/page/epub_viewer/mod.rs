@@ -605,10 +605,9 @@ impl EpubViewer {
             async move {
                 let aggregator = document_provider.aggregator.read().await;
                 match aggregator.get_reading_state(&fp).await {
-                    Ok(Some(state)) => match extract(&state.position, Viewer::Epub) {
-                        Some(own) => parse_reading_progress(&own),
-                        None => ReadingPosition::default(),
-                    },
+                    Ok(Some(state)) => extract(&state.position, Viewer::Epub)
+                        .map(resolve_reading_position)
+                        .unwrap_or_default(),
                     Ok(None) => ReadingPosition::default(),
                     Err(e) => {
                         tracing::warn!("failed to load reading state: {e}");
@@ -2128,74 +2127,55 @@ pub(crate) struct ReadingPosition {
     block_index: Option<usize>,
 }
 
-fn parse_reading_progress(progress: &str) -> ReadingPosition {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(progress) else {
-        return ReadingPosition::default();
-    };
-
-    // Try new CFI format first.
-    if let Some(cfi_str) = value.get("cfi").and_then(|v| v.as_str())
-        && let Some(locator) = epub::Locator::from_cfi(cfi_str)
-    {
-        return ReadingPosition {
-            chapter: Some(locator.spine_index as usize),
-            node_path: locator.node_path,
-            block_index: None, // resolved in ReadingProgressLoaded when chapters available
-        };
-    }
-
-    // Fall back to legacy format for graceful migration.
-    ReadingPosition {
-        chapter: value
-            .get("chapter")
-            .and_then(|v| v.as_u64())
-            .map(|n| n as usize),
-        node_path: vec![],
-        block_index: value
-            .get("block")
-            .and_then(|v| v.as_u64())
-            .map(|n| n as usize),
+/// Resolve a typed reading position (already extracted from the stored
+/// envelope by `reading_progress::extract`) into the viewer's own restore
+/// state.
+fn resolve_reading_position(position: ViewerPosition) -> ReadingPosition {
+    match position {
+        ViewerPosition::Cfi(cfi) => match epub::Locator::from_cfi(&cfi) {
+            Some(locator) => ReadingPosition {
+                chapter: Some(locator.spine_index as usize),
+                node_path: locator.node_path,
+                block_index: None, // resolved in ReadingProgressLoaded when chapters available
+            },
+            None => ReadingPosition::default(),
+        },
+        ViewerPosition::LegacyEpubChapterBlock { chapter, block } => ReadingPosition {
+            chapter,
+            node_path: vec![],
+            block_index: block,
+        },
+        // `extract(_, Viewer::Epub)` never returns `Page` — that variant is MuPDF-only.
+        ViewerPosition::Page(_) => ReadingPosition::default(),
     }
 }
 
 #[cfg(test)]
-mod reading_progress_parse_tests {
+mod resolve_reading_position_tests {
     use super::*;
 
     #[test]
-    fn parses_cfi_format() {
-        let pos = parse_reading_progress(r#"{"cfi":"epubcfi(/6/4!/2:10)"}"#);
+    fn resolves_cfi_format() {
+        let pos = resolve_reading_position(ViewerPosition::Cfi("epubcfi(/6/4!/2:10)".to_string()));
         assert_eq!(pos.chapter, Some(1));
         assert_eq!(pos.node_path, vec![0]);
         assert!(pos.block_index.is_none());
     }
 
     #[test]
-    fn parses_legacy_chapter_block_format() {
-        let pos = parse_reading_progress(r#"{"chapter":2,"block":5}"#);
+    fn resolves_legacy_chapter_block_format() {
+        let pos = resolve_reading_position(ViewerPosition::LegacyEpubChapterBlock {
+            chapter: Some(2),
+            block: Some(5),
+        });
         assert_eq!(pos.chapter, Some(2));
         assert_eq!(pos.block_index, Some(5));
         assert!(pos.node_path.is_empty());
     }
 
     #[test]
-    fn returns_default_for_garbage_input() {
-        let pos = parse_reading_progress("not json");
-        assert!(pos.chapter.is_none());
-        assert!(pos.block_index.is_none());
-    }
-
-    #[test]
-    fn returns_default_for_empty_object() {
-        let pos = parse_reading_progress("{}");
-        assert!(pos.chapter.is_none());
-        assert!(pos.block_index.is_none());
-    }
-
-    #[test]
-    fn invalid_cfi_falls_back_to_legacy_fields() {
-        // "cfi" present but unparseable — falls through to the (absent) legacy fields.
-        let pos = parse_reading_progress(r#"{"cfi":"not a cfi"}"#);
+    fn invalid_cfi_resolves_to_default() {
+        let pos = resolve_reading_position(ViewerPosition::Cfi("not a cfi".to_string()));
         assert!(pos.chapter.is_none());
         assert!(pos.block_index.is_none());
     }
