@@ -56,19 +56,33 @@ struct StoredPosition {
     epub: Option<EpubPosition>,
     #[serde(skip_serializing_if = "Option::is_none")]
     mupdf: Option<MuPdfPosition>,
+    #[deprecated(
+        note = "pre-envelope legacy row shape — only read, never written; remove once no stored rows use it"
+    )]
     #[serde(skip_serializing_if = "Option::is_none")]
     cfi: Option<String>,
+    #[deprecated(
+        note = "pre-envelope legacy row shape — only read, never written; remove once no stored rows use it"
+    )]
     #[serde(skip_serializing_if = "Option::is_none")]
     page: Option<u64>,
 }
 
 impl StoredPosition {
+    #[allow(
+        deprecated,
+        reason = "the whole point of this fallback is reading the legacy field"
+    )]
     fn epub(&self) -> Option<EpubPosition> {
         self.epub
             .clone()
             .or_else(|| self.cfi.clone().map(|cfi| EpubPosition { cfi }))
     }
 
+    #[allow(
+        deprecated,
+        reason = "the whole point of this fallback is reading the legacy field"
+    )]
     fn mupdf(&self) -> Option<MuPdfPosition> {
         self.mupdf
             .clone()
@@ -139,8 +153,7 @@ pub fn merge(existing: Option<&str>, own_position: &ViewerPosition) -> String {
         viewer: Some(own_position.viewer()),
         epub,
         mupdf,
-        cfi: None,
-        page: None,
+        ..Default::default()
     })
     .unwrap_or_default()
 }
@@ -232,6 +245,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        deprecated,
+        reason = "exercising the legacy fallback requires constructing it"
+    )]
     fn stored_position_epub_falls_back_to_the_legacy_top_level_cfi_field() {
         let stored = StoredPosition {
             cfi: Some("a".to_string()),
@@ -246,6 +263,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        deprecated,
+        reason = "exercising the legacy fallback requires constructing it"
+    )]
     fn stored_position_mupdf_falls_back_to_the_legacy_top_level_page_field() {
         let stored = StoredPosition {
             page: Some(7),
@@ -255,6 +276,10 @@ mod tests {
     }
 
     #[test]
+    #[allow(
+        deprecated,
+        reason = "exercising the legacy fallback requires constructing it"
+    )]
     fn stored_position_prefers_the_nested_field_over_the_legacy_one() {
         let stored = StoredPosition {
             epub: Some(EpubPosition {
