@@ -17,9 +17,9 @@
 //!
 //! Rows written before this format existed store one viewer's raw position
 //! directly, untagged. [`extract`] and [`merge`] recognize those by their
-//! distinctive keys (`page` for MuPDF; `cfi`/`chapter` for the EPUB
-//! viewer's own formats) so they migrate into the right slot instead of
-//! being misread by the other viewer or dropped.
+//! distinctive keys (`page` for MuPDF; `cfi` for the EPUB viewer's own
+//! format) so they migrate into the right slot instead of being misread by
+//! the other viewer or dropped.
 
 use serde_json::Value;
 use serde_json::json;
@@ -45,7 +45,7 @@ impl Viewer {
 fn sniff_legacy_viewer(map: &serde_json::Map<String, Value>) -> Option<Viewer> {
     if map.contains_key("page") {
         Some(Viewer::MuPdf)
-    } else if map.contains_key("cfi") || map.contains_key("chapter") {
+    } else if map.contains_key("cfi") {
         Some(Viewer::Epub)
     } else {
         None
@@ -59,21 +59,12 @@ pub enum ViewerPosition {
     Cfi(String),
     /// 0-based page index.
     Page(usize),
-    /// Pre-CFI EPUB format: a flat chapter/block pair instead of a CFI.
-    /// Written only by versions of this app that predate the CFI format —
-    /// nothing writes this today (`current_progress()` always produces
-    /// `Cfi`), but `extract` still needs to hand old rows back as
-    /// *something* typed rather than falling back to a raw string.
-    LegacyEpubChapterBlock {
-        chapter: Option<usize>,
-        block: Option<usize>,
-    },
 }
 
 impl ViewerPosition {
     pub fn viewer(&self) -> Viewer {
         match self {
-            Self::Cfi(_) | Self::LegacyEpubChapterBlock { .. } => Viewer::Epub,
+            Self::Cfi(_) => Viewer::Epub,
             Self::Page(_) => Viewer::MuPdf,
         }
     }
@@ -85,9 +76,6 @@ impl ViewerPosition {
         match self {
             Self::Cfi(cfi) => json!({ "cfi": cfi }),
             Self::Page(page) => json!({ "page": page + 1 }),
-            Self::LegacyEpubChapterBlock { chapter, block } => {
-                json!({ "chapter": chapter, "block": block })
-            }
         }
     }
 
@@ -100,19 +88,10 @@ impl ViewerPosition {
                 let wire_page = value.get("page")?.as_u64()?;
                 Some(Self::Page((wire_page as usize).saturating_sub(1)))
             }
-            Viewer::Epub => Some(match value.get("cfi").and_then(|v| v.as_str()) {
-                Some(cfi) => Self::Cfi(cfi.to_string()),
-                None => Self::LegacyEpubChapterBlock {
-                    chapter: value
-                        .get("chapter")
-                        .and_then(|v| v.as_u64())
-                        .map(|n| n as usize),
-                    block: value
-                        .get("block")
-                        .and_then(|v| v.as_u64())
-                        .map(|n| n as usize),
-                },
-            }),
+            Viewer::Epub => {
+                let cfi = value.get("cfi").and_then(|v| v.as_str())?;
+                Some(Self::Cfi(cfi.to_string()))
+            }
         }
     }
 }
@@ -252,23 +231,12 @@ mod tests {
     }
 
     #[test]
-    fn legacy_untagged_epub_chapter_position_migrates_into_epub_slot() {
+    fn pre_cfi_epub_chapter_block_rows_are_no_longer_recognized() {
+        // Support for the pre-CFI {"chapter":N,"block":M} format was removed —
+        // such rows are now indistinguishable from noise and simply ignored.
         let legacy = r#"{"chapter":2,"block":5}"#;
-        Assert::that(extract(legacy, Viewer::Epub)).is(Some(
-            ViewerPosition::LegacyEpubChapterBlock {
-                chapter: Some(2),
-                block: Some(5),
-            },
-        ));
+        Assert::that(extract(legacy, Viewer::Epub)).is(None);
         Assert::that(extract(legacy, Viewer::MuPdf)).is(None);
-    }
-
-    #[test]
-    fn legacy_chapter_block_round_trips_through_merge_and_extract() {
-        let legacy = r#"{"chapter":2,"block":5}"#;
-        let position = extract(legacy, Viewer::Epub).expect("legacy epub position");
-        let stored = merge(None, &position);
-        Assert::that(extract(&stored, Viewer::Epub)).is(Some(position));
     }
 
     #[test]
@@ -291,26 +259,6 @@ mod tests {
     fn viewer_position_reports_its_own_viewer() {
         assert_eq!(ViewerPosition::Cfi("a".to_string()).viewer(), Viewer::Epub);
         assert_eq!(ViewerPosition::Page(0).viewer(), Viewer::MuPdf);
-        assert_eq!(
-            ViewerPosition::LegacyEpubChapterBlock {
-                chapter: None,
-                block: None
-            }
-            .viewer(),
-            Viewer::Epub
-        );
-    }
-
-    #[test]
-    fn viewer_position_legacy_chapter_block_produces_the_legacy_wire_shape() {
-        assert_eq!(
-            ViewerPosition::LegacyEpubChapterBlock {
-                chapter: Some(2),
-                block: Some(5)
-            }
-            .to_value(),
-            serde_json::json!({"chapter": 2, "block": 5})
-        );
     }
 
     #[test]
@@ -322,13 +270,10 @@ mod tests {
     }
 
     #[test]
-    fn from_value_epub_falls_back_to_legacy_chapter_block_without_a_cfi_key() {
+    fn from_value_epub_returns_none_without_a_cfi_key() {
         assert_eq!(
-            ViewerPosition::from_value(Viewer::Epub, &serde_json::json!({})),
-            Some(ViewerPosition::LegacyEpubChapterBlock {
-                chapter: None,
-                block: None
-            })
+            ViewerPosition::from_value(Viewer::Epub, &serde_json::json!({"chapter": 2})),
+            None
         );
     }
 }
