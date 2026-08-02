@@ -1303,28 +1303,9 @@ fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, MuPdfView
         .into()
 }
 
-/// Build the `{"page":N}` MuPDF progress JSON for `active_page` (the 0-based
-/// index into `self.pages`). The wire format is 1-based — the human-visible
-/// page number, matching the PWA's own `currentPage` — rather than leaking
-/// the internal 0-based index onto the wire, where the PWA reads and writes
-/// the same field as a 1-based page number directly. Reading it back goes
-/// through `reading_progress::extract`, which does the `-1` conversion.
-pub(super) fn page_to_progress_json(active_page: usize) -> String {
-    format!("{{\"page\":{}}}", active_page + 1)
-}
-
 #[cfg(test)]
 mod progress_json_tests {
-    use assert4rs::Assert;
-
     use super::*;
-
-    #[test]
-    fn page_to_progress_json_is_one_based() {
-        // active_page 0 (the first, 0-based page) is wire page 1.
-        Assert::that(page_to_progress_json(0).as_str()).is(r#"{"page":1}"#);
-        Assert::that(page_to_progress_json(41).as_str()).is(r#"{"page":42}"#);
-    }
 
     #[tokio::test]
     async fn current_progress_is_none_before_pages_load() {
