@@ -34,8 +34,15 @@ pub(crate) fn run() -> anyhow::Result<()> {
         .build()?;
 
     let lib: &Path = args.sample_library.as_path();
-    let results: Vec<(&str, anyhow::Result<Vec<u8>>)> =
-        rt.block_on(async { vec![("cosmic-opds.png", scenes::opds::render(lib).await)] });
+    let results: Vec<(&str, anyhow::Result<Vec<u8>>)> = rt.block_on(async {
+        vec![
+            ("cosmic-opds.png", scenes::opds::render(lib).await),
+            (
+                "cosmic-multi-instance.png",
+                scenes::sources::render(lib).await,
+            ),
+        ]
+    });
 
     let total = results.len();
     let mut failures = Vec::new();
