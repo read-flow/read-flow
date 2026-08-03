@@ -41,6 +41,7 @@ pub(crate) fn run() -> anyhow::Result<()> {
                 "cosmic-multi-instance.png",
                 scenes::sources::render(lib).await,
             ),
+            ("cosmic-progress.png", scenes::progress::render(lib).await),
         ]
     });
 
