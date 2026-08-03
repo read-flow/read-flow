@@ -5,7 +5,7 @@ pub(crate) mod document_details;
 mod document_list;
 pub(crate) mod epub_viewer;
 pub mod image_viewer;
-mod mu_pdf_viewer;
+pub(crate) mod mu_pdf_viewer;
 mod online_library;
 mod preferences;
 mod server_log;

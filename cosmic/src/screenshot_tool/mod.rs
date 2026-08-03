@@ -49,6 +49,10 @@ pub(crate) fn run() -> anyhow::Result<()> {
                 "cosmic-epub-reader.png",
                 scenes::epub_reader::render(lib).await,
             ),
+            (
+                "cosmic-pdf-reader.png",
+                scenes::pdf_reader::render(lib).await,
+            ),
         ]
     });
 
