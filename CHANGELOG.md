@@ -12,6 +12,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 <!-- Add entries here as you land changes. Move them under a version heading at release time. -->
 
+## [0.4.0] - 2026-08-03
+
 ### Added
 
 - Server: `server.local_user_id` setting binds the desktop app's local database access to a
@@ -73,8 +75,6 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   4, so cards keep the same size regardless of how many are shown.
 - COSMIC: reading progress for open EPUB/PDF viewers is now saved when the application window is
   closed, not just when each viewer tab is closed individually.
-
-### Removed
 
 ## [0.3.2] - 2026-07-23
 
@@ -226,7 +226,8 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/read-flow/read-flow/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/read-flow/read-flow/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/read-flow/read-flow/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/read-flow/read-flow/compare/v0.2.0...v0.3.0
