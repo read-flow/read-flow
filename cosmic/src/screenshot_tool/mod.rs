@@ -45,6 +45,10 @@ pub(crate) fn run() -> anyhow::Result<()> {
             ("cosmic-tags-rule.png", scenes::tags_rule::render(lib).await),
             ("cosmic-tags.png", scenes::tags::render(lib).await),
             ("cosmic-scanning.png", scenes::scanning::render(lib).await),
+            (
+                "cosmic-epub-reader.png",
+                scenes::epub_reader::render(lib).await,
+            ),
         ]
     });
 

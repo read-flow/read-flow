@@ -1,3 +1,4 @@
+pub(super) mod epub_reader;
 pub(super) mod opds;
 pub(super) mod progress;
 pub(super) mod scanning;

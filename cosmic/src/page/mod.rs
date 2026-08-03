@@ -3,7 +3,7 @@
 pub(crate) mod dashboard;
 pub(crate) mod document_details;
 mod document_list;
-mod epub_viewer;
+pub(crate) mod epub_viewer;
 pub mod image_viewer;
 mod mu_pdf_viewer;
 mod online_library;
