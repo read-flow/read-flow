@@ -33,6 +33,9 @@ osx_minimum_system_version = "10.15"
 # web UI at the same origin. Requires `just pwa-build` first; enabled for
 # packaging/release builds, off for plain dev builds.
 embed-pwa = ["read-flow-core/embed-pwa"]
+# Headless screenshot generator for the marketing site (read-flow.github.io).
+# See cosmic/src/screenshot_tool/mod.rs.
+screenshot-tool = ["dep:cosmic-golden", "dep:tempfile"]
 
 [dependencies]
 anyhow.workspace = true
@@ -61,6 +64,9 @@ tracing-subscriber = { workspace = true, features = ["std", "fmt", "json", "env-
 serde_json.workspace = true
 time = { workspace = true, features = ["formatting", "macros", "parsing", "std"] }
 url.workspace = true
+
+cosmic-golden = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 
 epub = { path = "../epub" }
 provider = { path = "../provider" }

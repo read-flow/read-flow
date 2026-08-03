@@ -1,7 +1,7 @@
 //! Shared scaffolding for unit tests that need a real `ApplicationModule`/
 //! `DocumentProvider` (backed by a temp-dir SQLite DB) without going
 //! through the full BDD harness in `crate::bdd`.
-#![cfg(test)]
+#![cfg(any(test, feature = "screenshot-tool"))]
 
 use std::path::PathBuf;
 use std::sync::Arc;

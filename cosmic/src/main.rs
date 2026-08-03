@@ -19,9 +19,11 @@ mod logging;
 mod page;
 mod reading_progress;
 mod render_blocks;
+#[cfg(feature = "screenshot-tool")]
+mod screenshot_tool;
 mod state;
 mod subscription;
-#[cfg(test)]
+#[cfg(any(test, feature = "screenshot-tool"))]
 mod test_support;
 
 use std::path::PathBuf;
@@ -101,6 +103,9 @@ impl Provider<Settings> for AppSettings {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "screenshot-tool")]
+    return screenshot_tool::run();
+
     // Initialize logging: structured JSON to stderr + in-memory capture that
     // the in-app server log page renders.
     let log_bus = logging::init();
