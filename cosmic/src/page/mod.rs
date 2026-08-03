@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // pages
 pub(crate) mod dashboard;
-mod document_details;
+pub(crate) mod document_details;
 mod document_list;
 mod epub_viewer;
 pub mod image_viewer;
