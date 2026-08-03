@@ -44,6 +44,7 @@ pub(crate) fn run() -> anyhow::Result<()> {
             ("cosmic-progress.png", scenes::progress::render(lib).await),
             ("cosmic-tags-rule.png", scenes::tags_rule::render(lib).await),
             ("cosmic-tags.png", scenes::tags::render(lib).await),
+            ("cosmic-scanning.png", scenes::scanning::render(lib).await),
         ]
     });
 
