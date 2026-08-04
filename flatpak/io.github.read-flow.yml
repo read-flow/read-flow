@@ -18,7 +18,7 @@
 
 app-id: io.github.read-flow
 runtime: org.freedesktop.Platform
-runtime-version: '24.08'
+runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.node22
@@ -65,10 +65,11 @@ modules:
   - name: read-flow
     buildsystem: simple
     build-commands:
-      # 1. Install a current Rust toolchain. org.freedesktop.Sdk.Extension.rust-stable
-      #    on the 24.08 runtime provides rustc 1.89, which is too old for this
-      #    dependency tree (libcosmic needs 1.93, sqlx needs 1.94, wgpu/iced
-      #    need 1.92). Install the official standalone tarball instead. The
+      # 1. Install a current Rust toolchain, pinned to a specific version
+      #    rather than relying on org.freedesktop.Sdk.Extension.rust-stable
+      #    (whose version moves with each runtime release and isn't
+      #    guaranteed to clear this dependency tree's floor — libcosmic needs
+      #    1.93, sqlx needs 1.94, wgpu/iced need 1.92). The
       #    `type: archive` source below has dest: rust-dist -- flatpak-builder
       #    strips the archive's single top-level wrapper directory when a
       #    dest is given, so install.sh lands directly at rust-dist/install.sh
@@ -110,7 +111,7 @@ modules:
       # Pinned to whatever was current stable when this manifest was last
       # touched (2026-07-11); bump the version/sha256 here (both arches) if
       # cargo's MSRV requirements move past it again. Flatpak's `aarch64`
-      # arch name is what CI's arm64 runner (ubuntu-24.04-arm) reports —
+      # arch name is what CI's arm64 runner (ubuntu-26.04-arm) reports —
       # `only-arches` picks the matching source per build.
       - type: archive
         only-arches: [x86_64]
