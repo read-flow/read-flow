@@ -21,7 +21,7 @@ base64 = "0.22.1"
 clap = "4.6.2"
 directories = "6"
 cosmic-golden = { git = "https://github.com/peterpaul/cosmic-golden-test.git", tag = "0.6.0" }
-cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git" }
+cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git", tag = "0.19.0" }
 cucumber = "0.23"
 derive_more = "2.1.1"
 sha2 = "0.11"
@@ -77,6 +77,19 @@ xz2 = "0.1"
 zstd = "0.13"
 tempfile = "3"
 zip = { version = "8.6.0", default-features = false }
+
+[patch.crates-io]
+# iced_graphics/iced_tiny_skia/cryoglyph pull cosmic-text 0.19.0 from crates.io,
+# while cosmic-text above is the pop-os git fork also at 0.19.0 — two distinct
+# Cargo.lock entries for the same name+version. Regular cargo builds handle
+# that fine, but flatpak-cargo-generator's offline vendoring collides on them
+# ("checksum for `cosmic-text v0.19.0` could not be calculated..."). Patching
+# unifies every consumer onto the single git source. Pinned to the `0.19.0`
+# tag (not floating on the default branch) because cryoglyph's vendored call
+# site targets that exact published API — the fork's post-0.19.0 commits add
+# a `Direction` parameter to `Buffer::layout` that cryoglyph doesn't pass,
+# which breaks the build if this floats past the tag.
+cosmic-text = { git = "https://github.com/pop-os/cosmic-text.git", tag = "0.19.0" }
 
 [profile.release]
 lto = true
