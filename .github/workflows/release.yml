@@ -4,9 +4,10 @@
 #   - Linux x86_64:  portable .tar.gz  +  .deb
 #   - Linux arm64:   portable .tar.gz  +  .deb (e.g. Raspberry Pi 5)
 #   - macOS arm64:   .app bundle, zipped (UNSIGNED — see README install notes)
-#   - Flatpak:       single-file .flatpak bundle (flatpak/*.yml manifest — draft,
-#                     see RELEASING.md "Application stores"; this is CI-built for
-#                     direct install, not yet submitted to Flathub itself)
+#   - Flatpak:       single-file .flatpak bundle, x86_64 + aarch64 (flatpak/*.yml
+#                     manifest — draft, see RELEASING.md "Application stores";
+#                     this is CI-built for direct install, not yet submitted
+#                     to Flathub itself)
 #   - SHA256SUMS for every artifact
 #
 # TODO (see RELEASING.md open questions):
@@ -134,8 +135,15 @@ jobs:
           path: read-flow-*-macos-arm64.zip
 
   build-flatpak:
-    name: Build Flatpak
-    runs-on: ubuntu-latest
+    name: Build Flatpak ${{ matrix.arch }}
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runs-on: ubuntu-latest
+          - arch: aarch64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
     container:
       image: bilelmoussaoui/flatpak-github-actions:freedesktop-24.08
       options: --privileged
@@ -153,12 +161,13 @@ jobs:
           flatpak-node-generator npm pwa/package-lock.json -o flatpak/node-sources.json
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          bundle: read-flow-${{ github.ref_name }}.flatpak
+          bundle: read-flow-${{ github.ref_name }}-${{ matrix.arch }}.flatpak
           manifest-path: flatpak/io.github.read-flow.yml
-          cache-key: flatpak-builder-${{ github.sha }}
+          arch: ${{ matrix.arch }}
+          cache-key: flatpak-builder-${{ matrix.arch }}-${{ github.sha }}
       - uses: actions/upload-artifact@v4
         with:
-          name: flatpak
+          name: flatpak-${{ matrix.arch }}
           path: read-flow-*.flatpak
 
   release:

@@ -28,9 +28,9 @@ Git tag (`vX.Y.Z`) and attaches them to a **draft** GitHub Release:
   Raspberry Pi 5.
 - **macOS arm64** (Apple Silicon): a zipped `.app` bundle. **Unsigned** — users bypass Gatekeeper on
   first launch (documented in the README). _(decide: signing + notarization — see open questions.)_
-- **Flatpak**: a single-file `.flatpak` bundle, built from
+- **Flatpak**: single-file `.flatpak` bundles for x86_64 and aarch64, built from
   [`flatpak/io.github.read-flow.yml`](flatpak/io.github.read-flow.yml) (see "Application stores"
-  below).
+  below). The aarch64 build runs natively on `ubuntu-24.04-arm`, same as the Linux arm64 tarball/deb.
 - **Checksums**: `SHA256SUMS` covering every artifact, generated in the workflow.
 
 The **PWA** is not shipped as a separate artifact: the packaging recipes (`just deb`, `just bundle`)

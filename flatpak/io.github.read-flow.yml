@@ -108,9 +108,17 @@ modules:
       - cargo-sources.json
       - node-sources.json
       # Pinned to whatever was current stable when this manifest was last
-      # touched (2026-07-11); bump the version/sha256 here if cargo's MSRV
-      # requirements move past it again.
+      # touched (2026-07-11); bump the version/sha256 here (both arches) if
+      # cargo's MSRV requirements move past it again. Flatpak's `aarch64`
+      # arch name is what CI's arm64 runner (ubuntu-24.04-arm) reports —
+      # `only-arches` picks the matching source per build.
       - type: archive
+        only-arches: [x86_64]
         url: https://static.rust-lang.org/dist/rust-1.97.0-x86_64-unknown-linux-gnu.tar.xz
         sha256: 1cf17e4905b841d4c8e3f76467ac148d55fb3f54bf213c86f0d287a36471d904
+        dest: rust-dist
+      - type: archive
+        only-arches: [aarch64]
+        url: https://static.rust-lang.org/dist/rust-1.97.0-aarch64-unknown-linux-gnu.tar.xz
+        sha256: 4c88fe30a748a8853c19f4e8876a64b32005bc4cbcde48e93732d06a430e808a
         dest: rust-dist
