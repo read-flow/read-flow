@@ -12,6 +12,13 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 <!-- Add entries here as you land changes. Move them under a version heading at release time. -->
 
+## [0.4.1] - 2026-08-04
+
+### Changed
+
+- Release pipeline: build Flatpak bundles for arm64 (aarch64) alongside x86_64. Bumped the
+  Freedesktop SDK runtime to 25.08.
+
 ## [0.4.0] - 2026-08-03
 
 ### Added
@@ -226,7 +233,8 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/read-flow/read-flow/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/read-flow/read-flow/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/read-flow/read-flow/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/read-flow/read-flow/compare/v0.3.0...v0.3.1
