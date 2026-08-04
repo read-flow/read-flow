@@ -13,15 +13,8 @@ unless you ask it to.
 > source.
 
 ## Screenshots
-|                                                                                                       |                                                                                                         |
-|:-----------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------------:|
-|     ![Dark Dashboard](https://github.com/read-flow/read-flow/blob/screenshots/dark-dashboard.png)     |     ![Light Dashboard](https://github.com/read-flow/read-flow/blob/screenshots/light-dashboard.png)     |
-| ![Dark Document List](https://github.com/read-flow/read-flow/blob/screenshots/dark-document-list.png) | ![Light Document List](https://github.com/read-flow/read-flow/blob/screenshots/light-document-list.png) |
-|   ![Dark OPDF Search](https://github.com/read-flow/read-flow/blob/screenshots/dark-opds-search.png)   |   ![Light OPDS Search](https://github.com/read-flow/read-flow/blob/screenshots/light-opds-search.png)   |
 
-|                                            EPUB Reader                                            |                                           PDF Reader                                            |
-|:-------------------------------------------------------------------------------------------------:|:-----------------------------------------------------------------------------------------------:|
-| ![Dark Epub Reader](https://github.com/read-flow/read-flow/blob/screenshots/dark-epub-reader.png) | ![Dark Pdf Reader](https://github.com/read-flow/read-flow/blob/screenshots/dark-pdf-reader.png) |
+See [read-flow.github.io](https://read-flow.github.io) for current screenshots of the app.
 
 ## Features
 
