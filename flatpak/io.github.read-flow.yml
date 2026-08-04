@@ -111,7 +111,7 @@ modules:
       # Pinned to whatever was current stable when this manifest was last
       # touched (2026-07-11); bump the version/sha256 here (both arches) if
       # cargo's MSRV requirements move past it again. Flatpak's `aarch64`
-      # arch name is what CI's arm64 runner (ubuntu-26.04-arm) reports —
+      # arch name is what CI's arm64 runner (ubuntu-24.04-arm) reports —
       # `only-arches` picks the matching source per build.
       - type: archive
         only-arches: [x86_64]

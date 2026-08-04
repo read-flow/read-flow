@@ -63,7 +63,7 @@ jobs:
           - arch: x86_64
             runs-on: ubuntu-latest
           - arch: arm64
-            runs-on: ubuntu-26.04-arm
+            runs-on: ubuntu-24.04-arm
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
@@ -142,7 +142,7 @@ jobs:
           - arch: x86_64
             runs-on: ubuntu-latest
           - arch: aarch64
-            runs-on: ubuntu-26.04-arm
+            runs-on: ubuntu-24.04-arm
     runs-on: ${{ matrix.runs-on }}
     container:
       # docker.io/bilelmoussaoui/flatpak-github-actions is deprecated and
