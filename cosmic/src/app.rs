@@ -85,7 +85,7 @@ pub struct ReadFlow {
     /// Owns the aggregated view over all configured document sources. Held
     /// here (not just inside `pages`) because app-level flows (settings
     /// invalidation, scan, check-missing) need it independent of any page.
-    document_provider: Arc<DocumentProvider>,
+    pub(crate) document_provider: Arc<DocumentProvider>,
     /// Pages
     pages: Pages,
     /// Scan progress component, present while scanning or showing the last result.

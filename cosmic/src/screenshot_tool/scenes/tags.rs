@@ -3,26 +3,32 @@ use std::path::Path;
 use cosmic::Theme;
 use cosmic_golden::HeadlessRenderer;
 
+use crate::app::Message;
 use crate::component::tag_editor::TagEditorMessage;
-use crate::page::Page as _;
-use crate::page::document_details::DocumentDetails;
+use crate::page::PageMessage;
 use crate::page::document_details::DocumentDetailsMessage;
+use crate::screenshot_tool::app_harness::AppHarness;
 
 pub(in crate::screenshot_tool) async fn render(sample_library: &Path) -> anyhow::Result<Vec<u8>> {
-    let (application_module, document_provider, _db_dir) =
-        crate::test_support::document_provider().await;
+    let mut harness = AppHarness::new().await;
 
     let (document, _fixture_dir) = crate::test_support::scan_and_fetch_document(
-        &application_module,
-        &document_provider,
+        &harness.application_module,
+        harness.document_provider(),
         sample_library.join("meditations.epub"),
         "meditations.epub",
     )
     .await;
+    let document_guid = document.document_guid.clone();
 
-    let (mut page, init_task) =
-        DocumentDetails::new(document, document_provider, application_module);
-    crate::test_support::drain(init_task).await;
+    // Opening a document's details auto-registers and auto-activates that
+    // page, keyed by `document_guid` (unlike the reader viewers, which key
+    // by content fingerprint).
+    harness
+        .send(Message::Page(Box::new(PageMessage::OpenDocumentDetails(
+            document,
+        ))))
+        .await;
 
     let tags = vec![
         "philosophy".to_string(),
@@ -30,11 +36,13 @@ pub(in crate::screenshot_tool) async fn render(sample_library: &Path) -> anyhow:
         "public-domain".to_string(),
         "to-read".to_string(),
     ];
-    let _ = page.update(DocumentDetailsMessage::TagEditor(
-        TagEditorMessage::SetTags(tags),
-    ));
+    harness
+        .send(Message::Page(Box::new(PageMessage::DocumentDetails(
+            document_guid,
+            DocumentDetailsMessage::TagEditor(TagEditorMessage::SetTags(tags)),
+        ))))
+        .await;
 
-    let element = page.view();
     let mut renderer = HeadlessRenderer::with_theme(Theme::dark());
-    Ok(renderer.render(element, super::super::WIDTH, super::super::HEIGHT))
+    Ok(harness.render_rgba(&mut renderer))
 }

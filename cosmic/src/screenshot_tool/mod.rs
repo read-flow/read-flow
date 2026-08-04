@@ -4,6 +4,7 @@
 //! repo) via `cosmic-golden`'s CPU renderer, at a fixed size and dark theme,
 //! with no display server and no live network access.
 
+mod app_harness;
 mod scenes;
 
 use std::path::Path;

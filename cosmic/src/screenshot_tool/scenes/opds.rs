@@ -5,9 +5,11 @@ use cosmic_golden::HeadlessRenderer;
 use read_flow_core::online_library::DownloadFormat;
 use read_flow_core::online_library::OnlineBook;
 
+use crate::app::Message;
 use crate::page::OnlineLibraryMessage;
-use crate::page::OnlineLibraryPage;
-use crate::page::Page as _;
+use crate::page::PageMessage;
+use crate::page::PageSelector;
+use crate::screenshot_tool::app_harness::AppHarness;
 
 fn fake_book(id: &str, title: &str, authors: &[&str]) -> OnlineBook {
     OnlineBook {
@@ -37,11 +39,10 @@ fn fake_book(id: &str, title: &str, authors: &[&str]) -> OnlineBook {
 }
 
 pub(in crate::screenshot_tool) async fn render(_sample_library: &Path) -> anyhow::Result<Vec<u8>> {
-    let (application_module, _document_provider, _db_dir) =
-        crate::test_support::document_provider().await;
-
-    let (mut page, init_task) = OnlineLibraryPage::new(application_module);
-    crate::test_support::drain(init_task).await;
+    let mut harness = AppHarness::new().await;
+    harness
+        .send(Message::ActivatePage(PageSelector::OnlineLibrary))
+        .await;
 
     let books = vec![
         fake_book(
@@ -57,12 +58,12 @@ pub(in crate::screenshot_tool) async fn render(_sample_library: &Path) -> anyhow
             &["Lewis Carroll"],
         ),
     ];
-    let _ = page.update(OnlineLibraryMessage::SearchCompleted(
-        books,
-        std::collections::HashMap::new(),
-    ));
+    harness
+        .send(Message::Page(Box::new(PageMessage::OnlineLibrary(
+            OnlineLibraryMessage::SearchCompleted(books, std::collections::HashMap::new()),
+        ))))
+        .await;
 
-    let element = page.view();
     let mut renderer = HeadlessRenderer::with_theme(Theme::dark());
-    Ok(renderer.render(element, super::super::WIDTH, super::super::HEIGHT))
+    Ok(harness.render_rgba(&mut renderer))
 }

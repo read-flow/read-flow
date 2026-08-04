@@ -4,20 +4,19 @@ use cosmic::Theme;
 use cosmic_golden::HeadlessRenderer;
 use read_flow_core::db::models::Remote;
 
+use crate::app::Message;
 use crate::component::provided_state::ProvidedStateMessage;
-use crate::config::Config;
-use crate::page::Page as _;
+use crate::page::PageMessage;
+use crate::page::PageSelector;
 use crate::page::PreferencesMessage;
-use crate::page::PreferencesPage;
 use crate::page::PreferencesSection;
+use crate::screenshot_tool::app_harness::AppHarness;
 
 pub(in crate::screenshot_tool) async fn render(_sample_library: &Path) -> anyhow::Result<Vec<u8>> {
-    let (application_module, document_provider, _db_dir) =
-        crate::test_support::document_provider().await;
-
-    let (mut page, init_task) =
-        PreferencesPage::new(application_module, Config::default(), document_provider);
-    crate::test_support::drain(init_task).await;
+    let mut harness = AppHarness::new().await;
+    harness
+        .send(Message::ActivatePage(PageSelector::Preferences))
+        .await;
 
     let remotes = vec![
         Remote {
@@ -38,19 +37,27 @@ pub(in crate::screenshot_tool) async fn render(_sample_library: &Path) -> anyhow
 
     // Deliberately DISCARD the returned Task: `Remotes(Loaded(..))`'s update
     // arm auto-schedules a real `CheckSourceStatus` HTTP health-check per
-    // remote. Since nothing in this tool polls that task, it never runs —
-    // Rust futures do nothing until polled, and `drain()` is the only poller
-    // this tool has. We force "reachable" ourselves instead, synchronously.
-    let _ = page.update(PreferencesMessage::Remotes(ProvidedStateMessage::Loaded(
-        remotes,
-    )));
-    let _ = page.update(PreferencesMessage::SetSourceStatus(1, true));
-    let _ = page.update(PreferencesMessage::SetSourceStatus(2, true));
-    let _ = page.update(PreferencesMessage::SectionChanged(
-        PreferencesSection::Sources,
-    ));
+    // remote. Since nothing polls that task, it never runs — Rust futures
+    // do nothing until polled. We force "reachable" ourselves instead.
+    harness.send_without_draining(Message::Page(Box::new(PageMessage::Preferences(
+        PreferencesMessage::Remotes(ProvidedStateMessage::Loaded(remotes)),
+    ))));
+    harness
+        .send(Message::Page(Box::new(PageMessage::Preferences(
+            PreferencesMessage::SetSourceStatus(1, true),
+        ))))
+        .await;
+    harness
+        .send(Message::Page(Box::new(PageMessage::Preferences(
+            PreferencesMessage::SetSourceStatus(2, true),
+        ))))
+        .await;
+    harness
+        .send(Message::Page(Box::new(PageMessage::Preferences(
+            PreferencesMessage::SectionChanged(PreferencesSection::Sources),
+        ))))
+        .await;
 
-    let element = page.view();
     let mut renderer = HeadlessRenderer::with_theme(Theme::dark());
-    Ok(renderer.render(element, super::super::WIDTH, super::super::HEIGHT))
+    Ok(harness.render_rgba(&mut renderer))
 }
