@@ -591,7 +591,7 @@ impl DashboardPage {
             if let Some(handle) = self.covers.get(cover_key) {
                 widget::container(
                     widget::image(handle.clone())
-                        .content_fit(ContentFit::Cover)
+                        .content_fit(ContentFit::Contain)
                         .width(Length::Fill)
                         .height(Length::Fixed(180.0)),
                 )

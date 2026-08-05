@@ -10,6 +10,11 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- Dashboard "Continue Reading" cover thumbnails no longer bleed outside their card borders when
+  rendered by the software (tiny-skia) backend, as used by the marketing-screenshot tool.
+
 <!-- Add entries here as you land changes. Move them under a version heading at release time. -->
 
 ## [0.4.1] - 2026-08-04
