@@ -21,6 +21,6 @@ pub(in crate::screenshot_tool) async fn render(sample_library: &Path) -> anyhow:
     crate::test_support::drain(init_task).await;
 
     let element = form.view();
-    let mut renderer = HeadlessRenderer::with_theme(super::super::theme());
+    let mut renderer = HeadlessRenderer::with_theme(super::super::theme(sample_library)?);
     Ok(renderer.render(element, super::super::WIDTH, super::super::HEIGHT))
 }

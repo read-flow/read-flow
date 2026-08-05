@@ -12,37 +12,22 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use clap::Parser;
-use read_flow_core::settings::FrostedStrength;
-use read_flow_core::settings::ThemeDensity;
-use read_flow_core::settings::ThemeRoundness;
-use read_flow_core::settings::ThemeSettings;
+use read_flow_core::settings::Settings;
 use read_flow_core::settings::ThemeVariant;
-use read_flow_core::settings::ThemeVariantSettings;
 
 pub(super) const WIDTH: u32 = 1600;
 pub(super) const HEIGHT: u32 = 1000;
 
-/// The brand palette from `assets/brand/color-palette.md` in
-/// read-flow.github.io (same values as the sample library's `[ui.theme]`
-/// block), built through the same `app_theme` path the live app uses —
-/// scenes must render the app as themed, not stock COSMIC dark.
-pub(super) fn theme() -> cosmic::Theme {
-    let settings = ThemeSettings {
-        enabled: true,
-        dark: ThemeVariantSettings {
-            accent: Some("#a855f7".to_string()),
-            background: Some("#080935".to_string()),
-            container_background: Some("#151c5b".to_string()),
-        },
-        light: ThemeVariantSettings::default(),
-        density: ThemeDensity::Standard,
-        roundness: ThemeRoundness::Round,
-        frosted: true,
-        frosted_strength: FrostedStrength::Medium,
-        interface_font: None,
-        monospace_font: None,
-    };
-    crate::app_theme::effective_theme(&settings, ThemeVariant::Dark)
+/// Reads `[ui.theme]` from the sample library's `read-flow.toml` (brand
+/// palette, from `assets/brand/color-palette.md` in read-flow.github.io) and
+/// builds it through the same `app_theme` path the live app uses — scenes
+/// must render the app as themed, not stock COSMIC dark.
+pub(super) fn theme(sample_library: &Path) -> anyhow::Result<cosmic::Theme> {
+    let settings = Settings::extract_from(&sample_library.join("read-flow.toml"))?;
+    Ok(crate::app_theme::effective_theme(
+        settings.ui.theme(),
+        ThemeVariant::Dark,
+    ))
 }
 
 #[derive(Debug, clap::Parser)]

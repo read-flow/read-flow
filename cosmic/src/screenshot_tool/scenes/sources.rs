@@ -11,7 +11,7 @@ use crate::page::PreferencesMessage;
 use crate::page::PreferencesSection;
 use crate::screenshot_tool::app_harness::AppHarness;
 
-pub(in crate::screenshot_tool) async fn render(_sample_library: &Path) -> anyhow::Result<Vec<u8>> {
+pub(in crate::screenshot_tool) async fn render(sample_library: &Path) -> anyhow::Result<Vec<u8>> {
     let mut harness = AppHarness::new().await;
     harness
         .send(Message::ActivatePage(PageSelector::Preferences))
@@ -57,6 +57,6 @@ pub(in crate::screenshot_tool) async fn render(_sample_library: &Path) -> anyhow
         ))))
         .await;
 
-    let mut renderer = HeadlessRenderer::with_theme(super::super::theme());
+    let mut renderer = HeadlessRenderer::with_theme(super::super::theme(sample_library)?);
     Ok(harness.render_rgba(&mut renderer))
 }

@@ -46,6 +46,6 @@ pub(in crate::screenshot_tool) async fn render(sample_library: &Path) -> anyhow:
         ))))
         .await;
 
-    let mut renderer = HeadlessRenderer::with_theme(super::super::theme());
+    let mut renderer = HeadlessRenderer::with_theme(super::super::theme(sample_library)?);
     Ok(harness.render_rgba(&mut renderer))
 }
