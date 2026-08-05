@@ -11,10 +11,12 @@ use crate::screenshot_tool::app_harness::AppHarness;
 pub(in crate::screenshot_tool) async fn render(sample_library: &Path) -> anyhow::Result<Vec<u8>> {
     let mut harness = AppHarness::new().await;
 
+    // All 4 marked Reading so the dashboard's "Continue Reading" row shows
+    // 4 real cards instead of padding out with invisible placeholders.
     let seeds = [
-        ("leaves-of-grass.epub", ReadingStatus::Unread),
+        ("leaves-of-grass.epub", ReadingStatus::Reading),
         ("the-time-machine.epub", ReadingStatus::Reading),
-        ("twenty-thousand-leagues.epub", ReadingStatus::Read),
+        ("twenty-thousand-leagues.epub", ReadingStatus::Reading),
         ("meditations.epub", ReadingStatus::Reading),
     ];
     let mut fixture_dirs = Vec::new();
