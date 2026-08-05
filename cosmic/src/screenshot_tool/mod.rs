@@ -15,8 +15,8 @@ use clap::Parser;
 use read_flow_core::settings::Settings;
 use read_flow_core::settings::ThemeVariant;
 
-pub(super) const WIDTH: u32 = 1600;
-pub(super) const HEIGHT: u32 = 1000;
+pub(super) const WIDTH: u32 = 1200;
+pub(super) const HEIGHT: u32 = 800;
 
 /// Reads `[ui.theme]` from the sample library's `read-flow.toml` (brand
 /// palette, from `assets/brand/color-palette.md` in read-flow.github.io) and
