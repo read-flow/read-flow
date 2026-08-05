@@ -1,8 +1,9 @@
 //! Headless marketing-screenshot generator for read-flow.github.io.
 //!
 //! Renders each scene in `docs/screenshots-needed.md` (the marketing site
-//! repo) via `cosmic-golden`'s CPU renderer, at a fixed size and dark theme,
-//! with no display server and no live network access.
+//! repo) via `cosmic-golden`'s CPU renderer, at a fixed size and themed to
+//! match the site's brand palette, with no display server and no live
+//! network access.
 
 mod app_harness;
 mod scenes;
@@ -11,9 +12,38 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use clap::Parser;
+use read_flow_core::settings::FrostedStrength;
+use read_flow_core::settings::ThemeDensity;
+use read_flow_core::settings::ThemeRoundness;
+use read_flow_core::settings::ThemeSettings;
+use read_flow_core::settings::ThemeVariant;
+use read_flow_core::settings::ThemeVariantSettings;
 
 pub(super) const WIDTH: u32 = 1600;
 pub(super) const HEIGHT: u32 = 1000;
+
+/// The brand palette from `assets/brand/color-palette.md` in
+/// read-flow.github.io (same values as the sample library's `[ui.theme]`
+/// block), built through the same `app_theme` path the live app uses —
+/// scenes must render the app as themed, not stock COSMIC dark.
+pub(super) fn theme() -> cosmic::Theme {
+    let settings = ThemeSettings {
+        enabled: true,
+        dark: ThemeVariantSettings {
+            accent: Some("#a855f7".to_string()),
+            background: Some("#0d0f57".to_string()),
+            container_background: Some("#1b2472".to_string()),
+        },
+        light: ThemeVariantSettings::default(),
+        density: ThemeDensity::Standard,
+        roundness: ThemeRoundness::Round,
+        frosted: true,
+        frosted_strength: FrostedStrength::Medium,
+        interface_font: None,
+        monospace_font: None,
+    };
+    crate::app_theme::effective_theme(&settings, ThemeVariant::Dark)
+}
 
 #[derive(Debug, clap::Parser)]
 struct Args {

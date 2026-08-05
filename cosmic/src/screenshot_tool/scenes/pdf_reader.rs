@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use cosmic::Theme;
 use cosmic_golden::HeadlessRenderer;
 
 use crate::app::Message;
@@ -24,7 +23,7 @@ pub(in crate::screenshot_tool) async fn render(sample_library: &Path) -> anyhow:
         .send(Message::Page(Box::new(PageMessage::OpenDocument(document))))
         .await;
 
-    let mut renderer = HeadlessRenderer::with_theme(Theme::dark());
+    let mut renderer = HeadlessRenderer::with_theme(super::super::theme());
 
     // `viewport_size` is only set as a layout side effect inside the PDF
     // page's `responsive(...)` closure, which only runs during an actual

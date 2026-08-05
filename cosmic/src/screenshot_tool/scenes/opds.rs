@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use cosmic::Theme;
 use cosmic_golden::HeadlessRenderer;
 use read_flow_core::online_library::DownloadFormat;
 use read_flow_core::online_library::OnlineBook;
@@ -64,6 +63,6 @@ pub(in crate::screenshot_tool) async fn render(_sample_library: &Path) -> anyhow
         ))))
         .await;
 
-    let mut renderer = HeadlessRenderer::with_theme(Theme::dark());
+    let mut renderer = HeadlessRenderer::with_theme(super::super::theme());
     Ok(harness.render_rgba(&mut renderer))
 }
