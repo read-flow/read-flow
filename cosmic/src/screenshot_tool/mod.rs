@@ -31,8 +31,8 @@ pub(super) fn theme() -> cosmic::Theme {
         enabled: true,
         dark: ThemeVariantSettings {
             accent: Some("#a855f7".to_string()),
-            background: Some("#0d0f57".to_string()),
-            container_background: Some("#1b2472".to_string()),
+            background: Some("#080935".to_string()),
+            container_background: Some("#151c5b".to_string()),
         },
         light: ThemeVariantSettings::default(),
         density: ThemeDensity::Standard,
