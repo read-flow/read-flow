@@ -33,7 +33,6 @@ pub use online_library::OnlineLibraryPage;
 pub use preferences::PreferencesMessage;
 pub use preferences::PreferencesOutput;
 pub use preferences::PreferencesPage;
-pub use preferences::PreferencesSection;
 use read_flow_core::api::ReadingStatus;
 use read_flow_core::client::FilesClient;
 pub use server_log::ServerLogMessage;
