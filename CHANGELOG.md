@@ -10,6 +10,10 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ## [Unreleased]
 
+### Removed
+
+- Cover extraction no longer trims whitespace borders from extracted/resized covers.
+
 <!-- Add entries here as you land changes. Move them under a version heading at release time. -->
 
 ## [0.4.1] - 2026-08-04
