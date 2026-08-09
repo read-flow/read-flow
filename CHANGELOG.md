@@ -10,6 +10,10 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ## [Unreleased]
 
+### Removed
+
+- Cover extraction no longer trims whitespace borders from extracted/resized covers.
+
 ### Fixed
 
 - Dashboard "Continue Reading" cover thumbnails no longer bleed outside their card borders when

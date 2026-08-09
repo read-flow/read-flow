@@ -1,5 +1,10 @@
 # Read Flow
 
+[![CI](https://github.com/read-flow/read-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/read-flow/read-flow/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/read-flow/read-flow)](https://github.com/read-flow/read-flow/releases)
+[![License: AGPL-3.0-or-later / MIT](https://img.shields.io/badge/license-AGPL--3.0--or--later%20%2F%20MIT-blue)](NOTICE)
+[![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](#install)
+
 **Organize and read your e-book and PDF library across all your machines — locally, privately, and on your terms.**
 
 Read Flow scans your document folders, fingerprints and de-duplicates what it finds, lets you
