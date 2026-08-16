@@ -128,10 +128,6 @@ where
         self.all_tags.set_provider(provider);
     }
 
-    pub fn provider_mut(&mut self) -> &mut P {
-        self.all_tags.provider_mut()
-    }
-
     /// Merge additional tags into the cached tag list without refetching from
     /// the provider (which would rescan every source document).
     pub fn merge_tags(&mut self, tags: impl IntoIterator<Item = String>) {

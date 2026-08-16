@@ -35,10 +35,6 @@ impl<P, T> ProvidedState<P, T> {
     pub fn set_provider(&mut self, provider: P) {
         self.state_provider = provider;
     }
-
-    pub fn provider_mut(&mut self) -> &mut P {
-        &mut self.state_provider
-    }
 }
 
 impl<P, T, E> ProvidedState<P, T>

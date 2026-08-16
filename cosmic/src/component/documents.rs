@@ -18,7 +18,7 @@ use cosmic::widget;
 use cosmic::widget::Column;
 use cosmic::widget::Row;
 use cosmic::widget::button::ButtonClass;
-use provider::r#async::Provider;
+use provider::r#async::Value;
 
 use crate::ICON_SIZE;
 use crate::aggregator::Document;
@@ -37,23 +37,15 @@ use crate::state::filtered::Filtered;
 
 pub type DocumentState = LoadedState<Filtered<Document>>;
 
-impl Provider<Vec<String>> for DocumentState {
-    type Error = String;
-    async fn provide(&self) -> Result<Vec<String>, Self::Error> {
-        match self {
-            LoadedState::Loaded(documents) => {
-                let tags = documents
-                    .unfiltered()
-                    .iter()
-                    .flat_map(|doc| doc.contents.iter().flat_map(|c| c.tags.iter().cloned()))
-                    .collect::<HashSet<_>>();
-
-                Ok(tags.into_iter().collect::<Vec<_>>())
-            }
-            LoadedState::Failed(error) => Err(error.to_string()),
-            _ => Err(format!("{self:?}")),
-        }
-    }
+/// Unique tags across every document in the (unfiltered) collection.
+fn compute_all_tags(documents: &Filtered<Document>) -> Vec<String> {
+    documents
+        .unfiltered()
+        .iter()
+        .flat_map(|doc| doc.contents.iter().flat_map(|c| c.tags.iter().cloned()))
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -101,7 +93,7 @@ pub struct DocumentsComponent {
     documents: DocumentState,
     pagination: Pagination,
     selected_documents: HashSet<String>,
-    batch_tag_editor: TagEditor<DocumentState>, // Tag editor for batch operations
+    batch_tag_editor: TagEditor<Value<Vec<String>>>, // Tag editor for batch operations
     covers: HashMap<String, widget::image::Handle>,
 }
 
@@ -110,7 +102,7 @@ impl DocumentsComponent {
         let documents: DocumentState = Default::default();
 
         let (batch_tag_editor, init_batch_tag_editor) = TagEditor::new(
-            documents.clone(),
+            Value::new(Vec::new()),
             vec![],
             Orientation::Horizontal,
             fl!("tag-editor-select-tag"),
@@ -409,22 +401,20 @@ impl DocumentsComponent {
     }
 
     pub fn set_document_state(&mut self, state: DocumentState) -> Task<Action<DocumentsMessage>> {
-        self.documents = state.clone();
-        self.batch_tag_editor.set_provider(state);
+        let all_tags = state.get_loaded().map(compute_all_tags).unwrap_or_default();
+        self.batch_tag_editor.set_provider(Value::new(all_tags));
+        self.documents = state;
         task::message(DocumentsMessage::ResetBatchTagEditor)
     }
 
     pub fn update_item<F>(&mut self, search_fn: F, item: Document) -> Task<Action<DocumentsMessage>>
     where
-        F: FnMut(&&mut Document) -> bool + Clone,
+        F: FnMut(&&mut Document) -> bool,
     {
         let Some(docs) = self.documents.get_loaded_mut() else {
             return Task::none();
         };
-        docs.update_item(search_fn.clone(), item.clone());
-        if let Some(provider) = self.batch_tag_editor.provider_mut().get_loaded_mut() {
-            provider.update_item(search_fn, item.clone());
-        }
+        docs.update_item(search_fn, item.clone());
 
         // Merge the edited document's tags into the cached tag list instead of
         // refetching (which would rescan every document in the library).
@@ -445,13 +435,10 @@ impl DocumentsComponent {
 
     pub fn sort_unfiltered<F>(&mut self, sort_fn: F)
     where
-        F: FnMut(&mut [Document]) + Clone,
+        F: FnMut(&mut [Document]),
     {
         if let Some(docs) = self.documents.get_loaded_mut() {
-            docs.sort_unfiltered(sort_fn.clone());
-        }
-        if let Some(provider) = self.batch_tag_editor.provider_mut().get_loaded_mut() {
-            provider.sort_unfiltered(sort_fn);
+            docs.sort_unfiltered(sort_fn);
         }
     }
 }
@@ -619,13 +606,17 @@ pub fn get_common_tags(selected_documents: &[Document]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use read_flow_core::api::ReadingStatus;
 
     use super::Document;
+    use super::compute_all_tags;
     use super::document_tags;
     use super::get_common_tags;
     use crate::aggregator::DocumentContent;
     use crate::aggregator::DocumentType;
+    use crate::state::filtered::Filtered;
 
     fn content(tags: Vec<&str>) -> DocumentContent {
         DocumentContent {
@@ -679,5 +670,23 @@ mod tests {
     #[test]
     fn get_common_tags_empty_when_no_documents_selected() {
         assert_eq!(get_common_tags(&[]), Vec::<String>::new());
+    }
+
+    #[test]
+    fn compute_all_tags_dedupes_across_the_whole_collection() {
+        let files = Filtered::new(vec![
+            doc("d1", vec![content(vec!["rust", "fiction"])]),
+            doc("d2", vec![content(vec!["rust", "programming"])]),
+        ]);
+
+        let tags: HashSet<String> = compute_all_tags(&files).into_iter().collect();
+        assert_eq!(
+            tags,
+            HashSet::from([
+                "rust".to_string(),
+                "fiction".to_string(),
+                "programming".to_string(),
+            ])
+        );
     }
 }
