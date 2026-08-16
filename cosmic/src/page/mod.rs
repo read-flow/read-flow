@@ -153,6 +153,7 @@ pub enum PageMessage {
     ImageViewer(u64, ImageViewerMessage),
     OpenImageViewer(ViewerImage),
     CloseImageViewer(u64),
+    RequestClosePage(PageSelector),
     KeyEvent(PageSelector, Modifiers, Key, Option<SmolStr>),
     ModifiersChanged(PageSelector, Modifiers),
     NavigateToDocumentsWithStatus(ReadingStatus),
@@ -768,6 +769,27 @@ impl Pages {
                 self.deactivate_page(&selector);
                 task::message(PageMessage::Out(PageOutput::PageRemoved(selector)))
             }
+            PageMessage::RequestClosePage(selector) => match selector {
+                PageSelector::DocumentDetails(fingerprint) => {
+                    task::message(PageMessage::CloseDocumentDetails(fingerprint))
+                }
+                PageSelector::EpubViewer(fingerprint) => {
+                    let progress = self
+                        .epub_viewers
+                        .get(&fingerprint)
+                        .and_then(EpubViewer::current_progress);
+                    task::message(PageMessage::CloseEpubViewer(fingerprint, progress))
+                }
+                PageSelector::MuPdfViewer(fingerprint) => {
+                    let progress = self
+                        .mu_pdf_viewers
+                        .get(&fingerprint)
+                        .and_then(MuPdfViewer::current_progress);
+                    task::message(PageMessage::CloseMuPdfViewer(fingerprint, progress))
+                }
+                PageSelector::ImageViewer(id) => task::message(PageMessage::CloseImageViewer(id)),
+                _ => Task::none(),
+            },
             PageMessage::OpenDocument(document) => {
                 let type_ = document
                     .contents
@@ -1242,5 +1264,93 @@ mod tests {
 
         let messages = crate::test_support::drain(pages.save_all_reading_progress()).await;
         assert!(messages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn request_close_page_for_document_details_forwards_to_close_document_details() {
+        let (application_module, document_provider, _db_dir) =
+            crate::test_support::document_provider().await;
+        let (mut pages, init_task) = Pages::new(
+            application_module.clone(),
+            document_provider.clone(),
+            Config::default(),
+            crate::logging::init(),
+            false,
+        );
+        crate::test_support::drain(init_task).await;
+
+        let epub_file = crate::page::epub_viewer::test_helper::EpubBuilder::new("Test")
+            .body("<p>Hello</p>")
+            .build();
+        let (document, _fixture_dir) = crate::test_support::scan_and_fetch_document(
+            &application_module,
+            &document_provider,
+            epub_file.path().to_path_buf(),
+            "test.epub",
+        )
+        .await;
+        let fingerprint = document.document_guid.clone();
+
+        crate::test_support::drain(pages.update(PageMessage::OpenDocumentDetails(document))).await;
+        assert!(pages.document_details.contains_key(&fingerprint));
+
+        let messages = crate::test_support::drain(pages.update(PageMessage::RequestClosePage(
+            PageSelector::DocumentDetails(fingerprint.clone()),
+        )))
+        .await;
+
+        assert!(
+            messages
+                .iter()
+                .any(|m| matches!(m, PageMessage::CloseDocumentDetails(fp) if *fp == fingerprint))
+        );
+    }
+
+    #[tokio::test]
+    async fn request_close_page_for_mupdf_viewer_carries_current_progress() {
+        let (application_module, document_provider, _db_dir) =
+            crate::test_support::document_provider().await;
+        let (mut pages, init_task) = Pages::new(
+            application_module.clone(),
+            document_provider.clone(),
+            Config::default(),
+            crate::logging::init(),
+            false,
+        );
+        crate::test_support::drain(init_task).await;
+
+        let (pdf_document, _pdf_dir) = crate::test_support::scan_and_fetch_document(
+            &application_module,
+            &document_provider,
+            crate::bdd::fixtures::sample_pdf_path(),
+            "sample.pdf",
+        )
+        .await;
+        let fingerprint = pdf_document
+            .contents
+            .first()
+            .map(|c| c.fingerprint.clone())
+            .unwrap_or_default();
+
+        let messages =
+            crate::test_support::drain(pages.update(PageMessage::OpenInMuPdfViewer(pdf_document)))
+                .await;
+        for message in messages {
+            if !matches!(message, PageMessage::Out(_)) {
+                let _ = pages.update(message);
+            }
+        }
+        assert!(pages.mu_pdf_viewers.contains_key(&fingerprint));
+
+        let messages = crate::test_support::drain(pages.update(PageMessage::RequestClosePage(
+            PageSelector::MuPdfViewer(fingerprint.clone()),
+        )))
+        .await;
+
+        assert!(
+            messages
+                .iter()
+                .any(|m| matches!(m, PageMessage::CloseMuPdfViewer(fp, _) if *fp == fingerprint))
+        );
     }
 }
