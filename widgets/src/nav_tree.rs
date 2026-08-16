@@ -157,11 +157,25 @@ fn render_leaf<Message: Clone + 'static>(
 
     row = row.push(widget::text(leaf.label));
 
-    button::custom(row)
+    let body_btn = button::custom(row)
         .class(nav_button_class(leaf.active))
         .width(Length::Fill)
-        .on_press(leaf.on_activate)
-        .into()
+        .on_press(leaf.on_activate);
+
+    match leaf.on_close {
+        Some(on_close) => {
+            let close_btn = button::icon(
+                widget::icon::from_name("window-close-symbolic").size(CHEVRON_ICON_SIZE),
+            )
+            .on_press(on_close);
+            widget::Row::new()
+                .push(body_btn)
+                .push(close_btn)
+                .align_y(Alignment::Center)
+                .into()
+        }
+        None => body_btn.into(),
+    }
 }
 
 fn render_section_label<Message: 'static>(text: String) -> Element<'static, Message> {
@@ -324,6 +338,19 @@ mod tests {
                 active: false,
                 on_activate: "activate-pdf".to_string(),
                 on_close: None,
+            }))
+            .view()
+    }
+
+    #[golden_test(260, 60)]
+    fn leaf_with_close_shows_sibling_close_button() -> Element<'static, String> {
+        NavTree::new()
+            .push(NavItem::Leaf(NavLeaf {
+                icon: None,
+                label: "Sample.pdf".into(),
+                active: false,
+                on_activate: "activate".to_string(),
+                on_close: Some("close".to_string()),
             }))
             .view()
     }
