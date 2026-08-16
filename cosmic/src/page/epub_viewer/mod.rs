@@ -1382,7 +1382,10 @@ impl Page for EpubViewer {
             children,
             on_expand_all: Some(EpubViewerMessage::ExpandAllNavEntries),
             on_collapse_all: Some(EpubViewerMessage::CollapseAllNavEntries),
-            on_close: None,
+            on_close: Some(EpubViewerMessage::Out(EpubViewerOutput::Close(
+                self.fingerprint.clone(),
+                self.current_progress(),
+            ))),
         }))
     }
 
@@ -3381,6 +3384,8 @@ fn render_chapter_blocks(
 mod tests {
     use cosmic_golden::golden_test;
 
+    use super::EpubViewerMessage;
+    use super::EpubViewerOutput;
     use super::Page;
     use super::ViewerPosition;
     use super::load_epub_chapters;
@@ -3426,6 +3431,40 @@ mod tests {
             progress.position
         );
         assert!(progress.percentage > 0.0, "expected a nonzero percentage");
+    }
+
+    #[tokio::test]
+    async fn nav_tree_close_button_carries_current_progress() {
+        let (application_module, document_provider, _db_dir) =
+            crate::test_support::document_provider().await;
+        let epub_file = EpubBuilder::new("Test").body("<p>Hello</p>").build();
+        let (document, _fixture_dir) = crate::test_support::scan_and_fetch_document(
+            &application_module,
+            &document_provider,
+            epub_file.path().to_path_buf(),
+            "test.epub",
+        )
+        .await;
+        let fingerprint = document
+            .contents
+            .first()
+            .map(|c| c.fingerprint.clone())
+            .unwrap_or_default();
+
+        let (mut viewer, init_task) = super::EpubViewer::new(document, document_provider, false);
+        for message in crate::test_support::drain(init_task).await {
+            let _ = viewer.update(message);
+        }
+
+        let Some(read_flow_widgets::NavItem::Node(node)) = viewer.nav_tree(false) else {
+            panic!("expected a Node once chapters are loaded");
+        };
+        let EpubViewerMessage::Out(EpubViewerOutput::Close(closed_fingerprint, _)) =
+            node.on_close.expect("on_close should be set")
+        else {
+            panic!("expected on_close to be EpubViewerOutput::Close");
+        };
+        assert_eq!(closed_fingerprint, fingerprint);
     }
 
     #[golden_test(600, 150)]
