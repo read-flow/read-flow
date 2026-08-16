@@ -168,6 +168,11 @@ pub struct PreferencesPage {
     operation_error: Option<String>,
     pending_deletion: Option<Remote>,
     source_statuses: HashMap<i32, LoadedState<bool>>,
+    // server (ephemeral UI)
+    /// Whether the CORS/upload-limit/TLS controls are revealed. Purely a UI
+    /// concern — not persisted; these all have safe defaults so most users
+    /// never need to open it.
+    server_advanced_expanded: bool,
     // section nav
     selected_section: PreferencesSection,
 }
@@ -235,6 +240,7 @@ pub enum PreferencesMessage {
     SelectedServerDownloadFolder(Option<FileHandle>),
     ServerAddressChanged(String),
     ServerPortChanged(String),
+    ToggleServerAdvanced(bool),
     ServerAllowedOriginsChanged(String),
     ServerMaxUploadChanged(String),
     ToggleServerTls(bool),
@@ -409,6 +415,7 @@ impl PreferencesPage {
                 operation_error: None,
                 pending_deletion: None,
                 source_statuses: HashMap::new(),
+                server_advanced_expanded: false,
                 selected_section: PreferencesSection::default(),
             },
             tasks,
@@ -1274,6 +1281,31 @@ impl PreferencesPage {
                     ),
             )
             .add(
+                widget::settings::item::builder(fl!("settings-server-restart-to-apply"))
+                    .icon(widget::icon::from_name("view-refresh-symbolic").size(ICON_SIZE))
+                    .control(
+                        widget::button::standard(fl!("server-restart"))
+                            .on_press(PreferencesMessage::Out(PreferencesOutput::RestartServer)),
+                    ),
+            )
+            .add(
+                widget::settings::item::builder(fl!("settings-server-advanced"))
+                    .description(fl!("settings-server-advanced-description"))
+                    .icon(
+                        widget::icon::from_name("applications-engineering-symbolic")
+                            .size(ICON_SIZE),
+                    )
+                    .toggler(
+                        self.server_advanced_expanded,
+                        PreferencesMessage::ToggleServerAdvanced,
+                    ),
+            );
+
+        // Advanced network: CORS origins and upload limits. Both have safe
+        // defaults (unrestricted CORS, 100 MiB uploads), so these only
+        // matter once the server is reachable past localhost.
+        let advanced_network_section = widget::settings::section()
+            .add(
                 widget::settings::item::builder(fl!("settings-server-allowed-origins"))
                     .description(fl!("settings-server-allowed-origins-description"))
                     .icon(widget::icon::from_name("web-browser-symbolic").size(ICON_SIZE))
@@ -1301,14 +1333,6 @@ impl PreferencesPage {
                         )
                         .on_input(PreferencesMessage::ServerMaxUploadChanged)
                         .width(Length::Fixed(INPUT_WIDTH)),
-                    ),
-            )
-            .add(
-                widget::settings::item::builder(fl!("settings-server-restart-to-apply"))
-                    .icon(widget::icon::from_name("view-refresh-symbolic").size(ICON_SIZE))
-                    .control(
-                        widget::button::standard(fl!("server-restart"))
-                            .on_press(PreferencesMessage::Out(PreferencesOutput::RestartServer)),
                     ),
             );
 
@@ -1435,14 +1459,17 @@ impl PreferencesPage {
                 Some(PreferencesMessage::AddAuthorizedUser),
             ));
 
-        let items: Vec<Element<'_, PreferencesMessage>> = vec![
+        let mut items: Vec<Element<'_, PreferencesMessage>> = vec![
             widget::text::title2(fl!("preferences-server-section")).into(),
             server_section.into(),
             network_section.into(),
-            tls_section.into(),
-            authorized_users_section.into(),
-            local_identity_section.into(),
         ];
+        if self.server_advanced_expanded {
+            items.push(advanced_network_section.into());
+            items.push(tls_section.into());
+        }
+        items.push(authorized_users_section.into());
+        items.push(local_identity_section.into());
 
         items
     }
@@ -2135,6 +2162,10 @@ impl Page for PreferencesPage {
                     self.save_state = SaveState::Idle;
                 }
                 // Ignore non-numeric input (keeps the previous value).
+                Task::none()
+            }
+            PreferencesMessage::ToggleServerAdvanced(expanded) => {
+                self.server_advanced_expanded = expanded;
                 Task::none()
             }
             PreferencesMessage::ServerAllowedOriginsChanged(value) => {

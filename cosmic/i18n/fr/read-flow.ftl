@@ -496,6 +496,8 @@ settings-server-port-description = Port sur lequel le serveur écoute (0 = port 
 settings-server-start-on-launch = Démarrer le serveur au lancement
 settings-server-start-on-launch-description = Démarrer automatiquement le serveur à l'ouverture de l'application
 settings-server-restart-to-apply = Redémarrez le serveur pour appliquer la nouvelle adresse ou le nouveau port
+settings-server-advanced = Avancé
+settings-server-advanced-description = Origines CORS, limites de téléversement et TLS. Sans danger de laisser aux valeurs par défaut, sauf si le serveur est accessible au-delà de votre propre appareil.
 # Server network/TLS preferences
 settings-server-allowed-origins = Origines autorisées
 settings-server-allowed-origins-description = Origines web autorisées par CORS, séparées par des virgules (vide = toutes)

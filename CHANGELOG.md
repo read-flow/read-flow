@@ -15,6 +15,14 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 - New `--debug` flag. The EPUB viewer's "Show raw HTML" toggle (a developer-only debugging aid)
   is now hidden unless the app is launched with `--debug`.
 
+### Changed
+
+- Preferences → Server: CORS allowed origins, upload size limit, and HTTPS/TLS (certificates,
+  self-signed generation) now live behind a collapsed "Advanced" toggle. All three already default
+  to safe values (unrestricted CORS, 100 MiB uploads, no TLS) and only matter once the server is
+  reachable past your own device. Bind address and port stay visible, since those are needed for
+  the PWA to work at all.
+
 ### Removed
 
 - Cover extraction no longer trims whitespace borders from extracted/resized covers.

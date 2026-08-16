@@ -499,6 +499,8 @@ settings-server-port-description = Port the server listens on (0 = pick a free p
 settings-server-start-on-launch = Start server on launch
 settings-server-start-on-launch-description = Automatically start the server when the application opens
 settings-server-restart-to-apply = Restart the server to apply the new address or port
+settings-server-advanced = Advanced
+settings-server-advanced-description = CORS origins, upload limits, and TLS. Safe to leave at their defaults unless the server is reachable past your own device.
 # Server network/TLS preferences
 settings-server-allowed-origins = Allowed origins
 settings-server-allowed-origins-description = Comma-separated web origins allowed by CORS (empty = any)

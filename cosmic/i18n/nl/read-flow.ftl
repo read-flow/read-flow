@@ -497,6 +497,8 @@ settings-server-port-description = Poort waarop de server luistert (0 = kies een
 settings-server-start-on-launch = Server starten bij openen
 settings-server-start-on-launch-description = Start de server automatisch wanneer de toepassing opent
 settings-server-restart-to-apply = Herstart de server om het nieuwe adres of de nieuwe poort toe te passen
+settings-server-advanced = Geavanceerd
+settings-server-advanced-description = CORS-oorsprongen, uploadlimieten en TLS. Veilig om op de standaardwaarden te laten staan, tenzij de server buiten je eigen apparaat bereikbaar is.
 # Server network/TLS preferences
 settings-server-allowed-origins = Toegestane origins
 settings-server-allowed-origins-description = Door komma's gescheiden web-origins toegestaan door CORS (leeg = alle)
