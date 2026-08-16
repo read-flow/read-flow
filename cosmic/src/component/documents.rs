@@ -533,7 +533,7 @@ fn display_document_title<'a>(document: &'a Document) -> Element<'a, DocumentsMe
     .into()
 }
 
-fn pill<'a, Message: 'a>(label: impl ToString) -> Element<'a, Message> {
+pub(crate) fn pill<'a, Message: 'a>(label: impl ToString) -> Element<'a, Message> {
     let cosmic_theme::Spacing {
         space_xxs,
         space_xs,

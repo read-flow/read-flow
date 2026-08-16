@@ -24,6 +24,10 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   this, halving its memory footprint.
 - Document details cover-selection thumbnails now wrap onto additional rows instead of being
   squeezed to fit when a document has 4 or more attached files.
+- The document merge dialog now shows a cover thumbnail, authors, and format/tag pills for each
+  candidate document, states the concrete consequence of the merge (which documents will be
+  deleted and where their files move) once a winner is picked, and uses a destructive-styled
+  confirm button, matching the confirmation pattern already used for purging missing files.
 
 <!-- Add entries here as you land changes. Move them under a version heading at release time. -->
 

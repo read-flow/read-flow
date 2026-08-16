@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
 use std::slice;
@@ -35,6 +36,7 @@ use crate::component::documents::DocumentState;
 use crate::component::documents::DocumentsComponent;
 use crate::component::documents::DocumentsMessage;
 use crate::component::documents::DocumentsOutput;
+use crate::component::documents::pill;
 use crate::component::pagination::PaginationMessage;
 use crate::component::provided_state::ProvidedStateMessage;
 use crate::component::tag_editor::TagEditorOutput;
@@ -439,31 +441,36 @@ impl DocumentList {
 }
 
 impl DocumentList {
-    fn view_merge_dialog(&self, dialog: &MergeDialogState) -> Element<'_, DocumentListMessage> {
+    fn view_merge_dialog<'a>(
+        &'a self,
+        dialog: &'a MergeDialogState,
+    ) -> Element<'a, DocumentListMessage> {
         use cosmic::cosmic_theme::Spacing;
         use cosmic::theme;
 
-        let Spacing { space_s, .. } = theme::active().cosmic().spacing;
+        let Spacing {
+            space_s, space_xxs, ..
+        } = theme::active().cosmic().spacing;
+        let covers = self.archive.covers();
 
         let candidate_rows: Vec<Element<'_, DocumentListMessage>> = dialog
             .candidates
             .iter()
             .enumerate()
             .map(|(idx, doc)| {
-                let label = doc
-                    .document_meta
-                    .title
-                    .as_deref()
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| {
-                        doc.local_or_any_source()
-                            .and_then(|(_, s)| std::path::Path::new(&s.path).file_name()?.to_str())
-                            .unwrap_or("")
-                            .to_owned()
-                    });
+                let info = widget::column::with_children(vec![
+                    widget::text::body(merge_candidate_title(doc)).into(),
+                    widget::text::caption(merge_candidate_secondary(doc)).into(),
+                    merge_candidate_pills(doc),
+                ])
+                .spacing(space_xxs)
+                .width(iced::Length::Fill);
+
                 widget::settings::item_row(vec![])
                     .push(widget::radio(
-                        widget::text::body(label),
+                        cosmic::iced::widget::row![merge_candidate_cover(doc, covers), info,]
+                            .spacing(space_s)
+                            .align_y(cosmic::iced::Alignment::Center),
                         idx,
                         dialog.winner_index,
                         DocumentListMessage::MergeWinnerSelected,
@@ -479,14 +486,35 @@ impl DocumentList {
             .padding(space_s)
             .width(iced::Length::Fill);
 
-        let merge_btn = cosmic::widget::button::suggested(fl!("document-list-merge-confirm"))
+        let body = match dialog
+            .winner_index
+            .and_then(|idx| dialog.candidates.get(idx))
+        {
+            Some(winner) => {
+                let loser_titles: Vec<String> = dialog
+                    .candidates
+                    .iter()
+                    .filter(|d| d.document_guid != winner.document_guid)
+                    .map(merge_candidate_title)
+                    .collect();
+                fl!(
+                    "document-list-merge-confirm-body",
+                    winner = merge_candidate_title(winner),
+                    losers = loser_titles.join(", "),
+                    count = (loser_titles.len() as i32)
+                )
+            }
+            None => fl!("document-list-merge-body"),
+        };
+
+        let merge_btn = cosmic::widget::button::destructive(fl!("document-list-merge-confirm"))
             .apply_maybe(dialog.winner_index.is_some().then_some(()), |btn, _| {
                 btn.on_press(DocumentListMessage::ConfirmMerge)
             });
 
         cosmic::widget::dialog()
             .title(fl!("document-list-merge-title"))
-            .body(fl!("document-list-merge-body"))
+            .body(body)
             .control(controls)
             .primary_action(merge_btn)
             .secondary_action(
@@ -494,6 +522,94 @@ impl DocumentList {
                     .on_press(DocumentListMessage::CancelMerge),
             )
             .into()
+    }
+}
+
+/// Display title for a merge candidate: user-edited title, else source filename.
+fn merge_candidate_title(doc: &Document) -> String {
+    doc.document_meta
+        .title
+        .as_deref()
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            doc.local_or_any_source()
+                .and_then(|(_, s)| std::path::Path::new(&s.path).file_name()?.to_str())
+                .unwrap_or("")
+                .to_owned()
+        })
+}
+
+/// Secondary line for a merge candidate: authors, else file count/tag summary.
+fn merge_candidate_secondary(doc: &Document) -> String {
+    let total_sources: usize = doc.contents.iter().map(|c| c.sources.len()).sum();
+    let tag_count = merge_candidate_tags(doc).len();
+    match doc.document_meta.authors.as_deref() {
+        Some(authors) if !authors.is_empty() => authors.join(", "),
+        _ => fl!(
+            "document-list-merge-candidate-summary",
+            files = (total_sources as i32),
+            tags = (tag_count as i32)
+        ),
+    }
+}
+
+/// Unique tags across all of a merge candidate's contents.
+fn merge_candidate_tags(doc: &Document) -> Vec<String> {
+    let mut seen = HashSet::new();
+    doc.contents
+        .iter()
+        .flat_map(|c| c.tags.iter())
+        .filter(|t| seen.insert((*t).clone()))
+        .cloned()
+        .collect()
+}
+
+/// Format-type and tag-count pills for a merge candidate row.
+fn merge_candidate_pills<'a>(doc: &'a Document) -> Element<'a, DocumentListMessage> {
+    use cosmic::cosmic_theme::Spacing;
+    use cosmic::theme;
+
+    let Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+    let mut row = widget::Row::new().spacing(space_xxs);
+    for t in doc.file_types() {
+        row = row.push(pill(t.as_str().to_uppercase()));
+    }
+    let tag_count = merge_candidate_tags(doc).len();
+    if tag_count > 0 {
+        row = row.push(pill(fl!(
+            "document-list-merge-candidate-tags",
+            count = (tag_count as i32)
+        )));
+    }
+    row.into()
+}
+
+/// Cover thumbnail for a merge candidate row, falling back to blank space.
+fn merge_candidate_cover<'a>(
+    doc: &'a Document,
+    covers: &'a HashMap<String, widget::image::Handle>,
+) -> Element<'a, DocumentListMessage> {
+    let cover = doc
+        .document_meta
+        .selected_cover_fingerprint
+        .as_ref()
+        .and_then(|fp| covers.get(fp))
+        .or_else(|| {
+            doc.contents
+                .first()
+                .and_then(|c| covers.get(&c.fingerprint))
+        });
+
+    match cover {
+        Some(handle) => widget::image(handle.clone())
+            .width(iced::Length::Fixed(32.0))
+            .height(iced::Length::Fixed(48.0))
+            .content_fit(cosmic::iced::ContentFit::Contain)
+            .into(),
+        None => widget::Space::new()
+            .width(iced::Length::Fixed(32.0))
+            .height(iced::Length::Fixed(48.0))
+            .into(),
     }
 }
 
