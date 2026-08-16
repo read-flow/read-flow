@@ -18,6 +18,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 - Dashboard "Continue Reading" cover thumbnails no longer bleed outside their card borders when
   rendered by the software (tiny-skia) backend, as used by the marketing-screenshot tool.
+- Closing the document details page after editing tags no longer rescans the entire document
+  library to refresh the tag suggestion list, which was slow on large (8000+) libraries.
 
 <!-- Add entries here as you land changes. Move them under a version heading at release time. -->
 

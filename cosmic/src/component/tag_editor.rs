@@ -132,6 +132,19 @@ where
         self.all_tags.provider_mut()
     }
 
+    /// Merge additional tags into the cached tag list without refetching from
+    /// the provider (which would rescan every source document).
+    pub fn merge_tags(&mut self, tags: impl IntoIterator<Item = String>) {
+        if let Some(all_tags) = self.all_tags.state.get_loaded_mut() {
+            for tag in tags {
+                if !all_tags.contains(&tag) {
+                    all_tags.push(tag);
+                }
+            }
+        }
+        self.update_available_tags();
+    }
+
     /// View the tag editor
     pub fn view(&self) -> Element<'_, TagEditorMessage> {
         let cosmic_theme::Spacing {
@@ -333,6 +346,7 @@ mod tests {
     use provider::r#async::Value;
 
     use super::Orientation;
+    use super::ProvidedStateMessage;
     use super::TagEditor;
     use super::TagEditorMessage;
 
@@ -343,6 +357,38 @@ mod tests {
             "programming".to_string(),
             "rust".to_string(),
         ]
+    }
+
+    #[test]
+    fn merge_tags_appends_new_tags_without_duplicating_existing() {
+        let mut editor = make_editor(vec![], Orientation::Vertical);
+        let _ = editor.update(TagEditorMessage::Tags(ProvidedStateMessage::Loaded(
+            all_tags(),
+        )));
+
+        editor.merge_tags(vec!["rust".to_string(), "poetry".to_string()]);
+
+        let mut merged = editor.all_tags.state.get_loaded().cloned().unwrap();
+        merged.sort();
+        assert_eq!(
+            merged,
+            vec![
+                "fiction".to_string(),
+                "non-fiction".to_string(),
+                "poetry".to_string(),
+                "programming".to_string(),
+                "rust".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn merge_tags_before_provider_loaded_is_a_noop() {
+        let mut editor = make_editor(vec![], Orientation::Vertical);
+
+        editor.merge_tags(vec!["rust".to_string()]);
+
+        assert!(editor.all_tags.state.get_loaded().is_none());
     }
 
     fn make_editor(

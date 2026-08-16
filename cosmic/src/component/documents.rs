@@ -423,12 +423,13 @@ impl DocumentsComponent {
         };
         docs.update_item(search_fn.clone(), item.clone());
         if let Some(provider) = self.batch_tag_editor.provider_mut().get_loaded_mut() {
-            provider.update_item(search_fn, item);
+            provider.update_item(search_fn, item.clone());
         }
 
-        task::message(DocumentsMessage::BatchTagEditor(TagEditorMessage::Tags(
-            ProvidedStateMessage::Load,
-        )))
+        // Merge the edited document's tags into the cached tag list instead of
+        // refetching (which would rescan every document in the library).
+        self.batch_tag_editor.merge_tags(document_tags(&item));
+        Task::none()
     }
 
     pub fn is_loaded(&self) -> bool {
@@ -578,15 +579,7 @@ fn display_pills<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
     }
 
     // Tag pills (up to MAX_TAGS, then a count badge)
-    let all_tags: Vec<String> = {
-        let mut seen = HashSet::new();
-        document
-            .contents
-            .iter()
-            .flat_map(|c| c.tags.iter().cloned())
-            .filter(|t| seen.insert(t.clone()))
-            .collect()
-    };
+    let all_tags = document_tags(document);
     let shown = all_tags.len().min(MAX_TAGS);
     for tag in &all_tags[..shown] {
         row = row.push(pill(tag));
@@ -598,18 +591,23 @@ fn display_pills<'a>(document: &'a Document) -> Element<'a, DocumentsMessage> {
     row.into()
 }
 
+/// Unique tags across all of a document's contents, in first-seen order.
+fn document_tags(document: &Document) -> Vec<String> {
+    let mut seen = HashSet::new();
+    document
+        .contents
+        .iter()
+        .flat_map(|c| c.tags.iter().cloned())
+        .filter(|t| seen.insert(t.clone()))
+        .collect()
+}
+
 /// Get tags that are common to all selected documents
 pub fn get_common_tags(selected_documents: &[Document]) -> Vec<String> {
     let common_tags = selected_documents
         .iter()
-        .map(|document| {
-            document
-                .contents
-                .iter()
-                .flat_map(|c| c.tags.iter().cloned())
-                .collect::<HashSet<String>>()
-        })
-        .reduce(|acc, document_tags| acc.intersection(&document_tags).cloned().collect())
+        .map(|document| document_tags(document).into_iter().collect::<HashSet<_>>())
+        .reduce(|acc, tags| acc.intersection(&tags).cloned().collect())
         .unwrap_or_else(HashSet::new);
 
     let mut common_tags = common_tags.into_iter().collect::<Vec<_>>();
@@ -617,4 +615,69 @@ pub fn get_common_tags(selected_documents: &[Document]) -> Vec<String> {
     common_tags.sort();
 
     common_tags
+}
+
+#[cfg(test)]
+mod tests {
+    use read_flow_core::api::ReadingStatus;
+
+    use super::Document;
+    use super::document_tags;
+    use super::get_common_tags;
+    use crate::aggregator::DocumentContent;
+    use crate::aggregator::DocumentType;
+
+    fn content(tags: Vec<&str>) -> DocumentContent {
+        DocumentContent {
+            fingerprint: "fp".to_string(),
+            type_: DocumentType::Epub,
+            size: 0,
+            tags: tags.into_iter().map(String::from).collect(),
+            status: ReadingStatus::Unread,
+            sources: vec![],
+        }
+    }
+
+    fn doc(guid: &str, contents: Vec<DocumentContent>) -> Document {
+        Document {
+            document_guid: guid.to_string(),
+            document_meta: Default::default(),
+            contents,
+        }
+    }
+
+    #[test]
+    fn document_tags_dedupes_across_contents_preserving_first_seen_order() {
+        let document = doc(
+            "d1",
+            vec![
+                content(vec!["rust", "fiction"]),
+                content(vec!["fiction", "programming"]),
+            ],
+        );
+
+        assert_eq!(
+            document_tags(&document),
+            vec![
+                "rust".to_string(),
+                "fiction".to_string(),
+                "programming".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn get_common_tags_intersects_across_selected_documents() {
+        let selected = vec![
+            doc("d1", vec![content(vec!["rust", "fiction"])]),
+            doc("d2", vec![content(vec!["rust", "programming"])]),
+        ];
+
+        assert_eq!(get_common_tags(&selected), vec!["rust".to_string()]);
+    }
+
+    #[test]
+    fn get_common_tags_empty_when_no_documents_selected() {
+        assert_eq!(get_common_tags(&[]), Vec::<String>::new());
+    }
 }
