@@ -28,6 +28,11 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   restarts. An explicit choice is now saved and re-applied live without restarting.
 - Preferences → Server → Local Identity now includes a worked example of what picking a user
   there actually does, instead of only abstract wording.
+- The nav sidebar now separates permanent pages (Dashboard, Documents, Online Libraries,
+  Preferences, Server) from currently open documents, which appear below an "Open" label and can
+  each be closed with a new × button — including the EPUB viewer, whose chapter tree keeps its
+  existing expand/collapse chevron alongside the new close button. Closing a document from the
+  sidebar saves its reading progress exactly as closing it from its own back button already did.
 
 ### Added
 
