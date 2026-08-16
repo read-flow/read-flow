@@ -32,7 +32,7 @@ pub(in crate::screenshot_tool) async fn render(sample_library: &Path) -> anyhow:
     // This first render establishes the real (wide) viewport size;
     // re-selecting the active page then re-triggers rendering for whichever
     // pages are actually visible at that width (e.g. both pages of a
-    // dual-pane spread), which we drain and replay before the real, final
+    // dual-page spread), which we drain and replay before the real, final
     // render.
     let _ = harness.render_rgba(&mut renderer);
     harness

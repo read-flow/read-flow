@@ -207,7 +207,7 @@ pub enum MuPdfViewerMessage {
     // UI settings
     ThemeColors(bool),
     ShowThumbnails(bool),
-    DualPane(DualPageMode),
+    DualPage(DualPageMode),
     EpubFontSize(f32),
 
     // Keyboard / input
@@ -241,7 +241,7 @@ pub struct MuPdfViewer {
     zoom_scroll: f32,
     theme_colors: bool,
     show_thumbnails: bool,
-    dual_pane: DualPageMode,
+    dual_page: DualPageMode,
     is_reflowable: bool,
     epub_font_size: f32,
     layout_gen: u64,
@@ -296,7 +296,7 @@ impl MuPdfViewer {
             zoom_scroll: 0.0,
             theme_colors: false,
             show_thumbnails: true,
-            dual_pane: DualPageMode::default(),
+            dual_page: DualPageMode::default(),
             is_reflowable: false,
             epub_font_size: load_mupdf_prefs(),
             layout_gen: 0,
@@ -504,7 +504,7 @@ impl MuPdfViewer {
     fn view_content(&self) -> Element<'_, MuPdfViewerMessage> {
         widget::responsive(move |size| {
             self.viewport_size.set((size.width, size.height));
-            let dual = self.should_dual_pane(size.width);
+            let dual = self.should_dual_page(size.width);
             let content: Element<'_, MuPdfViewerMessage> = if dual {
                 let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
                 let first_page = (self.active_page / 2) * 2;
@@ -550,8 +550,8 @@ impl MuPdfViewer {
     }
 
     /// Whether dual-page display should be active at the given viewport width.
-    fn should_dual_pane(&self, viewport_width: f32) -> bool {
-        match self.dual_pane {
+    fn should_dual_page(&self, viewport_width: f32) -> bool {
+        match self.dual_page {
             DualPageMode::On => true,
             DualPageMode::Off => false,
             DualPageMode::Auto => viewport_width > 1200.0,
@@ -767,7 +767,7 @@ impl MuPdfViewer {
     /// single-pane mode, or both pages of the current spread in dual-pane mode.
     fn visible_page_indices(&self) -> Vec<usize> {
         let (vw, _) = self.viewport_size.get();
-        if self.should_dual_pane(vw) {
+        if self.should_dual_page(vw) {
             let first = (self.active_page / 2) * 2;
             let mut pages = vec![first];
             if first + 1 < self.pages.len() {
@@ -973,27 +973,27 @@ impl Page for MuPdfViewer {
                     .toggler(self.show_thumbnails, MuPdfViewerMessage::ShowThumbnails),
             )
             .add(
-                widget::settings::item::builder(fl!("pdf-viewer-dual-pane")).control(
+                widget::settings::item::builder(fl!("pdf-viewer-dual-page")).control(
                     widget::settings::item_row(vec![
                         widget::radio(
-                            widget::text::body(fl!("pdf-viewer-dual-pane-off")),
+                            widget::text::body(fl!("pdf-viewer-dual-page-off")),
                             DualPageMode::Off,
-                            Some(self.dual_pane),
-                            MuPdfViewerMessage::DualPane,
+                            Some(self.dual_page),
+                            MuPdfViewerMessage::DualPage,
                         )
                         .into(),
                         widget::radio(
-                            widget::text::body(fl!("pdf-viewer-dual-pane-auto")),
+                            widget::text::body(fl!("pdf-viewer-dual-page-auto")),
                             DualPageMode::Auto,
-                            Some(self.dual_pane),
-                            MuPdfViewerMessage::DualPane,
+                            Some(self.dual_page),
+                            MuPdfViewerMessage::DualPage,
                         )
                         .into(),
                         widget::radio(
-                            widget::text::body(fl!("pdf-viewer-dual-pane-on")),
+                            widget::text::body(fl!("pdf-viewer-dual-page-on")),
                             DualPageMode::On,
-                            Some(self.dual_pane),
-                            MuPdfViewerMessage::DualPane,
+                            Some(self.dual_page),
+                            MuPdfViewerMessage::DualPage,
                         )
                         .into(),
                     ])
@@ -1165,13 +1165,13 @@ impl Page for MuPdfViewer {
             }
             MuPdfViewerMessage::PreviousPage => {
                 let (vw, _) = self.viewport_size.get();
-                let step = if self.should_dual_pane(vw) { 2 } else { 1 };
+                let step = if self.should_dual_page(vw) { 2 } else { 1 };
                 self.active_page = self.active_page.saturating_sub(step);
                 self.update_active_page()
             }
             MuPdfViewerMessage::NextPage => {
                 let (vw, _) = self.viewport_size.get();
-                let step = if self.should_dual_pane(vw) { 2 } else { 1 };
+                let step = if self.should_dual_page(vw) { 2 } else { 1 };
                 if self.active_page + step < self.pages.len() {
                     self.active_page += step;
                 }
@@ -1210,13 +1210,13 @@ impl Page for MuPdfViewer {
             MuPdfViewerMessage::Key(_modifiers, key, _text) => match &key {
                 Key::Named(Named::ArrowUp | Named::ArrowLeft | Named::PageUp) => {
                     let (vw, _) = self.viewport_size.get();
-                    let step = if self.should_dual_pane(vw) { 2 } else { 1 };
+                    let step = if self.should_dual_page(vw) { 2 } else { 1 };
                     self.active_page = self.active_page.saturating_sub(step);
                     self.update_active_page()
                 }
                 Key::Named(Named::ArrowDown | Named::ArrowRight | Named::PageDown) => {
                     let (vw, _) = self.viewport_size.get();
-                    let step = if self.should_dual_pane(vw) { 2 } else { 1 };
+                    let step = if self.should_dual_page(vw) { 2 } else { 1 };
                     if self.active_page + step < self.pages.len() {
                         self.active_page += step;
                     }
@@ -1275,8 +1275,8 @@ impl Page for MuPdfViewer {
                 self.show_thumbnails = show_thumbnails;
                 Task::none()
             }
-            MuPdfViewerMessage::DualPane(dual_pane) => {
-                self.dual_pane = dual_pane;
+            MuPdfViewerMessage::DualPage(dual_page) => {
+                self.dual_page = dual_page;
                 self.update_active_page()
             }
             MuPdfViewerMessage::EpubFontSize(size) => {
