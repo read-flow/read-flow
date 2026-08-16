@@ -34,6 +34,7 @@ pub struct NavNode<Message> {
     pub on_expand_all: Option<Message>,
     /// If `Some`, a "Collapse All" entry appears in the right-click context menu.
     pub on_collapse_all: Option<Message>,
+    pub on_close: Option<Message>,
 }
 
 pub enum NavItem<Message> {
@@ -62,6 +63,7 @@ impl<Message: Clone> NavItem<Message> {
                 children: node.children.into_iter().map(|c| c.map(f)).collect(),
                 on_expand_all: node.on_expand_all.map(f),
                 on_collapse_all: node.on_collapse_all.map(f),
+                on_close: node.on_close.map(f),
             }),
             NavItem::SectionLabel(text) => NavItem::SectionLabel(text),
         }
@@ -223,10 +225,17 @@ fn render_node<Message: Clone + 'static>(
     let chevron_btn = button::icon(widget::icon::from_name(chevron_name).size(CHEVRON_ICON_SIZE))
         .on_press(node.on_toggle);
 
-    let row = widget::Row::new()
+    let mut row = widget::Row::new()
         .push(body_btn)
         .push(chevron_btn)
         .align_y(Alignment::Center);
+
+    if let Some(on_close) = node.on_close {
+        let close_btn =
+            button::icon(widget::icon::from_name("window-close-symbolic").size(CHEVRON_ICON_SIZE))
+                .on_press(on_close);
+        row = row.push(close_btn);
+    }
 
     // Build a right-click context menu when expand/collapse-all messages are provided.
     let context_items = build_context_items(&node.on_expand_all, &node.on_collapse_all);
@@ -350,6 +359,48 @@ mod tests {
                 label: "Sample.pdf".into(),
                 active: false,
                 on_activate: "activate".to_string(),
+                on_close: Some("close".to_string()),
+            }))
+            .view()
+    }
+
+    #[golden_test(260, 60)]
+    fn node_with_close_collapsed() -> Element<'static, String> {
+        NavTree::new()
+            .push(NavItem::Node(NavNode {
+                icon: None,
+                label: "Meditations".into(),
+                active: true,
+                collapsed: true,
+                on_activate: "activate".to_string(),
+                on_toggle: "toggle".to_string(),
+                children: vec![],
+                on_expand_all: None,
+                on_collapse_all: None,
+                on_close: Some("close".to_string()),
+            }))
+            .view()
+    }
+
+    #[golden_test(260, 130)]
+    fn node_with_close_expanded_shows_children_and_keeps_close() -> Element<'static, String> {
+        NavTree::new()
+            .push(NavItem::Node(NavNode {
+                icon: None,
+                label: "Meditations".into(),
+                active: true,
+                collapsed: false,
+                on_activate: "activate".to_string(),
+                on_toggle: "toggle".to_string(),
+                children: vec![NavItem::Leaf(NavLeaf {
+                    icon: None,
+                    label: "Book I".into(),
+                    active: false,
+                    on_activate: "activate-chapter".to_string(),
+                    on_close: None,
+                })],
+                on_expand_all: None,
+                on_collapse_all: None,
                 on_close: Some("close".to_string()),
             }))
             .view()

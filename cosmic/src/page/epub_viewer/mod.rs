@@ -1382,6 +1382,7 @@ impl Page for EpubViewer {
             children,
             on_expand_all: Some(EpubViewerMessage::ExpandAllNavEntries),
             on_collapse_all: Some(EpubViewerMessage::CollapseAllNavEntries),
+            on_close: None,
         }))
     }
 
@@ -3022,6 +3023,7 @@ fn build_nav_items_at_depth(
                 children,
                 on_expand_all: None,
                 on_collapse_all: None,
+                on_close: None,
             }));
         }
 
