@@ -30,6 +30,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
+use cosmic::cosmic_config;
+use cosmic::cosmic_config::CosmicConfigEntry;
 use provider::r#async::Provider;
 use read_flow_core::ApplicationModule as GenericApplicationModule;
 use read_flow_core::settings;
@@ -113,8 +115,22 @@ fn main() -> anyhow::Result<()> {
     // the in-app server log page renders.
     let log_bus = logging::init();
 
-    // Get the system's preferred languages.
-    let requested_languages = i18n_embed::DesktopLanguageRequester::requested_languages();
+    // Language: an explicit override saved in Preferences, else the OS locale.
+    // Reads the same cosmic_config entry `app::ReadFlow` reads later; this
+    // works identically with or without a running COSMIC session, and on
+    // macOS, since cosmic_config is just a local config-file store and
+    // `DesktopLanguageRequester` just reads the platform locale.
+    let saved_config = cosmic_config::Config::new(
+        <app::ReadFlow as cosmic::Application>::APP_ID,
+        config::Config::VERSION,
+    )
+    .ok()
+    .map(|ctx| match config::Config::get_entry(&ctx) {
+        Ok(config) => config,
+        Err((_errors, config)) => config,
+    })
+    .unwrap_or_default();
+    let requested_languages = i18n::effective_languages(saved_config.language.as_deref());
 
     // Enable localizations to be applied.
     i18n::init(&requested_languages);

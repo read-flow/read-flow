@@ -155,11 +155,14 @@ document-list-sort-type = Type
 # Page messages
 page-not-found = ⚠ Niet gevonden
 
-# Language menu
-language = Taal
+# Language
 language-dutch = Nederlands
 language-english = English
 language-french = Français
+settings-language-section = Taal
+settings-language = Taal
+settings-language-description = In welke taal Read Flow wordt weergegeven.
+settings-language-follow-system = Systeem volgen
 
 # Pagination
 pagination-first = Eerste

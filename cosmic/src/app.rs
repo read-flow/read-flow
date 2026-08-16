@@ -125,7 +125,9 @@ pub enum Message {
     PageAdded(PageSelector),
     ActivatePage(PageSelector),
     ActivePageRemoved(PageSelector),
-    SwitchLanguage(LanguageIdentifier),
+    /// Fallback-ordered candidates to select from, e.g. a single explicit
+    /// override or the OS-reported preferred languages for "Follow System".
+    SwitchLanguage(Vec<LanguageIdentifier>),
     ExpireDocumentProvider,
     ReassertInterfaceFont,
     SystemThemeModeChanged,
@@ -162,6 +164,7 @@ impl From<PageOutput> for Message {
             PageOutput::StopServer => Message::ServerStop,
             PageOutput::RestartServer => Message::ServerRestart,
             PageOutput::ReloadServerConfig => Message::ServerReloadConfig,
+            PageOutput::SwitchLanguage(languages) => Message::SwitchLanguage(languages),
             PageOutput::CloseContext => Message::ToggleActivePageContext,
         }
     }
@@ -377,25 +380,6 @@ impl cosmic::Application for ReadFlow {
                     vec![
                         menu::Item::Button(fl!("scan"), None, MenuAction::Scan),
                         menu::Item::Button(fl!("check-missing"), None, MenuAction::CheckMissing),
-                    ],
-                ),
-            ),
-            menu::Tree::with_children(
-                menu::root(fl!("language")).apply(Element::from),
-                menu::items(
-                    &self.key_binds,
-                    vec![
-                        menu::Item::Button(
-                            fl!("language-english"),
-                            None,
-                            MenuAction::SwitchTo("en"),
-                        ),
-                        menu::Item::Button(fl!("language-dutch"), None, MenuAction::SwitchTo("nl")),
-                        menu::Item::Button(
-                            fl!("language-french"),
-                            None,
-                            MenuAction::SwitchTo("fr"),
-                        ),
                     ],
                 ),
             ),
@@ -714,9 +698,9 @@ impl cosmic::Application for ReadFlow {
                 self.core.window.show_context = false;
                 self.update_title()
             }
-            Message::SwitchLanguage(language) => {
+            Message::SwitchLanguage(languages) => {
                 // Switch the language
-                crate::i18n::localizer().select(&[language]).ok();
+                crate::i18n::localizer().select(&languages).ok();
 
                 // Update the window title to reflect the new language
                 self.update_title()
@@ -1099,7 +1083,6 @@ pub enum MenuAction {
     Context,
     Scan,
     CheckMissing,
-    SwitchTo(&'static str),
 }
 
 impl menu::action::MenuAction for MenuAction {
@@ -1111,7 +1094,6 @@ impl menu::action::MenuAction for MenuAction {
             MenuAction::Context => Message::ToggleActivePageContext,
             MenuAction::Scan => Message::Scan,
             MenuAction::CheckMissing => Message::CheckMissing,
-            MenuAction::SwitchTo(language) => Message::SwitchLanguage(language.parse().unwrap()),
         }
     }
 }

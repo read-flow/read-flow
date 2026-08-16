@@ -19,6 +19,19 @@ pub fn init(requested_languages: &[LanguageIdentifier]) {
     }
 }
 
+/// Explicit language choices offered in the UI.
+pub const LANGUAGE_OPTIONS: &[&str] = &["en", "nl", "fr"];
+
+/// Fallback-ordered languages to request: the explicit override if set and valid,
+/// otherwise the OS-reported preferred languages (works on Linux, macOS, and Windows,
+/// with or without a COSMIC session — it just reads the platform locale).
+pub fn effective_languages(explicit_override: Option<&str>) -> Vec<LanguageIdentifier> {
+    match explicit_override.and_then(|code| code.parse().ok()) {
+        Some(language) => vec![language],
+        None => i18n_embed::DesktopLanguageRequester::requested_languages(),
+    }
+}
+
 // Get the `Localizer` to be used for localizing this library.
 #[must_use]
 pub fn localizer() -> Box<dyn Localizer> {

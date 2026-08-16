@@ -127,6 +127,7 @@ pub enum PageOutput {
     RestartServer,
     ReloadServerConfig,
     CloseContext,
+    SwitchLanguage(Vec<i18n_embed::unic_langid::LanguageIdentifier>),
 }
 
 #[derive(Debug, Clone)]
@@ -920,6 +921,9 @@ fn map_preferences_message(msg: PreferencesMessage) -> PageMessage {
             PreferencesOutput::RestartServer => PageMessage::Out(PageOutput::RestartServer),
             PreferencesOutput::OpenContext => PageMessage::Out(PageOutput::OpenContext),
             PreferencesOutput::CloseContext => PageMessage::Out(PageOutput::CloseContext),
+            PreferencesOutput::LanguageChanged(languages) => {
+                PageMessage::Out(PageOutput::SwitchLanguage(languages))
+            }
         },
         msg => PageMessage::Preferences(msg),
     }

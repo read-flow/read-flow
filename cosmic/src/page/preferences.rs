@@ -186,6 +186,7 @@ pub enum PreferencesOutput {
     RestartServer,
     OpenContext,
     CloseContext,
+    LanguageChanged(Vec<i18n_embed::unic_langid::LanguageIdentifier>),
 }
 
 /// Which theme color picker is shown in the context drawer.
@@ -224,6 +225,11 @@ pub enum PreferencesMessage {
     ContainerPicker(ColorPickerUpdate),
     ResetBackgroundColor,
     ResetContainerColor,
+
+    // language (cosmic_config-backed)
+    /// Index into the dropdown: 0 = follow the OS locale, 1.. = an explicit
+    /// language from `LANGUAGE_OPTIONS`.
+    SetLanguage(usize),
 
     // settings (TOML)
     ToggleDryRun(bool),
@@ -621,8 +627,52 @@ impl PreferencesPage {
 
     fn view_section_appearance(&self) -> Vec<Element<'_, PreferencesMessage>> {
         let mut items = vec![widget::text::title2(fl!("preferences-appearance-section")).into()];
+        items.push(self.view_section_language());
         items.extend(self.view_section_theme());
         items
+    }
+
+    fn view_section_language(&self) -> Element<'_, PreferencesMessage> {
+        let options: Vec<String> = std::iter::once(fl!("settings-language-follow-system"))
+            .chain(
+                crate::i18n::LANGUAGE_OPTIONS
+                    .iter()
+                    .map(|code| match *code {
+                        "en" => fl!("language-english"),
+                        "nl" => fl!("language-dutch"),
+                        "fr" => fl!("language-french"),
+                        other => other.to_string(),
+                    }),
+            )
+            .collect();
+        let selected = self
+            .config
+            .language
+            .as_deref()
+            .and_then(|code| {
+                crate::i18n::LANGUAGE_OPTIONS
+                    .iter()
+                    .position(|c| *c == code)
+            })
+            .map(|i| i + 1)
+            .unwrap_or(0);
+
+        widget::settings::section()
+            .title(fl!("settings-language-section"))
+            .add(
+                widget::settings::item::builder(fl!("settings-language"))
+                    .description(fl!("settings-language-description"))
+                    .icon(
+                        widget::icon::from_name("preferences-desktop-locale-symbolic")
+                            .size(ICON_SIZE),
+                    )
+                    .control(widget::dropdown(
+                        options,
+                        Some(selected),
+                        PreferencesMessage::SetLanguage,
+                    )),
+            )
+            .into()
     }
 
     /// @feature: app.theme_overrides
@@ -2288,6 +2338,20 @@ impl Page for PreferencesPage {
                     let _ = self.config.write_entry(&ctx);
                 }
                 Task::none()
+            }
+            PreferencesMessage::SetLanguage(index) => {
+                self.config.language = (index > 0)
+                    .then(|| crate::i18n::LANGUAGE_OPTIONS.get(index - 1))
+                    .flatten()
+                    .map(|code| (*code).to_string());
+                if let Ok(ctx) =
+                    cosmic_config::Config::new(crate::app::ReadFlow::APP_ID, Config::VERSION)
+                {
+                    let _ = self.config.write_entry(&ctx);
+                }
+                task::message(PreferencesMessage::Out(PreferencesOutput::LanguageChanged(
+                    crate::i18n::effective_languages(self.config.language.as_deref()),
+                )))
             }
             PreferencesMessage::SetLocalUserId(index) => {
                 // Index 0 is the "none" sentinel; 1.. maps to

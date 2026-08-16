@@ -9,4 +9,6 @@ use cosmic::cosmic_config::cosmic_config_derive::CosmicConfigEntry;
 pub struct Config {
     /// Start the embedded HTTP server automatically when the app launches.
     pub server_start_on_launch: bool,
+    /// Explicit language override (e.g. "en"). `None` follows the OS locale.
+    pub language: Option<String>,
 }

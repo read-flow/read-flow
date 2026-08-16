@@ -154,11 +154,14 @@ document-list-sort-type = Type
 # Page messages
 page-not-found = ⚠ Non trouvé
 
-# Language menu
-language = Langue
+# Language
 language-dutch = Nederlands
 language-english = English
 language-french = Français
+settings-language-section = Langue
+settings-language = Langue
+settings-language-description = Langue d'affichage de Read Flow.
+settings-language-follow-system = Suivre le système
 
 # Pagination
 pagination-first = Premier

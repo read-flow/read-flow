@@ -22,6 +22,10 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   to safe values (unrestricted CORS, 100 MiB uploads, no TLS) and only matter once the server is
   reachable past your own device. Bind address and port stay visible, since those are needed for
   the PWA to work at all.
+- The language switcher moved from the top menu bar (View/Actions/Language) into Preferences →
+  Appearance, and now defaults to "Follow System" instead of always starting in English — the app
+  already read the OS locale at startup, but a manual menu pick was never remembered across
+  restarts. An explicit choice is now saved and re-applied live without restarting.
 
 ### Removed
 
