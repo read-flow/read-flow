@@ -50,6 +50,7 @@ pub(crate) async fn document_provider() -> (
                     headless: false,
                     address: None,
                     port: None,
+                    debug: false,
                     files: Vec::new(),
                 },
             },

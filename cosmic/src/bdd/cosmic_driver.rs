@@ -1206,6 +1206,7 @@ impl CosmicDriver {
             self.document_provider.clone(),
             crate::config::Config::default(),
             log_bus(),
+            false,
         );
         drain(init_task).await;
 
@@ -1358,6 +1359,7 @@ impl AppSettings {
                 headless: false,
                 address: None,
                 port: None,
+                debug: false,
                 files: Vec::new(),
             },
         }

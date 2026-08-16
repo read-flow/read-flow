@@ -194,7 +194,7 @@ impl cosmic::Application for ReadFlow {
     type Executor = cosmic::executor::Default;
 
     /// Data that your application receives to its init method.
-    type Flags = (Arc<ApplicationModule>, Vec<PathBuf>, LogBus);
+    type Flags = (Arc<ApplicationModule>, Vec<PathBuf>, LogBus, bool);
 
     /// Messages which the application and its widgets will emit.
     type Message = Message;
@@ -217,7 +217,7 @@ impl cosmic::Application for ReadFlow {
     /// Initializes the application with any given flags and startup commands.
     fn init(
         core: cosmic::Core,
-        (application_module, initial_files, log_bus): Self::Flags,
+        (application_module, initial_files, log_bus, debug): Self::Flags,
     ) -> (Self, Task<cosmic::Action<Self::Message>>) {
         let config = cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
             .map(|context| match Config::get_entry(&context) {
@@ -237,6 +237,7 @@ impl cosmic::Application for ReadFlow {
             document_provider.clone(),
             config.clone(),
             log_bus.clone(),
+            debug,
         );
 
         let label = pages.display_name(&PageSelector::Dashboard);

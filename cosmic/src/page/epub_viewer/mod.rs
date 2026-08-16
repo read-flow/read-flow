@@ -503,12 +503,15 @@ pub struct EpubViewer {
     font_system: RefCell<FontSystem>,
     /// Page margin in pixels applied to all four sides of the page content area (0–128).
     page_margin: f32,
+    /// Whether developer-only controls (e.g. raw HTML view) are shown, set via `--debug`.
+    debug: bool,
 }
 
 impl EpubViewer {
     pub fn new(
         document: Document,
         document_provider: Arc<DocumentProvider>,
+        debug: bool,
     ) -> (Self, Task<Action<EpubViewerMessage>>) {
         let fingerprint = document
             .contents
@@ -571,6 +574,7 @@ impl EpubViewer {
             search_input_id: widget::Id::unique(),
             font_system: RefCell::new(FontSystem::new()),
             page_margin: saved_prefs.page_margin,
+            debug,
         };
 
         let mut tasks = Vec::new();
@@ -1302,10 +1306,14 @@ impl Page for EpubViewer {
             ),
         );
 
-        let display_section = display_section.add(
-            widget::settings::item::builder(fl!("epub-viewer-raw-html"))
-                .toggler(self.show_raw_html, EpubViewerMessage::ShowRawHtml),
-        );
+        let display_section = if self.debug {
+            display_section.add(
+                widget::settings::item::builder(fl!("epub-viewer-raw-html"))
+                    .toggler(self.show_raw_html, EpubViewerMessage::ShowRawHtml),
+            )
+        } else {
+            display_section
+        };
 
         let shortcuts_section = if self.view_mode == ViewMode::Paginated {
             widget::settings::section()
@@ -3375,7 +3383,7 @@ mod tests {
             document_meta: Default::default(),
             contents: Vec::new(),
         };
-        let (viewer, _init) = super::EpubViewer::new(document, document_provider);
+        let (viewer, _init) = super::EpubViewer::new(document, document_provider, false);
         assert_eq!(viewer.current_progress(), None);
     }
 
@@ -3392,7 +3400,7 @@ mod tests {
         )
         .await;
 
-        let (mut viewer, init_task) = super::EpubViewer::new(document, document_provider);
+        let (mut viewer, init_task) = super::EpubViewer::new(document, document_provider, false);
         for message in crate::test_support::drain(init_task).await {
             if matches!(message, super::EpubViewerMessage::EpubLoaded(..)) {
                 let _ = viewer.update(message);

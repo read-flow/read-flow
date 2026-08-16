@@ -60,6 +60,9 @@ pub struct Cli {
     #[clap(long)]
     /// Override the server bind port (headless mode); 0 = pick a free port
     port: Option<u16>,
+    #[clap(long, default_value = "false")]
+    /// Show developer-only controls (e.g. raw HTML view in the EPUB viewer)
+    debug: bool,
     /// Files to open on startup (EPUB, PDF, MOBI, or any file handled by the external viewer)
     files: Vec<PathBuf>,
 }
@@ -124,6 +127,7 @@ fn main() -> anyhow::Result<()> {
     let headless = cli.headless;
     let address = cli.address.clone();
     let port = cli.port;
+    let debug = cli.debug;
     let initial_files = cli.files.clone();
     let settings = AppSettings {
         cli_parameters: cli,
@@ -168,7 +172,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Starts the application's event loop.
-    cosmic::app::run::<app::ReadFlow>(settings, (application_module, initial_files, log_bus))?;
+    cosmic::app::run::<app::ReadFlow>(
+        settings,
+        (application_module, initial_files, log_bus, debug),
+    )?;
 
     Ok(())
 }

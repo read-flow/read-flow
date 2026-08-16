@@ -56,7 +56,7 @@ impl AppHarness {
 
         let (mut read_flow, init_task) = ReadFlow::init(
             Core::default(),
-            (application_module.clone(), Vec::new(), log_bus()),
+            (application_module.clone(), Vec::new(), log_bus(), false),
         );
         drain_and_replay(&mut read_flow, init_task).await;
 

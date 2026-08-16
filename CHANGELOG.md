@@ -10,6 +10,11 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ## [Unreleased]
 
+### Added
+
+- New `--debug` flag. The EPUB viewer's "Show raw HTML" toggle (a developer-only debugging aid)
+  is now hidden unless the app is launched with `--debug`.
+
 ### Removed
 
 - Cover extraction no longer trims whitespace borders from extracted/resized covers.

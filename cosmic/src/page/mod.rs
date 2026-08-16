@@ -85,6 +85,8 @@ pub struct PageInfo {
 pub struct Pages {
     document_provider: Arc<DocumentProvider>,
     application_module: Arc<ApplicationModule>,
+    /// Whether developer-only controls (e.g. raw HTML view) are shown, set via `--debug`.
+    debug: bool,
 
     dashboard: DashboardPage,
     preferences: PreferencesPage,
@@ -243,6 +245,7 @@ impl Pages {
         document_provider: Arc<DocumentProvider>,
         config: Config,
         log_bus: LogBus,
+        debug: bool,
     ) -> (Self, Task<Action<PageMessage>>) {
         let (preferences, init_preferences) = PreferencesPage::new(
             application_module.clone(),
@@ -268,6 +271,7 @@ impl Pages {
             Self {
                 document_provider,
                 application_module,
+                debug,
                 dashboard,
                 preferences,
                 online_library,
@@ -840,7 +844,7 @@ impl Pages {
         }
         let fingerprint_1 = fingerprint.clone();
         let (epub_viewer, initialization) =
-            EpubViewer::new(document, self.document_provider.clone());
+            EpubViewer::new(document, self.document_provider.clone(), self.debug);
         self.epub_viewers.insert(fingerprint.clone(), epub_viewer);
         let selector = PageSelector::EpubViewer(fingerprint);
         let init_task = initialization.map(move |action| {
@@ -1142,6 +1146,7 @@ mod tests {
             document_provider.clone(),
             config,
             log_bus,
+            false,
         );
         crate::test_support::drain(init_task).await;
 
@@ -1201,6 +1206,7 @@ mod tests {
             document_provider,
             Config::default(),
             crate::logging::init(),
+            false,
         );
         crate::test_support::drain(init_task).await;
 
