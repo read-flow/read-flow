@@ -22,6 +22,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   library to refresh the tag suggestion list, which was slow on large (8000+) libraries. The
   document list also no longer keeps a second, duplicate in-memory copy of the whole library for
   this, halving its memory footprint.
+- Document details cover-selection thumbnails now wrap onto additional rows instead of being
+  squeezed to fit when a document has 4 or more attached files.
 
 <!-- Add entries here as you land changes. Move them under a version heading at release time. -->
 

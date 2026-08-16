@@ -1068,7 +1068,10 @@ impl Page for DocumentDetails {
                     Some(btn.into())
                 })
                 .collect();
-            let cover_row = widget::Row::with_children(cover_buttons).spacing(8);
+            let cover_row = cover_buttons
+                .apply(widget::flex_row)
+                .spacing(8)
+                .width(Length::Fill);
             widget::container(cover_row)
                 .center_x(Length::Fill)
                 .padding(8)
