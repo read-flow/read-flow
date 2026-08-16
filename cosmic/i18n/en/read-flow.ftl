@@ -25,6 +25,7 @@ scan-report-close = Close
 view = View
 
 view-options = View Options
+nav-open-documents = Open
 
 # Preferences page
 preferences-page-title = Preferences

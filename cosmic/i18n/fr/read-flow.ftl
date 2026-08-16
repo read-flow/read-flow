@@ -44,6 +44,7 @@ scan-report-title = Rapport d'analyse
 scan-report-summary = { $added } ajoutés, { $updated } mis à jour, { $errors } erreurs
 scan-report-close = Fermer
 view = Affichage
+nav-open-documents = Ouverts
 
 # Generic messages
 generic-error = 🛑 Erreur: { $error }

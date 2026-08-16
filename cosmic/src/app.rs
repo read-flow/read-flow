@@ -22,6 +22,7 @@ use cosmic::widget::icon;
 use cosmic::widget::menu;
 use futures::StreamExt;
 use i18n_embed::unic_langid::LanguageIdentifier;
+use indexmap::IndexMap;
 use provider::r#async::HasSetExpired;
 use read_flow_core::scan::DirectorySettings;
 use read_flow_widgets::NavItem;
@@ -46,6 +47,7 @@ use crate::fl;
 use crate::logging::LogBus;
 use crate::page::DocumentListMessage;
 use crate::page::OnlineLibraryMessage;
+use crate::page::PageInfo;
 use crate::page::PageMessage;
 use crate::page::PageOutput;
 use crate::page::PageSelector;
@@ -983,29 +985,62 @@ impl cosmic::Application for ReadFlow {
 impl ReadFlow {
     fn build_nav_tree(&self) -> NavTree<cosmic::Action<Message>> {
         let active = self.pages.active_page();
+        let (static_pages, open_pages) = partition_page_list(self.pages.page_list());
         let mut tree = NavTree::new();
 
-        for (selector, info) in self.pages.page_list() {
-            let is_active = selector == active;
+        for (selector, info) in &static_pages {
+            tree = self.push_page_item(tree, selector, info, *selector == active);
+        }
 
-            if let Some(item) = self.pages.nav_tree(selector, is_active) {
-                // Page provides its own nav item (e.g. EPUB viewer with TOC).
-                let to_action =
-                    |msg: PageMessage| cosmic::action::app(Message::Page(Box::new(msg)));
-                tree = tree.push(item.map(&to_action));
-            } else {
-                // Default: simple leaf that navigates via ActivatePage.
-                tree = tree.push(NavItem::Leaf(NavLeaf {
-                    icon: Some(icon::from_name(info.icon_name).icon()),
-                    label: info.label.clone(),
-                    active: is_active,
-                    on_activate: cosmic::action::app(Message::ActivatePage(selector.clone())),
-                    on_close: None,
-                }));
-            }
+        if !open_pages.is_empty() {
+            tree = tree.push(NavItem::SectionLabel(fl!("nav-open-documents")));
+        }
+
+        for (selector, info) in &open_pages {
+            tree = self.push_page_item(tree, selector, info, *selector == active);
         }
 
         tree
+    }
+
+    /// Pushes one page's nav entry — either the page's own `nav_tree()` item
+    /// (e.g. the EPUB viewer's chapter tree) or a default leaf. Open/closable
+    /// pages that fall through to the default leaf get a close button wired to
+    /// `RequestClosePage`; static pages and pages that provide their own item
+    /// don't (the EPUB viewer wires its own close button itself).
+    fn push_page_item(
+        &self,
+        tree: NavTree<cosmic::Action<Message>>,
+        selector: &PageSelector,
+        info: &PageInfo,
+        is_active: bool,
+    ) -> NavTree<cosmic::Action<Message>> {
+        if let Some(item) = self.pages.nav_tree(selector, is_active) {
+            // Page provides its own nav item (e.g. EPUB viewer with TOC).
+            let to_action = |msg: PageMessage| cosmic::action::app(Message::Page(Box::new(msg)));
+            return tree.push(item.map(&to_action));
+        }
+
+        // Default: simple leaf that navigates via ActivatePage.
+        let is_closable = matches!(
+            selector,
+            PageSelector::DocumentDetails(_)
+                | PageSelector::EpubViewer(_)
+                | PageSelector::MuPdfViewer(_)
+                | PageSelector::ImageViewer(_)
+        );
+
+        tree.push(NavItem::Leaf(NavLeaf {
+            icon: Some(icon::from_name(info.icon_name).icon()),
+            label: info.label.clone(),
+            active: is_active,
+            on_activate: cosmic::action::app(Message::ActivatePage(selector.clone())),
+            on_close: is_closable.then(|| {
+                cosmic::action::app(Message::Page(Box::new(PageMessage::RequestClosePage(
+                    selector.clone(),
+                ))))
+            }),
+        }))
     }
 
     /// Updates the header and window titles.
@@ -1028,6 +1063,29 @@ impl ReadFlow {
             PageMessage::ServerLog(ServerLogMessage::StatusChanged(status)),
         ))))
     }
+}
+
+/// Splits the page list into (static pages, open/closable documents),
+/// each preserving registration order. Static pages (Dashboard, Documents,
+/// Online Library, Preferences, Server) are always present; the open group
+/// holds whatever's currently open (Document Details, EPUB/PDF/Image
+/// viewers) and is empty in a fresh app with nothing open.
+fn partition_page_list(
+    page_list: &IndexMap<PageSelector, PageInfo>,
+) -> (
+    Vec<(&PageSelector, &PageInfo)>,
+    Vec<(&PageSelector, &PageInfo)>,
+) {
+    page_list.iter().partition(|(selector, _)| {
+        matches!(
+            selector,
+            PageSelector::Dashboard
+                | PageSelector::Preferences
+                | PageSelector::OnlineLibrary
+                | PageSelector::Documents
+                | PageSelector::ServerLog
+        )
+    })
 }
 
 /// Bind and spawn the embedded server, recording its shutdown + join handle.
@@ -1253,5 +1311,63 @@ fn filter_keyboard_events(
             Some(Message::ModifiersChanged(modifiers))
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use indexmap::IndexMap;
+
+    use super::*;
+
+    fn info(label: &str) -> PageInfo {
+        PageInfo {
+            icon_name: "text-x-generic-symbolic",
+            label: label.to_string(),
+            parent: None,
+        }
+    }
+
+    #[test]
+    fn partition_page_list_puts_static_pages_first_and_open_pages_second() {
+        let mut pages: IndexMap<PageSelector, PageInfo> = IndexMap::new();
+        pages.insert(PageSelector::Dashboard, info("Dashboard"));
+        pages.insert(
+            PageSelector::EpubViewer("fp-1".to_string()),
+            info("Meditations"),
+        );
+        pages.insert(PageSelector::Documents, info("Documents"));
+        pages.insert(PageSelector::ImageViewer(7), info("cover.png"));
+
+        let (static_pages, open_pages) = partition_page_list(&pages);
+
+        assert_eq!(
+            static_pages
+                .iter()
+                .map(|(s, _)| (*s).clone())
+                .collect::<Vec<_>>(),
+            vec![PageSelector::Dashboard, PageSelector::Documents]
+        );
+        assert_eq!(
+            open_pages
+                .iter()
+                .map(|(s, _)| (*s).clone())
+                .collect::<Vec<_>>(),
+            vec![
+                PageSelector::EpubViewer("fp-1".to_string()),
+                PageSelector::ImageViewer(7)
+            ]
+        );
+    }
+
+    #[test]
+    fn partition_page_list_with_no_open_pages_returns_an_empty_open_group() {
+        let mut pages: IndexMap<PageSelector, PageInfo> = IndexMap::new();
+        pages.insert(PageSelector::Dashboard, info("Dashboard"));
+
+        let (static_pages, open_pages) = partition_page_list(&pages);
+
+        assert_eq!(static_pages.len(), 1);
+        assert!(open_pages.is_empty());
     }
 }

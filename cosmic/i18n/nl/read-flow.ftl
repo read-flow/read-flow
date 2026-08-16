@@ -25,6 +25,7 @@ scan-report-close = Sluiten
 view = Weergave
 
 view-options = Weergaveopties
+nav-open-documents = Open
 
 # Preferences page
 preferences-page-title = Voorkeuren
