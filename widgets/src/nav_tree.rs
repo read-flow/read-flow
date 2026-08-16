@@ -19,6 +19,7 @@ pub struct NavLeaf<Message> {
     pub label: String,
     pub active: bool,
     pub on_activate: Message,
+    pub on_close: Option<Message>,
 }
 
 pub struct NavNode<Message> {
@@ -38,6 +39,7 @@ pub struct NavNode<Message> {
 pub enum NavItem<Message> {
     Leaf(NavLeaf<Message>),
     Node(NavNode<Message>),
+    SectionLabel(String),
 }
 
 impl<Message: Clone> NavItem<Message> {
@@ -48,6 +50,7 @@ impl<Message: Clone> NavItem<Message> {
                 label: leaf.label,
                 active: leaf.active,
                 on_activate: f(leaf.on_activate),
+                on_close: leaf.on_close.map(f),
             }),
             NavItem::Node(node) => NavItem::Node(NavNode {
                 icon: node.icon,
@@ -60,6 +63,7 @@ impl<Message: Clone> NavItem<Message> {
                 on_expand_all: node.on_expand_all.map(f),
                 on_collapse_all: node.on_collapse_all.map(f),
             }),
+            NavItem::SectionLabel(text) => NavItem::SectionLabel(text),
         }
     }
 }
@@ -127,6 +131,7 @@ fn render_item<Message: Clone + 'static>(
     match item {
         NavItem::Leaf(leaf) => vec![render_leaf(leaf, depth, space_s)],
         NavItem::Node(node) => render_node(node, depth, space_s, space_xxs),
+        NavItem::SectionLabel(text) => vec![render_section_label(text)],
     }
 }
 
@@ -156,6 +161,13 @@ fn render_leaf<Message: Clone + 'static>(
         .class(nav_button_class(leaf.active))
         .width(Length::Fill)
         .on_press(leaf.on_activate)
+        .into()
+}
+
+fn render_section_label<Message: 'static>(text: String) -> Element<'static, Message> {
+    widget::text::caption(text)
+        .apply(widget::container)
+        .padding([12, 8, 4, 8])
         .into()
 }
 
@@ -287,4 +299,32 @@ fn nav_item_style(
     }
 
     style
+}
+
+#[cfg(test)]
+mod tests {
+    use cosmic_golden::golden_test;
+
+    use super::*;
+
+    #[golden_test(260, 90)]
+    fn section_label_renders_as_caption() -> Element<'static, String> {
+        NavTree::new()
+            .push(NavItem::Leaf(NavLeaf {
+                icon: None,
+                label: "Dashboard".into(),
+                active: true,
+                on_activate: "activate-dashboard".to_string(),
+                on_close: None,
+            }))
+            .push(NavItem::SectionLabel("Open".into()))
+            .push(NavItem::Leaf(NavLeaf {
+                icon: None,
+                label: "Sample.pdf".into(),
+                active: false,
+                on_activate: "activate-pdf".to_string(),
+                on_close: None,
+            }))
+            .view()
+    }
 }

@@ -3009,6 +3009,7 @@ fn build_nav_items_at_depth(
                 label: entry.label.clone(),
                 active: is_active,
                 on_activate: EpubViewerMessage::SelectNavEntry(orig_idx),
+                on_close: None,
             }));
         } else {
             result.push(NavItem::Node(NavNode {
@@ -3067,6 +3068,7 @@ impl EpubViewer {
                         label: chapter.label.clone(),
                         active: idx == self.active_chapter,
                         on_activate: EpubViewerMessage::SelectChapter(idx),
+                        on_close: None,
                     })
                 })
                 .collect()

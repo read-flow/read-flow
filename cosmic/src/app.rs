@@ -1000,6 +1000,7 @@ impl ReadFlow {
                     label: info.label.clone(),
                     active: is_active,
                     on_activate: cosmic::action::app(Message::ActivatePage(selector.clone())),
+                    on_close: None,
                 }));
             }
         }
