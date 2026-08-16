@@ -311,6 +311,10 @@ pub enum PreferencesMessage {
 
     Out(PreferencesOutput),
     Noop,
+    Key(
+        cosmic::iced::keyboard::Modifiers,
+        cosmic::iced::keyboard::Key,
+    ),
 }
 
 impl From<TagEditorMessage> for PreferencesMessage {
@@ -3040,6 +3044,19 @@ impl Page for PreferencesPage {
                 panic!("{message:?} should be handled by the parent component")
             }
             PreferencesMessage::Noop => task::none(),
+            PreferencesMessage::Key(_modifiers, key) => {
+                if matches!(
+                    key,
+                    cosmic::iced::keyboard::Key::Named(cosmic::iced::keyboard::key::Named::Escape)
+                ) && self.selected_section != PreferencesSection::Overview
+                {
+                    task::message(PreferencesMessage::SectionChanged(
+                        PreferencesSection::Overview,
+                    ))
+                } else {
+                    task::none()
+                }
+            }
         }
     }
 }

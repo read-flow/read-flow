@@ -12,6 +12,7 @@ use cosmic::iced::Subscription;
 use cosmic::iced::event;
 use cosmic::iced::event::Event;
 use cosmic::iced::keyboard::Event as KeyEvent;
+use cosmic::iced::keyboard::key::Named;
 use cosmic::iced::mouse;
 use cosmic::prelude::*;
 use cosmic::task;
@@ -291,7 +292,16 @@ impl cosmic::Application for ReadFlow {
             nav_bar_width: 280.0,
             nav_bar_resizing: false,
             nav_bar_condensed_open: false,
-            key_binds: HashMap::new(),
+            // Purely a display hint for the menu item's accelerator label — the
+            // libcosmic menu widget never matches `key_binds` against real key
+            // events, so F1 is handled separately in `Message::KeyboardEvent`.
+            key_binds: HashMap::from([(
+                menu::KeyBind {
+                    modifiers: vec![],
+                    key: cosmic::iced::keyboard::Key::Named(Named::F1),
+                },
+                MenuAction::Shortcuts,
+            )]),
             config,
             application_module,
             document_provider,
@@ -370,6 +380,7 @@ impl cosmic::Application for ReadFlow {
                     vec![
                         menu::Item::Button(fl!("context"), None, MenuAction::Context),
                         menu::Item::Button(fl!("about"), None, MenuAction::About),
+                        menu::Item::Button(fl!("shortcuts"), None, MenuAction::Shortcuts),
                     ],
                 ),
             ),
@@ -472,6 +483,11 @@ impl cosmic::Application for ReadFlow {
                 |url| Message::LaunchUrl(url.to_string()),
                 Message::ToggleContextPage(ContextPage::About),
             ),
+            ContextPage::Shortcuts => context_drawer::context_drawer(
+                view_all_shortcuts(),
+                Message::ToggleContextPage(ContextPage::Shortcuts),
+            )
+            .title(fl!("shortcuts")),
             ContextPage::PageContext(page) => {
                 let ContextView { title, content } = self.pages.view_context(page).map(Into::into);
                 context_drawer::context_drawer(
@@ -931,6 +947,14 @@ impl cosmic::Application for ReadFlow {
                 }
             }
             Message::KeyboardEvent(modifiers, key, text) => {
+                // F1 opens the global shortcuts overlay from anywhere. Unlike a
+                // character key (e.g. "?", which is Shift+/ on most layouts and
+                // would otherwise collide with normal typing in a focused text
+                // field), F1 is never produced by typing, so it's safe to
+                // intercept here rather than routing it to the active page.
+                if matches!(key, cosmic::iced::keyboard::Key::Named(Named::F1)) {
+                    return task::message(Message::ToggleContextPage(ContextPage::Shortcuts));
+                }
                 let page = self.pages.active_page().clone();
                 self.pages
                     .update(PageMessage::KeyEvent(page, modifiers, key, text))
@@ -1055,6 +1079,7 @@ async fn stop_server(ctl: Arc<tokio::sync::Mutex<ServerControl>>) {
 pub enum ContextPage {
     #[default]
     About,
+    Shortcuts,
     PageContext(PageSelector),
 }
 
@@ -1083,6 +1108,7 @@ pub enum MenuAction {
     Context,
     Scan,
     CheckMissing,
+    Shortcuts,
 }
 
 impl menu::action::MenuAction for MenuAction {
@@ -1094,8 +1120,112 @@ impl menu::action::MenuAction for MenuAction {
             MenuAction::Context => Message::ToggleActivePageContext,
             MenuAction::Scan => Message::Scan,
             MenuAction::CheckMissing => Message::CheckMissing,
+            MenuAction::Shortcuts => Message::ToggleContextPage(ContextPage::Shortcuts),
         }
     }
+}
+
+/// Every shortcut documented across the app, grouped by page, for the global
+/// "?" shortcuts overlay. Mirrors the per-row strings each page's own
+/// context-drawer shortcuts section already defines — kept as a flat,
+/// page-independent list here since it's read-only (no `on_press` needed).
+fn view_all_shortcuts<'a>() -> Element<'a, Message> {
+    let section = |title: String| widget::settings::section().title(title);
+
+    let documents = section(fl!("shortcuts-section-documents"))
+        .add(shortcut_item(
+            "Ctrl+M",
+            fl!("document-list-shortcut-toggle-search-mode"),
+        ))
+        .add(shortcut_item(
+            "← ↑ PgUp",
+            fl!("document-list-shortcut-previous-page"),
+        ))
+        .add(shortcut_item(
+            "→ ↓ PgDn",
+            fl!("document-list-shortcut-next-page"),
+        ))
+        .add(shortcut_item(
+            "Home",
+            fl!("document-list-shortcut-first-page"),
+        ))
+        .add(shortcut_item(
+            "End",
+            fl!("document-list-shortcut-last-page"),
+        ));
+
+    let epub = section(fl!("epub-viewer"))
+        .add(shortcut_item(
+            "Ctrl+F",
+            fl!("epub-viewer-shortcut-toggle-search"),
+        ))
+        .add(shortcut_item(
+            "Escape",
+            fl!("epub-viewer-shortcut-close-search"),
+        ))
+        .add(shortcut_item(
+            "← PgUp",
+            fl!("epub-viewer-shortcut-previous-page"),
+        ))
+        .add(shortcut_item(
+            "→ PgDn",
+            fl!("epub-viewer-shortcut-next-page"),
+        ))
+        .add(shortcut_item(
+            "↑ ← PgUp",
+            fl!("epub-viewer-shortcut-previous-chapter"),
+        ))
+        .add(shortcut_item(
+            "↓ → PgDn",
+            fl!("epub-viewer-shortcut-next-chapter"),
+        ));
+
+    let pdf = section(fl!("pdf-viewer-keyboard-shortcuts"))
+        .add(shortcut_item(
+            "↑ ← PgUp",
+            fl!("pdf-viewer-shortcut-previous-page"),
+        ))
+        .add(shortcut_item(
+            "↓ → PgDn",
+            fl!("pdf-viewer-shortcut-next-page"),
+        ))
+        .add(shortcut_item("0", fl!("pdf-viewer-shortcut-zoom-reset")))
+        .add(shortcut_item("−", fl!("pdf-viewer-shortcut-zoom-out")))
+        .add(shortcut_item("+", fl!("pdf-viewer-shortcut-zoom-in")))
+        .add(shortcut_item("F", fl!("pdf-viewer-shortcut-fit-both")))
+        .add(shortcut_item("H", fl!("pdf-viewer-shortcut-fit-height")))
+        .add(shortcut_item("W", fl!("pdf-viewer-shortcut-fit-width")))
+        .add(shortcut_item(
+            "Ctrl+Scroll",
+            fl!("pdf-viewer-shortcut-ctrl-scroll"),
+        ));
+
+    let image = section(fl!("image-viewer-keyboard-shortcuts"))
+        .add(shortcut_item("+", fl!("image-viewer-shortcut-zoom-in")))
+        .add(shortcut_item("-", fl!("image-viewer-shortcut-zoom-out")))
+        .add(shortcut_item("Escape", fl!("image-viewer-shortcut-close")));
+
+    let elsewhere = section(fl!("shortcuts-elsewhere"))
+        .add(shortcut_item(
+            "Escape",
+            fl!("shortcuts-escape-back-or-close"),
+        ))
+        .add(shortcut_item("F1", fl!("shortcuts-open-this-panel")));
+
+    widget::settings::view_column(vec![
+        documents.into(),
+        epub.into(),
+        pdf.into(),
+        image.into(),
+        elsewhere.into(),
+    ])
+    .into()
+}
+
+fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, Message> {
+    widget::settings::item::builder(description)
+        .control(widget::text::monotext(key))
+        .into()
 }
 
 fn filter_keyboard_events(

@@ -139,6 +139,10 @@ pub enum DocumentDetailsMessage {
     /// @feature: documents.select_cover
     SelectCover(String),
     CoverSelected(Result<(), String>),
+    Key(
+        cosmic::iced::keyboard::Modifiers,
+        cosmic::iced::keyboard::Key,
+    ),
     // Message intended for the parent module
     Out(DocumentDetailsOutput),
 }
@@ -1129,6 +1133,18 @@ impl Page for DocumentDetails {
                     tracing::warn!("failed to save cover selection: {e}");
                 }
                 Task::none()
+            }
+            DocumentDetailsMessage::Key(_modifiers, key) => {
+                if matches!(
+                    key,
+                    cosmic::iced::keyboard::Key::Named(cosmic::iced::keyboard::key::Named::Escape)
+                ) {
+                    task::message(DocumentDetailsMessage::Out(DocumentDetailsOutput::Close(
+                        self.document.document_guid.clone(),
+                    )))
+                } else {
+                    Task::none()
+                }
             }
             DocumentDetailsMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")

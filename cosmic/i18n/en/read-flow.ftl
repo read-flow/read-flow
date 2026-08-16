@@ -2,6 +2,11 @@
 
 app-title = Read Flow
 about = About
+shortcuts = Keyboard Shortcuts
+shortcuts-section-documents = Documents
+shortcuts-elsewhere = Elsewhere
+shortcuts-escape-back-or-close = Back / close (details, preferences, server log, image viewer)
+shortcuts-open-this-panel = Open this panel
 actions = Actions
 context = Context
 repository = Repository
@@ -391,6 +396,10 @@ epub-viewer-image-zoom-fit-height = Fit height
 epub-viewer-image-zoom-fit-width = Fit width
 epub-viewer-image-zoom-in = Zoom in
 epub-viewer-image-zoom-out = Zoom out
+image-viewer-keyboard-shortcuts = Keyboard shortcuts
+image-viewer-shortcut-zoom-in = Zoom in
+image-viewer-shortcut-zoom-out = Zoom out
+image-viewer-shortcut-close = Close
 epub-viewer-keyboard-shortcuts = Keyboard shortcuts
 epub-viewer-load-error = Failed to open EPUB: { $error }
 epub-viewer-loading = Loading EPUB...
@@ -410,6 +419,8 @@ epub-viewer-search-prev = Previous match
 epub-viewer-shortcut-next-chapter = Next chapter
 epub-viewer-shortcut-next-page = Next page
 epub-viewer-shortcut-previous-chapter = Previous chapter
+epub-viewer-shortcut-toggle-search = Toggle search
+epub-viewer-shortcut-close-search = Close search
 epub-viewer-shortcut-previous-page = Previous page
 epub-viewer-view-paginated = Paginated view
 

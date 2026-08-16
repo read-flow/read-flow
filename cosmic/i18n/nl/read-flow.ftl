@@ -2,6 +2,11 @@
 
 app-title = Read Flow
 about = Over
+shortcuts = Sneltoetsen
+shortcuts-section-documents = Documenten
+shortcuts-elsewhere = Elders
+shortcuts-escape-back-or-close = Terug / sluiten (details, voorkeuren, serverlog, afbeeldingsweergave)
+shortcuts-open-this-panel = Dit paneel openen
 actions = Acties
 context = Context
 repository = Repository
@@ -389,6 +394,10 @@ epub-viewer-image-zoom-fit-height = Hoogte passend maken
 epub-viewer-image-zoom-fit-width = Breedte passend maken
 epub-viewer-image-zoom-in = Inzoomen
 epub-viewer-image-zoom-out = Uitzoomen
+image-viewer-keyboard-shortcuts = Sneltoetsen
+image-viewer-shortcut-zoom-in = Inzoomen
+image-viewer-shortcut-zoom-out = Uitzoomen
+image-viewer-shortcut-close = Sluiten
 epub-viewer-keyboard-shortcuts = Sneltoetsen
 epub-viewer-load-error = Kan EPUB niet openen: { $error }
 epub-viewer-loading = EPUB laden...
@@ -408,6 +417,8 @@ epub-viewer-search-prev = Vorig resultaat
 epub-viewer-shortcut-next-chapter = Volgend hoofdstuk
 epub-viewer-shortcut-next-page = Volgende pagina
 epub-viewer-shortcut-previous-chapter = Vorig hoofdstuk
+epub-viewer-shortcut-toggle-search = Zoeken in-/uitschakelen
+epub-viewer-shortcut-close-search = Zoeken sluiten
 epub-viewer-shortcut-previous-page = Vorige pagina
 epub-viewer-view-paginated = Gepagineerde weergave
 

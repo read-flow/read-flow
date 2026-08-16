@@ -661,6 +661,32 @@ impl Pages {
                     .documents
                     .update(DocumentListMessage::Key(modifiers, key))
                     .map(|action| action.map(map_document_list_message)),
+                PageSelector::DocumentDetails(fingerprint) => {
+                    let Some(details) = self.document_details.get_mut(&fingerprint) else {
+                        return Task::none();
+                    };
+                    details
+                        .update(DocumentDetailsMessage::Key(modifiers, key))
+                        .map(move |action| {
+                            action.map(|msg| map_document_details_message(fingerprint.clone(), msg))
+                        })
+                }
+                PageSelector::ImageViewer(id) => {
+                    let Some(viewer) = self.image_viewers.get_mut(&id) else {
+                        return Task::none();
+                    };
+                    viewer
+                        .update(ImageViewerMessage::Key(modifiers, key))
+                        .map(move |action| action.map(|msg| map_image_viewer_message(id, msg)))
+                }
+                PageSelector::Preferences => self
+                    .preferences
+                    .update(PreferencesMessage::Key(modifiers, key))
+                    .map(move |action| action.map(map_preferences_message)),
+                PageSelector::ServerLog => self
+                    .server_log
+                    .update(ServerLogMessage::Key(modifiers, key))
+                    .map(|action| action.map(map_server_log_message)),
                 _ => Task::none(),
             },
             PageMessage::ModifiersChanged(page, modifiers) => match page {

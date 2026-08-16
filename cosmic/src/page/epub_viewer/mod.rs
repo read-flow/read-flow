@@ -1337,7 +1337,15 @@ impl Page for EpubViewer {
                     "↓ → PgDn",
                     fl!("epub-viewer-shortcut-next-chapter"),
                 ))
-        };
+        }
+        .add(shortcut_item(
+            "Ctrl+F",
+            fl!("epub-viewer-shortcut-toggle-search"),
+        ))
+        .add(shortcut_item(
+            "Escape",
+            fl!("epub-viewer-shortcut-close-search"),
+        ));
 
         ContextView {
             title: fl!("epub-viewer"),

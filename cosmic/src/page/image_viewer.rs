@@ -9,6 +9,7 @@ use cosmic::cosmic_theme;
 use cosmic::iced::ContentFit;
 use cosmic::iced::Length;
 use cosmic::iced::widget::scrollable;
+use cosmic::task;
 use cosmic::theme;
 use cosmic::widget;
 
@@ -79,6 +80,10 @@ pub enum ImageViewerMessage {
     ZoomDropdown(usize),
     ZoomIn,
     ZoomOut,
+    Key(
+        cosmic::iced::keyboard::Modifiers,
+        cosmic::iced::keyboard::Key,
+    ),
 }
 
 /// @feature: reading.image_viewer
@@ -244,6 +249,22 @@ impl Page for ImageViewer {
                 }
                 Task::none()
             }
+            ImageViewerMessage::Key(_modifiers, key) => {
+                use cosmic::iced::keyboard::Key;
+                use cosmic::iced::keyboard::key::Named;
+                match key {
+                    Key::Character(c) if c.as_str() == "+" || c.as_str() == "=" => {
+                        task::message(ImageViewerMessage::ZoomIn)
+                    }
+                    Key::Character(c) if c.as_str() == "-" => {
+                        task::message(ImageViewerMessage::ZoomOut)
+                    }
+                    Key::Named(Named::Escape) => {
+                        task::message(ImageViewerMessage::Out(ImageViewerOutput::Close(self.id)))
+                    }
+                    _ => Task::none(),
+                }
+            }
         }
     }
 
@@ -260,9 +281,25 @@ impl Page for ImageViewer {
                 ),
             );
 
+        let shortcuts_section = widget::settings::section()
+            .title(fl!("image-viewer-keyboard-shortcuts"))
+            .add(shortcut_item("+", fl!("image-viewer-shortcut-zoom-in")))
+            .add(shortcut_item("-", fl!("image-viewer-shortcut-zoom-out")))
+            .add(shortcut_item("Escape", fl!("image-viewer-shortcut-close")));
+
         ContextView {
             title: self.display_name(),
-            content: zoom_section.into(),
+            content: widget::settings::view_column(vec![
+                zoom_section.into(),
+                shortcuts_section.into(),
+            ])
+            .into(),
         }
     }
+}
+
+fn shortcut_item(key: &str, description: String) -> Element<'_, ImageViewerMessage> {
+    widget::settings::item::builder(description)
+        .control(widget::text::monotext(key))
+        .into()
 }

@@ -169,6 +169,10 @@ pub enum ServerLogMessage {
     MinLevelSelected(usize),
     EntrySelected(u64),
     ClearSelection,
+    Key(
+        cosmic::iced::keyboard::Modifiers,
+        cosmic::iced::keyboard::Key,
+    ),
     Out(ServerLogOutput),
 }
 
@@ -531,6 +535,18 @@ impl Page for ServerLogPage {
             ServerLogMessage::ClearSelection => {
                 self.selected = None;
                 return task::message(ServerLogMessage::Out(ServerLogOutput::CloseContext));
+            }
+            ServerLogMessage::Key(_modifiers, key) => {
+                if self.selected.is_some()
+                    && matches!(
+                        key,
+                        cosmic::iced::keyboard::Key::Named(
+                            cosmic::iced::keyboard::key::Named::Escape
+                        )
+                    )
+                {
+                    return task::message(ServerLogMessage::ClearSelection);
+                }
             }
             // Other `Out` variants are intercepted by the mapper at the view
             // boundary and never reach here.

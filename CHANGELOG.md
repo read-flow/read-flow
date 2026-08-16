@@ -29,7 +29,15 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 - Preferences → Server → Local Identity now includes a worked example of what picking a user
   there actually does, instead of only abstract wording.
 
-### Removed
+### Added
+
+- Global keyboard-shortcuts overlay: press F1 (or View → Keyboard Shortcuts) from any page
+  to see every shortcut in the app in one place, grouped by page.
+- Escape now closes/backs out of document details, Preferences (back to the section overview),
+  the server log's entry detail pane, and the image viewer; +/- now zoom the image viewer, matching
+  the zoom-key convention already used by the PDF viewer.
+- The EPUB viewer's own shortcuts panel now lists its `Ctrl+F` (toggle search) and `Escape`
+  (close search) shortcuts, which it already handled but never documented.
 
 - Cover extraction no longer trims whitespace borders from extracted/resized covers.
 
