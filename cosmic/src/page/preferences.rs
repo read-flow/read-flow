@@ -1477,6 +1477,10 @@ impl PreferencesPage {
         let local_identity_section = widget::settings::section()
             .title(fl!("settings-server-local-identity"))
             .add(
+                widget::text::body(fl!("settings-server-local-identity-example"))
+                    .width(Length::Fill),
+            )
+            .add(
                 widget::settings::item::builder(fl!("settings-server-local-user"))
                     .description(fl!("settings-server-local-user-description"))
                     .icon(widget::icon::from_name("avatar-default-symbolic").size(ICON_SIZE))

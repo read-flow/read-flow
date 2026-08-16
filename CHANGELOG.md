@@ -26,6 +26,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   Appearance, and now defaults to "Follow System" instead of always starting in English — the app
   already read the OS locale at startup, but a manual menu pick was never remembered across
   restarts. An explicit choice is now saved and re-applied live without restarting.
+- Preferences → Server → Local Identity now includes a worked example of what picking a user
+  there actually does, instead of only abstract wording.
 
 ### Removed
 

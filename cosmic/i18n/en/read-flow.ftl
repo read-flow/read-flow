@@ -278,6 +278,7 @@ settings-server-delete-authorized-user-confirm-title = Remove Authorized User
 settings-server-delete-authorized-user-confirm-body = Are you sure you want to remove this authorized user? This action cannot be undone.
 settings-server-delete-authorized-user-confirm-remove = Remove
 settings-server-local-identity = Local Identity
+settings-server-local-identity-example = Only matters if you also read this library from the PWA or another device. Example: picking "jane" here means reading progress and tags you set on this desktop show up when jane logs into the PWA on her phone — and vice versa.
 settings-server-local-user = Local User
 settings-server-local-user-description = When set, this device's local reading progress and tags are recorded under this authorized user, so they're picked up by that same user logging in remotely (e.g. from the PWA). Leave unset to keep local access private to this device only.
 settings-server-local-user-none = None (purely local)

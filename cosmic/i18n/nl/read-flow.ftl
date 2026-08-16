@@ -276,6 +276,7 @@ settings-server-delete-authorized-user-confirm-title = Geautoriseerde Gebruiker 
 settings-server-delete-authorized-user-confirm-body = Weet je zeker dat je deze geautoriseerde gebruiker wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.
 settings-server-delete-authorized-user-confirm-remove = Verwijderen
 settings-server-local-identity = Lokale identiteit
+settings-server-local-identity-example = Alleen relevant als je deze bibliotheek ook via de PWA of een ander apparaat leest. Voorbeeld: als je hier "jane" kiest, verschijnen leesvoortgang en labels die je op dit apparaat instelt zodra jane op haar telefoon inlogt op de PWA — en andersom.
 settings-server-local-user = Lokale gebruiker
 settings-server-local-user-description = Indien ingesteld worden de lokale leesvoortgang en tags van dit apparaat vastgelegd onder deze geautoriseerde gebruiker, zodat ze worden opgepikt door diezelfde gebruiker die elders inlogt (bv. via de PWA). Laat leeg om lokale toegang privé te houden voor alleen dit apparaat.
 settings-server-local-user-none = Geen (puur lokaal)

@@ -275,6 +275,7 @@ settings-server-delete-authorized-user-confirm-title = Supprimer l'utilisateur a
 settings-server-delete-authorized-user-confirm-body = Êtes-vous sûr de vouloir supprimer cet utilisateur autorisé ? Cette action ne peut pas être annulée.
 settings-server-delete-authorized-user-confirm-remove = Supprimer
 settings-server-local-identity = Identité locale
+settings-server-local-identity-example = Utile seulement si vous lisez aussi cette bibliothèque depuis la PWA ou un autre appareil. Exemple : choisir « jane » ici signifie que la progression de lecture et les étiquettes définies sur cet ordinateur apparaissent quand jane se connecte à la PWA sur son téléphone — et inversement.
 settings-server-local-user = Utilisateur local
 settings-server-local-user-description = Lorsque défini, la progression de lecture et les tags locaux de cet appareil sont enregistrés sous cet utilisateur autorisé, afin d'être repris par ce même utilisateur connecté à distance (par ex. depuis la PWA). Laissez vide pour garder l'accès local privé à cet appareil uniquement.
 settings-server-local-user-none = Aucun (purement local)
