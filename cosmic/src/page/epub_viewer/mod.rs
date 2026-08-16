@@ -422,6 +422,9 @@ pub enum EpubViewerMessage {
     FontPickerClose,
     /// User typed in the font picker filter input.
     FontPickerQuery(String),
+    /// The nav-sidebar close button was clicked; compute the current
+    /// progress snapshot now (at click time) rather than on every redraw.
+    RequestClose,
     Out(EpubViewerOutput),
 }
 
@@ -1382,10 +1385,7 @@ impl Page for EpubViewer {
             children,
             on_expand_all: Some(EpubViewerMessage::ExpandAllNavEntries),
             on_collapse_all: Some(EpubViewerMessage::CollapseAllNavEntries),
-            on_close: Some(EpubViewerMessage::Out(EpubViewerOutput::Close(
-                self.fingerprint.clone(),
-                self.current_progress(),
-            ))),
+            on_close: Some(EpubViewerMessage::RequestClose),
         }))
     }
 
@@ -1983,6 +1983,13 @@ impl Page for EpubViewer {
                 tracing::warn!("EPUB load failed: {error}");
                 self.load_error = Some(error);
                 Task::none()
+            }
+            EpubViewerMessage::RequestClose => {
+                let progress = self.current_progress();
+                task::message(EpubViewerMessage::Out(EpubViewerOutput::Close(
+                    self.fingerprint.clone(),
+                    progress,
+                )))
             }
             EpubViewerMessage::Out(_) => {
                 panic!("{message:?} should be handled by the parent component")
@@ -3459,10 +3466,17 @@ mod tests {
         let Some(read_flow_widgets::NavItem::Node(node)) = viewer.nav_tree(false) else {
             panic!("expected a Node once chapters are loaded");
         };
-        let EpubViewerMessage::Out(EpubViewerOutput::Close(closed_fingerprint, _)) =
-            node.on_close.expect("on_close should be set")
+        assert!(
+            matches!(node.on_close, Some(EpubViewerMessage::RequestClose)),
+            "nav_tree should wire the close button to RequestClose, not eagerly compute progress"
+        );
+
+        let task = viewer.update(EpubViewerMessage::RequestClose);
+        let messages = crate::test_support::drain(task).await;
+        let Some(EpubViewerMessage::Out(EpubViewerOutput::Close(closed_fingerprint, _))) =
+            messages.into_iter().next()
         else {
-            panic!("expected on_close to be EpubViewerOutput::Close");
+            panic!("expected handling RequestClose to emit EpubViewerOutput::Close");
         };
         assert_eq!(closed_fingerprint, fingerprint);
     }

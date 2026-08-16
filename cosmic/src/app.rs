@@ -989,7 +989,7 @@ impl ReadFlow {
         let mut tree = NavTree::new();
 
         for (selector, info) in &static_pages {
-            tree = self.push_page_item(tree, selector, info, *selector == active);
+            tree = self.push_page_item(tree, selector, info, *selector == active, false);
         }
 
         if !open_pages.is_empty() {
@@ -997,7 +997,7 @@ impl ReadFlow {
         }
 
         for (selector, info) in &open_pages {
-            tree = self.push_page_item(tree, selector, info, *selector == active);
+            tree = self.push_page_item(tree, selector, info, *selector == active, true);
         }
 
         tree
@@ -1007,13 +1007,16 @@ impl ReadFlow {
     /// (e.g. the EPUB viewer's chapter tree) or a default leaf. Open/closable
     /// pages that fall through to the default leaf get a close button wired to
     /// `RequestClosePage`; static pages and pages that provide their own item
-    /// don't (the EPUB viewer wires its own close button itself).
+    /// don't (the EPUB viewer wires its own close button itself). `closable`
+    /// is decided by the caller (static-pages loop passes `false`, open-pages
+    /// loop passes `true`) rather than being recomputed here.
     fn push_page_item(
         &self,
         tree: NavTree<cosmic::Action<Message>>,
         selector: &PageSelector,
         info: &PageInfo,
         is_active: bool,
+        closable: bool,
     ) -> NavTree<cosmic::Action<Message>> {
         if let Some(item) = self.pages.nav_tree(selector, is_active) {
             // Page provides its own nav item (e.g. EPUB viewer with TOC).
@@ -1022,20 +1025,12 @@ impl ReadFlow {
         }
 
         // Default: simple leaf that navigates via ActivatePage.
-        let is_closable = matches!(
-            selector,
-            PageSelector::DocumentDetails(_)
-                | PageSelector::EpubViewer(_)
-                | PageSelector::MuPdfViewer(_)
-                | PageSelector::ImageViewer(_)
-        );
-
         tree.push(NavItem::Leaf(NavLeaf {
             icon: Some(icon::from_name(info.icon_name).icon()),
             label: info.label.clone(),
             active: is_active,
             on_activate: cosmic::action::app(Message::ActivatePage(selector.clone())),
-            on_close: is_closable.then(|| {
+            on_close: closable.then(|| {
                 cosmic::action::app(Message::Page(Box::new(PageMessage::RequestClosePage(
                     selector.clone(),
                 ))))
@@ -1065,6 +1060,9 @@ impl ReadFlow {
     }
 }
 
+/// Entries from the page list, paired as `(selector, info)`.
+type PageEntries<'a> = Vec<(&'a PageSelector, &'a PageInfo)>;
+
 /// Splits the page list into (static pages, open/closable documents),
 /// each preserving registration order. Static pages (Dashboard, Documents,
 /// Online Library, Preferences, Server) are always present; the open group
@@ -1072,10 +1070,7 @@ impl ReadFlow {
 /// viewers) and is empty in a fresh app with nothing open.
 fn partition_page_list(
     page_list: &IndexMap<PageSelector, PageInfo>,
-) -> (
-    Vec<(&PageSelector, &PageInfo)>,
-    Vec<(&PageSelector, &PageInfo)>,
-) {
+) -> (PageEntries<'_>, PageEntries<'_>) {
     page_list.iter().partition(|(selector, _)| {
         matches!(
             selector,
