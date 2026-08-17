@@ -94,6 +94,10 @@ pub struct DocumentsComponent {
     pagination: Pagination,
     selected_documents: HashSet<String>,
     batch_tag_editor: TagEditor<Value<Vec<String>>>, // Tag editor for batch operations
+    /// Tags present on some, but not all, selected documents, with how many
+    /// selected documents have each one. Recomputed alongside the batch tag
+    /// editor's common-tags list.
+    partial_tags: Vec<(String, usize)>,
     covers: HashMap<String, widget::image::Handle>,
 }
 
@@ -116,6 +120,7 @@ impl DocumentsComponent {
                 pagination: Default::default(),
                 selected_documents: Default::default(),
                 batch_tag_editor,
+                partial_tags: Vec::new(),
                 covers: HashMap::new(),
             },
             init_batch_tag_editor.map(ActionExt::map_into),
@@ -184,17 +189,55 @@ impl DocumentsComponent {
         let all_selected = selected_count > 0 && selected_count >= filtered_count;
 
         let tag_editor_row: Option<Element<'_, DocumentsMessage>> = if selected_count > 0 {
+            let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
             Some(
-                self.batch_tag_editor
-                    .view()
-                    .map(Into::into)
-                    .apply(widget::container)
+                Column::new()
+                    .spacing(space_xxs)
+                    .push(widget::text::caption(fl!(
+                        "document-list-common-tags-label"
+                    )))
+                    .push(self.batch_tag_editor.view().map(Into::into))
                     .width(Length::Fill)
                     .into(),
             )
         } else {
             None
         };
+
+        let partial_tags_row: Option<Element<'_, DocumentsMessage>> =
+            if self.partial_tags.is_empty() {
+                None
+            } else {
+                let cosmic_theme::Spacing { space_xxs, .. } = theme::active().cosmic().spacing;
+                let chips = self
+                    .partial_tags
+                    .iter()
+                    .map(|(tag, count)| {
+                        widget::button::text(format!("{tag} ({count}/{selected_count})"))
+                            .trailing_icon(widget::icon::from_name("edit-delete-symbolic"))
+                            .on_press(DocumentsMessage::Out(DocumentsOutput::BatchTagEditor(
+                                TagEditorOutput::TagRemoved(tag.clone()),
+                            )))
+                            .tooltip(fl!("document-list-partial-tag-remove-tooltip"))
+                            .into()
+                    })
+                    .collect::<Vec<_>>();
+                Some(
+                    Column::new()
+                        .spacing(space_xxs)
+                        .push(widget::text::caption(fl!(
+                            "document-list-partial-tags-label"
+                        )))
+                        .push(
+                            chips
+                                .apply(widget::flex_row)
+                                .spacing(space_xxs)
+                                .width(Length::Fill),
+                        )
+                        .width(Length::Fill)
+                        .into(),
+                )
+            };
 
         let merge_button: Option<Element<'_, DocumentsMessage>> = if selected_count >= 2 {
             Some(
@@ -232,6 +275,7 @@ impl DocumentsComponent {
         let files_section = files_section
             .add(select_all_row)
             .add_maybe(tag_editor_row)
+            .add_maybe(partial_tags_row)
             .add(self.pagination.view().map(Into::into));
 
         let files_section = visible_files
@@ -355,6 +399,7 @@ impl DocumentsComponent {
             DocumentsMessage::ResetBatchTagEditor => {
                 let selected_documents = self.get_selected_documents();
                 let common_tags = get_common_tags(&selected_documents);
+                self.partial_tags = get_partial_tags(&selected_documents);
                 Task::batch(vec![
                     task::message(DocumentsMessage::BatchTagEditor(TagEditorMessage::SetTags(
                         common_tags,
@@ -601,6 +646,27 @@ pub fn get_common_tags(selected_documents: &[Document]) -> Vec<String> {
     common_tags
 }
 
+/// Tags present on some, but not all, selected documents, each with how many
+/// of the selected documents have it. Excludes tags common to every selected
+/// document (those belong to `get_common_tags` instead).
+pub fn get_partial_tags(selected_documents: &[Document]) -> Vec<(String, usize)> {
+    let total = selected_documents.len();
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for document in selected_documents {
+        for tag in document_tags(document) {
+            *counts.entry(tag).or_insert(0) += 1;
+        }
+    }
+
+    let mut partial_tags: Vec<(String, usize)> = counts
+        .into_iter()
+        .filter(|(_, count)| *count < total)
+        .collect();
+    partial_tags.sort();
+
+    partial_tags
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -611,6 +677,7 @@ mod tests {
     use super::compute_all_tags;
     use super::document_tags;
     use super::get_common_tags;
+    use super::get_partial_tags;
     use crate::aggregator::DocumentContent;
     use crate::aggregator::DocumentType;
     use crate::state::filtered::Filtered;
@@ -667,6 +734,27 @@ mod tests {
     #[test]
     fn get_common_tags_empty_when_no_documents_selected() {
         assert_eq!(get_common_tags(&[]), Vec::<String>::new());
+    }
+
+    #[test]
+    fn get_partial_tags_excludes_tags_common_to_all_and_reports_counts() {
+        let selected = vec![
+            doc("d1", vec![content(vec!["rust", "fiction"])]),
+            doc("d2", vec![content(vec!["rust", "programming"])]),
+            doc("d3", vec![content(vec!["rust"])]),
+        ];
+
+        // "rust" is on all 3 (common, not partial); "fiction" and
+        // "programming" are each on exactly 1 of the 3.
+        assert_eq!(
+            get_partial_tags(&selected),
+            vec![("fiction".to_string(), 1), ("programming".to_string(), 1),]
+        );
+    }
+
+    #[test]
+    fn get_partial_tags_empty_when_no_documents_selected() {
+        assert_eq!(get_partial_tags(&[]), Vec::new());
     }
 
     #[test]

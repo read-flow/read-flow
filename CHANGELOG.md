@@ -41,6 +41,12 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   Previously the whole row still opened the document, and only a small checkbox at its edge
   toggled selection, making it easy to accidentally navigate away while trying to select more
   documents. Opening a document while a selection is active still works via its "ⓘ" details button.
+- Documents page: the batch tag editor now also shows tags present on only *some* of the selected
+  documents (e.g. "fiction (2/3)"), each removable in one click, labeled "Also on some selected"
+  next to the existing common-tags editor, now labeled "On all selected" for symmetry. Previously
+  only tags common to every selected document were visible or editable, so a tag on some but not
+  all selected documents couldn't be seen or bulk-removed from the selection at all, and the
+  common-tags editor had no label of its own.
 - The nav sidebar now separates permanent pages (Dashboard, Documents, Online Libraries,
   Preferences, Server) from currently open documents, which appear below an "Open" label and can
   each be closed with a new × button — including the EPUB viewer, whose chapter tree keeps its
