@@ -12,6 +12,14 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.5.0] - 2026-08-17
+
+### Added
+
 - New `--debug` flag. The EPUB viewer's "Show raw HTML" toggle (a developer-only debugging aid)
   is now hidden unless the app is launched with `--debug`.
 
@@ -308,7 +316,8 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/read-flow/read-flow/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/read-flow/read-flow/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/read-flow/read-flow/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/read-flow/read-flow/compare/v0.3.1...v0.3.2
