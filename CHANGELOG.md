@@ -32,6 +32,10 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   below the selection toolbar, instead of sharing a single crowded row with the select-all
   checkbox, selection count, and Merge button (where it could be squeezed down to nothing on
   normal window widths).
+- Documents page: per-document selection now uses the same checkbox style as "Select all"
+  (previously a custom round icon button, inconsistent with the square checkbox used everywhere
+  else), and the Merge button is now accent-colored instead of a plain gray button, so it's
+  actually noticeable once you've selected documents to merge.
 - The nav sidebar now separates permanent pages (Dashboard, Documents, Online Libraries,
   Preferences, Server) from currently open documents, which appear below an "Open" label and can
   each be closed with a new × button — including the EPUB viewer, whose chapter tree keeps its

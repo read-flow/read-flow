@@ -198,7 +198,7 @@ impl DocumentsComponent {
 
         let merge_button: Option<Element<'_, DocumentsMessage>> = if selected_count >= 2 {
             Some(
-                widget::button::standard(fl!("document-list-merge"))
+                widget::button::suggested(fl!("document-list-merge"))
                     .on_press(DocumentsMessage::Out(DocumentsOutput::MergeDocuments))
                     .into(),
             )
@@ -446,12 +446,6 @@ fn view_document<'a>(
     is_selected: bool,
     cover: Option<&'a widget::image::Handle>,
 ) -> Element<'a, DocumentsMessage> {
-    let (selected_icon_name, selected_icon_class) = if is_selected {
-        ("checkbox-checked-symbolic", ButtonClass::Suggested)
-    } else {
-        ("checkbox-symbolic", ButtonClass::Icon)
-    };
-
     let total_sources: usize = document.contents.iter().map(|c| c.sources.len()).sum();
     let open_msg = if total_sources > 1 {
         DocumentsMessage::Out(DocumentsOutput::PickFormat(document.clone()))
@@ -472,9 +466,11 @@ fn view_document<'a>(
     };
 
     vec![
-        widget::button::icon(widget::icon::from_name(selected_icon_name).size(ICON_SIZE))
-            .class(selected_icon_class)
-            .on_press(DocumentsMessage::ToggleDocumentSelected(document.clone()))
+        widget::checkbox(is_selected)
+            .on_toggle({
+                let document = document.clone();
+                move |_checked| DocumentsMessage::ToggleDocumentSelected(document.clone())
+            })
             .into(),
         cover_widget,
         display_document_title(document),
