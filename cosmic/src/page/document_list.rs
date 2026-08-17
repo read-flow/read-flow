@@ -238,6 +238,9 @@ pub enum DocumentListMessage {
     Loaded(Documents),
     LoadingFailed(String),
     RefreshDocument(Document),
+    /// Batch tag add/remove finished on the server; merge the locally-applied
+    /// tag changes into the cached list instead of reloading it.
+    BatchTagsApplied(Vec<Document>),
     /// @feature: documents.search
     SearchChanged(String),
     SearchModeChanged(SearchMode),
@@ -382,23 +385,45 @@ impl DocumentList {
     fn batch_remove_tags(&mut self, removed_tag: String) -> Task<Action<DocumentListMessage>> {
         let selected_documents = self.archive.get_selected_documents();
         let document_provider = self.document_provider.clone();
+        let updated_documents: Vec<Document> = selected_documents
+            .iter()
+            .cloned()
+            .map(|mut doc| {
+                for content in &mut doc.contents {
+                    content.tags.retain(|t| t != &removed_tag);
+                }
+                doc
+            })
+            .collect();
         task::future(async move {
             let _ = document_provider
                 .batch_delete_document_tags(selected_documents, slice::from_ref(&removed_tag))
                 .await;
-            DocumentListMessage::LoadArchive
+            DocumentListMessage::BatchTagsApplied(updated_documents)
         })
     }
 
     fn batch_add_tags(&mut self, new_tag: String) -> Task<Action<DocumentListMessage>> {
         let selected_documents = self.archive.get_selected_documents();
         let document_provider = self.document_provider.clone();
+        let updated_documents: Vec<Document> = selected_documents
+            .iter()
+            .cloned()
+            .map(|mut doc| {
+                for content in &mut doc.contents {
+                    if !content.tags.iter().any(|t| t == &new_tag) {
+                        content.tags.push(new_tag.clone());
+                    }
+                }
+                doc
+            })
+            .collect();
         task::future(async move {
             let _ = document_provider
                 .batch_add_document_tags(selected_documents, slice::from_ref(&new_tag))
                 .await;
 
-            DocumentListMessage::LoadArchive
+            DocumentListMessage::BatchTagsApplied(updated_documents)
         })
     }
 
@@ -1177,6 +1202,24 @@ impl Page for DocumentList {
                 self.archive
                     .update_item(move |doc| doc.document_guid == document_guid, document)
                     .map(ActionExt::map_into)
+            }
+            DocumentListMessage::BatchTagsApplied(updated_documents) => {
+                if !self.archive.is_loaded() {
+                    return Task::none();
+                }
+                let mut tasks = Vec::with_capacity(updated_documents.len() + 1);
+                for document in updated_documents {
+                    let document_guid = document.document_guid.clone();
+                    tasks.push(
+                        self.archive
+                            .update_item(move |doc| doc.document_guid == document_guid, document)
+                            .map(ActionExt::map_into),
+                    );
+                }
+                tasks.push(task::message(DocumentListMessage::DocumentsComponent(
+                    DocumentsMessage::ResetBatchTagEditor,
+                )));
+                Task::batch(tasks)
             }
             DocumentListMessage::SearchChanged(query) => {
                 self.search_query = query.clone();

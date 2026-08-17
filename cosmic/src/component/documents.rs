@@ -183,13 +183,15 @@ impl DocumentsComponent {
         let selected_count = self.selected_documents.len();
         let all_selected = selected_count > 0 && selected_count >= filtered_count;
 
-        let tag_editor_view = if selected_count > 0 {
-            self.batch_tag_editor
-                .view()
-                .map(Into::into)
-                .apply(widget::container)
-                .width(Length::FillPortion(4))
-                .into()
+        let tag_editor_row: Option<Element<'_, DocumentsMessage>> = if selected_count > 0 {
+            Some(
+                self.batch_tag_editor
+                    .view()
+                    .map(Into::into)
+                    .apply(widget::container)
+                    .width(Length::Fill)
+                    .into(),
+            )
         } else {
             None
         };
@@ -209,11 +211,7 @@ impl DocumentsComponent {
         } else {
             fl!("document-list-select-all")
         };
-        let count_fill = match (tag_editor_view.is_some(), merge_button.is_some()) {
-            (true, _) => 1,
-            (false, false) => 5,
-            (false, true) => 4,
-        };
+        let count_fill = if merge_button.is_some() { 4 } else { 5 };
         let select_all_row = widget::settings::item_row(vec![])
             .push(
                 widget::checkbox(all_selected)
@@ -229,11 +227,11 @@ impl DocumentsComponent {
                 ))
                 .width(Length::FillPortion(count_fill)),
             )
-            .push_maybe(merge_button)
-            .push_maybe(tag_editor_view);
+            .push_maybe(merge_button);
 
         let files_section = files_section
             .add(select_all_row)
+            .add_maybe(tag_editor_row)
             .add(self.pagination.view().map(Into::into));
 
         let files_section = visible_files

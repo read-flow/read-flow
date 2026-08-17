@@ -28,6 +28,10 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   restarts. An explicit choice is now saved and re-applied live without restarting.
 - Preferences → Server → Local Identity now includes a worked example of what picking a user
   there actually does, instead of only abstract wording.
+- Documents page: the batch tag editor for selected documents now gets its own full-width row
+  below the selection toolbar, instead of sharing a single crowded row with the select-all
+  checkbox, selection count, and Merge button (where it could be squeezed down to nothing on
+  normal window widths).
 - The nav sidebar now separates permanent pages (Dashboard, Documents, Online Libraries,
   Preferences, Server) from currently open documents, which appear below an "Open" label and can
   each be closed with a new × button — including the EPUB viewer, whose chapter tree keeps its
@@ -62,6 +66,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   confirm button, matching the confirmation pattern already used for purging missing files.
 - The EPUB viewer's in-book search now says "No matches in this chapter" instead of a bare "No
   matches", since search only ever looked within the currently open chapter.
+- Adding or removing a tag on multiple selected documents no longer reloads the entire document
+  library (which briefly replaced the whole file list, selection toolbar, and tag editor with a
+  loading spinner on every single tag change). The affected documents are now updated in place.
 
 <!-- Add entries here as you land changes. Move them under a version heading at release time. -->
 
