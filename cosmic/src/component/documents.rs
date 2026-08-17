@@ -248,7 +248,7 @@ impl DocumentsComponent {
                             .first()
                             .and_then(|c| self.covers.get(&c.fingerprint))
                     });
-                section.add(view_document(file, is_selected, cover))
+                section.add(view_document(file, is_selected, selected_count > 0, cover))
             })
             .add(self.pagination.view().map(Into::into));
 
@@ -444,10 +444,13 @@ impl DocumentsComponent {
 fn view_document<'a>(
     document: &'a Document,
     is_selected: bool,
+    selection_active: bool,
     cover: Option<&'a widget::image::Handle>,
 ) -> Element<'a, DocumentsMessage> {
     let total_sources: usize = document.contents.iter().map(|c| c.sources.len()).sum();
-    let open_msg = if total_sources > 1 {
+    let row_press_msg = if selection_active {
+        DocumentsMessage::ToggleDocumentSelected(document.clone())
+    } else if total_sources > 1 {
         DocumentsMessage::Out(DocumentsOutput::PickFormat(document.clone()))
     } else {
         DocumentsMessage::Out(DocumentsOutput::OpenDocument(document.clone()))
@@ -488,7 +491,7 @@ fn view_document<'a>(
     .apply(widget::button::custom)
     .width(Length::Fill)
     .class(ButtonClass::ListItem(theme::active().cosmic().radius_s()))
-    .on_press(open_msg)
+    .on_press(row_press_msg)
     .into()
 }
 

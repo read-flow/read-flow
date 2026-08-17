@@ -36,6 +36,11 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   (previously a custom round icon button, inconsistent with the square checkbox used everywhere
   else), and the Merge button is now accent-colored instead of a plain gray button, so it's
   actually noticeable once you've selected documents to merge.
+- Documents page: while any documents are selected, clicking a document row now toggles its
+  selection instead of opening it, matching the convention of most file managers (Files, Explorer).
+  Previously the whole row still opened the document, and only a small checkbox at its edge
+  toggled selection, making it easy to accidentally navigate away while trying to select more
+  documents. Opening a document while a selection is active still works via its "ⓘ" details button.
 - The nav sidebar now separates permanent pages (Dashboard, Documents, Online Libraries,
   Preferences, Server) from currently open documents, which appear below an "Open" label and can
   each be closed with a new × button — including the EPUB viewer, whose chapter tree keeps its
