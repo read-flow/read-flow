@@ -16,6 +16,11 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Fixed
 
+- macOS `.app` bundle no longer links `liblzma` from an absolute Homebrew path. It's now copied
+  into `Contents/Frameworks` with its load path rewritten, so the app doesn't depend on a
+  matching Homebrew install being present, and the bundle re-signs cleanly instead of leaving a
+  broken/incomplete code-signature resource seal.
+
 ## [0.5.0] - 2026-08-17
 
 ### Added

@@ -146,6 +146,23 @@ bundle: pwa-build (build-release '--features' 'embed-pwa' '-p' 'read-flow') icon
     mkdir -p "$app/Contents/Resources"
     cp "{{bin-src}}" "$app/Contents/MacOS/"
     cp "{{icns}}" "$app/Contents/Resources/"
+
+    # Bundle any non-system dylibs (e.g. Homebrew's liblzma, pulled in by
+    # mupdf) instead of leaving the binary linked to an absolute host path —
+    # otherwise the app breaks on machines without that exact library
+    # installed, and macOS does extra work resolving/validating an external
+    # dependency outside the signed bundle on every launch.
+    exe="$app/Contents/MacOS/{{name}}"
+    frameworks="$app/Contents/Frameworks"
+    mkdir -p "$frameworks"
+    for lib in $(otool -L "$exe" | tail -n +2 | awk '{print $1}' | grep -vE '^(/usr/lib/|/System/Library/)'); do
+        libname="$(basename "$lib")"
+        cp -L "$lib" "$frameworks/$libname"
+        chmod 644 "$frameworks/$libname"
+        install_name_tool -id "@executable_path/../Frameworks/$libname" "$frameworks/$libname"
+        install_name_tool -change "$lib" "@executable_path/../Frameworks/$libname" "$exe"
+    done
+
     cat > "$app/Contents/Info.plist" << 'PLIST'
     <?xml version="1.0" encoding="UTF-8"?>
     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -174,6 +191,11 @@ bundle: pwa-build (build-release '--features' 'embed-pwa' '-p' 'read-flow') icon
     </dict>
     </plist>
     PLIST
+
+    # Re-sign (ad hoc) now that the binary's load commands changed and
+    # Frameworks/Resources were added — otherwise the seal is stale/missing
+    # and Gatekeeper flags the bundle as malformed on launch.
+    codesign --force --deep -s - "$app"
     echo "Built: $app"
 
 # Open the .app bundle (build first if needed)
