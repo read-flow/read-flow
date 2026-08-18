@@ -16,6 +16,10 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Fixed
 
+## [0.5.1] - 2026-08-18
+
+### Fixed
+
 - macOS `.app` bundle no longer links `liblzma` from an absolute Homebrew path. It's now copied
   into `Contents/Frameworks` with its load path rewritten, so the app doesn't depend on a
   matching Homebrew install being present, and the bundle re-signs cleanly instead of leaving a
@@ -321,7 +325,8 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/read-flow/read-flow/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/read-flow/read-flow/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/read-flow/read-flow/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/read-flow/read-flow/compare/v0.3.2...v0.4.0
