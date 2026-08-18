@@ -404,18 +404,21 @@ mod tests {
 
     #[golden_test(400, 150)]
     fn tag_editor_empty() -> cosmic::Element<'_, TagEditorMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let editor = make_editor(vec![], Orientation::Vertical);
         editor.view()
     }
 
     #[golden_test(400, 150, dark)]
     fn tag_editor_empty_dark() -> cosmic::Element<'_, TagEditorMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let editor = make_editor(vec![], Orientation::Vertical);
         editor.view()
     }
 
     #[golden_test(400, 150)]
     fn tag_editor_with_tags() -> cosmic::Element<'_, TagEditorMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let editor = make_editor(
             vec!["fiction".to_string(), "rust".to_string()],
             Orientation::Vertical,
@@ -425,6 +428,7 @@ mod tests {
 
     #[golden_test(400, 150, dark)]
     fn tag_editor_with_tags_dark() -> cosmic::Element<'_, TagEditorMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let editor = make_editor(
             vec!["fiction".to_string(), "rust".to_string()],
             Orientation::Vertical,
@@ -434,6 +438,7 @@ mod tests {
 
     #[golden_test(600, 150)]
     fn tag_editor_with_tags_horizontal() -> cosmic::Element<'_, TagEditorMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let editor = make_editor(
             vec!["fiction".to_string(), "rust".to_string()],
             Orientation::Horizontal,
@@ -443,6 +448,7 @@ mod tests {
 
     #[golden_test(600, 150, dark)]
     fn tag_editor_with_tags_horizontal_dark() -> cosmic::Element<'_, TagEditorMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let editor = make_editor(
             vec!["fiction".to_string(), "rust".to_string()],
             Orientation::Horizontal,

@@ -166,18 +166,21 @@ mod tests {
 
     #[golden_test(400, 400)]
     fn tag_filter_empty() -> cosmic::Element<'_, TagFilterMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let (filter, _) = TagFilter::new(Value::new(tags()));
         filter.view()
     }
 
     #[golden_test(400, 400, dark)]
     fn tag_filter_empty_dark() -> cosmic::Element<'_, TagFilterMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let (filter, _) = TagFilter::new(Value::new(tags()));
         filter.view()
     }
 
     #[golden_test(400, 400)]
     fn tag_filter_with_filters() -> cosmic::Element<'_, TagFilterMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let (mut filter, _) = TagFilter::new(Value::new(tags()));
         filter.allow_tags.insert("fiction".to_string());
         filter.deny_tags.insert("unread".to_string());
@@ -187,6 +190,7 @@ mod tests {
 
     #[golden_test(400, 400, dark)]
     fn tag_filter_with_filters_dark() -> cosmic::Element<'_, TagFilterMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let (mut filter, _) = TagFilter::new(Value::new(tags()));
         filter.allow_tags.insert("fiction".to_string());
         filter.deny_tags.insert("unread".to_string());

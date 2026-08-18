@@ -428,7 +428,25 @@ mod tests {
     #[test]
     fn apply_interface_font_overrides_and_restores_cosmic_tk() {
         // nextest runs each test in its own process, so mutating the
-        // process-global CosmicTk override is safe here.
+        // process-global CosmicTk override is safe there. Under `cargo
+        // test`'s threaded runner, other tests in the same process — e.g.
+        // `#[golden_test]` renders, which pin CosmicTk to bundled
+        // deterministic fonts once at binary start via `cosmic_golden::init`
+        // — read this same global. `apply_interface_font(&ThemeSettings::default())`
+        // below restores to the *system* font, not to whatever was pinned
+        // before this test ran, so without saving/restoring the pre-test
+        // value here, this test would permanently clobber the pinned fonts
+        // for every golden render that happens to run later in the same
+        // process. Take the lock too, so this snapshot/restore can't itself
+        // race a concurrent golden-test render — and call `init()` first so
+        // its one-time real pin (guarded only by its own internal `OnceLock`,
+        // not by `cosmic_tk_lock`) is guaranteed to have already happened
+        // before the snapshot below, rather than possibly landing between it
+        // and the restore.
+        let _guard = crate::test_support::cosmic_tk_lock();
+        cosmic_golden::init();
+        let original = COSMIC_TK.read().unwrap().clone();
+
         let installed = crate::fonts::fonts();
         let Some(family) = installed.first().copied() else {
             return; // no fonts installed in this environment
@@ -444,6 +462,8 @@ mod tests {
 
         apply_interface_font(&ThemeSettings::default());
         Assert::that(COSMIC_TK.read().unwrap().interface_font.family == system_family).is(true);
+
+        *COSMIC_TK.write().unwrap() = original;
     }
 
     #[test]
@@ -462,8 +482,12 @@ mod tests {
 
     #[test]
     fn apply_monospace_font_overrides_and_restores_cosmic_tk() {
-        // nextest runs each test in its own process, so mutating the
-        // process-global CosmicTk override is safe here.
+        // See the comment in `apply_interface_font_overrides_and_restores_cosmic_tk`
+        // — same reasoning, for the monospace half of CosmicTk.
+        let _guard = crate::test_support::cosmic_tk_lock();
+        cosmic_golden::init();
+        let original = COSMIC_TK.read().unwrap().clone();
+
         let installed = crate::fonts::fonts();
         let Some(family) = installed.first().copied() else {
             return; // no fonts installed in this environment
@@ -479,5 +503,7 @@ mod tests {
 
         apply_monospace_font(&ThemeSettings::default());
         Assert::that(COSMIC_TK.read().unwrap().monospace_font.family == system_family).is(true);
+
+        *COSMIC_TK.write().unwrap() = original;
     }
 }

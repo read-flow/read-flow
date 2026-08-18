@@ -5,6 +5,9 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::MutexGuard;
+use std::sync::OnceLock;
 
 use cosmic::Action;
 use cosmic::Task;
@@ -20,6 +23,29 @@ use crate::Cli;
 use crate::aggregator::Aggregator;
 use crate::aggregator::Document;
 use crate::document_provider::DocumentProvider;
+use crate::logging::LogBus;
+
+/// `logging::init()` installs a *global* tracing subscriber and panics if
+/// called more than once per process. Unit tests across the crate run in
+/// the same process, so share one `LogBus` here instead of each test
+/// calling `logging::init()` directly.
+pub(crate) fn log_bus() -> LogBus {
+    static LOG_BUS: OnceLock<LogBus> = OnceLock::new();
+    LOG_BUS.get_or_init(crate::logging::init).clone()
+}
+
+/// `apply_interface_font`/`apply_monospace_font` write the process-global
+/// `cosmic::config::COSMIC_TK`. `#[golden_test]` snapshot renders read that
+/// same global and assume it stays pinned to the bundled test fonts
+/// (`cosmic_golden::init`) — under `cargo test`'s default threaded runner,
+/// unit tests that mutate it can interleave with a concurrently running
+/// golden-test render, corrupting the font it renders with and producing a
+/// spurious snapshot mismatch. Both sides take this lock around their
+/// `COSMIC_TK`-touching section so they never overlap.
+pub(crate) fn cosmic_tk_lock() -> MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 /// A real `ApplicationModule`/`DocumentProvider` pair backed by a fresh
 /// temp-dir SQLite DB. Keep the returned `TempDir` alive for as long as the

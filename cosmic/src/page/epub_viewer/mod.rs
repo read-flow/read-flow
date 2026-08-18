@@ -3483,6 +3483,7 @@ mod tests {
 
     #[golden_test(600, 150)]
     fn epub_plain_paragraph() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("Test")
             .body("<p>This is a plain paragraph of body text.</p>")
             .build();
@@ -3492,6 +3493,7 @@ mod tests {
 
     #[golden_test(600, 150, dark)]
     fn epub_plain_paragraph_dark() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("Test")
             .body("<p>This is a plain paragraph of body text.</p>")
             .build();
@@ -3501,6 +3503,7 @@ mod tests {
 
     #[golden_test(600, 300)]
     fn epub_headings() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("Headings")
             .body(
                 "<h1>Chapter One</h1>\
@@ -3515,6 +3518,7 @@ mod tests {
 
     #[golden_test(600, 250)]
     fn epub_unordered_list() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("List")
             .body(
                 "<ul>\
@@ -3530,6 +3534,7 @@ mod tests {
 
     #[golden_test(600, 250)]
     fn epub_ordered_list() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("Ordered List")
             .body(
                 "<ol>\
@@ -3545,6 +3550,7 @@ mod tests {
 
     #[golden_test(600, 150)]
     fn epub_inline_styles() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("Inline Styles")
             .body(
                 "<p>\
@@ -3561,6 +3567,7 @@ mod tests {
 
     #[golden_test(600, 200)]
     fn epub_preformatted() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("Preformatted")
             .body("<pre>fn hello() {\n    println!(\"Hello, world!\");\n}</pre>")
             .build();
@@ -3570,6 +3577,7 @@ mod tests {
 
     #[golden_test(600, 200)]
     fn epub_blockquote() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("Blockquote")
             .body(
                 "<blockquote>\
@@ -3584,6 +3592,7 @@ mod tests {
 
     #[golden_test(600, 200)]
     fn epub_table() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("Table")
             .body(
                 "<table>\
@@ -3599,6 +3608,7 @@ mod tests {
 
     #[golden_test(600, 100)]
     fn epub_horizontal_rule() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("HR")
             .body("<p>Before the rule.</p><hr/><p>After the rule.</p>")
             .build();
@@ -3608,6 +3618,7 @@ mod tests {
 
     #[golden_test(600, 200)]
     fn epub_footnote() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("Footnote")
             .body(
                 "<p>Main text with a reference<sup><a href=\"#fn1\">1</a></sup>.</p>\
@@ -3622,6 +3633,7 @@ mod tests {
 
     #[golden_test(600, 250)]
     fn epub_footnote_styled_spans() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         // Footnotes render with a reduced context font size (0.8×). Spans with
         // explicit em font sizes must scale against that reduced size, not the
         // hardcoded 16px base. This test exercises a footnote whose content
@@ -3641,6 +3653,7 @@ mod tests {
 
     #[golden_test(600, 300)]
     fn epub_figure() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         // Use a small inline SVG as the figure content so no external resource
         // is needed while still exercising the Figure + caption render path.
         let _f = EpubBuilder::new("Figure")
@@ -3674,6 +3687,7 @@ mod tests {
 
     #[golden_test(600, 200)]
     fn epub_image() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("Image")
             .body("<p>An image follows:</p><img src=\"images/test.png\" alt=\"Test image\"/>")
             .resource("OEBPS/images/test.png", TINY_PNG.to_vec(), "image/png")
@@ -3684,6 +3698,7 @@ mod tests {
 
     #[golden_test(600, 200)]
     fn epub_image_data_url() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         // Image embedded as a data URL — no EPUB resource entry needed.
         // Uses the same 8×8 orange PNG as epub_image, base64-encoded inline.
         const TINY_PNG_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4kWKEFTEMLQkAVkZXgTy9n4kAAAAASUVORK5CYII=";
@@ -3700,6 +3715,7 @@ mod tests {
 
     #[golden_test(600, 150)]
     fn epub_image_missing_alt() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         // Image whose src cannot be resolved — falls back to alt text.
         let _f = EpubBuilder::new("Image Alt")
             .body("<img src=\"images/missing.png\" alt=\"Missing image\"/>")
@@ -3710,6 +3726,7 @@ mod tests {
 
     #[golden_test(600, 300)]
     fn epub_svg() -> cosmic::Element<'_, super::EpubViewerMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let _f = EpubBuilder::new("SVG")
             .body(
                 "<p>An inline SVG:</p>\

@@ -201,12 +201,14 @@ mod tests {
 
     #[golden_test(400, 40)]
     fn view_pagination() -> cosmic::Element<'_, PaginationMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let pagination = Pagination::new(100);
         pagination.view()
     }
 
     #[golden_test(400, 40, dark)]
     fn view_pagination_dark() -> cosmic::Element<'_, PaginationMessage> {
+        let _guard = crate::test_support::cosmic_tk_lock();
         let pagination = Pagination::new(100);
         pagination.view()
     }

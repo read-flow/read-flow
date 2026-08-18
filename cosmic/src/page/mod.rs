@@ -1191,7 +1191,7 @@ mod tests {
     async fn save_all_reading_progress_saves_every_open_viewer() {
         let (application_module, document_provider, _db_dir) =
             crate::test_support::document_provider().await;
-        let (config, log_bus) = (Config::default(), crate::logging::init());
+        let (config, log_bus) = (Config::default(), crate::test_support::log_bus());
 
         let (mut pages, init_task) = Pages::new(
             application_module.clone(),
@@ -1257,7 +1257,7 @@ mod tests {
             application_module,
             document_provider,
             Config::default(),
-            crate::logging::init(),
+            crate::test_support::log_bus(),
             false,
         );
         crate::test_support::drain(init_task).await;
@@ -1274,7 +1274,7 @@ mod tests {
             application_module.clone(),
             document_provider.clone(),
             Config::default(),
-            crate::logging::init(),
+            crate::test_support::log_bus(),
             false,
         );
         crate::test_support::drain(init_task).await;
@@ -1314,7 +1314,7 @@ mod tests {
             application_module.clone(),
             document_provider.clone(),
             Config::default(),
-            crate::logging::init(),
+            crate::test_support::log_bus(),
             false,
         );
         crate::test_support::drain(init_task).await;
