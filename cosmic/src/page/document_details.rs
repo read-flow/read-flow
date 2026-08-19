@@ -467,7 +467,6 @@ impl DocumentDetails {
     ) -> Element<'a, DocumentDetailsMessage> {
         let cosmic_theme::Spacing {
             space_xxs,
-            space_xs,
             space_s,
             space_m,
             ..
@@ -527,49 +526,40 @@ impl DocumentDetails {
             None => fl!("document-details-thumbnail-loading"),
         };
 
-        let trim_toggle = Row::new()
-            .spacing(space_xs)
-            .align_y(Vertical::Center)
-            .push(
-                widget::toggler(state.trim).on_toggle(DocumentDetailsMessage::ThumbnailTrimToggled),
+        let margin_item = |label: String, edge: ThumbnailMarginEdge, value: u32| {
+            widget::settings::item::builder(label).control(
+                widget::slider(0.0..=THUMBNAIL_MAX_MARGIN as f32, value as f32, move |v| {
+                    DocumentDetailsMessage::ThumbnailMarginChanged(edge, v as u32)
+                })
+                .step(1.0_f32),
             )
-            .push(widget::text(fl!("document-details-thumbnail-trim")));
-
-        let padding_slider: Option<Element<'_, DocumentDetailsMessage>> = state.trim.then(|| {
-            Column::new()
-                .spacing(space_xxs)
-                .push(widget::text(fl!(
-                    "document-details-thumbnail-padding",
-                    padding = state.padding
-                )))
-                .push(
-                    widget::slider(
-                        0.0..=THUMBNAIL_MAX_PADDING as f32,
-                        state.padding as f32,
-                        |v| DocumentDetailsMessage::ThumbnailPaddingChanged(v as u32),
-                    )
-                    .step(1.0_f32),
-                )
-                .into()
-        });
-
-        let margin_slider = |label: String, edge: ThumbnailMarginEdge, value: u32| {
-            Column::new()
-                .spacing(space_xxs)
-                .push(widget::text(label))
-                .push(
-                    widget::slider(0.0..=THUMBNAIL_MAX_MARGIN as f32, value as f32, move |v| {
-                        DocumentDetailsMessage::ThumbnailMarginChanged(edge, v as u32)
-                    })
-                    .step(1.0_f32),
-                )
         };
 
-        let margin_sliders: Option<Element<'_, DocumentDetailsMessage>> = state.trim.then(|| {
-            Column::new()
-                .spacing(space_xs)
-                .push(widget::text(fl!("document-details-thumbnail-margins")))
-                .push(margin_slider(
+        let mut controls = widget::settings::section().add(
+            widget::settings::item::builder(fl!("document-details-thumbnail-trim"))
+                .toggler(state.trim, DocumentDetailsMessage::ThumbnailTrimToggled),
+        );
+        if state.trim {
+            controls = controls
+                .add(
+                    widget::settings::item::builder(fl!(
+                        "document-details-thumbnail-padding",
+                        padding = state.padding
+                    ))
+                    .control(
+                        widget::slider(
+                            0.0..=THUMBNAIL_MAX_PADDING as f32,
+                            state.padding as f32,
+                            |v| DocumentDetailsMessage::ThumbnailPaddingChanged(v as u32),
+                        )
+                        .step(1.0_f32),
+                    ),
+                )
+                .add(
+                    widget::text::body(fl!("document-details-thumbnail-margins"))
+                        .width(Length::Fill),
+                )
+                .add(margin_item(
                     fl!(
                         "document-details-thumbnail-margin-top",
                         margin = state.margins.top
@@ -577,7 +567,7 @@ impl DocumentDetails {
                     ThumbnailMarginEdge::Top,
                     state.margins.top,
                 ))
-                .push(margin_slider(
+                .add(margin_item(
                     fl!(
                         "document-details-thumbnail-margin-bottom",
                         margin = state.margins.bottom
@@ -585,7 +575,7 @@ impl DocumentDetails {
                     ThumbnailMarginEdge::Bottom,
                     state.margins.bottom,
                 ))
-                .push(margin_slider(
+                .add(margin_item(
                     fl!(
                         "document-details-thumbnail-margin-left",
                         margin = state.margins.left
@@ -593,16 +583,15 @@ impl DocumentDetails {
                     ThumbnailMarginEdge::Left,
                     state.margins.left,
                 ))
-                .push(margin_slider(
+                .add(margin_item(
                     fl!(
                         "document-details-thumbnail-margin-right",
                         margin = state.margins.right
                     ),
                     ThumbnailMarginEdge::Right,
                     state.margins.right,
-                ))
-                .into()
-        });
+                ));
+        }
 
         let mut save_button = widget::button::suggested(fl!("document-details-thumbnail-save"));
         if !state.saving && state.preview.is_some() {
@@ -617,9 +606,7 @@ impl DocumentDetails {
             .push(widget::container(preview).center_x(Length::Fill))
             .push(widget::container(filmstrip).center_x(Length::Fill))
             .push(widget::text(page_label))
-            .push(trim_toggle)
-            .push_maybe(padding_slider)
-            .push_maybe(margin_sliders);
+            .push(controls);
 
         if let Some(error) = &state.error {
             content = content.push(widget::text(fl!("generic-error", error = error.clone())));
