@@ -15,6 +15,12 @@ async fn set_thumbnail_to_first_page(world: &mut BddWorld) {
         .expect("PDF document must be seeded before setting its thumbnail");
     world
         .driver
-        .set_pdf_page_thumbnail(&file_guid, 0, false, 0)
+        .set_pdf_page_thumbnail(
+            &file_guid,
+            0,
+            false,
+            0,
+            read_flow_core::scan::cover::TrimMargins::default(),
+        )
         .await;
 }

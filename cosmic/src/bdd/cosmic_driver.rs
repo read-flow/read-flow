@@ -1075,11 +1075,12 @@ impl CosmicDriver {
         page_index: i32,
         trim: bool,
         padding: u32,
+        margins: read_flow_core::scan::cover::TrimMargins,
     ) {
         self.application_module
             .db_client()
             .await
-            .set_pdf_page_thumbnail(file_guid, page_index, trim, padding)
+            .set_pdf_page_thumbnail(file_guid, page_index, trim, padding, margins)
             .await
             .expect("set_pdf_page_thumbnail");
     }

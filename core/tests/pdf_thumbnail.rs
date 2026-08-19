@@ -195,6 +195,21 @@ async fn page_preview_accepts_custom_trim_padding() {
 }
 
 #[tokio::test]
+async fn page_preview_accepts_custom_exclusion_margins() {
+    let (router, _dir, pdf_guid, _pdf_fp, _epub_guid) = test_router().await;
+    let (status, body) = get(
+        &router,
+        &format!(
+            "/files/{pdf_guid}/pdf/page/0/preview?trim=true&size=thumb\
+             &margin_top=5&margin_bottom=5&margin_left=5&margin_right=5"
+        ),
+    )
+    .await;
+    Assert::that(status).is(StatusCode::OK);
+    Assert::that(body.is_empty()).is(false);
+}
+
+#[tokio::test]
 async fn save_thumbnail_updates_file_cover_and_survives_rescan_style_upsert() {
     let (router, _dir, pdf_guid, pdf_fp, _epub_guid) = test_router().await;
 

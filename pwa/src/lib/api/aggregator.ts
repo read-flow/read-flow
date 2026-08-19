@@ -6,11 +6,18 @@ import {
 	type RemoteDocument,
 	type DocumentMeta,
 	type ReadingStatus,
+	type TrimMargins,
 } from './client';
 import { mergeFiles, groupByDocumentGuid, type AggregatedFile } from './merge';
 
 export type { AggregatedFile } from './merge';
-export type { RemoteDocument, DocumentMeta, RemoteReadingState, ReadingStatus } from './client';
+export type {
+	RemoteDocument,
+	DocumentMeta,
+	RemoteReadingState,
+	ReadingStatus,
+	TrimMargins,
+} from './client';
 
 async function getClients(): Promise<Array<{ id: number; client: ReadFlowClient }>> {
 	const sources = await db.sources.orderBy('order').toArray();
@@ -361,6 +368,7 @@ export async function fetchPdfPagePreviewUrl(
 	pageIndex: number,
 	trim: boolean,
 	padding: number,
+	margins: TrimMargins,
 	thumb: boolean,
 ): Promise<string> {
 	const source = await db.sources.get(sourceId);
@@ -370,6 +378,7 @@ export async function fetchPdfPagePreviewUrl(
 		pageIndex,
 		trim,
 		padding,
+		margins,
 		thumb,
 	);
 	return URL.createObjectURL(blob);
@@ -385,10 +394,11 @@ export async function savePdfPageThumbnail(
 	pageIndex: number,
 	trim: boolean,
 	padding: number,
+	margins: TrimMargins,
 ): Promise<void> {
 	const source = await db.sources.get(sourceId);
 	if (!source) throw new Error('Source not found');
-	await new ReadFlowClient(source).setPdfPageThumbnail(guid, pageIndex, trim, padding);
+	await new ReadFlowClient(source).setPdfPageThumbnail(guid, pageIndex, trim, padding, margins);
 }
 
 /**

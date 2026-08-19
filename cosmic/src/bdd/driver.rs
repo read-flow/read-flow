@@ -732,16 +732,17 @@ impl Driver {
         page_index: i32,
         trim: bool,
         padding: u32,
+        margins: read_flow_core::scan::cover::TrimMargins,
     ) {
         match self {
             Self::Rest(driver) => {
                 driver
-                    .set_pdf_page_thumbnail(file_guid, page_index, trim, padding)
+                    .set_pdf_page_thumbnail(file_guid, page_index, trim, padding, margins)
                     .await
             }
             Self::Cosmic(driver) => {
                 driver
-                    .set_pdf_page_thumbnail(file_guid, page_index, trim, padding)
+                    .set_pdf_page_thumbnail(file_guid, page_index, trim, padding, margins)
                     .await
             }
         }

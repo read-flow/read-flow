@@ -495,6 +495,7 @@ impl DbClient {
         page_index: i32,
         trim: bool,
         padding: u32,
+        margins: crate::scan::cover::TrimMargins,
         thumb: bool,
     ) -> Result<Vec<u8>, Error> {
         let (_file, path, _guard) = self.resolve_pdf_file(file_guid).await?;
@@ -502,7 +503,7 @@ impl DbClient {
         tokio::task::spawn_blocking(move || {
             let img = crate::scan::cover::render_pdf_page(&path, page_index, max_dim)?;
             let img = if trim {
-                crate::scan::cover::trim_whitespace(&img, padding)
+                crate::scan::cover::trim_whitespace(&img, padding, margins)
             } else {
                 img
             };
@@ -520,12 +521,13 @@ impl DbClient {
         page_index: i32,
         trim: bool,
         padding: u32,
+        margins: crate::scan::cover::TrimMargins,
     ) -> Result<ApiDocument, Error> {
         let (file, path, _guard) = self.resolve_pdf_file(file_guid).await?;
         let (data, mime) = tokio::task::spawn_blocking(move || {
             let img = crate::scan::cover::render_pdf_page(&path, page_index, 800)?;
             let img = if trim {
-                crate::scan::cover::trim_whitespace(&img, padding)
+                crate::scan::cover::trim_whitespace(&img, padding, margins)
             } else {
                 img
             };

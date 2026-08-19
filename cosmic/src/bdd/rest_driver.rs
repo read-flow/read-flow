@@ -884,6 +884,7 @@ impl RestDriver {
         page_index: i32,
         trim: bool,
         padding: u32,
+        margins: read_flow_core::scan::cover::TrimMargins,
     ) {
         let response = self
             .client
@@ -892,7 +893,14 @@ impl RestDriver {
                 self.server.base_url, file_guid, page_index
             ))
             .basic_auth(&self.server.user, Some(&self.server.password))
-            .json(&serde_json::json!({ "trim": trim, "padding": padding }))
+            .json(&serde_json::json!({
+                "trim": trim,
+                "padding": padding,
+                "margin_top": margins.top,
+                "margin_bottom": margins.bottom,
+                "margin_left": margins.left,
+                "margin_right": margins.right,
+            }))
             .send()
             .await
             .expect("POST /files/<guid>/pdf/page/<index>/thumbnail");

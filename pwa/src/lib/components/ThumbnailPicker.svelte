@@ -5,6 +5,7 @@
 		fetchPdfPageCount,
 		fetchPdfPagePreviewUrl,
 		savePdfPageThumbnail,
+		type TrimMargins,
 	} from '$lib/api/aggregator';
 	import { refreshDocuments } from '$lib/stores/documents';
 
@@ -19,11 +20,17 @@
 	const FILMSTRIP_RADIUS = 4;
 	const MAX_PADDING = 32;
 	const DEFAULT_PADDING = 8;
+	const MAX_MARGIN = 100;
+	const NO_MARGINS: TrimMargins = { top: 0, bottom: 0, left: 0, right: 0 };
 
 	let pageIndex = $state(0);
 	let pageCount = $state<number | null>(null);
 	let trim = $state(false);
 	let padding = $state(DEFAULT_PADDING);
+	let marginTop = $state(0);
+	let marginBottom = $state(0);
+	let marginLeft = $state(0);
+	let marginRight = $state(0);
 	let previewUrl = $state<string | null>(null);
 	let filmstripUrls = $state<Record<number, string>>({});
 	let saving = $state(false);
@@ -31,10 +38,23 @@
 
 	let previewGeneration = 0;
 
-	async function loadBigPreview(idx: number, useTrim: boolean, usePadding: number): Promise<void> {
+	async function loadBigPreview(
+		idx: number,
+		useTrim: boolean,
+		usePadding: number,
+		useMargins: TrimMargins,
+	): Promise<void> {
 		const myGeneration = ++previewGeneration;
 		try {
-			const url = await fetchPdfPagePreviewUrl(sourceId, guid, idx, useTrim, usePadding, false);
+			const url = await fetchPdfPagePreviewUrl(
+				sourceId,
+				guid,
+				idx,
+				useTrim,
+				usePadding,
+				useMargins,
+				false,
+			);
 			if (myGeneration !== previewGeneration) {
 				URL.revokeObjectURL(url);
 				return;
@@ -55,7 +75,7 @@
 		const end = Math.min(pageCount - 1, idx + FILMSTRIP_RADIUS);
 		for (let i = start; i <= end; i++) {
 			if (filmstripUrls[i]) continue;
-			fetchPdfPagePreviewUrl(sourceId, guid, i, false, 0, true)
+			fetchPdfPagePreviewUrl(sourceId, guid, i, false, 0, NO_MARGINS, true)
 				.then((url) => {
 					filmstripUrls = { ...filmstripUrls, [i]: url };
 				})
@@ -81,7 +101,13 @@
 		const idx = pageIndex;
 		const useTrim = trim;
 		const usePadding = padding;
-		loadBigPreview(idx, useTrim, usePadding);
+		const useMargins: TrimMargins = {
+			top: marginTop,
+			bottom: marginBottom,
+			left: marginLeft,
+			right: marginRight,
+		};
+		loadBigPreview(idx, useTrim, usePadding, useMargins);
 		loadFilmstripWindow(idx);
 	});
 
@@ -111,7 +137,12 @@
 		saving = true;
 		error = null;
 		try {
-			await savePdfPageThumbnail(sourceId, guid, pageIndex, trim, padding);
+			await savePdfPageThumbnail(sourceId, guid, pageIndex, trim, padding, {
+				top: marginTop,
+				bottom: marginBottom,
+				left: marginLeft,
+				right: marginRight,
+			});
 			await refreshDocuments();
 			onclose();
 		} catch (err) {
@@ -191,6 +222,86 @@
 					bind:value={padding}
 					class="w-full accent-slate-900 dark:accent-slate-100"
 				/>
+			</div>
+
+			<div class="mb-4">
+				<p class="text-xs text-slate-500 dark:text-slate-400 mb-2">
+					Exclude before cropping (e.g. a page number)
+				</p>
+				<div class="grid grid-cols-2 gap-x-4 gap-y-2">
+					<div>
+						<label
+							for="thumbnail-margin-top-{sourceId}-{guid}"
+							class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1"
+						>
+							<span>Top</span>
+							<span>{marginTop}px</span>
+						</label>
+						<input
+							id="thumbnail-margin-top-{sourceId}-{guid}"
+							type="range"
+							min="0"
+							max={MAX_MARGIN}
+							step="1"
+							bind:value={marginTop}
+							class="w-full accent-slate-900 dark:accent-slate-100"
+						/>
+					</div>
+					<div>
+						<label
+							for="thumbnail-margin-bottom-{sourceId}-{guid}"
+							class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1"
+						>
+							<span>Bottom</span>
+							<span>{marginBottom}px</span>
+						</label>
+						<input
+							id="thumbnail-margin-bottom-{sourceId}-{guid}"
+							type="range"
+							min="0"
+							max={MAX_MARGIN}
+							step="1"
+							bind:value={marginBottom}
+							class="w-full accent-slate-900 dark:accent-slate-100"
+						/>
+					</div>
+					<div>
+						<label
+							for="thumbnail-margin-left-{sourceId}-{guid}"
+							class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1"
+						>
+							<span>Left</span>
+							<span>{marginLeft}px</span>
+						</label>
+						<input
+							id="thumbnail-margin-left-{sourceId}-{guid}"
+							type="range"
+							min="0"
+							max={MAX_MARGIN}
+							step="1"
+							bind:value={marginLeft}
+							class="w-full accent-slate-900 dark:accent-slate-100"
+						/>
+					</div>
+					<div>
+						<label
+							for="thumbnail-margin-right-{sourceId}-{guid}"
+							class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1"
+						>
+							<span>Right</span>
+							<span>{marginRight}px</span>
+						</label>
+						<input
+							id="thumbnail-margin-right-{sourceId}-{guid}"
+							type="range"
+							min="0"
+							max={MAX_MARGIN}
+							step="1"
+							bind:value={marginRight}
+							class="w-full accent-slate-900 dark:accent-slate-100"
+						/>
+					</div>
+				</div>
 			</div>
 		{/if}
 

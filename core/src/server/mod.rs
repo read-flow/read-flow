@@ -1105,6 +1105,25 @@ struct PdfPagePreviewQuery {
     size: String,
     #[serde(default = "default_trim_padding")]
     padding: u32,
+    #[serde(default)]
+    margin_top: u32,
+    #[serde(default)]
+    margin_bottom: u32,
+    #[serde(default)]
+    margin_left: u32,
+    #[serde(default)]
+    margin_right: u32,
+}
+
+impl PdfPagePreviewQuery {
+    fn margins(&self) -> crate::scan::cover::TrimMargins {
+        clamp_margins(
+            self.margin_top,
+            self.margin_bottom,
+            self.margin_left,
+            self.margin_right,
+        )
+    }
 }
 
 fn default_preview_size() -> String {
@@ -1113,9 +1132,20 @@ fn default_preview_size() -> String {
 
 /// Default/clamp bound for trim padding — matches the picker UI's slider range.
 const MAX_TRIM_PADDING: u32 = 32;
+/// Clamp bound for the pre-crop exclusion margins — matches the picker UI's slider range.
+const MAX_TRIM_MARGIN: u32 = 100;
 
 fn default_trim_padding() -> u32 {
     8
+}
+
+fn clamp_margins(top: u32, bottom: u32, left: u32, right: u32) -> crate::scan::cover::TrimMargins {
+    crate::scan::cover::TrimMargins {
+        top: top.min(MAX_TRIM_MARGIN),
+        bottom: bottom.min(MAX_TRIM_MARGIN),
+        left: left.min(MAX_TRIM_MARGIN),
+        right: right.min(MAX_TRIM_MARGIN),
+    }
 }
 
 /// @feature: documents.change_thumbnail
@@ -1137,11 +1167,12 @@ async fn get_pdf_page_preview(
     let max_dim = if query.size == "thumb" { 200 } else { 800 };
     let trim = query.trim;
     let padding = query.padding.min(MAX_TRIM_PADDING);
+    let margins = query.margins();
     let (path, _guard) = resolve_readable_path(&file).await?;
     let data = tokio::task::spawn_blocking(move || {
         let img = crate::scan::cover::render_pdf_page(&path, index, max_dim)?;
         let img = if trim {
-            crate::scan::cover::trim_whitespace(&img, padding)
+            crate::scan::cover::trim_whitespace(&img, padding, margins)
         } else {
             img
         };
@@ -1159,6 +1190,25 @@ struct SetPdfThumbnailRequest {
     trim: bool,
     #[serde(default = "default_trim_padding")]
     padding: u32,
+    #[serde(default)]
+    margin_top: u32,
+    #[serde(default)]
+    margin_bottom: u32,
+    #[serde(default)]
+    margin_left: u32,
+    #[serde(default)]
+    margin_right: u32,
+}
+
+impl SetPdfThumbnailRequest {
+    fn margins(&self) -> crate::scan::cover::TrimMargins {
+        clamp_margins(
+            self.margin_top,
+            self.margin_bottom,
+            self.margin_left,
+            self.margin_right,
+        )
+    }
 }
 
 /// @feature: documents.change_thumbnail
@@ -1178,11 +1228,12 @@ async fn post_pdf_page_thumbnail(
 
     let trim = body.trim;
     let padding = body.padding.min(MAX_TRIM_PADDING);
+    let margins = body.margins();
     let (path, _guard) = resolve_readable_path(&file).await?;
     let (data, mime) = tokio::task::spawn_blocking(move || {
         let img = crate::scan::cover::render_pdf_page(&path, index, 800)?;
         let img = if trim {
-            crate::scan::cover::trim_whitespace(&img, padding)
+            crate::scan::cover::trim_whitespace(&img, padding, margins)
         } else {
             img
         };

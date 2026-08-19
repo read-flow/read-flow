@@ -230,12 +230,13 @@ impl DocumentProvider {
         page_index: i32,
         trim: bool,
         padding: u32,
+        margins: read_flow_core::scan::cover::TrimMargins,
         thumb: bool,
     ) -> Result<Vec<u8>, FilesClientError> {
         self.aggregator
             .read()
             .await
-            .get_pdf_page_preview(source, page_index, trim, padding, thumb)
+            .get_pdf_page_preview(source, page_index, trim, padding, margins, thumb)
             .await
     }
 
@@ -250,12 +251,13 @@ impl DocumentProvider {
         page_index: i32,
         trim: bool,
         padding: u32,
+        margins: read_flow_core::scan::cover::TrimMargins,
     ) -> Result<(), FilesClientError> {
         let result = self
             .aggregator
             .read()
             .await
-            .set_pdf_page_thumbnail(source, page_index, trim, padding)
+            .set_pdf_page_thumbnail(source, page_index, trim, padding, margins)
             .await;
         self.set_expired().await;
         result

@@ -88,6 +88,7 @@ struct ThumbnailPickerState {
     page_count: Option<i32>,
     trim: bool,
     padding: u32,
+    margins: read_flow_core::scan::cover::TrimMargins,
     preview: Option<cosmic::widget::image::Handle>,
     preview_bytes: Option<Vec<u8>>,
     filmstrip: std::collections::HashMap<i32, cosmic::widget::image::Handle>,
@@ -95,11 +96,33 @@ struct ThumbnailPickerState {
     error: Option<String>,
 }
 
+/// Which edge a margin slider controls.
+///
+/// @feature: documents.change_thumbnail
+#[derive(Debug, Clone, Copy)]
+pub enum ThumbnailMarginEdge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+/// The render inputs a loaded preview was generated with, so a late-arriving
+/// response can be discarded if the picker's settings have since moved on.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ThumbnailRenderParams {
+    trim: bool,
+    padding: u32,
+    margins: read_flow_core::scan::cover::TrimMargins,
+}
+
 /// Pages visible in the filmstrip window around `page_index`.
 const THUMBNAIL_FILMSTRIP_RADIUS: i32 = 4;
 /// Default/max trim padding (px), matching the server's `MAX_TRIM_PADDING`.
 const THUMBNAIL_MAX_PADDING: u32 = 32;
 const THUMBNAIL_DEFAULT_PADDING: u32 = 8;
+/// Max pre-crop exclusion margin (px), matching the server's `MAX_TRIM_MARGIN`.
+const THUMBNAIL_MAX_MARGIN: u32 = 100;
 
 #[derive(Debug, Clone)]
 pub enum DocumentDetailsOutput {
@@ -168,10 +191,11 @@ pub enum DocumentDetailsMessage {
     CancelThumbnailPicker,
     ThumbnailPageCountLoaded(Result<i32, String>),
     ThumbnailPageSelected(i32),
-    ThumbnailBigPreviewLoaded(i32, bool, u32, Result<Vec<u8>, String>),
+    ThumbnailBigPreviewLoaded(i32, ThumbnailRenderParams, Result<Vec<u8>, String>),
     ThumbnailFilmstripLoaded(i32, Result<Vec<u8>, String>),
     ThumbnailTrimToggled(bool),
     ThumbnailPaddingChanged(u32),
+    ThumbnailMarginChanged(ThumbnailMarginEdge, u32),
     SaveThumbnail,
     ThumbnailSaved(Result<(), String>),
     Key(
@@ -529,6 +553,57 @@ impl DocumentDetails {
                 .into()
         });
 
+        let margin_slider = |label: String, edge: ThumbnailMarginEdge, value: u32| {
+            Column::new()
+                .spacing(space_xxs)
+                .push(widget::text(label))
+                .push(
+                    widget::slider(0.0..=THUMBNAIL_MAX_MARGIN as f32, value as f32, move |v| {
+                        DocumentDetailsMessage::ThumbnailMarginChanged(edge, v as u32)
+                    })
+                    .step(1.0_f32),
+                )
+        };
+
+        let margin_sliders: Option<Element<'_, DocumentDetailsMessage>> = state.trim.then(|| {
+            Column::new()
+                .spacing(space_xs)
+                .push(widget::text(fl!("document-details-thumbnail-margins")))
+                .push(margin_slider(
+                    fl!(
+                        "document-details-thumbnail-margin-top",
+                        margin = state.margins.top
+                    ),
+                    ThumbnailMarginEdge::Top,
+                    state.margins.top,
+                ))
+                .push(margin_slider(
+                    fl!(
+                        "document-details-thumbnail-margin-bottom",
+                        margin = state.margins.bottom
+                    ),
+                    ThumbnailMarginEdge::Bottom,
+                    state.margins.bottom,
+                ))
+                .push(margin_slider(
+                    fl!(
+                        "document-details-thumbnail-margin-left",
+                        margin = state.margins.left
+                    ),
+                    ThumbnailMarginEdge::Left,
+                    state.margins.left,
+                ))
+                .push(margin_slider(
+                    fl!(
+                        "document-details-thumbnail-margin-right",
+                        margin = state.margins.right
+                    ),
+                    ThumbnailMarginEdge::Right,
+                    state.margins.right,
+                ))
+                .into()
+        });
+
         let mut save_button = widget::button::suggested(fl!("document-details-thumbnail-save"));
         if !state.saving && state.preview.is_some() {
             save_button = save_button.on_press(DocumentDetailsMessage::SaveThumbnail);
@@ -543,7 +618,8 @@ impl DocumentDetails {
             .push(widget::container(filmstrip).center_x(Length::Fill))
             .push(widget::text(page_label))
             .push(trim_toggle)
-            .push_maybe(padding_slider);
+            .push_maybe(padding_slider)
+            .push_maybe(margin_sliders);
 
         if let Some(error) = &state.error {
             content = content.push(widget::text(fl!("generic-error", error = error.clone())));
@@ -572,8 +648,11 @@ impl DocumentDetails {
             return Task::none();
         };
         let source = state.source.clone();
-        let trim = state.trim;
-        let padding = state.padding;
+        let render_params = ThumbnailRenderParams {
+            trim: state.trim,
+            padding: state.padding,
+            margins: state.margins,
+        };
         let document_provider = self.document_provider.clone();
 
         let mut tasks: Vec<Task<Action<DocumentDetailsMessage>>> = vec![task::future({
@@ -581,10 +660,17 @@ impl DocumentDetails {
             let source = source.clone();
             async move {
                 let result = document_provider
-                    .get_pdf_page_preview(&source, page_index, trim, padding, false)
+                    .get_pdf_page_preview(
+                        &source,
+                        page_index,
+                        render_params.trim,
+                        render_params.padding,
+                        render_params.margins,
+                        false,
+                    )
                     .await
                     .map_err(|e| format!("{e}"));
-                DocumentDetailsMessage::ThumbnailBigPreviewLoaded(page_index, trim, padding, result)
+                DocumentDetailsMessage::ThumbnailBigPreviewLoaded(page_index, render_params, result)
             }
         })];
 
@@ -598,7 +684,14 @@ impl DocumentDetails {
             let source = source.clone();
             tasks.push(task::future(async move {
                 let result = document_provider
-                    .get_pdf_page_preview(&source, idx, false, 0, true)
+                    .get_pdf_page_preview(
+                        &source,
+                        idx,
+                        false,
+                        0,
+                        read_flow_core::scan::cover::TrimMargins::default(),
+                        true,
+                    )
                     .await
                     .map_err(|e| format!("{e}"));
                 DocumentDetailsMessage::ThumbnailFilmstripLoaded(idx, result)
@@ -1372,6 +1465,7 @@ impl Page for DocumentDetails {
                     page_count: None,
                     trim: false,
                     padding: THUMBNAIL_DEFAULT_PADDING,
+                    margins: read_flow_core::scan::cover::TrimMargins::default(),
                     preview: None,
                     preview_bytes: None,
                     filmstrip: std::collections::HashMap::new(),
@@ -1413,14 +1507,14 @@ impl Page for DocumentDetails {
             }
             DocumentDetailsMessage::ThumbnailBigPreviewLoaded(
                 page_index,
-                trim,
-                padding,
+                render_params,
                 result,
             ) => {
                 if let Some(state) = &mut self.thumbnail_picker
                     && state.page_index == page_index
-                    && state.trim == trim
-                    && state.padding == padding
+                    && state.trim == render_params.trim
+                    && state.padding == render_params.padding
+                    && state.margins == render_params.margins
                 {
                     match result {
                         Ok(bytes) => {
@@ -1465,6 +1559,23 @@ impl Page for DocumentDetails {
                 };
                 self.thumbnail_load_tasks(page_index)
             }
+            DocumentDetailsMessage::ThumbnailMarginChanged(edge, value) => {
+                let page_index = match &mut self.thumbnail_picker {
+                    Some(state) => {
+                        let clamped = value.min(THUMBNAIL_MAX_MARGIN);
+                        match edge {
+                            ThumbnailMarginEdge::Top => state.margins.top = clamped,
+                            ThumbnailMarginEdge::Bottom => state.margins.bottom = clamped,
+                            ThumbnailMarginEdge::Left => state.margins.left = clamped,
+                            ThumbnailMarginEdge::Right => state.margins.right = clamped,
+                        }
+                        state.preview = None;
+                        state.page_index
+                    }
+                    None => return Task::none(),
+                };
+                self.thumbnail_load_tasks(page_index)
+            }
             DocumentDetailsMessage::SaveThumbnail => {
                 let Some(state) = &mut self.thumbnail_picker else {
                     return Task::none();
@@ -1474,10 +1585,11 @@ impl Page for DocumentDetails {
                 let page_index = state.page_index;
                 let trim = state.trim;
                 let padding = state.padding;
+                let margins = state.margins;
                 let document_provider = self.document_provider.clone();
                 task::future(async move {
                     let result = document_provider
-                        .set_pdf_page_thumbnail(&source, page_index, trim, padding)
+                        .set_pdf_page_thumbnail(&source, page_index, trim, padding, margins)
                         .await
                         .map_err(|e| format!("{e}"));
                     DocumentDetailsMessage::ThumbnailSaved(result)
