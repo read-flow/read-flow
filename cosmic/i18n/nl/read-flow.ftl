@@ -73,6 +73,7 @@ document-details-change-thumbnail-tooltip = Kies een pagina om als miniatuur te 
 document-details-thumbnail-page-label = Pagina { $current } van { $total }
 document-details-thumbnail-loading = Laden…
 document-details-thumbnail-trim = Witruimte bijsnijden
+document-details-thumbnail-padding = Marge: { $padding }px
 document-details-thumbnail-save = Opslaan
 document-details-thumbnail-cancel = Annuleren
 document-details-open-file = Bestand Openen

@@ -73,6 +73,7 @@ document-details-change-thumbnail-tooltip = Choose a page to use as the thumbnai
 document-details-thumbnail-page-label = Page { $current } of { $total }
 document-details-thumbnail-loading = Loading…
 document-details-thumbnail-trim = Trim whitespace
+document-details-thumbnail-padding = Padding: { $padding }px
 document-details-thumbnail-save = Save
 document-details-thumbnail-cancel = Cancel
 document-details-open-file = Open File

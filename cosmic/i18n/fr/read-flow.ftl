@@ -72,6 +72,7 @@ document-details-change-thumbnail-tooltip = Choisir une page à utiliser comme v
 document-details-thumbnail-page-label = Page { $current } sur { $total }
 document-details-thumbnail-loading = Chargement…
 document-details-thumbnail-trim = Rogner les marges blanches
+document-details-thumbnail-padding = Marge : { $padding }px
 document-details-thumbnail-save = Enregistrer
 document-details-thumbnail-cancel = Annuler
 document-details-open-file = Ouvrir le Fichier

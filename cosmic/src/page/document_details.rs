@@ -87,6 +87,7 @@ struct ThumbnailPickerState {
     page_index: i32,
     page_count: Option<i32>,
     trim: bool,
+    padding: u32,
     preview: Option<cosmic::widget::image::Handle>,
     preview_bytes: Option<Vec<u8>>,
     filmstrip: std::collections::HashMap<i32, cosmic::widget::image::Handle>,
@@ -96,6 +97,9 @@ struct ThumbnailPickerState {
 
 /// Pages visible in the filmstrip window around `page_index`.
 const THUMBNAIL_FILMSTRIP_RADIUS: i32 = 4;
+/// Default/max trim padding (px), matching the server's `MAX_TRIM_PADDING`.
+const THUMBNAIL_MAX_PADDING: u32 = 32;
+const THUMBNAIL_DEFAULT_PADDING: u32 = 8;
 
 #[derive(Debug, Clone)]
 pub enum DocumentDetailsOutput {
@@ -164,9 +168,10 @@ pub enum DocumentDetailsMessage {
     CancelThumbnailPicker,
     ThumbnailPageCountLoaded(Result<i32, String>),
     ThumbnailPageSelected(i32),
-    ThumbnailBigPreviewLoaded(i32, bool, Result<Vec<u8>, String>),
+    ThumbnailBigPreviewLoaded(i32, bool, u32, Result<Vec<u8>, String>),
     ThumbnailFilmstripLoaded(i32, Result<Vec<u8>, String>),
     ThumbnailTrimToggled(bool),
+    ThumbnailPaddingChanged(u32),
     SaveThumbnail,
     ThumbnailSaved(Result<(), String>),
     Key(
@@ -506,6 +511,24 @@ impl DocumentDetails {
             )
             .push(widget::text(fl!("document-details-thumbnail-trim")));
 
+        let padding_slider: Option<Element<'_, DocumentDetailsMessage>> = state.trim.then(|| {
+            Column::new()
+                .spacing(space_xxs)
+                .push(widget::text(fl!(
+                    "document-details-thumbnail-padding",
+                    padding = state.padding
+                )))
+                .push(
+                    widget::slider(
+                        0.0..=THUMBNAIL_MAX_PADDING as f32,
+                        state.padding as f32,
+                        |v| DocumentDetailsMessage::ThumbnailPaddingChanged(v as u32),
+                    )
+                    .step(1.0_f32),
+                )
+                .into()
+        });
+
         let mut save_button = widget::button::suggested(fl!("document-details-thumbnail-save"));
         if !state.saving && state.preview.is_some() {
             save_button = save_button.on_press(DocumentDetailsMessage::SaveThumbnail);
@@ -519,7 +542,8 @@ impl DocumentDetails {
             .push(widget::container(preview).center_x(Length::Fill))
             .push(widget::container(filmstrip).center_x(Length::Fill))
             .push(widget::text(page_label))
-            .push(trim_toggle);
+            .push(trim_toggle)
+            .push_maybe(padding_slider);
 
         if let Some(error) = &state.error {
             content = content.push(widget::text(fl!("generic-error", error = error.clone())));
@@ -549,6 +573,7 @@ impl DocumentDetails {
         };
         let source = state.source.clone();
         let trim = state.trim;
+        let padding = state.padding;
         let document_provider = self.document_provider.clone();
 
         let mut tasks: Vec<Task<Action<DocumentDetailsMessage>>> = vec![task::future({
@@ -556,10 +581,10 @@ impl DocumentDetails {
             let source = source.clone();
             async move {
                 let result = document_provider
-                    .get_pdf_page_preview(&source, page_index, trim, false)
+                    .get_pdf_page_preview(&source, page_index, trim, padding, false)
                     .await
                     .map_err(|e| format!("{e}"));
-                DocumentDetailsMessage::ThumbnailBigPreviewLoaded(page_index, trim, result)
+                DocumentDetailsMessage::ThumbnailBigPreviewLoaded(page_index, trim, padding, result)
             }
         })];
 
@@ -573,7 +598,7 @@ impl DocumentDetails {
             let source = source.clone();
             tasks.push(task::future(async move {
                 let result = document_provider
-                    .get_pdf_page_preview(&source, idx, false, true)
+                    .get_pdf_page_preview(&source, idx, false, 0, true)
                     .await
                     .map_err(|e| format!("{e}"));
                 DocumentDetailsMessage::ThumbnailFilmstripLoaded(idx, result)
@@ -1346,6 +1371,7 @@ impl Page for DocumentDetails {
                     page_index: 0,
                     page_count: None,
                     trim: false,
+                    padding: THUMBNAIL_DEFAULT_PADDING,
                     preview: None,
                     preview_bytes: None,
                     filmstrip: std::collections::HashMap::new(),
@@ -1385,10 +1411,16 @@ impl Page for DocumentDetails {
                 }
                 self.thumbnail_load_tasks(idx)
             }
-            DocumentDetailsMessage::ThumbnailBigPreviewLoaded(page_index, trim, result) => {
+            DocumentDetailsMessage::ThumbnailBigPreviewLoaded(
+                page_index,
+                trim,
+                padding,
+                result,
+            ) => {
                 if let Some(state) = &mut self.thumbnail_picker
                     && state.page_index == page_index
                     && state.trim == trim
+                    && state.padding == padding
                 {
                     match result {
                         Ok(bytes) => {
@@ -1422,6 +1454,17 @@ impl Page for DocumentDetails {
                 };
                 self.thumbnail_load_tasks(page_index)
             }
+            DocumentDetailsMessage::ThumbnailPaddingChanged(value) => {
+                let page_index = match &mut self.thumbnail_picker {
+                    Some(state) => {
+                        state.padding = value.min(THUMBNAIL_MAX_PADDING);
+                        state.preview = None;
+                        state.page_index
+                    }
+                    None => return Task::none(),
+                };
+                self.thumbnail_load_tasks(page_index)
+            }
             DocumentDetailsMessage::SaveThumbnail => {
                 let Some(state) = &mut self.thumbnail_picker else {
                     return Task::none();
@@ -1430,10 +1473,11 @@ impl Page for DocumentDetails {
                 let source = state.source.clone();
                 let page_index = state.page_index;
                 let trim = state.trim;
+                let padding = state.padding;
                 let document_provider = self.document_provider.clone();
                 task::future(async move {
                     let result = document_provider
-                        .set_pdf_page_thumbnail(&source, page_index, trim)
+                        .set_pdf_page_thumbnail(&source, page_index, trim, padding)
                         .await
                         .map_err(|e| format!("{e}"));
                     DocumentDetailsMessage::ThumbnailSaved(result)

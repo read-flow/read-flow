@@ -17,10 +17,13 @@
 	let { sourceId, guid, onclose }: Props = $props();
 
 	const FILMSTRIP_RADIUS = 4;
+	const MAX_PADDING = 32;
+	const DEFAULT_PADDING = 8;
 
 	let pageIndex = $state(0);
 	let pageCount = $state<number | null>(null);
 	let trim = $state(false);
+	let padding = $state(DEFAULT_PADDING);
 	let previewUrl = $state<string | null>(null);
 	let filmstripUrls = $state<Record<number, string>>({});
 	let saving = $state(false);
@@ -28,10 +31,10 @@
 
 	let previewGeneration = 0;
 
-	async function loadBigPreview(idx: number, useTrim: boolean): Promise<void> {
+	async function loadBigPreview(idx: number, useTrim: boolean, usePadding: number): Promise<void> {
 		const myGeneration = ++previewGeneration;
 		try {
-			const url = await fetchPdfPagePreviewUrl(sourceId, guid, idx, useTrim, false);
+			const url = await fetchPdfPagePreviewUrl(sourceId, guid, idx, useTrim, usePadding, false);
 			if (myGeneration !== previewGeneration) {
 				URL.revokeObjectURL(url);
 				return;
@@ -52,7 +55,7 @@
 		const end = Math.min(pageCount - 1, idx + FILMSTRIP_RADIUS);
 		for (let i = start; i <= end; i++) {
 			if (filmstripUrls[i]) continue;
-			fetchPdfPagePreviewUrl(sourceId, guid, i, false, true)
+			fetchPdfPagePreviewUrl(sourceId, guid, i, false, 0, true)
 				.then((url) => {
 					filmstripUrls = { ...filmstripUrls, [i]: url };
 				})
@@ -77,7 +80,8 @@
 		if (pageCount === null) return;
 		const idx = pageIndex;
 		const useTrim = trim;
-		loadBigPreview(idx, useTrim);
+		const usePadding = padding;
+		loadBigPreview(idx, useTrim, usePadding);
 		loadFilmstripWindow(idx);
 	});
 
@@ -107,7 +111,7 @@
 		saving = true;
 		error = null;
 		try {
-			await savePdfPageThumbnail(sourceId, guid, pageIndex, trim);
+			await savePdfPageThumbnail(sourceId, guid, pageIndex, trim, padding);
 			await refreshDocuments();
 			onclose();
 		} catch (err) {
@@ -160,7 +164,7 @@
 			{pageCount === null ? 'Loading…' : `Page ${pageIndex + 1} of ${pageCount}`}
 		</p>
 
-		<label class="flex items-center gap-2 mb-4 cursor-pointer select-none">
+		<label class="flex items-center gap-2 mb-2 cursor-pointer select-none">
 			<input
 				type="checkbox"
 				bind:checked={trim}
@@ -168,6 +172,27 @@
 			/>
 			<span class="text-sm text-slate-600 dark:text-slate-300">Trim whitespace</span>
 		</label>
+
+		{#if trim}
+			<div class="mb-4">
+				<label
+					for="thumbnail-padding-{sourceId}-{guid}"
+					class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1"
+				>
+					<span>Padding</span>
+					<span>{padding}px</span>
+				</label>
+				<input
+					id="thumbnail-padding-{sourceId}-{guid}"
+					type="range"
+					min="0"
+					max={MAX_PADDING}
+					step="1"
+					bind:value={padding}
+					class="w-full accent-slate-900 dark:accent-slate-100"
+				/>
+			</div>
+		{/if}
 
 		{#if error}
 			<p class="text-sm text-red-500 dark:text-red-400 mb-3">{error}</p>

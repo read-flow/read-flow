@@ -13,7 +13,7 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 ### Added
 
 - Change a PDF document's thumbnail by picking any page and optionally trimming surrounding
-  whitespace, in both the COSMIC app and the PWA.
+  whitespace, with an adjustable padding amount, in both the COSMIC app and the PWA.
 
 ### Changed
 

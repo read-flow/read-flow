@@ -275,16 +275,17 @@ impl Client {
         file_guid: &str,
         page_index: i32,
         trim: bool,
+        padding: u32,
         thumb: bool,
     ) -> Result<Vec<u8>, FilesClientError> {
         match self {
             Client::Local(module) => Ok(module
                 .db_client()
                 .await
-                .get_pdf_page_preview(file_guid, page_index, trim, thumb)
+                .get_pdf_page_preview(file_guid, page_index, trim, padding, thumb)
                 .await?),
             Client::Remote(client) => Ok(client
-                .get_pdf_page_preview(file_guid, page_index, trim, thumb)
+                .get_pdf_page_preview(file_guid, page_index, trim, padding, thumb)
                 .await?),
         }
     }
@@ -295,15 +296,16 @@ impl Client {
         file_guid: &str,
         page_index: i32,
         trim: bool,
+        padding: u32,
     ) -> Result<ApiDocument, FilesClientError> {
         match self {
             Client::Local(module) => Ok(module
                 .db_client()
                 .await
-                .set_pdf_page_thumbnail(file_guid, page_index, trim)
+                .set_pdf_page_thumbnail(file_guid, page_index, trim, padding)
                 .await?),
             Client::Remote(client) => Ok(client
-                .set_pdf_page_thumbnail(file_guid, page_index, trim)
+                .set_pdf_page_thumbnail(file_guid, page_index, trim, padding)
                 .await?),
         }
     }

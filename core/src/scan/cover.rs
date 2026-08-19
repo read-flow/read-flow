@@ -68,11 +68,11 @@ pub fn pdf_page_count(path: &Path) -> Option<i32> {
 }
 
 /// Crop the surrounding whitespace off a rendered page image, leaving a
-/// small margin around the detected content. Falls back to the untouched
-/// image when the page is blank (or near-blank) and no content bbox is found.
-pub fn trim_whitespace(image: &image::RgbImage) -> image::RgbImage {
+/// `padding`-px margin around the detected content. Falls back to the
+/// untouched image when the page is blank (or near-blank) and no content
+/// bbox is found.
+pub fn trim_whitespace(image: &image::RgbImage, padding: u32) -> image::RgbImage {
     const WHITE_THRESHOLD: u8 = 250;
-    const PADDING: u32 = 8;
 
     let (width, height) = image.dimensions();
     let is_content = |x: u32, y: u32| {
@@ -102,10 +102,10 @@ pub fn trim_whitespace(image: &image::RgbImage) -> image::RgbImage {
         return image.clone();
     }
 
-    let crop_x = min_x.saturating_sub(PADDING);
-    let crop_y = min_y.saturating_sub(PADDING);
-    let crop_max_x = (max_x + PADDING).min(width.saturating_sub(1));
-    let crop_max_y = (max_y + PADDING).min(height.saturating_sub(1));
+    let crop_x = min_x.saturating_sub(padding);
+    let crop_y = min_y.saturating_sub(padding);
+    let crop_max_x = (max_x + padding).min(width.saturating_sub(1));
+    let crop_max_y = (max_y + padding).min(height.saturating_sub(1));
     let crop_w = crop_max_x - crop_x + 1;
     let crop_h = crop_max_y - crop_y + 1;
 
@@ -148,11 +148,26 @@ mod tests {
                 img.put_pixel(x, y, Rgb([0, 0, 0]));
             }
         }
-        let trimmed = trim_whitespace(&img);
+        let trimmed = trim_whitespace(&img, 8);
         let (w, h) = trimmed.dimensions();
         // Content bbox is 40..=59 (20px) plus 8px padding on each side, clamped to canvas.
         Assert::that(w).is(36u32);
         Assert::that(h).is(36u32);
+    }
+
+    #[test]
+    fn trim_whitespace_padding_widens_the_crop() {
+        let mut img = white_canvas(100, 100);
+        for y in 40..60 {
+            for x in 40..60 {
+                img.put_pixel(x, y, Rgb([0, 0, 0]));
+            }
+        }
+        let trimmed = trim_whitespace(&img, 20);
+        let (w, h) = trimmed.dimensions();
+        // Content bbox is 40..=59 (20px) plus 20px padding on each side.
+        Assert::that(w).is(60u32);
+        Assert::that(h).is(60u32);
     }
 
     #[test]
@@ -163,7 +178,7 @@ mod tests {
                 img.put_pixel(x, y, Rgb([0, 0, 0]));
             }
         }
-        let trimmed = trim_whitespace(&img);
+        let trimmed = trim_whitespace(&img, 8);
         let (w, h) = trimmed.dimensions();
         // Padding clamps at the canvas edge instead of going negative/out of bounds.
         Assert::that(w).is(18u32);
@@ -173,7 +188,7 @@ mod tests {
     #[test]
     fn trim_whitespace_falls_back_to_original_on_blank_page() {
         let img = white_canvas(30, 20);
-        let trimmed = trim_whitespace(&img);
+        let trimmed = trim_whitespace(&img, 8);
         Assert::that(trimmed.dimensions()).is((30u32, 20u32));
         Assert::that(trimmed.as_raw().clone()).is(img.as_raw().clone());
     }

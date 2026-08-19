@@ -349,11 +349,12 @@ export class ReadFlowClient {
 		guid: string,
 		pageIndex: number,
 		trim: boolean,
+		padding: number,
 		thumb: boolean,
 	): Promise<Blob> {
 		const size = thumb ? 'thumb' : 'large';
 		const response = await this.authedFetch(
-			`/files/${guid}/pdf/page/${pageIndex}/preview?trim=${trim}&size=${size}`,
+			`/files/${guid}/pdf/page/${pageIndex}/preview?trim=${trim}&padding=${padding}&size=${size}`,
 		);
 		if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
 		return response.blob();
@@ -364,10 +365,11 @@ export class ReadFlowClient {
 		guid: string,
 		pageIndex: number,
 		trim: boolean,
+		padding: number,
 	): Promise<RemoteDocument> {
 		return this.request<RemoteDocument>(`/files/${guid}/pdf/page/${pageIndex}/thumbnail`, {
 			method: 'POST',
-			body: JSON.stringify({ trim }),
+			body: JSON.stringify({ trim, padding }),
 		});
 	}
 

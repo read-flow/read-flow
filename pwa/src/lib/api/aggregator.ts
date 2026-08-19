@@ -360,11 +360,18 @@ export async function fetchPdfPagePreviewUrl(
 	guid: string,
 	pageIndex: number,
 	trim: boolean,
+	padding: number,
 	thumb: boolean,
 ): Promise<string> {
 	const source = await db.sources.get(sourceId);
 	if (!source) throw new Error('Source not found');
-	const blob = await new ReadFlowClient(source).downloadPdfPagePreview(guid, pageIndex, trim, thumb);
+	const blob = await new ReadFlowClient(source).downloadPdfPagePreview(
+		guid,
+		pageIndex,
+		trim,
+		padding,
+		thumb,
+	);
 	return URL.createObjectURL(blob);
 }
 
@@ -377,10 +384,11 @@ export async function savePdfPageThumbnail(
 	guid: string,
 	pageIndex: number,
 	trim: boolean,
+	padding: number,
 ): Promise<void> {
 	const source = await db.sources.get(sourceId);
 	if (!source) throw new Error('Source not found');
-	await new ReadFlowClient(source).setPdfPageThumbnail(guid, pageIndex, trim);
+	await new ReadFlowClient(source).setPdfPageThumbnail(guid, pageIndex, trim, padding);
 }
 
 /**

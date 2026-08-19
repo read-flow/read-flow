@@ -522,11 +522,12 @@ impl FilesClient {
         file_guid: &str,
         page_index: i32,
         trim: bool,
+        padding: u32,
         thumb: bool,
     ) -> Result<Vec<u8>, Error> {
         let size = if thumb { "thumb" } else { "large" };
         let builder = self.client.get(self.base_url.join(&format!(
-            "files/{file_guid}/pdf/page/{page_index}/preview?trim={trim}&size={size}"
+            "files/{file_guid}/pdf/page/{page_index}/preview?trim={trim}&padding={padding}&size={size}"
         ))?);
         let response = self.send(builder).await?;
         response.error_for_status_ref()?;
@@ -539,6 +540,7 @@ impl FilesClient {
         file_guid: &str,
         page_index: i32,
         trim: bool,
+        padding: u32,
     ) -> Result<ApiDocument, Error> {
         let builder = self
             .client
@@ -546,7 +548,7 @@ impl FilesClient {
                 "files/{file_guid}/pdf/page/{page_index}/thumbnail"
             ))?)
             .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
-            .json(&serde_json::json!({ "trim": trim }));
+            .json(&serde_json::json!({ "trim": trim, "padding": padding }));
         let response = self.send(builder).await?;
         response.error_for_status_ref()?;
         Ok(response.json().await?)

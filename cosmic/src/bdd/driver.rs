@@ -726,16 +726,22 @@ impl Driver {
 
     // -- documents.change_thumbnail --
 
-    pub async fn set_pdf_page_thumbnail(&self, file_guid: &str, page_index: i32, trim: bool) {
+    pub async fn set_pdf_page_thumbnail(
+        &self,
+        file_guid: &str,
+        page_index: i32,
+        trim: bool,
+        padding: u32,
+    ) {
         match self {
             Self::Rest(driver) => {
                 driver
-                    .set_pdf_page_thumbnail(file_guid, page_index, trim)
+                    .set_pdf_page_thumbnail(file_guid, page_index, trim, padding)
                     .await
             }
             Self::Cosmic(driver) => {
                 driver
-                    .set_pdf_page_thumbnail(file_guid, page_index, trim)
+                    .set_pdf_page_thumbnail(file_guid, page_index, trim, padding)
                     .await
             }
         }

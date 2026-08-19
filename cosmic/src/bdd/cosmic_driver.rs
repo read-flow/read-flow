@@ -1069,11 +1069,17 @@ impl CosmicDriver {
 
     // -- documents.change_thumbnail --
 
-    pub async fn set_pdf_page_thumbnail(&self, file_guid: &str, page_index: i32, trim: bool) {
+    pub async fn set_pdf_page_thumbnail(
+        &self,
+        file_guid: &str,
+        page_index: i32,
+        trim: bool,
+        padding: u32,
+    ) {
         self.application_module
             .db_client()
             .await
-            .set_pdf_page_thumbnail(file_guid, page_index, trim)
+            .set_pdf_page_thumbnail(file_guid, page_index, trim, padding)
             .await
             .expect("set_pdf_page_thumbnail");
     }

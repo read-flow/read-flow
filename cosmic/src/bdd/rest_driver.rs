@@ -878,7 +878,13 @@ impl RestDriver {
 
     // -- documents.change_thumbnail --
 
-    pub async fn set_pdf_page_thumbnail(&self, file_guid: &str, page_index: i32, trim: bool) {
+    pub async fn set_pdf_page_thumbnail(
+        &self,
+        file_guid: &str,
+        page_index: i32,
+        trim: bool,
+        padding: u32,
+    ) {
         let response = self
             .client
             .post(format!(
@@ -886,7 +892,7 @@ impl RestDriver {
                 self.server.base_url, file_guid, page_index
             ))
             .basic_auth(&self.server.user, Some(&self.server.password))
-            .json(&serde_json::json!({ "trim": trim }))
+            .json(&serde_json::json!({ "trim": trim, "padding": padding }))
             .send()
             .await
             .expect("POST /files/<guid>/pdf/page/<index>/thumbnail");

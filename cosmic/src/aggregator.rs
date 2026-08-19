@@ -554,13 +554,14 @@ impl Aggregator {
         source: &DocumentSource,
         page_index: i32,
         trim: bool,
+        padding: u32,
         thumb: bool,
     ) -> Result<Vec<u8>, FilesClientError> {
         let client = self
             .client_for(&source.client)
             .ok_or(FilesClientError::NoSourcesAvailable)?;
         client
-            .get_pdf_page_preview(&source.guid, page_index, trim, thumb)
+            .get_pdf_page_preview(&source.guid, page_index, trim, padding, thumb)
             .await
     }
 
@@ -574,12 +575,13 @@ impl Aggregator {
         source: &DocumentSource,
         page_index: i32,
         trim: bool,
+        padding: u32,
     ) -> Result<(), FilesClientError> {
         let client = self
             .client_for(&source.client)
             .ok_or(FilesClientError::NoSourcesAvailable)?;
         client
-            .set_pdf_page_thumbnail(&source.guid, page_index, trim)
+            .set_pdf_page_thumbnail(&source.guid, page_index, trim, padding)
             .await?;
         Ok(())
     }
