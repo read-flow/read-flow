@@ -724,6 +724,23 @@ impl Driver {
         }
     }
 
+    // -- documents.change_thumbnail --
+
+    pub async fn set_pdf_page_thumbnail(&self, file_guid: &str, page_index: i32, trim: bool) {
+        match self {
+            Self::Rest(driver) => {
+                driver
+                    .set_pdf_page_thumbnail(file_guid, page_index, trim)
+                    .await
+            }
+            Self::Cosmic(driver) => {
+                driver
+                    .set_pdf_page_thumbnail(file_guid, page_index, trim)
+                    .await
+            }
+        }
+    }
+
     // -- reading.image_viewer --
 
     pub fn image_viewer_opens_successfully(&self) -> bool {

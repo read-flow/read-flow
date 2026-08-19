@@ -338,6 +338,39 @@ export class ReadFlowClient {
 		return response.blob();
 	}
 
+	// @feature: documents.change_thumbnail
+	async getPdfPageCount(guid: string): Promise<number> {
+		const result = await this.request<{ page_count: number }>(`/files/${guid}/pdf/page-count`);
+		return result.page_count;
+	}
+
+	// @feature: documents.change_thumbnail
+	async downloadPdfPagePreview(
+		guid: string,
+		pageIndex: number,
+		trim: boolean,
+		thumb: boolean,
+	): Promise<Blob> {
+		const size = thumb ? 'thumb' : 'large';
+		const response = await this.authedFetch(
+			`/files/${guid}/pdf/page/${pageIndex}/preview?trim=${trim}&size=${size}`,
+		);
+		if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+		return response.blob();
+	}
+
+	// @feature: documents.change_thumbnail
+	async setPdfPageThumbnail(
+		guid: string,
+		pageIndex: number,
+		trim: boolean,
+	): Promise<RemoteDocument> {
+		return this.request<RemoteDocument>(`/files/${guid}/pdf/page/${pageIndex}/thumbnail`, {
+			method: 'POST',
+			body: JSON.stringify({ trim }),
+		});
+	}
+
 	// @feature: sources.delete
 	async deleteFile(guid: string): Promise<void> {
 		await this.requestVoid(`/files/${guid}`, { method: 'DELETE' });

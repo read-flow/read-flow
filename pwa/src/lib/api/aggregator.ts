@@ -341,6 +341,49 @@ export async function fetchCoverFromSources(
 }
 
 /**
+ * Number of pages in a single PDF file, on a specific source.
+ */
+// @feature: documents.change_thumbnail
+export async function fetchPdfPageCount(sourceId: number, guid: string): Promise<number> {
+	const source = await db.sources.get(sourceId);
+	if (!source) throw new Error('Source not found');
+	return new ReadFlowClient(source).getPdfPageCount(guid);
+}
+
+/**
+ * Render one page of a single PDF file (not persisted), on a specific source.
+ * Returns an object URL (caller must call URL.revokeObjectURL when done).
+ */
+// @feature: documents.change_thumbnail
+export async function fetchPdfPagePreviewUrl(
+	sourceId: number,
+	guid: string,
+	pageIndex: number,
+	trim: boolean,
+	thumb: boolean,
+): Promise<string> {
+	const source = await db.sources.get(sourceId);
+	if (!source) throw new Error('Source not found');
+	const blob = await new ReadFlowClient(source).downloadPdfPagePreview(guid, pageIndex, trim, thumb);
+	return URL.createObjectURL(blob);
+}
+
+/**
+ * Save a page of a single PDF file as its document's thumbnail, on a specific source.
+ */
+// @feature: documents.change_thumbnail
+export async function savePdfPageThumbnail(
+	sourceId: number,
+	guid: string,
+	pageIndex: number,
+	trim: boolean,
+): Promise<void> {
+	const source = await db.sources.get(sourceId);
+	if (!source) throw new Error('Source not found');
+	await new ReadFlowClient(source).setPdfPageThumbnail(guid, pageIndex, trim);
+}
+
+/**
  * Download a file by trying each source that holds it in order.
  * `sourceGuids` comes from AggregatedFile.sourceGuids (sourceId → GUID).
  */

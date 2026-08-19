@@ -27,15 +27,23 @@ fn extract_epub_cover(path: &Path) -> Option<Vec<u8>> {
 }
 
 fn extract_mupdf_cover(path: &Path) -> Option<Vec<u8>> {
+    let img = render_pdf_page(path, 0, 800)?;
+    encode_webp(image::DynamicImage::from(img))
+}
+
+/// Render one page of a MuPDF-backed document (PDF) to an RGB image, scaled
+/// to fit within `max_dim` × `max_dim` px.
+pub fn render_pdf_page(path: &Path, page_index: i32, max_dim: u32) -> Option<image::RgbImage> {
     let doc = mupdf::Document::open(path).ok()?;
-    let page = doc.load_page(0).ok()?;
+    let page = doc.load_page(page_index).ok()?;
     let bounds = page.bounds().ok()?;
     let w = bounds.width();
     let h = bounds.height();
     if w <= 0.0 || h <= 0.0 {
         return None;
     }
-    let scale = f32::min(800.0 / w, 800.0 / h).max(0.01);
+    let max_dim = max_dim as f32;
+    let scale = f32::min(max_dim / w, max_dim / h).max(0.01);
     let matrix = mupdf::Matrix::new_scale(scale, scale);
     let display_list = page.to_display_list(false).ok()?;
     let pixmap = display_list
@@ -44,9 +52,64 @@ fn extract_mupdf_cover(path: &Path) -> Option<Vec<u8>> {
     let pw = pixmap.width();
     let ph = pixmap.height();
     let samples = pixmap.samples().to_vec();
-    let img = image::RgbImage::from_raw(pw, ph, samples)?;
-    let img = image::DynamicImage::from(img);
-    encode_webp(img)
+    image::RgbImage::from_raw(pw, ph, samples)
+}
+
+/// Encode a rendered page as WebP bytes (lossy, quality 82), for a live
+/// preview response or for storing as a custom cover.
+pub fn encode_page_webp(img: &image::RgbImage) -> Option<Vec<u8>> {
+    encode_webp(image::DynamicImage::from(img.clone()))
+}
+
+/// Return the number of pages in a MuPDF-backed document (PDF).
+pub fn pdf_page_count(path: &Path) -> Option<i32> {
+    let doc = mupdf::Document::open(path).ok()?;
+    doc.page_count().ok()
+}
+
+/// Crop the surrounding whitespace off a rendered page image, leaving a
+/// small margin around the detected content. Falls back to the untouched
+/// image when the page is blank (or near-blank) and no content bbox is found.
+pub fn trim_whitespace(image: &image::RgbImage) -> image::RgbImage {
+    const WHITE_THRESHOLD: u8 = 250;
+    const PADDING: u32 = 8;
+
+    let (width, height) = image.dimensions();
+    let is_content = |x: u32, y: u32| {
+        let px = image.get_pixel(x, y);
+        px.0.iter().any(|&channel| channel < WHITE_THRESHOLD)
+    };
+
+    let mut min_x = width;
+    let mut min_y = height;
+    let mut max_x = 0u32;
+    let mut max_y = 0u32;
+    let mut found = false;
+
+    for y in 0..height {
+        for x in 0..width {
+            if is_content(x, y) {
+                found = true;
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+            }
+        }
+    }
+
+    if !found {
+        return image.clone();
+    }
+
+    let crop_x = min_x.saturating_sub(PADDING);
+    let crop_y = min_y.saturating_sub(PADDING);
+    let crop_max_x = (max_x + PADDING).min(width.saturating_sub(1));
+    let crop_max_y = (max_y + PADDING).min(height.saturating_sub(1));
+    let crop_w = crop_max_x - crop_x + 1;
+    let crop_h = crop_max_y - crop_y + 1;
+
+    image::imageops::crop_imm(image, crop_x, crop_y, crop_w, crop_h).to_image()
 }
 
 fn decode_resize_webp(raw: &[u8]) -> Option<Vec<u8>> {
@@ -63,4 +126,55 @@ fn encode_webp(img: image::DynamicImage) -> Option<Vec<u8>> {
             .encode(82.0)
             .to_vec(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use assert4rs::Assert;
+    use image::Rgb;
+    use image::RgbImage;
+
+    use super::trim_whitespace;
+
+    fn white_canvas(width: u32, height: u32) -> RgbImage {
+        RgbImage::from_pixel(width, height, Rgb([255, 255, 255]))
+    }
+
+    #[test]
+    fn trim_whitespace_crops_to_centered_content_with_padding() {
+        let mut img = white_canvas(100, 100);
+        for y in 40..60 {
+            for x in 40..60 {
+                img.put_pixel(x, y, Rgb([0, 0, 0]));
+            }
+        }
+        let trimmed = trim_whitespace(&img);
+        let (w, h) = trimmed.dimensions();
+        // Content bbox is 40..=59 (20px) plus 8px padding on each side, clamped to canvas.
+        Assert::that(w).is(36u32);
+        Assert::that(h).is(36u32);
+    }
+
+    #[test]
+    fn trim_whitespace_does_not_crop_content_touching_edge() {
+        let mut img = white_canvas(50, 50);
+        for y in 0..10 {
+            for x in 0..10 {
+                img.put_pixel(x, y, Rgb([0, 0, 0]));
+            }
+        }
+        let trimmed = trim_whitespace(&img);
+        let (w, h) = trimmed.dimensions();
+        // Padding clamps at the canvas edge instead of going negative/out of bounds.
+        Assert::that(w).is(18u32);
+        Assert::that(h).is(18u32);
+    }
+
+    #[test]
+    fn trim_whitespace_falls_back_to_original_on_blank_page() {
+        let img = white_canvas(30, 20);
+        let trimmed = trim_whitespace(&img);
+        Assert::that(trimmed.dimensions()).is((30u32, 20u32));
+        Assert::that(trimmed.as_raw().clone()).is(img.as_raw().clone());
+    }
 }

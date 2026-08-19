@@ -99,6 +99,11 @@ id = "documents.select_cover"
 description = "Choose which content's cover represents the document"
 surfaces = ["cosmic", "pwa", "rest"]
 
+[[feature]]
+id = "documents.change_thumbnail"
+description = "Pick a PDF page and optionally trim whitespace to use as a document's thumbnail"
+surfaces = ["cosmic", "pwa", "rest"]
+
 # ── Per-document sources ───────────────────────────────────────────────────
 
 [[feature]]

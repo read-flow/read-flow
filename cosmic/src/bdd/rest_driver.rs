@@ -875,4 +875,25 @@ impl RestDriver {
             .map(|r| r.status().is_success())
             .unwrap_or(false)
     }
+
+    // -- documents.change_thumbnail --
+
+    pub async fn set_pdf_page_thumbnail(&self, file_guid: &str, page_index: i32, trim: bool) {
+        let response = self
+            .client
+            .post(format!(
+                "{}/files/{}/pdf/page/{}/thumbnail",
+                self.server.base_url, file_guid, page_index
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .json(&serde_json::json!({ "trim": trim }))
+            .send()
+            .await
+            .expect("POST /files/<guid>/pdf/page/<index>/thumbnail");
+        assert!(
+            response.status().is_success(),
+            "POST .../thumbnail failed: {}",
+            response.status()
+        );
+    }
 }

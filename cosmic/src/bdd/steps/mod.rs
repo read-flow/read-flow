@@ -7,6 +7,7 @@ mod admin_scan_directories;
 mod admin_server_settings;
 mod app_theme_overrides;
 mod documents_batch_tag;
+mod documents_change_thumbnail;
 mod documents_cover_display;
 mod documents_detail_view;
 mod documents_edit_metadata;

@@ -207,6 +207,58 @@ impl DocumentProvider {
         result
     }
 
+    /// Number of pages in a single PDF source.
+    ///
+    /// @feature: documents.change_thumbnail
+    pub async fn get_pdf_page_count(
+        &self,
+        source: &DocumentSource,
+    ) -> Result<i32, FilesClientError> {
+        self.aggregator
+            .read()
+            .await
+            .get_pdf_page_count(source)
+            .await
+    }
+
+    /// Render one page of a single PDF source (not persisted).
+    ///
+    /// @feature: documents.change_thumbnail
+    pub async fn get_pdf_page_preview(
+        &self,
+        source: &DocumentSource,
+        page_index: i32,
+        trim: bool,
+        thumb: bool,
+    ) -> Result<Vec<u8>, FilesClientError> {
+        self.aggregator
+            .read()
+            .await
+            .get_pdf_page_preview(source, page_index, trim, thumb)
+            .await
+    }
+
+    /// Save a page of a single PDF source as its document's thumbnail.
+    ///
+    /// Automatically invalidates the cache after the update.
+    ///
+    /// @feature: documents.change_thumbnail
+    pub async fn set_pdf_page_thumbnail(
+        &self,
+        source: &DocumentSource,
+        page_index: i32,
+        trim: bool,
+    ) -> Result<(), FilesClientError> {
+        let result = self
+            .aggregator
+            .read()
+            .await
+            .set_pdf_page_thumbnail(source, page_index, trim)
+            .await;
+        self.set_expired().await;
+        result
+    }
+
     /// Add tags to a document across all sources.
     ///
     /// Automatically invalidates the cache after the update.

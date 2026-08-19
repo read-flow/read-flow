@@ -256,4 +256,55 @@ impl Client {
             Client::Remote(client) => Ok(client.ensure_document_for_file(file_guid).await?),
         }
     }
+
+    /// @feature: documents.change_thumbnail
+    pub async fn get_pdf_page_count(&self, file_guid: &str) -> Result<i32, FilesClientError> {
+        match self {
+            Client::Local(module) => Ok(module
+                .db_client()
+                .await
+                .get_pdf_page_count(file_guid)
+                .await?),
+            Client::Remote(client) => Ok(client.get_pdf_page_count(file_guid).await?),
+        }
+    }
+
+    /// @feature: documents.change_thumbnail
+    pub async fn get_pdf_page_preview(
+        &self,
+        file_guid: &str,
+        page_index: i32,
+        trim: bool,
+        thumb: bool,
+    ) -> Result<Vec<u8>, FilesClientError> {
+        match self {
+            Client::Local(module) => Ok(module
+                .db_client()
+                .await
+                .get_pdf_page_preview(file_guid, page_index, trim, thumb)
+                .await?),
+            Client::Remote(client) => Ok(client
+                .get_pdf_page_preview(file_guid, page_index, trim, thumb)
+                .await?),
+        }
+    }
+
+    /// @feature: documents.change_thumbnail
+    pub async fn set_pdf_page_thumbnail(
+        &self,
+        file_guid: &str,
+        page_index: i32,
+        trim: bool,
+    ) -> Result<ApiDocument, FilesClientError> {
+        match self {
+            Client::Local(module) => Ok(module
+                .db_client()
+                .await
+                .set_pdf_page_thumbnail(file_guid, page_index, trim)
+                .await?),
+            Client::Remote(client) => Ok(client
+                .set_pdf_page_thumbnail(file_guid, page_index, trim)
+                .await?),
+        }
+    }
 }

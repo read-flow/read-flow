@@ -533,6 +533,57 @@ impl Aggregator {
         client.delete_file(file).await
     }
 
+    /// Number of pages in a single PDF source.
+    ///
+    /// @feature: documents.change_thumbnail
+    pub async fn get_pdf_page_count(
+        &self,
+        source: &DocumentSource,
+    ) -> Result<i32, FilesClientError> {
+        let client = self
+            .client_for(&source.client)
+            .ok_or(FilesClientError::NoSourcesAvailable)?;
+        client.get_pdf_page_count(&source.guid).await
+    }
+
+    /// Render one page of a single PDF source (not persisted).
+    ///
+    /// @feature: documents.change_thumbnail
+    pub async fn get_pdf_page_preview(
+        &self,
+        source: &DocumentSource,
+        page_index: i32,
+        trim: bool,
+        thumb: bool,
+    ) -> Result<Vec<u8>, FilesClientError> {
+        let client = self
+            .client_for(&source.client)
+            .ok_or(FilesClientError::NoSourcesAvailable)?;
+        client
+            .get_pdf_page_preview(&source.guid, page_index, trim, thumb)
+            .await
+    }
+
+    /// Save a page of a single PDF source as its document's thumbnail.
+    ///
+    /// Automatically invalidates the cache after the update.
+    ///
+    /// @feature: documents.change_thumbnail
+    pub async fn set_pdf_page_thumbnail(
+        &self,
+        source: &DocumentSource,
+        page_index: i32,
+        trim: bool,
+    ) -> Result<(), FilesClientError> {
+        let client = self
+            .client_for(&source.client)
+            .ok_or(FilesClientError::NoSourcesAvailable)?;
+        client
+            .set_pdf_page_thumbnail(&source.guid, page_index, trim)
+            .await?;
+        Ok(())
+    }
+
     /// Send a document to a client that doesn't have it yet.
     pub async fn send_document_to_client(
         &self,

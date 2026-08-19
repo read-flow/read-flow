@@ -21,6 +21,7 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `documents.edit_metadata` | ✅ | ✅ | ✅ | Edit document metadata (title, authors, description, …) |
 | `documents.cover_display` | ✅ | ✅ | ✅ | Display a document's cover image |
 | `documents.select_cover` | ✅ | ✅ | ✅ | Choose which content's cover represents the document |
+| `documents.change_thumbnail` | ✅ | ✅ | ✅ | Pick a PDF page and optionally trim whitespace to use as a document's thumbnail |
 | `sources.delete` | ✅ | ✅ | ✅ | Delete a single source/file of a document |
 | `sources.send_to_client` | ✅ | ✅ | ✅ | Send a document to another client (download-to-local / upload) |
 | `sources.sync_to_all` | ✅ |  |  | Sync a document to all configured sources |
@@ -49,4 +50,4 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `app.epub_viewer_choice` | ✅ |  |  | Open the current EPUB in the MuPDF viewer or an external application, from the viewer's context pane |
 | `app.theme_overrides` | ✅ |  |  | Per-app theme overrides (dark/light, accent, density, roundness, frosted glass, interface font, monospace font) without changing global COSMIC settings |
 
-_42 features tracked._
+_43 features tracked._

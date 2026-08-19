@@ -727,7 +727,7 @@ async fn enrich_file(pool: &sqlx::SqlitePool, task: EnrichTask) {
 
 /// Extract an archive member into a named temp file with the right extension
 /// so format-sniffing extractors (MuPDF et al.) can open it.
-async fn extract_member_to_temp_file(
+pub(crate) async fn extract_member_to_temp_file(
     archive_path: PathBuf,
     inner: String,
     extension: String,

@@ -503,4 +503,52 @@ impl FilesClient {
         response.error_for_status_ref()?;
         Ok(response.json().await?)
     }
+
+    /// @feature: documents.change_thumbnail
+    pub async fn get_pdf_page_count(&self, file_guid: &str) -> Result<i32, Error> {
+        #[derive(serde::Deserialize)]
+        struct PageCount {
+            page_count: i32,
+        }
+        let result: PageCount = self
+            .get_json(&format!("files/{file_guid}/pdf/page-count"))
+            .await?;
+        Ok(result.page_count)
+    }
+
+    /// @feature: documents.change_thumbnail
+    pub async fn get_pdf_page_preview(
+        &self,
+        file_guid: &str,
+        page_index: i32,
+        trim: bool,
+        thumb: bool,
+    ) -> Result<Vec<u8>, Error> {
+        let size = if thumb { "thumb" } else { "large" };
+        let builder = self.client.get(self.base_url.join(&format!(
+            "files/{file_guid}/pdf/page/{page_index}/preview?trim={trim}&size={size}"
+        ))?);
+        let response = self.send(builder).await?;
+        response.error_for_status_ref()?;
+        Ok(response.bytes().await?.to_vec())
+    }
+
+    /// @feature: documents.change_thumbnail
+    pub async fn set_pdf_page_thumbnail(
+        &self,
+        file_guid: &str,
+        page_index: i32,
+        trim: bool,
+    ) -> Result<ApiDocument, Error> {
+        let builder = self
+            .client
+            .post(self.base_url.join(&format!(
+                "files/{file_guid}/pdf/page/{page_index}/thumbnail"
+            ))?)
+            .header(header::ACCEPT, format!("{}", mime::APPLICATION_JSON))
+            .json(&serde_json::json!({ "trim": trim }));
+        let response = self.send(builder).await?;
+        response.error_for_status_ref()?;
+        Ok(response.json().await?)
+    }
 }

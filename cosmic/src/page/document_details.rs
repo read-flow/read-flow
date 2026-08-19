@@ -76,7 +76,26 @@ pub struct DocumentDetails {
     /// Covers keyed by content fingerprint (all contents loaded on open).
     covers: std::collections::HashMap<String, (cosmic::widget::image::Handle, Vec<u8>)>,
     description_content: text_editor::Content,
+    /// State for the "Change thumbnail" drawer content, when open.
+    thumbnail_picker: Option<ThumbnailPickerState>,
 }
+
+/// @feature: documents.change_thumbnail
+struct ThumbnailPickerState {
+    source: DocumentSource,
+    fingerprint: String,
+    page_index: i32,
+    page_count: Option<i32>,
+    trim: bool,
+    preview: Option<cosmic::widget::image::Handle>,
+    preview_bytes: Option<Vec<u8>>,
+    filmstrip: std::collections::HashMap<i32, cosmic::widget::image::Handle>,
+    saving: bool,
+    error: Option<String>,
+}
+
+/// Pages visible in the filmstrip window around `page_index`.
+const THUMBNAIL_FILMSTRIP_RADIUS: i32 = 4;
 
 #[derive(Debug, Clone)]
 pub enum DocumentDetailsOutput {
@@ -139,6 +158,17 @@ pub enum DocumentDetailsMessage {
     /// @feature: documents.select_cover
     SelectCover(String),
     CoverSelected(Result<(), String>),
+
+    /// @feature: documents.change_thumbnail
+    OpenThumbnailPicker(DocumentSource, String),
+    CancelThumbnailPicker,
+    ThumbnailPageCountLoaded(Result<i32, String>),
+    ThumbnailPageSelected(i32),
+    ThumbnailBigPreviewLoaded(i32, bool, Result<Vec<u8>, String>),
+    ThumbnailFilmstripLoaded(i32, Result<Vec<u8>, String>),
+    ThumbnailTrimToggled(bool),
+    SaveThumbnail,
+    ThumbnailSaved(Result<(), String>),
     Key(
         cosmic::iced::keyboard::Modifiers,
         cosmic::iced::keyboard::Key,
@@ -214,6 +244,7 @@ impl DocumentDetails {
             document_meta_draft: initial_document_meta,
             covers: std::collections::HashMap::new(),
             description_content: text_editor::Content::new(),
+            thumbnail_picker: None,
         };
 
         (
@@ -400,6 +431,158 @@ impl DocumentDetails {
 }
 
 impl DocumentDetails {
+    /// @feature: documents.change_thumbnail
+    fn view_thumbnail_picker<'a>(
+        &'a self,
+        state: &'a ThumbnailPickerState,
+    ) -> Element<'a, DocumentDetailsMessage> {
+        let cosmic_theme::Spacing {
+            space_xxs,
+            space_xs,
+            space_s,
+            space_m,
+            ..
+        } = theme::active().cosmic().spacing;
+
+        let preview: Element<'_, DocumentDetailsMessage> = if let Some(handle) = &state.preview {
+            widget::image(handle.clone())
+                .width(Length::Fixed(220.0))
+                .height(Length::Fixed(300.0))
+                .content_fit(ContentFit::Contain)
+                .into()
+        } else {
+            widget::container(widget::text(fl!("document-details-thumbnail-loading")))
+                .width(Length::Fixed(220.0))
+                .height(Length::Fixed(300.0))
+                .center(Length::Fill)
+                .into()
+        };
+
+        let mut filmstrip = Row::new().spacing(space_xxs);
+        if let Some(page_count) = state.page_count {
+            let window_start = (state.page_index - THUMBNAIL_FILMSTRIP_RADIUS).max(0);
+            let window_end = (state.page_index + THUMBNAIL_FILMSTRIP_RADIUS).min(page_count - 1);
+            for idx in window_start..=window_end {
+                let tile: Element<'_, DocumentDetailsMessage> =
+                    if let Some(handle) = state.filmstrip.get(&idx) {
+                        widget::image(handle.clone())
+                            .width(Length::Fixed(44.0))
+                            .height(Length::Fixed(60.0))
+                            .content_fit(ContentFit::Contain)
+                            .into()
+                    } else {
+                        widget::container(widget::space())
+                            .width(Length::Fixed(44.0))
+                            .height(Length::Fixed(60.0))
+                            .into()
+                    };
+                let mut btn = widget::button::custom(tile).padding(2);
+                if idx == state.page_index {
+                    btn = btn.class(cosmic::widget::button::ButtonClass::Suggested);
+                } else {
+                    btn = btn.on_press(DocumentDetailsMessage::ThumbnailPageSelected(idx));
+                }
+                filmstrip = filmstrip.push(btn);
+            }
+        }
+
+        let page_label = match state.page_count {
+            Some(count) => {
+                let current: i32 = state.page_index + 1;
+                fl!(
+                    "document-details-thumbnail-page-label",
+                    current = current,
+                    total = count
+                )
+            }
+            None => fl!("document-details-thumbnail-loading"),
+        };
+
+        let trim_toggle = Row::new()
+            .spacing(space_xs)
+            .align_y(Vertical::Center)
+            .push(
+                widget::toggler(state.trim).on_toggle(DocumentDetailsMessage::ThumbnailTrimToggled),
+            )
+            .push(widget::text(fl!("document-details-thumbnail-trim")));
+
+        let mut save_button = widget::button::suggested(fl!("document-details-thumbnail-save"));
+        if !state.saving && state.preview.is_some() {
+            save_button = save_button.on_press(DocumentDetailsMessage::SaveThumbnail);
+        }
+        let cancel_button = widget::button::standard(fl!("document-details-thumbnail-cancel"))
+            .on_press(DocumentDetailsMessage::CancelThumbnailPicker);
+
+        let mut content = Column::new()
+            .spacing(space_m)
+            .align_x(Horizontal::Center)
+            .push(widget::container(preview).center_x(Length::Fill))
+            .push(widget::container(filmstrip).center_x(Length::Fill))
+            .push(widget::text(page_label))
+            .push(trim_toggle);
+
+        if let Some(error) = &state.error {
+            content = content.push(widget::text(fl!("generic-error", error = error.clone())));
+        }
+
+        content = content.push(
+            Row::new()
+                .spacing(space_s)
+                .push(cancel_button)
+                .push(save_button),
+        );
+
+        widget::container(content).padding(space_s).into()
+    }
+
+    /// Load the big preview for `page_index` plus any not-yet-cached
+    /// filmstrip thumbnails in the window around it. A no-op if the picker
+    /// isn't open or the page count hasn't loaded yet.
+    ///
+    /// @feature: documents.change_thumbnail
+    fn thumbnail_load_tasks(&self, page_index: i32) -> Task<Action<DocumentDetailsMessage>> {
+        let Some(state) = &self.thumbnail_picker else {
+            return Task::none();
+        };
+        let Some(page_count) = state.page_count else {
+            return Task::none();
+        };
+        let source = state.source.clone();
+        let trim = state.trim;
+        let document_provider = self.document_provider.clone();
+
+        let mut tasks: Vec<Task<Action<DocumentDetailsMessage>>> = vec![task::future({
+            let document_provider = document_provider.clone();
+            let source = source.clone();
+            async move {
+                let result = document_provider
+                    .get_pdf_page_preview(&source, page_index, trim, false)
+                    .await
+                    .map_err(|e| format!("{e}"));
+                DocumentDetailsMessage::ThumbnailBigPreviewLoaded(page_index, trim, result)
+            }
+        })];
+
+        let window_start = (page_index - THUMBNAIL_FILMSTRIP_RADIUS).max(0);
+        let window_end = (page_index + THUMBNAIL_FILMSTRIP_RADIUS).min(page_count - 1);
+        for idx in window_start..=window_end {
+            if state.filmstrip.contains_key(&idx) {
+                continue;
+            }
+            let document_provider = document_provider.clone();
+            let source = source.clone();
+            tasks.push(task::future(async move {
+                let result = document_provider
+                    .get_pdf_page_preview(&source, idx, false, true)
+                    .await
+                    .map_err(|e| format!("{e}"));
+                DocumentDetailsMessage::ThumbnailFilmstripLoaded(idx, result)
+            }));
+        }
+
+        task::batch(tasks)
+    }
+
     fn document_meta_section_view(&self) -> Element<'_, DocumentDetailsMessage> {
         let cosmic_theme::Spacing {
             space_xs, space_s, ..
@@ -1032,6 +1215,13 @@ impl Page for DocumentDetails {
     }
 
     fn view_context(&self) -> ContextView<'_, DocumentDetailsMessage> {
+        if let Some(state) = &self.thumbnail_picker {
+            return ContextView {
+                title: fl!("document-details-change-thumbnail"),
+                content: self.view_thumbnail_picker(state),
+            };
+        }
+
         let content: Element<'_, DocumentDetailsMessage> = if self.covers.is_empty() {
             widget::text(fl!("document-details-no-covers")).into()
         } else {
@@ -1069,7 +1259,22 @@ impl Page for DocumentDetails {
                     } else {
                         btn = btn.on_press(DocumentDetailsMessage::SelectCover(fp));
                     }
-                    Some(btn.into())
+                    let mut tile =
+                        widget::column::with_children(vec![btn.into()]).align_x(Horizontal::Center);
+                    if content.type_ == read_flow_core::scan::DocumentType::Pdf
+                        && let Some(source) = content.sources.first()
+                    {
+                        let fp = content.fingerprint.clone();
+                        let source = source.clone();
+                        tile = tile.push(
+                            widget::button::icon(
+                                widget::icon::from_name("edit-symbolic").size(ICON_SIZE),
+                            )
+                            .tooltip(fl!("document-details-change-thumbnail-tooltip"))
+                            .on_press(DocumentDetailsMessage::OpenThumbnailPicker(source, fp)),
+                        );
+                    }
+                    Some(tile.into())
                 })
                 .collect();
             let cover_row = cover_buttons
@@ -1131,6 +1336,130 @@ impl Page for DocumentDetails {
             DocumentDetailsMessage::CoverSelected(result) => {
                 if let Err(e) = result {
                     tracing::warn!("failed to save cover selection: {e}");
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::OpenThumbnailPicker(source, fingerprint) => {
+                self.thumbnail_picker = Some(ThumbnailPickerState {
+                    source: source.clone(),
+                    fingerprint,
+                    page_index: 0,
+                    page_count: None,
+                    trim: false,
+                    preview: None,
+                    preview_bytes: None,
+                    filmstrip: std::collections::HashMap::new(),
+                    saving: false,
+                    error: None,
+                });
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    let result = document_provider
+                        .get_pdf_page_count(&source)
+                        .await
+                        .map_err(|e| format!("{e}"));
+                    DocumentDetailsMessage::ThumbnailPageCountLoaded(result)
+                })
+            }
+            DocumentDetailsMessage::CancelThumbnailPicker => {
+                self.thumbnail_picker = None;
+                Task::none()
+            }
+            DocumentDetailsMessage::ThumbnailPageCountLoaded(result) => match result {
+                Ok(count) => {
+                    if let Some(state) = &mut self.thumbnail_picker {
+                        state.page_count = Some(count);
+                    }
+                    self.thumbnail_load_tasks(0)
+                }
+                Err(e) => {
+                    if let Some(state) = &mut self.thumbnail_picker {
+                        state.error = Some(e);
+                    }
+                    Task::none()
+                }
+            },
+            DocumentDetailsMessage::ThumbnailPageSelected(idx) => {
+                if let Some(state) = &mut self.thumbnail_picker {
+                    state.page_index = idx;
+                }
+                self.thumbnail_load_tasks(idx)
+            }
+            DocumentDetailsMessage::ThumbnailBigPreviewLoaded(page_index, trim, result) => {
+                if let Some(state) = &mut self.thumbnail_picker
+                    && state.page_index == page_index
+                    && state.trim == trim
+                {
+                    match result {
+                        Ok(bytes) => {
+                            state.preview =
+                                Some(cosmic::widget::image::Handle::from_bytes(bytes.clone()));
+                            state.preview_bytes = Some(bytes);
+                        }
+                        Err(e) => state.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::ThumbnailFilmstripLoaded(idx, result) => {
+                if let Some(state) = &mut self.thumbnail_picker
+                    && let Ok(bytes) = result
+                {
+                    state
+                        .filmstrip
+                        .insert(idx, cosmic::widget::image::Handle::from_bytes(bytes));
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::ThumbnailTrimToggled(value) => {
+                let page_index = match &mut self.thumbnail_picker {
+                    Some(state) => {
+                        state.trim = value;
+                        state.preview = None;
+                        state.page_index
+                    }
+                    None => return Task::none(),
+                };
+                self.thumbnail_load_tasks(page_index)
+            }
+            DocumentDetailsMessage::SaveThumbnail => {
+                let Some(state) = &mut self.thumbnail_picker else {
+                    return Task::none();
+                };
+                state.saving = true;
+                let source = state.source.clone();
+                let page_index = state.page_index;
+                let trim = state.trim;
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    let result = document_provider
+                        .set_pdf_page_thumbnail(&source, page_index, trim)
+                        .await
+                        .map_err(|e| format!("{e}"));
+                    DocumentDetailsMessage::ThumbnailSaved(result)
+                })
+            }
+            DocumentDetailsMessage::ThumbnailSaved(result) => {
+                match result {
+                    Ok(()) => {
+                        if let Some(state) = self.thumbnail_picker.take()
+                            && let Some(bytes) = state.preview_bytes
+                        {
+                            let handle = cosmic::widget::image::Handle::from_bytes(bytes.clone());
+                            self.covers
+                                .insert(state.fingerprint.clone(), (handle, bytes));
+                            self.document.document_meta.selected_cover_fingerprint =
+                                Some(state.fingerprint.clone());
+                            self.document_meta_draft.selected_cover_fingerprint =
+                                Some(state.fingerprint);
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(state) = &mut self.thumbnail_picker {
+                            state.saving = false;
+                            state.error = Some(e);
+                        }
+                    }
                 }
                 Task::none()
             }

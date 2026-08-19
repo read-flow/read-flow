@@ -430,6 +430,136 @@ impl DbClient {
     ) -> Result<(), Error> {
         dao::merge_documents(&self.connection_pool, winner_guid, loser_guids).await
     }
+
+    /// Resolve a readable filesystem path for a file, extracting archive
+    /// members to a temp file when needed. Drop the returned guard only once
+    /// the path is no longer read — it deletes the temp file.
+    async fn resolve_pdf_file(
+        &self,
+        file_guid: &str,
+    ) -> Result<
+        (
+            crate::db::models::File,
+            std::path::PathBuf,
+            Option<tempfile::NamedTempFile>,
+        ),
+        Error,
+    > {
+        let mut conn = self.connection_pool.acquire().await?;
+        let file = dao::select_file_by_guid(&mut conn, &self.user_id, file_guid)
+            .await?
+            .ok_or_else(|| {
+                Error::IO(Arc::new(std::io::Error::other(format!(
+                    "file not found: {file_guid}"
+                ))))
+            })?;
+        if file.type_.to_lowercase() != "pdf" {
+            return Err(Error::IO(Arc::new(std::io::Error::other(format!(
+                "file type {} is not a PDF",
+                file.type_
+            )))));
+        }
+        let (path, guard) = match (&file.archive_path, &file.archive_inner_path) {
+            (Some(archive_path), Some(inner)) => {
+                let tmp = crate::scan::scanner::extract_member_to_temp_file(
+                    std::path::PathBuf::from(archive_path),
+                    inner.clone(),
+                    file.type_.clone(),
+                )
+                .await?;
+                let path = tmp.path().to_path_buf();
+                (path, Some(tmp))
+            }
+            _ => (std::path::PathBuf::from(&file.path), None),
+        };
+        Ok((file, path, guard))
+    }
+
+    /// @feature: documents.change_thumbnail
+    pub async fn get_pdf_page_count(&self, file_guid: &str) -> Result<i32, Error> {
+        let (_file, path, _guard) = self.resolve_pdf_file(file_guid).await?;
+        tokio::task::spawn_blocking(move || crate::scan::cover::pdf_page_count(&path))
+            .await
+            .map_err(|e| Error::IO(Arc::new(std::io::Error::other(e))))?
+            .ok_or_else(|| {
+                Error::IO(Arc::new(std::io::Error::other(
+                    "could not read PDF page count",
+                )))
+            })
+    }
+
+    /// @feature: documents.change_thumbnail
+    pub async fn get_pdf_page_preview(
+        &self,
+        file_guid: &str,
+        page_index: i32,
+        trim: bool,
+        thumb: bool,
+    ) -> Result<Vec<u8>, Error> {
+        let (_file, path, _guard) = self.resolve_pdf_file(file_guid).await?;
+        let max_dim = if thumb { 200 } else { 800 };
+        tokio::task::spawn_blocking(move || {
+            let img = crate::scan::cover::render_pdf_page(&path, page_index, max_dim)?;
+            let img = if trim {
+                crate::scan::cover::trim_whitespace(&img)
+            } else {
+                img
+            };
+            crate::scan::cover::encode_page_webp(&img)
+        })
+        .await
+        .map_err(|e| Error::IO(Arc::new(std::io::Error::other(e))))?
+        .ok_or_else(|| Error::IO(Arc::new(std::io::Error::other("could not render page"))))
+    }
+
+    /// @feature: documents.change_thumbnail
+    pub async fn set_pdf_page_thumbnail(
+        &self,
+        file_guid: &str,
+        page_index: i32,
+        trim: bool,
+    ) -> Result<ApiDocument, Error> {
+        let (file, path, _guard) = self.resolve_pdf_file(file_guid).await?;
+        let (data, mime) = tokio::task::spawn_blocking(move || {
+            let img = crate::scan::cover::render_pdf_page(&path, page_index, 800)?;
+            let img = if trim {
+                crate::scan::cover::trim_whitespace(&img)
+            } else {
+                img
+            };
+            crate::scan::cover::encode_page_webp(&img).map(|data| (data, "image/webp".to_string()))
+        })
+        .await
+        .map_err(|e| Error::IO(Arc::new(std::io::Error::other(e))))?
+        .ok_or_else(|| Error::IO(Arc::new(std::io::Error::other("could not render page"))))?;
+
+        let mut conn = self.connection_pool.acquire().await?;
+        dao::set_custom_cover(
+            &mut conn,
+            &file.fingerprint,
+            page_index as i64,
+            trim,
+            &data,
+            &mime,
+        )
+        .await?;
+        let doc = dao::ensure_document_for_fingerprint(&mut conn, &file.fingerprint).await?;
+        let doc_row = dao::select_document_by_guid(&mut conn, &doc.guid)
+            .await?
+            .ok_or_else(|| {
+                Error::IO(Arc::new(std::io::Error::other(
+                    "document must exist after ensure_document_for_fingerprint",
+                )))
+            })?;
+        dao::set_selected_cover_fingerprint(&mut conn, doc_row.id, &file.fingerprint).await?;
+        dao::select_api_document_by_guid(&mut conn, &doc.guid)
+            .await?
+            .ok_or_else(|| {
+                Error::IO(Arc::new(std::io::Error::other(
+                    "document must exist after upsert",
+                )))
+            })
+    }
 }
 
 /// Wraps a [`DbClient`] and filters out files/tags whose tags include any of

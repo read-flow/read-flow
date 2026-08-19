@@ -219,6 +219,28 @@ pub async fn upsert_document_user_metadata(
     Ok(row)
 }
 
+/// Point a document at a specific content's cover, without touching any
+/// other metadata field (unlike [`upsert_document_user_metadata`], which
+/// replaces the whole row).
+pub async fn set_selected_cover_fingerprint(
+    conn: &mut SqliteConnection,
+    document_id: i32,
+    fingerprint: &str,
+) -> Result<(), Error> {
+    sqlx::query(
+        "INSERT INTO document_metadata (document_id, selected_cover_fingerprint) \
+         VALUES (?, ?) \
+         ON CONFLICT(document_id) DO UPDATE SET \
+             selected_cover_fingerprint = excluded.selected_cover_fingerprint, \
+             updated_at                 = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
+    )
+    .bind(document_id)
+    .bind(fingerprint)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
 /// Smart-merge extracted file metadata into a document's metadata row.
 ///
 /// Rules:
