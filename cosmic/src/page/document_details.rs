@@ -196,6 +196,9 @@ pub enum DocumentDetailsMessage {
     ThumbnailTrimToggled(bool),
     ThumbnailPaddingChanged(u32),
     ThumbnailMarginChanged(ThumbnailMarginEdge, u32),
+    /// Fired on slider release (not on every drag tick) to actually re-render
+    /// the preview — dragging only updates the label/thumb locally.
+    ThumbnailReloadPreview,
     SaveThumbnail,
     ThumbnailSaved(Result<(), String>),
     Key(
@@ -526,12 +529,19 @@ impl DocumentDetails {
             None => fl!("document-details-thumbnail-loading"),
         };
 
+        // Dragging a slider fires `on_change` on every tick (the widget's
+        // own docs warn this "could create too many events"). `on_change`
+        // only updates the local value (label + thumb position, no I/O);
+        // the actual reload fires once via `on_release`, and the last
+        // preview stays on screen until the new one replaces it — avoids
+        // the flicker a reload-per-tick caused.
         let margin_item = |label: String, edge: ThumbnailMarginEdge, value: u32| {
             widget::settings::item::builder(label).control(
                 widget::slider(0.0..=THUMBNAIL_MAX_MARGIN as f32, value as f32, move |v| {
                     DocumentDetailsMessage::ThumbnailMarginChanged(edge, v as u32)
                 })
-                .step(1.0_f32),
+                .step(1.0_f32)
+                .on_release(DocumentDetailsMessage::ThumbnailReloadPreview),
             )
         };
 
@@ -552,7 +562,8 @@ impl DocumentDetails {
                             state.padding as f32,
                             |v| DocumentDetailsMessage::ThumbnailPaddingChanged(v as u32),
                         )
-                        .step(1.0_f32),
+                        .step(1.0_f32)
+                        .on_release(DocumentDetailsMessage::ThumbnailReloadPreview),
                     ),
                 )
                 .add(
@@ -1528,7 +1539,6 @@ impl Page for DocumentDetails {
                 let page_index = match &mut self.thumbnail_picker {
                     Some(state) => {
                         state.trim = value;
-                        state.preview = None;
                         state.page_index
                     }
                     None => return Task::none(),
@@ -1536,32 +1546,32 @@ impl Page for DocumentDetails {
                 self.thumbnail_load_tasks(page_index)
             }
             DocumentDetailsMessage::ThumbnailPaddingChanged(value) => {
-                let page_index = match &mut self.thumbnail_picker {
-                    Some(state) => {
-                        state.padding = value.min(THUMBNAIL_MAX_PADDING);
-                        state.preview = None;
-                        state.page_index
-                    }
-                    None => return Task::none(),
-                };
-                self.thumbnail_load_tasks(page_index)
+                // Local-only update: moves the thumb/label as the user drags,
+                // without re-rendering. The expensive reload waits for
+                // ThumbnailReloadPreview (fired on release) so a drag doesn't
+                // spam the backend with a render per pixel of movement.
+                if let Some(state) = &mut self.thumbnail_picker {
+                    state.padding = value.min(THUMBNAIL_MAX_PADDING);
+                }
+                Task::none()
             }
             DocumentDetailsMessage::ThumbnailMarginChanged(edge, value) => {
-                let page_index = match &mut self.thumbnail_picker {
-                    Some(state) => {
-                        let clamped = value.min(THUMBNAIL_MAX_MARGIN);
-                        match edge {
-                            ThumbnailMarginEdge::Top => state.margins.top = clamped,
-                            ThumbnailMarginEdge::Bottom => state.margins.bottom = clamped,
-                            ThumbnailMarginEdge::Left => state.margins.left = clamped,
-                            ThumbnailMarginEdge::Right => state.margins.right = clamped,
-                        }
-                        state.preview = None;
-                        state.page_index
+                if let Some(state) = &mut self.thumbnail_picker {
+                    let clamped = value.min(THUMBNAIL_MAX_MARGIN);
+                    match edge {
+                        ThumbnailMarginEdge::Top => state.margins.top = clamped,
+                        ThumbnailMarginEdge::Bottom => state.margins.bottom = clamped,
+                        ThumbnailMarginEdge::Left => state.margins.left = clamped,
+                        ThumbnailMarginEdge::Right => state.margins.right = clamped,
                     }
-                    None => return Task::none(),
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::ThumbnailReloadPreview => {
+                let Some(state) = &self.thumbnail_picker else {
+                    return Task::none();
                 };
-                self.thumbnail_load_tasks(page_index)
+                self.thumbnail_load_tasks(state.page_index)
             }
             DocumentDetailsMessage::SaveThumbnail => {
                 let Some(state) = &mut self.thumbnail_picker else {
