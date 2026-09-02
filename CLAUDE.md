@@ -97,6 +97,7 @@ Runtime config: `read-flow.toml`. Supports `$HOME`/`~`. Sections: `[database]`, 
 ### Style: functional
 
 - Prefer pure functions, immutable data, transformation pipelines (`map`/`filter`/`fold` in Rust; `map`/`filter`/`reduce` in TS) over imperative loops.
+  - Use of the `itertools` Rust crate is encouraged for more complicated operations.
 - Functions depend only on arguments, no side effects. Isolate I/O + DB at boundary; keep logic underneath pure.
 - Every non-trivial pure function gets unit test. Small, deterministic, no network/fs/DB. Use DI/params to decouple from env (see `pwa/src/lib/utils/filter.ts`, `pwa/src/lib/api/merge.ts`).
 
