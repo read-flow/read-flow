@@ -2,6 +2,7 @@
 	// @feature: admin.activity_history
 	import { onMount } from 'svelte';
 	import { fetchAllActivity, type SourceActivityOperation } from '$lib/api/aggregator';
+	import { formatTimestamp } from '$lib/utils/datetime';
 
 	const OPERATION_LABELS: Record<SourceActivityOperation['operation_type'], string> = {
 		scan: 'Scan',
@@ -34,11 +35,6 @@
 			loading = false;
 		}
 	});
-
-	function formatTime(iso: string): string {
-		const d = new Date(iso);
-		return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
-	}
 
 	function actorLabel(op: SourceActivityOperation): string {
 		switch (op.actor.kind) {
@@ -87,7 +83,7 @@
 								{OPERATION_LABELS[op.operation_type]}
 							</span>
 							<span class="text-xs text-slate-500 dark:text-slate-400">
-								{actorLabel(op)} · {formatTime(op.started_at)}
+								{actorLabel(op)} · {formatTimestamp(op.started_at)}
 							</span>
 						</div>
 						<div class="flex items-center gap-3 shrink-0">

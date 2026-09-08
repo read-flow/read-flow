@@ -34,6 +34,10 @@ use read_flow_core::audit::AuditOutcome;
 use read_flow_core::audit::OperationStatus;
 use read_flow_core::audit::OperationType;
 use serde_json::Value;
+use time::Duration;
+use time::OffsetDateTime;
+use time::UtcOffset;
+use time::macros::format_description;
 
 use crate::ApplicationModule;
 use crate::app::ContextView;
@@ -464,12 +468,15 @@ impl ActivityPage {
         let op = &selection.op;
         let mut children: Vec<Element<'_, ActivityMessage>> = vec![
             widget::text::heading(operation_type_label(op.operation_type)).into(),
-            detail_row(fl!("activity-detail-started"), op.started_at.clone()),
+            detail_row(
+                fl!("activity-detail-started"),
+                friendly_when(&op.started_at),
+            ),
         ];
         if let Some(completed) = &op.completed_at {
             children.push(detail_row(
                 fl!("activity-detail-completed"),
-                completed.clone(),
+                friendly_when(completed),
             ));
         }
         children.push(detail_row(
@@ -701,9 +708,24 @@ fn compact_value(value: &Value) -> String {
     }
 }
 
-/// Render a timestamp (RFC-3339 or fourths-style) trimmed to `YYYY-MM-DD HH:MM`.
+/// Render a Unix-microseconds timestamp (the activity store's wire format) as
+/// a wall-clock `YYYY-MM-DD HH:MM` string in the system's local time. Falls
+/// back to the raw value when it cannot be parsed or no local offset applies.
 fn friendly_when(when: &str) -> String {
-    when.replacen('T', " ", 1).chars().take(16).collect()
+    let Ok(micros) = when.parse::<i64>() else {
+        return when.to_string();
+    };
+    let offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
+    format_when_at_offset(micros, offset).unwrap_or_else(|| when.to_string())
+}
+
+/// Deterministic formatting of a Unix-microseconds timestamp at a fixed offset.
+fn format_when_at_offset(micros: i64, offset: UtcOffset) -> Option<String> {
+    let utc = OffsetDateTime::from_unix_timestamp(micros.div_euclid(1_000_000)).ok()?
+        + Duration::microseconds(micros.rem_euclid(1_000_000));
+    utc.to_offset(offset)
+        .format(format_description!("[year]-[month]-[day] [hour]:[minute]"))
+        .ok()
 }
 
 /// A solid-color rounded background style.
@@ -715,4 +737,48 @@ fn rounded_bg(color: Color, radius: f32) -> widget::container::Style {
         ..Default::default()
     };
     style
+}
+
+#[cfg(test)]
+mod tests {
+    use time::UtcOffset;
+
+    use super::format_when_at_offset;
+    use super::friendly_when;
+
+    /// 2026-09-08T12:34:56Z in Unix microseconds.
+    const MICROS: i64 = 1_788_870_896_000_000;
+
+    fn offset(seconds: i32) -> UtcOffset {
+        UtcOffset::from_whole_seconds(seconds).expect("valid offset")
+    }
+
+    #[test]
+    fn formats_micros_timestamp_at_utc() {
+        assert_eq!(
+            format_when_at_offset(MICROS, UtcOffset::UTC),
+            Some("2026-09-08 12:34".to_string())
+        );
+    }
+
+    #[test]
+    fn formats_micros_timestamp_at_a_local_offset() {
+        assert_eq!(
+            format_when_at_offset(MICROS, offset(2 * 3600)),
+            Some("2026-09-08 14:34".to_string())
+        );
+    }
+
+    #[test]
+    fn formats_micros_timestamp_with_subsecond_micros() {
+        assert_eq!(
+            format_when_at_offset(MICROS + 123_456, UtcOffset::UTC),
+            Some("2026-09-08 12:34".to_string())
+        );
+    }
+
+    #[test]
+    fn friendly_when_passes_through_garbage() {
+        assert_eq!(friendly_when("not-a-timestamp"), "not-a-timestamp");
+    }
 }

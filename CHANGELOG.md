@@ -20,6 +20,7 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 ### Fixed
 
 - Activity ordering no longer ties: operation timestamps use microsecond precision, so freshly recorded operations render in stable, newest-first order during scans.
+- Activity timestamps in COSMIC and the PWA are shown as readable date-times in local time instead of the raw microsecond integer.
 
 ## [0.5.1] - 2026-08-18
 

@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import Icon from '$lib/components/Icon.svelte';
+	import { formatTimestamp } from '$lib/utils/datetime';
 	import {
 		fetchActivityDetail,
 		type ActivityDetail,
@@ -51,11 +52,6 @@
 		}
 	});
 
-	function formatTime(iso: string): string {
-		const d = new Date(iso);
-		return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
-	}
-
 	function actorLabel(op: ActivityOperation): string {
 		switch (op.actor.kind) {
 			case 'user':
@@ -103,7 +99,7 @@
 			{OPERATION_LABELS[detail.operation_type]}
 		</h1>
 		<p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
-			{actorLabel(detail)} · {detail.channel} · {formatTime(detail.started_at)}
+			{actorLabel(detail)} · {detail.channel} · {formatTimestamp(detail.started_at)}
 		</p>
 
 		<div class="flex flex-wrap items-center gap-2 mb-6">
@@ -151,7 +147,7 @@
 						></span>
 						<div class="flex items-center gap-2">
 							<span class="font-medium text-sm">{event.event_type}</span>
-							<span class="text-xs text-slate-400">{formatTime(event.occurred_at)}</span>
+							<span class="text-xs text-slate-400">{formatTimestamp(event.occurred_at)}</span>
 						</div>
 						{#if event.targets.length > 0}
 							<ul class="mt-1 space-y-0.5">
