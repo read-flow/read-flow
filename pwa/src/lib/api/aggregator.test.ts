@@ -39,6 +39,9 @@ import {
 	fetchReadingState,
 	saveReadingState,
 	downloadFileFromSources,
+	fetchAllActivity,
+	fetchActivityDetail,
+	fetchDocumentActivity,
 } from './aggregator';
 import type { Source } from '$lib/db';
 import type { RemoteFile, RemoteReadingState } from './client';
@@ -377,5 +380,116 @@ describe('downloadFileFromSources', () => {
 		await expect(
 			downloadFileFromSources({}, 'missing.pdf'),
 		).rejects.toThrow('Could not download "missing.pdf" from any source');
+	});
+});
+
+// ── fetchAllActivity ──────────────────────────────────────────────────────────
+
+function makeOp(id: string, started_at: string) {
+	return {
+		id,
+		operation_type: 'scan' as const,
+		actor: { kind: 'user' as const, id: 'alice' },
+		channel: 'rest' as const,
+		status: 'completed' as const,
+		dry_run: false,
+		started_at,
+		completed_at: started_at,
+		error_code: null,
+		counts: {},
+	};
+}
+
+describe('fetchAllActivity', () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it('returns empty array when no sources are configured', async () => {
+		mocks.sourcesToArray.mockResolvedValue([]);
+		expect(await fetchAllActivity()).toEqual([]);
+	});
+
+	it('merges operations from all sources newest-first and tags sourceId', async () => {
+		mocks.sourcesToArray.mockResolvedValue([makeSource(1), makeSource(2)]);
+		mocks.MockReadFlowClient
+			.mockImplementationOnce(() => ({
+				getActivity: vi.fn().mockResolvedValue({
+					operations: [makeOp('op-2', '2026-09-08T10:00:00.000001Z')],
+					next_cursor: null,
+				}),
+			}))
+			.mockImplementationOnce(() => ({
+				getActivity: vi.fn().mockResolvedValue({
+					operations: [makeOp('op-1', '2026-09-08T09:00:00.000001Z')],
+					next_cursor: null,
+				}),
+			}));
+		const result = await fetchAllActivity();
+		expect(result.map((o) => o.id)).toEqual(['op-2', 'op-1']);
+		expect(result[0].sourceId).toBe(1);
+		expect(result[1].sourceId).toBe(2);
+	});
+
+	it('tolerates a source that fails', async () => {
+		mocks.sourcesToArray.mockResolvedValue([makeSource(1), makeSource(2)]);
+		mocks.MockReadFlowClient
+			.mockImplementationOnce(() => ({
+				getActivity: vi.fn().mockResolvedValue({
+					operations: [makeOp('op-ok', '2026-09-08T10:00:00.000001Z')],
+					next_cursor: null,
+				}),
+			}))
+			.mockImplementationOnce(() => ({
+				getActivity: vi.fn().mockRejectedValue(new Error('network timeout')),
+			}));
+		const result = await fetchAllActivity();
+		expect(result).toHaveLength(1);
+		expect(result[0].id).toBe('op-ok');
+	});
+});
+
+// ── fetchActivityDetail ───────────────────────────────────────────────────────
+
+describe('fetchActivityDetail', () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it('returns the detail from the first responding source', async () => {
+		mocks.sourcesToArray.mockResolvedValue([makeSource(1), makeSource(2)]);
+		const detail = { ...makeOp('op-1', '2026-09-08T10:00:00.000001Z'), events: [] };
+		mocks.MockReadFlowClient
+			.mockImplementationOnce(() => ({ getActivityDetail: vi.fn().mockResolvedValue(detail) }))
+			.mockImplementationOnce(() => ({ getActivityDetail: vi.fn().mockRejectedValue(new Error('404')) }));
+		expect(await fetchActivityDetail('op-1')).toEqual(detail);
+	});
+
+	it('returns null when no source has it', async () => {
+		mocks.sourcesToArray.mockResolvedValue([makeSource(1)]);
+		mocks.MockReadFlowClient.mockImplementation(() => ({
+			getActivityDetail: vi.fn().mockRejectedValue(new Error('404')),
+		}));
+		expect(await fetchActivityDetail('op-1')).toBeNull();
+	});
+});
+
+// ── fetchDocumentActivity ─────────────────────────────────────────────────────
+
+describe('fetchDocumentActivity', () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it('dedupes operations by id across sources and sorts newest first', async () => {
+		mocks.sourcesToArray.mockResolvedValue([makeSource(1), makeSource(2)]);
+		mocks.MockReadFlowClient
+			.mockImplementationOnce(() => ({
+				getDocumentActivity: vi.fn().mockResolvedValue([
+					{ ...makeOp('op-2', '2026-09-08T10:00:00.000001Z'), events: [] },
+					{ ...makeOp('op-1', '2026-09-08T11:00:00.000001Z'), events: [] },
+				]),
+			}))
+			.mockImplementationOnce(() => ({
+				getDocumentActivity: vi.fn().mockResolvedValue([
+					{ ...makeOp('op-1', '2026-09-08T11:00:00.000001Z'), events: [] },
+				]),
+			}));
+		const result = await fetchDocumentActivity('guid-abc');
+		expect(result.map((d) => d.id)).toEqual(['op-1', 'op-2']);
 	});
 });

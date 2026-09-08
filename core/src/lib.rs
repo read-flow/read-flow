@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+pub mod activity;
 pub mod api;
+pub mod audit;
 pub mod client;
 pub mod db;
 pub mod online_library;
@@ -24,6 +26,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use api::FileDataSource;
+use audit::AuditActor;
+use audit::AuditChannel;
+use audit::AuditContext;
 use db::ConnectionPool;
 use db::dao;
 use db::datasource::DbClient;
@@ -168,6 +173,24 @@ where
         // Force whole provider chain, to capture errors eagerly.
         db_client.provide().await?;
 
+        // Recover operations left in `started` by a process that died mid-run.
+        // Truthful history: they are marked interrupted with a reason, not
+        // silently dropped or left "running" forever.
+        match dao::interrupt_stale_operations(
+            &connection_pool.provide().await?,
+            &audit::now_timestamp(),
+        )
+        .await
+        {
+            Ok(interrupted) if interrupted > 0 => {
+                tracing::info!("interrupted {interrupted} stale audit operation(s) at startup");
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!("could not recover stale audit operations: {error}");
+            }
+        }
+
         Ok(Self {
             config_path,
             settings,
@@ -250,6 +273,32 @@ where
         FilteredDbClient::new(self.db_client().await, hidden)
     }
 
+    /// An audit context for a local (GUI/CLI) operation. The actor is the
+    /// configured local identity ([`crate::settings::ServerSettings::resolve_local_user_id`]),
+    /// never anything a request body could select.
+    pub async fn local_audit_context(&self, channel: AuditChannel) -> AuditContext {
+        let user_id = self
+            .settings()
+            .await
+            .server
+            .resolve_local_user_id()
+            .to_string();
+        AuditContext::new(
+            uuid::Uuid::new_v4().to_string(),
+            AuditActor::local_identity(user_id),
+            channel,
+        )
+    }
+
+    /// An audit context for anonymous system work (e.g. startup recovery).
+    pub fn system_audit_context() -> AuditContext {
+        AuditContext::new(
+            uuid::Uuid::new_v4().to_string(),
+            AuditActor::system(),
+            AuditChannel::Internal,
+        )
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<Invalidated> {
         self.settings.subscribe()
     }
@@ -257,6 +306,20 @@ where
     /// Find all local files in the database whose path no longer exists on disk.
     /// If `purge` is true, also removes those stale records from the database.
     pub async fn check_missing(&self, purge: bool) -> Vec<String> {
+        let context = self.local_audit_context(AuditChannel::Cli).await;
+        self.check_missing_with_audit(&context, purge).await
+    }
+
+    /// Like [`Self::check_missing`], but records an activity-history operation
+    /// and per-file events under `context`. Files are recorded as missing at
+    /// their recorded path (`missing_at_recorded_path`) without asserting an
+    /// external actor — ReadFlow only performed the record purge, never the
+    /// filesystem change it observed.
+    pub async fn check_missing_with_audit(
+        &self,
+        context: &AuditContext,
+        purge: bool,
+    ) -> Vec<String> {
         let user_id = self
             .settings()
             .await
@@ -264,6 +327,20 @@ where
             .resolve_local_user_id()
             .to_string();
         let connection_pool = self.connection_pool().await;
+        let pool = connection_pool.clone();
+
+        if let Err(error) = dao::create_audit_operation(
+            &pool,
+            context,
+            audit::OperationType::MissingFileMaintenance,
+            false,
+            &audit::now_timestamp(),
+        )
+        .await
+        {
+            tracing::warn!("could not start maintenance audit operation: {error}");
+        }
+
         let mut conn = connection_pool.acquire().await.expect("database available");
         let files = dao::select_all_files(&mut conn, &user_id)
             .await
@@ -279,6 +356,55 @@ where
                 }
                 missing.push(file.path);
             }
+        }
+
+        if !missing.is_empty() {
+            let event_type = if purge {
+                audit::AuditEventType::MaintenanceMissingFilesPurged
+            } else {
+                audit::AuditEventType::MaintenanceMissingFilesChecked
+            };
+            let outcome = if purge {
+                audit::AuditOutcome::Success
+            } else {
+                audit::AuditOutcome::Observed
+            };
+            let targets: Vec<dao::AuditTargetSnapshot> = missing
+                .iter()
+                .cloned()
+                .map(|path| dao::AuditTargetSnapshot::path(path.clone()))
+                .collect();
+            if let Err(error) = dao::append_audit_event(
+                &mut conn,
+                &context.operation_id,
+                event_type,
+                outcome,
+                &audit::now_timestamp(),
+                serde_json::json!({
+                    "purge": purge,
+                    "missing_at_recorded_path": missing.len(),
+                }),
+                targets,
+            )
+            .await
+            {
+                tracing::warn!("could not record missing-file maintenance: {error}");
+            }
+        }
+        if let Err(error) = dao::finish_audit_operation(
+            &pool,
+            &context.operation_id,
+            audit::OperationStatus::Completed,
+            &audit::now_timestamp(),
+            None,
+            serde_json::json!({
+                "missing_count": missing.len(),
+                "purge": purge,
+            }),
+        )
+        .await
+        {
+            tracing::warn!("could not finish maintenance audit operation: {error}");
         }
         missing
     }

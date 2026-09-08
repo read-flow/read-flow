@@ -66,6 +66,35 @@ impl BddWorld {
             reading_open: false,
         })
     }
+
+    /// Poll `probe` until `accept` holds or a short deadline expires, then
+    /// return the last observed value. Read-after-write steps use this: SQLite
+    /// snapshot isolation can hand a fast follow-up read a view from before
+    /// the write committed, so assertions must tolerate the write landing a
+    /// few milliseconds later.
+    pub async fn eventually<T, F, Fut>(
+        &self,
+        mut probe: F,
+        mut accept: impl FnMut(&T) -> bool,
+    ) -> Option<T>
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = T>,
+    {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        let mut last: Option<T> = None;
+        loop {
+            let value = probe().await;
+            if last.is_some() && std::time::Instant::now() >= deadline {
+                return last;
+            }
+            last = Some(value);
+            if accept(last.as_ref().expect("just stored")) {
+                return last;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    }
 }
 
 impl std::fmt::Debug for BddWorld {

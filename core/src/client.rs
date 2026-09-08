@@ -223,7 +223,39 @@ impl FilesClient {
         Ok(result)
     }
 
-    fn get_target_file(filename: &str) -> Result<PathBuf, Error> {
+    /// The newest activity-history operations, remote-server page.
+    pub async fn get_activity(
+        &self,
+        limit: usize,
+        cursor: Option<(String, String)>,
+    ) -> Result<crate::activity::ActivityPage, Error> {
+        let mut url = format!("activity?limit={limit}");
+        if let Some((started_at, operation_id)) = cursor {
+            url =
+                format!("{url}&cursor_started_at={started_at}&cursor_operation_id={operation_id}");
+        }
+        self.get_json(&url).await
+    }
+
+    /// One full operation (with its ordered events) by id.
+    pub async fn get_activity_operation(
+        &self,
+        operation_id: &str,
+    ) -> Result<crate::activity::ActivityDetail, Error> {
+        self.get_json(&format!("activity/{operation_id}")).await
+    }
+
+    /// Every operation whose events carry a target with the given document id.
+    /// Works even after the document's rows were merged away.
+    pub async fn get_document_activity(
+        &self,
+        document_id: &str,
+    ) -> Result<Vec<crate::activity::ActivityDetail>, Error> {
+        self.get_json(&format!("documents/{document_id}/activity"))
+            .await
+    }
+
+    pub fn get_target_file(filename: &str) -> Result<PathBuf, Error> {
         let mut file_path: PathBuf = filename.parse().map_err(Error::Unexpected)?;
 
         let orig_extension =

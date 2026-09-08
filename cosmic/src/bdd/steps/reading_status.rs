@@ -20,6 +20,12 @@ async fn reading_status_is(world: &mut BddWorld, expected: String) {
         .current_document_guid
         .as_ref()
         .expect("no current document — seed step must run first");
-    let actual = world.driver.get_reading_status(guid).await;
+    let actual = world
+        .eventually(
+            || world.driver.get_reading_status(guid),
+            |status| *status == expected,
+        )
+        .await
+        .expect("reading status was never observed");
     assert_eq!(actual, expected, "reading status mismatch");
 }

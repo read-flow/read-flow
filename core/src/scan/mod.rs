@@ -75,6 +75,9 @@ use tokio::sync::mpsc;
 
 use crate::ApplicationModule;
 use crate::ExpandedPath;
+use crate::audit::AuditActor;
+use crate::audit::AuditChannel;
+use crate::audit::AuditContext;
 use crate::settings::Settings;
 use crate::settings::SettingsError;
 
@@ -320,11 +323,25 @@ where
     /// Start a scan and return a receiver for progress events.
     /// The caller is responsible for consuming all events from the receiver.
     pub async fn start_scan(&self, path: impl AsRef<Path>) -> Result<mpsc::Receiver<ScanProgress>> {
+        let settings = self.settings().await;
+        let context = AuditContext::new(
+            uuid::Uuid::new_v4().to_string(),
+            AuditActor::local_identity(settings.server.resolve_local_user_id().to_string()),
+            AuditChannel::Cosmic,
+        );
+        self.start_scan_with_context(path, context).await
+    }
+
+    pub async fn start_scan_with_context(
+        &self,
+        path: impl AsRef<Path>,
+        context: AuditContext,
+    ) -> Result<mpsc::Receiver<ScanProgress>> {
         let path = path.as_ref().canonicalize()?;
         let settings = self.settings().await.scan;
         let pool = self.connection_pool().await;
         let scanner = Scanner::new(settings);
-        Ok(scanner.scan(path, pool).await)
+        Ok(scanner.scan_with_audit(path, pool, context).await)
     }
 
     pub async fn scan(&self, path: impl AsRef<Path>) -> Result<()> {

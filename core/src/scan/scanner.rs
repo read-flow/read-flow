@@ -14,6 +14,12 @@ use super::metadata;
 use super::pipeline::ScanProgress;
 use super::pipeline::ScannedFile;
 use super::pipeline::TraversalItem;
+use crate::audit;
+use crate::audit::AuditContext;
+use crate::audit::AuditEventType;
+use crate::audit::AuditOutcome;
+use crate::audit::OperationStatus;
+use crate::audit::OperationType;
 use crate::db::dao;
 
 const MAX_BATCH_SIZE: usize = 100;
@@ -38,6 +44,52 @@ impl Scanner {
         root: PathBuf,
         pool: sqlx::SqlitePool,
     ) -> mpsc::Receiver<ScanProgress> {
+        self.scan_inner(root, pool, None).await
+    }
+
+    /// Run the pipeline and persist structured activity events under `context`.
+    pub async fn scan_with_audit(
+        &self,
+        root: PathBuf,
+        pool: sqlx::SqlitePool,
+        context: AuditContext,
+    ) -> mpsc::Receiver<ScanProgress> {
+        self.scan_inner(root, pool, Some(context)).await
+    }
+
+    async fn scan_inner(
+        &self,
+        root: PathBuf,
+        pool: sqlx::SqlitePool,
+        audit_context: Option<AuditContext>,
+    ) -> mpsc::Receiver<ScanProgress> {
+        if let Some(context) = &audit_context {
+            if let Err(error) = dao::create_audit_operation(
+                &pool,
+                context,
+                OperationType::Scan,
+                self.settings.dry_run,
+                &audit::now_timestamp(),
+            )
+            .await
+            {
+                tracing::warn!("could not start scan audit operation: {error}");
+            } else if let Ok(mut connection) = pool.acquire().await {
+                if let Err(error) = dao::append_audit_event(
+                    &mut connection,
+                    &context.operation_id,
+                    AuditEventType::ScanStarted,
+                    AuditOutcome::Success,
+                    &audit::now_timestamp(),
+                    serde_json::json!({"dry_run": self.settings.dry_run}),
+                    vec![],
+                )
+                .await
+                {
+                    tracing::warn!("could not record scan start: {error}");
+                }
+            }
+        }
         let (progress_tx, progress_rx) = mpsc::channel(256);
         let (ch1_tx, ch1_rx) = mpsc::channel::<TraversalItem>(self.settings.concurrency * 2);
         let (ch2_tx, ch2_rx) = mpsc::channel::<ScannedFile>(64);
@@ -45,10 +97,24 @@ impl Scanner {
         let settings = self.settings.clone();
         let progress_tx2 = progress_tx.clone();
         let progress_tx3 = progress_tx.clone();
+        let stage1_audit = audit_context.clone();
+        let dry_run_pool = if self.settings.dry_run {
+            audit_context.as_ref().map(|_| pool.clone())
+        } else {
+            None
+        };
 
         // Stage 1 — traversal
         tokio::spawn(async move {
-            stage1_traversal(root, &settings, ch1_tx, progress_tx).await;
+            stage1_traversal(
+                root,
+                &settings,
+                ch1_tx,
+                progress_tx,
+                dry_run_pool.as_ref(),
+                stage1_audit.as_ref(),
+            )
+            .await;
         });
 
         // Stage 2 — fingerprinting
@@ -60,7 +126,7 @@ impl Scanner {
         // Stage 3 — DB writer
         let concurrency = self.settings.concurrency;
         tokio::spawn(async move {
-            stage3_writer(ch2_rx, pool, concurrency, progress_tx3).await;
+            stage3_writer(ch2_rx, pool, concurrency, progress_tx3, audit_context).await;
         });
 
         progress_rx
@@ -76,6 +142,8 @@ async fn stage1_traversal(
     settings: &ScanSettings,
     tx: mpsc::Sender<TraversalItem>,
     progress_tx: mpsc::Sender<ScanProgress>,
+    pool: Option<&sqlx::SqlitePool>,
+    audit_context: Option<&AuditContext>,
 ) {
     let is_dir = tokio::fs::metadata(&root)
         .await
@@ -83,11 +151,12 @@ async fn stage1_traversal(
         .unwrap_or(false);
 
     if is_dir {
-        visit_dir(&root, settings, &tx, &progress_tx).await;
+        visit_dir(&root, settings, &tx, &progress_tx, pool, audit_context).await;
     } else if extension_matches(&root, &settings.extensions) {
         let tags = tags_for_path(&root, settings).unwrap_or_default();
         if settings.dry_run {
             tracing::info!("[dry_run] would scan: {root:?}");
+            record_proposed_discovery(pool, audit_context, &root.display().to_string()).await;
             let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
         } else if tx
             .send(TraversalItem {
@@ -102,7 +171,35 @@ async fn stage1_traversal(
             let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
         }
     } else if archive::is_archive_path(&root) {
-        emit_archive_members(&root, settings, &tx, &progress_tx).await;
+        emit_archive_members(&root, settings, &tx, &progress_tx, pool, audit_context).await;
+    }
+}
+
+/// Record a proposed (dry-run) `scan.file_discovered` event. ReadFlow is
+/// declaring what it *would* mutate, so the outcome is `Proposed`, never
+/// `Success`/`Observed` — nothing was actually written.
+async fn record_proposed_discovery(
+    pool: Option<&sqlx::SqlitePool>,
+    context: Option<&AuditContext>,
+    path: &str,
+) {
+    if let (Some(pool), Some(context)) = (pool, context)
+        && let Ok(mut connection) = pool.acquire().await
+        && let Err(error) = dao::append_audit_event(
+            &mut connection,
+            &context.operation_id,
+            AuditEventType::ScanFileDiscovered,
+            AuditOutcome::Proposed,
+            &audit::now_timestamp(),
+            serde_json::json!({
+                "path": path,
+                "dry_run": true,
+            }),
+            vec![dao::AuditTargetSnapshot::path(path.to_string())],
+        )
+        .await
+    {
+        tracing::warn!("could not record proposed scan event: {error}");
     }
 }
 
@@ -122,6 +219,8 @@ async fn emit_archive_members(
     settings: &ScanSettings,
     tx: &mpsc::Sender<TraversalItem>,
     progress_tx: &mpsc::Sender<ScanProgress>,
+    pool: Option<&sqlx::SqlitePool>,
+    audit_context: Option<&AuditContext>,
 ) -> bool {
     let Some(tags) = tags_for_path(archive_path, settings) else {
         tracing::debug!("skipping ignored archive: {archive_path:?}");
@@ -155,6 +254,12 @@ async fn emit_archive_members(
     if settings.dry_run {
         for member in &matching {
             tracing::info!("[dry_run] would scan: {archive_path:?}::{member}");
+            record_proposed_discovery(
+                pool,
+                audit_context,
+                &archive::joined_archive_path(archive_path, member),
+            )
+            .await;
             let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
         }
         return true;
@@ -238,6 +343,8 @@ fn visit_dir<'a>(
     settings: &'a ScanSettings,
     tx: &'a mpsc::Sender<TraversalItem>,
     progress_tx: &'a mpsc::Sender<ScanProgress>,
+    pool: Option<&'a sqlx::SqlitePool>,
+    audit_context: Option<&'a AuditContext>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
     Box::pin(async move {
         if is_scm_root(dir) {
@@ -277,7 +384,7 @@ fn visit_dir<'a>(
             };
 
             if meta.is_dir() {
-                visit_dir(&path, settings, tx, progress_tx).await;
+                visit_dir(&path, settings, tx, progress_tx, pool, audit_context).await;
             } else if extension_matches(&path, &settings.extensions) {
                 let Some(tags) = tags_for_path(&path, settings) else {
                     tracing::debug!("skipping ignored path: {path:?}");
@@ -285,6 +392,8 @@ fn visit_dir<'a>(
                 };
                 if settings.dry_run {
                     tracing::info!("[dry_run] would scan: {path:?}");
+                    record_proposed_discovery(pool, audit_context, &path.display().to_string())
+                        .await;
                     let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
                     continue;
                 }
@@ -300,7 +409,8 @@ fn visit_dir<'a>(
                 }
                 let _ = progress_tx.send(ScanProgress::FileDiscovered).await;
             } else if archive::is_archive_path(&path)
-                && !emit_archive_members(&path, settings, tx, progress_tx).await
+                && !emit_archive_members(&path, settings, tx, progress_tx, pool, audit_context)
+                    .await
             {
                 // Receiver dropped — pipeline shutting down.
                 return;
@@ -462,6 +572,7 @@ async fn stage3_writer(
     pool: sqlx::SqlitePool,
     concurrency: usize,
     progress_tx: mpsc::Sender<ScanProgress>,
+    audit_context: Option<AuditContext>,
 ) {
     let mut discovered: u64 = 0;
     let mut processed: u64 = 0;
@@ -490,26 +601,28 @@ async fn stage3_writer(
             }
         }
 
-        flush_batch(
+        flush_batch_with_audit(
             &mut batch,
             &pool,
             concurrency,
             &progress_tx,
             &mut processed,
             &mut errors,
+            audit_context.as_ref(),
         )
         .await;
     }
 
     // Flush any remaining items (channel closed mid-accumulation).
     if !batch.is_empty() {
-        flush_batch(
+        flush_batch_with_audit(
             &mut batch,
             &pool,
             concurrency,
             &progress_tx,
             &mut processed,
             &mut errors,
+            audit_context.as_ref(),
         )
         .await;
     }
@@ -526,8 +639,52 @@ async fn stage3_writer(
             errors,
         })
         .await;
+
+    if let Some(context) = audit_context {
+        let status = OperationStatus::Completed;
+        let outcome = if errors == 0 {
+            AuditOutcome::Success
+        } else {
+            AuditOutcome::CompletedWithErrors
+        };
+        if let Ok(mut connection) = pool.acquire().await
+            && let Err(error) = dao::append_audit_event(
+                &mut connection,
+                &context.operation_id,
+                AuditEventType::ScanCompleted,
+                outcome,
+                &audit::now_timestamp(),
+                serde_json::json!({
+                    "discovered": discovered,
+                    "processed": processed,
+                    "errors": errors,
+                }),
+                vec![],
+            )
+            .await
+        {
+            tracing::warn!("could not record scan completion: {error}");
+        }
+        if let Err(error) = dao::finish_audit_operation(
+            &pool,
+            &context.operation_id,
+            status,
+            &audit::now_timestamp(),
+            None,
+            serde_json::json!({
+                "discovered": discovered,
+                "processed": processed,
+                "errors": errors,
+            }),
+        )
+        .await
+        {
+            tracing::warn!("could not finish scan audit operation: {error}");
+        }
+    }
 }
 
+#[cfg(test)]
 async fn flush_batch(
     batch: &mut Vec<ScannedFile>,
     pool: &sqlx::SqlitePool,
@@ -535,6 +692,27 @@ async fn flush_batch(
     progress_tx: &mpsc::Sender<ScanProgress>,
     processed: &mut u64,
     errors: &mut u64,
+) {
+    flush_batch_with_audit(
+        batch,
+        pool,
+        concurrency,
+        progress_tx,
+        processed,
+        errors,
+        None,
+    )
+    .await;
+}
+
+async fn flush_batch_with_audit(
+    batch: &mut Vec<ScannedFile>,
+    pool: &sqlx::SqlitePool,
+    concurrency: usize,
+    progress_tx: &mpsc::Sender<ScanProgress>,
+    processed: &mut u64,
+    errors: &mut u64,
+    audit_context: Option<&AuditContext>,
 ) {
     let items = std::mem::take(batch);
 
@@ -582,6 +760,42 @@ async fn flush_batch(
         .await
         {
             Ok((was_new, was_updated)) => {
+                if let Some(context) = audit_context {
+                    let event_type = if was_new {
+                        AuditEventType::ScanFileDiscovered
+                    } else {
+                        AuditEventType::ScanFileContentChanged
+                    };
+                    if was_new || was_updated {
+                        if let Err(error) = dao::append_audit_event(
+                            &mut tx,
+                            &context.operation_id,
+                            event_type,
+                            AuditOutcome::Observed,
+                            &audit::now_timestamp(),
+                            serde_json::json!({
+                                "path": path_str,
+                                "external_change_detected": was_updated,
+                            }),
+                            vec![dao::AuditTargetSnapshot::path(path_str.clone())],
+                        )
+                        .await
+                        {
+                            tracing::error!(
+                                "could not record scan event; rolling back batch: {error}"
+                            );
+                            *errors += 1;
+                            let _ = progress_tx
+                                .send(ScanProgress::FileError {
+                                    path: PathBuf::from(path_str),
+                                    error: error.to_string(),
+                                })
+                                .await;
+                            let _ = tx.rollback().await;
+                            return;
+                        }
+                    }
+                }
                 if was_new || was_updated {
                     needs_metadata.push(EnrichTask {
                         fingerprint: file.fingerprint.clone(),
@@ -805,7 +1019,7 @@ mod tests {
     async fn collect_traversal(root: PathBuf, settings: ScanSettings) -> Vec<TraversalItem> {
         let (tx, mut rx) = mpsc::channel(64);
         let (progress_tx, _progress_rx) = mpsc::channel(64);
-        stage1_traversal(root, &settings, tx, progress_tx).await;
+        stage1_traversal(root, &settings, tx, progress_tx, None, None).await;
         let mut items = Vec::new();
         while let Ok(item) = rx.try_recv() {
             items.push(item);
@@ -965,7 +1179,15 @@ mod tests {
 
         let (tx, mut rx) = mpsc::channel(64);
         let (progress_tx, mut progress_rx) = mpsc::channel(64);
-        stage1_traversal(tmp.path().to_path_buf(), &settings, tx, progress_tx).await;
+        stage1_traversal(
+            tmp.path().to_path_buf(),
+            &settings,
+            tx,
+            progress_tx,
+            None,
+            None,
+        )
+        .await;
 
         // ch1 must be empty (no actual items sent in dry-run mode)
         assert!(rx.try_recv().is_err());

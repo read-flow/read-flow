@@ -276,6 +276,13 @@ impl cosmic::Application for ReadFlow {
             label,
             None,
         );
+        let label = pages.display_name(&PageSelector::Activity);
+        pages.register_page(
+            PageSelector::Activity,
+            "utilities-system-monitor-symbolic",
+            label,
+            None,
+        );
 
         // Create the about widget
         let about = About::default()
@@ -1079,6 +1086,7 @@ fn partition_page_list(
                 | PageSelector::OnlineLibrary
                 | PageSelector::Documents
                 | PageSelector::ServerLog
+                | PageSelector::Activity
         )
     })
 }

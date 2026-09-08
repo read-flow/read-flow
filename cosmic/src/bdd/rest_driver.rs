@@ -321,6 +321,116 @@ impl RestDriver {
         docs.len()
     }
 
+    // -- activity history --
+
+    /// Fetch the `/activity` page (newest first).
+    async fn activity_page(&self, limit: usize) -> serde_json::Value {
+        self.client
+            .get(format!("{}/activity?limit={}", self.server.base_url, limit))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /activity")
+            .json()
+            .await
+            .expect("parse activity JSON")
+    }
+
+    /// Operation types of the recorded history, newest first.
+    pub async fn activity_operation_types(&self) -> Vec<String> {
+        self.activity_page(100).await["operations"]
+            .as_array()
+            .map(|ops| {
+                ops.iter()
+                    .filter_map(|op| op["operation_type"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Whether the most recent operation is a dry run.
+    pub async fn latest_activity_is_dry_run(&self) -> bool {
+        self.activity_page(1).await["operations"][0]["dry_run"]
+            .as_bool()
+            .unwrap_or(false)
+    }
+
+    /// Events (`serde_json::Value` array) of the most recent operation.
+    async fn latest_activity_events(&self) -> serde_json::Value {
+        let operation_id = self.activity_page(1).await["operations"][0]["id"]
+            .as_str()
+            .expect("operation id")
+            .to_string();
+        self.client
+            .get(format!(
+                "{}/activity/{}",
+                self.server.base_url, operation_id
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /activity/<id>")
+            .json::<serde_json::Value>()
+            .await
+            .expect("parse activity detail JSON")["events"]
+            .clone()
+    }
+
+    /// Event outcomes (wire names) of the most recent operation.
+    pub async fn latest_activity_event_outcomes(&self) -> Vec<String> {
+        self.latest_activity_events()
+            .await
+            .as_array()
+            .map(|events| {
+                events
+                    .iter()
+                    .filter_map(|event| event["outcome"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Event types (wire names) of the most recent operation.
+    pub async fn latest_activity_event_types(&self) -> Vec<String> {
+        self.latest_activity_events()
+            .await
+            .as_array()
+            .map(|events| {
+                events
+                    .iter()
+                    .filter_map(|event| event["event_type"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Event types of the history recorded against a document, in order.
+    pub async fn document_activity_event_types(&self, doc_api_guid: &str) -> Vec<String> {
+        let details: Vec<serde_json::Value> = self
+            .client
+            .get(format!(
+                "{}/documents/{}/activity",
+                self.server.base_url, doc_api_guid
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /documents/<guid>/activity")
+            .json()
+            .await
+            .expect("parse document activity JSON");
+        details
+            .iter()
+            .flat_map(|detail| {
+                detail["events"]
+                    .as_array()
+                    .map(|events| events.to_vec())
+                    .unwrap_or_default()
+            })
+            .filter_map(|event| event["event_type"].as_str().map(str::to_string))
+            .collect()
+    }
+
     pub async fn add_tag_to_document(&self, guid: &str, tag: &str) {
         let response = self
             .client

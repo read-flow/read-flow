@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 mod access;
+mod activity;
 mod authn;
 mod token;
 
@@ -63,6 +64,9 @@ use crate::api::MergeDocumentsRequest;
 use crate::api::ReadingState;
 use crate::api::ReadingStatus;
 use crate::api::Status;
+use crate::audit::AuditActor;
+use crate::audit::AuditChannel;
+use crate::audit::AuditContext;
 use crate::db::ConnectionPool;
 use crate::db::dao;
 use crate::db::datasource::DbClient;
@@ -157,6 +161,7 @@ pub trait ServerModule: Send + Sync + 'static {
     async fn scan(&self, path: PathBuf) -> anyhow::Result<()>;
     async fn scan_configured(&self) -> anyhow::Result<ScanSummary>;
     async fn check_missing(&self, purge: bool) -> Vec<String>;
+    async fn check_missing_with_audit(&self, context: &AuditContext, purge: bool) -> Vec<String>;
     async fn update_settings(
         &self,
         mutate: Box<dyn for<'a> FnOnce(&'a mut Settings) + Send>,
@@ -189,6 +194,9 @@ where
     }
     async fn check_missing(&self, purge: bool) -> Vec<String> {
         self.check_missing(purge).await
+    }
+    async fn check_missing_with_audit(&self, context: &AuditContext, purge: bool) -> Vec<String> {
+        self.check_missing_with_audit(context, purge).await
     }
     async fn update_settings(
         &self,
@@ -353,6 +361,12 @@ pub async fn build_router(state: AppState) -> Router {
         .route("/documents/{guid}", get(get_document))
         .route("/documents/{guid}/cover", get(get_document_cover))
         .route("/documents/{guid}/metadata", put(put_document_metadata))
+        .route("/activity", get(activity::list_activity))
+        .route("/activity/{operation_id}", get(activity::get_activity))
+        .route(
+            "/documents/{guid}/activity",
+            get(activity::get_document_activity),
+        )
         .route("/scan", post(post_scan))
         .route("/maintenance/check-missing", post(post_check_missing))
         .route(
@@ -939,13 +953,13 @@ async fn post_file_tags(
     let Some((file, _)) = visible_file(&mut conn, &vis, &guid).await? else {
         return Ok(Json(vec![]));
     };
-    let content_tags = tags
-        .into_iter()
-        .map(|tag| crate::db::models::ContentTag::new(file.fingerprint.clone(), tag))
-        .collect();
-    dao::upsert_many_content_tags(&mut conn, content_tags).await?;
-    let updated = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
-    Ok(Json(updated.into_iter().map(|t| t.tag).collect()))
+    drop(conn);
+    let context = audit_context_for(vis.user_id());
+    let db_client = application_module.db_client().await;
+    let updated = db_client
+        .add_file_tags_with_audit(&context, &file.guid, tags)
+        .await?;
+    Ok(Json(updated))
 }
 
 /// @feature: tags.remove
@@ -961,7 +975,13 @@ async fn delete_file_tags(
     let Some((file, _)) = visible_file(&mut conn, &vis, &guid).await? else {
         return Ok(Json(vec![]));
     };
-    dao::delete_content_tags(&mut conn, &file.fingerprint, tags).await?;
+    drop(conn);
+    let context = audit_context_for(vis.user_id());
+    let db_client = application_module.db_client().await;
+    db_client
+        .delete_file_tags_with_audit(&context, &file.guid, tags)
+        .await?;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let updated = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint).await?;
     Ok(Json(updated.into_iter().map(|t| t.tag).collect()))
 }
@@ -1043,10 +1063,11 @@ async fn delete_file(
         return Err(Error::FileNotFound(guid.to_string()));
     }
     drop(conn);
+    let context = audit_context_for(vis.user_id());
     let db_client = application_module.db_client().await;
     let file = db_client.get_file(guid).await?;
     if let Some(ref file) = file {
-        db_client.delete_file(file.clone()).await?;
+        db_client.delete_file_with_audit(&context, file).await?;
         Ok(())
     } else {
         Err(Error::FileNotFound(guid.to_string()))
@@ -1180,7 +1201,16 @@ async fn put_reading_status(
     if !fingerprint_visible(&mut conn, &vis, &fingerprint).await? {
         return Err(Error::FileNotFound(fingerprint.clone()));
     }
-    dao::update_reading_status_only(&mut conn, vis.user_id(), &fingerprint, req.status.into())
+    drop(conn);
+    let context = audit_context_for(vis.user_id());
+    let db_client = application_module.db_client().await;
+    db_client
+        .update_reading_status_for_user_with_audit(
+            &context,
+            vis.user_id(),
+            &fingerprint,
+            req.status,
+        )
         .await?;
     Ok(())
 }
@@ -1264,32 +1294,13 @@ async fn put_document_metadata(
     if !document_visible(&mut conn, &vis, &api_doc).await? {
         return Err(Error::FileNotFound(guid.to_string()));
     }
-    let doc_row = dao::select_document_by_guid(&mut conn, guid)
+    drop(conn);
+    let context = audit_context_for(vis.user_id());
+    let db_client = application_module.db_client().await;
+    let updated = db_client
+        .update_document_metadata_with_audit(&context, guid, meta)
         .await?
         .ok_or_else(|| Error::FileNotFound(guid.to_string()))?;
-
-    let doc_type_str = meta.document_type_str();
-    let authors_json = meta.authors_json();
-    dao::upsert_document_user_metadata(
-        &mut conn,
-        doc_row.id,
-        doc_type_str.as_deref(),
-        meta.title.as_deref(),
-        meta.subtitle.as_deref(),
-        authors_json.as_deref(),
-        meta.description.as_deref(),
-        meta.language.as_deref(),
-        meta.publisher.as_deref(),
-        meta.identifier.as_deref(),
-        meta.date.as_deref(),
-        meta.subject.as_deref(),
-        meta.selected_cover_fingerprint.as_deref(),
-    )
-    .await?;
-
-    let updated = dao::select_api_document_by_guid(&mut conn, guid)
-        .await?
-        .expect("document must exist after upsert");
     Ok(Json(updated))
 }
 
@@ -1315,6 +1326,18 @@ fn require_owner(user: &AuthorizedUser) -> Result<()> {
     } else {
         Err(Error::Forbidden("admin actions require owner role".into()))
     }
+}
+
+/// Build an audit context for this request. The actor is always the server's
+/// authenticated user id (`Visibility::user_id`, which derives from the token
+/// or, in private mode, the single configured user) — request bodies can never
+/// name the actor.
+fn audit_context_for(user_id: &str) -> AuditContext {
+    AuditContext::new(
+        uuid::Uuid::new_v4().to_string(),
+        AuditActor::user(user_id.to_string()),
+        AuditChannel::Rest,
+    )
 }
 
 /// Look up a file by guid and apply the request's visibility policy. Hidden
@@ -1397,7 +1420,10 @@ async fn post_check_missing(
 ) -> Result<Json<CheckMissingResponse>> {
     require_owner(&user)?;
     let purge = query.purge.unwrap_or(false);
-    let missing = application_module.check_missing(purge).await;
+    let context = audit_context_for(&user.user_id);
+    let missing = application_module
+        .check_missing_with_audit(&context, purge)
+        .await;
     Ok(Json(CheckMissingResponse {
         missing,
         purged: purge,
@@ -1730,7 +1756,8 @@ async fn post_merge_documents(
             }
         }
     }
-    dao::merge_documents(&pool, &req.winner_guid, &req.loser_guids).await?;
+    let context = audit_context_for(vis.user_id());
+    dao::merge_documents_with_audit(&pool, &context, &req.winner_guid, &req.loser_guids).await?;
     let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
     let doc = dao::select_api_document_by_guid(&mut conn, &req.winner_guid)
         .await?

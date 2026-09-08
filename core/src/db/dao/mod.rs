@@ -20,6 +20,7 @@
 //! open their own transaction (`merge_documents`, `delete_remote_by_id`,
 //! `swap_order_of_remotes`).
 
+mod audit;
 mod covers;
 mod documents;
 mod files;
@@ -33,6 +34,7 @@ mod tests;
 use std::io;
 use std::sync::Arc;
 
+pub use audit::*;
 pub use covers::*;
 pub use documents::*;
 pub use files::*;
@@ -48,6 +50,8 @@ pub enum Error {
     Sqlx(#[source] Arc<sqlx::Error>),
     #[error("io error: {0}")]
     IO(#[source] Arc<io::Error>),
+    #[error("invalid audit event: {0}")]
+    InvalidAuditEvent(String),
 }
 
 impl From<sqlx::Error> for Error {

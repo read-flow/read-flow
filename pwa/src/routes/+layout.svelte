@@ -28,6 +28,7 @@
 	const navLinks: { href: string; label: string; icon: IconName }[] = [
 		{ href: '/', label: 'Dashboard', icon: 'home' },
 		{ href: '/library', label: 'Library', icon: 'library' },
+		{ href: '/activity', label: 'Activity', icon: 'history' },
 		{ href: '/online-library', label: 'Online library', icon: 'globe' },
 		{ href: '/settings', label: 'Settings', icon: 'settings' },
 	];
@@ -101,6 +102,19 @@
 			>
 				<Icon name="globe" class="w-4 h-4 shrink-0" />
 				{#if !collapsed}<span class="whitespace-nowrap">Online library</span>{/if}
+			</a>
+
+			<a
+				href="/activity"
+				title="Activity"
+				class="flex items-center px-3 py-2 rounded-md text-sm transition-colors
+					{collapsed ? 'justify-center' : 'gap-3'}
+					{isActive('/activity')
+						? 'bg-accent/10 text-accent font-medium'
+						: 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-black dark:hover:text-white'}"
+			>
+				<Icon name="history" class="w-4 h-4 shrink-0" />
+				{#if !collapsed}<span class="whitespace-nowrap">Activity</span>{/if}
 			</a>
 
 			<a

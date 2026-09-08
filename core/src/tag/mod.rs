@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use itertools::Itertools;
-use itertools::concat;
 use provider::r#async::Provider;
 
 use crate::ApplicationModule;
@@ -30,22 +29,69 @@ where
         user_id: &str,
     ) -> Result<(), Error> {
         let pool = self.connection_pool().await;
-        let mut conn = pool.acquire().await?;
-        let mut tags_to_add: Vec<Vec<ContentTag>> = Vec::new();
+        let dry_run = scan_settings.dry_run;
+        let context = self
+            .local_audit_context(crate::audit::AuditChannel::Cli)
+            .await;
+        if let Err(error) = dao::create_audit_operation(
+            &pool,
+            &context,
+            crate::audit::OperationType::TagEdit,
+            dry_run,
+            &crate::audit::now_timestamp(),
+        )
+        .await
+        {
+            tracing::warn!("could not start auto-tag audit operation: {error}");
+        }
 
+        let mut conn = pool.acquire().await?;
+        let mut applied: u64 = 0;
         for (path, tags) in &scan_settings.auto_tags {
             let files = dao::select_all_files_by_path_like(&mut conn, user_id, path).await?;
-            if scan_settings.dry_run {
+            let count = files.len() as u64;
+            if dry_run {
                 for file in files.iter() {
                     println!("{}: {:?}", file.path, tags);
                 }
+            } else {
+                dao::upsert_many_content_tags(&mut conn, to_all_content_tags(files, tags)).await?;
             }
-            tags_to_add.push(to_all_content_tags(files, tags));
+            applied += count;
+            let _ = dao::append_audit_event(
+                &mut conn,
+                &context.operation_id,
+                crate::audit::AuditEventType::DocumentTagsAdded,
+                if dry_run {
+                    crate::audit::AuditOutcome::Proposed
+                } else {
+                    crate::audit::AuditOutcome::Success
+                },
+                &crate::audit::now_timestamp(),
+                serde_json::json!({
+                    "auto_tag_pattern": path,
+                    "tags": tags,
+                    "files": count,
+                    "dry_run": dry_run,
+                }),
+                vec![],
+            )
+            .await
+            .map_err(|e| {
+                tracing::warn!("could not record auto-tag audit event: {e}");
+                e
+            });
         }
 
-        if !scan_settings.dry_run {
-            dao::upsert_many_content_tags(&mut conn, concat(tags_to_add)).await?;
-        }
+        dao::finish_audit_operation(
+            &pool,
+            &context.operation_id,
+            crate::audit::OperationStatus::Completed,
+            &crate::audit::now_timestamp(),
+            None,
+            serde_json::json!({ "tags_applied": applied }),
+        )
+        .await?;
         Ok(())
     }
 }

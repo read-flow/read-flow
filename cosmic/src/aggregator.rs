@@ -72,6 +72,12 @@ impl Aggregator {
         self.clients.keys().cloned().collect()
     }
 
+    /// All registered clients, for fan-out operations that do not aggregate
+    /// into a document list (e.g. activity history, which reads per source).
+    pub fn clients(&self) -> Vec<Client> {
+        self.clients.values().cloned().collect()
+    }
+
     pub async fn aggregate(&self) -> Result<Documents, FilesClientError> {
         let clients: Vec<(ClientSelector, Client)> = self
             .clients

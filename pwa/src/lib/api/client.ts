@@ -1,5 +1,9 @@
 import type { Source } from '$lib/db';
 
+// Type-only import to avoid a circular dependency at runtime (activity.ts does
+// not import client.ts at runtime beyond types).
+import type { ActivityPage, ActivityDetail } from './activity';
+
 /** String-form reading status as returned by GET /files. */
 export type ReadingStatus = 'Unread' | 'Reading' | 'Read';
 
@@ -482,5 +486,30 @@ export class ReadFlowClient {
 			method: 'POST',
 			body: JSON.stringify({ title, format }),
 		});
+	}
+
+	// @feature: admin.activity_history
+	// A page of operations, newest first, with an optional cursor for the next page.
+	async getActivity(
+		limit = 50,
+		cursor?: { started_at: string; operation_id: string } | null,
+	): Promise<ActivityPage> {
+		const params = new URLSearchParams({ limit: String(limit) });
+		if (cursor) {
+			params.set('cursor_started_at', cursor.started_at);
+			params.set('cursor_operation_id', cursor.operation_id);
+		}
+		return this.request<ActivityPage>(`/activity?${params.toString()}`);
+	}
+
+	// @feature: admin.activity_history
+	async getActivityDetail(operationId: string): Promise<ActivityDetail> {
+		return this.request<ActivityDetail>(`/activity/${encodeURIComponent(operationId)}`);
+	}
+
+	// @feature: documents.activity_history
+	// Document activity survives documents that were merged away.
+	async getDocumentActivity(guid: string): Promise<ActivityDetail[]> {
+		return this.request<ActivityDetail[]>(`/documents/${encodeURIComponent(guid)}/activity`);
 	}
 }

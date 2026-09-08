@@ -8,9 +8,11 @@ import {
 	type ReadingStatus,
 } from './client';
 import { mergeFiles, groupByDocumentGuid, type AggregatedFile } from './merge';
+import type { ActivityDetail, ActivityOperation } from './activity';
 
 export type { AggregatedFile } from './merge';
 export type { RemoteDocument, DocumentMeta, RemoteReadingState, ReadingStatus } from './client';
+export type { ActivityDetail, ActivityOperation } from './activity';
 
 async function getClients(): Promise<Array<{ id: number; client: ReadFlowClient }>> {
 	const sources = await db.sources.orderBy('order').toArray();
@@ -365,4 +367,81 @@ export async function downloadFileFromSources(
 	throw new Error(
 		`Could not download "${fileName}" from any source: ${errors.map((e) => e.message).join('; ')}`,
 	);
+}
+
+// ── Activity history (aggregated across sources) ────────────────────────────
+
+// @feature: admin.activity_history
+// @feature: documents.activity_history
+
+/** An activity operation plus the id of the source (server) it came from. */
+export interface SourceActivityOperation extends ActivityOperation {
+	sourceId: number;
+}
+
+/**
+ * Fetch the newest activity operations from every configured source, merging
+ * them newest-first by `started_at` (falling back to operation id for ties).
+ */
+export async function fetchAllActivity(limitPerSource = 50): Promise<SourceActivityOperation[]> {
+	const clients = await getClients();
+	if (clients.length === 0) return [];
+
+	const results = await Promise.allSettled(
+		clients.map(({ client }) => client.getActivity(limitPerSource)),
+	);
+
+	const ops: SourceActivityOperation[] = [];
+	results.forEach((result, i) => {
+		if (result.status !== 'fulfilled') return;
+		for (const op of result.value.operations) {
+			ops.push({ ...op, sourceId: clients[i]?.id ?? 0 });
+		}
+	});
+	return ops.sort(compareActivityNewestFirst);
+}
+
+/** `started_at` descending, tie-break on operation id descending. */
+function compareActivityNewestFirst(a: ActivityOperation, b: ActivityOperation): number {
+	if (a.started_at !== b.started_at) return a.started_at < b.started_at ? 1 : -1;
+	return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+}
+
+/**
+ * Fetch the detail (operation + ordered child events) for an operation across
+ * sources; returns the first source that responds with it.
+ */
+export async function fetchActivityDetail(operationId: string): Promise<ActivityDetail | null> {
+	const clients = await getClients();
+	for (const { client } of clients) {
+		try {
+			return await client.getActivityDetail(operationId);
+		} catch {
+			// try next source
+		}
+	}
+	return null;
+}
+
+/**
+ * Fetch document-specific activity across sources, merging by operation id.
+ * Survives documents that were merged away (the endpoint keeps history).
+ */
+export async function fetchDocumentActivity(guid: string): Promise<ActivityDetail[]> {
+	const clients = await getClients();
+	const results = await Promise.allSettled(
+		clients.map(({ client }) => client.getDocumentActivity(guid)),
+	);
+	const seen = new Set<string>();
+	const details: ActivityDetail[] = [];
+	for (const result of results) {
+		if (result.status !== 'fulfilled') continue;
+		for (const detail of result.value) {
+			if (!seen.has(detail.id)) {
+				seen.add(detail.id);
+				details.push(detail);
+			}
+		}
+	}
+	return details.sort((a, b) => (a.started_at < b.started_at ? 1 : -1));
 }

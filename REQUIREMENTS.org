@@ -179,11 +179,13 @@ The scanner only knows document types (=DocumentType= in
 videos (=.mpeg=/=.mov=/=.mp4=/etc.), audio (=.ogg=/=.mp3=/=.wav=/etc.) — each
 with its own extension set and, eventually, its own viewer.
 
-*** TODO Audit log for scan changes
-The async scanner already logs file updates (size/fingerprint changed)
-and new tag insertions at =INFO= level with all the before/after data
-needed. Persist that as an =audit_log= table (migration required) plus a
-COSMIC page to inspect what changed between scans and when.
+*** DONE Audit log for scan changes
+The async scanner records every mutation and observation (file upserts,
+tag insertions, merges, deletions, metadata/status edits, missing-file
+maintenance) as structured activity operations and events in an
+=activity_*=-prefixed set of tables, with typed parameters (never localized
+sentences), a derived actor, channel, and dry-run flag on each operation.
+Surfaces: COSMIC activity page, REST =/activity= endpoints, and a PWA view.
 
 *** TODO Calibre library import
 Recognize Calibre library directories during scan and support importing

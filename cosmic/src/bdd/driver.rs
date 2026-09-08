@@ -612,6 +612,43 @@ impl Driver {
         }
     }
 
+    // -- documents.activity_history --
+
+    pub async fn activity_operation_types(&self) -> Vec<String> {
+        match self {
+            Self::Rest(driver) => driver.activity_operation_types().await,
+            Self::Cosmic(driver) => driver.activity_operation_types().await,
+        }
+    }
+
+    pub async fn latest_activity_is_dry_run(&self) -> bool {
+        match self {
+            Self::Rest(driver) => driver.latest_activity_is_dry_run().await,
+            Self::Cosmic(driver) => driver.latest_activity_is_dry_run().await,
+        }
+    }
+
+    pub async fn latest_activity_event_outcomes(&self) -> Vec<String> {
+        match self {
+            Self::Rest(driver) => driver.latest_activity_event_outcomes().await,
+            Self::Cosmic(driver) => driver.latest_activity_event_outcomes().await,
+        }
+    }
+
+    pub async fn latest_activity_event_types(&self) -> Vec<String> {
+        match self {
+            Self::Rest(driver) => driver.latest_activity_event_types().await,
+            Self::Cosmic(driver) => driver.latest_activity_event_types().await,
+        }
+    }
+
+    pub async fn document_activity_event_types(&self, doc_api_guid: &str) -> Vec<String> {
+        match self {
+            Self::Rest(driver) => driver.document_activity_event_types(doc_api_guid).await,
+            Self::Cosmic(driver) => driver.document_activity_event_types(doc_api_guid).await,
+        }
+    }
+
     // -- documents.sort --
 
     pub async fn sorted_document_titles_ascending(&self) -> Vec<String> {

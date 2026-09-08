@@ -256,4 +256,61 @@ impl Client {
             Client::Remote(client) => Ok(client.ensure_document_for_file(file_guid).await?),
         }
     }
+
+    /// A page of activity-history operations (newest first).
+    pub async fn get_activity(
+        &self,
+        limit: usize,
+        cursor: Option<(&str, &str)>,
+    ) -> Result<read_flow_core::activity::ActivityPage, FilesClientError> {
+        match self {
+            Client::Local(module) => Ok(module
+                .db_client()
+                .await
+                .list_audit_activity(
+                    limit,
+                    cursor
+                        .map(|(started_at, operation_id)| dao::AuditCursor {
+                            started_at: started_at.to_string(),
+                            operation_id: operation_id.to_string(),
+                        })
+                        .as_ref(),
+                )
+                .await?),
+            Client::Remote(client) => Ok(client
+                .get_activity(limit, cursor.map(|(s, o)| (s.to_string(), o.to_string())))
+                .await?),
+        }
+    }
+
+    /// One full activity-history operation (with its ordered events) by id.
+    pub async fn get_activity_operation(
+        &self,
+        operation_id: &str,
+    ) -> Result<Option<read_flow_core::activity::ActivityDetail>, FilesClientError> {
+        match self {
+            Client::Local(module) => Ok(module
+                .db_client()
+                .await
+                .get_audit_activity_operation(operation_id)
+                .await?),
+            Client::Remote(client) => Ok(Some(client.get_activity_operation(operation_id).await?)),
+        }
+    }
+
+    /// The activity-history operations touching a given document, newest first.
+    /// Works even after the document was merged away.
+    pub async fn get_document_activity(
+        &self,
+        document_id: &str,
+    ) -> Result<Vec<read_flow_core::activity::ActivityDetail>, FilesClientError> {
+        match self {
+            Client::Local(module) => Ok(module
+                .db_client()
+                .await
+                .get_document_audit_activity(document_id)
+                .await?),
+            Client::Remote(client) => Ok(client.get_document_activity(document_id).await?),
+        }
+    }
 }

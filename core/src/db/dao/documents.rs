@@ -10,9 +10,19 @@ use sqlx::SqliteConnection;
 use sqlx::SqlitePool;
 
 use super::Error;
+use super::audit::AuditTargetSnapshot;
+use super::audit::append_audit_event;
+use super::audit::create_audit_operation;
+use super::audit::finish_audit_operation;
+use super::audit::finish_audit_operation_on_connection;
 use super::files::select_file_by_guid;
 use crate::api::ApiDocument;
 use crate::api::DocumentMeta;
+use crate::audit::AuditContext;
+use crate::audit::AuditEventType;
+use crate::audit::AuditOutcome;
+use crate::audit::OperationStatus;
+use crate::audit::OperationType;
 use crate::db::models::Document;
 use crate::db::models::DocumentUserMetadata;
 use crate::scan::metadata::ExtractedMetadata;
@@ -380,6 +390,39 @@ pub async fn merge_documents(
     winner_guid: &str,
     loser_guids: &[String],
 ) -> Result<(), Error> {
+    merge_documents_impl(pool, winner_guid, loser_guids, None).await
+}
+
+/// Like [`merge_documents`], but records the merge as activity history under
+/// `context`: a `document.merged` event targeted at the winner and every loser
+/// (losers keep their own `document` targets so
+/// `/documents/{loser_guid}/activity` still finds them after deletion).
+/// The operation row and its event join the same transaction as the merge.
+pub async fn merge_documents_with_audit(
+    pool: &SqlitePool,
+    context: &AuditContext,
+    winner_guid: &str,
+    loser_guids: &[String],
+) -> Result<(), Error> {
+    merge_documents_impl(pool, winner_guid, loser_guids, Some(context)).await
+}
+
+async fn merge_documents_impl(
+    pool: &SqlitePool,
+    winner_guid: &str,
+    loser_guids: &[String],
+    context: Option<&AuditContext>,
+) -> Result<(), Error> {
+    if let Some(context) = context {
+        create_audit_operation(
+            pool,
+            context,
+            OperationType::DocumentMerge,
+            false,
+            &crate::audit::now_timestamp(),
+        )
+        .await?;
+    }
     let mut tx = pool.begin().await?;
 
     let Some(winner_id) = sqlx::query_scalar::<_, i32>("SELECT id FROM documents WHERE guid = ?")
@@ -387,8 +430,26 @@ pub async fn merge_documents(
         .fetch_optional(&mut *tx)
         .await?
     else {
+        if let Some(context) = context {
+            finish_audit_operation_on_connection(
+                &mut tx,
+                &context.operation_id,
+                OperationStatus::Failed,
+                &crate::audit::now_timestamp(),
+                Some("winner_not_found"),
+                serde_json::json!({}),
+            )
+            .await?;
+        }
         return Ok(());
     };
+
+    let winner_title = document_title_snapshot(&mut tx, winner_id).await?;
+    let mut targets = vec![AuditTargetSnapshot::document(
+        winner_guid.to_string(),
+        winner_title.unwrap_or_default(),
+    )];
+    let mut merged_loser_count: usize = 0;
 
     for loser_guid in loser_guids {
         if loser_guid == winner_guid {
@@ -402,6 +463,11 @@ pub async fn merge_documents(
         else {
             continue;
         };
+        let loser_title = document_title_snapshot(&mut tx, loser_id).await?;
+        targets.push(AuditTargetSnapshot::document(
+            loser_guid.to_string(),
+            loser_title.unwrap_or_default(),
+        ));
 
         // Merge metadata from loser into winner before deleting the loser.
         merge_document_metadata_from_document(&mut tx, winner_id, loser_id).await?;
@@ -418,10 +484,53 @@ pub async fn merge_documents(
             .bind(loser_id)
             .execute(&mut *tx)
             .await?;
+        merged_loser_count += 1;
+    }
+
+    if let Some(context) = context {
+        append_audit_event(
+            &mut tx,
+            &context.operation_id,
+            AuditEventType::DocumentMerged,
+            AuditOutcome::Success,
+            &crate::audit::now_timestamp(),
+            serde_json::json!({
+                "winner_guid": winner_guid,
+                "loser_count": merged_loser_count,
+            }),
+            targets,
+        )
+        .await?;
     }
 
     tx.commit().await?;
+
+    if let Some(context) = context {
+        finish_audit_operation(
+            pool,
+            &context.operation_id,
+            OperationStatus::Completed,
+            &crate::audit::now_timestamp(),
+            None,
+            serde_json::json!({
+                "merged": merged_loser_count,
+            }),
+        )
+        .await?;
+    }
     Ok(())
+}
+
+async fn document_title_snapshot(
+    conn: &mut SqliteConnection,
+    document_id: i32,
+) -> Result<Option<String>, Error> {
+    Ok(sqlx::query_scalar(
+        "SELECT title FROM document_metadata WHERE document_id = ? AND title IS NOT NULL LIMIT 1",
+    )
+    .bind(document_id)
+    .fetch_optional(&mut *conn)
+    .await?)
 }
 
 /// Get or create a `documents` row for the file identified by `file_guid`.

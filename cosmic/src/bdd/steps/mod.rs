@@ -1,3 +1,4 @@
+mod activity_history;
 mod admin_authorized_users;
 mod admin_check_missing;
 mod admin_local_ca;

@@ -79,6 +79,11 @@ needs the Tailscale client installed.
   `X-Content-Type-Options`, `Referrer-Policy`.
 - Clients warn when about to send credentials over plaintext HTTP to a
   non-loopback host.
+- **Owner scoping**: activity endpoints (`/activity`) authorize the caller
+  before applying any filter, and reading-status writes via REST are scoped to
+  the authenticated user rather than a shared "local" identity. Activity
+  request payloads carry no actor or credential fields — the server derives the
+  actor from the session.
 
 ## Known residual risks (not yet addressed)
 

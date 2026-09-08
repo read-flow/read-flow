@@ -99,6 +99,11 @@ id = "documents.select_cover"
 description = "Choose which content's cover represents the document"
 surfaces = ["cosmic", "pwa", "rest"]
 
+[[feature]]
+id = "documents.activity_history"
+description = "Per-document activity history (scan, edit, merge, delete events)"
+surfaces = ["cosmic", "pwa", "rest"]
+
 # ── Per-document sources ───────────────────────────────────────────────────
 
 [[feature]]
@@ -213,6 +218,11 @@ surfaces = ["cosmic"]
 id = "admin.local_ca"
 description = "Local root CA for browser-trusted TLS without a public hostname: generate/reuse a CA-signed cert, and let client devices fetch the CA root to trust once"
 surfaces = ["cosmic", "rest"]
+
+[[feature]]
+id = "admin.activity_history"
+description = "Activity history: audit operations and their events across scan, delete, merge, metadata/tag/status/cover edits, and missing-file maintenance"
+surfaces = ["cosmic", "pwa", "rest"]
 
 # ── Online library (OPDS — needs REST extension) ───────────────────────────
 

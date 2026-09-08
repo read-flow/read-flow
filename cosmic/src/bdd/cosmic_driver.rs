@@ -735,9 +735,16 @@ impl CosmicDriver {
             .await
             .expect("select file by guid")
             .expect("file not found");
-        dao::delete_file_record(&mut conn, file.id)
+        let tags = dao::select_content_tags_by_fingerprint(&mut conn, &file.fingerprint)
             .await
-            .expect("delete file record");
+            .expect("select tags for file");
+        let api_file = read_flow_core::api::File::from((file, tags));
+        self.application_module
+            .db_client()
+            .await
+            .delete_file(api_file)
+            .await
+            .expect("delete file");
     }
 
     pub async fn file_is_listed(&self, guid: &str) -> bool {
@@ -901,8 +908,10 @@ impl CosmicDriver {
 
     /// Merges `loser_guid` into `winner_guid`. After merge, only the winner document remains.
     pub async fn merge_documents(&self, winner_guid: &str, loser_guid: &str) {
-        let pool = self.application_module.connection_pool().await;
-        dao::merge_documents(&pool, winner_guid, &[loser_guid.to_string()])
+        self.application_module
+            .db_client()
+            .await
+            .merge_documents(winner_guid, &[loser_guid.to_string()])
             .await
             .expect("merge documents");
     }
@@ -915,6 +924,102 @@ impl CosmicDriver {
             .await
             .expect("get documents");
         docs.into_iter().count()
+    }
+
+    // -- documents.activity_history --
+
+    /// Operation types of the recorded activity history, newest first
+    /// (read from the same embedded-server database the activity page shows).
+    pub async fn activity_operation_types(&self) -> Vec<String> {
+        let db = self.application_module.db_client().await;
+        db.list_audit_activity(100, None)
+            .await
+            .expect("list activity")
+            .operations
+            .into_iter()
+            .map(|op| op.operation_type.as_str().to_string())
+            .collect()
+    }
+
+    /// Whether the most recent recorded operation is a dry run.
+    pub async fn latest_activity_is_dry_run(&self) -> bool {
+        let db = self.application_module.db_client().await;
+        db.list_audit_activity(1, None)
+            .await
+            .expect("list activity")
+            .operations
+            .first()
+            .is_some_and(|op| op.dry_run)
+    }
+
+    /// Event outcomes (wire names) of the most recent recorded operation.
+    pub async fn latest_activity_event_outcomes(&self) -> Vec<String> {
+        let db = self.application_module.db_client().await;
+        let Some(newest) = db
+            .list_audit_activity(1, None)
+            .await
+            .expect("list activity")
+            .operations
+            .into_iter()
+            .next()
+        else {
+            return Vec::new();
+        };
+        let detail = db
+            .get_audit_activity_operation(&newest.id)
+            .await
+            .expect("get activity operation")
+            .expect("newest operation still present");
+        detail
+            .events
+            .into_iter()
+            .map(|event| {
+                serde_json::to_value(event.outcome)
+                    .expect("serialize outcome")
+                    .as_str()
+                    .expect("outcome serializes to a string")
+                    .to_string()
+            })
+            .collect()
+    }
+
+    /// Event types (wire names) of the most recent recorded operation.
+    pub async fn latest_activity_event_types(&self) -> Vec<String> {
+        let db = self.application_module.db_client().await;
+        let Some(newest) = db
+            .list_audit_activity(1, None)
+            .await
+            .expect("list activity")
+            .operations
+            .into_iter()
+            .next()
+        else {
+            return Vec::new();
+        };
+        let detail = db
+            .get_audit_activity_operation(&newest.id)
+            .await
+            .expect("get activity operation")
+            .expect("newest operation still present");
+        detail
+            .events
+            .into_iter()
+            .map(|event| event.event_type.as_str().to_string())
+            .collect()
+    }
+
+    /// Event types of the history recorded against a document, in order.
+    pub async fn document_activity_event_types(&self, doc_api_guid: &str) -> Vec<String> {
+        let db = self.application_module.db_client().await;
+        let details = db
+            .get_document_audit_activity(doc_api_guid)
+            .await
+            .expect("document activity");
+        details
+            .into_iter()
+            .flat_map(|detail| detail.events.into_iter())
+            .map(|event| event.event_type.as_str().to_string())
+            .collect()
     }
 
     // -- documents.sort --

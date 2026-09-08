@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // pages
+pub(crate) mod activity;
 pub(crate) mod dashboard;
 pub(crate) mod document_details;
 mod document_list;
@@ -14,6 +15,9 @@ mod traits;
 use core::panic;
 use std::sync::Arc;
 
+pub use activity::ActivityMessage;
+use activity::ActivityOutput;
+pub use activity::ActivityPage;
 use cosmic::Action;
 use cosmic::Apply;
 use cosmic::Element;
@@ -93,6 +97,7 @@ pub struct Pages {
     online_library: OnlineLibraryPage,
     documents: DocumentList,
     server_log: ServerLogPage,
+    activity: ActivityPage,
     document_details: IndexMap<Fingerprint, DocumentDetails>,
     epub_viewers: IndexMap<Fingerprint, EpubViewer>,
     mu_pdf_viewers: IndexMap<Fingerprint, MuPdfViewer>,
@@ -109,6 +114,7 @@ pub enum PageSelector {
     OnlineLibrary,
     Documents,
     ServerLog,
+    Activity,
     DocumentDetails(Fingerprint),
     EpubViewer(Fingerprint),
     MuPdfViewer(Fingerprint),
@@ -136,6 +142,7 @@ pub enum PageMessage {
     Preferences(PreferencesMessage),
     OnlineLibrary(OnlineLibraryMessage),
     ServerLog(ServerLogMessage),
+    Activity(ActivityMessage),
     AddRemote(Url, String, String),
     EditRemote(Url, Url, String, String),
     DeleteRemote(Url),
@@ -181,6 +188,12 @@ impl From<PreferencesMessage> for PageMessage {
     }
 }
 
+impl From<ActivityMessage> for PageMessage {
+    fn from(source: ActivityMessage) -> Self {
+        Self::Activity(source)
+    }
+}
+
 macro_rules! with_active_page {
     ($self:expr, $selector:expr, |$page:ident, $mapper:ident| $body:expr) => {
         match $selector {
@@ -207,6 +220,11 @@ macro_rules! with_active_page {
             PageSelector::ServerLog => {
                 let $page = Some(&$self.server_log);
                 let $mapper = map_server_log_message;
+                $body
+            }
+            PageSelector::Activity => {
+                let $page = Some(&$self.activity);
+                let $mapper = map_activity_message;
                 $body
             }
             PageSelector::DocumentDetails(fingerprint) => {
@@ -260,14 +278,16 @@ impl Pages {
         let (online_library, init_online_library) =
             OnlineLibraryPage::new(application_module.clone());
 
+        let server_log = ServerLogPage::new(log_bus);
+        let (activity, init_activity) = ActivityPage::new(application_module.clone());
+
         let tasks = vec![
             init_preferences.map(ActionExt::map_into),
             init_documents.map(ActionExt::map_into),
             init_dashboard.map(|action| action.map(map_dashboard_message)),
             init_online_library.map(|action| action.map(map_online_library_message)),
+            init_activity.map(|action| action.map(map_activity_message)),
         ];
-
-        let server_log = ServerLogPage::new(log_bus);
 
         (
             Self {
@@ -279,6 +299,7 @@ impl Pages {
                 online_library,
                 documents,
                 server_log,
+                activity,
                 document_details: Default::default(),
                 epub_viewers: Default::default(),
                 mu_pdf_viewers: Default::default(),
@@ -351,6 +372,7 @@ impl Pages {
             PageSelector::Preferences => fl!("preferences-page-title"),
             PageSelector::OnlineLibrary => fl!("online-library-page-title"),
             PageSelector::ServerLog => fl!("server-log-page-title"),
+            PageSelector::Activity => fl!("activity-page-title"),
             PageSelector::Documents => "Documents".to_string(),
             PageSelector::DocumentDetails(fingerprint) => self
                 .document_details
@@ -591,6 +613,10 @@ impl Pages {
                 .server_log
                 .update(msg)
                 .map(move |action| action.map(map_server_log_message)),
+            PageMessage::Activity(msg) => self
+                .activity
+                .update(msg)
+                .map(move |action| action.map(map_activity_message)),
             PageMessage::Documents(document_list_message) => self
                 .documents
                 .update(document_list_message)
@@ -688,6 +714,10 @@ impl Pages {
                     .server_log
                     .update(ServerLogMessage::Key(modifiers, key))
                     .map(|action| action.map(map_server_log_message)),
+                PageSelector::Activity => self
+                    .activity
+                    .update(ActivityMessage::Key(modifiers, key))
+                    .map(|action| action.map(map_activity_message)),
                 _ => Task::none(),
             },
             PageMessage::ModifiersChanged(page, modifiers) => match page {
@@ -953,6 +983,16 @@ fn map_server_log_message(msg: ServerLogMessage) -> PageMessage {
             ServerLogOutput::CloseContext => PageMessage::Out(PageOutput::CloseContext),
         },
         msg => PageMessage::ServerLog(msg),
+    }
+}
+
+fn map_activity_message(msg: ActivityMessage) -> PageMessage {
+    match msg {
+        ActivityMessage::Out(output) => match output {
+            ActivityOutput::OpenContext => PageMessage::Out(PageOutput::OpenContext),
+            ActivityOutput::CloseContext => PageMessage::Out(PageOutput::CloseContext),
+        },
+        msg => PageMessage::Activity(msg),
     }
 }
 

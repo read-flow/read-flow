@@ -21,6 +21,7 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `documents.edit_metadata` | ✅ | ✅ | ✅ | Edit document metadata (title, authors, description, …) |
 | `documents.cover_display` | ✅ | ✅ | ✅ | Display a document's cover image |
 | `documents.select_cover` | ✅ | ✅ | ✅ | Choose which content's cover represents the document |
+| `documents.activity_history` | ✅ | ✅ | ✅ | Per-document activity history (scan, edit, merge, delete events) |
 | `sources.delete` | ✅ | ✅ | ✅ | Delete a single source/file of a document |
 | `sources.send_to_client` | ✅ | ✅ | ✅ | Send a document to another client (download-to-local / upload) |
 | `sources.sync_to_all` | ✅ |  |  | Sync a document to all configured sources |
@@ -42,6 +43,7 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `admin.server_settings` | ✅ | ✅ | ✅ | Server settings (db path, file types, dry-run, private) |
 | `admin.local_identity` | ✅ |  |  | Bind the desktop app's local database access to an authorized user, so local reading progress/tags sync with that user's remote (REST/PWA) sessions |
 | `admin.local_ca` | ✅ |  | ✅ | Local root CA for browser-trusted TLS without a public hostname: generate/reuse a CA-signed cert, and let client devices fetch the CA root to trust once |
+| `admin.activity_history` | ✅ | ✅ | ✅ | Activity history: audit operations and their events across scan, delete, merge, metadata/tag/status/cover edits, and missing-file maintenance |
 | `online_library.search` | ✅ | ✅ | ✅ | Search OPDS catalogs |
 | `online_library.download_import` | ✅ | ✅ | ✅ | Download and import a book from an OPDS catalog |
 | `online_library.manage_catalogs` | ✅ | 🟡 | 🟡 | Add/edit/remove custom OPDS catalogs and toggle built-ins, from Preferences |
@@ -49,4 +51,4 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `app.epub_viewer_choice` | ✅ |  |  | Open the current EPUB in the MuPDF viewer or an external application, from the viewer's context pane |
 | `app.theme_overrides` | ✅ |  |  | Per-app theme overrides (dark/light, accent, density, roundness, frosted glass, interface font, monospace font) without changing global COSMIC settings |
 
-_42 features tracked._
+_44 features tracked._

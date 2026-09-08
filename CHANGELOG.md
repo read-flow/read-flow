@@ -12,9 +12,14 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+- Activity history: every mutation and observation (scan, merge, delete, metadata/tag/status/cover edits, missing-file maintenance) is recorded as a structured audit operation with typed child events. Available in COSMIC via the new Activity page, over REST (`GET /activity`, `GET /activity/{id}`, `GET /documents/{guid}/activity`), and in the PWA via a new Activity view.
+- Reading status set over REST now applies to the authenticated user (not "local"), so owner reads update correctly.
+
 ### Changed
 
 ### Fixed
+
+- Activity ordering no longer ties: operation timestamps use microsecond precision, so freshly recorded operations render in stable, newest-first order during scans.
 
 ## [0.5.1] - 2026-08-18
 
