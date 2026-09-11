@@ -95,11 +95,11 @@ tag-editor-select-tag = Select a tag
 
 # Document details
 document-details-copy-path = Copy path
-document-details-delete-source = Delete source
-document-details-delete-source-confirm-body = Are you sure you want to delete this source? This action cannot be undone.
-document-details-delete-source-confirm-cancel = Cancel
-document-details-delete-source-confirm-delete = Delete
-document-details-delete-source-confirm-title = Delete Source
+document-details-delete-copy = Delete copy
+document-details-delete-copy-confirm-body = Are you sure you want to delete this copy of the document? The file will be removed from this device and this copy can no longer be opened. This action cannot be undone.
+document-details-delete-copy-confirm-cancel = Cancel
+document-details-delete-copy-confirm-delete = Delete
+document-details-delete-copy-confirm-title = Delete copy?
 document-details-done-editing-sources = Done editing sources
 document-details-download-to-local = Download to Local
 document-details-edit-sources = Edit sources
@@ -109,6 +109,13 @@ document-details-source-local = Local
 document-details-sources = Formats
 document-details-sync-to-all-sources = Sync to all sources
 document-details-upload-to = Upload to { $host }
+document-details-remove-format = Remove { $format } format
+document-details-remove-format-tooltip = Remove { $format } format and all its copies
+document-details-remove-format-confirm-title = Remove { $format } format?
+document-details-remove-format-confirm-body = Every { $format } copy of this document will be permanently deleted, including its reading progress and tags. This cannot be undone.
+document-details-remove-format-confirm-files = Files to be deleted:
+document-details-remove-format-confirm-remove = Remove { $count } files
+document-details-remove-format-confirm-cancel = Cancel
 
 # Document list
 document-list-all-sources = All sources
@@ -565,6 +572,7 @@ activity-detail-related = History of related documents
 activity-op-scan = Scan
 activity-op-file-delete = Delete file
 activity-op-document-merge = Merge documents
+activity-op-document-content-removed = Remove content from document
 activity-op-metadata-edit = Edit metadata
 activity-op-tag-edit = Edit tags
 activity-op-status-edit = Change reading status
@@ -590,6 +598,7 @@ activity-outcome-proposed = Proposed
 activity-summary-scan = Scan: { $counts }
 activity-summary-file-delete = Deleted
 activity-summary-document-merge = Merged documents
+activity-summary-document-content-removed = Removed content: { $counts }
 activity-summary-metadata-edit = Edited metadata
 activity-summary-tag-edit = Edited tags
 activity-summary-status-edit = Changed reading status

@@ -610,6 +610,7 @@ fn operation_type_label(kind: OperationType) -> String {
         OperationType::Scan => fl!("activity-op-scan"),
         OperationType::FileDelete => fl!("activity-op-file-delete"),
         OperationType::DocumentMerge => fl!("activity-op-document-merge"),
+        OperationType::DocumentContentRemoved => fl!("activity-op-document-content-removed"),
         OperationType::MetadataEdit => fl!("activity-op-metadata-edit"),
         OperationType::TagEdit => fl!("activity-op-tag-edit"),
         OperationType::StatusEdit => fl!("activity-op-status-edit"),
@@ -667,6 +668,12 @@ fn operation_summary(op: &ActivityOperation) -> String {
         OperationType::Scan => fl!("activity-summary-scan", counts = counts.as_str()),
         OperationType::FileDelete => fl!("activity-summary-file-delete"),
         OperationType::DocumentMerge => fl!("activity-summary-document-merge"),
+        OperationType::DocumentContentRemoved => {
+            fl!(
+                "activity-summary-document-content-removed",
+                counts = counts.as_str()
+            )
+        }
         OperationType::MetadataEdit => fl!("activity-summary-metadata-edit"),
         OperationType::TagEdit => fl!("activity-summary-tag-edit"),
         OperationType::StatusEdit => fl!("activity-summary-status-edit"),

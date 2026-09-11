@@ -1023,6 +1023,37 @@ impl DbClient {
         self.merge_documents_with_audit(&self.local_audit_context(), winner_guid, loser_guids)
             .await
     }
+
+    /// Remove a fingerprint and all its files from a document (purge).
+    pub async fn delete_content_from_document_with_audit(
+        &self,
+        context: &AuditContext,
+        document_guid: &str,
+        fingerprint: &str,
+    ) -> Result<Option<dao::DeleteContentResult>, Error> {
+        dao::delete_content_from_document(
+            &self.connection_pool,
+            Some(context),
+            document_guid,
+            fingerprint,
+        )
+        .await
+    }
+
+    /// [`Self::delete_content_from_document_with_audit`] with a local audit context.
+    pub async fn delete_content_from_document(
+        &self,
+        document_guid: &str,
+        fingerprint: &str,
+    ) -> Result<Option<dao::DeleteContentResult>, Error> {
+        dao::delete_content_from_document(
+            &self.connection_pool,
+            Some(&self.local_audit_context()),
+            document_guid,
+            fingerprint,
+        )
+        .await
+    }
 }
 
 /// Wraps a [`DbClient`] and filters out files/tags whose tags include any of

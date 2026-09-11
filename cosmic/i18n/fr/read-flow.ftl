@@ -92,11 +92,11 @@ tag-editor-select-tag = Sélectionner une étiquette
 
 # Document details
 document-details-copy-path = Copier le chemin
-document-details-delete-source = Supprimer la source
-document-details-delete-source-confirm-body = Êtes-vous sûr de vouloir supprimer cette source ? Cette action ne peut pas être annulée.
-document-details-delete-source-confirm-cancel = Annuler
-document-details-delete-source-confirm-delete = Supprimer
-document-details-delete-source-confirm-title = Supprimer la source
+document-details-delete-copy = Supprimer la copie
+document-details-delete-copy-confirm-body = Voulez-vous vraiment supprimer cette copie du document ? Le fichier sera retiré de cet appareil et cette copie ne pourra plus être ouverte. Cette action ne peut pas être annulée.
+document-details-delete-copy-confirm-cancel = Annuler
+document-details-delete-copy-confirm-delete = Supprimer
+document-details-delete-copy-confirm-title = Supprimer la copie ?
 document-details-done-editing-sources = Terminer la modification
 document-details-download-to-local = Télécharger en local
 document-details-edit-sources = Modifier les sources
@@ -106,6 +106,13 @@ document-details-source-local = Local
 document-details-sources = Formats
 document-details-sync-to-all-sources = Synchroniser avec toutes les sources
 document-details-upload-to = Envoyer vers { $host }
+document-details-remove-format = Supprimer le format { $format }
+document-details-remove-format-tooltip = Supprimer le format { $format } et toutes ses copies
+document-details-remove-format-confirm-title = Supprimer le format { $format } ?
+document-details-remove-format-confirm-body = Chaque copie { $format } de ce document sera définitivement supprimée, y compris sa progression de lecture et ses étiquettes. Cette action ne peut pas être annulée.
+document-details-remove-format-confirm-files = Fichiers à supprimer :
+document-details-remove-format-confirm-remove = Supprimer { $count } fichiers
+document-details-remove-format-confirm-cancel = Annuler
 
 # Document list
 document-list-all-sources = Toutes les sources
@@ -562,6 +569,7 @@ activity-detail-related = Historique des documents liés
 activity-op-scan = Analyse
 activity-op-file-delete = Supprimer le fichier
 activity-op-document-merge = Fusionner les documents
+activity-op-document-content-removed = Retirer un contenu du document
 activity-op-metadata-edit = Modifier les métadonnées
 activity-op-tag-edit = Modifier les étiquettes
 activity-op-status-edit = Changer le statut de lecture
@@ -587,6 +595,7 @@ activity-outcome-proposed = Proposé
 activity-summary-scan = Analyse : { $counts }
 activity-summary-file-delete = Fichier supprimé
 activity-summary-document-merge = Documents fusionnés
+activity-summary-document-content-removed = Contenu retiré : { $counts }
 activity-summary-metadata-edit = Métadonnées modifiées
 activity-summary-tag-edit = Étiquettes modifiées
 activity-summary-status-edit = Statut de lecture modifié

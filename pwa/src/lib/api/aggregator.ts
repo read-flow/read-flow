@@ -12,6 +12,7 @@ import type { ActivityDetail, ActivityOperation } from './activity';
 
 export type { AggregatedFile } from './merge';
 export type { RemoteDocument, DocumentMeta, RemoteReadingState, ReadingStatus } from './client';
+export type { DeleteContentResult } from './client';
 export type { ActivityDetail, ActivityOperation } from './activity';
 
 async function getClients(): Promise<Array<{ id: number; client: ReadFlowClient }>> {
@@ -276,6 +277,28 @@ export async function deleteFileFromSources(
 		sources
 			.filter((s) => s.id !== undefined && sourceGuids[s.id as number] !== undefined)
 			.map((s) => new ReadFlowClient(s).deleteFile(sourceGuids[s.id as number])),
+	);
+}
+
+/**
+ * Remove a whole content (fingerprint) from a document on every source.
+ * Every file copy sharing the fingerprint is deleted on each server, along
+ * with its tags/reading state and covers. Returns the paths removed on each
+ * source (for the confirmation UI).
+ */
+// @feature: documents.remove_format
+export async function removeContentFromDocument(
+	documentGuid: string,
+	fingerprint: string,
+): Promise<string[]> {
+	const sources = await db.sources.orderBy('order').toArray();
+	const results = await Promise.allSettled(
+		sources.map((s) =>
+			new ReadFlowClient(s).removeContent(documentGuid, fingerprint),
+		),
+	);
+	return results.flatMap((r) =>
+		r.status === 'fulfilled' ? r.value.deleted_paths : [],
 	);
 }
 

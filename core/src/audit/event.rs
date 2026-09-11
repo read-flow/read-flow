@@ -84,6 +84,8 @@ pub enum AuditEventType {
     FileRecordRemovedMissing,
     #[serde(rename = "document.merged")]
     DocumentMerged,
+    #[serde(rename = "document.content_removed")]
+    DocumentContentRemoved,
     #[serde(rename = "document.metadata_changed")]
     DocumentMetadataChanged,
     #[serde(rename = "document.tags_added")]
@@ -117,6 +119,7 @@ impl AuditEventType {
             Self::FileDeleteFailed => "file.delete_failed",
             Self::FileRecordRemovedMissing => "file.record_removed_missing",
             Self::DocumentMerged => "document.merged",
+            Self::DocumentContentRemoved => "document.content_removed",
             Self::DocumentMetadataChanged => "document.metadata_changed",
             Self::DocumentTagsAdded => "document.tags_added",
             Self::DocumentTagsRemoved => "document.tags_removed",

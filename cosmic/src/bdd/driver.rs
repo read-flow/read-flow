@@ -411,6 +411,46 @@ impl Driver {
         }
     }
 
+    // -- documents.remove_format --
+
+    pub async fn remove_content_from_document(&self, document_guid: &str, fingerprint: &str) {
+        match self {
+            Self::Rest(driver) => {
+                driver
+                    .remove_content_from_document(document_guid, fingerprint)
+                    .await
+            }
+            Self::Cosmic(driver) => {
+                driver
+                    .remove_content_from_document(document_guid, fingerprint)
+                    .await
+            }
+        }
+    }
+
+    /// Number of formats (fingerprints) a document currently holds.
+    pub async fn format_count_for_document(&self, document_guid: &str) -> usize {
+        match self {
+            Self::Rest(driver) => driver.format_count_for_document(document_guid).await,
+            Self::Cosmic(driver) => driver.format_count_for_document(document_guid).await,
+        }
+    }
+
+    /// Whether the document record is still listed in the library.
+    pub async fn document_is_listed_by_guid(&self, document_guid: &str) -> bool {
+        match self {
+            Self::Rest(driver) => driver.document_is_listed_by_guid(document_guid).await,
+            Self::Cosmic(driver) => driver.document_is_listed_by_guid(document_guid).await,
+        }
+    }
+
+    pub async fn fingerprint_has_files(&self, fingerprint: &str) -> bool {
+        match self {
+            Self::Rest(driver) => driver.fingerprint_has_files(fingerprint).await,
+            Self::Cosmic(driver) => driver.fingerprint_has_files(fingerprint).await,
+        }
+    }
+
     // -- reading.progress --
 
     pub async fn set_reading_progress(&self, fingerprint: &str, position: &str, percentage: f64) {

@@ -243,6 +243,31 @@ impl Client {
         }
     }
 
+    /// @feature: documents.remove_format
+    ///
+    /// Remove a fingerprint (and all its copies) from a document on this client.
+    /// Returns `Ok(())` even when this client does not hold the fingerprint.
+    pub async fn remove_content(
+        &self,
+        document_guid: &str,
+        fingerprint: &str,
+    ) -> Result<(), FilesClientError> {
+        match self {
+            Client::Local(module) => {
+                let _ = module
+                    .db_client()
+                    .await
+                    .delete_content_from_document(document_guid, fingerprint)
+                    .await?;
+                Ok(())
+            }
+            Client::Remote(client) => {
+                let _ = client.remove_content(document_guid, fingerprint).await?;
+                Ok(())
+            }
+        }
+    }
+
     pub async fn ensure_document_for_file(
         &self,
         file_guid: &str,

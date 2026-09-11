@@ -364,6 +364,26 @@ impl DocumentProvider {
         result
     }
 
+    /// @feature: documents.remove_format
+    ///
+    /// Remove a fingerprint (and all its copies) from a merged document.
+    ///
+    /// Automatically invalidates the cache after the removal.
+    pub async fn remove_content_from_document(
+        &self,
+        document_guid: &str,
+        fingerprint: &str,
+    ) -> Result<(), FilesClientError> {
+        let result = self
+            .aggregator
+            .read()
+            .await
+            .remove_content_from_document(document_guid, fingerprint)
+            .await;
+        self.set_expired().await;
+        result
+    }
+
     /// Open a document using the system's default application.
     ///
     /// Prefers local sources over remote sources.

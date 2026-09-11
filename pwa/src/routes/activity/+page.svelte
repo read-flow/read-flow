@@ -13,6 +13,7 @@
 		status_edit: 'Reading status changed',
 		cover_edit: 'Cover changed',
 		missing_file_maintenance: 'Missing file maintenance',
+		document_content_removed: 'Content removed from document',
 	};
 
 	const STATUS_LABELS: Record<SourceActivityOperation['status'], string> = {

@@ -70,6 +70,8 @@ pub struct DocumentDetails {
     tag_editor: TagEditor<Arc<DocumentProvider>>,
     editing_sources: bool,
     pending_source_deletion: Option<DocumentSource>,
+    /// @feature: documents.remove_format
+    pending_format_removal: Option<String>,
     show_open_picker: bool,
     editing_document_meta: bool,
     document_meta_draft: DocumentMeta,
@@ -107,6 +109,12 @@ pub enum DocumentDetailsMessage {
     CancelDeleteSource,
     DeleteSource(DocumentSource),
     SourceDeleted(Result<(), String>),
+    /// @feature: documents.remove_format
+    RequestRemoveFormat(String),
+    ConfirmRemoveFormat,
+    CancelRemoveFormat,
+    RemoveFormat(String),
+    FormatRemoved(Result<(), String>),
     AllClients(ProvidedStateMessage<Vec<ClientSelector>>),
     /// @feature: sources.send_to_client
     SendToClient(ClientSelector),
@@ -209,6 +217,7 @@ impl DocumentDetails {
             tag_editor,
             editing_sources: false,
             pending_source_deletion: None,
+            pending_format_removal: None,
             show_open_picker: false,
             editing_document_meta: false,
             document_meta_draft: initial_document_meta,
@@ -708,6 +717,24 @@ impl DocumentDetails {
                         .push(text(size_label).size(12));
                 }
 
+                // @feature: documents.remove_format
+                if self.editing_sources {
+                    let format_label = content.type_.as_str().to_uppercase();
+                    group_header_row = group_header_row.push(
+                        widget::button::destructive(fl!(
+                            "document-details-remove-format",
+                            format = format_label.as_str()
+                        ))
+                        .on_press(DocumentDetailsMessage::RequestRemoveFormat(
+                            content.fingerprint.clone(),
+                        ))
+                        .tooltip(fl!(
+                            "document-details-remove-format-tooltip",
+                            format = format_label.as_str()
+                        )),
+                    );
+                }
+
                 sources_section =
                     sources_section.add(widget::settings::item_row(vec![group_header_row.into()]));
 
@@ -801,7 +828,7 @@ impl DocumentDetails {
                             .on_press(DocumentDetailsMessage::RequestDeleteSource(
                                 (*source).clone(),
                             ))
-                            .tooltip(fl!("document-details-delete-source")),
+                            .tooltip(fl!("document-details-delete-copy")),
                         );
                     }
 
@@ -858,6 +885,91 @@ impl DocumentDetails {
         }
 
         sections
+    }
+
+    /// @feature: documents.remove_format
+    /// Confirmation dialog for removing a format: lists every file path (with
+    /// its source client) that will be deleted.
+    fn remove_format_dialog(
+        &self,
+        fingerprint: &str,
+    ) -> Option<Element<'_, DocumentDetailsMessage>> {
+        let cosmic_theme::Spacing {
+            space_s, space_m, ..
+        } = theme::active().cosmic().spacing;
+
+        let content = self
+            .document
+            .contents
+            .iter()
+            .find(|c| c.fingerprint == fingerprint)?;
+
+        let paths: Vec<Element<'_, DocumentDetailsMessage>> = content
+            .sources
+            .iter()
+            .map(|source| {
+                let label = match &source.client {
+                    ClientSelector::Local => fl!("document-details-source-local"),
+                    ClientSelector::Remote(url) => url.host_str().unwrap_or("Remote").to_string(),
+                };
+                widget::container(
+                    widget::Column::new()
+                        .spacing(4)
+                        .push(widget::text::monotext(source.path.as_str()).size(14))
+                        .push(text::caption(format!("  {label}"))),
+                )
+                .class(theme::Container::Card)
+                .padding(space_s)
+                .width(Length::Fill)
+                .into()
+            })
+            .collect();
+
+        let count = content.sources.len();
+        let format_label = content.type_.as_str().to_uppercase();
+        let format_display = format_label.clone();
+
+        let paths_list = widget::column::with_children(paths)
+            .spacing(space_s)
+            .width(Length::Fill)
+            .apply(widget::container)
+            .class(theme::Container::Card)
+            .padding(space_s)
+            .width(Length::Fill);
+
+        Some(
+            widget::dialog()
+                .title(fl!(
+                    "document-details-remove-format-confirm-title",
+                    format = format_label
+                ))
+                .body(fl!(
+                    "document-details-remove-format-confirm-body",
+                    format = format_display
+                ))
+                .icon(widget::icon::from_name("dialog-warning-symbolic").size(64))
+                .control(
+                    widget::Column::new()
+                        .spacing(space_m)
+                        .width(Length::Fill)
+                        .push(widget::text::body(fl!(
+                            "document-details-remove-format-confirm-files"
+                        )))
+                        .push(paths_list),
+                )
+                .primary_action(
+                    widget::button::destructive(fl!(
+                        "document-details-remove-format-confirm-remove",
+                        count = count
+                    ))
+                    .on_press(DocumentDetailsMessage::ConfirmRemoveFormat),
+                )
+                .secondary_action(
+                    widget::button::standard(fl!("document-details-remove-format-confirm-cancel"))
+                        .on_press(DocumentDetailsMessage::CancelRemoveFormat),
+                )
+                .into(),
+        )
     }
 }
 
@@ -931,14 +1043,19 @@ impl Page for DocumentDetails {
     fn dialog(&self) -> Option<Element<'_, DocumentDetailsMessage>> {
         if let Some(source) = &self.pending_source_deletion {
             return Some(crate::component::confirm_dialog::confirm_delete_dialog(
-                fl!("document-details-delete-source-confirm-title"),
-                fl!("document-details-delete-source-confirm-body"),
+                fl!("document-details-delete-copy-confirm-title"),
+                fl!("document-details-delete-copy-confirm-body"),
                 &source.path,
-                fl!("document-details-delete-source-confirm-delete"),
-                fl!("document-details-delete-source-confirm-cancel"),
+                fl!("document-details-delete-copy-confirm-delete"),
+                fl!("document-details-delete-copy-confirm-cancel"),
                 DocumentDetailsMessage::ConfirmDeleteSource,
                 DocumentDetailsMessage::CancelDeleteSource,
             ));
+        }
+
+        // @feature: documents.remove_format
+        if let Some(fingerprint) = &self.pending_format_removal {
+            return self.remove_format_dialog(fingerprint);
         }
 
         if self.show_open_picker {
@@ -1345,6 +1462,48 @@ impl Page for DocumentDetails {
                 }
             },
             DocumentDetailsMessage::CopyPath(path) => cosmic::iced::clipboard::write(path),
+            DocumentDetailsMessage::RequestRemoveFormat(fingerprint) => {
+                self.pending_format_removal = Some(fingerprint);
+                Task::none()
+            }
+            DocumentDetailsMessage::CancelRemoveFormat => {
+                self.pending_format_removal = None;
+                Task::none()
+            }
+            DocumentDetailsMessage::ConfirmRemoveFormat => {
+                if let Some(fingerprint) = self.pending_format_removal.take() {
+                    task::message(DocumentDetailsMessage::RemoveFormat(fingerprint))
+                } else {
+                    Task::none()
+                }
+            }
+            DocumentDetailsMessage::RemoveFormat(fingerprint) => {
+                let document_guid = self.document.document_guid.clone();
+                let document_provider = self.document_provider.clone();
+                let fingerprint = fingerprint.clone();
+                task::future(async move {
+                    let result = document_provider
+                        .remove_content_from_document(&document_guid, &fingerprint)
+                        .await
+                        .map_err(|err| format!("{err}"));
+                    DocumentDetailsMessage::FormatRemoved(result)
+                })
+            }
+            DocumentDetailsMessage::FormatRemoved(result) => match result {
+                Ok(()) => {
+                    let is_last_format = self.document.contents.len() <= 1;
+                    task::message(DocumentDetailsMessage::Out(if is_last_format {
+                        DocumentDetailsOutput::Close(self.document.document_guid.clone())
+                    } else {
+                        DocumentDetailsOutput::RefreshDocument(self.document.clone())
+                    }))
+                    .chain(task::message(DocumentDetailsMessage::RefreshDocument))
+                }
+                Err(err) => {
+                    tracing::error!("Failed to remove format: {err}");
+                    Task::none()
+                }
+            },
             DocumentDetailsMessage::ToggleEditSources => {
                 self.editing_sources = !self.editing_sources;
                 self.pending_source_deletion = None;

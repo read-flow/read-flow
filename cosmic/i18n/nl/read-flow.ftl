@@ -93,11 +93,11 @@ tag-editor-select-tag = Selecteer een tag
 
 # Document details
 document-details-copy-path = Pad kopiëren
-document-details-delete-source = Bron verwijderen
-document-details-delete-source-confirm-body = Weet je zeker dat je deze bron wilt verwijderen? Deze actie kan niet ongedaan worden gemaakt.
-document-details-delete-source-confirm-cancel = Annuleren
-document-details-delete-source-confirm-delete = Verwijderen
-document-details-delete-source-confirm-title = Bron verwijderen
+document-details-delete-copy = Kopie verwijderen
+document-details-delete-copy-confirm-body = Weet je zeker dat je deze kopie van het document wilt verwijderen? Het bestand wordt van dit apparaat verwijderd en deze kopie kan niet meer worden geopend. Deze actie kan niet ongedaan worden gemaakt.
+document-details-delete-copy-confirm-cancel = Annuleren
+document-details-delete-copy-confirm-delete = Verwijderen
+document-details-delete-copy-confirm-title = Kopie verwijderen?
 document-details-done-editing-sources = Klaar met bewerken
 document-details-download-to-local = Downloaden naar lokaal
 document-details-edit-sources = Bronnen bewerken
@@ -107,6 +107,13 @@ document-details-source-local = Lokaal
 document-details-sources = Formaten
 document-details-sync-to-all-sources = Synchroniseren met alle bronnen
 document-details-upload-to = Uploaden naar { $host }
+document-details-remove-format = Format { $format } verwijderen
+document-details-remove-format-tooltip = Format { $format } en al zijn kopieën verwijderen
+document-details-remove-format-confirm-title = Format { $format } verwijderen?
+document-details-remove-format-confirm-body = Elke { $format }-kopie van dit document wordt permanent verwijderd, inclusief leesvoortgang en labels. Dit kan niet ongedaan worden gemaakt.
+document-details-remove-format-confirm-files = Te verwijderen bestanden:
+document-details-remove-format-confirm-remove = { $count } bestanden verwijderen
+document-details-remove-format-confirm-cancel = Annuleren
 
 # Document list
 document-list-all-sources = Alle bronnen
@@ -563,6 +570,7 @@ activity-detail-related = Geschiedenis van gerelateerde documenten
 activity-op-scan = Scan
 activity-op-file-delete = Bestand verwijderen
 activity-op-document-merge = Documenten samenvoegen
+activity-op-document-content-removed = Inhoud uit document verwijderen
 activity-op-metadata-edit = Metadata bewerken
 activity-op-tag-edit = Labels bewerken
 activity-op-status-edit = Leesstatus wijzigen
@@ -588,6 +596,7 @@ activity-outcome-proposed = Voorgesteld
 activity-summary-scan = Scan: { $counts }
 activity-summary-file-delete = Bestand verwijderd
 activity-summary-document-merge = Documenten samengevoegd
+activity-summary-document-content-removed = Inhoud verwijderd: { $counts }
 activity-summary-metadata-edit = Metadata bewerkt
 activity-summary-tag-edit = Labels bewerkt
 activity-summary-status-edit = Leesstatus gewijzigd

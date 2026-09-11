@@ -961,3 +961,235 @@ async fn auto_link_documents_already_linked_is_no_op() {
         .unwrap();
     Assert::that(doc_count).is(1);
 }
+
+// ── delete_content_from_document (remove format) ─────────────────────────────
+
+#[tokio::test]
+async fn delete_content_from_document_removes_all_files_and_cascades() {
+    let pool = test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let doc = upsert_document(&mut conn, "doc-rmf").await.unwrap();
+    // Two formats in the same document.
+    upsert_content(&mut conn, "fp-epub").await.unwrap();
+    upsert_content(&mut conn, "fp-pdf").await.unwrap();
+    sqlx::query("UPDATE contents SET document_id = ? WHERE fingerprint = ?")
+        .bind(doc.id)
+        .bind("fp-epub")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE contents SET document_id = ? WHERE fingerprint = ?")
+        .bind(doc.id)
+        .bind("fp-pdf")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    // Two local files sharing the pdf fingerprint (simulating two sources).
+    make_file(&mut conn, "/books/pdf_one.pdf", "fp-pdf").await;
+    make_file(&mut conn, "/nas/pdf_two.pdf", "fp-pdf").await;
+    let epub = make_file(&mut conn, "/books/epub_three.epub", "fp-epub").await;
+    let _ = epub;
+
+    // Per-format artifacts that must cascade away with the content row.
+    sqlx::query("INSERT INTO content_tags (fingerprint, tag) VALUES (?, ?)")
+        .bind("fp-pdf")
+        .bind("fiction")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO reading_state (user_id, fingerprint, status) VALUES (?, ?, ?)")
+        .bind(LOCAL_USER_ID)
+        .bind("fp-pdf")
+        .bind(1i32)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    upsert_cover(&mut conn, "fp-pdf", b"webpdata", "image/webp")
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO document_metadata (document_id, title, selected_cover_fingerprint) \
+         VALUES (?, ?, ?)",
+    )
+    .bind(doc.id)
+    .bind("My Book")
+    .bind("fp-pdf")
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+
+    drop(conn);
+
+    let result = delete_content_from_document(&pool, None, "doc-rmf", "fp-pdf")
+        .await
+        .unwrap()
+        .expect("fp-pdf belongs to the document");
+
+    assert!(!result.document_deleted, "epub content remains");
+    assert_eq!(result.deleted_paths.len(), 2);
+    assert!(
+        result
+            .deleted_paths
+            .contains(&"/books/pdf_one.pdf".to_string())
+    );
+    assert!(
+        result
+            .deleted_paths
+            .contains(&"/nas/pdf_two.pdf".to_string())
+    );
+
+    let mut conn = pool.acquire().await.unwrap();
+
+    for path in ["/books/pdf_one.pdf", "/nas/pdf_two.pdf"] {
+        assert!(
+            select_file_by_path(&mut conn, LOCAL_USER_ID, path)
+                .await
+                .unwrap()
+                .is_none(),
+            "expected {path} record to be removed"
+        );
+    }
+    assert!(
+        select_file_by_path(&mut conn, LOCAL_USER_ID, "/books/epub_three.epub")
+            .await
+            .unwrap()
+            .is_some(),
+        "epub file must survive"
+    );
+
+    let tag_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM content_tags WHERE fingerprint = ?")
+            .bind("fp-pdf")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(tag_count, 0, "content_tags must cascade");
+
+    let state_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM reading_state WHERE fingerprint = ?")
+            .bind("fp-pdf")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(state_count, 0, "reading_state must cascade");
+
+    assert!(
+        !cover_exists(&mut conn, "fp-pdf").await.unwrap(),
+        "covers must cascade"
+    );
+
+    let selected: Option<String> = sqlx::query_scalar(
+        "SELECT selected_cover_fingerprint FROM document_metadata WHERE document_id = ?",
+    )
+    .bind(doc.id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert!(selected.is_none(), "selected cover must be cleared");
+
+    let doc_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM documents WHERE guid = ?")
+        .bind("doc-rmf")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(doc_count, 1, "document survives while a format remains");
+}
+
+#[tokio::test]
+async fn delete_content_from_document_last_format_deletes_document() {
+    let pool = test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let doc = upsert_document(&mut conn, "doc-rmf-last").await.unwrap();
+    upsert_content(&mut conn, "fp-only").await.unwrap();
+    sqlx::query("UPDATE contents SET document_id = ? WHERE fingerprint = ?")
+        .bind(doc.id)
+        .bind("fp-only")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    make_file(&mut conn, "/books/solo.epub", "fp-only").await;
+    sqlx::query("INSERT INTO document_metadata (document_id, title) VALUES (?, ?)")
+        .bind(doc.id)
+        .bind("Solo")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    drop(conn);
+
+    let result = delete_content_from_document(&pool, None, "doc-rmf-last", "fp-only")
+        .await
+        .unwrap()
+        .expect("fp-only belongs to the document");
+
+    assert!(result.document_deleted, "last format deletes the document");
+    assert_eq!(result.deleted_paths, vec!["/books/solo.epub".to_string()]);
+
+    let mut conn = pool.acquire().await.unwrap();
+    let docs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM documents WHERE guid = ?")
+        .bind("doc-rmf-last")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(docs, 0, "document row must be deleted");
+
+    let meta: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM document_metadata WHERE document_id = ?")
+            .bind(doc.id)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(meta, 0, "document metadata must cascade");
+}
+
+#[tokio::test]
+async fn delete_content_from_document_unknown_targets_return_none() {
+    let pool = test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+
+    let doc = upsert_document(&mut conn, "doc-rmf-none").await.unwrap();
+    upsert_content(&mut conn, "fp-a").await.unwrap();
+    sqlx::query("UPDATE contents SET document_id = ? WHERE fingerprint = ?")
+        .bind(doc.id)
+        .bind("fp-a")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    // The other document owns fp-b: it is not part of doc-rmf-none.
+    let other = upsert_document(&mut conn, "doc-rmf-other").await.unwrap();
+    upsert_content(&mut conn, "fp-b").await.unwrap();
+    sqlx::query("UPDATE contents SET document_id = ? WHERE fingerprint = ?")
+        .bind(other.id)
+        .bind("fp-b")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    drop(conn);
+
+    assert!(
+        delete_content_from_document(&pool, None, "doc-rmf-none", "fp-b")
+            .await
+            .unwrap()
+            .is_none(),
+        "fingerprint belonging to another document must not be removed"
+    );
+    assert!(
+        delete_content_from_document(&pool, None, "no-such-doc", "fp-a")
+            .await
+            .unwrap()
+            .is_none(),
+        "unknown document guid must be a no-op"
+    );
+
+    let mut conn = pool.acquire().await.unwrap();
+    let doc_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM documents")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(doc_count, 2, "no-op calls must not delete anything");
+}

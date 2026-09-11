@@ -87,6 +87,13 @@ export interface CheckMissingResponse {
 	purged: boolean;
 }
 
+export interface DeleteContentResult {
+	/** Paths of files that were removed (one per source copy). */
+	deleted_paths: string[];
+	/** Whether the whole document was removed (no contents remained). */
+	document_deleted: boolean;
+}
+
 export interface ScanDirectoryEntry {
 	path: string;
 	action: 'Scan' | 'Ignore';
@@ -399,6 +406,17 @@ export class ReadFlowClient {
 			method: 'POST',
 			body: JSON.stringify({ winner_guid: winnerGuid, loser_guids: loserGuids }),
 		});
+	}
+
+	// @feature: documents.remove_format
+	async removeContent(
+		documentGuid: string,
+		fingerprint: string,
+	): Promise<DeleteContentResult> {
+		return this.request<DeleteContentResult>(
+			`/documents/${encodeURIComponent(documentGuid)}/contents/${encodeURIComponent(fingerprint)}`,
+			{ method: 'DELETE' },
+		);
 	}
 
 	// @feature: admin.scan

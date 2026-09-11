@@ -526,6 +526,26 @@ impl FilesClient {
         Ok(())
     }
 
+    /// Remove a fingerprint and all its files from a document (purge).
+    ///
+    /// Returns `None` when the document or the fingerprint is unknown.
+    pub async fn remove_content(
+        &self,
+        document_guid: &str,
+        fingerprint: &str,
+    ) -> Result<Option<crate::db::dao::DeleteContentResult>, Error> {
+        let builder = self.client.delete(self.base_url.join(&format!(
+            "/documents/{document_guid}/contents/{fingerprint}"
+        ))?);
+        let response = self.send(builder).await?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        response.error_for_status_ref()?;
+        Ok(Some(response.json().await?))
+    }
+
     pub async fn ensure_document_for_file(&self, file_guid: &str) -> Result<ApiDocument, Error> {
         let builder = self
             .client

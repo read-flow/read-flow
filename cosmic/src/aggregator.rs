@@ -301,6 +301,37 @@ impl Aggregator {
         Ok(())
     }
 
+    /// @feature: documents.remove_format
+    ///
+    /// Remove a fingerprint (and all its copies) from a merged document.
+    /// The local client must succeed; remotes are best-effort (each server
+    /// deletes only its own files for the fingerprint).
+    pub async fn remove_content_from_document(
+        &self,
+        document_guid: &str,
+        fingerprint: &str,
+    ) -> Result<(), FilesClientError> {
+        let local_client = self
+            .clients
+            .get(&ClientSelector::Local)
+            .ok_or(FilesClientError::NoSourcesAvailable)?;
+
+        local_client
+            .remove_content(document_guid, fingerprint)
+            .await?;
+
+        for (selector, client) in &self.clients {
+            if selector.is_local() {
+                continue;
+            }
+            if let Err(e) = client.remove_content(document_guid, fingerprint).await {
+                tracing::warn!("error removing content on {selector}: {e}");
+            }
+        }
+
+        Ok(())
+    }
+
     fn iter_document(&self, document: Document) -> impl Iterator<Item = (Client, File)> {
         let files: Vec<(ClientSelector, File)> = document.into();
         files.into_iter().filter_map(|(s, f)| {

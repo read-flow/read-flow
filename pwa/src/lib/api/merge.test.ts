@@ -54,6 +54,17 @@ describe('mergeFiles', () => {
 		expect(result[0].sourceGuids).toEqual({ 1: 'guid-1', 2: 'guid-2' });
 	});
 
+	it('tracks per-source paths for the same fingerprint', () => {
+		const file1 = makeFile({ guid: 'guid-1', path: '/a/novel.epub', fingerprint: 'fp-1' });
+		const file2 = makeFile({ guid: 'guid-2', path: '/b/novel.epub', fingerprint: 'fp-1' });
+		const result = mergeFiles([
+			{ sourceId: 1, files: [file1] },
+			{ sourceId: 2, files: [file2] },
+		]);
+		expect(result).toHaveLength(1);
+		expect(result[0].sourcePaths).toEqual({ 1: '/a/novel.epub', 2: '/b/novel.epub' });
+	});
+
 	it('uses the first-seen file as the base when merging', () => {
 		const file1 = makeFile({ guid: 'guid-1', path: '/a/novel.epub', fingerprint: 'fp-1' });
 		const file2 = makeFile({ guid: 'guid-2', path: '/b/novel.epub', fingerprint: 'fp-1' });

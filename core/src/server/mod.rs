@@ -28,6 +28,7 @@ use axum::http::StatusCode;
 use axum::http::header;
 use axum::response::IntoResponse;
 use axum::response::Response;
+use axum::routing::delete;
 use axum::routing::get;
 use axum::routing::post;
 use axum::routing::put;
@@ -360,6 +361,10 @@ pub async fn build_router(state: AppState) -> Router {
         .route("/documents/merge", post(post_merge_documents))
         .route("/documents/{guid}", get(get_document))
         .route("/documents/{guid}/cover", get(get_document_cover))
+        .route(
+            "/documents/{guid}/contents/{fingerprint}",
+            delete(delete_content_from_document),
+        )
         .route("/documents/{guid}/metadata", put(put_document_metadata))
         .route("/activity", get(activity::list_activity))
         .route("/activity/{operation_id}", get(activity::get_activity))
@@ -1251,6 +1256,7 @@ async fn get_document(
     })
 }
 
+/// @feature: documents.select_cover
 /// @feature: documents.cover_display
 #[tracing::instrument(skip_all)]
 async fn get_document_cover(
@@ -1275,8 +1281,37 @@ async fn get_document_cover(
     Ok(cover_response(data, mime))
 }
 
+/// @feature: documents.remove_format
+#[tracing::instrument(skip_all)]
+async fn delete_content_from_document(
+    AxumPath((document_guid, fingerprint)): AxumPath<(String, String)>,
+    State(application_module): State<AppState>,
+    vis: Visibility,
+) -> Result<Response> {
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+
+    let doc = dao::select_api_document_by_guid(&mut conn, &document_guid)
+        .await?
+        .ok_or_else(|| Error::FileNotFound(document_guid.clone()))?;
+    if !document_visible(&mut conn, &vis, &doc).await?
+        || !fingerprint_visible(&mut conn, &vis, &fingerprint).await?
+    {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    }
+    drop(conn);
+
+    let context = audit_context_for(vis.user_id());
+    let db_client = application_module.db_client().await;
+    let result = db_client
+        .delete_content_from_document_with_audit(&context, &document_guid, &fingerprint)
+        .await?;
+    match result {
+        Some(result) => Ok(Json(result).into_response()),
+        None => Ok(StatusCode::NOT_FOUND.into_response()),
+    }
+}
 /// @feature: documents.edit_metadata
-/// @feature: documents.select_cover
 #[tracing::instrument(skip_all)]
 async fn put_document_metadata(
     AxumPath(guid): AxumPath<String>,

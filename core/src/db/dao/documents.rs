@@ -521,6 +521,194 @@ async fn merge_documents_impl(
     Ok(())
 }
 
+/// Remove a fingerprint and **all** its files from a document.
+///
+/// Deletes:
+/// - All `files` rows referencing the fingerprint (plus their on-disk files).
+/// - The `contents` row itself (cascades to `content_tags`, `reading_state`, `covers`).
+/// - Clears `document_metadata.selected_cover_fingerprint` if it matches.
+///
+/// If the document has no remaining contents afterwards, the document row and
+/// its metadata are also deleted.
+///
+/// When `context` is present the audit operation, event, and completion all
+/// join the same transaction as the deletion.
+///
+/// Returns `Ok(None)` when the document does not exist or the fingerprint is
+/// not part of it (a failed audit operation is recorded in that case).
+pub async fn delete_content_from_document(
+    pool: &SqlitePool,
+    context: Option<&AuditContext>,
+    document_guid: &str,
+    fingerprint: &str,
+) -> Result<Option<DeleteContentResult>, Error> {
+    if let Some(context) = context {
+        create_audit_operation(
+            pool,
+            context,
+            OperationType::DocumentContentRemoved,
+            false,
+            &crate::audit::now_timestamp(),
+        )
+        .await?;
+    }
+    let mut tx = pool.begin().await?;
+
+    let Some(document_id) = sqlx::query_scalar::<_, i32>("SELECT id FROM documents WHERE guid = ?")
+        .bind(document_guid)
+        .fetch_optional(&mut *tx)
+        .await?
+    else {
+        if let Some(context) = context {
+            finish_audit_operation_on_connection(
+                &mut tx,
+                &context.operation_id,
+                OperationStatus::Failed,
+                &crate::audit::now_timestamp(),
+                Some("document_not_found"),
+                serde_json::json!({}),
+            )
+            .await?;
+        }
+        return Ok(None);
+    };
+
+    // The fingerprint must be part of this document.
+    let belongs: Option<i32> =
+        sqlx::query_scalar("SELECT document_id FROM contents WHERE fingerprint = ?")
+            .bind(fingerprint)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if belongs != Some(document_id) {
+        if let Some(context) = context {
+            finish_audit_operation_on_connection(
+                &mut tx,
+                &context.operation_id,
+                OperationStatus::Failed,
+                &crate::audit::now_timestamp(),
+                Some("fingerprint_not_in_document"),
+                serde_json::json!({}),
+            )
+            .await?;
+        }
+        return Ok(None);
+    }
+
+    let title = document_title_snapshot(&mut tx, document_id).await?;
+
+    // Collect every file row for the fingerprint before deletion (paths for
+    // the filesystem + audit).
+    let files = sqlx::query_as::<_, (i32, String, Option<String>)>(
+        "SELECT id, path, archive_path FROM files WHERE fingerprint = ?",
+    )
+    .bind(fingerprint)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    let mut deleted_paths = Vec::with_capacity(files.len());
+    for (id, path, archive_path) in files {
+        // Archive members exist as long as their containing archive does — only
+        // touch the filesystem for standalone files. Rows are removed either way.
+        if archive_path.is_none() {
+            match tokio::fs::remove_file(&path).await {
+                Ok(()) => deleted_paths.push(path.clone()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    deleted_paths.push(path.clone());
+                }
+                Err(e) => {
+                    tracing::warn!("failed to remove {}: {e}", path);
+                }
+            }
+        } else {
+            deleted_paths.push(path.clone());
+        }
+        sqlx::query("DELETE FROM files WHERE id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    // Delete contents row (cascades to content_tags, reading_state, covers).
+    sqlx::query("DELETE FROM contents WHERE fingerprint = ?")
+        .bind(fingerprint)
+        .execute(&mut *tx)
+        .await?;
+
+    // Clear selected_cover_fingerprint if it pointed at the removed content.
+    sqlx::query(
+        "UPDATE document_metadata SET selected_cover_fingerprint = NULL \
+         WHERE document_id = ? AND selected_cover_fingerprint = ?",
+    )
+    .bind(document_id)
+    .bind(fingerprint)
+    .execute(&mut *tx)
+    .await?;
+
+    // If the document has no remaining contents, delete the document too.
+    let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contents WHERE document_id = ?")
+        .bind(document_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let document_deleted = remaining == 0;
+    if document_deleted {
+        sqlx::query("DELETE FROM documents WHERE id = ?")
+            .bind(document_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    if let Some(context) = context {
+        append_audit_event(
+            &mut tx,
+            &context.operation_id,
+            AuditEventType::DocumentContentRemoved,
+            AuditOutcome::Success,
+            &crate::audit::now_timestamp(),
+            serde_json::json!({
+                "fingerprint": fingerprint,
+                "deleted_file_count": deleted_paths.len(),
+                "deleted_file_paths": deleted_paths,
+                "document_deleted": document_deleted,
+            }),
+            vec![AuditTargetSnapshot::document(
+                document_guid.to_string(),
+                title.unwrap_or_default(),
+            )],
+        )
+        .await?;
+    }
+
+    tx.commit().await?;
+
+    if let Some(context) = context {
+        finish_audit_operation(
+            pool,
+            &context.operation_id,
+            OperationStatus::Completed,
+            &crate::audit::now_timestamp(),
+            None,
+            serde_json::json!({
+                "deleted": deleted_paths.len(),
+                "document_deleted": document_deleted,
+            }),
+        )
+        .await?;
+    }
+
+    Ok(Some(DeleteContentResult {
+        deleted_paths,
+        document_deleted,
+    }))
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeleteContentResult {
+    /// Paths of files whose on-disk records were removed.
+    pub deleted_paths: Vec<String>,
+    /// Whether the document was also deleted (no remaining contents).
+    pub document_deleted: bool,
+}
+
 async fn document_title_snapshot(
     conn: &mut SqliteConnection,
     document_id: i32,

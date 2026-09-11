@@ -16,6 +16,7 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `documents.pagination` | ✅ | ✅ |  | Paginate large document collections |
 | `documents.format_picker` | ✅ | ✅ |  | Pick a format when a document has multiple versions |
 | `documents.merge` | ✅ | ✅ | ✅ | Merge duplicate documents into one |
+| `documents.remove_format` | ✅ | ✅ | ✅ | Remove one format (all files with a shared fingerprint) from a merged document |
 | `documents.batch_tag` | ✅ | ✅ |  | Add/remove tags on a multi-document selection |
 | `documents.detail_view` | ✅ | ✅ | ✅ | View a single document's details |
 | `documents.edit_metadata` | ✅ | ✅ | ✅ | Edit document metadata (title, authors, description, …) |
@@ -51,4 +52,4 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `app.epub_viewer_choice` | ✅ |  |  | Open the current EPUB in the MuPDF viewer or an external application, from the viewer's context pane |
 | `app.theme_overrides` | ✅ |  |  | Per-app theme overrides (dark/light, accent, density, roundness, frosted glass, interface font, monospace font) without changing global COSMIC settings |
 
-_44 features tracked._
+_45 features tracked._

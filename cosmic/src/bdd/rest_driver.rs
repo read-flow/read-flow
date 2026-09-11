@@ -706,6 +706,76 @@ impl RestDriver {
         files.iter().any(|f| f["guid"] == guid)
     }
 
+    pub async fn remove_content_from_document(&self, document_guid: &str, fingerprint: &str) {
+        let response = self
+            .client
+            .delete(format!(
+                "{}/documents/{document_guid}/contents/{fingerprint}",
+                self.server.base_url
+            ))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("DELETE /documents/<guid>/contents/<fingerprint>");
+        assert!(
+            response.status().is_success(),
+            "DELETE /documents/{document_guid}/contents/{fingerprint} failed: {}",
+            response.status()
+        );
+    }
+
+    pub async fn format_count_for_document(&self, document_guid: &str) -> usize {
+        let files: Vec<serde_json::Value> = self
+            .client
+            .get(format!("{}/files", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /files")
+            .json()
+            .await
+            .expect("parse files JSON");
+        files
+            .iter()
+            .filter(|f| f["document_guid"] == document_guid)
+            .map(|f| {
+                f["fingerprint"]
+                    .as_str()
+                    .expect("fingerprint field")
+                    .to_string()
+            })
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+    }
+
+    pub async fn document_is_listed_by_guid(&self, document_guid: &str) -> bool {
+        let documents: Vec<serde_json::Value> = self
+            .client
+            .get(format!("{}/documents", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /documents")
+            .json()
+            .await
+            .expect("parse documents JSON");
+        documents.iter().any(|d| d["guid"] == document_guid)
+    }
+
+    pub async fn fingerprint_has_files(&self, fingerprint: &str) -> bool {
+        let files: Vec<serde_json::Value> = self
+            .client
+            .get(format!("{}/files", self.server.base_url))
+            .basic_auth(&self.server.user, Some(&self.server.password))
+            .send()
+            .await
+            .expect("GET /files")
+            .json()
+            .await
+            .expect("parse files JSON");
+        files.iter().any(|f| f["fingerprint"] == fingerprint)
+    }
+
     pub async fn set_reading_progress(&self, fingerprint: &str, position: &str, percentage: f64) {
         let response = self
             .client

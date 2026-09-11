@@ -73,6 +73,11 @@ description = "Merge duplicate documents into one"
 surfaces = ["cosmic", "pwa", "rest"]
 
 [[feature]]
+id = "documents.remove_format"
+description = "Remove one format (all files with a shared fingerprint) from a merged document"
+surfaces = ["cosmic", "pwa", "rest"]
+
+[[feature]]
 id = "documents.batch_tag"
 description = "Add/remove tags on a multi-document selection"
 surfaces = ["cosmic", "pwa"]

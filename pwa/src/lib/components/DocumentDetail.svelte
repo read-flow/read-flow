@@ -3,6 +3,7 @@
 	// @feature: documents.edit_metadata
 	import Icon from '$lib/components/Icon.svelte';
 	import CoverImage from '$lib/components/CoverImage.svelte';
+	import RemoveFormatDialog from '$lib/components/RemoveFormatDialog.svelte';
 	import {
 		allDocuments,
 		documentMetaMap,
@@ -193,6 +194,7 @@
 	// ── Formats: cover selection, delete, send-to-source ───────────────────────
 	let manageFormats = $state(false);
 	let pendingDeleteFp = $state<string | null>(null);
+	let pendingRemoveFp = $state<string | null>(null);
 	let formatBusy = $state(false);
 	let formatError = $state('');
 
@@ -238,7 +240,7 @@
 				doc = findByFingerprint(get(allDocuments), fingerprint) ?? doc;
 			}
 		} catch (err) {
-			formatError = err instanceof Error ? err.message : 'Failed to delete format.';
+			formatError = err instanceof Error ? err.message : 'Failed to delete copy.';
 		} finally {
 			formatBusy = false;
 		}
@@ -262,6 +264,25 @@
 		} finally {
 			formatBusy = false;
 		}
+	}
+
+	/**
+	 * Opens the remove-format confirmation for `fmt`. Only meaningful for
+	 * merged documents (multi-format); the dialog lists every file path that
+	 * will be deleted across all sources.
+	 */
+	function openRemoveFormat(fmt: AggregatedFile): void {
+		if (formatBusy || !doc?.document_guid || formats.length < 2) return;
+		pendingRemoveFp = fmt.fingerprint;
+		formatError = '';
+	}
+
+	/** After a successful remove, re-resolve the doc; close if it's gone. */
+	function handleFormatRemoved(): void {
+		pendingRemoveFp = null;
+		const removedViewedFormat = !findByFingerprint(get(allDocuments), fingerprint);
+		doc = findByFingerprint(get(allDocuments), fingerprint) ?? doc;
+		if (removedViewedFormat) onclose?.();
 	}
 </script>
 
@@ -511,7 +532,7 @@
 			<div class="flex items-center justify-between mb-2">
 				<h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Formats</h2>
 				<button
-					onclick={() => { manageFormats = !manageFormats; pendingDeleteFp = null; formatError = ''; }}
+					onclick={() => { manageFormats = !manageFormats; pendingDeleteFp = null; pendingRemoveFp = null; formatError = ''; }}
 					class="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
 				>
 					{manageFormats ? 'Done' : 'Manage'}
@@ -548,7 +569,7 @@
 								<button
 									onclick={() => { pendingDeleteFp = fmt.fingerprint; formatError = ''; }}
 									disabled={formatBusy}
-									aria-label="Delete this format"
+									aria-label="Delete this copy"
 									class="shrink-0 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-40"
 								>
 									<Icon name="trash" class="w-4 h-4" />
@@ -567,7 +588,7 @@
 						<!-- Delete confirmation -->
 						{#if pendingDeleteFp === fmt.fingerprint}
 							<div class="mt-2 flex items-center justify-between gap-2 pl-11">
-								<span class="text-xs text-red-500 dark:text-red-400">Delete this format from all sources?</span>
+								<span class="text-xs text-red-500 dark:text-red-400">Delete this copy from all sources?</span>
 								<div class="flex gap-2 shrink-0">
 									<button
 										onclick={() => deleteFormat(fmt)}
@@ -602,6 +623,22 @@
 											{s.name}
 										</button>
 									{/each}
+								</div>
+							{/if}
+
+							<!-- Remove format entirely (fingerprint-level, only for merged docs) -->
+							{#if doc?.document_guid && formats.length >= 2}
+								<div class="mt-2 flex items-center justify-between gap-2 pl-11">
+									<span class="text-xs text-slate-400 dark:text-slate-500">
+										Remove this {fmt.type_.toUpperCase()} format and all its copies
+									</span>
+									<button
+										onclick={() => openRemoveFormat(fmt)}
+										disabled={formatBusy}
+										class="shrink-0 text-xs px-2.5 py-1 rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-40"
+									>
+										Remove format
+									</button>
 								</div>
 							{/if}
 						{/if}
@@ -735,5 +772,18 @@
 				<p class="mt-2 text-xs text-red-500 dark:text-red-400">{tagError}</p>
 			{/if}
 		</div>
+	{/if}
+
+	<!-- Remove-format confirmation: lists every file that will be deleted -->
+	{#if pendingRemoveFp !== null && doc?.document_guid}
+		{@const fmt = formats.find((f) => f.fingerprint === pendingRemoveFp)}
+		{#if fmt}
+			<RemoveFormatDialog
+				documentGuid={doc.document_guid}
+				format={fmt}
+				onclose={() => { pendingRemoveFp = null; formatError = ''; }}
+				onremoved={handleFormatRemoved}
+			/>
+		{/if}
 	{/if}
 </div>

@@ -756,6 +756,44 @@ impl CosmicDriver {
             .is_some()
     }
 
+    pub async fn remove_content_from_document(&self, document_guid: &str, fingerprint: &str) {
+        let db_client = self.application_module.db_client().await;
+        let _ = db_client
+            .delete_content_from_document(document_guid, fingerprint)
+            .await
+            .expect("delete content from document");
+    }
+
+    pub async fn format_count_for_document(&self, document_guid: &str) -> usize {
+        let docs = self
+            .document_provider
+            .get_documents()
+            .await
+            .expect("get documents");
+        docs.into_iter()
+            .find(|d| d.document_guid == document_guid)
+            .map(|d| d.contents.len())
+            .unwrap_or(0)
+    }
+
+    pub async fn document_is_listed_by_guid(&self, document_guid: &str) -> bool {
+        let docs = self
+            .document_provider
+            .get_documents()
+            .await
+            .expect("get documents");
+        docs.into_iter().any(|d| d.document_guid == document_guid)
+    }
+
+    pub async fn fingerprint_has_files(&self, fingerprint: &str) -> bool {
+        let pool = self.application_module.connection_pool().await;
+        let mut conn = pool.acquire().await.expect("acquire connection");
+        let files = dao::select_all_files(&mut conn, LOCAL_USER_ID)
+            .await
+            .expect("select all files");
+        files.iter().any(|f| f.fingerprint == fingerprint)
+    }
+
     pub async fn set_reading_progress(&self, fingerprint: &str, position: &str, percentage: f64) {
         let pool = self.application_module.connection_pool().await;
         let mut conn = pool.acquire().await.expect("acquire connection");

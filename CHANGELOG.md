@@ -13,12 +13,14 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 ### Added
 
 - Activity history: every mutation and observation (scan, merge, delete, metadata/tag/status/cover edits, missing-file maintenance) is recorded as a structured audit operation with typed child events. Available in COSMIC via the new Activity page, over REST (`GET /activity`, `GET /activity/{id}`, `GET /documents/{guid}/activity`), and in the PWA via a new Activity view.
+- Format removal: purge one format (every copy sharing a fingerprint) from a merged document in a single operation (`DELETE /documents/{guid}/contents/{fingerprint}`). Copies are removed from disk and the library; the document is deleted when it was the last format. Offered in COSMIC (Manage mode) and the PWA, each with a confirmation step listing all affected files.
 - Reading status set over REST now applies to the authenticated user (not "local"), so owner reads update correctly.
 
 ### Changed
 
 ### Fixed
 
+- The per-file (deduplication) delete action in the document details dialog is labeled "Delete copy" instead of the misleading "Delete source".
 - Activity ordering no longer ties: operation timestamps use microsecond precision, so freshly recorded operations render in stable, newest-first order during scans.
 - Activity timestamps in COSMIC and the PWA are shown as readable date-times in local time instead of the raw microsecond integer.
 

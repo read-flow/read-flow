@@ -24,6 +24,7 @@ export type OperationType =
 	| 'scan'
 	| 'file_delete'
 	| 'document_merge'
+	| 'document_content_removed'
 	| 'metadata_edit'
 	| 'tag_edit'
 	| 'status_edit'

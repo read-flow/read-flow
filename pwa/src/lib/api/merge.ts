@@ -6,6 +6,11 @@ export interface AggregatedFile extends RemoteFile {
 	 * Used to route tag and download operations to the right source.
 	 */
 	sourceGuids: Record<number, string>;
+	/**
+	 * Maps Dexie source id → per-server path for this file's copy.
+	 * The same fingerprint can live at different paths on different servers.
+	 */
+	sourcePaths: Record<number, string>;
 	/** Other formats of the same document (epub, pdf, mobi variants). Empty for single-format docs. */
 	otherFormats: AggregatedFile[];
 }
@@ -24,6 +29,7 @@ export function mergeFiles(
 			const existing = byFingerprint.get(file.fingerprint);
 			if (existing) {
 				existing.sourceGuids[sourceId] = file.guid;
+				existing.sourcePaths[sourceId] = file.path;
 				for (const tag of file.tags) {
 					if (!existing.tags.includes(tag)) existing.tags.push(tag);
 				}
@@ -31,6 +37,7 @@ export function mergeFiles(
 				byFingerprint.set(file.fingerprint, {
 					...file,
 					sourceGuids: { [sourceId]: file.guid },
+					sourcePaths: { [sourceId]: file.path },
 					otherFormats: [],
 				});
 			}

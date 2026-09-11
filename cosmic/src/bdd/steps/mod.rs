@@ -18,6 +18,7 @@ mod documents_format_picker;
 mod documents_list;
 mod documents_merge;
 mod documents_pagination;
+mod documents_remove_format;
 mod documents_search;
 mod documents_select_cover;
 mod documents_sort;
