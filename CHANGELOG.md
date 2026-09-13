@@ -12,6 +12,14 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.6.0] - 2026-09-13
+
+### Added
+
 - Activity history: every mutation and observation (scan, merge, delete, metadata/tag/status/cover edits, missing-file maintenance) is recorded as a structured audit operation with typed child events. Available in COSMIC via the new Activity page, over REST (`GET /activity`, `GET /activity/{id}`, `GET /documents/{guid}/activity`), and in the PWA via a new Activity view.
 - Format removal: purge one format (every copy sharing a fingerprint) from a merged document in a single operation (`DELETE /documents/{guid}/contents/{fingerprint}`). Copies are removed from disk and the library; the document is deleted when it was the last format. Offered in COSMIC (Manage mode) and the PWA, each with a confirmation step listing all affected files.
 - Reading status set over REST now applies to the authenticated user (not "local"), so owner reads update correctly.
@@ -339,7 +347,8 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/read-flow/read-flow/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/read-flow/read-flow/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/read-flow/read-flow/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/read-flow/read-flow/compare/v0.4.0...v0.4.1

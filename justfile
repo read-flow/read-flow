@@ -175,9 +175,9 @@ bundle: pwa-build (build-release '--features' 'embed-pwa' '-p' 'read-flow') icon
         <key>CFBundleIdentifier</key>
         <string>io.github.read-flow</string>
         <key>CFBundleVersion</key>
-        <string>0.5.1</string>
+        <string>0.6.0</string>
         <key>CFBundleShortVersionString</key>
-        <string>0.5.1</string>
+        <string>0.6.0</string>
         <key>CFBundleExecutable</key>
         <string>read-flow</string>
         <key>CFBundleIconFile</key>
