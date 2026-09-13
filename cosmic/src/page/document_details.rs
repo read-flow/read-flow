@@ -116,8 +116,42 @@ pub(crate) struct ThumbnailRenderParams {
     margins: read_flow_core::scan::cover::TrimMargins,
 }
 
-/// Pages visible in the filmstrip window around `page_index`.
+/// Pages prefetched (and at most shown) in the filmstrip around `page_index`.
 const THUMBNAIL_FILMSTRIP_RADIUS: i32 = 4;
+/// Width of one filmstrip image, in pixels.
+const THUMBNAIL_FILMSTRIP_TILE_WIDTH: f32 = 44.0;
+/// Height of one filmstrip image, in pixels.
+const THUMBNAIL_FILMSTRIP_TILE_HEIGHT: f32 = 60.0;
+/// Padding the filmstrip button draws around its image, per side.
+const THUMBNAIL_FILMSTRIP_TILE_PADDING: f32 = 2.0;
+/// How far the selected tile sits above the rest of the strip, in pixels.
+const THUMBNAIL_FILMSTRIP_SELECTED_LIFT: f32 = 6.0;
+
+/// Inclusive page range to show in the filmstrip: the widest window around
+/// `page_index` that fits `available_width` without the row overflowing (an
+/// overflowing row squeezes its trailing tiles). Capped at the prefetch
+/// radius, and slid inwards so a selection near either end still shows a
+/// full-width strip. Empty when there are no pages.
+fn filmstrip_window(
+    page_index: i32,
+    page_count: i32,
+    available_width: f32,
+    spacing: f32,
+) -> std::ops::RangeInclusive<i32> {
+    if page_count <= 0 {
+        return 0..=-1;
+    }
+    let slot = THUMBNAIL_FILMSTRIP_TILE_WIDTH + 2.0 * THUMBNAIL_FILMSTRIP_TILE_PADDING;
+    // n tiles occupy n * slot + (n - 1) * spacing.
+    let fitting = ((available_width + spacing) / (slot + spacing)).floor() as i32;
+    let tiles = fitting
+        .clamp(1, 2 * THUMBNAIL_FILMSTRIP_RADIUS + 1)
+        .min(page_count);
+
+    let last = page_count - 1;
+    let start = (page_index - (tiles - 1) / 2).clamp(0, last - (tiles - 1));
+    start..=start + tiles - 1
+}
 /// Default/max trim padding (px), matching the server's `MAX_TRIM_PADDING`.
 const THUMBNAIL_MAX_PADDING: u32 = 32;
 const THUMBNAIL_DEFAULT_PADDING: u32 = 8;
@@ -191,6 +225,7 @@ pub enum DocumentDetailsMessage {
     CancelThumbnailPicker,
     ThumbnailPageCountLoaded(Result<i32, String>),
     ThumbnailPageSelected(i32),
+    ThumbnailPageScrubbed(i32),
     ThumbnailBigPreviewLoaded(i32, ThumbnailRenderParams, Result<Vec<u8>, String>),
     ThumbnailFilmstripLoaded(i32, Result<Vec<u8>, String>),
     ThumbnailTrimToggled(bool),
@@ -489,33 +524,72 @@ impl DocumentDetails {
                 .into()
         };
 
-        let mut filmstrip = Row::new().spacing(space_xxs);
-        if let Some(page_count) = state.page_count {
-            let window_start = (state.page_index - THUMBNAIL_FILMSTRIP_RADIUS).max(0);
-            let window_end = (state.page_index + THUMBNAIL_FILMSTRIP_RADIUS).min(page_count - 1);
-            for idx in window_start..=window_end {
+        // How many tiles fit depends on the drawer width, so the strip is
+        // laid out against the width it actually gets: a row wider than its
+        // parent doesn't wrap or scroll, it squeezes the trailing tiles.
+        let filmstrip: Element<'_, DocumentDetailsMessage> = widget::responsive(move |size| {
+            let mut row = Row::new().spacing(space_xxs);
+            let window = filmstrip_window(
+                state.page_index,
+                state.page_count.unwrap_or(0),
+                size.width,
+                space_xxs as f32,
+            );
+            for idx in window {
                 let tile: Element<'_, DocumentDetailsMessage> =
                     if let Some(handle) = state.filmstrip.get(&idx) {
                         widget::image(handle.clone())
-                            .width(Length::Fixed(44.0))
-                            .height(Length::Fixed(60.0))
+                            .width(Length::Fixed(THUMBNAIL_FILMSTRIP_TILE_WIDTH))
+                            .height(Length::Fixed(THUMBNAIL_FILMSTRIP_TILE_HEIGHT))
                             .content_fit(ContentFit::Contain)
                             .into()
                     } else {
                         widget::container(widget::space())
-                            .width(Length::Fixed(44.0))
-                            .height(Length::Fixed(60.0))
+                            .width(Length::Fixed(THUMBNAIL_FILMSTRIP_TILE_WIDTH))
+                            .height(Length::Fixed(THUMBNAIL_FILMSTRIP_TILE_HEIGHT))
                             .into()
                     };
-                let mut btn = widget::button::custom(tile).padding(2);
-                if idx == state.page_index {
+                let selected = idx == state.page_index;
+                let mut btn =
+                    widget::button::custom(tile).padding(THUMBNAIL_FILMSTRIP_TILE_PADDING);
+                if selected {
                     btn = btn.class(cosmic::widget::button::ButtonClass::Suggested);
                 } else {
                     btn = btn.on_press(DocumentDetailsMessage::ThumbnailPageSelected(idx));
                 }
-                filmstrip = filmstrip.push(btn);
+                // The lift is spent as padding above or below the tile, so
+                // every slot keeps the same height and only the selected
+                // tile rides higher than its neighbours.
+                let offset = if selected {
+                    [0.0, 0.0, THUMBNAIL_FILMSTRIP_SELECTED_LIFT, 0.0]
+                } else {
+                    [THUMBNAIL_FILMSTRIP_SELECTED_LIFT, 0.0, 0.0, 0.0]
+                };
+                row = row.push(widget::container(btn).padding(offset));
             }
-        }
+            widget::container(row).center_x(Length::Fill).into()
+        })
+        .into();
+        let filmstrip = widget::container(filmstrip).height(Length::Fixed(
+            THUMBNAIL_FILMSTRIP_TILE_HEIGHT
+                + 2.0 * THUMBNAIL_FILMSTRIP_TILE_PADDING
+                + THUMBNAIL_FILMSTRIP_SELECTED_LIFT,
+        ));
+
+        // Scrubbing the slider only moves the local page index (label +
+        // filmstrip window); the render fires once on release, like the
+        // trim sliders below.
+        let page_slider: Option<Element<'_, DocumentDetailsMessage>> = match state.page_count {
+            Some(count) if count > 1 => Some(
+                widget::slider(0.0..=(count - 1) as f32, state.page_index as f32, |v| {
+                    DocumentDetailsMessage::ThumbnailPageScrubbed(v as i32)
+                })
+                .step(1.0_f32)
+                .on_release(DocumentDetailsMessage::ThumbnailReloadPreview)
+                .into(),
+            ),
+            _ => None,
+        };
 
         let page_label = match state.page_count {
             Some(count) => {
@@ -615,9 +689,11 @@ impl DocumentDetails {
             .spacing(space_m)
             .align_x(Horizontal::Center)
             .push(widget::container(preview).center_x(Length::Fill))
-            .push(widget::container(filmstrip).center_x(Length::Fill))
-            .push(widget::text(page_label))
-            .push(controls);
+            .push(filmstrip);
+        if let Some(slider) = page_slider {
+            content = content.push(widget::container(slider).center_x(Length::Fill));
+        }
+        content = content.push(widget::text(page_label)).push(controls);
 
         if let Some(error) = &state.error {
             content = content.push(widget::text(fl!("generic-error", error = error.clone())));
@@ -1497,6 +1573,15 @@ impl Page for DocumentDetails {
                     Task::none()
                 }
             },
+            DocumentDetailsMessage::ThumbnailPageScrubbed(idx) => {
+                // Local-only: keeps the drag cheap. The preview/filmstrip
+                // reload happens once on release via ThumbnailReloadPreview.
+                if let Some(state) = &mut self.thumbnail_picker {
+                    let max = state.page_count.map(|c| c - 1).unwrap_or(0).max(0);
+                    state.page_index = idx.clamp(0, max);
+                }
+                Task::none()
+            }
             DocumentDetailsMessage::ThumbnailPageSelected(idx) => {
                 if let Some(state) = &mut self.thumbnail_picker {
                     state.page_index = idx;
@@ -1992,8 +2077,42 @@ impl Page for DocumentDetails {
 #[cfg(test)]
 mod tests {
     use assert4rs::Assert;
+    use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    // 5 tiles fit in 260px (5*48 + 4*4 = 256), 6 would need 308.
+    #[case(10, 100, 260.0, 8, 12)]
+    // Wider strip: 8 tiles (8*48 + 7*4 = 412) fit in 420px.
+    #[case(10, 100, 420.0, 7, 14)]
+    // Near the start the window slides right instead of losing tiles.
+    #[case(0, 100, 260.0, 0, 4)]
+    #[case(1, 100, 260.0, 0, 4)]
+    // Near the end it slides left.
+    #[case(99, 100, 260.0, 95, 99)]
+    // Fewer pages than fit: show them all.
+    #[case(1, 3, 260.0, 0, 2)]
+    // Never wider than the prefetch radius allows.
+    #[case(50, 100, 4000.0, 46, 54)]
+    // Degenerate widths still yield the selected page.
+    #[case(7, 100, 0.0, 7, 7)]
+    fn filmstrip_window_fits_available_width(
+        #[case] page_index: i32,
+        #[case] page_count: i32,
+        #[case] available_width: f32,
+        #[case] expected_start: i32,
+        #[case] expected_end: i32,
+    ) {
+        let window = filmstrip_window(page_index, page_count, available_width, 4.0);
+        Assert::that(*window.start()).is(expected_start);
+        Assert::that(*window.end()).is(expected_end);
+    }
+
+    #[test]
+    fn filmstrip_window_is_empty_without_pages() {
+        Assert::that(filmstrip_window(0, 0, 400.0, 4.0).next()).is(None);
+    }
 
     #[test]
     fn format_imported_at_formats_valid_rfc3339() {

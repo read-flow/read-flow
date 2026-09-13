@@ -16,6 +16,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   whitespace, with an adjustable padding amount, in both the COSMIC app and the PWA.
 - Exclude a fixed margin from each edge (top/bottom/left/right) before the thumbnail whitespace
   crop runs, so a page number or other decorative band near an edge doesn't widen the crop.
+- Scrub through a PDF's pages with a horizontal slider in the thumbnail picker, so picking a page
+  in a long document no longer needs repeated filmstrip clicks.
 
 ### Changed
 
