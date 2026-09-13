@@ -4,6 +4,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import CoverImage from '$lib/components/CoverImage.svelte';
 	import RemoveFormatDialog from '$lib/components/RemoveFormatDialog.svelte';
+	import ThumbnailPicker from '$lib/components/ThumbnailPicker.svelte';
 	import {
 		allDocuments,
 		documentMetaMap,
@@ -197,6 +198,14 @@
 	let pendingRemoveFp = $state<string | null>(null);
 	let formatBusy = $state(false);
 	let formatError = $state('');
+	// @feature: documents.change_thumbnail
+	let thumbnailPickerFor = $state<{ sourceId: number; guid: string } | null>(null);
+
+	function openThumbnailPicker(fmt: AggregatedFile): void {
+		const entry = Object.entries(fmt.sourceGuids)[0];
+		if (!entry) return;
+		thumbnailPickerFor = { sourceId: Number(entry[0]), guid: entry[1] };
+	}
 
 	/** All formats (primary + others) as a flat array. */
 	const formats = $derived(doc ? [doc, ...doc.otherFormats] : []);
@@ -574,14 +583,28 @@
 								>
 									<Icon name="trash" class="w-4 h-4" />
 								</button>
-							{:else if fmt.type_ === 'epub' || fmt.type_ === 'pdf'}
-								<a
-									href={readerHref(fmt)}
-									class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors"
-								>
-									<Icon name="library" class="w-3.5 h-3.5" />
-									Open {fmt.type_.toUpperCase()}
-								</a>
+							{:else}
+								<div class="shrink-0 flex items-center gap-2">
+									{#if fmt.type_ === 'pdf'}
+										<button
+											onclick={() => openThumbnailPicker(fmt)}
+											aria-label="Change thumbnail"
+											title="Change thumbnail"
+											class="p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+										>
+											<Icon name="edit" class="w-4 h-4" />
+										</button>
+									{/if}
+									{#if fmt.type_ === 'epub' || fmt.type_ === 'pdf'}
+										<a
+											href={readerHref(fmt)}
+											class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-medium hover:bg-slate-700 dark:hover:bg-white transition-colors"
+										>
+											<Icon name="library" class="w-3.5 h-3.5" />
+											Open {fmt.type_.toUpperCase()}
+										</a>
+									{/if}
+								</div>
 							{/if}
 						</div>
 
@@ -785,5 +808,13 @@
 				onremoved={handleFormatRemoved}
 			/>
 		{/if}
+	{/if}
+
+	{#if thumbnailPickerFor}
+		<ThumbnailPicker
+			sourceId={thumbnailPickerFor.sourceId}
+			guid={thumbnailPickerFor.guid}
+			onclose={() => (thumbnailPickerFor = null)}
+		/>
 	{/if}
 </div>

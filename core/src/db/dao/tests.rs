@@ -78,6 +78,64 @@ async fn upsert_document_user_metadata_inserts_and_updates() {
 }
 
 #[tokio::test]
+async fn set_selected_cover_fingerprint_inserts_row_when_absent() {
+    let pool = test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let doc = upsert_document(&mut conn, "doc-guid-cover-1")
+        .await
+        .unwrap();
+    upsert_content(&mut conn, "fp-cover-1").await.unwrap();
+
+    set_selected_cover_fingerprint(&mut conn, doc.id, "fp-cover-1")
+        .await
+        .unwrap();
+
+    let row = get_document_user_metadata(&mut conn, doc.id)
+        .await
+        .unwrap()
+        .unwrap();
+    Assert::that(row.selected_cover_fingerprint.as_deref()).is_some("fp-cover-1");
+}
+
+#[tokio::test]
+async fn set_selected_cover_fingerprint_does_not_touch_other_fields() {
+    let pool = test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let doc = upsert_document(&mut conn, "doc-guid-cover-2")
+        .await
+        .unwrap();
+    upsert_document_user_metadata(
+        &mut conn,
+        doc.id,
+        Some("Book"),
+        Some("My Title"),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    upsert_content(&mut conn, "fp-cover-2").await.unwrap();
+
+    set_selected_cover_fingerprint(&mut conn, doc.id, "fp-cover-2")
+        .await
+        .unwrap();
+
+    let row = get_document_user_metadata(&mut conn, doc.id)
+        .await
+        .unwrap()
+        .unwrap();
+    Assert::that(row.title.as_deref()).is_some("My Title");
+    Assert::that(row.selected_cover_fingerprint.as_deref()).is_some("fp-cover-2");
+}
+
+#[tokio::test]
 async fn get_document_user_metadata_returns_none_when_absent() {
     let pool = test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
@@ -798,6 +856,35 @@ async fn select_fingerprints_with_covers_returns_set() {
     let fps = select_fingerprints_with_covers(&mut conn).await.unwrap();
     assert!(fps.contains("fp-cov4"));
     assert!(!fps.contains("fp-cov5"));
+}
+
+#[tokio::test]
+async fn set_custom_cover_stores_page_and_trim_flag() {
+    let pool = test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    upsert_content(&mut conn, "fp-cov6").await.unwrap();
+    set_custom_cover(&mut conn, "fp-cov6", 4, true, b"custom-data", "image/webp")
+        .await
+        .unwrap();
+    let result = get_cover(&mut conn, "fp-cov6").await.unwrap().unwrap();
+    Assert::that(result.0).is(b"custom-data");
+    Assert::that(result.1).is("image/webp");
+}
+
+#[tokio::test]
+async fn auto_upsert_does_not_overwrite_custom_cover_on_rescan() {
+    let pool = test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    upsert_content(&mut conn, "fp-cov7").await.unwrap();
+    set_custom_cover(&mut conn, "fp-cov7", 2, false, b"custom-data", "image/webp")
+        .await
+        .unwrap();
+    // Simulate a rescan re-extracting page 0 for the same content.
+    upsert_cover(&mut conn, "fp-cov7", b"rescanned-data", "image/webp")
+        .await
+        .unwrap();
+    let result = get_cover(&mut conn, "fp-cov7").await.unwrap().unwrap();
+    Assert::that(result.0).is(b"custom-data");
 }
 
 // ── ensure_document_for_fingerprint ──────────────────────────────────────

@@ -18,6 +18,9 @@ pub async fn select_fingerprints_with_covers(
     Ok(rows.into_iter().collect())
 }
 
+/// Store an auto-extracted cover. A no-op on the `data`/`mime` columns when
+/// the existing row is user-customized (`is_custom`), so scans never clobber
+/// a custom thumbnail.
 pub async fn upsert_cover(
     conn: &mut SqliteConnection,
     fingerprint: &str,
@@ -26,11 +29,39 @@ pub async fn upsert_cover(
 ) -> Result<(), Error> {
     sqlx::query(
         "INSERT INTO covers (fingerprint, data, mime) VALUES (?, ?, ?) \
-         ON CONFLICT(fingerprint) DO UPDATE SET data = excluded.data, mime = excluded.mime",
+         ON CONFLICT(fingerprint) DO UPDATE SET data = excluded.data, mime = excluded.mime \
+         WHERE covers.is_custom = 0",
     )
     .bind(fingerprint)
     .bind(data)
     .bind(mime)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+/// Store a user-chosen page as the cover, always overwriting whatever was
+/// there and marking the row `is_custom` so later scans leave it alone.
+pub async fn set_custom_cover(
+    conn: &mut SqliteConnection,
+    fingerprint: &str,
+    page_index: i64,
+    trimmed: bool,
+    data: &[u8],
+    mime: &str,
+) -> Result<(), Error> {
+    sqlx::query(
+        "INSERT INTO covers (fingerprint, data, mime, is_custom, source_page_index, trimmed) \
+         VALUES (?, ?, ?, 1, ?, ?) \
+         ON CONFLICT(fingerprint) DO UPDATE SET \
+             data = excluded.data, mime = excluded.mime, is_custom = 1, \
+             source_page_index = excluded.source_page_index, trimmed = excluded.trimmed",
+    )
+    .bind(fingerprint)
+    .bind(data)
+    .bind(mime)
+    .bind(page_index)
+    .bind(trimmed)
     .execute(&mut *conn)
     .await?;
     Ok(())

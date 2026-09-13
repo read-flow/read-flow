@@ -15,6 +15,12 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 - Activity history: every mutation and observation (scan, merge, delete, metadata/tag/status/cover edits, missing-file maintenance) is recorded as a structured audit operation with typed child events. Available in COSMIC via the new Activity page, over REST (`GET /activity`, `GET /activity/{id}`, `GET /documents/{guid}/activity`), and in the PWA via a new Activity view.
 - Format removal: purge one format (every copy sharing a fingerprint) from a merged document in a single operation (`DELETE /documents/{guid}/contents/{fingerprint}`). Copies are removed from disk and the library; the document is deleted when it was the last format. Offered in COSMIC (Manage mode) and the PWA, each with a confirmation step listing all affected files.
 - Reading status set over REST now applies to the authenticated user (not "local"), so owner reads update correctly.
+- Change a PDF document's thumbnail by picking any page and optionally trimming surrounding
+  whitespace, with an adjustable padding amount, in both the COSMIC app and the PWA.
+- Exclude a fixed margin from each edge (top/bottom/left/right) before the thumbnail whitespace
+  crop runs, so a page number or other decorative band near an edge doesn't widen the crop.
+- Scrub through a PDF's pages with a horizontal slider in the thumbnail picker, so picking a page
+  in a long document no longer needs repeated filmstrip clicks.
 
 ### Changed
 

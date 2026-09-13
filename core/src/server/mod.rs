@@ -351,6 +351,15 @@ pub async fn build_router(state: AppState) -> Router {
         .route("/files/{guid}/download-as/{file_name}", get(download_file))
         .route("/files/{guid}/cover", get(get_file_cover))
         .route("/files/{guid}/document", post(ensure_document_for_file))
+        .route("/files/{guid}/pdf/page-count", get(get_pdf_page_count))
+        .route(
+            "/files/{guid}/pdf/page/{index}/preview",
+            get(get_pdf_page_preview),
+        )
+        .route(
+            "/files/{guid}/pdf/page/{index}/thumbnail",
+            post(post_pdf_page_thumbnail),
+        )
         .route("/reading-state", put(put_reading_state))
         .route("/reading-state/{fingerprint}", get(get_reading_state))
         .route(
@@ -1052,6 +1061,233 @@ async fn get_file_cover(
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
     Ok(cover_response(data, mime))
+}
+
+fn require_pdf(file: &crate::db::models::File) -> Result<()> {
+    if file.type_.to_lowercase() != "pdf" {
+        return Err(Error::BadRequest(format!(
+            "file type {} is not a PDF",
+            file.type_
+        )));
+    }
+    Ok(())
+}
+
+/// Resolve a readable filesystem path for a file, extracting archive members
+/// to a temp file when needed. Drop the returned guard only once the path is
+/// no longer read — it deletes the temp file.
+async fn resolve_readable_path(
+    file: &crate::db::models::File,
+) -> Result<(PathBuf, Option<tempfile::NamedTempFile>)> {
+    match (&file.archive_path, &file.archive_inner_path) {
+        (Some(archive_path), Some(inner)) => {
+            let tmp = crate::scan::scanner::extract_member_to_temp_file(
+                PathBuf::from(archive_path),
+                inner.clone(),
+                file.type_.clone(),
+            )
+            .await?;
+            let path = tmp.path().to_path_buf();
+            Ok((path, Some(tmp)))
+        }
+        _ => Ok((PathBuf::from(&file.path), None)),
+    }
+}
+
+#[derive(serde::Serialize)]
+struct PdfPageCount {
+    page_count: i32,
+}
+
+/// @feature: documents.change_thumbnail
+#[tracing::instrument(skip_all)]
+async fn get_pdf_page_count(
+    AxumPath(guid): AxumPath<String>,
+    State(application_module): State<AppState>,
+    vis: Visibility,
+) -> Result<Json<PdfPageCount>> {
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let Some((file, _)) = visible_file(&mut conn, &vis, &guid).await? else {
+        return Err(Error::FileNotFound(guid));
+    };
+    require_pdf(&file)?;
+    drop(conn);
+
+    let (path, _guard) = resolve_readable_path(&file).await?;
+    let page_count = tokio::task::spawn_blocking(move || crate::scan::cover::pdf_page_count(&path))
+        .await
+        .map_err(io::Error::other)?
+        .ok_or_else(|| Error::BadRequest("could not read PDF page count".into()))?;
+    Ok(Json(PdfPageCount { page_count }))
+}
+
+#[derive(serde::Deserialize)]
+struct PdfPagePreviewQuery {
+    #[serde(default)]
+    trim: bool,
+    #[serde(default = "default_preview_size")]
+    size: String,
+    #[serde(default = "default_trim_padding")]
+    padding: u32,
+    #[serde(default)]
+    margin_top: u32,
+    #[serde(default)]
+    margin_bottom: u32,
+    #[serde(default)]
+    margin_left: u32,
+    #[serde(default)]
+    margin_right: u32,
+}
+
+impl PdfPagePreviewQuery {
+    fn margins(&self) -> crate::scan::cover::TrimMargins {
+        clamp_margins(
+            self.margin_top,
+            self.margin_bottom,
+            self.margin_left,
+            self.margin_right,
+        )
+    }
+}
+
+fn default_preview_size() -> String {
+    "large".to_string()
+}
+
+/// Default/clamp bound for trim padding — matches the picker UI's slider range.
+const MAX_TRIM_PADDING: u32 = 32;
+/// Clamp bound for the pre-crop exclusion margins — matches the picker UI's slider range.
+const MAX_TRIM_MARGIN: u32 = 100;
+
+fn default_trim_padding() -> u32 {
+    8
+}
+
+fn clamp_margins(top: u32, bottom: u32, left: u32, right: u32) -> crate::scan::cover::TrimMargins {
+    crate::scan::cover::TrimMargins {
+        top: top.min(MAX_TRIM_MARGIN),
+        bottom: bottom.min(MAX_TRIM_MARGIN),
+        left: left.min(MAX_TRIM_MARGIN),
+        right: right.min(MAX_TRIM_MARGIN),
+    }
+}
+
+/// @feature: documents.change_thumbnail
+#[tracing::instrument(skip_all)]
+async fn get_pdf_page_preview(
+    AxumPath((guid, index)): AxumPath<(String, i32)>,
+    State(application_module): State<AppState>,
+    vis: Visibility,
+    Query(query): Query<PdfPagePreviewQuery>,
+) -> Result<Response> {
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let Some((file, _)) = visible_file(&mut conn, &vis, &guid).await? else {
+        return Err(Error::FileNotFound(guid));
+    };
+    require_pdf(&file)?;
+    drop(conn);
+
+    let max_dim = if query.size == "thumb" { 200 } else { 800 };
+    let trim = query.trim;
+    let padding = query.padding.min(MAX_TRIM_PADDING);
+    let margins = query.margins();
+    let (path, _guard) = resolve_readable_path(&file).await?;
+    let data = tokio::task::spawn_blocking(move || {
+        let img = crate::scan::cover::render_pdf_page(&path, index, max_dim)?;
+        let img = if trim {
+            crate::scan::cover::trim_whitespace(&img, padding, margins)
+        } else {
+            img
+        };
+        crate::scan::cover::encode_page_webp(&img)
+    })
+    .await
+    .map_err(io::Error::other)?
+    .ok_or_else(|| Error::BadRequest("could not render page".into()))?;
+    Ok(cover_response(data, "image/webp".to_string()))
+}
+
+#[derive(serde::Deserialize)]
+struct SetPdfThumbnailRequest {
+    #[serde(default)]
+    trim: bool,
+    #[serde(default = "default_trim_padding")]
+    padding: u32,
+    #[serde(default)]
+    margin_top: u32,
+    #[serde(default)]
+    margin_bottom: u32,
+    #[serde(default)]
+    margin_left: u32,
+    #[serde(default)]
+    margin_right: u32,
+}
+
+impl SetPdfThumbnailRequest {
+    fn margins(&self) -> crate::scan::cover::TrimMargins {
+        clamp_margins(
+            self.margin_top,
+            self.margin_bottom,
+            self.margin_left,
+            self.margin_right,
+        )
+    }
+}
+
+/// @feature: documents.change_thumbnail
+#[tracing::instrument(skip_all)]
+async fn post_pdf_page_thumbnail(
+    AxumPath((guid, index)): AxumPath<(String, i32)>,
+    State(application_module): State<AppState>,
+    vis: Visibility,
+    Json(body): Json<SetPdfThumbnailRequest>,
+) -> Result<Json<ApiDocument>> {
+    let pool = application_module.connection_pool().await;
+    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
+    let Some((file, _)) = visible_file(&mut conn, &vis, &guid).await? else {
+        return Err(Error::FileNotFound(guid));
+    };
+    require_pdf(&file)?;
+
+    let trim = body.trim;
+    let padding = body.padding.min(MAX_TRIM_PADDING);
+    let margins = body.margins();
+    let (path, _guard) = resolve_readable_path(&file).await?;
+    let (data, mime) = tokio::task::spawn_blocking(move || {
+        let img = crate::scan::cover::render_pdf_page(&path, index, 800)?;
+        let img = if trim {
+            crate::scan::cover::trim_whitespace(&img, padding, margins)
+        } else {
+            img
+        };
+        crate::scan::cover::encode_page_webp(&img).map(|data| (data, "image/webp".to_string()))
+    })
+    .await
+    .map_err(io::Error::other)?
+    .ok_or_else(|| Error::BadRequest("could not render page".into()))?;
+
+    dao::set_custom_cover(
+        &mut conn,
+        &file.fingerprint,
+        index as i64,
+        trim,
+        &data,
+        &mime,
+    )
+    .await?;
+
+    let doc = dao::ensure_document_for_fingerprint(&mut conn, &file.fingerprint).await?;
+    let doc_row = dao::select_document_by_guid(&mut conn, &doc.guid)
+        .await?
+        .expect("document must exist after ensure_document_for_fingerprint");
+    dao::set_selected_cover_fingerprint(&mut conn, doc_row.id, &file.fingerprint).await?;
+
+    let updated = dao::select_api_document_by_guid(&mut conn, &doc.guid)
+        .await?
+        .expect("document must exist after upsert");
+    Ok(Json(updated))
 }
 
 /// @feature: sources.delete

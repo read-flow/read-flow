@@ -78,7 +78,87 @@ pub struct DocumentDetails {
     /// Covers keyed by content fingerprint (all contents loaded on open).
     covers: std::collections::HashMap<String, (cosmic::widget::image::Handle, Vec<u8>)>,
     description_content: text_editor::Content,
+    /// State for the "Change thumbnail" drawer content, when open.
+    thumbnail_picker: Option<ThumbnailPickerState>,
 }
+
+/// @feature: documents.change_thumbnail
+struct ThumbnailPickerState {
+    source: DocumentSource,
+    fingerprint: String,
+    page_index: i32,
+    page_count: Option<i32>,
+    trim: bool,
+    padding: u32,
+    margins: read_flow_core::scan::cover::TrimMargins,
+    preview: Option<cosmic::widget::image::Handle>,
+    preview_bytes: Option<Vec<u8>>,
+    filmstrip: std::collections::HashMap<i32, cosmic::widget::image::Handle>,
+    saving: bool,
+    error: Option<String>,
+}
+
+/// Which edge a margin slider controls.
+///
+/// @feature: documents.change_thumbnail
+#[derive(Debug, Clone, Copy)]
+pub enum ThumbnailMarginEdge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+/// The render inputs a loaded preview was generated with, so a late-arriving
+/// response can be discarded if the picker's settings have since moved on.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ThumbnailRenderParams {
+    trim: bool,
+    padding: u32,
+    margins: read_flow_core::scan::cover::TrimMargins,
+}
+
+/// Pages prefetched (and at most shown) in the filmstrip around `page_index`.
+const THUMBNAIL_FILMSTRIP_RADIUS: i32 = 4;
+/// Width of one filmstrip image, in pixels.
+const THUMBNAIL_FILMSTRIP_TILE_WIDTH: f32 = 44.0;
+/// Height of one filmstrip image, in pixels.
+const THUMBNAIL_FILMSTRIP_TILE_HEIGHT: f32 = 60.0;
+/// Padding the filmstrip button draws around its image, per side.
+const THUMBNAIL_FILMSTRIP_TILE_PADDING: f32 = 2.0;
+/// How far the selected tile sits above the rest of the strip, in pixels.
+const THUMBNAIL_FILMSTRIP_SELECTED_LIFT: f32 = 6.0;
+
+/// Inclusive page range to show in the filmstrip: the widest window around
+/// `page_index` that fits `available_width` without the row overflowing (an
+/// overflowing row squeezes its trailing tiles). Capped at the prefetch
+/// radius, and slid inwards so a selection near either end still shows a
+/// full-width strip. Empty when there are no pages.
+fn filmstrip_window(
+    page_index: i32,
+    page_count: i32,
+    available_width: f32,
+    spacing: f32,
+) -> std::ops::RangeInclusive<i32> {
+    if page_count <= 0 {
+        return 0..=-1;
+    }
+    let slot = THUMBNAIL_FILMSTRIP_TILE_WIDTH + 2.0 * THUMBNAIL_FILMSTRIP_TILE_PADDING;
+    // n tiles occupy n * slot + (n - 1) * spacing.
+    let fitting = ((available_width + spacing) / (slot + spacing)).floor() as i32;
+    let tiles = fitting
+        .clamp(1, 2 * THUMBNAIL_FILMSTRIP_RADIUS + 1)
+        .min(page_count);
+
+    let last = page_count - 1;
+    let start = (page_index - (tiles - 1) / 2).clamp(0, last - (tiles - 1));
+    start..=start + tiles - 1
+}
+/// Default/max trim padding (px), matching the server's `MAX_TRIM_PADDING`.
+const THUMBNAIL_MAX_PADDING: u32 = 32;
+const THUMBNAIL_DEFAULT_PADDING: u32 = 8;
+/// Max pre-crop exclusion margin (px), matching the server's `MAX_TRIM_MARGIN`.
+const THUMBNAIL_MAX_MARGIN: u32 = 100;
 
 #[derive(Debug, Clone)]
 pub enum DocumentDetailsOutput {
@@ -147,6 +227,23 @@ pub enum DocumentDetailsMessage {
     /// @feature: documents.select_cover
     SelectCover(String),
     CoverSelected(Result<(), String>),
+
+    /// @feature: documents.change_thumbnail
+    OpenThumbnailPicker(DocumentSource, String),
+    CancelThumbnailPicker,
+    ThumbnailPageCountLoaded(Result<i32, String>),
+    ThumbnailPageSelected(i32),
+    ThumbnailPageScrubbed(i32),
+    ThumbnailBigPreviewLoaded(i32, ThumbnailRenderParams, Result<Vec<u8>, String>),
+    ThumbnailFilmstripLoaded(i32, Result<Vec<u8>, String>),
+    ThumbnailTrimToggled(bool),
+    ThumbnailPaddingChanged(u32),
+    ThumbnailMarginChanged(ThumbnailMarginEdge, u32),
+    /// Fired on slider release (not on every drag tick) to actually re-render
+    /// the preview — dragging only updates the label/thumb locally.
+    ThumbnailReloadPreview,
+    SaveThumbnail,
+    ThumbnailSaved(Result<(), String>),
     Key(
         cosmic::iced::keyboard::Modifiers,
         cosmic::iced::keyboard::Key,
@@ -223,6 +320,7 @@ impl DocumentDetails {
             document_meta_draft: initial_document_meta,
             covers: std::collections::HashMap::new(),
             description_content: text_editor::Content::new(),
+            thumbnail_picker: None,
         };
 
         (
@@ -409,6 +507,283 @@ impl DocumentDetails {
 }
 
 impl DocumentDetails {
+    /// @feature: documents.change_thumbnail
+    fn view_thumbnail_picker<'a>(
+        &'a self,
+        state: &'a ThumbnailPickerState,
+    ) -> Element<'a, DocumentDetailsMessage> {
+        let cosmic_theme::Spacing {
+            space_xxs,
+            space_s,
+            space_m,
+            ..
+        } = theme::active().cosmic().spacing;
+
+        let preview: Element<'_, DocumentDetailsMessage> = if let Some(handle) = &state.preview {
+            widget::image(handle.clone())
+                .width(Length::Fixed(220.0))
+                .height(Length::Fixed(300.0))
+                .content_fit(ContentFit::Contain)
+                .into()
+        } else {
+            widget::container(widget::text(fl!("document-details-thumbnail-loading")))
+                .width(Length::Fixed(220.0))
+                .height(Length::Fixed(300.0))
+                .center(Length::Fill)
+                .into()
+        };
+
+        // How many tiles fit depends on the drawer width, so the strip is
+        // laid out against the width it actually gets: a row wider than its
+        // parent doesn't wrap or scroll, it squeezes the trailing tiles.
+        let filmstrip: Element<'_, DocumentDetailsMessage> = widget::responsive(move |size| {
+            let mut row = Row::new().spacing(space_xxs);
+            let window = filmstrip_window(
+                state.page_index,
+                state.page_count.unwrap_or(0),
+                size.width,
+                space_xxs as f32,
+            );
+            for idx in window {
+                let tile: Element<'_, DocumentDetailsMessage> =
+                    if let Some(handle) = state.filmstrip.get(&idx) {
+                        widget::image(handle.clone())
+                            .width(Length::Fixed(THUMBNAIL_FILMSTRIP_TILE_WIDTH))
+                            .height(Length::Fixed(THUMBNAIL_FILMSTRIP_TILE_HEIGHT))
+                            .content_fit(ContentFit::Contain)
+                            .into()
+                    } else {
+                        widget::container(widget::space())
+                            .width(Length::Fixed(THUMBNAIL_FILMSTRIP_TILE_WIDTH))
+                            .height(Length::Fixed(THUMBNAIL_FILMSTRIP_TILE_HEIGHT))
+                            .into()
+                    };
+                let selected = idx == state.page_index;
+                let mut btn =
+                    widget::button::custom(tile).padding(THUMBNAIL_FILMSTRIP_TILE_PADDING);
+                if selected {
+                    btn = btn.class(cosmic::widget::button::ButtonClass::Suggested);
+                } else {
+                    btn = btn.on_press(DocumentDetailsMessage::ThumbnailPageSelected(idx));
+                }
+                // The lift is spent as padding above or below the tile, so
+                // every slot keeps the same height and only the selected
+                // tile rides higher than its neighbours.
+                let offset = if selected {
+                    [0.0, 0.0, THUMBNAIL_FILMSTRIP_SELECTED_LIFT, 0.0]
+                } else {
+                    [THUMBNAIL_FILMSTRIP_SELECTED_LIFT, 0.0, 0.0, 0.0]
+                };
+                row = row.push(widget::container(btn).padding(offset));
+            }
+            widget::container(row).center_x(Length::Fill).into()
+        })
+        .into();
+        let filmstrip = widget::container(filmstrip).height(Length::Fixed(
+            THUMBNAIL_FILMSTRIP_TILE_HEIGHT
+                + 2.0 * THUMBNAIL_FILMSTRIP_TILE_PADDING
+                + THUMBNAIL_FILMSTRIP_SELECTED_LIFT,
+        ));
+
+        // Scrubbing the slider only moves the local page index (label +
+        // filmstrip window); the render fires once on release, like the
+        // trim sliders below.
+        let page_slider: Option<Element<'_, DocumentDetailsMessage>> = match state.page_count {
+            Some(count) if count > 1 => Some(
+                widget::slider(0.0..=(count - 1) as f32, state.page_index as f32, |v| {
+                    DocumentDetailsMessage::ThumbnailPageScrubbed(v as i32)
+                })
+                .step(1.0_f32)
+                .on_release(DocumentDetailsMessage::ThumbnailReloadPreview)
+                .into(),
+            ),
+            _ => None,
+        };
+
+        let page_label = match state.page_count {
+            Some(count) => {
+                let current: i32 = state.page_index + 1;
+                fl!(
+                    "document-details-thumbnail-page-label",
+                    current = current,
+                    total = count
+                )
+            }
+            None => fl!("document-details-thumbnail-loading"),
+        };
+
+        // Dragging a slider fires `on_change` on every tick (the widget's
+        // own docs warn this "could create too many events"). `on_change`
+        // only updates the local value (label + thumb position, no I/O);
+        // the actual reload fires once via `on_release`, and the last
+        // preview stays on screen until the new one replaces it — avoids
+        // the flicker a reload-per-tick caused.
+        let margin_item = |label: String, edge: ThumbnailMarginEdge, value: u32| {
+            widget::settings::item::builder(label).control(
+                widget::slider(0.0..=THUMBNAIL_MAX_MARGIN as f32, value as f32, move |v| {
+                    DocumentDetailsMessage::ThumbnailMarginChanged(edge, v as u32)
+                })
+                .step(1.0_f32)
+                .on_release(DocumentDetailsMessage::ThumbnailReloadPreview),
+            )
+        };
+
+        let mut controls = widget::settings::section().add(
+            widget::settings::item::builder(fl!("document-details-thumbnail-trim"))
+                .toggler(state.trim, DocumentDetailsMessage::ThumbnailTrimToggled),
+        );
+        if state.trim {
+            controls = controls
+                .add(
+                    widget::settings::item::builder(fl!(
+                        "document-details-thumbnail-padding",
+                        padding = state.padding
+                    ))
+                    .control(
+                        widget::slider(
+                            0.0..=THUMBNAIL_MAX_PADDING as f32,
+                            state.padding as f32,
+                            |v| DocumentDetailsMessage::ThumbnailPaddingChanged(v as u32),
+                        )
+                        .step(1.0_f32)
+                        .on_release(DocumentDetailsMessage::ThumbnailReloadPreview),
+                    ),
+                )
+                .add(
+                    widget::text::body(fl!("document-details-thumbnail-margins"))
+                        .width(Length::Fill),
+                )
+                .add(margin_item(
+                    fl!(
+                        "document-details-thumbnail-margin-top",
+                        margin = state.margins.top
+                    ),
+                    ThumbnailMarginEdge::Top,
+                    state.margins.top,
+                ))
+                .add(margin_item(
+                    fl!(
+                        "document-details-thumbnail-margin-bottom",
+                        margin = state.margins.bottom
+                    ),
+                    ThumbnailMarginEdge::Bottom,
+                    state.margins.bottom,
+                ))
+                .add(margin_item(
+                    fl!(
+                        "document-details-thumbnail-margin-left",
+                        margin = state.margins.left
+                    ),
+                    ThumbnailMarginEdge::Left,
+                    state.margins.left,
+                ))
+                .add(margin_item(
+                    fl!(
+                        "document-details-thumbnail-margin-right",
+                        margin = state.margins.right
+                    ),
+                    ThumbnailMarginEdge::Right,
+                    state.margins.right,
+                ));
+        }
+
+        let mut save_button = widget::button::suggested(fl!("document-details-thumbnail-save"));
+        if !state.saving && state.preview.is_some() {
+            save_button = save_button.on_press(DocumentDetailsMessage::SaveThumbnail);
+        }
+        let cancel_button = widget::button::standard(fl!("document-details-thumbnail-cancel"))
+            .on_press(DocumentDetailsMessage::CancelThumbnailPicker);
+
+        let mut content = Column::new()
+            .spacing(space_m)
+            .align_x(Horizontal::Center)
+            .push(widget::container(preview).center_x(Length::Fill))
+            .push(filmstrip);
+        if let Some(slider) = page_slider {
+            content = content.push(widget::container(slider).center_x(Length::Fill));
+        }
+        content = content.push(widget::text(page_label)).push(controls);
+
+        if let Some(error) = &state.error {
+            content = content.push(widget::text(fl!("generic-error", error = error.clone())));
+        }
+
+        content = content.push(
+            Row::new()
+                .spacing(space_s)
+                .push(cancel_button)
+                .push(save_button),
+        );
+
+        widget::container(content).padding(space_s).into()
+    }
+
+    /// Load the big preview for `page_index` plus any not-yet-cached
+    /// filmstrip thumbnails in the window around it. A no-op if the picker
+    /// isn't open or the page count hasn't loaded yet.
+    ///
+    /// @feature: documents.change_thumbnail
+    fn thumbnail_load_tasks(&self, page_index: i32) -> Task<Action<DocumentDetailsMessage>> {
+        let Some(state) = &self.thumbnail_picker else {
+            return Task::none();
+        };
+        let Some(page_count) = state.page_count else {
+            return Task::none();
+        };
+        let source = state.source.clone();
+        let render_params = ThumbnailRenderParams {
+            trim: state.trim,
+            padding: state.padding,
+            margins: state.margins,
+        };
+        let document_provider = self.document_provider.clone();
+
+        let mut tasks: Vec<Task<Action<DocumentDetailsMessage>>> = vec![task::future({
+            let document_provider = document_provider.clone();
+            let source = source.clone();
+            async move {
+                let result = document_provider
+                    .get_pdf_page_preview(
+                        &source,
+                        page_index,
+                        render_params.trim,
+                        render_params.padding,
+                        render_params.margins,
+                        false,
+                    )
+                    .await
+                    .map_err(|e| format!("{e}"));
+                DocumentDetailsMessage::ThumbnailBigPreviewLoaded(page_index, render_params, result)
+            }
+        })];
+
+        let window_start = (page_index - THUMBNAIL_FILMSTRIP_RADIUS).max(0);
+        let window_end = (page_index + THUMBNAIL_FILMSTRIP_RADIUS).min(page_count - 1);
+        for idx in window_start..=window_end {
+            if state.filmstrip.contains_key(&idx) {
+                continue;
+            }
+            let document_provider = document_provider.clone();
+            let source = source.clone();
+            tasks.push(task::future(async move {
+                let result = document_provider
+                    .get_pdf_page_preview(
+                        &source,
+                        idx,
+                        false,
+                        0,
+                        read_flow_core::scan::cover::TrimMargins::default(),
+                        true,
+                    )
+                    .await
+                    .map_err(|e| format!("{e}"));
+                DocumentDetailsMessage::ThumbnailFilmstripLoaded(idx, result)
+            }));
+        }
+
+        task::batch(tasks)
+    }
+
     fn document_meta_section_view(&self) -> Element<'_, DocumentDetailsMessage> {
         let cosmic_theme::Spacing {
             space_xs, space_s, ..
@@ -1149,6 +1524,13 @@ impl Page for DocumentDetails {
     }
 
     fn view_context(&self) -> ContextView<'_, DocumentDetailsMessage> {
+        if let Some(state) = &self.thumbnail_picker {
+            return ContextView {
+                title: fl!("document-details-change-thumbnail"),
+                content: self.view_thumbnail_picker(state),
+            };
+        }
+
         let content: Element<'_, DocumentDetailsMessage> = if self.covers.is_empty() {
             widget::text(fl!("document-details-no-covers")).into()
         } else {
@@ -1186,7 +1568,22 @@ impl Page for DocumentDetails {
                     } else {
                         btn = btn.on_press(DocumentDetailsMessage::SelectCover(fp));
                     }
-                    Some(btn.into())
+                    let mut tile =
+                        widget::column::with_children(vec![btn.into()]).align_x(Horizontal::Center);
+                    if content.type_ == read_flow_core::scan::DocumentType::Pdf
+                        && let Some(source) = content.sources.first()
+                    {
+                        let fp = content.fingerprint.clone();
+                        let source = source.clone();
+                        tile = tile.push(
+                            widget::button::icon(
+                                widget::icon::from_name("edit-symbolic").size(ICON_SIZE),
+                            )
+                            .tooltip(fl!("document-details-change-thumbnail-tooltip"))
+                            .on_press(DocumentDetailsMessage::OpenThumbnailPicker(source, fp)),
+                        );
+                    }
+                    Some(tile.into())
                 })
                 .collect();
             let cover_row = cover_buttons
@@ -1248,6 +1645,176 @@ impl Page for DocumentDetails {
             DocumentDetailsMessage::CoverSelected(result) => {
                 if let Err(e) = result {
                     tracing::warn!("failed to save cover selection: {e}");
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::OpenThumbnailPicker(source, fingerprint) => {
+                self.thumbnail_picker = Some(ThumbnailPickerState {
+                    source: source.clone(),
+                    fingerprint,
+                    page_index: 0,
+                    page_count: None,
+                    trim: false,
+                    padding: THUMBNAIL_DEFAULT_PADDING,
+                    margins: read_flow_core::scan::cover::TrimMargins::default(),
+                    preview: None,
+                    preview_bytes: None,
+                    filmstrip: std::collections::HashMap::new(),
+                    saving: false,
+                    error: None,
+                });
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    let result = document_provider
+                        .get_pdf_page_count(&source)
+                        .await
+                        .map_err(|e| format!("{e}"));
+                    DocumentDetailsMessage::ThumbnailPageCountLoaded(result)
+                })
+            }
+            DocumentDetailsMessage::CancelThumbnailPicker => {
+                self.thumbnail_picker = None;
+                Task::none()
+            }
+            DocumentDetailsMessage::ThumbnailPageCountLoaded(result) => match result {
+                Ok(count) => {
+                    if let Some(state) = &mut self.thumbnail_picker {
+                        state.page_count = Some(count);
+                    }
+                    self.thumbnail_load_tasks(0)
+                }
+                Err(e) => {
+                    if let Some(state) = &mut self.thumbnail_picker {
+                        state.error = Some(e);
+                    }
+                    Task::none()
+                }
+            },
+            DocumentDetailsMessage::ThumbnailPageScrubbed(idx) => {
+                // Local-only: keeps the drag cheap. The preview/filmstrip
+                // reload happens once on release via ThumbnailReloadPreview.
+                if let Some(state) = &mut self.thumbnail_picker {
+                    let max = state.page_count.map(|c| c - 1).unwrap_or(0).max(0);
+                    state.page_index = idx.clamp(0, max);
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::ThumbnailPageSelected(idx) => {
+                if let Some(state) = &mut self.thumbnail_picker {
+                    state.page_index = idx;
+                }
+                self.thumbnail_load_tasks(idx)
+            }
+            DocumentDetailsMessage::ThumbnailBigPreviewLoaded(
+                page_index,
+                render_params,
+                result,
+            ) => {
+                if let Some(state) = &mut self.thumbnail_picker
+                    && state.page_index == page_index
+                    && state.trim == render_params.trim
+                    && state.padding == render_params.padding
+                    && state.margins == render_params.margins
+                {
+                    match result {
+                        Ok(bytes) => {
+                            state.preview =
+                                Some(cosmic::widget::image::Handle::from_bytes(bytes.clone()));
+                            state.preview_bytes = Some(bytes);
+                        }
+                        Err(e) => state.error = Some(e),
+                    }
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::ThumbnailFilmstripLoaded(idx, result) => {
+                if let Some(state) = &mut self.thumbnail_picker
+                    && let Ok(bytes) = result
+                {
+                    state
+                        .filmstrip
+                        .insert(idx, cosmic::widget::image::Handle::from_bytes(bytes));
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::ThumbnailTrimToggled(value) => {
+                let page_index = match &mut self.thumbnail_picker {
+                    Some(state) => {
+                        state.trim = value;
+                        state.page_index
+                    }
+                    None => return Task::none(),
+                };
+                self.thumbnail_load_tasks(page_index)
+            }
+            DocumentDetailsMessage::ThumbnailPaddingChanged(value) => {
+                // Local-only update: moves the thumb/label as the user drags,
+                // without re-rendering. The expensive reload waits for
+                // ThumbnailReloadPreview (fired on release) so a drag doesn't
+                // spam the backend with a render per pixel of movement.
+                if let Some(state) = &mut self.thumbnail_picker {
+                    state.padding = value.min(THUMBNAIL_MAX_PADDING);
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::ThumbnailMarginChanged(edge, value) => {
+                if let Some(state) = &mut self.thumbnail_picker {
+                    let clamped = value.min(THUMBNAIL_MAX_MARGIN);
+                    match edge {
+                        ThumbnailMarginEdge::Top => state.margins.top = clamped,
+                        ThumbnailMarginEdge::Bottom => state.margins.bottom = clamped,
+                        ThumbnailMarginEdge::Left => state.margins.left = clamped,
+                        ThumbnailMarginEdge::Right => state.margins.right = clamped,
+                    }
+                }
+                Task::none()
+            }
+            DocumentDetailsMessage::ThumbnailReloadPreview => {
+                let Some(state) = &self.thumbnail_picker else {
+                    return Task::none();
+                };
+                self.thumbnail_load_tasks(state.page_index)
+            }
+            DocumentDetailsMessage::SaveThumbnail => {
+                let Some(state) = &mut self.thumbnail_picker else {
+                    return Task::none();
+                };
+                state.saving = true;
+                let source = state.source.clone();
+                let page_index = state.page_index;
+                let trim = state.trim;
+                let padding = state.padding;
+                let margins = state.margins;
+                let document_provider = self.document_provider.clone();
+                task::future(async move {
+                    let result = document_provider
+                        .set_pdf_page_thumbnail(&source, page_index, trim, padding, margins)
+                        .await
+                        .map_err(|e| format!("{e}"));
+                    DocumentDetailsMessage::ThumbnailSaved(result)
+                })
+            }
+            DocumentDetailsMessage::ThumbnailSaved(result) => {
+                match result {
+                    Ok(()) => {
+                        if let Some(state) = self.thumbnail_picker.take()
+                            && let Some(bytes) = state.preview_bytes
+                        {
+                            let handle = cosmic::widget::image::Handle::from_bytes(bytes.clone());
+                            self.covers
+                                .insert(state.fingerprint.clone(), (handle, bytes));
+                            self.document.document_meta.selected_cover_fingerprint =
+                                Some(state.fingerprint.clone());
+                            self.document_meta_draft.selected_cover_fingerprint =
+                                Some(state.fingerprint);
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(state) = &mut self.thumbnail_picker {
+                            state.saving = false;
+                            state.error = Some(e);
+                        }
+                    }
                 }
                 Task::none()
             }
@@ -1669,8 +2236,42 @@ impl Page for DocumentDetails {
 #[cfg(test)]
 mod tests {
     use assert4rs::Assert;
+    use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    // 5 tiles fit in 260px (5*48 + 4*4 = 256), 6 would need 308.
+    #[case(10, 100, 260.0, 8, 12)]
+    // Wider strip: 8 tiles (8*48 + 7*4 = 412) fit in 420px.
+    #[case(10, 100, 420.0, 7, 14)]
+    // Near the start the window slides right instead of losing tiles.
+    #[case(0, 100, 260.0, 0, 4)]
+    #[case(1, 100, 260.0, 0, 4)]
+    // Near the end it slides left.
+    #[case(99, 100, 260.0, 95, 99)]
+    // Fewer pages than fit: show them all.
+    #[case(1, 3, 260.0, 0, 2)]
+    // Never wider than the prefetch radius allows.
+    #[case(50, 100, 4000.0, 46, 54)]
+    // Degenerate widths still yield the selected page.
+    #[case(7, 100, 0.0, 7, 7)]
+    fn filmstrip_window_fits_available_width(
+        #[case] page_index: i32,
+        #[case] page_count: i32,
+        #[case] available_width: f32,
+        #[case] expected_start: i32,
+        #[case] expected_end: i32,
+    ) {
+        let window = filmstrip_window(page_index, page_count, available_width, 4.0);
+        Assert::that(*window.start()).is(expected_start);
+        Assert::that(*window.end()).is(expected_end);
+    }
+
+    #[test]
+    fn filmstrip_window_is_empty_without_pages() {
+        Assert::that(filmstrip_window(0, 0, 400.0, 4.0).next()).is(None);
+    }
 
     #[test]
     fn format_imported_at_formats_valid_rfc3339() {

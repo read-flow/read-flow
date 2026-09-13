@@ -32,6 +32,14 @@ export interface DocumentMeta {
 	selected_cover_fingerprint: string | null;
 }
 
+/** Pixel bands excluded from content-detection before a page's whitespace crop. */
+export interface TrimMargins {
+	top: number;
+	bottom: number;
+	left: number;
+	right: number;
+}
+
 export interface RemoteDocument {
 	guid: string;
 	metadata: DocumentMeta;
@@ -347,6 +355,52 @@ export class ReadFlowClient {
 		if (response.status === 404) return null;
 		if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
 		return response.blob();
+	}
+
+	// @feature: documents.change_thumbnail
+	async getPdfPageCount(guid: string): Promise<number> {
+		const result = await this.request<{ page_count: number }>(`/files/${guid}/pdf/page-count`);
+		return result.page_count;
+	}
+
+	// @feature: documents.change_thumbnail
+	async downloadPdfPagePreview(
+		guid: string,
+		pageIndex: number,
+		trim: boolean,
+		padding: number,
+		margins: TrimMargins,
+		thumb: boolean,
+	): Promise<Blob> {
+		const size = thumb ? 'thumb' : 'large';
+		const response = await this.authedFetch(
+			`/files/${guid}/pdf/page/${pageIndex}/preview?trim=${trim}&padding=${padding}&size=${size}` +
+				`&margin_top=${margins.top}&margin_bottom=${margins.bottom}` +
+				`&margin_left=${margins.left}&margin_right=${margins.right}`,
+		);
+		if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+		return response.blob();
+	}
+
+	// @feature: documents.change_thumbnail
+	async setPdfPageThumbnail(
+		guid: string,
+		pageIndex: number,
+		trim: boolean,
+		padding: number,
+		margins: TrimMargins,
+	): Promise<RemoteDocument> {
+		return this.request<RemoteDocument>(`/files/${guid}/pdf/page/${pageIndex}/thumbnail`, {
+			method: 'POST',
+			body: JSON.stringify({
+				trim,
+				padding,
+				margin_top: margins.top,
+				margin_bottom: margins.bottom,
+				margin_left: margins.left,
+				margin_right: margins.right,
+			}),
+		});
 	}
 
 	// @feature: sources.delete
