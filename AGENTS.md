@@ -32,8 +32,7 @@ cargo run -p read-flow
 # Run the headless server (no UI) — this is the user-facing server
 cargo run -p read-flow -- --headless --address 0.0.0.0 --port 8000
 
-# read-flow-cli is an INTERNAL test-harness server launcher only (not user-facing).
-# Subcommands: scan, apply-tags, serve, extract-scan-directories, check-missing.
+# read-flow-cli (internal test harness, see Architecture below)
 cargo run --bin read-flow-cli -- scan /path/to/directory
 
 # Format code (requires nightly)
@@ -73,6 +72,8 @@ SQLite + sqlx (async). WAL mode, foreign keys on, pool ≤5. Migrations: `core/m
 ### Configuration
 
 Runtime config: `read-flow.toml`. Supports `$HOME`/`~`. Sections: `[database]`, `[client]`, `[server]`, `[scan]`, `[ui]`, `[online_library]` (OPDS catalogs).
+
+Schema changes must be backwards compatible: existing databases open and work without manual migration steps or data loss.
 
 ## Workflow
 
