@@ -141,7 +141,7 @@ fn filmstrip_window(
     spacing: f32,
 ) -> std::ops::RangeInclusive<i32> {
     if page_count <= 0 {
-        return 0..=-1;
+        return std::ops::RangeInclusive::new(0, -1);
     }
     let slot = THUMBNAIL_FILMSTRIP_TILE_WIDTH + 2.0 * THUMBNAIL_FILMSTRIP_TILE_PADDING;
     // n tiles occupy n * slot + (n - 1) * spacing.
