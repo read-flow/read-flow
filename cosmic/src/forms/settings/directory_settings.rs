@@ -55,6 +55,8 @@ pub struct DirectorySettingsForm {
     new_directory_inherit: bool,
     /// Tags for the Scan action
     new_directory_scan_tags: Vec<String>,
+    /// Validation error from the last save attempt, shown until the path changes
+    path_error: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +118,7 @@ impl DirectorySettingsForm {
             new_directory_action: action,
             new_directory_inherit: inherit,
             new_directory_scan_tags: tags.unwrap_or(vec![]),
+            path_error: None,
         };
 
         let tag_editor_actions = form.create_or_destroy_tag_editor();
@@ -137,6 +140,19 @@ impl DirectorySettingsForm {
                 }
             }
         }
+    }
+
+    /// Save is only possible once a directory has been selected.
+    fn can_save(&self) -> bool {
+        self.new_directory_path.is_some()
+    }
+
+    pub fn save_button(&self) -> Element<'_, DirectorySettingsFormMessage> {
+        widget::button::suggested(fl!("settings-save-directory"))
+            .apply_if(self.can_save(), |b| {
+                b.on_press(DirectorySettingsFormMessage::SaveDirectory)
+            })
+            .into()
     }
 
     fn create_or_destroy_tag_editor(&mut self) -> Task<Action<DirectorySettingsFormMessage>> {
@@ -188,7 +204,7 @@ impl DirectorySettingsForm {
                         .unwrap_or_default(),
                 )
                 .into(),
-                widget::button::text("Select")
+                widget::button::text(fl!("settings-directory-select"))
                     .on_press(DirectorySettingsFormMessage::SelectDirectoryPath)
                     .into(),
             ]));
@@ -217,6 +233,11 @@ impl DirectorySettingsForm {
 
         section
             .add(path_input)
+            .add_maybe(self.path_error.as_ref().map(|error| {
+                settings::item::builder(error.as_str())
+                    .icon(widget::icon::from_name("dialog-error-symbolic").size(ICON_SIZE))
+                    .control(widget::Space::new())
+            }))
             .add(action_selection)
             .add_maybe(self.tag_editor.as_ref().map(|tag_editor| {
                 settings::item::builder(fl!("settings-directory-tags"))
@@ -296,6 +317,7 @@ impl DirectorySettingsForm {
                 // Only overwrite when some file_handle is returned
                 if let Some(path) = file_handle {
                     self.new_directory_path = Some(path);
+                    self.path_error = None;
                 }
                 Task::none()
             }
@@ -311,27 +333,26 @@ impl DirectorySettingsForm {
             }
             DirectorySettingsFormMessage::SaveDirectory => {
                 // Validate and save the directory being edited/added
-                if let Some(path) = self.new_directory_path.as_ref() {
-                    let path_buf = PathBuf::from(path);
-                    let expanded_path = match ExpandedPath::try_from(path_buf) {
-                        Ok(path) => path,
-                        Err(_) => return Task::none(), // TODO: Show error message for invalid path
-                    };
+                let expanded_path = match validate_directory_path(self.new_directory_path.as_ref())
+                {
+                    Ok(path) => path,
+                    Err(error) => {
+                        self.path_error = Some(error);
+                        return Task::none();
+                    }
+                };
 
-                    let dir_settings = self.take_directory_settings();
+                let dir_settings = self.take_directory_settings();
 
-                    // reset editor state
-                    self.original_settings = None;
-                    self.new_directory_path = None;
-                    self.new_directory_action = DirectoryAction::Ignore;
-                    self.new_directory_inherit = false;
+                // reset editor state
+                self.original_settings = None;
+                self.new_directory_path = None;
+                self.new_directory_action = DirectoryAction::Ignore;
+                self.new_directory_inherit = false;
 
-                    task::message(DirectorySettingsFormMessage::Out(
-                        DirectorySettingsFormOutput::Ok(expanded_path, dir_settings),
-                    ))
-                } else {
-                    Task::none() // TODO: Show error message for empty path
-                }
+                task::message(DirectorySettingsFormMessage::Out(
+                    DirectorySettingsFormOutput::Ok(expanded_path, dir_settings),
+                ))
             }
             DirectorySettingsFormMessage::CancelEditDirectory => {
                 // reset the editor state
@@ -348,5 +369,37 @@ impl DirectorySettingsForm {
                 panic!("{message:?} should be handled by the parent component")
             }
         }
+    }
+}
+
+/// Turns the selected directory into an [`ExpandedPath`], or a user-facing
+/// (translated) error message when nothing is selected or it can't be expanded.
+fn validate_directory_path(path: Option<&FileHandle>) -> Result<ExpandedPath, String> {
+    let path = path.ok_or_else(|| fl!("settings-directory-path-required"))?;
+    ExpandedPath::try_from(PathBuf::from(path))
+        .map_err(|error| fl!("settings-directory-path-invalid", error = error.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use assert4rs::Assert;
+
+    use super::*;
+
+    #[test]
+    fn validate_rejects_missing_path() {
+        Assert::that(validate_directory_path(None).unwrap_err())
+            .is(fl!("settings-directory-path-required"));
+    }
+
+    #[test]
+    fn validate_accepts_selected_absolute_path() {
+        let handle = FileHandle::from(PathBuf::from("/some/books"));
+        Assert::that(
+            validate_directory_path(Some(&handle))
+                .unwrap()
+                .to_path_buf(),
+        )
+        .is(PathBuf::from("/some/books"));
     }
 }
