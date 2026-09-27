@@ -1828,13 +1828,7 @@ impl Page for PreferencesPage {
                 widget::dialog()
                     .title(form.title())
                     .control(form.view().map(Into::into))
-                    .primary_action(
-                        widget::button::suggested(fl!("settings-save-directory")).on_press(
-                            PreferencesMessage::DirectorySettingsForm(
-                                DirectorySettingsFormMessage::SaveDirectory,
-                            ),
-                        ),
-                    )
+                    .primary_action(form.save_button().map(Into::into))
                     .secondary_action(
                         widget::button::standard(fl!("settings-cancel-edit")).on_press(
                             PreferencesMessage::DirectorySettingsForm(
