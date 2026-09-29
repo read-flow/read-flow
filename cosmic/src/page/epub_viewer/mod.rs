@@ -747,7 +747,7 @@ impl EpubViewer {
 
             if self.show_raw_html {
                 column = column.push(
-                    widget::text_editor(&self.raw_html_content)
+                    widget::text_editor::text_editor(&self.raw_html_content)
                         .on_action(EpubViewerMessage::RawHtmlAction)
                         .font(cosmic::font::mono())
                         .apply(widget::container)
@@ -832,7 +832,7 @@ impl EpubViewer {
             // In raw HTML mode, fall back to a simple scrollable view.
             if show_raw_html {
                 return widget::container(
-                    widget::text_editor(&self.raw_html_content)
+                    widget::text_editor::text_editor(&self.raw_html_content)
                         .on_action(EpubViewerMessage::RawHtmlAction)
                         .font(cosmic::font::mono())
                         .height(Length::Fill),
