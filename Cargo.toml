@@ -38,7 +38,7 @@ itertools = "0.15.0"
 libcosmic = { git = "https://github.com/pop-os/libcosmic.git" }
 mime = "0.3.17"
 argon2 = "0.6.0"
-jsonwebtoken = "10.4.0"
+jsonwebtoken = "11.1.0"
 mupdf = "0.8.0"
 open = "5.4.4"
 pbkdf2 = "0.13.0"
