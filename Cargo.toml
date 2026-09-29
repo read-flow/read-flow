@@ -42,7 +42,7 @@ jsonwebtoken = "11.1.0"
 mupdf = "0.8.0"
 open = "5.4.4"
 pbkdf2 = "0.13.0"
-quick-xml = "0.41.0"
+quick-xml = "0.42.0"
 rcgen = "0.14"
 rand = { version = "0.10.3", default-features = false }
 rustc-hash = "2"

@@ -397,9 +397,8 @@ pub fn parse_opds_feed(
 }
 
 fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, OnlineLibraryError> {
-    let mut reader = Reader::from_reader(xml.as_bytes());
+    let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
-    let mut buf = Vec::new();
 
     let mut books: Vec<OnlineBook> = Vec::new();
     let mut stubs: Vec<BookStub> = Vec::new();
@@ -448,15 +447,14 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
     let mut cur_subsection_url: Option<String> = None;
 
     loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
+        match reader.read_event() {
             Ok(Event::Eof) => break,
 
             Ok(Event::Start(ref e)) => {
                 let name = e.name();
                 let local = local_name(name.as_ref());
                 match local {
-                    b"entry" => {
+                    "entry" => {
                         in_entry = true;
                         cur_id.clear();
                         cur_title.clear();
@@ -477,20 +475,20 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                         collecting = None;
                         cur_text.clear();
                     }
-                    b"title" if in_entry => {
+                    "title" if in_entry => {
                         collecting = Some(Collecting::Title);
                         cur_text.clear();
                     }
-                    b"subtitle" if in_entry => {
+                    "subtitle" if in_entry => {
                         collecting = Some(Collecting::Subtitle);
                         cur_text.clear();
                     }
-                    b"id" if in_entry => {
+                    "id" if in_entry => {
                         collecting = Some(Collecting::Id);
                         cur_text.clear();
                     }
-                    b"summary" | b"content" if in_entry => {
-                        let content_type = get_attr(e, b"type").unwrap_or_default();
+                    "summary" | "content" if in_entry => {
+                        let content_type = get_attr(e, "type").unwrap_or_default();
                         match content_type.as_str() {
                             "html" => {
                                 // Inner loop consumes </content> and returns the decoded HTML.
@@ -514,47 +512,47 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             }
                         }
                     }
-                    b"author" if in_entry => {
+                    "author" if in_entry => {
                         in_author = true;
                     }
-                    b"contributor" if in_entry => {
+                    "contributor" if in_entry => {
                         in_contributor = true;
                     }
-                    b"name" if in_author => {
+                    "name" if in_author => {
                         collecting = Some(Collecting::AuthorName);
                         cur_text.clear();
                     }
-                    b"name" if in_contributor => {
+                    "name" if in_contributor => {
                         collecting = Some(Collecting::ContributorName);
                         cur_text.clear();
                     }
                     // Dublin Core / OPDS extension elements (dc:language, dc:publisher, etc.)
                     // local_name() strips the namespace prefix, so dc:X and X both match.
-                    b"language" if in_entry => {
+                    "language" if in_entry => {
                         collecting = Some(Collecting::Language);
                         cur_text.clear();
                     }
-                    b"publisher" if in_entry => {
+                    "publisher" if in_entry => {
                         collecting = Some(Collecting::Publisher);
                         cur_text.clear();
                     }
-                    b"identifier" if in_entry => {
+                    "identifier" if in_entry => {
                         collecting = Some(Collecting::Identifier);
                         cur_text.clear();
                     }
-                    b"published" | b"date" if in_entry => {
+                    "published" | "date" if in_entry => {
                         collecting = Some(Collecting::Published);
                         cur_text.clear();
                     }
-                    b"rights" if in_entry => {
+                    "rights" if in_entry => {
                         collecting = Some(Collecting::Rights);
                         cur_text.clear();
                     }
-                    b"subject" if in_entry => {
+                    "subject" if in_entry => {
                         collecting = Some(Collecting::Subject);
                         cur_text.clear();
                     }
-                    b"link" if in_entry => {
+                    "link" if in_entry => {
                         process_link(
                             e,
                             &mut cur_formats,
@@ -562,12 +560,11 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             &mut cur_subsection_url,
                         );
                     }
-                    b"link" if get_attr(e, b"rel").as_deref() == Some("next") => {
-                        feed_next_url = get_attr(e, b"href");
+                    "link" if get_attr(e, "rel").as_deref() == Some("next") => {
+                        feed_next_url = get_attr(e, "href");
                     }
                     _ => {
-                        let t = std::str::from_utf8(local).unwrap();
-                        tracing::debug!("ignoring unhandled tag: `{t}`");
+                        tracing::debug!("ignoring unhandled tag: `{local}`");
                     }
                 }
             }
@@ -575,7 +572,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
             Ok(Event::Empty(ref e)) => {
                 let name = e.name();
                 let local = local_name(name.as_ref());
-                if local == b"link" {
+                if local == "link" {
                     if in_entry {
                         process_link(
                             e,
@@ -583,17 +580,15 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             &mut cur_cover_url,
                             &mut cur_subsection_url,
                         );
-                    } else if get_attr(e, b"rel").as_deref() == Some("next") {
-                        feed_next_url = get_attr(e, b"href");
+                    } else if get_attr(e, "rel").as_deref() == Some("next") {
+                        feed_next_url = get_attr(e, "href");
                     }
                 }
             }
 
             Ok(Event::Text(ref e)) => {
-                if collecting.is_some()
-                    && let Ok(t) = e.xml_content(XmlVersion::Explicit1_1)
-                {
-                    cur_text.push_str(&t);
+                if collecting.is_some() {
+                    cur_text.push_str(&e.xml_content(XmlVersion::Explicit1_1));
                 }
             }
 
@@ -601,7 +596,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                 let name = e.name();
                 let local = local_name(name.as_ref());
                 match local {
-                    b"entry" if in_entry => {
+                    "entry" if in_entry => {
                         if !cur_formats.is_empty() && !cur_title.is_empty() {
                             books.push(OnlineBook {
                                 id: cur_id.clone(),
@@ -633,20 +628,20 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                         in_contributor = false;
                         collecting = None;
                     }
-                    b"author" if in_author => {
+                    "author" if in_author => {
                         in_author = false;
                     }
-                    b"contributor" if in_contributor => {
+                    "contributor" if in_contributor => {
                         in_contributor = false;
                     }
-                    b"title" if in_entry => {
+                    "title" if in_entry => {
                         if matches!(collecting, Some(Collecting::Title)) {
                             cur_title = cur_text.trim().to_string();
                             cur_text.clear();
                             collecting = None;
                         }
                     }
-                    b"subtitle" if in_entry => {
+                    "subtitle" if in_entry => {
                         if matches!(collecting, Some(Collecting::Subtitle)) {
                             let s = cur_text.trim().to_string();
                             if !s.is_empty() {
@@ -656,14 +651,14 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             collecting = None;
                         }
                     }
-                    b"id" if in_entry => {
+                    "id" if in_entry => {
                         if matches!(collecting, Some(Collecting::Id)) {
                             cur_id = cur_text.trim().to_string();
                             cur_text.clear();
                             collecting = None;
                         }
                     }
-                    b"summary" | b"content" if in_entry => {
+                    "summary" | "content" if in_entry => {
                         if let Some(Collecting::Summary) = collecting {
                             let s = cur_text.trim().to_string();
                             if !s.is_empty() {
@@ -673,7 +668,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             collecting = None;
                         }
                     }
-                    b"name" if in_author => {
+                    "name" if in_author => {
                         if matches!(collecting, Some(Collecting::AuthorName)) {
                             let name = cur_text.trim().to_string();
                             if !name.is_empty() {
@@ -683,7 +678,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             collecting = None;
                         }
                     }
-                    b"name" if in_contributor => {
+                    "name" if in_contributor => {
                         if matches!(collecting, Some(Collecting::ContributorName)) {
                             let name = cur_text.trim().to_string();
                             if !name.is_empty() {
@@ -693,7 +688,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             collecting = None;
                         }
                     }
-                    b"language" if in_entry => {
+                    "language" if in_entry => {
                         if matches!(collecting, Some(Collecting::Language)) {
                             let s = cur_text.trim().to_string();
                             if !s.is_empty() {
@@ -703,7 +698,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             collecting = None;
                         }
                     }
-                    b"publisher" if in_entry => {
+                    "publisher" if in_entry => {
                         if matches!(collecting, Some(Collecting::Publisher)) {
                             let s = cur_text.trim().to_string();
                             if !s.is_empty() {
@@ -713,7 +708,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             collecting = None;
                         }
                     }
-                    b"identifier" if in_entry => {
+                    "identifier" if in_entry => {
                         if matches!(collecting, Some(Collecting::Identifier)) {
                             let s = cur_text.trim().to_string();
                             if !s.is_empty() {
@@ -723,7 +718,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             collecting = None;
                         }
                     }
-                    b"published" | b"date" if in_entry => {
+                    "published" | "date" if in_entry => {
                         if matches!(collecting, Some(Collecting::Published)) {
                             let s = cur_text.trim().to_string();
                             if !s.is_empty() {
@@ -733,7 +728,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             collecting = None;
                         }
                     }
-                    b"rights" if in_entry => {
+                    "rights" if in_entry => {
                         if matches!(collecting, Some(Collecting::Rights)) {
                             let s = cur_text.trim().to_string();
                             if !s.is_empty() {
@@ -743,7 +738,7 @@ fn parse_opds_feed_full(xml: &str, catalog_name: &str) -> Result<FeedResult, Onl
                             collecting = None;
                         }
                     }
-                    b"subject" if in_entry => {
+                    "subject" if in_entry => {
                         if matches!(collecting, Some(Collecting::Subject)) {
                             let s = cur_text.trim().to_string();
                             if !s.is_empty() {
@@ -943,8 +938,8 @@ fn resolve_url(base: &str, href: &str) -> Result<String, OnlineLibraryError> {
     }
 }
 
-fn local_name(name: &[u8]) -> &[u8] {
-    match name.iter().position(|&b| b == b':') {
+fn local_name(name: &str) -> &str {
+    match name.find(':') {
         Some(pos) => &name[pos + 1..],
         None => name,
     }
@@ -962,14 +957,13 @@ fn process_link(
     let mut title_attr = String::new();
 
     for attr in e.attributes().flatten() {
-        let attr_key = attr.key.as_ref().to_vec();
-        let key = local_name(&attr_key);
-        let val = String::from_utf8_lossy(&attr.value).into_owned();
+        let key = local_name(attr.key.as_ref());
+        let val = attr.value.into_owned();
         match key {
-            b"rel" => rel = val,
-            b"href" => href = val,
-            b"type" => mime_type = val,
-            b"title" => title_attr = val,
+            "rel" => rel = val,
+            "href" => href = val,
+            "type" => mime_type = val,
+            "title" => title_attr = val,
             _ => {}
         }
     }
@@ -1000,10 +994,10 @@ fn process_link(
     }
 }
 
-fn get_attr(e: &quick_xml::events::BytesStart<'_>, name: &[u8]) -> Option<String> {
+fn get_attr(e: &quick_xml::events::BytesStart<'_>, name: &str) -> Option<String> {
     e.attributes().flatten().find_map(|a| {
         if local_name(a.key.as_ref()) == name {
-            Some(String::from_utf8_lossy(&a.value).into_owned())
+            Some(a.value.into_owned())
         } else {
             None
         }
@@ -1047,16 +1041,12 @@ fn collect_html_content(reader: &mut Reader<&[u8]>) -> String {
     reader.config_mut().trim_text_start = false;
     reader.config_mut().trim_text_end = false;
 
-    let mut buf = Vec::new();
     let mut result = String::new();
 
     loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
+        match reader.read_event() {
             Ok(Event::Text(ref e)) => {
-                if let Ok(t) = e.decode() {
-                    result.push_str(&t);
-                }
+                result.push_str(e);
             }
             Ok(Event::GeneralRef(ref e)) => {
                 if let Some(ch) = resolve_predefined_entity(e) {
@@ -1076,8 +1066,7 @@ fn collect_html_content(reader: &mut Reader<&[u8]>) -> String {
 /// Resolve the five predefined XML entities and numeric character references.
 /// Returns `None` for unknown named entity references.
 fn resolve_predefined_entity(e: &quick_xml::events::BytesRef<'_>) -> Option<char> {
-    let name = e.decode().ok()?;
-    match name.as_ref() {
+    match e.as_ref() {
         "lt" => Some('<'),
         "gt" => Some('>'),
         "amp" => Some('&'),
@@ -1091,23 +1080,19 @@ fn resolve_predefined_entity(e: &quick_xml::events::BytesRef<'_>) -> Option<char
 /// serialises the inner XML nodes to an HTML string. Consumes the matching
 /// `</content>` end tag before returning, so the outer event loop won't see it.
 fn collect_xhtml_inner(reader: &mut Reader<&[u8]>) -> String {
-    let mut buf = Vec::new();
     let mut depth: u32 = 1; // already inside <content>
     let mut raw = String::new();
 
     loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
+        match reader.read_event() {
             Ok(Event::Start(ref e)) => {
                 depth += 1;
                 let qname = e.name();
-                let local = local_name(qname.as_ref());
-                if let Ok(name) = std::str::from_utf8(local) {
-                    raw.push('<');
-                    raw.push_str(name);
-                    serialize_attrs_to_html(e, &mut raw);
-                    raw.push('>');
-                }
+                let name = local_name(qname.as_ref());
+                raw.push('<');
+                raw.push_str(name);
+                serialize_attrs_to_html(e, &mut raw);
+                raw.push('>');
             }
             Ok(Event::End(ref e)) => {
                 depth -= 1;
@@ -1115,27 +1100,22 @@ fn collect_xhtml_inner(reader: &mut Reader<&[u8]>) -> String {
                     break; // consumed </content>
                 }
                 let qname = e.name();
-                let local = local_name(qname.as_ref());
-                if let Ok(name) = std::str::from_utf8(local) {
-                    raw.push_str("</");
-                    raw.push_str(name);
-                    raw.push('>');
-                }
+                let name = local_name(qname.as_ref());
+                raw.push_str("</");
+                raw.push_str(name);
+                raw.push('>');
             }
             Ok(Event::Empty(ref e)) => {
                 let qname = e.name();
-                let local = local_name(qname.as_ref());
-                if let Ok(name) = std::str::from_utf8(local) {
-                    raw.push('<');
-                    raw.push_str(name);
-                    serialize_attrs_to_html(e, &mut raw);
-                    raw.push_str("/>");
-                }
+                let name = local_name(qname.as_ref());
+                raw.push('<');
+                raw.push_str(name);
+                serialize_attrs_to_html(e, &mut raw);
+                raw.push_str("/>");
             }
             Ok(Event::Text(ref e)) => {
-                if let Ok(t) = e.xml_content(XmlVersion::Explicit1_1)
-                    && !t.trim().is_empty()
-                {
+                let t = e.xml_content(XmlVersion::Explicit1_1);
+                if !t.trim().is_empty() {
                     raw.push_str(&t);
                 }
             }
@@ -1149,25 +1129,22 @@ fn collect_xhtml_inner(reader: &mut Reader<&[u8]>) -> String {
 /// Write HTML attributes from a start/empty tag, skipping namespace declarations.
 fn serialize_attrs_to_html(e: &quick_xml::events::BytesStart<'_>, out: &mut String) {
     for attr in e.attributes().flatten() {
-        let attr_key = attr.key.as_ref().to_vec();
-        if attr_key.starts_with(b"xmlns") {
+        let attr_key = attr.key.as_ref();
+        if attr_key.starts_with("xmlns") {
             continue; // skip xmlns="..." and xmlns:foo="..."
         }
-        let local = local_name(&attr_key);
-        if let Ok(name) = std::str::from_utf8(local) {
-            let val = String::from_utf8_lossy(&attr.value).into_owned();
-            out.push(' ');
-            out.push_str(name);
-            out.push_str("=\"");
-            for c in val.chars() {
-                if c == '"' {
-                    out.push_str("&quot;");
-                } else {
-                    out.push(c);
-                }
+        let name = local_name(attr_key);
+        out.push(' ');
+        out.push_str(name);
+        out.push_str("=\"");
+        for c in attr.value.chars() {
+            if c == '"' {
+                out.push_str("&quot;");
+            } else {
+                out.push(c);
             }
-            out.push('"');
         }
+        out.push('"');
     }
 }
 
