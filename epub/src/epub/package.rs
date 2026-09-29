@@ -4,6 +4,7 @@ use quick_xml::Reader;
 use quick_xml::XmlVersion;
 use quick_xml::events::Event;
 
+use super::decode_lossy;
 use crate::content::resolve_href;
 use crate::domain::metadata::DocumentMetadata;
 use crate::domain::spine::SpineItem;
@@ -36,8 +37,8 @@ pub struct Package {
 
 impl Package {
     pub fn parse(xml: &[u8], opf_base: &str) -> Result<Self> {
-        let mut reader = Reader::from_reader(xml);
-        let mut buf = Vec::new();
+        let xml = decode_lossy(xml);
+        let mut reader = Reader::from_str(&xml);
 
         let mut metadata = DocumentMetadata::default();
         let mut manifest: HashMap<String, ManifestItem> = HashMap::new();
@@ -51,27 +52,26 @@ impl Package {
         let mut cover_meta_id: Option<String> = None;
 
         loop {
-            match reader.read_event_into(&mut buf)? {
+            match reader.read_event()? {
                 Event::Start(ref e) => {
                     let name = e.name();
                     let local = local_name(name.as_ref());
                     match local {
-                        b"metadata" => in_metadata = true,
-                        b"title" | b"creator" | b"language" | b"publisher" | b"identifier"
-                        | b"date"
+                        "metadata" => in_metadata = true,
+                        "title" | "creator" | "language" | "publisher" | "identifier" | "date"
                             if in_metadata =>
                         {
-                            current_tag = Some(String::from_utf8_lossy(local).into_owned());
+                            current_tag = Some(local.to_string());
                         }
-                        b"item" => {
+                        "item" => {
                             if let Some(item) = parse_manifest_item(e, opf_base)? {
                                 manifest.insert(item.id.clone(), item);
                             }
                         }
-                        b"spine" => {
+                        "spine" => {
                             ncx_idref = parse_toc_attr(e)?;
                         }
-                        b"itemref" => {
+                        "itemref" => {
                             if let Some(spine_ref) = parse_spine_ref(e)? {
                                 spine_refs.push(spine_ref);
                             }
@@ -83,20 +83,20 @@ impl Package {
                     let name = e.name();
                     let local = local_name(name.as_ref());
                     match local {
-                        b"item" => {
+                        "item" => {
                             if let Some(item) = parse_manifest_item(e, opf_base)? {
                                 manifest.insert(item.id.clone(), item);
                             }
                         }
-                        b"meta" if in_metadata => {
+                        "meta" if in_metadata => {
                             if let Some(id) = parse_cover_meta(e)? {
                                 cover_meta_id = Some(id);
                             }
                         }
-                        b"spine" => {
+                        "spine" => {
                             ncx_idref = parse_toc_attr(e)?;
                         }
-                        b"itemref" => {
+                        "itemref" => {
                             if let Some(spine_ref) = parse_spine_ref(e)? {
                                 spine_refs.push(spine_ref);
                             }
@@ -105,9 +105,7 @@ impl Package {
                     }
                 }
                 Event::Text(ref e) if in_metadata && current_tag.is_some() => {
-                    let text = e.xml_content(XmlVersion::Explicit1_1).map_err(|err| {
-                        EpubError::InvalidPackage(format!("text decode error: {err}"))
-                    })?;
+                    let text = e.xml_content(XmlVersion::Explicit1_1);
                     let text = text.trim().to_string();
                     if !text.is_empty() {
                         match current_tag.as_deref() {
@@ -127,7 +125,7 @@ impl Package {
                 Event::End(ref e) => {
                     let name = e.name();
                     let local = local_name(name.as_ref());
-                    if local == b"metadata" {
+                    if local == "metadata" {
                         in_metadata = false;
                     }
                     current_tag = None;
@@ -135,7 +133,6 @@ impl Package {
                 Event::Eof => break,
                 _ => {}
             }
-            buf.clear();
         }
 
         // Resolve nav href: EPUB3 nav item has properties containing "nav"
@@ -190,8 +187,8 @@ impl Package {
     }
 }
 
-fn local_name(name: &[u8]) -> &[u8] {
-    match name.iter().position(|&b| b == b':') {
+fn local_name(name: &str) -> &str {
+    match name.find(':') {
         Some(pos) => &name[pos + 1..],
         None => name,
     }
@@ -210,17 +207,17 @@ fn parse_manifest_item(
         let attr =
             attr.map_err(|e| EpubError::InvalidPackage(format!("bad manifest attribute: {e}")))?;
         match attr.key.as_ref() {
-            b"id" => id = Some(String::from_utf8_lossy(&attr.value).into_owned()),
-            b"href" => {
-                let raw = String::from_utf8_lossy(&attr.value).into_owned();
+            "id" => id = Some(attr.value.into_owned()),
+            "href" => {
+                let raw = attr.value.into_owned();
                 href = Some(if opf_base.is_empty() {
                     raw
                 } else {
                     resolve_href(opf_base, &raw)
                 });
             }
-            b"media-type" => media_type = Some(String::from_utf8_lossy(&attr.value).into_owned()),
-            b"properties" => properties = Some(String::from_utf8_lossy(&attr.value).into_owned()),
+            "media-type" => media_type = Some(attr.value.into_owned()),
+            "properties" => properties = Some(attr.value.into_owned()),
             _ => {}
         }
     }
@@ -244,8 +241,8 @@ fn parse_cover_meta(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<Stri
         let attr =
             attr.map_err(|e| EpubError::InvalidPackage(format!("bad meta attribute: {e}")))?;
         match attr.key.as_ref() {
-            b"name" => name = Some(String::from_utf8_lossy(&attr.value).into_owned()),
-            b"content" => content = Some(String::from_utf8_lossy(&attr.value).into_owned()),
+            "name" => name = Some(attr.value.into_owned()),
+            "content" => content = Some(attr.value.into_owned()),
             _ => {}
         }
     }
@@ -260,8 +257,8 @@ fn parse_toc_attr(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<String
     for attr in e.attributes() {
         let attr =
             attr.map_err(|e| EpubError::InvalidPackage(format!("bad spine attribute: {e}")))?;
-        if attr.key.as_ref() == b"toc" {
-            return Ok(Some(String::from_utf8_lossy(&attr.value).into_owned()));
+        if attr.key.as_ref() == "toc" {
+            return Ok(Some(attr.value.into_owned()));
         }
     }
     Ok(None)
@@ -275,8 +272,8 @@ fn parse_spine_ref(e: &quick_xml::events::BytesStart<'_>) -> Result<Option<(Stri
         let attr =
             attr.map_err(|e| EpubError::InvalidPackage(format!("bad spine attribute: {e}")))?;
         match attr.key.as_ref() {
-            b"idref" => idref = Some(String::from_utf8_lossy(&attr.value).into_owned()),
-            b"linear" => linear = &*attr.value != b"no",
+            "idref" => idref = Some(attr.value.into_owned()),
+            "linear" => linear = attr.value != "no",
             _ => {}
         }
     }
@@ -323,6 +320,22 @@ mod tests {
         Assert::that(pkg.metadata.publisher.as_deref()).is_some("Test Publisher");
         Assert::that(pkg.metadata.identifier.as_deref()).is_some("urn:isbn:1234567890");
         Assert::that(pkg.metadata.date.as_deref()).is_some("2024-01-15");
+    }
+
+    #[test]
+    fn tolerates_invalid_utf8() {
+        // A stray Latin-1 byte (0xE9, "é") in an attribute and a comment.
+        let opf = b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<package xmlns=\"http://www.idpf.org/2007/opf\" version=\"3.0\">
+  <!-- r\xe9sum\xe9 -->
+  <manifest>
+    <item id=\"c1\" href=\"caf\xe9.xhtml\" media-type=\"application/xhtml+xml\"/>
+  </manifest>
+  <spine><itemref idref=\"c1\"/></spine>
+</package>";
+        let pkg = Package::parse(opf, "").unwrap();
+        Assert::that(pkg.manifest.get("c1").unwrap().href.clone()).is("caf\u{fffd}.xhtml");
+        Assert::that(&pkg.spine).has_length(1);
     }
 
     #[test]

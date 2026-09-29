@@ -1,6 +1,7 @@
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
+use super::decode_lossy;
 use crate::error::EpubError;
 use crate::error::Result;
 
@@ -10,18 +11,18 @@ pub struct Container {
 
 impl Container {
     pub fn from_xml(xml: &[u8]) -> Result<Self> {
-        let mut reader = Reader::from_reader(xml);
-        let mut buf = Vec::new();
+        let xml = decode_lossy(xml);
+        let mut reader = Reader::from_str(&xml);
 
         loop {
-            match reader.read_event_into(&mut buf)? {
-                Event::Empty(ref e) | Event::Start(ref e) if e.name().as_ref() == b"rootfile" => {
+            match reader.read_event()? {
+                Event::Empty(ref e) | Event::Start(ref e) if e.name().as_ref() == "rootfile" => {
                     for attr in e.attributes() {
                         let attr = attr.map_err(|e| {
                             EpubError::InvalidContainer(format!("bad attribute: {e}"))
                         })?;
-                        if attr.key.as_ref() == b"full-path" {
-                            let path = String::from_utf8_lossy(&attr.value).into_owned();
+                        if attr.key.as_ref() == "full-path" {
+                            let path = attr.value.into_owned();
                             return Ok(Container {
                                 rootfile_path: path,
                             });
@@ -34,7 +35,6 @@ impl Container {
                 Event::Eof => break,
                 _ => {}
             }
-            buf.clear();
         }
 
         Err(EpubError::InvalidContainer(

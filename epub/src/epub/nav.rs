@@ -2,6 +2,7 @@ use quick_xml::Reader;
 use quick_xml::XmlVersion;
 use quick_xml::events::Event;
 
+use super::decode_lossy;
 use crate::content::base_dir;
 use crate::content::resolve_href;
 use crate::domain::nav::NavEntry;
@@ -14,29 +15,23 @@ use crate::domain::nav::NavEntry;
 /// (all at depth 0).
 pub fn parse_epub3_nav(xml: &[u8], nav_zip_href: &str) -> Vec<NavEntry> {
     let base = base_dir(nav_zip_href);
-    let mut reader = Reader::from_reader(xml);
+    let xml = decode_lossy(xml);
+    let mut reader = Reader::from_str(&xml);
     reader.config_mut().trim_text(true);
-    let mut buf = Vec::new();
 
     // Two-pass: first try only the toc nav; if empty, fall back to all <a> elements.
-    let result = extract_nav_links(&mut reader, &mut buf, base, true);
+    let result = extract_nav_links(&mut reader, base, true);
     if !result.is_empty() {
         return result;
     }
 
     // Reset and retry without the toc filter
-    let mut reader = Reader::from_reader(xml);
+    let mut reader = Reader::from_str(&xml);
     reader.config_mut().trim_text(true);
-    let mut buf = Vec::new();
-    extract_nav_links(&mut reader, &mut buf, base, false)
+    extract_nav_links(&mut reader, base, false)
 }
 
-fn extract_nav_links(
-    reader: &mut Reader<&[u8]>,
-    buf: &mut Vec<u8>,
-    base: &str,
-    toc_only: bool,
-) -> Vec<NavEntry> {
+fn extract_nav_links(reader: &mut Reader<&[u8]>, base: &str, toc_only: bool) -> Vec<NavEntry> {
     let mut entries: Vec<NavEntry> = Vec::new();
 
     // Depth tracking for the toc nav element
@@ -52,43 +47,42 @@ fn extract_nav_links(
     let mut in_anchor = false;
 
     loop {
-        buf.clear();
-        match reader.read_event_into(buf) {
+        match reader.read_event() {
             Ok(Event::Start(ref e)) => {
                 let name = e.name();
                 let local = local_name(name.as_ref());
                 match local {
-                    b"nav" if toc_only => {
+                    "nav" if toc_only => {
                         // Check for epub:type="toc" (or type="toc" with any prefix)
                         let is_toc = e.attributes().flatten().any(|a| {
                             let key = local_name(a.key.as_ref());
-                            key == b"type"
-                                && (a.value.as_ref() == b"toc"
-                                    || a.value.as_ref().ends_with(b" toc")
-                                    || a.value.as_ref().starts_with(b"toc "))
+                            key == "type"
+                                && (a.value == "toc"
+                                    || a.value.ends_with(" toc")
+                                    || a.value.starts_with("toc "))
                         });
                         if is_toc {
                             in_toc_nav = true;
                             nav_depth = 1;
                         }
                     }
-                    b"nav" if in_toc_nav && nav_depth > 0 => {
+                    "nav" if in_toc_nav && nav_depth > 0 => {
                         nav_depth += 1;
                     }
-                    b"ol" if in_toc_nav => {
+                    "ol" if in_toc_nav => {
                         ol_depth += 1;
                     }
-                    _ if in_anchor && local != b"a"
+                    _ if in_anchor && local != "a"
                         // Child element opened inside <a>: ensure a space separator
                         // so that e.g. <span>1.2</span><span>Title</span> → "1.2 Title".
                         && !current_text.is_empty() && !current_text.ends_with(char::is_whitespace) =>
                     {
                         current_text.push(' ');
                     }
-                    b"a" if in_toc_nav => {
+                    "a" if in_toc_nav => {
                         let href = e.attributes().flatten().find_map(|a| {
-                            if a.key.as_ref() == b"href" {
-                                let raw = String::from_utf8_lossy(&a.value).into_owned();
+                            if a.key.as_ref() == "href" {
+                                let raw = a.value.into_owned();
                                 // Resolve the full href (with fragment) against the base dir
                                 let (path_part, fragment) = match raw.split_once('#') {
                                     Some((p, f)) => (p, Some(f.to_string())),
@@ -131,7 +125,7 @@ fn extract_nav_links(
             Ok(Event::Empty(ref e)) => {
                 let name = e.name();
                 let local = local_name(name.as_ref());
-                if local == b"a" && in_toc_nav {
+                if local == "a" && in_toc_nav {
                     // Self-closing <a/> — unusual but handle gracefully (no text to capture)
                 }
             }
@@ -139,23 +133,23 @@ fn extract_nav_links(
                 let name = e.name();
                 let local = local_name(name.as_ref());
                 match local {
-                    b"nav" if toc_only && in_toc_nav => {
+                    "nav" if toc_only && in_toc_nav => {
                         nav_depth = nav_depth.saturating_sub(1);
                         if nav_depth == 0 {
                             in_toc_nav = false;
                         }
                     }
-                    b"ol" if in_toc_nav => {
+                    "ol" if in_toc_nav => {
                         ol_depth = ol_depth.saturating_sub(1);
                     }
-                    _ if in_anchor && local != b"a"
+                    _ if in_anchor && local != "a"
                         // Child element closed inside <a>: ensure a space separator
                         // so that e.g. <span>1.2</span>Title → "1.2 Title".
                         && !current_text.is_empty() && !current_text.ends_with(char::is_whitespace) =>
                     {
                         current_text.push(' ');
                     }
-                    b"a" if in_anchor => {
+                    "a" if in_anchor => {
                         if let Some(href) = current_href.take() {
                             let label = current_text.trim().to_string();
                             if !label.is_empty() {
@@ -173,9 +167,7 @@ fn extract_nav_links(
                 }
             }
             Ok(Event::Text(ref e)) if in_anchor => {
-                if let Ok(t) = e.xml_content(XmlVersion::Explicit1_1) {
-                    current_text.push_str(&t);
-                }
+                current_text.push_str(&e.xml_content(XmlVersion::Explicit1_1));
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -189,9 +181,9 @@ fn extract_nav_links(
 /// entries with labels, full hrefs (including fragments), and nesting depth.
 pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> Vec<NavEntry> {
     let base = base_dir(ncx_zip_href);
-    let mut reader = Reader::from_reader(xml);
+    let xml = decode_lossy(xml);
+    let mut reader = Reader::from_str(&xml);
     reader.config_mut().trim_text(true);
-    let mut buf = Vec::new();
     let mut entries: Vec<NavEntry> = Vec::new();
 
     let mut in_navlabel_text = false;
@@ -200,17 +192,16 @@ pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> Vec<NavEntry> {
     let mut navpoint_depth: usize = 0;
 
     loop {
-        buf.clear();
-        match reader.read_event_into(&mut buf) {
+        match reader.read_event() {
             Ok(Event::Start(ref e)) => {
                 let name = e.name();
                 let local = local_name(name.as_ref());
                 match local {
-                    b"navPoint" => {
+                    "navPoint" => {
                         navpoint_depth += 1;
                     }
-                    b"navLabel" => capturing_label = true,
-                    b"text" if capturing_label => {
+                    "navLabel" => capturing_label = true,
+                    "text" if capturing_label => {
                         in_navlabel_text = true;
                         pending_label.clear();
                     }
@@ -220,11 +211,11 @@ pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> Vec<NavEntry> {
             Ok(Event::Empty(ref e)) => {
                 let name = e.name();
                 let local = local_name(name.as_ref());
-                if local == b"content" {
+                if local == "content" {
                     // <content src="chapter.xhtml#anchor"/>
                     let src = e.attributes().flatten().find_map(|a| {
-                        if a.key.as_ref() == b"src" {
-                            let raw = String::from_utf8_lossy(&a.value).into_owned();
+                        if a.key.as_ref() == "src" {
+                            let raw = a.value.into_owned();
                             let (path_part, fragment) = match raw.split_once('#') {
                                 Some((p, f)) => (p, Some(f.to_string())),
                                 None => (raw.as_str(), None),
@@ -262,13 +253,13 @@ pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> Vec<NavEntry> {
                 let name = e.name();
                 let local = local_name(name.as_ref());
                 match local {
-                    b"text" if in_navlabel_text => {
+                    "text" if in_navlabel_text => {
                         in_navlabel_text = false;
                     }
-                    b"navLabel" => {
+                    "navLabel" => {
                         capturing_label = false;
                     }
-                    b"navPoint" => {
+                    "navPoint" => {
                         // Reset pending label when the navPoint closes
                         pending_label.clear();
                         navpoint_depth = navpoint_depth.saturating_sub(1);
@@ -277,9 +268,7 @@ pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> Vec<NavEntry> {
                 }
             }
             Ok(Event::Text(ref e)) if in_navlabel_text => {
-                if let Ok(t) = e.xml_content(XmlVersion::Explicit1_1) {
-                    pending_label.push_str(&t);
-                }
+                pending_label.push_str(&e.xml_content(XmlVersion::Explicit1_1));
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -289,8 +278,8 @@ pub fn parse_epub2_ncx(xml: &[u8], ncx_zip_href: &str) -> Vec<NavEntry> {
     entries
 }
 
-fn local_name(name: &[u8]) -> &[u8] {
-    match name.iter().position(|&b| b == b':') {
+fn local_name(name: &str) -> &str {
+    match name.find(':') {
         Some(pos) => &name[pos + 1..],
         None => name,
     }
