@@ -29,7 +29,7 @@ sqlx = { version = "0.9.0", features = ["sqlite", "runtime-tokio", "macros"] }
 figment = { version = "0.10.19", default-features = false }
 futures = { version = "0.3.34", default-features = false, features = ["std", "async-await"] }
 futures-util = "0.3.34"
-html5ever = "0.39.0"
+html5ever = "0.40.1"
 image = { version = "0.25", default-features = false }
 i18n-embed = "0.16.0"
 i18n-embed-fl = "0.10.1"
