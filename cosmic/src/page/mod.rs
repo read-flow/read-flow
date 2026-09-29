@@ -559,7 +559,8 @@ impl Pages {
                 [&fingerprint]
                 .update(message)
                 .map(move |action| {
-                    action.map(|msg| map_document_details_message(fingerprint.clone(), msg))
+                    let fingerprint = fingerprint.clone();
+                    action.map(move |msg| map_document_details_message(fingerprint.clone(), msg))
                 }),
             PageMessage::AddRemote(url, user_id, passphrase) => {
                 let private_mode = self.preferences.current_private_mode();
@@ -656,7 +657,9 @@ impl Pages {
                     initialization
                         .map(move |action| {
                             let fingerprint = fingerprint_1.clone();
-                            action.map(move |msg| map_document_details_message(fingerprint, msg))
+                            action.map(move |msg| {
+                                map_document_details_message(fingerprint.clone(), msg)
+                            })
                         })
                         .chain(task::message(PageMessage::Out(PageOutput::PageAdded(
                             selector,
@@ -671,7 +674,8 @@ impl Pages {
                     viewer
                         .update(EpubViewerMessage::Key(modifiers, key, text))
                         .map(move |action| {
-                            action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
+                            let fingerprint = fingerprint.clone();
+                            action.map(move |msg| map_epub_viewer_message(fingerprint.clone(), msg))
                         })
                 }
                 PageSelector::MuPdfViewer(fingerprint) => {
@@ -681,7 +685,9 @@ impl Pages {
                     viewer
                         .update(MuPdfViewerMessage::Key(modifiers, key, text))
                         .map(move |action| {
-                            action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
+                            let fingerprint = fingerprint.clone();
+                            action
+                                .map(move |msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
                         })
                 }
                 PageSelector::Documents => self
@@ -695,7 +701,10 @@ impl Pages {
                     details
                         .update(DocumentDetailsMessage::Key(modifiers, key))
                         .map(move |action| {
-                            action.map(|msg| map_document_details_message(fingerprint.clone(), msg))
+                            let fingerprint = fingerprint.clone();
+                            action.map(move |msg| {
+                                map_document_details_message(fingerprint.clone(), msg)
+                            })
                         })
                 }
                 PageSelector::ImageViewer(id) => {
@@ -704,7 +713,7 @@ impl Pages {
                     };
                     viewer
                         .update(ImageViewerMessage::Key(modifiers, key))
-                        .map(move |action| action.map(|msg| map_image_viewer_message(id, msg)))
+                        .map(move |action| action.map(move |msg| map_image_viewer_message(id, msg)))
                 }
                 PageSelector::Preferences => self
                     .preferences
@@ -728,7 +737,8 @@ impl Pages {
                     viewer
                         .update(EpubViewerMessage::ModifiersChanged(modifiers))
                         .map(move |action| {
-                            action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
+                            let fingerprint = fingerprint.clone();
+                            action.map(move |msg| map_epub_viewer_message(fingerprint.clone(), msg))
                         })
                 }
                 PageSelector::MuPdfViewer(fingerprint) => {
@@ -738,7 +748,9 @@ impl Pages {
                     viewer
                         .update(MuPdfViewerMessage::ModifiersChanged(modifiers))
                         .map(move |action| {
-                            action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
+                            let fingerprint = fingerprint.clone();
+                            action
+                                .map(move |msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
                         })
                 }
                 _ => Task::none(),
@@ -748,7 +760,8 @@ impl Pages {
                     return Task::none();
                 };
                 viewer.update(message).map(move |action| {
-                    action.map(|msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
+                    let fingerprint = fingerprint.clone();
+                    action.map(move |msg| map_mu_pdf_viewer_message(fingerprint.clone(), msg))
                 })
             }
             PageMessage::CloseMuPdfViewer(fingerprint, progress_info) => {
@@ -775,7 +788,8 @@ impl Pages {
                     return Task::none();
                 };
                 viewer.update(message).map(move |action| {
-                    action.map(|msg| map_epub_viewer_message(fingerprint.clone(), msg))
+                    let fingerprint = fingerprint.clone();
+                    action.map(move |msg| map_epub_viewer_message(fingerprint.clone(), msg))
                 })
             }
             PageMessage::ImageViewer(id, message) => {
@@ -784,7 +798,7 @@ impl Pages {
                 };
                 viewer
                     .update(message)
-                    .map(move |action| action.map(|msg| map_image_viewer_message(id, msg)))
+                    .map(move |action| action.map(move |msg| map_image_viewer_message(id, msg)))
             }
             PageMessage::OpenImageViewer(image) => {
                 let id = self.next_image_viewer_id;
@@ -904,7 +918,7 @@ impl Pages {
         let selector = PageSelector::MuPdfViewer(fingerprint);
         let init_task = initialization.map(move |action| {
             let fp = fingerprint_1.clone();
-            action.map(move |msg| map_mu_pdf_viewer_message(fp, msg))
+            action.map(move |msg| map_mu_pdf_viewer_message(fp.clone(), msg))
         });
         self.activate_new_viewer(selector, "application-pdf-symbolic", init_task)
     }
@@ -928,7 +942,7 @@ impl Pages {
         let selector = PageSelector::EpubViewer(fingerprint);
         let init_task = initialization.map(move |action| {
             let fp = fingerprint_1.clone();
-            action.map(move |msg| map_epub_viewer_message(fp, msg))
+            action.map(move |msg| map_epub_viewer_message(fp.clone(), msg))
         });
         self.activate_new_viewer(selector, "application-epub+zip", init_task)
     }

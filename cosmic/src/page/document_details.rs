@@ -955,7 +955,7 @@ impl DocumentDetails {
             section = section.add(Self::stacked_field(
                 "accessories-text-editor-symbolic",
                 fl!("document-details-document-meta-description"),
-                widget::text_editor(&self.description_content)
+                widget::text_editor::text_editor(&self.description_content)
                     .on_action(DocumentDetailsMessage::DescriptionAction)
                     .height(Length::Fixed(120.0))
                     .into(),
