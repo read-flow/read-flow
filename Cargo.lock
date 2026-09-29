@@ -2263,7 +2263,7 @@ name = "epub"
 version = "0.6.0"
 dependencies = [
  "assert4rs",
- "base64 0.22.1",
+ "base64 0.23.1",
  "html5ever",
  "image",
  "quick-xml",
@@ -6112,7 +6112,7 @@ dependencies = [
  "async-trait",
  "axum",
  "axum-server",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bzip2",
  "clap",
  "directories",
