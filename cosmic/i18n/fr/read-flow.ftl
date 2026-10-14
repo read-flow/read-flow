@@ -315,6 +315,7 @@ settings-server-owner-role = Rôle Propriétaire
 settings-server-owner-role-description = Donne accès au contenu privé (requis pour demander le mode privé à ce serveur).
 settings-server-passphrase = La phrase de passe
 settings-server-passphrase-placeholder = Entrer la phrase de passe...
+settings-server-passphrase-requirements = Au moins 8 caractères, avec des lettres et des chiffres ou des caractères spéciaux.
 settings-server-section = Serveur
 settings-server-section-description = Partagez votre bibliothèque sur le réseau et gérez les appareils autorisés à se connecter.
 settings-server-user-id = L'ID utilisateur

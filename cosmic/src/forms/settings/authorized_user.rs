@@ -61,8 +61,9 @@ impl AuthorizedUserForm {
     }
 
     fn password_meets_requirements(password: &str) -> bool {
-        // TODO: combination of alphanumeric and special characters
-        password.len() >= 8
+        password.chars().count() >= 8
+            && password.chars().any(char::is_alphabetic)
+            && password.chars().any(|c| !c.is_alphabetic())
     }
 
     fn is_submittable(&self) -> bool {
@@ -128,6 +129,7 @@ impl AuthorizedUserForm {
             )
             .add(
                 widget::settings::item::builder(fl!("settings-server-passphrase"))
+                    .description(fl!("settings-server-passphrase-requirements"))
                     .icon(widget::icon::from_name("dialog-password-symbolic").size(ICON_SIZE))
                     .control(
                         widget::secure_input(
@@ -180,5 +182,19 @@ impl AuthorizedUserForm {
                 panic!("{message:?} should be handled by the parent component")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AuthorizedUserForm;
+
+    #[test]
+    fn password_requirements() {
+        assert!(!AuthorizedUserForm::password_meets_requirements("short1!"));
+        assert!(!AuthorizedUserForm::password_meets_requirements("onlyletters"));
+        assert!(!AuthorizedUserForm::password_meets_requirements("12345678"));
+        assert!(AuthorizedUserForm::password_meets_requirements("letters123"));
+        assert!(AuthorizedUserForm::password_meets_requirements("with space"));
     }
 }

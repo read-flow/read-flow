@@ -316,6 +316,7 @@ settings-server-owner-role = Eigenaarrol
 settings-server-owner-role-description = Geeft toegang tot privé-inhoud (vereist om privémodus te vragen bij deze server).
 settings-server-passphrase = Wachtwoord
 settings-server-passphrase-placeholder = Voer wachtwoord in...
+settings-server-passphrase-requirements = Minimaal 8 tekens, met letters en cijfers of speciale tekens.
 settings-server-section = Server
 settings-server-section-description = Deel uw bibliotheek via het netwerk en beheer welke apparaten verbinding mogen maken.
 settings-server-user-id = Gebruikers-ID

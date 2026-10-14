@@ -318,6 +318,7 @@ settings-server-owner-role = Owner Role
 settings-server-owner-role-description = Grants access to private content (required to request private mode from this server).
 settings-server-passphrase = Passphrase
 settings-server-passphrase-placeholder = Enter passphrase...
+settings-server-passphrase-requirements = At least 8 characters, with letters and numbers or special characters.
 settings-server-section = Server
 settings-server-section-description = Share your library over the network and manage which devices can connect.
 settings-server-user-id = User ID
