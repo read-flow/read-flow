@@ -6280,7 +6280,6 @@ dependencies = [
  "cosmic-golden",
  "cosmic-text",
  "cucumber",
- "derive_more",
  "epub",
  "futures",
  "futures-util",

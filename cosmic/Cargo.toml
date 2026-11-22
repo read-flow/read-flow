@@ -42,7 +42,6 @@ anyhow.workspace = true
 async-trait.workspace = true
 clap = { workspace = true, features = ["derive"] }
 cosmic-text.workspace = true
-derive_more = { workspace = true, features = ["as_ref", "deref", "from"] }
 futures.workspace = true
 futures-util.workspace = true
 i18n-embed = { workspace = true, features = ["fluent-system", "desktop-requester"] }
