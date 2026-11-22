@@ -192,9 +192,15 @@ mod tests {
     #[test]
     fn password_requirements() {
         assert!(!AuthorizedUserForm::password_meets_requirements("short1!"));
-        assert!(!AuthorizedUserForm::password_meets_requirements("onlyletters"));
+        assert!(!AuthorizedUserForm::password_meets_requirements(
+            "onlyletters"
+        ));
         assert!(!AuthorizedUserForm::password_meets_requirements("12345678"));
-        assert!(AuthorizedUserForm::password_meets_requirements("letters123"));
-        assert!(AuthorizedUserForm::password_meets_requirements("with space"));
+        assert!(AuthorizedUserForm::password_meets_requirements(
+            "letters123"
+        ));
+        assert!(AuthorizedUserForm::password_meets_requirements(
+            "with space"
+        ));
     }
 }
