@@ -154,3 +154,87 @@ pub(crate) async fn drain<M: Send + 'static>(task: Task<Action<M>>) -> Vec<M> {
     }
     messages
 }
+
+/// Bounds found by laying out an element, see [`layout_extents`].
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub(crate) struct LayoutExtents {
+    /// Viewport and content bounds of every scrollable, in tree order.
+    pub scrollables: Vec<ScrollableExtent>,
+    /// Bounds of every container that has an id, in tree order.
+    pub containers: Vec<(cosmic::widget::Id, cosmic::iced::Rectangle)>,
+}
+
+/// Viewport and content bounds of one scrollable in a laid-out element.
+#[cfg(test)]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ScrollableExtent {
+    pub viewport: cosmic::iced::Rectangle,
+    pub content: cosmic::iced::Rectangle,
+}
+
+/// Lay out `element` at `width` × `height` with the real (headless) renderer
+/// and return the bounds of its scrollables and of its containers with ids.
+///
+/// Lets tests check what the user would see — e.g. whether content overflows
+/// its scrollable — without rendering pixels.
+#[cfg(test)]
+pub(crate) fn layout_extents<Message>(
+    element: cosmic::Element<'_, Message>,
+    width: f32,
+    height: f32,
+) -> LayoutExtents {
+    use cosmic::iced::Rectangle;
+    use cosmic::iced::Size;
+    use cosmic::iced::Vector;
+    use cosmic::iced::advanced::widget::Id;
+    use cosmic::iced::advanced::widget::Operation;
+    use cosmic::iced::advanced::widget::operation::Scrollable;
+    use cosmic::iced::core::renderer::Headless;
+    use cosmic::iced::runtime::user_interface::Cache;
+    use cosmic::iced::runtime::user_interface::UserInterface;
+
+    struct Collect(LayoutExtents);
+
+    impl Operation<()> for Collect {
+        fn traverse(&mut self, operate: &mut dyn FnMut(&mut dyn Operation<()>)) {
+            operate(self);
+        }
+
+        fn container(&mut self, id: Option<&Id>, bounds: Rectangle) {
+            if let Some(id) = id {
+                self.0.containers.push((id.clone(), bounds));
+            }
+        }
+
+        fn scrollable(
+            &mut self,
+            _id: Option<&Id>,
+            bounds: Rectangle,
+            content_bounds: Rectangle,
+            _translation: Vector,
+            _state: &mut dyn Scrollable,
+        ) {
+            self.0.scrollables.push(ScrollableExtent {
+                viewport: bounds,
+                content: content_bounds,
+            });
+        }
+    }
+
+    let mut renderer = futures::executor::block_on(<cosmic::Renderer as Headless>::new(
+        cosmic::font::default(),
+        cosmic::iced::Pixels(16.0),
+        Some("tiny-skia"),
+    ))
+    .expect("create headless renderer");
+    let mut ui = UserInterface::build(
+        element,
+        Size::new(width, height),
+        Cache::default(),
+        &mut renderer,
+    );
+    let mut collect = Collect(LayoutExtents::default());
+    ui.operate(&renderer, &mut collect);
+    collect.0
+}

@@ -1,9 +1,10 @@
+#[cfg(test)]
+mod pagination_tests;
 mod render;
 #[cfg(test)]
 pub(crate) mod test_helper;
 
 use std::cell::Cell;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
@@ -19,7 +20,14 @@ use cosmic::cosmic_config;
 use cosmic::cosmic_config::ConfigGet;
 use cosmic::cosmic_config::ConfigSet;
 use cosmic::cosmic_theme;
+use cosmic::iced::Font;
 use cosmic::iced::Length;
+use cosmic::iced::advanced::graphics::text::Paragraph;
+use cosmic::iced::advanced::graphics::text::cosmic_text;
+use cosmic::iced::advanced::graphics::text::cosmic_text::FontSystem;
+use cosmic::iced::advanced::graphics::text::font_system;
+use cosmic::iced::advanced::graphics::text::to_attributes;
+use cosmic::iced::advanced::text::Paragraph as _;
 use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::alignment::Vertical;
 use cosmic::iced::core::SmolStr;
@@ -33,7 +41,7 @@ use cosmic::task;
 use cosmic::theme;
 use cosmic::theme::Container;
 use cosmic::widget;
-use cosmic_text::FontSystem;
+use epub::BlockStyle;
 use epub::ContentBlock;
 use epub::Document as EpubDocumentTrait;
 use epub::EpubDocument;
@@ -460,6 +468,9 @@ pub struct EpubViewer {
     /// Most recently observed viewport dimensions, set from the `responsive`
     /// closure (via Cell, since `view()` takes `&self`).
     viewport_size: Cell<(f32, f32)>,
+    /// Size of the area the pages are laid out in (paginated mode), recorded
+    /// during view() so pagination measures against the space the pages get.
+    page_area: Cell<(f32, f32)>,
     /// Whether to render two pages side by side in paginated mode.
     dual_page: DualPageMode,
     /// Deferred block index for page restoration.  Set when reading progress
@@ -500,10 +511,6 @@ pub struct EpubViewer {
     search_current: usize,
     /// Widget ID for the search text input (used to focus it on open).
     search_input_id: widget::Id,
-    /// Shared font system for shaped text measurement (Phase 4b).
-    /// Wrapped in `RefCell` for interior mutability: shaping mutates the font system
-    /// cache but is logically read-only from the viewer's perspective.
-    font_system: RefCell<FontSystem>,
     /// Page margin in pixels applied to all four sides of the page content area (0–128).
     page_margin: f32,
     /// Whether developer-only controls (e.g. raw HTML view) are shown, set via `--debug`.
@@ -557,6 +564,7 @@ impl EpubViewer {
             pagination_cache: HashMap::new(),
             block_heights_cache: HashMap::new(),
             viewport_size: Cell::new((0.0, 0.0)),
+            page_area: Cell::new((0.0, 0.0)),
             dual_page: saved_prefs.dual_page,
             pending_block_index: None,
             pending_node_path: Vec::new(),
@@ -575,7 +583,6 @@ impl EpubViewer {
             search_matches: Vec::new(),
             search_current: 0,
             search_input_id: widget::Id::unique(),
-            font_system: RefCell::new(FontSystem::new()),
             page_margin: saved_prefs.page_margin,
             debug,
         };
@@ -821,7 +828,6 @@ impl EpubViewer {
         let active_chapter = self.active_chapter;
         let show_raw_html = self.show_raw_html;
 
-        let max_content_width = 800.0_f32;
         let base_font_size = self.base_font_size;
         let page_margin = self.page_margin;
 
@@ -845,105 +851,117 @@ impl EpubViewer {
 
             let dual = self.should_dual_page(size.width);
 
-            // Use cached layout if available, otherwise compute on-the-fly so
-            // the first render after switching to paginated mode isn't empty.
-            let cached_layout = self.pagination_cache.get(&active_chapter);
-            let computed_layout;
-            let layout = match cached_layout {
-                Some(l) => l,
-                None => {
-                    let sp_s = theme::active().cosmic().spacing.space_s as f32;
-                    let sp_xxs = theme::active().cosmic().spacing.space_xxs as f32;
-                    let pw = if dual {
-                        ((size.width - sp_xxs) / 2.0 - sp_s * 2.0).min(max_content_width)
-                    } else {
-                        max_content_width.min(size.width - sp_s * 2.0)
-                    };
-                    let cw = (pw - page_margin * 2.0).max(1.0);
-                    let ch = (size.height - page_margin * 2.0 - sp_s * 2.0 - 24.0).max(1.0);
-                    computed_layout = paginate_blocks(
-                        &chapter.blocks,
-                        ch,
-                        cw,
-                        base_font_size,
-                        sp_xxs,
-                        &mut self.font_system.borrow_mut(),
-                    );
-                    &computed_layout
-                }
-            };
-            let total = layout.pages.len();
-            // Resolve deferred block index to the correct page.  The
-            // pending value is consumed by `maybe_repaginate()` on the next
-            // `update()`, but the viewport isn't available until this first
-            // render, so we peek at it here to show the right page
-            // immediately.
-            let current_page = match self.pending_block_index {
-                Some(block_idx) => layout
-                    .pages
-                    .iter()
-                    .position(|p| p.start <= block_idx && block_idx < p.end)
-                    .unwrap_or(0),
-                None => current_page,
-            };
-            // Clamp page index to valid range (may be stale before update runs).
-            let current_page = current_page.min(total.saturating_sub(1));
+            // The pages are laid out inside the exact area left for them, so
+            // pagination measures against the space the text really gets.
+            let pages = widget::responsive(move |area| {
+                self.page_area.set((area.width, area.height));
 
-            // Build a single page "paper" element from a page index.
-            let family = self.font_family.to_family();
-            let make_paper = |page_idx: usize| -> Element<'_, EpubViewerMessage> {
-                let page_range = layout.pages.get(page_idx);
+                // Use cached layout if available, otherwise compute on-the-fly so
+                // the first render after switching to paginated mode isn't empty.
+                let computed_layout;
+                let layout = match self.pagination_cache.get(&active_chapter) {
+                    Some(l) => l,
+                    None => {
+                        let (cw, ch) = page_text_size(
+                            (area.width, area.height),
+                            dual,
+                            space_xxs as f32,
+                            page_margin,
+                        );
+                        computed_layout = paginate_blocks(
+                            &chapter.blocks,
+                            ch,
+                            cw,
+                            base_font_size,
+                            space_xxs as f32,
+                            self.font_family.to_family(),
+                        );
+                        &computed_layout
+                    }
+                };
+                let total = layout.pages.len();
+                // Resolve deferred block index to the correct page.  The
+                // pending value is consumed by `maybe_repaginate()` on the next
+                // `update()`, but the viewport isn't available until this first
+                // render, so we peek at it here to show the right page
+                // immediately.
+                let current_page = match self.pending_block_index {
+                    Some(block_idx) => layout
+                        .pages
+                        .iter()
+                        .position(|p| p.start <= block_idx && block_idx < p.end)
+                        .unwrap_or(0),
+                    None => current_page,
+                };
+                // Clamp page index to valid range (may be stale before update runs).
+                let current_page = current_page.min(total.saturating_sub(1));
 
-                let mut column = widget::Column::new().spacing(space_xxs).width(Length::Fill);
-                if let Some(range) = page_range {
-                    let block_count = range.end - range.start;
-                    for (i, block) in chapter.blocks[range.start..range.end].iter().enumerate() {
-                        let abs_idx = range.start + i;
-                        let highlight = if self.highlighted_block == Some(abs_idx) {
-                            BlockHighlight::Current
-                        } else if !self.search_matches.is_empty()
-                            && self.search_matches.contains(&abs_idx)
+                // Build a single page "paper" element from a page index.
+                let family = self.font_family.to_family();
+                let make_paper = |page_idx: usize| -> Element<'_, EpubViewerMessage> {
+                    let page_range = layout.pages.get(page_idx);
+
+                    let mut column = widget::Column::new().spacing(space_xxs).width(Length::Fill);
+                    if let Some(range) = page_range {
+                        let block_count = range.end - range.start;
+                        for (i, block) in chapter.blocks[range.start..range.end].iter().enumerate()
                         {
-                            BlockHighlight::SearchMatch
-                        } else {
-                            BlockHighlight::None
-                        };
-                        // For split paragraphs, render only the visible char range using
-                        // owned data so the element lifetime does not depend on locals.
-                        let start_off = if i == 0 { range.start_char_offset } else { 0 };
-                        let end_off = if i + 1 == block_count && range.end_char_offset > 0 {
-                            range.end_char_offset
-                        } else {
-                            usize::MAX
-                        };
-                        let el = if start_off > 0 || end_off < usize::MAX {
-                            if let ContentBlock::Paragraph { text, spans, style } = block {
-                                let char_count = text.chars().count();
-                                let s = start_off.min(char_count);
-                                let e = end_off.min(char_count);
-                                render_partial_paragraph(
-                                    text[char_offset_to_byte(text, s)
-                                        ..char_offset_to_byte(text, e)]
-                                        .to_string(),
-                                    slice_spans(spans, s, e),
-                                    style,
-                                    highlight,
-                                    base_font_size,
-                                    family,
-                                )
-                            } else if let ContentBlock::Preformatted { text, spans, .. } = block {
-                                let char_count = text.chars().count();
-                                let s = start_off.min(char_count);
-                                let e = end_off.min(char_count);
-                                let full_text_to_copy = (start_off == 0).then(|| text.clone());
-                                render_partial_preformatted(
-                                    text[char_offset_to_byte(text, s)
-                                        ..char_offset_to_byte(text, e)]
-                                        .to_string(),
-                                    slice_spans(spans, s, e),
-                                    base_font_size,
-                                    full_text_to_copy,
-                                )
+                            let abs_idx = range.start + i;
+                            let highlight = if self.highlighted_block == Some(abs_idx) {
+                                BlockHighlight::Current
+                            } else if !self.search_matches.is_empty()
+                                && self.search_matches.contains(&abs_idx)
+                            {
+                                BlockHighlight::SearchMatch
+                            } else {
+                                BlockHighlight::None
+                            };
+                            // For split paragraphs, render only the visible char range using
+                            // owned data so the element lifetime does not depend on locals.
+                            let start_off = if i == 0 { range.start_char_offset } else { 0 };
+                            let end_off = if i + 1 == block_count && range.end_char_offset > 0 {
+                                range.end_char_offset
+                            } else {
+                                usize::MAX
+                            };
+                            let el = if start_off > 0 || end_off < usize::MAX {
+                                if let ContentBlock::Paragraph { text, spans, style } = block {
+                                    let char_count = text.chars().count();
+                                    let s = start_off.min(char_count);
+                                    let e = end_off.min(char_count);
+                                    render_partial_paragraph(
+                                        text[char_offset_to_byte(text, s)
+                                            ..char_offset_to_byte(text, e)]
+                                            .to_string(),
+                                        slice_spans(spans, s, e),
+                                        style,
+                                        highlight,
+                                        base_font_size,
+                                        family,
+                                    )
+                                } else if let ContentBlock::Preformatted { text, spans, .. } = block
+                                {
+                                    let char_count = text.chars().count();
+                                    let s = start_off.min(char_count);
+                                    let e = end_off.min(char_count);
+                                    let full_text_to_copy = (start_off == 0).then(|| text.clone());
+                                    render_partial_preformatted(
+                                        text[char_offset_to_byte(text, s)
+                                            ..char_offset_to_byte(text, e)]
+                                            .to_string(),
+                                        slice_spans(spans, s, e),
+                                        base_font_size,
+                                        full_text_to_copy,
+                                    )
+                                } else {
+                                    RenderContext {
+                                        font_size: base_font_size,
+                                        family,
+                                        max_image_height: layout.page_height * 0.9,
+                                        image_handles: &chapter.image_handles,
+                                    }
+                                    .render_block(block, highlight)
+                                }
                             } else {
                                 RenderContext {
                                     font_size: base_font_size,
@@ -952,81 +970,74 @@ impl EpubViewer {
                                     image_handles: &chapter.image_handles,
                                 }
                                 .render_block(block, highlight)
-                            }
-                        } else {
-                            RenderContext {
-                                font_size: base_font_size,
-                                family,
-                                max_image_height: layout.page_height * 0.9,
-                                image_handles: &chapter.image_handles,
-                            }
-                            .render_block(block, highlight)
-                        };
-                        column = column.push(el);
+                            };
+                            column = column.push(el);
+                        }
                     }
-                }
-
-                let page_indicator =
-                    widget::text::caption(format!("{} / {}", page_idx + 1, total,))
-                        .width(Length::Fill)
-                        .align_x(Horizontal::Center);
-
-                // Wrap blocks in a scrollable so content that overflows the
-                // estimated page height is still accessible.
-                // The inner container uses max_width to constrain the text
-                // column, and a centering wrapper keeps it horizontally centered
-                // within the paper.
-                let paper_content = widget::Column::new()
-                    .push(
-                        widget::scrollable(
-                            widget::container(
-                                widget::container(column)
-                                    .padding(page_margin)
-                                    .max_width(max_content_width)
-                                    .width(Length::Fill),
-                            )
+                    let page_indicator = widget::container(
+                        widget::text::caption(format!("{} / {}", page_idx + 1, total))
                             .width(Length::Fill)
                             .align_x(Horizontal::Center),
-                        )
-                        .width(Length::Fill)
-                        .height(Length::Fill),
                     )
-                    .push(page_indicator)
-                    .height(Length::Fill);
+                    .height(PAGE_INDICATOR_HEIGHT);
 
-                widget::container(paper_content)
-                    .style(move |theme: &cosmic::Theme| paper_background(theme))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into()
-            };
-
-            // Build the center content: single or dual page.
-            let center_content: Element<'_, EpubViewerMessage> = if dual {
-                let left_paper = make_paper(current_page);
-                let right_paper = if current_page + 1 < total {
-                    make_paper(current_page + 1)
-                } else {
-                    // Empty right page when on the last page.
-                    widget::container(
-                        widget::Space::new()
+                    // Wrap blocks in a scrollable so content that overflows the
+                    // page is still accessible. The inner container caps the text
+                    // column at MAX_PAGE_WIDTH, and a centering wrapper keeps it
+                    // horizontally centered within the paper.
+                    let paper_content = widget::Column::new()
+                        .push(
+                            widget::scrollable(
+                                widget::container(
+                                    widget::container(column)
+                                        .id(page_text_id())
+                                        .padding(page_margin)
+                                        .max_width(MAX_PAGE_WIDTH)
+                                        .width(Length::Fill),
+                                )
+                                .width(Length::Fill)
+                                .align_x(Horizontal::Center),
+                            )
                             .width(Length::Fill)
                             .height(Length::Fill),
-                    )
-                    .style(move |theme: &cosmic::Theme| paper_background(theme))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into()
+                        )
+                        .push(page_indicator)
+                        .height(Length::Fill);
+
+                    widget::container(paper_content)
+                        .style(move |theme: &cosmic::Theme| paper_background(theme))
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into()
                 };
-                widget::Row::new()
-                    .push(left_paper)
-                    .spacing(space_xxs)
-                    .push(right_paper)
-                    .height(Length::Fill)
-                    .into()
-            } else {
-                make_paper(current_page)
-            };
+
+                // Single or dual page.
+                if dual {
+                    let left_paper = make_paper(current_page);
+                    let right_paper = if current_page + 1 < total {
+                        make_paper(current_page + 1)
+                    } else {
+                        // Empty right page when on the last page.
+                        widget::container(
+                            widget::Space::new()
+                                .width(Length::Fill)
+                                .height(Length::Fill),
+                        )
+                        .style(move |theme: &cosmic::Theme| paper_background(theme))
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into()
+                    };
+                    widget::Row::new()
+                        .push(left_paper)
+                        .spacing(space_xxs)
+                        .push(right_paper)
+                        .height(Length::Fill)
+                        .into()
+                } else {
+                    make_paper(current_page)
+                }
+            });
 
             // Cap the reading area so wide screens don't produce huge empty desk
             // margins. The click zones are FillPortion(1) each and the center is
@@ -1035,9 +1046,9 @@ impl EpubViewer {
             // so the click zones shrink to their icon size to give the center the
             // maximum available space.
             let center_pages_width = if dual {
-                max_content_width * 2.0 + space_xxs as f32
+                MAX_PAGE_WIDTH * 2.0 + space_xxs as f32
             } else {
-                max_content_width
+                MAX_PAGE_WIDTH
             };
             let max_row_width = center_pages_width / 0.8;
             let (zone_length, center_length) = if size.width < max_row_width {
@@ -1059,7 +1070,7 @@ impl EpubViewer {
             )
             .on_press(EpubViewerMessage::PreviousPage);
 
-            let center = widget::container(center_content)
+            let center = widget::container(pages)
                 .width(center_length)
                 .height(Length::Fill);
 
@@ -2417,54 +2428,53 @@ const COSMIC_TITLE4_SIZE: f32 = 20.0;
 const COSMIC_TITLE4_LINE_HEIGHT: f32 = 30.0;
 const COSMIC_HEADING_SIZE: f32 = 14.0;
 const COSMIC_HEADING_LINE_HEIGHT: f32 = 21.0;
-// Body text: widget::text::body() sets line_height=21 and font_size=14.
-// The render calls .size(user_font_size) to override font size, but the
-// line_height stays at 21.0, so we use that for unstyled paragraphs too.
-const COSMIC_BODY_LINE_HEIGHT: f32 = 21.0;
 
-/// Measure the pixel height that `text` occupies when shaped with explicit
-/// `font_size` and `line_height` and wrapped to `content_width`.
-/// This is the core measurement primitive used by the height estimator.
+/// Run `f` with the renderer's font system, so text is measured with the
+/// same fonts it is drawn with.
+fn with_font_system<R>(f: impl FnOnce(&mut FontSystem) -> R) -> R {
+    f(font_system().write().expect("font system").raw())
+}
+
+/// Measure the pixel height that `text` occupies when shaped in `family` with
+/// explicit `font_size` and `line_height` and wrapped to `content_width`.
 fn measure_text_height_with_line_height(
     text: &str,
     content_width: f32,
     font_size: f32,
     line_height: f32,
-    font_system: &mut FontSystem,
+    family: font::Family,
 ) -> f32 {
-    use cosmic_text::Attrs;
     use cosmic_text::Buffer;
     use cosmic_text::Metrics;
     use cosmic_text::Shaping;
-    let metrics = Metrics::new(font_size, line_height);
-    let mut buffer = Buffer::new(font_system, metrics);
-    buffer.set_size(Some(content_width), None);
-    buffer.set_text(text, &Attrs::new(), Shaping::Advanced, None);
-    buffer.shape_until_scroll(font_system, false);
-    buffer
-        .layout_runs()
-        .last()
-        .map(|r| r.line_y + r.line_height)
-        .unwrap_or(line_height)
+    with_font_system(|font_system| {
+        let metrics = Metrics::new(font_size, line_height);
+        let mut buffer = Buffer::new(font_system, metrics);
+        buffer.set_size(Some(content_width), None);
+        let attrs = to_attributes(Font {
+            family,
+            ..Font::default()
+        });
+        buffer.set_text(text, &attrs, Shaping::Advanced, None);
+        buffer.shape_until_scroll(font_system, false);
+        buffer
+            .layout_runs()
+            .last()
+            .map(|r| r.line_y + r.line_height)
+            .unwrap_or(line_height)
+    })
 }
 
 /// Measure the pixel height that `text` occupies when shaped at `font_size` and wrapped to
-/// `content_width`, using `cosmic-text` for accurate glyph metrics (Phase 4b).
-/// Line height is derived as `font_size * 1.375` — use
+/// `content_width`. Line height is derived as `font_size * 1.375` — use
 /// [`measure_text_height_with_line_height`] when the line height differs.
 fn measure_text_height(
     text: &str,
     content_width: f32,
     font_size: f32,
-    font_system: &mut FontSystem,
+    family: font::Family,
 ) -> f32 {
-    measure_text_height_with_line_height(
-        text,
-        content_width,
-        font_size,
-        font_size * 1.375,
-        font_system,
-    )
+    measure_text_height_with_line_height(text, content_width, font_size, font_size * 1.375, family)
 }
 
 /// Return the byte offset in `text` corresponding to `char_offset` Unicode code points.
@@ -2507,107 +2517,112 @@ fn slice_spans(spans: &[TextSpan], start_char: usize, end_char: usize) -> Vec<Te
     result
 }
 
-/// Shape `text` and return the character offset at which lines first exceed
-/// `available_height` pixels.  Returns `None` when all lines fit or the text is empty.
-fn find_split_char_offset(
-    text: &str,
-    content_width: f32,
-    font_size: f32,
-    available_height: f32,
-    font_system: &mut FontSystem,
-) -> Option<usize> {
-    if text.is_empty() || available_height <= 0.0 {
-        return None;
+/// A paragraph's content as pagination measures it.
+#[derive(Clone, Copy)]
+struct ParagraphContent<'a> {
+    text: &'a str,
+    spans: &'a [TextSpan],
+    style: &'a BlockStyle,
+}
+
+impl ParagraphContent<'_> {
+    /// Lay out the paragraph from character `start` on, as a page showing it
+    /// from there draws it.
+    fn layout_from(
+        self,
+        start: usize,
+        content_width: f32,
+        font_size: f32,
+        family: font::Family,
+    ) -> Paragraph {
+        let size = render::paragraph_font_size(self.style, font_size);
+        let spans = render::owned_paragraph_spans(
+            self.text[char_offset_to_byte(self.text, start)..].to_string(),
+            slice_spans(self.spans, start, usize::MAX),
+            family,
+            size,
+        );
+        render::layout_paragraph(&spans, self.style, family, size, content_width)
     }
-    use cosmic_text::Attrs;
-    use cosmic_text::Buffer;
-    use cosmic_text::Metrics;
-    use cosmic_text::Shaping;
-    let line_height = font_size * 1.375;
-    let metrics = Metrics::new(font_size, line_height);
-    let mut buffer = Buffer::new(font_system, metrics);
-    buffer.set_size(Some(content_width), None);
-    buffer.set_text(text, &Attrs::new(), Shaping::Advanced, None);
-    buffer.shape_until_scroll(font_system, false);
-    let mut last_byte_end: Option<usize> = None;
-    for run in buffer.layout_runs() {
-        if run.line_y + run.line_height > available_height {
-            break;
+
+    /// Rendered height of the paragraph shown from character `start` on,
+    /// including its margins.
+    fn height_from(
+        self,
+        start: usize,
+        content_width: f32,
+        font_size: f32,
+        family: font::Family,
+    ) -> f32 {
+        let (top, bottom) = render::block_margins(self.style);
+        let layout = self.layout_from(start, content_width, font_size, family);
+        layout.min_bounds().height + top + bottom
+    }
+
+    /// Character offset at which the paragraph shown from character `start`
+    /// on must continue on the next page, so that the lines before it fit in
+    /// `available_height` pixels. The offset is the start of the first line
+    /// that does not fit, so every line on the page stays as full as the
+    /// layout made it. Returns `None` when not even one line fits, or when all
+    /// lines fit.
+    fn split_from(
+        self,
+        start: usize,
+        content_width: f32,
+        font_size: f32,
+        family: font::Family,
+        available_height: f32,
+    ) -> Option<usize> {
+        let (top, bottom) = render::block_margins(self.style);
+        let available = available_height - top - bottom;
+        let layout = self.layout_from(start, content_width, font_size, family);
+        let buffer = layout.buffer();
+        let mut fitting_lines = 0;
+        let first_overflowing = buffer.layout_runs().find(|run| {
+            let fits = run.line_top + run.line_height <= available;
+            fitting_lines += usize::from(fits);
+            !fits
+        })?;
+        if fitting_lines == 0 {
+            return None;
         }
-        if let Some(g) = run.glyphs.last() {
-            last_byte_end = Some(g.end);
-        }
+        // Character offset of the overflowing line's first glyph, counted over
+        // the laid-out text (buffer lines plus their line endings).
+        let preceding_lines: usize = buffer.lines[..first_overflowing.line_i]
+            .iter()
+            .map(|line| line.text().chars().count() + line.ending().as_str().chars().count())
+            .sum();
+        let line_text = buffer.lines[first_overflowing.line_i].text();
+        let glyph_start = first_overflowing
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.start)
+            .min()
+            .unwrap_or(0);
+        Some(start + preceding_lines + line_text[..glyph_start].chars().count())
     }
-
-    // cosmic-text glyph endpoints can land mid-codepoint for multi-byte
-    // characters (e.g. curly quotes).  Walk back to the nearest valid
-    // UTF-8 boundary before slicing.
-    let mut b = last_byte_end?;
-    while b > 0 && !text.is_char_boundary(b) {
-        b -= 1;
-    }
-    if b == 0 {
-        return None;
-    }
-    let prefix = &text[..b];
-
-    // Cosmic-text wraps at word boundaries, but force-breaks long words at
-    // character boundaries.  If the raw split point is mid-word, walk back to
-    // the nearest preceding whitespace so we never split inside a word.
-    if !prefix.ends_with(char::is_whitespace)
-        && let Some(ws_byte) = prefix.rfind(char::is_whitespace)
-    {
-        // Put the whitespace on the current page; next page starts with
-        // the first letter of the word that would have been split.
-        let ws_char_len = text[ws_byte..].chars().next().map_or(1, |c| c.len_utf8());
-        return Some(text[..ws_byte + ws_char_len].chars().count());
-    }
-    // No whitespace before the force-break (one very long word with no
-    // preceding space in the suffix): fall through and return the raw
-    // character offset — the caller will let the block overflow rather
-    // than loop forever.
-
-    Some(prefix.chars().count())
 }
 
 /// Height of `block` starting from `start_char_offset` characters in.
-/// Falls back to the full block height when `start_char_offset == 0` or when the
-/// block type does not support partial measurement.
+/// Falls back to the full block height when the block type does not support
+/// partial measurement.
 fn effective_block_height(
     block: &ContentBlock,
     start_char_offset: usize,
     content_width: f32,
     font_size: f32,
-    font_system: &mut FontSystem,
+    family: font::Family,
 ) -> f32 {
-    if start_char_offset == 0 {
-        return estimated_block_height_for_width(block, content_width, font_size, font_system);
-    }
     match block {
-        ContentBlock::Paragraph { text, .. } => {
-            let suffix = &text[char_offset_to_byte(text, start_char_offset)..];
-            measure_text_height(suffix, content_width, font_size, font_system)
-                .max(font_size * 1.375)
-        }
-        ContentBlock::Heading { text, level, .. } => {
-            let heading_size = match level {
-                1 => font_size * 2.0,
-                2 => font_size * 1.75,
-                3 => font_size * 1.5,
-                4 => font_size * 1.25,
-                _ => font_size * 1.125,
-            };
-            let suffix = &text[char_offset_to_byte(text, start_char_offset)..];
-            measure_text_height(suffix, content_width, heading_size, font_system)
-                .max(heading_size * 1.375)
-        }
-        ContentBlock::Preformatted { text, .. } => {
+        ContentBlock::Paragraph { text, spans, style } => ParagraphContent { text, spans, style }
+            .height_from(start_char_offset, content_width, font_size, family),
+        ContentBlock::Preformatted { text, .. } if start_char_offset > 0 => {
             let line_h = font_size * 1.375;
             let byte_start = char_offset_to_byte(text, start_char_offset);
             let line_count = text[byte_start..].lines().count();
             (line_count as f32 * line_h).max(line_h)
         }
-        _ => estimated_block_height_for_width(block, content_width, font_size, font_system),
+        _ => estimated_block_height_for_width(block, content_width, font_size, family),
     }
 }
 
@@ -2620,21 +2635,17 @@ fn try_split_block(
     font_size: f32,
     available_height: f32,
     start_char_offset: usize,
-    font_system: &mut FontSystem,
+    family: font::Family,
 ) -> Option<usize> {
     match block {
-        ContentBlock::Paragraph { text, .. } => {
-            let byte_start = char_offset_to_byte(text, start_char_offset);
-            let suffix = &text[byte_start..];
-            find_split_char_offset(
-                suffix,
+        ContentBlock::Paragraph { text, spans, style } => ParagraphContent { text, spans, style }
+            .split_from(
+                start_char_offset,
                 content_width,
                 font_size,
+                family,
                 available_height,
-                font_system,
-            )
-            .map(|rel| start_char_offset + rel)
-        }
+            ),
         ContentBlock::Preformatted { text, .. } => {
             let line_h = font_size * 1.375;
             let lines_that_fit = (available_height / line_h).floor() as usize;
@@ -2666,21 +2677,25 @@ fn try_split_block(
 }
 
 /// Estimate the rendered height of a block given the available content width and font size.
-/// Uses [`measure_text_height`] (cosmic-text shaping) for text blocks (Phase 4b), and
-/// word-boundary line counting (Phase 4a) for list items and other block types.
+/// Paragraphs and styled headings are laid out exactly as they are drawn; other
+/// block types are estimated with [`measure_text_height`] or fixed heights.
 fn estimated_block_height_for_width(
     block: &ContentBlock,
     content_width: f32,
     font_size: f32,
-    font_system: &mut FontSystem,
+    family: font::Family,
 ) -> f32 {
     let scale = font_size / 16.0;
     let line_h = font_size * 1.375;
     match block {
         ContentBlock::Heading {
-            level, text, spans, ..
+            level,
+            text,
+            spans,
+            style,
         } => {
-            if spans.is_empty() {
+            let (top, bottom) = render::block_margins(style);
+            let text_height = if spans.is_empty() {
                 // Plain headings render via widget::text::title1/2/3/4/heading which
                 // use fixed COSMIC typography sizes independent of base_font_size.
                 let (h_size, h_line_h) = match level {
@@ -2690,42 +2705,25 @@ fn estimated_block_height_for_width(
                     4 => (COSMIC_TITLE4_SIZE, COSMIC_TITLE4_LINE_HEIGHT),
                     _ => (COSMIC_HEADING_SIZE, COSMIC_HEADING_LINE_HEIGHT),
                 };
-                measure_text_height_with_line_height(
-                    text,
-                    content_width,
-                    h_size,
-                    h_line_h,
-                    font_system,
-                )
-                .max(h_line_h)
+                measure_text_height_with_line_height(text, content_width, h_size, h_line_h, family)
+                    .max(h_line_h)
             } else {
-                // Styled headings use render_spans() which applies font_size * multiplier.
-                let heading_size = match level {
-                    1 => font_size * 2.0,
-                    2 => font_size * 1.75,
-                    3 => font_size * 1.5,
-                    4 => font_size * 1.25,
-                    _ => font_size * 1.125,
-                };
-                measure_text_height(text, content_width, heading_size, font_system)
-                    .max(heading_size * 1.375)
-            }
+                // Styled headings are drawn like paragraphs, at the heading size.
+                let size = render::heading_font_size(*level, style, font_size);
+                render::layout_paragraph(
+                    &render::paragraph_spans(text, spans, family, size),
+                    style,
+                    family,
+                    size,
+                    content_width,
+                )
+                .min_bounds()
+                .height
+            };
+            text_height + top + bottom
         }
-        ContentBlock::Paragraph { text, spans, .. } => {
-            if spans.is_empty() {
-                // widget::text::body().size(font_size) keeps line_height=21 regardless
-                // of font_size, so we measure with the fixed COSMIC body line height.
-                measure_text_height_with_line_height(
-                    text,
-                    content_width,
-                    font_size,
-                    COSMIC_BODY_LINE_HEIGHT.max(font_size * 1.375),
-                    font_system,
-                )
-                .max(COSMIC_BODY_LINE_HEIGHT.max(line_h))
-            } else {
-                measure_text_height(text, content_width, font_size, font_system).max(line_h)
-            }
+        ContentBlock::Paragraph { text, spans, style } => {
+            ParagraphContent { text, spans, style }.height_from(0, content_width, font_size, family)
         }
         ContentBlock::Preformatted { text, .. } => {
             (text.lines().count() as f32 * line_h).max(line_h)
@@ -2734,12 +2732,7 @@ fn estimated_block_height_for_width(
             children
                 .iter()
                 .map(|b| {
-                    estimated_block_height_for_width(
-                        b,
-                        content_width - 16.0,
-                        font_size,
-                        font_system,
-                    )
+                    estimated_block_height_for_width(b, content_width - 16.0, font_size, family)
                 })
                 .sum::<f32>()
                 + 16.0 * scale
@@ -2752,7 +2745,7 @@ fn estimated_block_height_for_width(
                     &item.text,
                     (content_width - 24.0).max(40.0),
                     font_size,
-                    font_system,
+                    family,
                 )
                 .max(line_h)
             })
@@ -2767,7 +2760,7 @@ fn estimated_block_height_for_width(
                     &item.text,
                     (content_width - prefix_px).max(40.0),
                     font_size,
-                    font_system,
+                    family,
                 )
                 .max(line_h)
             })
@@ -2801,7 +2794,7 @@ fn estimated_block_height_for_width(
                         b,
                         content_width - 16.0,
                         font_size * 0.8,
-                        font_system,
+                        family,
                     )
                 })
                 .sum::<f32>()
@@ -2816,11 +2809,11 @@ fn estimated_block_height_for_width(
             let caption_h = if caption_text.is_empty() {
                 0.0
             } else {
-                measure_text_height(caption_text, content_width, caption_size, font_system)
+                measure_text_height(caption_text, content_width, caption_size, family)
             };
             let blocks_h: f32 = blocks
                 .iter()
-                .map(|b| estimated_block_height_for_width(b, content_width, font_size, font_system))
+                .map(|b| estimated_block_height_for_width(b, content_width, font_size, family))
                 .sum::<f32>();
             blocks_h + caption_h + 8.0 * scale
         }
@@ -2828,10 +2821,31 @@ fn estimated_block_height_for_width(
     }
 }
 
+/// Height of the page number line under each page in paginated mode.
+const PAGE_INDICATOR_HEIGHT: f32 = 17.0;
+/// Id of the container holding a page's text, including its margins.
+fn page_text_id() -> widget::Id {
+    widget::Id::new("epub-page-text")
+}
+/// Widest a page's text column gets, including its margins.
+const MAX_PAGE_WIDTH: f32 = 800.0;
+
+/// Width and height of one page's text when the pages fill `area`: one page,
+/// or two side by side `gap` apart, each with `margin` on all sides and the
+/// page number line below.
+fn page_text_size(area: (f32, f32), dual: bool, gap: f32, margin: f32) -> (f32, f32) {
+    let (width, height) = area;
+    let paper_width = if dual { (width - gap) / 2.0 } else { width };
+    (
+        (paper_width.min(MAX_PAGE_WIDTH) - margin * 2.0).max(1.0),
+        (height - PAGE_INDICATOR_HEIGHT - margin * 2.0).max(1.0),
+    )
+}
+
 /// Split a chapter's blocks into pages that fit within `page_height` pixels.
 ///
-/// Paragraphs that straddle a page boundary are split at a word-boundary
-/// character offset computed via cosmic-text layout runs (Phase 4c).
+/// Paragraphs that straddle a page boundary are split at the start of the
+/// first line that does not fit (see [`ParagraphContent::split_from`]).
 /// Other block types that exceed `page_height` get their own page unchanged.
 fn paginate_blocks(
     blocks: &[ContentBlock],
@@ -2839,7 +2853,7 @@ fn paginate_blocks(
     page_width: f32,
     font_size: f32,
     block_spacing: f32,
-    font_system: &mut FontSystem,
+    family: font::Family,
 ) -> PaginationLayout {
     let block_spacing = block_spacing.max(0.0);
 
@@ -2857,7 +2871,7 @@ fn paginate_blocks(
         } else {
             0
         };
-        let block_h = effective_block_height(block, start_off, page_width, font_size, font_system);
+        let block_h = effective_block_height(block, start_off, page_width, font_size, family);
         let needed = if is_first_on_page {
             block_h
         } else {
@@ -2872,14 +2886,7 @@ fn paginate_blocks(
             // First block on the page but still too tall — try to split it so
             // we don't produce an infinite empty-page loop.
             let available = (page_height - accumulated).max(0.0);
-            match try_split_block(
-                block,
-                page_width,
-                font_size,
-                available,
-                start_off,
-                font_system,
-            ) {
+            match try_split_block(block, page_width, font_size, available, start_off, family) {
                 Some(abs_off) if abs_off > start_off => {
                     pages.push(PageRange {
                         start: page_start,
@@ -2909,7 +2916,7 @@ fn paginate_blocks(
         } else {
             // Block doesn't fit — try to place its top portion on the current page.
             let available = (page_height - accumulated - block_spacing).max(0.0);
-            match try_split_block(block, page_width, font_size, available, 0, font_system) {
+            match try_split_block(block, page_width, font_size, available, 0, family) {
                 Some(abs_off) if abs_off > 0 => {
                     pages.push(PageRange {
                         start: page_start,
@@ -3101,16 +3108,11 @@ impl EpubViewer {
         }
         let heights = match self.chapters.get(chapter_idx) {
             Some(ch) => {
-                let mut fs_guard = self.font_system.borrow_mut();
+                let family = self.font_family.to_family();
                 ch.blocks
                     .iter()
                     .map(|block| {
-                        estimated_block_height_for_width(
-                            block,
-                            content_width,
-                            font_size,
-                            &mut fs_guard,
-                        )
+                        estimated_block_height_for_width(block, content_width, font_size, family)
                     })
                     .collect()
             }
@@ -3136,27 +3138,15 @@ impl EpubViewer {
         if self.view_mode != ViewMode::Paginated {
             return;
         }
-        let (vw, vh) = self.viewport_size.get();
-        if vw <= 0.0 || vh <= 0.0 {
+        let (vw, _) = self.viewport_size.get();
+        let area = self.page_area.get();
+        if vw <= 0.0 || area.0 <= 0.0 || area.1 <= 0.0 {
             return;
         }
 
-        let space_s = theme::active().cosmic().spacing.space_s as f32;
         let space_xxs = theme::active().cosmic().spacing.space_xxs as f32;
-        let page_margin = self.page_margin;
-        let max_content_width = 800.0;
-        // In dual-page mode, each page gets half the width minus the gap.
-        let per_page_width = if self.should_dual_page(vw) {
-            let available = vw - space_xxs; // gap between pages
-            (available / 2.0 - space_s * 2.0).min(max_content_width)
-        } else {
-            max_content_width.min(vw - space_s * 2.0)
-        };
-        // Subtract the page margin (applied to all 4 sides of the inner content container).
-        let content_width = (per_page_width - page_margin * 2.0).max(1.0);
-        // Reserve space for the page indicator line and outer layout spacing.
-        // Apply the user-configurable height fraction to leave extra headroom.
-        let content_height = (vh - page_margin * 2.0 - space_s * 2.0 - 24.0).max(1.0);
+        let (content_width, content_height) =
+            page_text_size(area, self.should_dual_page(vw), space_xxs, self.page_margin);
 
         let needs_recompute = match self.pagination_cache.get(&self.active_chapter) {
             Some(cached) => {
@@ -3173,7 +3163,7 @@ impl EpubViewer {
                 content_width,
                 self.base_font_size,
                 space_xxs,
-                &mut self.font_system.borrow_mut(),
+                self.font_family.to_family(),
             );
             if self.current_page >= layout.pages.len() {
                 self.current_page = layout.pages.len().saturating_sub(1);
@@ -3209,14 +3199,14 @@ impl EpubViewer {
         if let Some(layout) = self.pagination_cache.get(&self.active_chapter)
             && let Some(chapter) = self.chapters.get(self.active_chapter)
         {
-            let mut fs = self.font_system.borrow_mut();
+            let family = self.font_family.to_family();
             let mut y = 0.0f32;
             for (i, block) in chapter.blocks.iter().enumerate() {
                 let h = estimated_block_height_for_width(
                     block,
                     layout.page_width,
                     self.base_font_size,
-                    &mut fs,
+                    family,
                 );
                 if y + h > self.scroll_y {
                     return layout
@@ -3237,14 +3227,14 @@ impl EpubViewer {
             && let Some(chapter) = self.chapters.get(self.active_chapter)
             && let Some(page) = layout.pages.get(self.current_page)
         {
-            let mut fs = self.font_system.borrow_mut();
+            let family = self.font_family.to_family();
             let mut y = 0.0f32;
             for block in &chapter.blocks[..page.start] {
                 y += estimated_block_height_for_width(
                     block,
                     layout.page_width,
                     self.base_font_size,
-                    &mut fs,
+                    family,
                 ) + 8.0;
             }
             return y;
@@ -3291,11 +3281,10 @@ impl EpubViewer {
     fn approximate_block_at_scroll_y(&self, target_y: f32) -> Option<usize> {
         let chapter = self.chapters.get(self.active_chapter)?;
         let content_w = 800.0;
-        let mut fs = self.font_system.borrow_mut();
+        let family = self.font_family.to_family();
         let mut y = 0.0f32;
         for (i, block) in chapter.blocks.iter().enumerate() {
-            let h =
-                estimated_block_height_for_width(block, content_w, self.base_font_size, &mut fs);
+            let h = estimated_block_height_for_width(block, content_w, self.base_font_size, family);
             if y + h > target_y {
                 return Some(i);
             }
@@ -3322,7 +3311,7 @@ impl EpubViewer {
             ViewMode::Scroll => {
                 // Estimate the y-position of the target block.
                 let content_w = 800.0;
-                let mut fs = self.font_system.borrow_mut();
+                let family = self.font_family.to_family();
                 let y = self
                     .chapters
                     .get(self.active_chapter)
@@ -3332,12 +3321,11 @@ impl EpubViewer {
                                 b,
                                 content_w,
                                 self.base_font_size,
-                                &mut fs,
+                                family,
                             ) + 8.0
                         })
                     })
                     .unwrap_or(0.0);
-                drop(fs);
                 self.scroll_y = y;
                 scrollable::scroll_to(
                     self.content_scroll_id.clone(),
@@ -3742,26 +3730,17 @@ mod tests {
     }
 }
 
-/// Height estimation accuracy tests.
-///
-/// Each test measures a block with [`estimated_block_height_for_width`] and
-/// compares it against the height computed with the **same** font metrics that
-/// the renderer actually uses (COSMIC typography constants or `font_size`).
-/// The invariant is:
-///   `estimated >= actual_rendered`  — never underestimate (causes overflow)
-///   `estimated <= actual_rendered * 1.20`  — not more than 20 % over-estimate
-///
-/// The "actual_rendered" value is derived by calling
-/// [`measure_text_height_with_line_height`] with the exact sizes and line
-/// heights that the COSMIC text widgets use (title1..heading/body).
+/// Block heights the pagination measures must match the heights the blocks
+/// are laid out with.
 #[cfg(test)]
 mod height_tests {
-    use cosmic_text::FontSystem;
+    use cosmic::iced::font;
     use epub::BlockStyle;
     use epub::ContentBlock;
+    use epub::InlineStyle;
+    use epub::TextSpan;
     use rstest::rstest;
 
-    use super::COSMIC_BODY_LINE_HEIGHT;
     use super::COSMIC_HEADING_LINE_HEIGHT;
     use super::COSMIC_HEADING_SIZE;
     use super::COSMIC_TITLE1_LINE_HEIGHT;
@@ -3774,10 +3753,12 @@ mod height_tests {
     use super::COSMIC_TITLE4_SIZE;
     use super::estimated_block_height_for_width;
     use super::measure_text_height_with_line_height;
+    use super::render::RenderContext;
+    use crate::page::epub_viewer::BlockHighlight;
 
-    fn make_font_system() -> FontSystem {
-        FontSystem::new()
-    }
+    const FAMILY: font::Family = font::Family::Serif;
+    const WIDTH: f32 = 600.0;
+    const BASE_FONT_SIZE: f32 = 14.0;
 
     fn plain_heading(level: u8, text: &str) -> ContentBlock {
         ContentBlock::Heading {
@@ -3788,12 +3769,44 @@ mod height_tests {
         }
     }
 
-    fn plain_paragraph(text: &str) -> ContentBlock {
+    fn paragraph(text: &str, spans: Vec<TextSpan>, style: BlockStyle) -> ContentBlock {
         ContentBlock::Paragraph {
             text: text.to_string(),
-            spans: vec![],
-            style: BlockStyle::default(),
+            spans,
+            style,
         }
+    }
+
+    fn span(text: &str, bold: bool, italic: bool) -> TextSpan {
+        TextSpan {
+            text: text.to_string(),
+            style: InlineStyle {
+                bold,
+                italic,
+                ..InlineStyle::default()
+            },
+            link: None,
+            color: None,
+            font_size_em: None,
+        }
+    }
+
+    /// Height `block` is laid out with by the real renderer at `width`.
+    fn rendered_height(block: &ContentBlock, width: f32) -> f32 {
+        let handles = std::collections::HashMap::new();
+        let element = RenderContext {
+            font_size: BASE_FONT_SIZE,
+            family: FAMILY,
+            max_image_height: 400.0,
+            image_handles: &handles,
+        }
+        .render_block(block, BlockHighlight::None);
+        let extents = crate::test_support::layout_extents(
+            cosmic::widget::scrollable(cosmic::widget::container(element).width(width)).into(),
+            width,
+            100.0,
+        );
+        extents.scrollables[0].content.height
     }
 
     /// Helper: assert estimated is within [actual, actual * 1.20].
@@ -3809,9 +3822,6 @@ mod height_tests {
         );
     }
 
-    const WIDTH: f32 = 600.0;
-    const BASE_FONT_SIZE: f32 = 14.0;
-
     // ── Plain heading height matches COSMIC typography ────────────────────────
 
     #[rstest]
@@ -3826,12 +3836,11 @@ mod height_tests {
         #[case] cosmic_size: f32,
         #[case] cosmic_line_h: f32,
     ) {
-        let mut fs = make_font_system();
         let text = "Chapter Title";
         let block = plain_heading(level, text);
-        let estimated = estimated_block_height_for_width(&block, WIDTH, BASE_FONT_SIZE, &mut fs);
+        let estimated = estimated_block_height_for_width(&block, WIDTH, BASE_FONT_SIZE, FAMILY);
         let actual =
-            measure_text_height_with_line_height(text, WIDTH, cosmic_size, cosmic_line_h, &mut fs);
+            measure_text_height_with_line_height(text, WIDTH, cosmic_size, cosmic_line_h, FAMILY);
         assert_height(&format!("h{level} single-line"), estimated, actual);
     }
 
@@ -3844,152 +3853,132 @@ mod height_tests {
         #[case] cosmic_size: f32,
         #[case] cosmic_line_h: f32,
     ) {
-        let mut fs = make_font_system();
         // Text long enough to wrap at 600px for the largest heading sizes.
         let text = "A Very Long Chapter Title That Should Wrap Across Multiple Lines On The Page";
         let block = plain_heading(level, text);
-        let estimated = estimated_block_height_for_width(&block, WIDTH, BASE_FONT_SIZE, &mut fs);
+        let estimated = estimated_block_height_for_width(&block, WIDTH, BASE_FONT_SIZE, FAMILY);
         let actual =
-            measure_text_height_with_line_height(text, WIDTH, cosmic_size, cosmic_line_h, &mut fs);
+            measure_text_height_with_line_height(text, WIDTH, cosmic_size, cosmic_line_h, FAMILY);
         assert_height(&format!("h{level} multi-line"), estimated, actual);
     }
-
-    // ── Plain paragraph height matches COSMIC body typography ─────────────────
-
-    #[test]
-    fn plain_paragraph_single_line() {
-        let mut fs = make_font_system();
-        let text = "A short paragraph.";
-        let block = plain_paragraph(text);
-        let estimated = estimated_block_height_for_width(&block, WIDTH, BASE_FONT_SIZE, &mut fs);
-        let actual = measure_text_height_with_line_height(
-            text,
-            WIDTH,
-            BASE_FONT_SIZE,
-            COSMIC_BODY_LINE_HEIGHT,
-            &mut fs,
-        );
-        assert_height("paragraph single-line", estimated, actual);
-    }
-
-    #[test]
-    fn plain_paragraph_multiline() {
-        let mut fs = make_font_system();
-        let text = "This is a longer paragraph that contains enough text to wrap across \
-                    multiple lines when rendered at the default content width. It exercises \
-                    the multi-line height estimation path.";
-        let block = plain_paragraph(text);
-        let estimated = estimated_block_height_for_width(&block, WIDTH, BASE_FONT_SIZE, &mut fs);
-        let actual = measure_text_height_with_line_height(
-            text,
-            WIDTH,
-            BASE_FONT_SIZE,
-            COSMIC_BODY_LINE_HEIGHT,
-            &mut fs,
-        );
-        assert_height("paragraph multi-line", estimated, actual);
-    }
-
-    // ── Heading height scales correctly with content width ────────────────────
 
     #[rstest]
     #[case(300.0)]
     #[case(600.0)]
     #[case(800.0)]
     fn h1_height_at_various_widths(#[case] width: f32) {
-        let mut fs = make_font_system();
         let text = "A Chapter Title Long Enough To Potentially Wrap At Narrow Widths";
         let block = plain_heading(1, text);
-        let estimated = estimated_block_height_for_width(&block, width, BASE_FONT_SIZE, &mut fs);
+        let estimated = estimated_block_height_for_width(&block, width, BASE_FONT_SIZE, FAMILY);
         let actual = measure_text_height_with_line_height(
             text,
             width,
             COSMIC_TITLE1_SIZE,
             COSMIC_TITLE1_LINE_HEIGHT,
-            &mut fs,
+            FAMILY,
         );
         assert_height(&format!("h1 width={width}"), estimated, actual);
+    }
+
+    // ── Paragraph height is exactly the rendered height ───────────────────────
+
+    const LONG_TEXT: &str = "This is a longer paragraph that contains enough text to wrap \
+        across multiple lines when rendered at the content width. It exercises the \
+        multi-line path, and keeps going so that narrow widths wrap many times over.";
+
+    #[rstest]
+    #[case::plain_single_line(paragraph("A short paragraph.", vec![], BlockStyle::default()))]
+    #[case::plain_multiline(paragraph(LONG_TEXT, vec![], BlockStyle::default()))]
+    #[case::styled(paragraph(
+        LONG_TEXT,
+        vec![
+            span(&LONG_TEXT[..60], false, true),
+            span(&LONG_TEXT[60..140], true, false),
+            span(&LONG_TEXT[140..], false, false),
+        ],
+        BlockStyle::default(),
+    ))]
+    #[case::margins_and_size(paragraph(
+        LONG_TEXT,
+        vec![],
+        BlockStyle {
+            font_size_em: Some(1.3),
+            margin_top_em: Some(1.0),
+            margin_bottom_em: Some(0.5),
+            ..BlockStyle::default()
+        },
+    ))]
+    fn paragraph_height_matches_rendered_height(
+        #[case] block: ContentBlock,
+        #[values(240.0, 600.0)] width: f32,
+    ) {
+        let _guard = crate::test_support::cosmic_tk_lock();
+        cosmic_golden::init();
+        let estimated = estimated_block_height_for_width(&block, width, BASE_FONT_SIZE, FAMILY);
+        let actual = rendered_height(&block, width);
+        assert!(
+            (estimated - actual).abs() < 0.5,
+            "width {width}: measured {estimated:.1}, rendered {actual:.1}"
+        );
     }
 }
 
 #[cfg(test)]
 mod split_tests {
     use assert4rs::Assert;
-    use cosmic_text::FontSystem;
+    use cosmic::iced::font;
+    use epub::BlockStyle;
+    use epub::ContentBlock;
     use rstest::rstest;
 
-    use super::find_split_char_offset;
-
-    fn make_font_system() -> FontSystem {
-        FontSystem::new()
-    }
+    use super::try_split_block;
 
     const WIDTH: f32 = 600.0;
     const FONT_SIZE: f32 = 14.0;
     /// One line of body text at FONT_SIZE.
-    const ONE_LINE_HEIGHT: f32 = FONT_SIZE * 1.375;
+    const ONE_LINE_HEIGHT: f32 = FONT_SIZE * 1.4;
+
+    fn split(text: &str, width: f32, available_height: f32) -> Option<usize> {
+        let block = ContentBlock::Paragraph {
+            text: text.to_string(),
+            spans: vec![],
+            style: BlockStyle::default(),
+        };
+        try_split_block(
+            &block,
+            width,
+            FONT_SIZE,
+            available_height,
+            0,
+            font::Family::Serif,
+        )
+    }
 
     // ── Early-exit conditions ────────────────────────────────────────────────
 
     #[test]
     fn empty_text_returns_none() {
-        let mut fs = make_font_system();
-        Assert::that(find_split_char_offset("", WIDTH, FONT_SIZE, 100.0, &mut fs)).is(None);
+        Assert::that(split("", WIDTH, 100.0)).is(None);
     }
 
     #[test]
     fn zero_height_returns_none() {
-        let mut fs = make_font_system();
-        Assert::that(find_split_char_offset(
-            "some text",
-            WIDTH,
-            FONT_SIZE,
-            0.0,
-            &mut fs,
-        ))
-        .is(None);
+        Assert::that(split("some text", WIDTH, 0.0)).is(None);
     }
 
     #[test]
     fn negative_height_returns_none() {
-        let mut fs = make_font_system();
-        Assert::that(find_split_char_offset(
-            "some text",
-            WIDTH,
-            FONT_SIZE,
-            -1.0,
-            &mut fs,
-        ))
-        .is(None);
+        Assert::that(split("some text", WIDTH, -1.0)).is(None);
     }
 
-    /// The function returns `None` only when *zero* lines fit (height is too
-    /// small for even the first line).  When all lines fit it returns
-    /// `Some(end_of_text)`.  Either way the result must be in bounds and must
-    /// not panic.
     #[test]
     fn no_lines_fit_returns_none() {
-        let mut fs = make_font_system();
-        // 1 px is less than any realistic line height, so the very first layout
-        // run exceeds it and we break immediately with last_byte_end = None.
-        Assert::that(find_split_char_offset(
-            "Short text.",
-            WIDTH,
-            FONT_SIZE,
-            1.0,
-            &mut fs,
-        ))
-        .is(None);
+        Assert::that(split("Short text.", WIDTH, 1.0)).is(None);
     }
 
     #[test]
-    fn large_height_does_not_panic_and_result_is_in_bounds() {
-        let text = "Short text.";
-        let mut fs = make_font_system();
-        // A huge height: either None (zero lines fit, unusual) or Some(n ≤ len).
-        if let Some(offset) = find_split_char_offset(text, WIDTH, FONT_SIZE, 10_000.0, &mut fs) {
-            assert!(offset <= text.chars().count());
-        }
+    fn all_lines_fit_returns_none() {
+        Assert::that(split("Short text.", WIDTH, 10_000.0)).is(None);
     }
 
     // ── Basic split contract ─────────────────────────────────────────────────
@@ -4001,8 +3990,7 @@ mod split_tests {
     fn split_offset_is_in_bounds(#[case] height: f32) {
         let text = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo \
                     lima mike november oscar papa quebec romeo sierra tango uniform victor";
-        let mut fs = make_font_system();
-        if let Some(offset) = find_split_char_offset(text, WIDTH, FONT_SIZE, height, &mut fs) {
+        if let Some(offset) = split(text, 200.0, height) {
             let char_count = text.chars().count();
             assert!(offset > 0, "split offset must be > 0, got {offset}");
             assert!(
@@ -4014,18 +4002,15 @@ mod split_tests {
 
     // ── Multibyte / char-boundary safety (regression for the crash) ──────────
 
-    /// The exact text from the crash report.  Curly-quote characters (\u{201C}/\u{201D})
-    /// are 3-byte UTF-8 sequences; cosmic-text glyph.end can land mid-codepoint.
-    /// Before the fix this panicked with "byte index N is not a char boundary".
+    /// Curly-quote characters (\u{201C}/\u{201D}) are 3-byte UTF-8 sequences;
+    /// the split must not panic around them.
     #[test]
     fn multibyte_curly_quotes_dont_panic() {
         let text = "guards.\n Guards specify conditions that a request must satisfy in \
                     order to \u{201C}match\u{201D} and be passed over to the handler. \
                     From an implementation standpoint guards are implementors of the \
                     Guard trait: Guard::check is where the magic happens.";
-        let mut fs = make_font_system();
-        // Tiny height so the split triggers near the curly quote.
-        let _ = find_split_char_offset(text, WIDTH, FONT_SIZE, ONE_LINE_HEIGHT * 1.5, &mut fs);
+        let _ = split(text, WIDTH, ONE_LINE_HEIGHT * 1.5);
     }
 
     /// Any `Some(offset)` returned must correspond to a valid UTF-8 char boundary
@@ -4036,15 +4021,12 @@ mod split_tests {
                     order to \u{201C}match\u{201D} and be passed over to the handler. \
                     From an implementation standpoint guards are implementors of the \
                     Guard trait: Guard::check is where the magic happens.";
-        let mut fs = make_font_system();
         for available_height in [
             ONE_LINE_HEIGHT,
             ONE_LINE_HEIGHT * 2.0,
             ONE_LINE_HEIGHT * 3.0,
         ] {
-            if let Some(offset) =
-                find_split_char_offset(text, WIDTH, FONT_SIZE, available_height, &mut fs)
-            {
+            if let Some(offset) = split(text, 200.0, available_height) {
                 let byte_pos = text
                     .char_indices()
                     .nth(offset)
@@ -4058,38 +4040,36 @@ mod split_tests {
         }
     }
 
-    // ── Word-boundary snap ───────────────────────────────────────────────────
+    /// Text after a line break in the paragraph is counted, so a split after
+    /// it lands at the start of a line.
+    #[test]
+    fn split_after_a_line_break_starts_the_next_line() {
+        let text = "first line\nsecond line\nthird line";
+        let offset = split(text, WIDTH, ONE_LINE_HEIGHT * 2.0).expect("two lines fit");
+        let rest: String = text.chars().skip(offset).collect();
+        Assert::that(rest.as_str()).is("third line");
+    }
 
-    /// When the raw split falls mid-word, the returned prefix (first `offset` chars)
-    /// must end with whitespace — i.e. the split is at a word boundary.
+    // ── Word boundaries ──────────────────────────────────────────────────────
+
+    /// A split lands at the start of a wrapped line, so the page's part of the
+    /// paragraph ends with the whitespace the line wrapped at.
     #[test]
     fn split_does_not_break_inside_word() {
         let text = "alpha bravo charlie delta echo foxtrot golf hotel india juliet";
-        let mut fs = make_font_system();
-        // Narrow width forces wrapping and a mid-word raw split.
-        if let Some(offset) =
-            find_split_char_offset(text, 200.0, FONT_SIZE, ONE_LINE_HEIGHT, &mut fs)
-        {
-            let prefix: String = text.chars().take(offset).collect();
-            assert!(
-                prefix.ends_with(char::is_whitespace),
-                "split prefix should end with whitespace, got: {prefix:?}"
-            );
-        }
+        let offset = split(text, 200.0, ONE_LINE_HEIGHT).expect("one line fits");
+        let prefix: String = text.chars().take(offset).collect();
+        assert!(
+            prefix.ends_with(char::is_whitespace),
+            "split prefix should end with whitespace, got: {prefix:?}"
+        );
     }
 
-    /// A single very long word with no preceding whitespace must not loop
-    /// forever; the function falls back to a raw char offset.
+    /// Word wrapping keeps a single very long word on one line, so there is
+    /// nothing to split.
     #[test]
-    fn single_long_word_returns_raw_offset() {
-        // 200 'a' chars — no whitespace at all.
+    fn single_long_word_is_not_split() {
         let text: String = "a".repeat(200);
-        let mut fs = make_font_system();
-        // If any lines overflow, the offset must still be in bounds.
-        if let Some(offset) =
-            find_split_char_offset(&text, WIDTH, FONT_SIZE, ONE_LINE_HEIGHT, &mut fs)
-        {
-            assert!(offset > 0 && offset < text.chars().count());
-        }
+        Assert::that(split(&text, WIDTH, ONE_LINE_HEIGHT)).is(None);
     }
 }

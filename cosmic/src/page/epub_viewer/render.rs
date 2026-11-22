@@ -6,10 +6,19 @@ use cosmic::iced::Border;
 use cosmic::iced::Color;
 use cosmic::iced::Font;
 use cosmic::iced::Length;
+use cosmic::iced::Pixels;
+use cosmic::iced::Size;
+use cosmic::iced::advanced::graphics::text::Paragraph;
+use cosmic::iced::advanced::text::Paragraph as _;
 use cosmic::iced::alignment::Horizontal;
+use cosmic::iced::alignment::Vertical;
 use cosmic::iced::font;
 use cosmic::iced::widget::rich_text;
 use cosmic::iced::widget::span;
+use cosmic::iced::widget::text::LineHeight;
+use cosmic::iced::widget::text::Shaping;
+use cosmic::iced::widget::text::Span;
+use cosmic::iced::widget::text::Wrapping;
 use cosmic::theme;
 use cosmic::theme::Container;
 use cosmic::widget;
@@ -36,6 +45,121 @@ pub(super) struct RenderContext<'a> {
     pub image_handles: &'a std::collections::HashMap<usize, widget::image::Handle>,
 }
 
+/// Line height of paragraph text. Rendering and pagination both use it, so
+/// pagination measures paragraphs exactly as they are drawn.
+const PARAGRAPH_LINE_HEIGHT: LineHeight = LineHeight::Relative(1.4);
+
+/// Font size of a paragraph with `style` at the reader's `font_size`.
+pub(super) fn paragraph_font_size(style: &BlockStyle, font_size: f32) -> f32 {
+    style
+        .font_size_em
+        .map(|em| em * font_size)
+        .unwrap_or(font_size)
+}
+
+/// Font size of a styled heading of `level` with `style` at the reader's
+/// `font_size`.
+pub(super) fn heading_font_size(level: u8, style: &BlockStyle, font_size: f32) -> f32 {
+    let base_size = match level {
+        1 => font_size * 2.0,
+        2 => font_size * 1.75,
+        3 => font_size * 1.5,
+        4 => font_size * 1.25,
+        _ => font_size * 1.125,
+    };
+    style
+        .font_size_em
+        .map(|em| em * base_size)
+        .unwrap_or(base_size)
+}
+
+/// The spans a paragraph is drawn with: its styled spans, or its plain `text`
+/// as a single span in the reader's font.
+pub(super) fn paragraph_spans<'a>(
+    text: &'a str,
+    spans: &'a [TextSpan],
+    family: font::Family,
+    size: f32,
+) -> Vec<Span<'a, EpubViewerMessage>> {
+    if spans.is_empty() {
+        vec![span(text).font(Font {
+            family,
+            ..Font::default()
+        })]
+    } else {
+        spans.iter().map(|s| styled_span(s, family, size)).collect()
+    }
+}
+
+/// Owned variant of [`paragraph_spans`], for paragraphs split across pages.
+pub(super) fn owned_paragraph_spans(
+    text: String,
+    spans: Vec<TextSpan>,
+    family: font::Family,
+    size: f32,
+) -> Vec<Span<'static, EpubViewerMessage>> {
+    if spans.is_empty() {
+        vec![span(text).font(Font {
+            family,
+            ..Font::default()
+        })]
+    } else {
+        spans
+            .into_iter()
+            .map(|s| owned_styled_span(s, family, size))
+            .collect()
+    }
+}
+
+/// Draw paragraph `spans`.
+fn paragraph_text<'a>(
+    spans: Vec<Span<'a, EpubViewerMessage>>,
+    style: &BlockStyle,
+    family: font::Family,
+    size: f32,
+) -> Element<'a, EpubViewerMessage> {
+    apply_text_align(
+        rich_text(spans)
+            .on_link_click(|m| m)
+            .size(size)
+            .line_height(PARAGRAPH_LINE_HEIGHT)
+            .font(Font {
+                family,
+                ..Font::default()
+            })
+            .width(Length::Fill)
+            .align_x(text_align_horizontal(style))
+            .into(),
+        style,
+    )
+}
+
+/// Lay out paragraph `spans` `width` pixels wide exactly as [`paragraph_text`]
+/// draws them, excluding the block margins (see [`block_margins`]).
+pub(super) fn layout_paragraph(
+    spans: &[Span<'_, EpubViewerMessage>],
+    style: &BlockStyle,
+    family: font::Family,
+    size: f32,
+    width: f32,
+) -> Paragraph {
+    Paragraph::with_spans(cosmic::iced::advanced::Text {
+        content: spans,
+        bounds: Size::new(width, f32::INFINITY),
+        size: Pixels(size),
+        line_height: PARAGRAPH_LINE_HEIGHT,
+        font: Font {
+            family,
+            ..Font::default()
+        },
+        align_x: text_align_horizontal(style).into(),
+        align_y: Vertical::Top,
+        shaping: Shaping::Advanced,
+        wrapping: Wrapping::default(),
+        ellipsize: Default::default(),
+    })
+}
+
 /// Render a partial paragraph (split at page boundary) using owned text and span data.
 /// The returned element is self-contained — it does not borrow from any local variables.
 pub(super) fn render_partial_paragraph<'a>(
@@ -46,41 +170,16 @@ pub(super) fn render_partial_paragraph<'a>(
     font_size: f32,
     family: font::Family,
 ) -> Element<'a, EpubViewerMessage> {
-    let size = style
-        .font_size_em
-        .map(|em| em * font_size)
-        .unwrap_or(font_size);
-    let align = text_align_horizontal(style);
-    let font = Font {
-        family,
-        ..Font::default()
-    };
-    let inner: Element<'a, EpubViewerMessage> = if spans.is_empty() {
-        apply_text_align(
-            widget::text::body(text)
-                .size(font_size)
-                .font(font)
-                .width(Length::Fill)
-                .align_x(align)
-                .into(),
+    let size = paragraph_font_size(style, font_size);
+    apply_highlight(
+        paragraph_text(
+            owned_paragraph_spans(text, spans, family, size),
             style,
-        )
-    } else {
-        let iced_spans: Vec<_> = spans
-            .into_iter()
-            .map(|s| owned_styled_span(s, family, font_size))
-            .collect();
-        apply_text_align(
-            rich_text(iced_spans)
-                .on_link_click(|m| m)
-                .size(size)
-                .width(Length::Fill)
-                .align_x(align)
-                .into(),
-            style,
-        )
-    };
-    apply_highlight(inner, highlight)
+            family,
+            size,
+        ),
+        highlight,
+    )
 }
 
 /// Render a partial preformatted block (split at a page boundary) using owned data.
@@ -190,17 +289,6 @@ impl<'a> RenderContext<'a> {
                 text,
                 style,
             } => {
-                let base_size = match level {
-                    1 => font_size * 2.0,
-                    2 => font_size * 1.75,
-                    3 => font_size * 1.5,
-                    4 => font_size * 1.25,
-                    _ => font_size * 1.125,
-                };
-                let size = style
-                    .font_size_em
-                    .map(|em| em * base_size)
-                    .unwrap_or(base_size);
                 let align = text_align_horizontal(style);
                 if spans.is_empty() {
                     return apply_text_align(
@@ -234,26 +322,22 @@ impl<'a> RenderContext<'a> {
                         style,
                     );
                 }
-                apply_text_align(render_spans(spans, size, family, align), style)
+                let size = heading_font_size(*level, style, font_size);
+                paragraph_text(
+                    paragraph_spans(text, spans, family, size),
+                    style,
+                    family,
+                    size,
+                )
             }
             ContentBlock::Paragraph { spans, text, style } => {
-                let size = style
-                    .font_size_em
-                    .map(|em| em * font_size)
-                    .unwrap_or(font_size);
-                let align = text_align_horizontal(style);
-                if spans.is_empty() {
-                    return apply_text_align(
-                        widget::text::body(text)
-                            .size(font_size)
-                            .font(font)
-                            .width(Length::Fill)
-                            .align_x(align)
-                            .into(),
-                        style,
-                    );
-                }
-                apply_text_align(render_spans(spans, size, family, align), style)
+                let size = paragraph_font_size(style, font_size);
+                paragraph_text(
+                    paragraph_spans(text, spans, family, size),
+                    style,
+                    family,
+                    size,
+                )
             }
             ContentBlock::Preformatted { text, spans, .. } => {
                 let inner: Element<'a, EpubViewerMessage> = if spans.is_empty() {
@@ -612,6 +696,14 @@ fn text_align_horizontal(style: &BlockStyle) -> cosmic::iced::alignment::Horizon
     }
 }
 
+/// Top and bottom margin in pixels from `style` (em converted at a 16px base).
+pub(super) fn block_margins(style: &BlockStyle) -> (f32, f32) {
+    (
+        style.margin_top_em.unwrap_or(0.0) * 16.0,
+        style.margin_bottom_em.unwrap_or(0.0) * 16.0,
+    )
+}
+
 /// Wrap `el` in a container that applies margin-top / margin-bottom from `style`.
 /// If no margins are set the element is returned as-is.
 fn apply_text_align<'a>(
@@ -623,9 +715,7 @@ fn apply_text_align<'a>(
     if !has_margin {
         return el;
     }
-    // Convert em to pixels using 16px base
-    let top = style.margin_top_em.unwrap_or(0.0) * 16.0;
-    let bottom = style.margin_bottom_em.unwrap_or(0.0) * 16.0;
+    let (top, bottom) = block_margins(style);
     container(el)
         .padding(cosmic::iced::Padding {
             top,
