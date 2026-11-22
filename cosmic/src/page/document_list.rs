@@ -1032,7 +1032,7 @@ impl Page for DocumentList {
                     DocumentListMessage::TypeFilterChanged(Some(t))
                 })
                 .width(Length::Fill)
-                .placeholder(fl!("document-list-all-statuses")),
+                .placeholder(fl!("document-list-all-types")),
             )
             .add_maybe(self.type_filter.map(|_| {
                 widget::button::text(fl!("document-list-clear-filter"))

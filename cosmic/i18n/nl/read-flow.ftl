@@ -131,6 +131,7 @@ document-details-remove-format-confirm-cancel = Annuleren
 # Document list
 document-list-all-sources = Alle bronnen
 document-list-all-statuses = Alle statussen
+document-list-all-types = Alle bestandstypen
 document-list-clear-all-tag-filters = Alle tagfilters wissen
 document-list-clear-filter = Filter wissen
 document-list-deselect-all = Alles deselecteren

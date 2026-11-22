@@ -19,6 +19,7 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Fixed
 
+- COSMIC document list: the file type filter shows "All file types" as its placeholder instead of "All statuses".
 - COSMIC scan-directory dialog: "Save Directory" is disabled until a directory is selected, and a path that can't be expanded now shows an error in the dialog instead of silently doing nothing. The "Select" button label is now translated.
 
 ## [0.6.0] - 2026-09-13

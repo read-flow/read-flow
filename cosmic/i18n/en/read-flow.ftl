@@ -133,6 +133,7 @@ document-details-remove-format-confirm-cancel = Cancel
 # Document list
 document-list-all-sources = All sources
 document-list-all-statuses = All statuses
+document-list-all-types = All file types
 document-list-clear-all-tag-filters = Clear All Tag Filters
 document-list-clear-filter = Clear Filter
 document-list-deselect-all = Deselect all
