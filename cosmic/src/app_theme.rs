@@ -9,17 +9,14 @@
 
 use std::sync::Arc;
 
-use cosmic::config::COSMIC_TK;
-use cosmic::config::CosmicTk;
-use cosmic::cosmic_config::CosmicConfigEntry;
 use cosmic::cosmic_theme;
 use cosmic::cosmic_theme::CornerRadii;
+use cosmic::cosmic_theme::FontConfig;
 use cosmic::cosmic_theme::Spacing;
 use cosmic::cosmic_theme::ThemeBuilder;
 use cosmic::cosmic_theme::palette::Srgba;
 use cosmic::cosmic_theme::palette::color_difference::Wcag21RelativeContrast;
 use cosmic::iced::Color;
-use cosmic::iced::font;
 use read_flow_core::settings::FrostedStrength;
 use read_flow_core::settings::ThemeDensity;
 use read_flow_core::settings::ThemeRoundness;
@@ -56,6 +53,19 @@ pub fn build_theme(t: &ThemeSettings, variant: ThemeVariant) -> Option<cosmic::T
     builder = builder
         .spacing(Spacing::from(map_density(t.density)))
         .corner_radii(CornerRadii::from(map_roundness(t.roundness)));
+
+    // Fonts are part of the theme: start from the system theme's fonts and
+    // only swap the family when an override is configured.
+    let system = match variant {
+        ThemeVariant::Dark => cosmic::theme::system_dark(),
+        ThemeVariant::Light => cosmic::theme::system_light(),
+    };
+    builder = builder
+        .font(with_family(&system.cosmic().font, resolve_font_family(t)))
+        .mono_font(with_family(
+            &system.cosmic().mono_font,
+            resolve_monospace_font_family(t),
+        ));
 
     // Frosted glass needs compositor blur (COSMIC on Wayland); elsewhere it
     // would only make the window translucent without the blur, so skip it.
@@ -157,16 +167,6 @@ pub fn accent_presets(variant: ThemeVariant) -> Vec<(&'static str, Srgba)> {
     ]
 }
 
-/// Resolve the configured interface font against the installed font
-/// families. `None` when unset or when the family is not installed.
-pub fn interface_font(t: &ThemeSettings) -> Option<font::Font> {
-    let name = resolve_font_family(t)?;
-    Some(font::Font {
-        family: font::Family::Name(name),
-        ..font::Font::DEFAULT
-    })
-}
-
 /// The configured interface font family, validated against the installed
 /// families. `None` when overrides are disabled, unset, or not installed.
 fn resolve_font_family(t: &ThemeSettings) -> Option<&'static str> {
@@ -177,31 +177,6 @@ fn resolve_font_family(t: &ThemeSettings) -> Option<&'static str> {
     crate::fonts::fonts()
         .into_iter()
         .find(|family| *family == wanted)
-}
-
-/// The system's interface font from the on-disk CosmicTk config, ignoring
-/// any in-process override.
-fn system_interface_font() -> cosmic::config::FontConfig {
-    CosmicTk::config()
-        .map(|ctx| CosmicTk::get_entry(&ctx).unwrap_or_else(|(_errors, tk)| tk))
-        .unwrap_or_default()
-        .interface_font
-}
-
-/// Apply (or clear) the per-app interface font override, live.
-///
-/// Cosmic text widgets resolve their font from the in-process `COSMIC_TK`
-/// global on every view pass, so writing the family here shows up on the
-/// next redraw — the on-disk COSMIC settings are never touched. Clearing
-/// restores the system font read fresh from disk. Font *size* has no live
-/// equivalent (renderer `default_text_size` is startup-only).
-pub fn apply_interface_font(t: &ThemeSettings) {
-    let family = resolve_font_family(t);
-    let mut tk = COSMIC_TK.write().expect("CosmicTk global poisoned");
-    match family {
-        Some(name) => tk.interface_font.family = name.to_string(),
-        None => tk.interface_font = system_interface_font(),
-    }
 }
 
 /// The configured monospace font family, validated against the installed
@@ -216,26 +191,13 @@ fn resolve_monospace_font_family(t: &ThemeSettings) -> Option<&'static str> {
         .find(|family| *family == wanted)
 }
 
-/// The system's monospace font from the on-disk CosmicTk config, ignoring
-/// any in-process override.
-fn system_monospace_font() -> cosmic::config::FontConfig {
-    CosmicTk::config()
-        .map(|ctx| CosmicTk::get_entry(&ctx).unwrap_or_else(|(_errors, tk)| tk))
-        .unwrap_or_default()
-        .monospace_font
-}
-
-/// Apply (or clear) the per-app monospace font override, live. Same
-/// mechanism as [`apply_interface_font`], but for `CosmicTk::monospace_font`
-/// — read by `cosmic::font::mono()`, used for code blocks and preformatted
-/// text.
-pub fn apply_monospace_font(t: &ThemeSettings) {
-    let family = resolve_monospace_font_family(t);
-    let mut tk = COSMIC_TK.write().expect("CosmicTk global poisoned");
-    match family {
-        Some(name) => tk.monospace_font.family = name.to_string(),
-        None => tk.monospace_font = system_monospace_font(),
+/// `base` with its family replaced by `family`, keeping weight and style.
+fn with_family(base: &FontConfig, family: Option<&str>) -> FontConfig {
+    let mut font = base.clone();
+    if let Some(name) = family {
+        font.family = name.to_string();
     }
+    font
 }
 
 /// True when the two colors fail WCAG 2.1 AA contrast for normal text.
@@ -403,12 +365,12 @@ mod tests {
             interface_font: Some("No Such Font Family 12345".into()),
             ..enabled()
         };
-        Assert::that(interface_font(&settings)).is_none();
+        Assert::that(resolve_font_family(&settings)).is_none();
     }
 
     #[test]
     fn unset_interface_font_resolves_to_none() {
-        Assert::that(interface_font(&enabled())).is_none();
+        Assert::that(resolve_font_family(&enabled())).is_none();
     }
 
     #[test]
@@ -422,48 +384,29 @@ mod tests {
             interface_font: Some(family.to_string()),
             ..ThemeSettings::default()
         };
-        Assert::that(interface_font(&settings)).is_none();
+        Assert::that(resolve_font_family(&settings)).is_none();
     }
 
     #[test]
-    fn apply_interface_font_overrides_and_restores_cosmic_tk() {
-        // nextest runs each test in its own process, so mutating the
-        // process-global CosmicTk override is safe there. Under `cargo
-        // test`'s threaded runner, other tests in the same process — e.g.
-        // `#[golden_test]` renders, which pin CosmicTk to bundled
-        // deterministic fonts once at binary start via `cosmic_golden::init`
-        // — read this same global. `apply_interface_font(&ThemeSettings::default())`
-        // below restores to the *system* font, not to whatever was pinned
-        // before this test ran, so without saving/restoring the pre-test
-        // value here, this test would permanently clobber the pinned fonts
-        // for every golden render that happens to run later in the same
-        // process. Take the lock too, so this snapshot/restore can't itself
-        // race a concurrent golden-test render — and call `init()` first so
-        // its one-time real pin (guarded only by its own internal `OnceLock`,
-        // not by `cosmic_tk_lock`) is guaranteed to have already happened
-        // before the snapshot below, rather than possibly landing between it
-        // and the restore.
-        let _guard = crate::test_support::cosmic_tk_lock();
-        cosmic_golden::init();
-        let original = COSMIC_TK.read().unwrap().clone();
-
+    fn interface_font_override_sets_theme_font_family() {
         let installed = crate::fonts::fonts();
         let Some(family) = installed.first().copied() else {
             return; // no fonts installed in this environment
         };
-        let system_family = system_interface_font().family;
-
         let settings = ThemeSettings {
             interface_font: Some(family.to_string()),
             ..enabled()
         };
-        apply_interface_font(&settings);
-        Assert::that(COSMIC_TK.read().unwrap().interface_font.family.as_str()).is(family);
+        let theme = build_theme(&settings, ThemeVariant::Dark).expect("theme");
+        Assert::that(theme.cosmic().font.family.as_str()).is(family);
+    }
 
-        apply_interface_font(&ThemeSettings::default());
-        Assert::that(COSMIC_TK.read().unwrap().interface_font.family == system_family).is(true);
-
-        *COSMIC_TK.write().unwrap() = original;
+    #[test]
+    fn unset_fonts_keep_system_theme_fonts() {
+        let theme = build_theme(&enabled(), ThemeVariant::Dark).expect("theme");
+        let system = cosmic::theme::system_dark();
+        Assert::that(theme.cosmic().font == system.cosmic().font).is(true);
+        Assert::that(theme.cosmic().mono_font == system.cosmic().mono_font).is(true);
     }
 
     #[test]
@@ -481,29 +424,16 @@ mod tests {
     }
 
     #[test]
-    fn apply_monospace_font_overrides_and_restores_cosmic_tk() {
-        // See the comment in `apply_interface_font_overrides_and_restores_cosmic_tk`
-        // — same reasoning, for the monospace half of CosmicTk.
-        let _guard = crate::test_support::cosmic_tk_lock();
-        cosmic_golden::init();
-        let original = COSMIC_TK.read().unwrap().clone();
-
+    fn monospace_font_override_sets_theme_mono_font_family() {
         let installed = crate::fonts::fonts();
         let Some(family) = installed.first().copied() else {
             return; // no fonts installed in this environment
         };
-        let system_family = system_monospace_font().family;
-
         let settings = ThemeSettings {
             monospace_font: Some(family.to_string()),
             ..enabled()
         };
-        apply_monospace_font(&settings);
-        Assert::that(COSMIC_TK.read().unwrap().monospace_font.family.as_str()).is(family);
-
-        apply_monospace_font(&ThemeSettings::default());
-        Assert::that(COSMIC_TK.read().unwrap().monospace_font.family == system_family).is(true);
-
-        *COSMIC_TK.write().unwrap() = original;
+        let theme = build_theme(&settings, ThemeVariant::Light).expect("theme");
+        Assert::that(theme.cosmic().mono_font.family.as_str()).is(family);
     }
 }

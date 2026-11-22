@@ -1974,9 +1974,6 @@ impl Page for PreferencesPage {
             PreferencesMessage::ToggleCustomTheme(enabled) => {
                 self.settings.ui.theme_mut().enabled = enabled;
                 self.save_state = SaveState::Idle;
-                // The custom-theme toggle gates the font overrides too.
-                app_theme::apply_interface_font(self.settings.ui.theme());
-                app_theme::apply_monospace_font(self.settings.ui.theme());
                 self.apply_theme_preview()
             }
             PreferencesMessage::SetThemeVariant(variant) => {
@@ -2056,16 +2053,14 @@ impl Page for PreferencesPage {
                 self.theme_font_query = String::new();
                 self.theme_font_focused = false;
                 self.save_state = SaveState::Idle;
-                app_theme::apply_interface_font(self.settings.ui.theme());
-                Task::none()
+                self.apply_theme_preview()
             }
             PreferencesMessage::ClearInterfaceFont => {
                 self.settings.ui.theme_mut().interface_font = None;
                 self.theme_font_query = String::new();
                 self.theme_font_focused = false;
                 self.save_state = SaveState::Idle;
-                app_theme::apply_interface_font(self.settings.ui.theme());
-                Task::none()
+                self.apply_theme_preview()
             }
             PreferencesMessage::ThemeFontQuery(query) => {
                 self.theme_font_query = query;
@@ -2085,16 +2080,14 @@ impl Page for PreferencesPage {
                 self.monospace_font_query = String::new();
                 self.monospace_font_focused = false;
                 self.save_state = SaveState::Idle;
-                app_theme::apply_monospace_font(self.settings.ui.theme());
-                Task::none()
+                self.apply_theme_preview()
             }
             PreferencesMessage::ClearMonospaceFont => {
                 self.settings.ui.theme_mut().monospace_font = None;
                 self.monospace_font_query = String::new();
                 self.monospace_font_focused = false;
                 self.save_state = SaveState::Idle;
-                app_theme::apply_monospace_font(self.settings.ui.theme());
-                Task::none()
+                self.apply_theme_preview()
             }
             PreferencesMessage::MonospaceFontQuery(query) => {
                 self.monospace_font_query = query;
@@ -2578,8 +2571,6 @@ impl Page for PreferencesPage {
                 self.settings = (*self.original_settings).clone();
                 self.save_state = SaveState::Idle;
                 self.sync_theme_pickers();
-                app_theme::apply_interface_font(self.settings.ui.theme());
-                app_theme::apply_monospace_font(self.settings.ui.theme());
                 Task::batch([
                     self.tag_editor
                         .update(TagEditorMessage::SetTags(

@@ -14,6 +14,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Changed
 
+- Updated to the latest libcosmic. The custom interface and monospace fonts are now part of the app theme, so they apply together with the other theme overrides and survive system toolkit setting changes.
+- Building Read Flow now requires Rust 1.100; the Flatpak and release builds use it.
+
 ### Fixed
 
 - COSMIC scan-directory dialog: "Save Directory" is disabled until a directory is selected, and a path that can't be expanded now shows an error in the dialog instead of silently doing nothing. The "Select" button label is now translated.

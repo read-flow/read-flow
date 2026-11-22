@@ -166,14 +166,12 @@ fn main() -> anyhow::Result<()> {
 
     // Settings for configuring the application window and iced runtime.
     // Theme and interface/monospace fonts come from the `[ui.theme]`
-    // overrides so the first frame already matches. The font families are
-    // written into the in-process CosmicTk global (live-updatable).
+    // overrides so the first frame already matches. libcosmic takes the
+    // default font from this theme.
     let theme_settings = Settings::extract_from(application_module.config_path())
         .map(|s| s.ui.theme().clone())
         .unwrap_or_default();
-    app_theme::apply_interface_font(&theme_settings);
-    app_theme::apply_monospace_font(&theme_settings);
-    let mut settings = cosmic::app::Settings::default()
+    let settings = cosmic::app::Settings::default()
         .size_limits(
             cosmic::iced::Limits::NONE
                 .min_width(360.0)
@@ -183,9 +181,6 @@ fn main() -> anyhow::Result<()> {
             &theme_settings,
             app_theme::current_system_variant(),
         ));
-    if let Some(font) = app_theme::interface_font(&theme_settings) {
-        settings = settings.default_font(font);
-    }
 
     // Starts the application's event loop.
     cosmic::app::run::<app::ReadFlow>(
