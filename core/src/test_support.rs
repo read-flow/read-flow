@@ -97,14 +97,22 @@ impl Drop for TestServer {
 /// The compiled `read-flow-cli` binary lives alongside the test binary's
 /// `deps/` directory in the target dir — `CARGO_BIN_EXE_*` isn't available
 /// here since the binary belongs to a different workspace package.
+/// The `read-flow-cli` binary in the profile directory (e.g. `target/debug`)
+/// of the running test binary. Cargo places test binaries in `deps/` or, with
+/// the newer build-dir layout, in `build/<pkg>/<hash>/out/`, so walk up until
+/// the directory holding the binary is found.
 fn read_flow_cli_path() -> PathBuf {
-    let mut path = std::env::current_exe().expect("path to current test binary");
-    path.pop();
-    if path.ends_with("deps") {
-        path.pop();
-    }
-    path.push("read-flow-cli");
-    path
+    let exe = std::env::current_exe().expect("path to current test binary");
+    exe.ancestors()
+        .skip(1)
+        .map(|dir| dir.join("read-flow-cli"))
+        .find(|path| path.is_file())
+        .unwrap_or_else(|| {
+            panic!(
+                "read-flow-cli not found above {}; build it with `cargo build -p read-flow-core --bin read-flow-cli`",
+                exe.display()
+            )
+        })
 }
 
 async fn wait_for_launch_url(lines: &mut Lines<BufReader<ChildStdout>>) -> String {
