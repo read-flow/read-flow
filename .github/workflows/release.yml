@@ -67,6 +67,8 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install latest stable Rust
+        run: rustup update stable --no-self-update
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -110,6 +112,8 @@ jobs:
     runs-on: macos-14          # Apple Silicon
     steps:
       - uses: actions/checkout@v4
+      - name: Install latest stable Rust
+        run: rustup update stable --no-self-update
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:

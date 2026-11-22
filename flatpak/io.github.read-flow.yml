@@ -115,11 +115,11 @@ modules:
       # `only-arches` picks the matching source per build.
       - type: archive
         only-arches: [x86_64]
-        url: https://static.rust-lang.org/dist/rust-1.97.0-x86_64-unknown-linux-gnu.tar.xz
-        sha256: 1cf17e4905b841d4c8e3f76467ac148d55fb3f54bf213c86f0d287a36471d904
+        url: https://static.rust-lang.org/dist/rust-1.100.0-x86_64-unknown-linux-gnu.tar.xz
+        sha256: 98ee6bec240e1cfe944f17e7092412dc5ef6e008484bb668c6936d35a7d15acd
         dest: rust-dist
       - type: archive
         only-arches: [aarch64]
-        url: https://static.rust-lang.org/dist/rust-1.97.0-aarch64-unknown-linux-gnu.tar.xz
-        sha256: 4c88fe30a748a8853c19f4e8876a64b32005bc4cbcde48e93732d06a430e808a
+        url: https://static.rust-lang.org/dist/rust-1.100.0-aarch64-unknown-linux-gnu.tar.xz
+        sha256: a21f6a21818df07c1e2e7addb570af5444b3fa9dd61e3a207f4fb1c5a5e665c9
         dest: rust-dist

@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install latest stable Rust
+        run: rustup update stable --no-self-update
       - name: Install clippy
         run: rustup component add clippy
       - name: Install libcosmic system dependencies
