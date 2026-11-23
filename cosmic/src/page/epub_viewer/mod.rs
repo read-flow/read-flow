@@ -2824,17 +2824,33 @@ fn split_container(
     })
 }
 
-/// Where a page holding only the first child of container `block`, shown
-/// from `from` on, ends when more of the block follows; `None` otherwise.
-/// A child too tall for a page, which cannot be split, is placed alone.
+/// Where a page holding only the first shown child of container `block`,
+/// shown from `from` on, ends when more of the block follows; `None`
+/// otherwise. When that child is itself a container, the page holds only its
+/// first shown child. A child too tall for a page that cannot be cut there is
+/// placed alone this way.
 fn after_first_container_child(
     ctx: &RenderContext<'_>,
     block: &ContentBlock,
     from: BlockCut,
 ) -> Option<BlockCut> {
+    let parts = |block: &ContentBlock| {
+        render::container_children(block).map_or(0, <[ContentBlock]>::len)
+            + usize::from(ctx.figure_caption(block).is_some())
+    };
     let children = render::container_children(block)?;
-    let parts = children.len() + usize::from(ctx.figure_caption(block).is_some());
-    (from.child + 1 < parts).then_some(BlockCut {
+    if let Some(child) = children.get(from.child)
+        && render::container_children(child).is_some()
+    {
+        let first = container_child_cut(child, from.char_offset).child;
+        if first + 1 < parts(child) {
+            return Some(BlockCut {
+                child: from.child,
+                char_offset: first + 1,
+            });
+        }
+    }
+    (from.child + 1 < parts(block)).then_some(BlockCut {
         child: from.child + 1,
         char_offset: 0,
     })
@@ -2930,9 +2946,11 @@ fn page_text_size(area: (f32, f32), dual: bool, gap: f32, margin: f32) -> (f32, 
 /// Lists are split between items, or inside the first item that does not fit
 /// at the start of its first line that does not fit. Block quotes, footnotes
 /// and figures are split between their children, or inside the first child
-/// that does not fit as that child splits; a child that cannot be split and
-/// does not fit on a page gets a page of its own. Other block types that
-/// exceed `page_height` get their own page unchanged.
+/// that does not fit as that child splits; a nested container is split only
+/// between its own children. A child taller than a page that cannot be cut
+/// there gets a page of its own; for a nested container that is its first
+/// shown child. Other block types that exceed `page_height` get their own
+/// page unchanged.
 ///
 /// Blocks are measured as `ctx` draws them `page_width` wide, `block_spacing`
 /// apart; blocks measuring 0 take no spacing, as the page column leaves them
@@ -2979,8 +2997,9 @@ fn paginate_blocks(
         let cut = try_split_block(ctx, measurer, block, page_width, available, from)
             .filter(|cut| *cut > from)
             .or_else(|| {
-                // A container's first child that cannot be split is placed
-                // alone, to overflow the page on its own.
+                // A container's first shown child (or a nested container's
+                // first shown child) that cannot be split is placed alone, to
+                // overflow the page on its own.
                 is_first_on_page
                     .then(|| after_first_container_child(ctx, block, from))
                     .flatten()

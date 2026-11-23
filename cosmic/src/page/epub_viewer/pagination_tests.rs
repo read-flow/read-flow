@@ -866,6 +866,76 @@ async fn nested_containers_split_without_losing_text() {
     }
 }
 
+/// A block quote holding a block quote whose first paragraph is taller than a
+/// page, then a table taller than a page, which cannot be split.
+fn oversized_children_chapter() -> String {
+    let rows: String = (0..60)
+        .map(|i| format!("<tr><td>{i}</td><td>{}</td></tr>", prose(i, 2)))
+        .collect();
+    format!(
+        "<p>{}</p><blockquote><p>{}</p><blockquote><p>{}</p><p>{}</p><p>{}</p>\
+         </blockquote><table>{rows}</table><p>{}</p></blockquote>",
+        prose(0, 60),
+        prose(1, 20),
+        prose(2, 900),
+        prose(3, 40),
+        prose(4, 40),
+        prose(5, 60)
+    )
+}
+
+#[tokio::test]
+async fn oversized_container_children_are_placed_alone() {
+    let (mut viewer, ..) = paginated_viewer(oversized_children_chapter()).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    let cut = |child, char_offset| super::BlockCut { child, char_offset };
+    for viewport in VIEWPORTS {
+        paginate(&mut viewer, viewport);
+        assert_shows_all_text(&viewer, viewport);
+        let layout = viewer.pagination_cache[&viewer.active_chapter].clone();
+        let page_of = |start_cut| {
+            layout
+                .pages
+                .iter()
+                .position(|p| p.start == 1 && p.start_cut == start_cut)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{viewport:?}: no page starts at {start_cut:?}: {:?}",
+                        layout.pages
+                    )
+                })
+        };
+        // The nested block quote's first paragraph, then the table, each
+        // overflow a page on their own.
+        let alone = [
+            (page_of(cut(1, 0)), cut(1, 1)),
+            (page_of(cut(2, 0)), cut(3, 0)),
+        ];
+        for (page, end_cut) in alone {
+            let range = &layout.pages[page];
+            assert_eq!(
+                (range.end, range.end_cut),
+                (2, Some(end_cut)),
+                "{viewport:?} page {page}: expected only the oversized child"
+            );
+        }
+        let mut page = 0;
+        while page < layout.pages.len() {
+            let fits = page_fits(&mut viewer, page, viewport);
+            for (side, fit) in fits.iter().enumerate() {
+                let shown = page + side;
+                assert!(
+                    fit.gap() >= -0.5 || alone.iter().any(|(page, _)| *page == shown),
+                    "{viewport:?} page {shown}: text overflows by {:.1}px",
+                    -fit.gap()
+                );
+            }
+            page += fits.len();
+        }
+    }
+}
+
 /// The text of `block` shown from `from` up to `to` (`None`: to its end).
 fn part_text(block: &ContentBlock, from: super::BlockCut, to: Option<super::BlockCut>) -> String {
     let slice = |text: &str, start: usize, end: Option<usize>| {
