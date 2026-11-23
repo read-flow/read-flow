@@ -451,10 +451,20 @@ fn assert_pages_fill(viewer: &mut EpubViewer, viewport: (f32, f32), what: &str) 
                 -gap
             );
             if shown + 1 < total {
-                // The next unit that did not fit: a line, or the headings
+                // The next unit that did not fit: a line, the heading starting
+                // the next page, or, when that heading would have fit but was
+                // moved to keep it with the text after it, the headings
                 // starting the next page with the first line after them.
-                let bound =
-                    heading_room(viewer, shown + 1, spacing).unwrap_or(LINE_ADVANCE + spacing);
+                let headings = leading_headings(viewer, shown + 1);
+                let bound = match headings.first() {
+                    None => LINE_ADVANCE + spacing,
+                    Some(&first) if gap < spacing + first => spacing + first,
+                    Some(_) => {
+                        headings.iter().map(|height| spacing + height).sum::<f32>()
+                            + spacing
+                            + LINE_ADVANCE
+                    }
+                };
                 assert!(
                     gap < bound,
                     "{what} {viewport:?} page {shown}: bottom gap {gap:.1}px leaves room \
@@ -466,33 +476,31 @@ fn assert_pages_fill(viewer: &mut EpubViewer, viewport: (f32, f32), what: &str) 
     }
 }
 
-/// Room the headings starting page `page` of the active chapter would take
-/// at the bottom of the page before it, with the first line of body text
-/// after them: the headings' measured heights, the block spacing above each
-/// of them and above that line, and the line. `None` when page `page` does
-/// not start with a heading, or continues a block from the page before it.
-fn heading_room(viewer: &EpubViewer, page: usize, spacing: f32) -> Option<f32> {
+/// Measured heights of the headings starting page `page` of the active
+/// chapter, passing over the anchors among them (which take no room); empty
+/// when the page does not start with a heading, or continues a block from
+/// the page before it.
+fn leading_headings(viewer: &EpubViewer, page: usize) -> Vec<f32> {
     let chapter = &viewer.chapters[viewer.active_chapter];
     let layout = &viewer.pagination_cache[&viewer.active_chapter];
     let range = &layout.pages[page];
     if range.start_cut != super::BlockCut::default() {
-        return None;
+        return Vec::new();
     }
     let ctx = viewer.page_render_context(chapter, layout.page_height);
-    let headings: f32 = chapter.blocks[range.start..]
+    chapter.blocks[range.start..]
         .iter()
-        .take_while(|block| super::is_heading(block))
+        .take_while(|block| super::is_heading(block) || super::is_anchor(block))
+        .filter(|block| super::is_heading(block))
         .map(|block| {
-            spacing
-                + super::block_height(
-                    &mut viewer.measurer.borrow_mut(),
-                    &ctx,
-                    block,
-                    layout.page_width,
-                )
+            super::block_height(
+                &mut viewer.measurer.borrow_mut(),
+                &ctx,
+                block,
+                layout.page_width,
+            )
         })
-        .sum();
-    (headings > 0.0).then_some(headings + spacing + LINE_ADVANCE)
+        .collect()
 }
 
 /// A paragraph followed by a code block of `lines` lines, each short enough
@@ -1524,26 +1532,39 @@ async fn paginated_image_page_golden() {
 
 /// Sections of a heading (a part heading and a section heading for every
 /// third) and a paragraph of varying length, so that headings come near the
-/// bottom of pages.
-fn heading_chapter() -> String {
+/// bottom of pages. With `ids`, every heading and paragraph has an id, which
+/// puts an anchor before it.
+fn heading_chapter(ids: bool) -> String {
+    let id = |name: &str, section: usize| {
+        if ids {
+            format!(" id=\"{name}-{section}\"")
+        } else {
+            String::new()
+        }
+    };
     (0..24)
         .map(|section| {
             let part = if section % 3 == 0 {
-                format!("<h1>Part {section}</h1>")
+                format!("<h1{}>Part {section}</h1>", id("part", section))
             } else {
                 String::new()
             };
             format!(
-                "{part}<h2>Section {section}</h2><p>{}</p>",
+                "{part}<h2{}>Section {section}</h2><p{}>{}</p>",
+                id("section", section),
+                id("text", section),
                 prose(section, 20 + section * 37 % 110)
             )
         })
         .collect()
 }
 
+#[rstest::rstest]
+#[case::plain(false)]
+#[case::with_ids(true)]
 #[tokio::test]
-async fn heading_is_not_left_alone_at_the_bottom_of_a_page() {
-    let (mut viewer, ..) = paginated_viewer(heading_chapter()).await;
+async fn heading_is_not_left_alone_at_the_bottom_of_a_page(#[case] ids: bool) {
+    let (mut viewer, ..) = paginated_viewer(heading_chapter(ids)).await;
     let _guard = crate::test_support::cosmic_tk_lock();
     cosmic_golden::init();
     for viewport in VIEWPORTS {
@@ -1551,12 +1572,38 @@ async fn heading_is_not_left_alone_at_the_bottom_of_a_page() {
         assert_shows_all_text(&viewer, viewport);
         let chapter = &viewer.chapters[viewer.active_chapter];
         let layout = &viewer.pagination_cache[&viewer.active_chapter];
+        assert_eq!(
+            chapter.blocks.iter().any(super::is_anchor),
+            ids,
+            "anchors only with ids"
+        );
         for (page, range) in layout.pages.iter().enumerate().take(total - 1) {
+            let last_shown = chapter.blocks[range.start..range.end]
+                .iter()
+                .rev()
+                .find(|block| !super::is_anchor(block))
+                .expect("a page shows a block");
             assert!(
-                !super::is_heading(&chapter.blocks[range.end - 1]),
-                "{viewport:?} page {page} ends with a heading: {:?}",
-                chapter.blocks[range.end - 1]
+                !super::is_heading(last_shown),
+                "{viewport:?} page {page} ends with a heading: {last_shown:?}"
             );
+        }
+        // A link to an anchor opens the page showing the block after it.
+        let page_of = |block: usize| {
+            layout
+                .pages
+                .iter()
+                .position(|page| page.start <= block && block < page.end)
+                .expect("every block is on a page")
+        };
+        for (anchor, block) in chapter.blocks.iter().enumerate() {
+            if let ContentBlock::Anchor { id } = block {
+                assert_eq!(
+                    page_of(anchor),
+                    page_of(anchor + 1),
+                    "{viewport:?}: anchor #{id} is not on the page showing its block"
+                );
+            }
         }
         assert_pages_fill(&mut viewer, viewport, "headings");
     }
@@ -1596,14 +1643,14 @@ async fn heading_before_a_block_as_tall_as_a_page_stays_in_place() {
 /// with the text after them, leaving the page before them short.
 #[tokio::test]
 async fn paginated_heading_kept_with_text_golden() {
-    let (mut viewer, ..) = paginated_viewer(heading_chapter()).await;
+    let (mut viewer, ..) = paginated_viewer(heading_chapter(false)).await;
     let _guard = crate::test_support::cosmic_tk_lock();
     cosmic_golden::init();
     let viewport = VIEWPORTS[2];
     paginate(&mut viewer, viewport);
     let spacing = cosmic::theme::active().cosmic().spacing.space_xxs as f32;
     let next = (1..viewer.total_pages())
-        .find(|&page| heading_room(&viewer, page, spacing).is_some())
+        .find(|&page| !leading_headings(&viewer, page).is_empty())
         .expect("a page starting with a heading");
     let fits = page_fits(&mut viewer, next - 1, viewport);
     assert!(

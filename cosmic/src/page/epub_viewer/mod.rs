@@ -3057,9 +3057,12 @@ fn page_text_size(area: (f32, f32), dual: bool, gap: f32, margin: f32) -> (f32, 
 /// first part of the block after it (a line, list item, table row or other
 /// smallest part it is cut into) fits below it, the heading starts the next
 /// page with that block, together with the headings right before it (a part
-/// heading above a section heading). They stay where they are when they do
-/// not fit on a page with that part, and when nothing else is on the page.
-/// This applies to the chapter's own headings, not to headings inside block
+/// heading above a section heading). The anchors among and right before
+/// them (link targets, which take no room) move along, as do the anchors
+/// right before any block starting the next page, so a link to them opens
+/// the page showing their block. They stay where they are when they do not
+/// fit on a page with that part, and when nothing else is on the page. This
+/// applies to the chapter's own headings, not to headings inside block
 /// quotes, footnotes or figures.
 ///
 /// Blocks are measured as `ctx` draws them `page_width` wide, `block_spacing`
@@ -3223,22 +3226,27 @@ fn is_heading(block: &ContentBlock) -> bool {
     matches!(block, ContentBlock::Heading { .. })
 }
 
-/// Index of the first of the headings right before block `end` on the page
-/// starting at block `page_start`; `None` when block `end - 1` is not a
-/// heading, or when the page holds nothing but these headings.
+/// Whether `block` is a link target, which takes no room on the page.
+fn is_anchor(block: &ContentBlock) -> bool {
+    matches!(block, ContentBlock::Anchor { .. })
+}
+
+/// Index of the first of the headings and anchors right before block `end`
+/// on the page starting at block `page_start`; `None` when block `end - 1`
+/// is neither, or when the page holds nothing but these blocks.
 fn headings_before(blocks: &[ContentBlock], page_start: usize, end: usize) -> Option<usize> {
     let headings = blocks[page_start..end]
         .iter()
         .rev()
-        .take_while(|block| is_heading(block))
+        .take_while(|block| is_heading(block) || is_anchor(block))
         .count();
     (headings > 0 && headings < end - page_start).then_some(end - headings)
 }
 
-/// Whether the headings from block `start` on, with the first part of the
-/// block after them (a line, list item, table row or other smallest part it
-/// is cut into), fit on an empty page `page_height` pixels high. Headings
-/// ending the chapter fit when they fit on their own.
+/// Whether the headings and anchors from block `start` on, with the first
+/// part of the block after them (a line, list item, table row or other
+/// smallest part it is cut into), fit on an empty page `page_height` pixels
+/// high. Headings ending the chapter fit when they fit on their own.
 fn fits_with_headings(
     blocks: &[ContentBlock],
     start: usize,
@@ -3258,7 +3266,7 @@ fn fits_with_headings(
             0.0
         };
         let available = page_height - used - spacing;
-        if !is_heading(block) {
+        if !is_heading(block) && !is_anchor(block) {
             return block_h <= available
                 || first_part_fits(ctx, measurer, block, page_width, page_height, available);
         }
