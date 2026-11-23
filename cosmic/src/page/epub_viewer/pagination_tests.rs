@@ -102,9 +102,27 @@ async fn paginated_viewer(
     tempfile::TempDir,
     tempfile::TempDir,
 ) {
+    paginated_viewer_with_resources(body, Vec::new()).await
+}
+
+/// [`paginated_viewer`] for a book that also holds `resources` (zip path,
+/// data, media type).
+async fn paginated_viewer_with_resources(
+    body: String,
+    resources: Vec<(&str, Vec<u8>, &'static str)>,
+) -> (
+    EpubViewer,
+    tempfile::NamedTempFile,
+    tempfile::TempDir,
+    tempfile::TempDir,
+) {
     let (application_module, document_provider, db_dir) =
         crate::test_support::document_provider().await;
-    let epub_file = EpubBuilder::new("Pagination").body(body).build();
+    let mut builder = EpubBuilder::new("Pagination").body(body);
+    for (path, data, media_type) in resources {
+        builder = builder.resource(path, data, media_type);
+    }
+    let epub_file = builder.build();
     let (document, fixture_dir) = crate::test_support::scan_and_fetch_document(
         &application_module,
         &document_provider,
@@ -1305,6 +1323,139 @@ async fn paginated_table_goldens() {
     viewer.current_page = total / 2;
     cosmic_golden::assert_snapshot!(
         "paginated_table_middle",
+        viewer.view_content_paginated(),
+        width,
+        height
+    );
+}
+
+/// A PNG of `width` × `height` pixels.
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image::RgbImage::from_pixel(width, height, image::Rgb([200, 120, 40]))
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .expect("encode png");
+    bytes.into_inner()
+}
+
+/// Paragraphs around an image far taller than any page: an SVG drawing when
+/// `svg`, a PNG otherwise.
+async fn tall_image_viewer(
+    svg: bool,
+) -> (
+    EpubViewer,
+    tempfile::NamedTempFile,
+    tempfile::TempDir,
+    tempfile::TempDir,
+) {
+    let image = if svg {
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"300\" height=\"3000\" \
+         viewBox=\"0 0 300 3000\"><rect width=\"300\" height=\"3000\" fill=\"#c87828\"/></svg>"
+    } else {
+        "<img src=\"images/tall.png\" alt=\"Tall\"/>"
+    };
+    paginated_viewer_with_resources(
+        format!("<p>{}</p>{image}<p>{}</p>", prose(0, 300), prose(1, 300)),
+        vec![("OEBPS/images/tall.png", png(300, 3000), "image/png")],
+    )
+    .await
+}
+
+/// Index of the first image block (raster with data, or SVG) in the active
+/// chapter.
+fn image_block(viewer: &EpubViewer) -> usize {
+    viewer.chapters[viewer.active_chapter]
+        .blocks
+        .iter()
+        .position(|block| match block {
+            ContentBlock::Image { data, .. } => !data.is_empty(),
+            ContentBlock::Svg { .. } => true,
+            _ => false,
+        })
+        .expect("an image block")
+}
+
+#[rstest::rstest]
+#[case::raster(false)]
+#[case::svg(true)]
+#[tokio::test]
+async fn image_taller_than_the_page_scales_to_fit(#[case] svg: bool) {
+    let (mut viewer, ..) = tall_image_viewer(svg).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    let spacing = cosmic::theme::active().cosmic().spacing.space_xxs as f32;
+    let image = image_block(&viewer);
+    for viewport in VIEWPORTS {
+        let total = paginate(&mut viewer, viewport);
+        let layout = viewer.pagination_cache[&viewer.active_chapter].clone();
+        assert!(
+            layout.pages.iter().all(|page| page.start < page.end),
+            "{viewport:?}: expected no empty page, got {:?}",
+            layout.pages
+        );
+        let image_page = layout
+            .pages
+            .iter()
+            .position(|page| page.start <= image && image < page.end)
+            .expect("a page showing the image");
+        assert_eq!(
+            (layout.pages[image_page].start, layout.pages[image_page].end),
+            (image, image + 1),
+            "{viewport:?}: expected the image alone on its page, got {:?}",
+            layout.pages
+        );
+        let mut page = 0;
+        while page < total {
+            let fits = page_fits(&mut viewer, page, viewport);
+            for (side, fit) in fits.iter().enumerate() {
+                let shown = page + side;
+                let gap = fit.gap();
+                assert!(
+                    gap >= -0.5,
+                    "{viewport:?} page {shown}: text overflows by {:.1}px",
+                    -gap
+                );
+                if shown + 1 == total {
+                    continue;
+                }
+                // The next unit that did not fit: the image (as tall as the
+                // page), or a line.
+                let bound = if shown + 1 == image_page {
+                    layout.page_height + spacing
+                } else if shown == image_page {
+                    LINE_ADVANCE
+                } else {
+                    LINE_ADVANCE + spacing
+                };
+                assert!(
+                    gap < bound,
+                    "{viewport:?} page {shown}: bottom gap {gap:.1}px leaves room for \
+                     {bound:.1}px"
+                );
+            }
+            page += fits.len();
+        }
+    }
+}
+
+/// Golden snapshot of an image taller than the page, scaled down to fill
+/// its page exactly.
+#[tokio::test]
+async fn paginated_image_page_golden() {
+    let (mut viewer, ..) = tall_image_viewer(false).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    let viewport = VIEWPORTS[0];
+    paginate(&mut viewer, viewport);
+    let image = image_block(&viewer);
+    let (width, height) = (viewport.0 as u32, viewport.1 as u32);
+    viewer.current_page = viewer.pagination_cache[&viewer.active_chapter]
+        .pages
+        .iter()
+        .position(|page| page.start == image)
+        .expect("a page starting at the image");
+    cosmic_golden::assert_snapshot!(
+        "paginated_image_page",
         viewer.view_content_paginated(),
         width,
         height

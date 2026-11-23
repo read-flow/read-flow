@@ -3329,8 +3329,9 @@ impl EpubViewer {
         }
     }
 
-    /// How paginated mode draws `chapter`'s blocks on pages with
-    /// `page_height` pixels of text.
+    /// How paginated mode measures and draws `chapter`'s blocks on pages with
+    /// `page_height` pixels of text: an image taller than the page scales
+    /// down to fill it exactly.
     fn page_render_context<'a>(
         &self,
         chapter: &'a EpubChapter,
@@ -3339,7 +3340,7 @@ impl EpubViewer {
         RenderContext {
             font_size: self.base_font_size,
             family: self.font_family.to_family(),
-            max_image_height: page_height * 0.9,
+            max_image_height: page_height,
             image_handles: &chapter.image_handles,
         }
     }
