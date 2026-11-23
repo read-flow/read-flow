@@ -1379,6 +1379,9 @@ impl Page for EpubViewer {
 
     fn update(&mut self, message: EpubViewerMessage) -> Task<Action<EpubViewerMessage>> {
         let task = self.handle_message(message);
+        // A message may switch chapters: paginate the active chapter here, so
+        // view() paginates only before the page area is known.
+        self.maybe_repaginate();
         // Scroll positions looked up during view() read these heights, so
         // view() never lays blocks out itself.
         self.ensure_block_heights(self.active_chapter, SCROLL_MEASURE_WIDTH);

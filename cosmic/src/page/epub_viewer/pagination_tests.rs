@@ -408,6 +408,32 @@ async fn font_change_repaginates_all_block_types() {
     );
 }
 
+#[rstest::rstest]
+#[case::chapter(crate::page::EpubViewerMessage::SelectChapter(1))]
+#[case::contents_entry(crate::page::EpubViewerMessage::SelectNavEntry(1))]
+#[tokio::test]
+async fn switching_chapters_paginates_the_new_chapter(#[case] message: super::EpubViewerMessage) {
+    let (mut viewer, ..) = paginated_viewer(mixed_chapter(20)).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    // A second chapter, listed in the table of contents.
+    let mut second = viewer.chapters[0].clone();
+    second.href = format!("{}-second", second.href);
+    viewer.nav_entries.push(epub::NavEntry {
+        href: second.href.clone(),
+        label: "Second".to_string(),
+        depth: 0,
+    });
+    viewer.chapters.push(second);
+    paginate(&mut viewer, VIEWPORTS[0]);
+    let _ = viewer.update(message);
+    assert_eq!(viewer.active_chapter, 1);
+    assert!(
+        viewer.pagination_cache.contains_key(&1),
+        "the update paginates the chapter it switches to, so view() need not"
+    );
+}
+
 #[tokio::test]
 #[cfg_attr(debug_assertions, ignore = "timing needs a release build")]
 async fn paginating_a_long_chapter_is_fast() {
