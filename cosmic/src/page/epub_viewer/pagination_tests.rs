@@ -1389,6 +1389,72 @@ async fn table_with_row_labels_repeats_its_header_row() {
     }
 }
 
+/// A paragraph, then a table whose header row starts with an empty corner
+/// cell and has 80 body rows, each starting with a `label_tag` cell, then a
+/// paragraph.
+fn corner_table_chapter(label_tag: &str) -> String {
+    let rows: String = (0..80)
+        .map(|i| {
+            format!(
+                "<tr><{label_tag}>{i}</{label_tag}><td>{}</td></tr>",
+                prose(i, 2 + i % 4)
+            )
+        })
+        .collect();
+    format!(
+        "<p>{}</p><table><tr><td></td><th>Description</th></tr>{rows}</table><p>{}</p>",
+        prose(0, 60),
+        prose(1, 60)
+    )
+}
+
+/// Assert that every continuation page of the table in `chapter` repeats its
+/// first row.
+async fn assert_header_row_repeats(chapter: String) {
+    let (mut viewer, ..) = paginated_viewer(chapter).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    for viewport in VIEWPORTS {
+        let total = paginate(&mut viewer, viewport);
+        assert_shows_all_text(&viewer, viewport);
+        let rows = table_rows(&viewer);
+        let mut continued = 0;
+        for page in 1..total {
+            let Some((from, to)) = table_part(&viewer, page) else {
+                continue;
+            };
+            if from == super::BlockCut::default() {
+                continue;
+            }
+            continued += 1;
+            let shown: Vec<usize> = super::render::table_part_rows(&rows, from, to)
+                .iter()
+                .map(|part| part.index)
+                .take(2)
+                .collect();
+            assert_eq!(
+                shown,
+                [0, from.child],
+                "{viewport:?} page {page}: expected the header row, then the page's rows"
+            );
+        }
+        assert!(
+            continued >= 2,
+            "{viewport:?}: expected the table to continue on several pages"
+        );
+    }
+}
+
+#[tokio::test]
+async fn table_header_row_with_an_empty_corner_cell_repeats() {
+    assert_header_row_repeats(corner_table_chapter("td")).await;
+}
+
+#[tokio::test]
+async fn table_with_a_corner_cell_and_row_labels_repeats_its_header_row() {
+    assert_header_row_repeats(corner_table_chapter("th")).await;
+}
+
 #[tokio::test]
 async fn table_with_a_header_taller_than_a_page_does_not_repeat_it() {
     let (mut viewer, ..) = paginated_viewer(table_chapter(1500, 30)).await;

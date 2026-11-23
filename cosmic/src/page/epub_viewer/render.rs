@@ -668,12 +668,18 @@ fn is_table_header_row(row: &[TableCell]) -> bool {
 }
 
 /// Number of header rows at the start of table `rows`, the rows a part
-/// continuing the table repeats (see [`BlockCut`]): the leading rows made of
-/// header cells only. A body row starting with a header cell (a row label)
-/// is not one of them, although it is drawn as a header row.
+/// continuing the table repeats (see [`BlockCut`]): the leading rows with a
+/// header cell whose other cells are empty, such as a corner cell. A body row
+/// starting with a header cell (a row label) is not one of them, although it
+/// is drawn as a header row.
 pub(super) fn table_header_rows(rows: &[Vec<TableCell>]) -> usize {
     rows.iter()
-        .take_while(|row| !row.is_empty() && row.iter().all(|cell| cell.is_header))
+        .take_while(|row| {
+            is_table_header_row(row)
+                && row
+                    .iter()
+                    .all(|cell| cell.is_header || cell.text.trim().is_empty())
+        })
         .count()
 }
 
