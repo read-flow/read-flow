@@ -222,21 +222,26 @@ pub(crate) enum ViewMode {
     Paginated,
 }
 
+/// A position inside a block where a page starts or ends: before character
+/// `char_offset` of the block's child `child`. A paragraph or code block has
+/// one child (0), its text.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+struct BlockCut {
+    child: usize,
+    char_offset: usize,
+}
+
 /// A page is a contiguous range of blocks from the chapter's block list.
 /// Stored as \[start .. end) (exclusive end).
-///
-/// When `start_char_offset > 0`, the first block (`blocks[start]`) is shown
-/// starting from that character offset (continuation from the previous page).
-/// When `end_char_offset > 0`, the last block (`blocks[end - 1]`) is shown only
-/// up to that character offset (paragraph continues on the next page).
 #[derive(Clone, Debug)]
 struct PageRange {
     start: usize,
-    /// First character of `blocks[start]` shown on this page (0 = from beginning).
-    start_char_offset: usize,
+    /// Where in `blocks[start]` the page starts (the default cut: at its
+    /// beginning).
+    start_cut: BlockCut,
     end: usize,
-    /// Last character (exclusive) of `blocks[end - 1]` shown on this page (0 = to end).
-    end_char_offset: usize,
+    /// Where in `blocks[end - 1]` the page ends (`None`: at its end).
+    end_cut: Option<BlockCut>,
 }
 
 /// Cached pagination layout for a chapter at a particular viewport size.
@@ -827,7 +832,6 @@ impl EpubViewer {
         let active_chapter = self.active_chapter;
         let show_raw_html = self.show_raw_html;
 
-        let base_font_size = self.base_font_size;
         let page_margin = self.page_margin;
 
         widget::responsive(move |size| {
@@ -896,7 +900,6 @@ impl EpubViewer {
                 let current_page = current_page.min(total.saturating_sub(1));
 
                 // Build a single page "paper" element from a page index.
-                let family = self.font_family.to_family();
                 let make_paper = |page_idx: usize| -> Element<'_, EpubViewerMessage> {
                     let page_range = layout.pages.get(page_idx);
 
@@ -915,61 +918,23 @@ impl EpubViewer {
                             } else {
                                 BlockHighlight::None
                             };
-                            // For split paragraphs, render only the visible char range using
-                            // owned data so the element lifetime does not depend on locals.
-                            let start_off = if i == 0 { range.start_char_offset } else { 0 };
-                            let end_off = if i + 1 == block_count && range.end_char_offset > 0 {
-                                range.end_char_offset
+                            let from = if i == 0 {
+                                range.start_cut
                             } else {
-                                usize::MAX
+                                BlockCut::default()
                             };
-                            let el = if start_off > 0 || end_off < usize::MAX {
-                                if let ContentBlock::Paragraph { text, spans, style } = block {
-                                    let char_count = text.chars().count();
-                                    let s = start_off.min(char_count);
-                                    let e = end_off.min(char_count);
-                                    render_partial_paragraph(
-                                        text[char_offset_to_byte(text, s)
-                                            ..char_offset_to_byte(text, e)]
-                                            .to_string(),
-                                        slice_spans(spans, s, e),
-                                        style,
-                                        highlight,
-                                        base_font_size,
-                                        family,
-                                    )
-                                } else if let ContentBlock::Preformatted { text, spans, .. } = block
-                                {
-                                    let char_count = text.chars().count();
-                                    let s = start_off.min(char_count);
-                                    let mut e = end_off.min(char_count);
-                                    // A part ending at a line boundary leaves out
-                                    // the line ending, which would draw an empty
-                                    // last line.
-                                    if e > s
-                                        && e < char_count
-                                        && text[..char_offset_to_byte(text, e)].ends_with('\n')
-                                    {
-                                        e -= 1;
-                                    }
-                                    let full_text_to_copy = (start_off == 0).then(|| text.clone());
-                                    render_partial_preformatted(
-                                        text[char_offset_to_byte(text, s)
-                                            ..char_offset_to_byte(text, e)]
-                                            .to_string(),
-                                        slice_spans(spans, s, e),
-                                        base_font_size,
-                                        full_text_to_copy,
-                                    )
-                                } else {
-                                    self.page_render_context(chapter, layout.page_height)
-                                        .render_block(block, highlight)
-                                }
+                            let to = if i + 1 == block_count {
+                                range.end_cut
                             } else {
-                                self.page_render_context(chapter, layout.page_height)
-                                    .render_block(block, highlight)
+                                None
                             };
-                            column = column.push(el);
+                            column = column.push(render_block_part(
+                                &self.page_render_context(chapter, layout.page_height),
+                                block,
+                                from,
+                                to,
+                                highlight,
+                            ));
                         }
                     }
                     let page_indicator = widget::container(
@@ -2559,62 +2524,107 @@ fn first_overflowing_char(layout: &Paragraph, available: f32) -> Option<usize> {
 }
 
 /// Height of `block` drawn by `ctx` `content_width` pixels wide, shown from
-/// `start_char_offset` characters in (a block continued from the previous
-/// page).
+/// `from` on (a block continued from the previous page).
 fn effective_block_height(
     measurer: &mut BlockMeasurer,
     ctx: &RenderContext<'_>,
     block: &ContentBlock,
-    start_char_offset: usize,
+    from: BlockCut,
     content_width: f32,
 ) -> f32 {
     match block {
-        ContentBlock::Paragraph { text, spans, style } if start_char_offset > 0 => {
-            ParagraphContent { text, spans, style }.height_from(
-                start_char_offset,
-                content_width,
+        _ if from == BlockCut::default() => block_height(measurer, ctx, block, content_width),
+        ContentBlock::Paragraph { text, spans, style } => ParagraphContent { text, spans, style }
+            .height_from(from.char_offset, content_width, ctx.font_size, ctx.family),
+        _ => measurer.height(
+            render_block_part(ctx, block, from, None, BlockHighlight::None),
+            content_width,
+        ),
+    }
+}
+
+/// The part of `block` from `from` up to `to` (`None`: to its end), as `ctx`
+/// draws it on a page.
+fn render_block_part<'a>(
+    ctx: &RenderContext<'a>,
+    block: &'a ContentBlock,
+    from: BlockCut,
+    to: Option<BlockCut>,
+    highlight: BlockHighlight,
+) -> Element<'a, EpubViewerMessage> {
+    if from == BlockCut::default() && to.is_none() {
+        return ctx.render_block(block, highlight);
+    }
+    let end = to.map_or(usize::MAX, |cut| cut.char_offset);
+    match block {
+        ContentBlock::Paragraph { text, spans, style } => {
+            let char_count = text.chars().count();
+            let s = from.char_offset.min(char_count);
+            let e = end.min(char_count);
+            render_partial_paragraph(
+                text[char_offset_to_byte(text, s)..char_offset_to_byte(text, e)].to_string(),
+                slice_spans(spans, s, e),
+                style,
+                highlight,
                 ctx.font_size,
                 ctx.family,
             )
         }
-        ContentBlock::Preformatted { text, spans, .. } if start_char_offset > 0 => {
-            let start = start_char_offset.min(text.chars().count());
-            measurer.height(
-                render_partial_preformatted(
-                    text[char_offset_to_byte(text, start)..].to_string(),
-                    slice_spans(spans, start, usize::MAX),
-                    ctx.font_size,
-                    None,
-                ),
-                content_width,
+        ContentBlock::Preformatted { text, spans, .. } => {
+            let s = from.char_offset.min(text.chars().count());
+            let e = preformatted_part_end(text, s, end);
+            render_partial_preformatted(
+                text[char_offset_to_byte(text, s)..char_offset_to_byte(text, e)].to_string(),
+                slice_spans(spans, s, e),
+                ctx.font_size,
+                (s == 0).then(|| text.clone()),
             )
         }
-        _ => block_height(measurer, ctx, block, content_width),
+        _ => ctx.render_block(block, highlight),
     }
 }
 
-/// Attempt to split `block` so that text up to `available_height` pixels fits on the current
-/// page.  `start_char_offset` is the offset already skipped (for continued splits).
-/// Returns the absolute char offset where the split should occur, or `None` if unsplittable.
+/// End of the part of code block `text` shown from character `start` up to
+/// character `end`. A part ending at a line boundary leaves out the line
+/// ending (`\r\n`, `\n` or `\r`), so it draws exactly its lines, without an
+/// empty last one.
+fn preformatted_part_end(text: &str, start: usize, end: usize) -> usize {
+    let char_count = text.chars().count();
+    let end = end.min(char_count);
+    if end <= start || end == char_count {
+        return end;
+    }
+    let shown = &text[..char_offset_to_byte(text, end)];
+    let ending = ["\r\n", "\n", "\r"]
+        .into_iter()
+        .find(|ending| shown.ends_with(ending))
+        .map_or(0, |ending| ending.len());
+    (end - ending).max(start)
+}
+
+/// Where to cut `block`, shown from `from` on, so that the part before the cut
+/// fits in `available_height` pixels: the start of the first line that does
+/// not fit. Returns `None` when the block cannot be cut there: it is not
+/// splittable, not even one line fits, or all of it fits.
 fn try_split_block(
     block: &ContentBlock,
     content_width: f32,
     font_size: f32,
     available_height: f32,
-    start_char_offset: usize,
+    from: BlockCut,
     family: font::Family,
-) -> Option<usize> {
-    match block {
+) -> Option<BlockCut> {
+    let char_offset = match block {
         ContentBlock::Paragraph { text, spans, style } => ParagraphContent { text, spans, style }
             .split_from(
-                start_char_offset,
+                from.char_offset,
                 content_width,
                 font_size,
                 family,
                 available_height,
             ),
         ContentBlock::Preformatted { text, spans, .. } => {
-            let start = start_char_offset.min(text.chars().count());
+            let start = from.char_offset.min(text.chars().count());
             let padding = render::preformatted_padding();
             let spans = render::owned_paragraph_spans(
                 text[char_offset_to_byte(text, start)..].to_string(),
@@ -2628,7 +2638,11 @@ fn try_split_block(
                 .map(|offset| start + offset)
         }
         _ => None,
-    }
+    };
+    char_offset.map(|char_offset| BlockCut {
+        child: 0,
+        char_offset,
+    })
 }
 
 /// Height of the page number line under each page in paginated mode.
@@ -2675,109 +2689,89 @@ fn paginate_blocks(
 
     let mut pages: Vec<PageRange> = Vec::new();
     let mut page_start = 0usize;
-    let mut page_start_char_offset = 0usize;
+    let mut page_start_cut = BlockCut::default();
     let mut accumulated = 0.0f32;
     let mut i = 0usize;
 
     while i < blocks.len() {
         let block = &blocks[i];
         let is_first_on_page = i == page_start;
-        let start_off = if is_first_on_page {
-            page_start_char_offset
+        let from = if is_first_on_page {
+            page_start_cut
         } else {
-            0
+            BlockCut::default()
         };
-        let block_h = effective_block_height(measurer, ctx, block, start_off, page_width);
-        let needed = if accumulated > 0.0 && block_h > 0.0 {
-            block_spacing + block_h
+        let block_h = effective_block_height(measurer, ctx, block, from, page_width);
+        let spacing = if accumulated > 0.0 && block_h > 0.0 {
+            block_spacing
         } else {
-            block_h
+            0.0
         };
 
-        if accumulated + needed <= page_height {
+        if accumulated + spacing + block_h <= page_height {
             // Block fits on the current page.
-            accumulated += needed;
+            accumulated += spacing + block_h;
             i += 1;
-        } else if is_first_on_page {
-            // First block on the page but still too tall — try to split it so
-            // we don't produce an infinite empty-page loop.
-            let available = (page_height - accumulated).max(0.0);
-            match try_split_block(block, page_width, font_size, available, start_off, family) {
-                Some(abs_off) if abs_off > start_off => {
-                    pages.push(PageRange {
-                        start: page_start,
-                        start_char_offset: page_start_char_offset,
-                        end: i + 1,
-                        end_char_offset: abs_off,
-                    });
-                    page_start = i;
-                    page_start_char_offset = abs_off;
-                    accumulated = 0.0;
-                    // Re-process block `i` on the new page.
-                }
-                _ => {
-                    // Cannot split — let it overflow rather than loop forever.
-                    pages.push(PageRange {
-                        start: page_start,
-                        start_char_offset: page_start_char_offset,
-                        end: i + 1,
-                        end_char_offset: 0,
-                    });
-                    page_start = i + 1;
-                    page_start_char_offset = 0;
-                    accumulated = 0.0;
-                    i += 1;
-                }
+            continue;
+        }
+        // Block doesn't fit — try to place its top part on the current page.
+        let available = (page_height - accumulated - spacing).max(0.0);
+        match try_split_block(block, page_width, font_size, available, from, family) {
+            Some(cut) if cut > from => {
+                pages.push(PageRange {
+                    start: page_start,
+                    start_cut: page_start_cut,
+                    end: i + 1,
+                    end_cut: Some(cut),
+                });
+                page_start = i;
+                page_start_cut = cut;
+                // Re-process block `i` on the new page.
             }
-        } else {
-            // Block doesn't fit — try to place its top portion on the current page.
-            let available = (page_height - accumulated - (needed - block_h)).max(0.0);
-            match try_split_block(block, page_width, font_size, available, 0, family) {
-                Some(abs_off) if abs_off > 0 => {
-                    pages.push(PageRange {
-                        start: page_start,
-                        start_char_offset: page_start_char_offset,
-                        end: i + 1,
-                        end_char_offset: abs_off,
-                    });
-                    page_start = i;
-                    page_start_char_offset = abs_off;
-                    accumulated = 0.0;
-                    // Re-process block `i` on the new page.
-                }
-                _ => {
-                    // Nothing fits on this page — close it and start block on next page.
-                    pages.push(PageRange {
-                        start: page_start,
-                        start_char_offset: page_start_char_offset,
-                        end: i,
-                        end_char_offset: 0,
-                    });
-                    page_start = i;
-                    page_start_char_offset = 0;
-                    accumulated = 0.0;
-                    // Re-process block `i` on the new page.
-                }
+            _ if is_first_on_page => {
+                // Cannot split — let it overflow rather than loop forever.
+                pages.push(PageRange {
+                    start: page_start,
+                    start_cut: page_start_cut,
+                    end: i + 1,
+                    end_cut: None,
+                });
+                page_start = i + 1;
+                page_start_cut = BlockCut::default();
+                i += 1;
+            }
+            _ => {
+                // Nothing fits on this page — close it and start block on next page.
+                pages.push(PageRange {
+                    start: page_start,
+                    start_cut: page_start_cut,
+                    end: i,
+                    end_cut: None,
+                });
+                page_start = i;
+                page_start_cut = BlockCut::default();
+                // Re-process block `i` on the new page.
             }
         }
+        accumulated = 0.0;
     }
 
     // Final page (may be a continuation of a split block).
     if page_start < blocks.len() {
         pages.push(PageRange {
             start: page_start,
-            start_char_offset: page_start_char_offset,
+            start_cut: page_start_cut,
             end: blocks.len(),
-            end_char_offset: 0,
+            end_cut: None,
         });
     }
 
     if pages.is_empty() {
         pages.push(PageRange {
             start: 0,
-            start_char_offset: 0,
+            start_cut: BlockCut::default(),
             end: 0,
-            end_char_offset: 0,
+            end_cut: None,
         });
     }
 
@@ -3879,6 +3873,7 @@ mod split_tests {
     use epub::ContentBlock;
     use rstest::rstest;
 
+    use super::BlockCut;
     use super::try_split_block;
 
     const WIDTH: f32 = 600.0;
@@ -3897,9 +3892,10 @@ mod split_tests {
             width,
             FONT_SIZE,
             available_height,
-            0,
+            BlockCut::default(),
             font::Family::Serif,
         )
+        .map(|cut| cut.char_offset)
     }
 
     // ── Early-exit conditions ────────────────────────────────────────────────
@@ -4019,5 +4015,24 @@ mod split_tests {
     fn single_long_word_is_not_split() {
         let text: String = "a".repeat(200);
         Assert::that(split(&text, WIDTH, ONE_LINE_HEIGHT)).is(None);
+    }
+
+    /// A code block part ending at a line boundary leaves out the whole line
+    /// ending, so it draws no empty last line.
+    #[rstest]
+    #[case::newline("ab\ncd", 0, 3, 2)]
+    #[case::carriage_return_newline("ab\r\ncd", 0, 4, 2)]
+    #[case::carriage_return("ab\rcd", 0, 3, 2)]
+    #[case::inside_a_line("abc\ncd", 0, 2, 2)]
+    #[case::at_the_end("ab\n", 0, 3, 3)]
+    #[case::continued_part("ab\ncd\nef", 3, 6, 5)]
+    #[case::empty_part("ab\ncd", 3, 3, 3)]
+    fn preformatted_part_leaves_out_its_last_line_ending(
+        #[case] text: &str,
+        #[case] start: usize,
+        #[case] end: usize,
+        #[case] expected: usize,
+    ) {
+        Assert::that(super::preformatted_part_end(text, start, end)).is(expected);
     }
 }

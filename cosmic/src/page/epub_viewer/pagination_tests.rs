@@ -232,21 +232,21 @@ async fn page_breaks_leave_no_room_on_the_last_line() {
         let layout = &viewer.pagination_cache[&viewer.active_chapter];
         let mut breaks = 0;
         for (page, range) in layout.pages.iter().enumerate().take(total - 1) {
-            if range.end_char_offset == 0 {
+            let Some(end_cut) = range.end_cut else {
                 continue;
-            }
+            };
             let ContentBlock::Paragraph { text, .. } = &chapter.blocks[range.end - 1] else {
                 continue;
             };
             breaks += 1;
             let start = if range.end - 1 == range.start {
-                range.start_char_offset
+                range.start_cut.char_offset
             } else {
                 0
             };
-            let on_page = &text[char_offset_to_byte(text, start)
-                ..char_offset_to_byte(text, range.end_char_offset)];
-            let rest = &text[char_offset_to_byte(text, range.end_char_offset)..];
+            let on_page = &text
+                [char_offset_to_byte(text, start)..char_offset_to_byte(text, end_cut.char_offset)];
+            let rest = &text[char_offset_to_byte(text, end_cut.char_offset)..];
             let next_word = rest.split_whitespace().next().expect("text continues");
             let with_next = format!("{} {next_word}", on_page.trim_end());
             assert!(
@@ -470,14 +470,14 @@ async fn preformatted_pages_fill_without_overflowing() {
         let chapter = &viewer.chapters[viewer.active_chapter];
         let layout = &viewer.pagination_cache[&viewer.active_chapter];
         for (page, range) in layout.pages.iter().enumerate() {
-            if range.end_char_offset == 0 {
+            let Some(end_cut) = range.end_cut else {
                 continue;
-            }
+            };
             let ContentBlock::Preformatted { text, .. } = &chapter.blocks[range.end - 1] else {
                 panic!("{viewport:?} page {page}: only the code block is split");
             };
             assert!(
-                text[..char_offset_to_byte(text, range.end_char_offset)].ends_with('\n'),
+                text[..char_offset_to_byte(text, end_cut.char_offset)].ends_with('\n'),
                 "{viewport:?} page {page}: code block split inside a line"
             );
         }
