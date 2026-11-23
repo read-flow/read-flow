@@ -1390,6 +1390,16 @@ impl Page for EpubViewer {
     }
 
     fn update(&mut self, message: EpubViewerMessage) -> Task<Action<EpubViewerMessage>> {
+        let task = self.handle_message(message);
+        // Scroll positions looked up during view() read these heights, so
+        // view() never lays blocks out itself.
+        self.ensure_block_heights(self.active_chapter, SCROLL_MEASURE_WIDTH);
+        task
+    }
+}
+
+impl EpubViewer {
+    fn handle_message(&mut self, message: EpubViewerMessage) -> Task<Action<EpubViewerMessage>> {
         self.maybe_repaginate();
         match message {
             EpubViewerMessage::EpubLoaded(title, chapters, epub_doc) => {
@@ -1427,7 +1437,7 @@ impl Page for EpubViewer {
                 // with different display dimensions or font size settings).
                 let target_y = if self.view_mode == ViewMode::Scroll {
                     if let Some(bi) = self.pending_block_index.take() {
-                        let content_w = 800.0;
+                        let content_w = SCROLL_MEASURE_WIDTH;
                         let chapter_idx = self.active_chapter;
                         self.ensure_block_heights(chapter_idx, content_w);
                         self.block_heights_cache
@@ -1468,7 +1478,7 @@ impl Page for EpubViewer {
                         .unwrap_or(0);
                     self.pending_block_index = Some(block_idx);
                     if self.view_mode == ViewMode::Scroll {
-                        let content_w = 800.0;
+                        let content_w = SCROLL_MEASURE_WIDTH;
                         self.ensure_block_heights(c, content_w);
                         let target_y = self.block_heights_cache.get(&c).map(|(_, _, heights)| {
                             y_for_block_index_from_heights(heights, block_idx)
@@ -1533,7 +1543,7 @@ impl Page for EpubViewer {
 
                             match self.view_mode {
                                 ViewMode::Scroll => {
-                                    let content_w = 800.0;
+                                    let content_w = SCROLL_MEASURE_WIDTH;
                                     self.ensure_block_heights(idx, content_w);
                                     let target_y = if let Some((_, _, heights)) =
                                         self.block_heights_cache.get(&idx)
@@ -1623,7 +1633,7 @@ impl Page for EpubViewer {
                     if let Some(frag) = fragment.filter(|f| !f.is_empty()) {
                         // Ensure cached heights before borrowing chapter (avoid split borrow).
                         let chapter_idx = self.active_chapter;
-                        let content_w = 800.0;
+                        let content_w = SCROLL_MEASURE_WIDTH;
                         self.ensure_block_heights(chapter_idx, content_w);
 
                         if let Some(chapter) = self.chapters.get(chapter_idx) {
@@ -2380,6 +2390,10 @@ fn extract_attr_value<'a>(tag_content: &'a str, attr_name: &str) -> Option<&'a s
     }
 }
 
+/// Width scroll mode positions are measured at: the widest the scroll
+/// column gets.
+const SCROLL_MEASURE_WIDTH: f32 = 800.0;
+
 /// Compute the y-offset for `block_idx` using pre-computed `heights`.
 fn y_for_block_index_from_heights(heights: &[f32], block_idx: usize) -> f32 {
     const SPACING: f32 = 8.0;
@@ -3027,20 +3041,13 @@ impl EpubViewer {
     /// Convert current scroll_y position to approximate page index.
     fn scroll_y_to_page(&self) -> usize {
         if let Some(layout) = self.pagination_cache.get(&self.active_chapter)
-            && let Some(chapter) = self.chapters.get(self.active_chapter)
+            && let Some(block_idx) = self.approximate_block_at_scroll_y(self.scroll_y)
         {
-            let mut y = 0.0f32;
-            for (i, block) in chapter.blocks.iter().enumerate() {
-                let h = self.scroll_block_height(chapter, block, layout.page_width);
-                if y + h > self.scroll_y {
-                    return layout
-                        .pages
-                        .iter()
-                        .position(|p| p.start <= i && i < p.end)
-                        .unwrap_or(0);
-                }
-                y += h + 8.0;
-            }
+            return layout
+                .pages
+                .iter()
+                .position(|p| p.start <= block_idx && block_idx < p.end)
+                .unwrap_or(0);
         }
         0
     }
@@ -3048,14 +3055,10 @@ impl EpubViewer {
     /// Convert current page index to approximate scroll_y position.
     fn page_to_scroll_y(&self) -> f32 {
         if let Some(layout) = self.pagination_cache.get(&self.active_chapter)
-            && let Some(chapter) = self.chapters.get(self.active_chapter)
             && let Some(page) = layout.pages.get(self.current_page)
+            && let Some(heights) = self.active_scroll_heights()
         {
-            let mut y = 0.0f32;
-            for block in &chapter.blocks[..page.start] {
-                y += self.scroll_block_height(chapter, block, layout.page_width) + 8.0;
-            }
-            return y;
+            return y_for_block_index_from_heights(heights, page.start);
         }
         0.0
     }
@@ -3094,20 +3097,26 @@ impl EpubViewer {
         })
     }
 
-    /// Find the block index closest to a given scroll_y offset, measuring
-    /// blocks at the widest scroll width (no viewport width available).
+    /// Scroll mode heights of the active chapter's blocks, as `update()` last
+    /// measured them. `None` before the chapter has been measured.
+    fn active_scroll_heights(&self) -> Option<&[f32]> {
+        self.block_heights_cache
+            .get(&self.active_chapter)
+            .map(|(_, _, heights)| heights.as_slice())
+    }
+
+    /// Find the block index at a given scroll_y offset from the cached scroll
+    /// mode heights, so it is cheap enough to call while drawing.
     fn approximate_block_at_scroll_y(&self, target_y: f32) -> Option<usize> {
-        let chapter = self.chapters.get(self.active_chapter)?;
-        let content_w = 800.0;
+        let heights = self.active_scroll_heights()?;
         let mut y = 0.0f32;
-        for (i, block) in chapter.blocks.iter().enumerate() {
-            let h = self.scroll_block_height(chapter, block, content_w);
+        for (i, &h) in heights.iter().enumerate() {
             if y + h > target_y {
                 return Some(i);
             }
             y += h + 8.0;
         }
-        Some(chapter.blocks.len().saturating_sub(1))
+        Some(heights.len().saturating_sub(1))
     }
 
     /// How many pages to advance per navigation step (2 in dual-page mode, 1 otherwise).
@@ -3127,7 +3136,7 @@ impl EpubViewer {
         match self.view_mode {
             ViewMode::Scroll => {
                 // Measure the y-position of the target block.
-                let content_w = 800.0;
+                let content_w = SCROLL_MEASURE_WIDTH;
                 let chapter_idx = self.active_chapter;
                 self.ensure_block_heights(chapter_idx, content_w);
                 let y = self
@@ -3206,6 +3215,52 @@ mod tests {
         };
         let (viewer, _init) = super::EpubViewer::new(document, document_provider, false);
         assert_eq!(viewer.current_progress(), None);
+    }
+
+    /// Scroll progress is looked up while drawing, so it must come from the
+    /// heights `update()` cached rather than from laying blocks out again.
+    #[tokio::test]
+    async fn scroll_progress_reads_cached_block_heights() {
+        let (application_module, document_provider, _db_dir) =
+            crate::test_support::document_provider().await;
+        let epub_file = EpubBuilder::new("Test")
+            .body("<p>One</p><p>Two</p><p>Three</p><p>Four</p>")
+            .build();
+        let (document, _fixture_dir) = crate::test_support::scan_and_fetch_document(
+            &application_module,
+            &document_provider,
+            epub_file.path().to_path_buf(),
+            "test.epub",
+        )
+        .await;
+        let (mut viewer, init_task) = super::EpubViewer::new(document, document_provider, false);
+        for message in crate::test_support::drain(init_task).await {
+            if matches!(message, super::EpubViewerMessage::EpubLoaded(..)) {
+                let _ = viewer.update(message);
+            }
+        }
+        viewer.view_mode = super::ViewMode::Scroll;
+        let chapter = viewer.active_chapter;
+        assert_eq!(
+            viewer.block_heights_cache[&chapter].2.len(),
+            viewer.chapters[chapter].blocks.len(),
+            "update() measures the active chapter"
+        );
+
+        // Heights no layout would produce: only a cache lookup finds block 2.
+        viewer
+            .block_heights_cache
+            .get_mut(&chapter)
+            .expect("cached")
+            .2 = vec![1000.0; viewer.chapters[chapter].blocks.len()];
+        viewer.scroll_y = 2500.0;
+        assert_eq!(
+            viewer.approximate_block_at_scroll_y(viewer.scroll_y),
+            Some(2)
+        );
+        let progress = viewer.current_progress().expect("chapters loaded");
+        let (expected, _) = super::serialize_progress(&viewer.chapters, chapter, 2);
+        assert_eq!(progress.position, expected);
     }
 
     #[tokio::test]
