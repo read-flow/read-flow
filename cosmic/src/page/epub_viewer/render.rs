@@ -26,14 +26,18 @@ use cosmic::widget;
 use epub::BlockStyle;
 use epub::ContentBlock;
 use epub::InlineStyle;
+use epub::ListItem;
 use epub::TableCell;
 use epub::TextAlign;
 use epub::TextSpan;
 
 use crate::ICON_SIZE;
 use crate::fl;
+use crate::page::epub_viewer::BlockCut;
 use crate::page::epub_viewer::BlockHighlight;
 use crate::page::epub_viewer::EpubViewerMessage;
+use crate::page::epub_viewer::char_offset_to_byte;
+use crate::page::epub_viewer::slice_spans;
 use crate::page::image_viewer::ViewerImage;
 
 #[derive(Clone, Copy)]
@@ -275,7 +279,7 @@ pub(super) fn render_partial_preformatted(
     )
 }
 
-fn apply_highlight<'a>(
+pub(super) fn apply_highlight<'a>(
     inner: Element<'a, EpubViewerMessage>,
     highlight: BlockHighlight,
 ) -> Element<'a, EpubViewerMessage> {
@@ -407,53 +411,16 @@ impl<'a> RenderContext<'a> {
                     .into()
             }
             ContentBlock::UnorderedList { items } => {
-                let mut col = widget::column::with_capacity(items.len())
-                    .spacing(space_xxs)
-                    .width(Length::Fill);
-                for item in items {
-                    if item.spans.is_empty() {
-                        col = col.push(
-                            widget::text::body(format!("  \u{2022} {}", item.text))
-                                .size(font_size)
-                                .font(font)
-                                .width(Length::Fill),
-                        );
-                    } else {
-                        col = col.push(render_list_item_spans(
-                            "  \u{2022} ".to_string(),
-                            &item.spans,
-                            font_size,
-                            family,
-                        ));
-                    }
-                }
-                col.into()
+                render_partial_list(items, None, BlockCut::default(), None, font_size, family)
             }
-            ContentBlock::OrderedList { start, items } => {
-                let mut col = widget::column::with_capacity(items.len())
-                    .spacing(space_xxs)
-                    .width(Length::Fill);
-                for (i, item) in items.iter().enumerate() {
-                    let n = *start as usize + i;
-                    if item.spans.is_empty() {
-                        col = col.push(
-                            widget::text::body(format!("  {n}. {}", item.text))
-                                .size(font_size)
-                                .font(font)
-                                .width(Length::Fill),
-                        );
-                    } else {
-                        let prefix = format!("  {n}. ");
-                        col = col.push(render_list_item_spans(
-                            prefix,
-                            &item.spans,
-                            font_size,
-                            family,
-                        ));
-                    }
-                }
-                col.into()
-            }
+            ContentBlock::OrderedList { start, items } => render_partial_list(
+                items,
+                Some(*start),
+                BlockCut::default(),
+                None,
+                font_size,
+                family,
+            ),
             ContentBlock::Image { data, .. } if !data.is_empty() => {
                 let key = data.as_ptr() as usize;
                 let handle = self
@@ -843,6 +810,131 @@ fn render_list_item_spans<'a>(
         .size(size)
         .width(Length::Fill)
         .into()
+}
+
+/// What a page shows of one list item: characters `start..end` of item
+/// `index`, after `prefix` when it shows the item from its beginning.
+#[derive(Debug)]
+pub(super) struct ListItemPart {
+    pub index: usize,
+    pub prefix: Option<String>,
+    pub start: usize,
+    pub end: usize,
+}
+
+/// The prefix drawn before list item `index`: a bullet, or, in a list
+/// numbered from `ordered_start`, the item's number.
+fn list_item_prefix(ordered_start: Option<u32>, index: usize) -> String {
+    match ordered_start {
+        Some(start) => format!("  {}. ", start as usize + index),
+        None => "  \u{2022} ".to_string(),
+    }
+}
+
+/// The parts of list `items` (numbered from `ordered_start` when ordered)
+/// shown from `from` up to `to` (`None`: to the end of the list). A cut at
+/// character 0 of an item falls between items.
+pub(super) fn list_item_parts(
+    items: &[ListItem],
+    ordered_start: Option<u32>,
+    from: BlockCut,
+    to: Option<BlockCut>,
+) -> Vec<ListItemPart> {
+    (from.child..items.len())
+        .take_while(|&index| {
+            to.is_none_or(|to| index < to.child || (index == to.child && to.char_offset > 0))
+        })
+        .map(|index| {
+            let start = if index == from.child {
+                from.char_offset
+            } else {
+                0
+            };
+            let end = match to {
+                Some(to) if index == to.child => to.char_offset,
+                _ => usize::MAX,
+            };
+            ListItemPart {
+                index,
+                prefix: (start == 0).then(|| list_item_prefix(ordered_start, index)),
+                start,
+                end,
+            }
+        })
+        .collect()
+}
+
+/// The spans list item `part` of `item` is drawn with: its prefix, then the
+/// item's text as a paragraph's.
+pub(super) fn list_item_part_spans<'a>(
+    item: &'a ListItem,
+    part: &ListItemPart,
+    family: font::Family,
+    size: f32,
+) -> Vec<Span<'a, EpubViewerMessage>> {
+    let prefix = part.prefix.clone().map(|prefix| {
+        span(prefix).font(Font {
+            family,
+            ..Font::default()
+        })
+    });
+    let text = if part.start == 0 && part.end == usize::MAX {
+        paragraph_spans(&item.text, &item.spans, family, size)
+    } else {
+        let char_count = item.text.chars().count();
+        let start = part.start.min(char_count);
+        let end = part.end.min(char_count);
+        owned_paragraph_spans(
+            item.text[char_offset_to_byte(&item.text, start)..char_offset_to_byte(&item.text, end)]
+                .to_string(),
+            slice_spans(&item.spans, start, end),
+            family,
+            size,
+        )
+    };
+    prefix.into_iter().chain(text).collect()
+}
+
+/// Space between the items of a list.
+pub(super) fn list_item_spacing() -> f32 {
+    theme::active().cosmic().spacing.space_xxs as f32
+}
+
+/// Lay out list item `spans` `width` pixels wide exactly as
+/// [`render_partial_list`] draws them.
+pub(super) fn layout_list_item(
+    spans: &[Span<'_, EpubViewerMessage>],
+    family: font::Family,
+    size: f32,
+    width: f32,
+) -> Paragraph {
+    layout_paragraph(spans, &BlockStyle::default(), family, size, width)
+}
+
+/// Draw list `items` (numbered from `ordered_start` when ordered) from `from`
+/// up to `to` (`None`: to the end of the list), each item as a paragraph at
+/// the reader's `font_size`.
+pub(super) fn render_partial_list<'a>(
+    items: &'a [ListItem],
+    ordered_start: Option<u32>,
+    from: BlockCut,
+    to: Option<BlockCut>,
+    font_size: f32,
+    family: font::Family,
+) -> Element<'a, EpubViewerMessage> {
+    let parts = list_item_parts(items, ordered_start, from, to);
+    let mut col = widget::column::with_capacity(parts.len())
+        .spacing(list_item_spacing())
+        .width(Length::Fill);
+    for part in &parts {
+        col = col.push(paragraph_text(
+            list_item_part_spans(&items[part.index], part, family, font_size),
+            &BlockStyle::default(),
+            family,
+            font_size,
+        ));
+    }
+    col.into()
 }
 
 fn styled_span<'a>(

@@ -42,6 +42,7 @@ use epub::BlockStyle;
 use epub::ContentBlock;
 use epub::Document as EpubDocumentTrait;
 use epub::EpubDocument;
+use epub::ListItem;
 use epub::NavEntry;
 use epub::StyleSheet;
 use epub::TextSpan;
@@ -61,6 +62,7 @@ use crate::page::Page;
 use crate::page::epub_viewer::measure::BlockMeasurer;
 use crate::page::epub_viewer::measure::block_height;
 use crate::page::epub_viewer::render::RenderContext;
+use crate::page::epub_viewer::render::render_partial_list;
 use crate::page::epub_viewer::render::render_partial_paragraph;
 use crate::page::epub_viewer::render::render_partial_preformatted;
 use crate::page::image_viewer::ViewerImage;
@@ -2580,8 +2582,63 @@ fn render_block_part<'a>(
                 (s == 0).then(|| text.clone()),
             )
         }
+        ContentBlock::UnorderedList { items } => render::apply_highlight(
+            render_partial_list(items, None, from, to, ctx.font_size, ctx.family),
+            highlight,
+        ),
+        ContentBlock::OrderedList { start, items } => render::apply_highlight(
+            render_partial_list(items, Some(*start), from, to, ctx.font_size, ctx.family),
+            highlight,
+        ),
         _ => ctx.render_block(block, highlight),
     }
+}
+
+/// Where to cut list `items` (numbered from `ordered_start` when ordered),
+/// shown from `from` on, so that the items before the cut fit in
+/// `available_height` pixels: between the items, or inside the first item
+/// that does not fit, at the start of its first line that does not fit.
+/// Returns `None` when all of it fits.
+fn split_list(
+    items: &[ListItem],
+    ordered_start: Option<u32>,
+    from: BlockCut,
+    content_width: f32,
+    font_size: f32,
+    family: font::Family,
+    available_height: f32,
+) -> Option<BlockCut> {
+    let mut used = 0.0;
+    for (i, part) in render::list_item_parts(items, ordered_start, from, None)
+        .iter()
+        .enumerate()
+    {
+        let spans = render::list_item_part_spans(&items[part.index], part, family, font_size);
+        let layout = render::layout_list_item(&spans, family, font_size, content_width);
+        let spacing = if i > 0 {
+            render::list_item_spacing()
+        } else {
+            0.0
+        };
+        let available = available_height - used - spacing;
+        let height = layout.min_bounds().height;
+        if height <= available {
+            used += spacing + height;
+            continue;
+        }
+        // The prefix is laid out before the item's text, on its first line.
+        let prefix_len = part
+            .prefix
+            .as_ref()
+            .map_or(0, |prefix| prefix.chars().count());
+        let char_offset = first_overflowing_char(&layout, available)
+            .map_or(0, |offset| part.start + offset.saturating_sub(prefix_len));
+        return Some(BlockCut {
+            child: part.index,
+            char_offset,
+        });
+    }
+    None
 }
 
 /// End of the part of code block `text` shown from character `start` up to
@@ -2637,6 +2694,30 @@ fn try_split_block(
             first_overflowing_char(&layout, available_height - padding.y())
                 .map(|offset| start + offset)
         }
+        ContentBlock::UnorderedList { items } => {
+            return split_list(
+                items,
+                None,
+                from,
+                content_width,
+                font_size,
+                family,
+                available_height,
+            )
+            .filter(|cut| *cut > from);
+        }
+        ContentBlock::OrderedList { start, items } => {
+            return split_list(
+                items,
+                Some(*start),
+                from,
+                content_width,
+                font_size,
+                family,
+                available_height,
+            )
+            .filter(|cut| *cut > from);
+        }
         _ => None,
     };
     char_offset.map(|char_offset| BlockCut {
@@ -2670,7 +2751,9 @@ fn page_text_size(area: (f32, f32), dual: bool, gap: f32, margin: f32) -> (f32, 
 ///
 /// Paragraphs and code blocks that straddle a page boundary are split at the
 /// start of the first line that does not fit (see [`first_overflowing_char`]).
-/// Other block types that exceed `page_height` get their own page unchanged.
+/// Lists are split between items, or inside the first item that does not fit
+/// at the start of its first line that does not fit. Other block types that
+/// exceed `page_height` get their own page unchanged.
 ///
 /// Blocks are measured as `ctx` draws them `page_width` wide, `block_spacing`
 /// apart; blocks measuring 0 take no spacing, as the page column leaves them

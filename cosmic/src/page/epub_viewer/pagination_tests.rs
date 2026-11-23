@@ -550,3 +550,129 @@ async fn paginated_preformatted_goldens() {
         );
     }
 }
+
+/// A paragraph followed by a `tag` list (`ul` or `ol`, with `attributes`) of
+/// 60 short items and 5 items longer than a page, spread between them.
+fn list_chapter(tag: &str, attributes: &str) -> String {
+    let items: String = (0..65)
+        .map(|i| {
+            let words = if i % 13 == 12 { 400 } else { 3 + i % 5 };
+            format!("<li>{}</li>", prose(i, words))
+        })
+        .collect();
+    format!("<p>{}</p><{tag}{attributes}>{items}</{tag}>", prose(0, 60))
+}
+
+#[tokio::test]
+async fn list_pages_fill_without_overflowing() {
+    for tag in ["ul", "ol"] {
+        let (mut viewer, ..) = paginated_viewer(list_chapter(tag, "")).await;
+        let _guard = crate::test_support::cosmic_tk_lock();
+        cosmic_golden::init();
+        for viewport in VIEWPORTS {
+            let total = paginate(&mut viewer, viewport);
+            assert!(
+                total > 2,
+                "{tag} {viewport:?}: expected several pages, got {total}"
+            );
+            assert_pages_fill(&mut viewer, viewport, tag);
+
+            let layout = &viewer.pagination_cache[&viewer.active_chapter];
+            let cuts: Vec<_> = layout.pages.iter().filter_map(|p| p.end_cut).collect();
+            assert!(
+                cuts.iter().any(|cut| cut.char_offset == 0),
+                "{tag} {viewport:?}: expected a page break between items, got {cuts:?}"
+            );
+            assert!(
+                cuts.iter().any(|cut| cut.char_offset > 0),
+                "{tag} {viewport:?}: expected a page break inside an item, got {cuts:?}"
+            );
+        }
+    }
+}
+
+/// Golden snapshots of an ordered list split across pages: it must fill each
+/// page down to the bottom margin.
+#[tokio::test]
+async fn paginated_list_goldens() {
+    let (mut viewer, ..) = paginated_viewer(list_chapter("ol", "")).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    let viewport = VIEWPORTS[0];
+    let total = paginate(&mut viewer, viewport);
+    let (width, height) = (viewport.0 as u32, viewport.1 as u32);
+    for (suffix, page) in [("first", 0), ("middle", total / 2)] {
+        viewer.current_page = page;
+        cosmic_golden::assert_snapshot!(
+            &format!("paginated_list_{suffix}"),
+            viewer.view_content_paginated(),
+            width,
+            height
+        );
+    }
+}
+
+/// A page starting between the items of an ordered list numbers its first
+/// item as the list does; a page continuing an item draws no number.
+#[tokio::test]
+async fn ordered_list_numbering_continues_on_the_next_page() {
+    const START: u32 = 3;
+    let (mut viewer, ..) =
+        paginated_viewer(list_chapter("ol", &format!(" start=\"{START}\""))).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    for viewport in VIEWPORTS {
+        paginate(&mut viewer, viewport);
+        let chapter = &viewer.chapters[viewer.active_chapter];
+        let layout = &viewer.pagination_cache[&viewer.active_chapter];
+        let first_part = |range: &super::PageRange| {
+            let ContentBlock::OrderedList { start, items } = &chapter.blocks[range.start] else {
+                panic!("{viewport:?}: the page starts inside the list");
+            };
+            let to = if range.end - 1 == range.start {
+                range.end_cut
+            } else {
+                None
+            };
+            let part = super::render::list_item_parts(items, Some(*start), range.start_cut, to)
+                .into_iter()
+                .next()
+                .expect("the page shows an item");
+            let spans = super::render::list_item_part_spans(
+                &items[part.index],
+                &part,
+                font::Family::Serif,
+                FONT_SIZE,
+            );
+            (part.index, spans[0].text.to_string())
+        };
+
+        let between = layout
+            .pages
+            .iter()
+            .find(|p| p.start_cut.child > 0 && p.start_cut.char_offset == 0)
+            .expect("a page starts between items");
+        let (index, first_text) = first_part(between);
+        assert_eq!(
+            first_text,
+            format!("  {}. ", index + START as usize),
+            "{viewport:?}: first item on the page"
+        );
+
+        let inside = layout
+            .pages
+            .iter()
+            .find(|p| p.start_cut.char_offset > 0)
+            .expect("a page starts inside an item");
+        let ContentBlock::OrderedList { items, .. } = &chapter.blocks[inside.start] else {
+            panic!("{viewport:?}: the page starts inside the list");
+        };
+        let (index, first_text) = first_part(inside);
+        let item = &items[index].text;
+        let rest = &item[super::char_offset_to_byte(item, inside.start_cut.char_offset)..];
+        assert!(
+            !first_text.is_empty() && rest.starts_with(&first_text),
+            "{viewport:?}: the continued item draws no number, but starts with {first_text:?}"
+        );
+    }
+}

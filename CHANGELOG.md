@@ -19,7 +19,7 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Fixed
 
-- EPUB paginated mode: pages fill with text down to the bottom margin, without a scrollbar and without breaking a paragraph before its last line is full. This holds in single and dual page mode at any window width. Headings, lists, block quotes, code blocks, tables, images, figures and footnotes are measured as they are drawn, so pages holding them no longer overflow or end early. Code blocks continue on the next page at a line boundary, are drawn at the reader's font size, and wrap lines too long for the page.
+- EPUB paginated mode: pages fill with text down to the bottom margin, without a scrollbar and without breaking a paragraph before its last line is full. This holds in single and dual page mode at any window width. Headings, lists, block quotes, code blocks, tables, images, figures and footnotes are measured as they are drawn, so pages holding them no longer overflow or end early. Code blocks continue on the next page at a line boundary, are drawn at the reader's font size, and wrap lines too long for the page. Lists continue on the next page between items, or inside an item too long for the page at a line boundary; list items are drawn with the line spacing of paragraphs, and a numbered list keeps its numbering on the next page.
 - COSMIC document list: the file type filter shows "All file types" as its placeholder instead of "All statuses".
 - COSMIC scan-directory dialog: "Save Directory" is disabled until a directory is selected, and a path that can't be expanded now shows an error in the dialog instead of silently doing nothing. The "Select" button label is now translated.
 
