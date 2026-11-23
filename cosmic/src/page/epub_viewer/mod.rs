@@ -3053,6 +3053,15 @@ fn page_text_size(area: (f32, f32), dual: bool, gap: f32, margin: f32) -> (f32, 
 /// gets a page of its own. A table inside a container is not split. Other
 /// block types that exceed `page_height` get their own page unchanged.
 ///
+/// A heading is not left as the last block of a page: when not even the
+/// first part of the block after it (a line, list item, table row or other
+/// smallest part it is cut into) fits below it, the heading starts the next
+/// page with that block, together with the headings right before it (a part
+/// heading above a section heading). They stay where they are when they do
+/// not fit on a page with that part, and when nothing else is on the page.
+/// This applies to the chapter's own headings, not to headings inside block
+/// quotes, footnotes or figures.
+///
 /// Blocks are measured as `ctx` draws them `page_width` wide, `block_spacing`
 /// apart; blocks measuring 0 take no spacing, as the page column leaves them
 /// out.
@@ -3153,15 +3162,30 @@ fn paginate_blocks(
                 i += 1;
             }
             _ => {
-                // Nothing fits on this page — close it and start block on next page.
+                // Nothing fits on this page — close it and start block on
+                // next page, with the headings right before it.
+                let end = headings_before(blocks, page_start, i)
+                    .filter(|&headings| {
+                        fits_with_headings(
+                            blocks,
+                            headings,
+                            page_height,
+                            page_width,
+                            block_spacing,
+                            ctx,
+                            measurer,
+                        )
+                    })
+                    .unwrap_or(i);
                 pages.push(PageRange {
                     start: page_start,
                     start_cut: page_start_cut,
-                    end: i,
+                    end,
                     end_cut: None,
                 });
-                page_start = i;
+                page_start = end;
                 page_start_cut = BlockCut::default();
+                i = end;
                 // Re-process block `i` on the new page.
             }
         }
@@ -3191,6 +3215,92 @@ fn paginate_blocks(
         page_height,
         page_width,
         pages,
+    }
+}
+
+/// Whether `block` is a heading.
+fn is_heading(block: &ContentBlock) -> bool {
+    matches!(block, ContentBlock::Heading { .. })
+}
+
+/// Index of the first of the headings right before block `end` on the page
+/// starting at block `page_start`; `None` when block `end - 1` is not a
+/// heading, or when the page holds nothing but these headings.
+fn headings_before(blocks: &[ContentBlock], page_start: usize, end: usize) -> Option<usize> {
+    let headings = blocks[page_start..end]
+        .iter()
+        .rev()
+        .take_while(|block| is_heading(block))
+        .count();
+    (headings > 0 && headings < end - page_start).then_some(end - headings)
+}
+
+/// Whether the headings from block `start` on, with the first part of the
+/// block after them (a line, list item, table row or other smallest part it
+/// is cut into), fit on an empty page `page_height` pixels high. Headings
+/// ending the chapter fit when they fit on their own.
+fn fits_with_headings(
+    blocks: &[ContentBlock],
+    start: usize,
+    page_height: f32,
+    page_width: f32,
+    block_spacing: f32,
+    ctx: &RenderContext<'_>,
+    measurer: &mut BlockMeasurer,
+) -> bool {
+    let from = BlockCut::default();
+    let mut used = 0.0f32;
+    for block in &blocks[start..] {
+        let block_h = effective_block_height(measurer, ctx, block, from, page_width);
+        let spacing = if used > 0.0 && block_h > 0.0 {
+            block_spacing
+        } else {
+            0.0
+        };
+        let available = page_height - used - spacing;
+        if !is_heading(block) {
+            return block_h <= available
+                || first_part_fits(ctx, measurer, block, page_width, page_height, available);
+        }
+        if block_h > available {
+            return false;
+        }
+        used += spacing + block_h;
+    }
+    true
+}
+
+/// Whether the first part of `block` (a line, list item, table row or other
+/// smallest part it is cut into) fits in `available` pixels at the bottom of
+/// a page `page_height` pixels high.
+fn first_part_fits(
+    ctx: &RenderContext<'_>,
+    measurer: &mut BlockMeasurer,
+    block: &ContentBlock,
+    page_width: f32,
+    page_height: f32,
+    available: f32,
+) -> bool {
+    let from = BlockCut::default();
+    if available <= 0.0 {
+        return false;
+    }
+    match block {
+        ContentBlock::Table { rows } => {
+            let repeat_header = table_repeats_header(ctx, measurer, rows, page_width, page_height);
+            split_table(
+                ctx,
+                measurer,
+                rows,
+                from,
+                repeat_header,
+                page_width,
+                available,
+            )
+            .is_some()
+        }
+        _ => try_split_block(ctx, measurer, block, page_width, available, from)
+            .is_some_and(|cut| cut > from),
     }
 }
 

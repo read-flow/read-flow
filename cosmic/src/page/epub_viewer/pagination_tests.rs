@@ -451,15 +451,48 @@ fn assert_pages_fill(viewer: &mut EpubViewer, viewport: (f32, f32), what: &str) 
                 -gap
             );
             if shown + 1 < total {
+                // The next unit that did not fit: a line, or the headings
+                // starting the next page with the first line after them.
+                let bound =
+                    heading_room(viewer, shown + 1, spacing).unwrap_or(LINE_ADVANCE + spacing);
                 assert!(
-                    gap < LINE_ADVANCE + spacing,
+                    gap < bound,
                     "{what} {viewport:?} page {shown}: bottom gap {gap:.1}px leaves room \
-                     for another line"
+                     for {bound:.1}px"
                 );
             }
         }
         page += fits.len();
     }
+}
+
+/// Room the headings starting page `page` of the active chapter would take
+/// at the bottom of the page before it, with the first line of body text
+/// after them: the headings' measured heights, the block spacing above each
+/// of them and above that line, and the line. `None` when page `page` does
+/// not start with a heading, or continues a block from the page before it.
+fn heading_room(viewer: &EpubViewer, page: usize, spacing: f32) -> Option<f32> {
+    let chapter = &viewer.chapters[viewer.active_chapter];
+    let layout = &viewer.pagination_cache[&viewer.active_chapter];
+    let range = &layout.pages[page];
+    if range.start_cut != super::BlockCut::default() {
+        return None;
+    }
+    let ctx = viewer.page_render_context(chapter, layout.page_height);
+    let headings: f32 = chapter.blocks[range.start..]
+        .iter()
+        .take_while(|block| super::is_heading(block))
+        .map(|block| {
+            spacing
+                + super::block_height(
+                    &mut viewer.measurer.borrow_mut(),
+                    &ctx,
+                    block,
+                    layout.page_width,
+                )
+        })
+        .sum();
+    (headings > 0.0).then_some(headings + spacing + LINE_ADVANCE)
 }
 
 /// A paragraph followed by a code block of `lines` lines, each short enough
@@ -1483,6 +1516,103 @@ async fn paginated_image_page_golden() {
         .expect("a page starting at the image");
     cosmic_golden::assert_snapshot!(
         "paginated_image_page",
+        viewer.view_content_paginated(),
+        width,
+        height
+    );
+}
+
+/// Sections of a heading (a part heading and a section heading for every
+/// third) and a paragraph of varying length, so that headings come near the
+/// bottom of pages.
+fn heading_chapter() -> String {
+    (0..24)
+        .map(|section| {
+            let part = if section % 3 == 0 {
+                format!("<h1>Part {section}</h1>")
+            } else {
+                String::new()
+            };
+            format!(
+                "{part}<h2>Section {section}</h2><p>{}</p>",
+                prose(section, 20 + section * 37 % 110)
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn heading_is_not_left_alone_at_the_bottom_of_a_page() {
+    let (mut viewer, ..) = paginated_viewer(heading_chapter()).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    for viewport in VIEWPORTS {
+        let total = paginate(&mut viewer, viewport);
+        assert_shows_all_text(&viewer, viewport);
+        let chapter = &viewer.chapters[viewer.active_chapter];
+        let layout = &viewer.pagination_cache[&viewer.active_chapter];
+        for (page, range) in layout.pages.iter().enumerate().take(total - 1) {
+            assert!(
+                !super::is_heading(&chapter.blocks[range.end - 1]),
+                "{viewport:?} page {page} ends with a heading: {:?}",
+                chapter.blocks[range.end - 1]
+            );
+        }
+        assert_pages_fill(&mut viewer, viewport, "headings");
+    }
+}
+
+#[tokio::test]
+async fn heading_before_a_block_as_tall_as_a_page_stays_in_place() {
+    let (mut viewer, ..) = tall_image_viewer(false, "<h2>A drawing</h2>", "").await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    let image = image_block(&viewer);
+    for viewport in VIEWPORTS {
+        paginate(&mut viewer, viewport);
+        assert_shows_all_text(&viewer, viewport);
+        let layout = &viewer.pagination_cache[&viewer.active_chapter];
+        assert!(
+            layout
+                .pages
+                .iter()
+                .any(|page| (page.start, page.start_cut, page.end)
+                    == (image, super::BlockCut::default(), image + 1)),
+            "{viewport:?}: expected the image alone on its page, got {:?}",
+            layout.pages
+        );
+        assert!(
+            layout
+                .pages
+                .iter()
+                .any(|page| page.start < image - 1 && page.end == image),
+            "{viewport:?}: expected the heading below the paragraph before it, got {:?}",
+            layout.pages
+        );
+    }
+}
+
+/// Golden snapshot of a part and a section heading moved to the next page
+/// with the text after them, leaving the page before them short.
+#[tokio::test]
+async fn paginated_heading_kept_with_text_golden() {
+    let (mut viewer, ..) = paginated_viewer(heading_chapter()).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    let viewport = VIEWPORTS[2];
+    paginate(&mut viewer, viewport);
+    let spacing = cosmic::theme::active().cosmic().spacing.space_xxs as f32;
+    let next = (1..viewer.total_pages())
+        .find(|&page| heading_room(&viewer, page, spacing).is_some())
+        .expect("a page starting with a heading");
+    let fits = page_fits(&mut viewer, next - 1, viewport);
+    assert!(
+        fits.len() == 2 && fits[0].gap() > LINE_ADVANCE + spacing,
+        "expected the short page and the page starting with the headings side by side"
+    );
+    let (width, height) = (viewport.0 as u32, viewport.1 as u32);
+    cosmic_golden::assert_snapshot!(
+        "paginated_heading_kept_with_text",
         viewer.view_content_paginated(),
         width,
         height
