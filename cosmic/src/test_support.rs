@@ -190,9 +190,8 @@ pub(crate) fn layout_extents<Message>(
     use cosmic::iced::advanced::widget::Id;
     use cosmic::iced::advanced::widget::Operation;
     use cosmic::iced::advanced::widget::operation::Scrollable;
-    use cosmic::iced::core::renderer::Headless;
-    use cosmic::iced::runtime::user_interface::Cache;
-    use cosmic::iced::runtime::user_interface::UserInterface;
+
+    use crate::page::epub_viewer::measure;
 
     struct Collect(LayoutExtents);
 
@@ -222,19 +221,12 @@ pub(crate) fn layout_extents<Message>(
         }
     }
 
-    let mut renderer = futures::executor::block_on(<cosmic::Renderer as Headless>::new(
-        cosmic::font::default(),
-        cosmic::iced::Pixels(16.0),
-        Some("tiny-skia"),
-    ))
-    .expect("create headless renderer");
-    let mut ui = UserInterface::build(
+    let mut collect = Collect(LayoutExtents::default());
+    measure::lay_out(
+        &mut measure::headless_renderer(),
         element,
         Size::new(width, height),
-        Cache::default(),
-        &mut renderer,
+        &mut collect,
     );
-    let mut collect = Collect(LayoutExtents::default());
-    ui.operate(&renderer, &mut collect);
     collect.0
 }

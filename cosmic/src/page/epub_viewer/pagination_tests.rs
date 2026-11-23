@@ -316,3 +316,119 @@ async fn paginated_page_goldens() {
         }
     }
 }
+
+/// A chapter of `count` blocks cycling through every block type.
+fn mixed_chapter(count: usize) -> String {
+    (0..count)
+        .map(|i| match i % 12 {
+            0 => format!("<h2>Section {i}</h2>"),
+            1 | 2 => format!("<p>{}</p>", prose(i, 60 + i % 40)),
+            3 => format!("<p><em>{}</em> {}</p>", prose(i, 10), prose(i + 1, 40)),
+            4 => format!("<ul><li>{}</li><li>{}</li></ul>", prose(i, 8), prose(i, 20)),
+            5 => format!("<ol><li>{}</li><li>{}</li></ol>", prose(i, 8), prose(i, 20)),
+            6 => format!(
+                "<blockquote><p>{}</p><p>{}</p></blockquote>",
+                prose(i, 30),
+                prose(i, 5)
+            ),
+            // One line, so it is never split across pages.
+            7 => "<pre>let answer = 42;</pre>".to_string(),
+            8 => "<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>"
+                .to_string(),
+            9 => "<hr/>".to_string(),
+            10 => "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 200 100\">\
+                   <rect width=\"200\" height=\"100\" fill=\"#6060c0\"/></svg>"
+                .to_string(),
+            _ => format!(
+                "<figure><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 60\">\
+                 <rect width=\"100\" height=\"60\"/></svg><figcaption>{}</figcaption></figure>",
+                prose(i, 6)
+            ),
+        })
+        .collect()
+}
+
+/// Heights of the active chapter's page texts, checking that none overflows
+/// its page.
+fn page_text_heights(viewer: &mut EpubViewer, viewport: (f32, f32)) -> Vec<f32> {
+    let total = viewer.total_pages();
+    let mut heights = Vec::new();
+    let mut page = 0;
+    while page < total {
+        let fits = page_fits(viewer, page, viewport);
+        for (side, fit) in fits.iter().enumerate() {
+            let gap = fit.gap();
+            assert!(
+                gap >= -0.5,
+                "{viewport:?} page {}: text overflows by {:.1}px",
+                page + side,
+                -gap
+            );
+            heights.push(fit.text.height);
+        }
+        page += fits.len();
+    }
+    heights
+}
+
+#[tokio::test]
+async fn font_change_repaginates_all_block_types() {
+    let (mut viewer, ..) = paginated_viewer(mixed_chapter(48)).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    let viewport = VIEWPORTS[0];
+    paginate(&mut viewer, viewport);
+    let pages_before = viewer.total_pages();
+
+    for (change, message) in [
+        (
+            "font family",
+            super::EpubViewerMessage::SetFontFamily(FontFamily::SansSerif),
+        ),
+        (
+            "font size",
+            super::EpubViewerMessage::SetBaseFontSize(FONT_SIZE + 4.0),
+        ),
+        (
+            "page margin",
+            super::EpubViewerMessage::SetPageMargin(PAGE_MARGIN * 3.0),
+        ),
+    ] {
+        let previous = (
+            viewer.total_pages(),
+            page_text_heights(&mut viewer, viewport),
+        );
+        let _ = viewer.update(message);
+        let after = (
+            viewer.total_pages(),
+            page_text_heights(&mut viewer, viewport),
+        );
+        assert_ne!(after, previous, "{change}: pages not recomputed");
+    }
+    assert!(
+        viewer.total_pages() > pages_before,
+        "larger text and margins take more pages: {pages_before} then {}",
+        viewer.total_pages()
+    );
+}
+
+#[tokio::test]
+#[cfg_attr(debug_assertions, ignore = "timing needs a release build")]
+async fn paginating_a_long_chapter_is_fast() {
+    let (mut viewer, ..) = paginated_viewer(mixed_chapter(1000)).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    assert!(viewer.chapters[viewer.active_chapter].blocks.len() >= 1000);
+    // Learn the page area, then time the pagination alone.
+    paginate(&mut viewer, VIEWPORTS[1]);
+    viewer.pagination_cache.clear();
+    let started = std::time::Instant::now();
+    viewer.maybe_repaginate();
+    let elapsed = started.elapsed();
+    let total = viewer.total_pages();
+    assert!(total > 10, "expected many pages, got {total}");
+    assert!(
+        elapsed < std::time::Duration::from_millis(500),
+        "paginating {total} pages took {elapsed:?}"
+    );
+}
