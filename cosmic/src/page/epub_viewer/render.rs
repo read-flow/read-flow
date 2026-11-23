@@ -473,12 +473,18 @@ impl<'a> RenderContext<'a> {
         }
     }
 
-    /// The context a footnote draws its child blocks with: footnote text
-    /// size, images at their natural height.
-    pub(super) fn footnote_context(&self) -> Self {
+    /// The context container `container` draws its child blocks with: images
+    /// no taller than fit inside the container's padding, and in a footnote,
+    /// footnote text size.
+    pub(super) fn child_context(&self, container: &ContentBlock) -> Self {
+        let max_image_height = (self.max_image_height - container_padding(container).y()).max(0.0);
+        let font_size = match container {
+            ContentBlock::Footnote { .. } => footnote_font_size(self.font_size),
+            _ => self.font_size,
+        };
         RenderContext {
-            font_size: footnote_font_size(self.font_size),
-            max_image_height: f32::MAX,
+            font_size,
+            max_image_height,
             ..*self
         }
     }
@@ -534,7 +540,7 @@ impl<'a> RenderContext<'a> {
     /// Draw child `index` of container `container` from `from` up to `to`
     /// (`None`: to its end). A footnote draws its paragraphs after their
     /// prefix (see [`footnote_paragraph_spans`]), and its other children in
-    /// its [`footnote_context`](Self::footnote_context).
+    /// the container's [`child_context`](Self::child_context).
     pub(super) fn render_container_child(
         &self,
         container: &'a ContentBlock,
@@ -561,14 +567,13 @@ impl<'a> RenderContext<'a> {
                     footnote_font_size(self.font_size),
                 )
             }
-            (ContentBlock::Footnote { .. }, _) => super::render_block_part(
-                &self.footnote_context(),
+            _ => super::render_block_part(
+                &self.child_context(container),
                 child,
                 from,
                 to,
                 BlockHighlight::None,
             ),
-            _ => super::render_block_part(self, child, from, to, BlockHighlight::None),
         }
     }
 

@@ -1338,10 +1338,13 @@ fn png(width: u32, height: u32) -> Vec<u8> {
     bytes.into_inner()
 }
 
-/// Paragraphs around an image far taller than any page: an SVG drawing when
-/// `svg`, a PNG otherwise.
+/// Paragraphs around an image far taller than any page, between `before` and
+/// `after` (markup of a block holding it, or nothing): an SVG drawing when
+/// `svg`, a PNG otherwise. The first paragraph references footnote `fn1`.
 async fn tall_image_viewer(
     svg: bool,
+    before: &str,
+    after: &str,
 ) -> (
     EpubViewer,
     tempfile::NamedTempFile,
@@ -1355,38 +1358,61 @@ async fn tall_image_viewer(
         "<img src=\"images/tall.png\" alt=\"Tall\"/>"
     };
     paginated_viewer_with_resources(
-        format!("<p>{}</p>{image}<p>{}</p>", prose(0, 300), prose(1, 300)),
+        format!(
+            "<p>{}<sup><a href=\"#fn1\">1</a></sup>.</p>{before}{image}{after}<p>{}</p>",
+            prose(0, 300),
+            prose(1, 300)
+        ),
         vec![("OEBPS/images/tall.png", png(300, 3000), "image/png")],
     )
     .await
 }
 
-/// Index of the first image block (raster with data, or SVG) in the active
-/// chapter.
+/// Whether `block` is an image (raster with data, or SVG) or holds one.
+fn holds_image(block: &ContentBlock) -> bool {
+    match block {
+        ContentBlock::Image { data, .. } => !data.is_empty(),
+        ContentBlock::Svg { .. } => true,
+        _ => super::render::container_children(block)
+            .is_some_and(|children| children.iter().any(holds_image)),
+    }
+}
+
+/// Index of the first block in the active chapter that is an image or holds
+/// one.
 fn image_block(viewer: &EpubViewer) -> usize {
     viewer.chapters[viewer.active_chapter]
         .blocks
         .iter()
-        .position(|block| match block {
-            ContentBlock::Image { data, .. } => !data.is_empty(),
-            ContentBlock::Svg { .. } => true,
-            _ => false,
-        })
+        .position(holds_image)
         .expect("an image block")
 }
 
 #[rstest::rstest]
-#[case::raster(false)]
-#[case::svg(true)]
+#[case::raster(false, "", "")]
+#[case::svg(true, "", "")]
+#[case::block_quote(false, "<blockquote>", "</blockquote>")]
+#[case::svg_in_block_quote(true, "<blockquote>", "</blockquote>")]
+#[case::figure_with_caption(
+    false,
+    "<figure>",
+    "<figcaption>A caption below a drawing far taller than the page</figcaption></figure>"
+)]
+#[case::footnote(false, "<aside epub:type=\"footnote\" id=\"fn1\">", "</aside>")]
 #[tokio::test]
-async fn image_taller_than_the_page_scales_to_fit(#[case] svg: bool) {
-    let (mut viewer, ..) = tall_image_viewer(svg).await;
+async fn image_taller_than_the_page_scales_to_fit(
+    #[case] svg: bool,
+    #[case] before: &str,
+    #[case] after: &str,
+) {
+    let (mut viewer, ..) = tall_image_viewer(svg, before, after).await;
     let _guard = crate::test_support::cosmic_tk_lock();
     cosmic_golden::init();
     let spacing = cosmic::theme::active().cosmic().spacing.space_xxs as f32;
     let image = image_block(&viewer);
     for viewport in VIEWPORTS {
         let total = paginate(&mut viewer, viewport);
+        assert_shows_all_text(&viewer, viewport);
         let layout = viewer.pagination_cache[&viewer.active_chapter].clone();
         assert!(
             layout.pages.iter().all(|page| page.start < page.end),
@@ -1398,9 +1424,10 @@ async fn image_taller_than_the_page_scales_to_fit(#[case] svg: bool) {
             .iter()
             .position(|page| page.start <= image && image < page.end)
             .expect("a page showing the image");
+        let range = &layout.pages[image_page];
         assert_eq!(
-            (layout.pages[image_page].start, layout.pages[image_page].end),
-            (image, image + 1),
+            (range.start, range.start_cut, range.end),
+            (image, super::BlockCut::default(), image + 1),
             "{viewport:?}: expected the image alone on its page, got {:?}",
             layout.pages
         );
@@ -1442,7 +1469,7 @@ async fn image_taller_than_the_page_scales_to_fit(#[case] svg: bool) {
 /// its page exactly.
 #[tokio::test]
 async fn paginated_image_page_golden() {
-    let (mut viewer, ..) = tall_image_viewer(false).await;
+    let (mut viewer, ..) = tall_image_viewer(false, "", "").await;
     let _guard = crate::test_support::cosmic_tk_lock();
     cosmic_golden::init();
     let viewport = VIEWPORTS[0];

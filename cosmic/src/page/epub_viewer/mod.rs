@@ -2775,10 +2775,7 @@ fn split_container(
             used += gap + height;
             continue;
         }
-        let child_ctx = match block {
-            ContentBlock::Footnote { .. } => ctx.footnote_context(),
-            _ => *ctx,
-        };
+        let child_ctx = ctx.child_context(block);
         let child_cut = match (block, child) {
             (ContentBlock::Footnote { id, .. }, ContentBlock::Paragraph { text, spans, .. }) => {
                 let start = child_from.char_offset;
