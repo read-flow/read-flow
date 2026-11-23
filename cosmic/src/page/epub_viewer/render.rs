@@ -462,7 +462,9 @@ impl<'a> RenderContext<'a> {
                     .on_press(EpubViewerMessage::OpenImageViewer(ViewerImage::Svg(handle)))
                     .into()
             }
-            ContentBlock::Table { rows } => render_table(rows, font_size, family),
+            ContentBlock::Table { rows } => {
+                render_table_rows(rows, BlockCut::default(), None, font_size, family)
+            }
             ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
             ContentBlock::Anchor { .. } => widget::Space::new()
                 .width(Length::Fixed(0.0))
@@ -638,8 +640,98 @@ pub(super) fn container_child_spacing() -> f32 {
     theme::active().cosmic().spacing.space_xxs as f32
 }
 
-fn render_table(
+/// The divider a table draws above a row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TableDivider {
+    Light,
+    /// Above the first body row after a header row.
+    Heavy,
+}
+
+/// A row a part of a table draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct TableRowPart {
+    /// Index of the row in the table.
+    pub index: usize,
+    /// The divider drawn above the row.
+    pub divider: TableDivider,
+}
+
+/// Whether table row `row` is a header row: one with a header cell.
+fn is_table_header_row(row: &[TableCell]) -> bool {
+    row.iter().any(|cell| cell.is_header)
+}
+
+/// Number of header rows at the start of table `rows`.
+pub(super) fn table_header_rows(rows: &[Vec<TableCell>]) -> usize {
+    rows.iter()
+        .take_while(|row| is_table_header_row(row))
+        .count()
+}
+
+/// The rows the part of table `rows` from `from` up to `to` (`None`: to its
+/// end) draws, in order: the table's header rows when the part repeats them
+/// (see [`BlockCut`]), then rows `from.child` up to `to.child`. Each row has a
+/// light divider above it, except the first body row after a header row,
+/// which has a heavy one.
+pub(super) fn table_part_rows(
     rows: &[Vec<TableCell>],
+    from: BlockCut,
+    to: Option<BlockCut>,
+) -> Vec<TableRowPart> {
+    let end = to.map_or(rows.len(), |to| to.child).min(rows.len());
+    let start = from.child.min(end);
+    let repeated = if start > 0 && from.char_offset > 0 {
+        table_header_rows(rows).min(start)
+    } else {
+        0
+    };
+    let mut seen_header = false;
+    let mut heavy_drawn = false;
+    (0..repeated)
+        .chain(start..end)
+        .map(|index| {
+            let is_header = is_table_header_row(&rows[index]);
+            let divider = if seen_header && !is_header && !heavy_drawn {
+                heavy_drawn = true;
+                TableDivider::Heavy
+            } else {
+                TableDivider::Light
+            };
+            seen_header |= is_header;
+            TableRowPart { index, divider }
+        })
+        .collect()
+}
+
+/// Draw the part of table `rows` from `from` up to `to` (`None`: to its end):
+/// the rows [`table_part_rows`] lists, one below the other.
+pub(super) fn render_table_rows(
+    rows: &[Vec<TableCell>],
+    from: BlockCut,
+    to: Option<BlockCut>,
+    font_size: f32,
+    family: font::Family,
+) -> Element<'_, EpubViewerMessage> {
+    let parts = table_part_rows(rows, from, to);
+    let mut col = widget::column::with_capacity(parts.len())
+        .spacing(0)
+        .width(Length::Fill);
+    for part in parts {
+        col = col.push(render_table_row(
+            &rows[part.index],
+            part.divider,
+            font_size,
+            family,
+        ));
+    }
+    widget::container(col).width(Length::Fill).into()
+}
+
+/// Draw table row `row` below `divider`, its header cells in bold.
+pub(super) fn render_table_row(
+    row: &[TableCell],
+    divider: TableDivider,
     font_size: f32,
     family: font::Family,
 ) -> Element<'_, EpubViewerMessage> {
@@ -647,87 +739,71 @@ fn render_table(
         space_xxs, space_s, ..
     } = theme::active().cosmic().spacing;
 
-    let mut col = widget::column::with_capacity(rows.len() + 1)
-        .spacing(0)
-        .width(Length::Fill);
+    let mut row_widget = widget::Row::new().width(Length::Fill);
 
-    let mut seen_header = false;
-    let mut divider_inserted = false;
-
-    for row in rows {
-        let is_header_row = row.iter().any(|c| c.is_header);
-
-        // Insert divider between header section and body section
-        if seen_header && !is_header_row && !divider_inserted {
-            col = col.push(widget::divider::horizontal::heavy());
-            divider_inserted = true;
-        } else {
-            col = col.push(widget::divider::horizontal::light());
-        }
-        if is_header_row {
-            seen_header = true;
-        }
-
-        let mut row_widget = widget::Row::new().width(Length::Fill);
-
-        for cell in row {
-            let cell_spans: Vec<cosmic::iced::widget::text::Span<'_, EpubViewerMessage>> =
-                if !cell.spans.is_empty() {
-                    cell.spans
-                        .iter()
-                        .map(|s| {
-                            let mut sp = styled_span(s, family, font_size);
-                            // Force bold for header cells whose spans aren't already bold.
-                            if cell.is_header && !s.style.bold {
-                                let font = sp.font.unwrap_or_default();
-                                sp = sp.font(Font {
-                                    weight: font::Weight::Bold,
-                                    ..font
-                                });
-                            }
-                            sp
-                        })
-                        .collect()
-                } else if !cell.text.is_empty() {
-                    let mut s = span(cell.text.as_str());
-                    if cell.is_header {
-                        s = s.font(Font {
-                            family,
-                            weight: font::Weight::Bold,
-                            ..Font::default()
-                        });
-                    } else {
-                        s = s.font(Font {
-                            family,
-                            ..Font::default()
-                        });
-                    }
-                    vec![s]
+    for cell in row {
+        let cell_spans: Vec<cosmic::iced::widget::text::Span<'_, EpubViewerMessage>> =
+            if !cell.spans.is_empty() {
+                cell.spans
+                    .iter()
+                    .map(|s| {
+                        let mut sp = styled_span(s, family, font_size);
+                        // Force bold for header cells whose spans aren't already bold.
+                        if cell.is_header && !s.style.bold {
+                            let font = sp.font.unwrap_or_default();
+                            sp = sp.font(Font {
+                                weight: font::Weight::Bold,
+                                ..font
+                            });
+                        }
+                        sp
+                    })
+                    .collect()
+            } else if !cell.text.is_empty() {
+                let mut s = span(cell.text.as_str());
+                if cell.is_header {
+                    s = s.font(Font {
+                        family,
+                        weight: font::Weight::Bold,
+                        ..Font::default()
+                    });
                 } else {
-                    vec![]
-                };
-
-            let cell_content: Element<'_, EpubViewerMessage> = if !cell_spans.is_empty() {
-                rich_text(cell_spans)
-                    .on_link_click(|m| m)
-                    .size(font_size)
-                    .width(Length::Fill)
-                    .into()
+                    s = s.font(Font {
+                        family,
+                        ..Font::default()
+                    });
+                }
+                vec![s]
             } else {
-                widget::Space::new().width(Length::Fill).height(0).into()
+                vec![]
             };
 
-            row_widget = row_widget.push(
-                widget::container(cell_content)
-                    .padding([space_xxs, space_s])
-                    .width(Length::FillPortion(1)),
-            );
-        }
+        let cell_content: Element<'_, EpubViewerMessage> = if !cell_spans.is_empty() {
+            rich_text(cell_spans)
+                .on_link_click(|m| m)
+                .size(font_size)
+                .width(Length::Fill)
+                .into()
+        } else {
+            widget::Space::new().width(Length::Fill).height(0).into()
+        };
 
-        col = col.push(row_widget);
+        row_widget = row_widget.push(
+            widget::container(cell_content)
+                .padding([space_xxs, space_s])
+                .width(Length::FillPortion(1)),
+        );
     }
 
-    widget::container(col).width(Length::Fill).into()
+    let divider: Element<'_, EpubViewerMessage> = match divider {
+        TableDivider::Light => widget::divider::horizontal::light().into(),
+        TableDivider::Heavy => widget::divider::horizontal::heavy().into(),
+    };
+    widget::column::with_capacity(2)
+        .push(divider)
+        .push(row_widget)
+        .width(Length::Fill)
+        .into()
 }
 
 /// Map `BlockStyle.text_align` to an iced `Horizontal` alignment.

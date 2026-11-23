@@ -45,6 +45,7 @@ use epub::EpubDocument;
 use epub::ListItem;
 use epub::NavEntry;
 use epub::StyleSheet;
+use epub::TableCell;
 use epub::TextSpan;
 use read_flow_core::Builder;
 use read_flow_widgets::FontPicker;
@@ -236,7 +237,8 @@ pub(crate) enum ViewMode {
 ///   items of a list, each item one more than its length, or the child
 ///   before which a nested container is cut, which is only cut between its
 ///   children. Child `len` of a figure is its caption;
-/// - table: row `child`.
+/// - table: row `child`, and `char_offset` 1 when the part starting there
+///   repeats the table's header rows above it, 0 otherwise.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 struct BlockCut {
     child: usize,
@@ -2576,6 +2578,12 @@ fn render_block_part<'a>(
     if render::container_children(block).is_some() {
         return render::apply_highlight(ctx.render_partial_container(block, from, to), highlight);
     }
+    if let ContentBlock::Table { rows } = block {
+        return render::apply_highlight(
+            render::render_table_rows(rows, from, to, ctx.font_size, ctx.family),
+            highlight,
+        );
+    }
     let end = to.map_or(usize::MAX, |cut| cut.char_offset);
     match block {
         ContentBlock::Paragraph { text, spans, style } => {
@@ -2856,6 +2864,99 @@ fn after_first_container_child(
     })
 }
 
+/// Whether table `rows`, drawn by `ctx` `content_width` pixels wide, repeats
+/// its header rows above the rows it continues with on later pages: when it
+/// has header rows and body rows, and its header rows with its first body
+/// row fit on an empty page `page_height` pixels high.
+fn table_repeats_header(
+    ctx: &RenderContext<'_>,
+    measurer: &mut BlockMeasurer,
+    rows: &[Vec<TableCell>],
+    content_width: f32,
+    page_height: f32,
+) -> bool {
+    let header = render::table_header_rows(rows);
+    if header == 0 || header == rows.len() {
+        return false;
+    }
+    let first_body_row = BlockCut {
+        child: header + 1,
+        char_offset: 0,
+    };
+    let height = measurer.height(
+        render::render_table_rows(
+            rows,
+            BlockCut::default(),
+            Some(first_body_row),
+            ctx.font_size,
+            ctx.family,
+        ),
+        content_width,
+    );
+    height <= page_height
+}
+
+/// The first row a page continuing table `rows`, shown from `from` on, may
+/// start at: the row after the first shown row, or, when the table repeats
+/// its header rows (`repeat_header`) and the part starts among them, the row
+/// after its first body row, so the header rows are never left alone.
+fn first_table_cut_row(rows: &[Vec<TableCell>], from: BlockCut, repeat_header: bool) -> usize {
+    let header = render::table_header_rows(rows);
+    if repeat_header && from.child < header {
+        header + 1
+    } else {
+        from.child + 1
+    }
+}
+
+/// Where to cut table `rows`, drawn by `ctx` and shown from `from` on, so
+/// that the part before the cut fits in `available_height` pixels: before
+/// the first row that does not fit, counting the header rows the part
+/// repeats. `repeat_header`: whether the parts after the cut repeat the
+/// header rows (see [`BlockCut`]). Returns `None` when all of it fits, or
+/// when not even the rows before [`first_table_cut_row`] fit.
+fn split_table(
+    ctx: &RenderContext<'_>,
+    measurer: &mut BlockMeasurer,
+    rows: &[Vec<TableCell>],
+    from: BlockCut,
+    repeat_header: bool,
+    content_width: f32,
+    available_height: f32,
+) -> Option<BlockCut> {
+    let mut used = 0.0;
+    for part in render::table_part_rows(rows, from, None) {
+        used += measurer.height(
+            render::render_table_row(&rows[part.index], part.divider, ctx.font_size, ctx.family),
+            content_width,
+        );
+        if used > available_height {
+            return (part.index >= first_table_cut_row(rows, from, repeat_header)).then_some(
+                BlockCut {
+                    child: part.index,
+                    char_offset: usize::from(repeat_header),
+                },
+            );
+        }
+    }
+    None
+}
+
+/// Where a page holding only the first shown row of table `rows`, shown from
+/// `from` on, ends when more of the table follows (see
+/// [`first_table_cut_row`]); `None` otherwise.
+fn after_first_table_row(
+    rows: &[Vec<TableCell>],
+    from: BlockCut,
+    repeat_header: bool,
+) -> Option<BlockCut> {
+    let child = first_table_cut_row(rows, from, repeat_header);
+    (child < rows.len()).then_some(BlockCut {
+        child,
+        char_offset: usize::from(repeat_header),
+    })
+}
+
 /// Where to cut `block`, drawn by `ctx` and shown from `from` on, so that the
 /// part before the cut fits in `available_height` pixels: at the start of the
 /// first line that does not fit, or between the block's children (see
@@ -2949,8 +3050,11 @@ fn page_text_size(area: (f32, f32), dual: bool, gap: f32, margin: f32) -> (f32, 
 /// that does not fit as that child splits; a nested container is split only
 /// between its own children. A child taller than a page that cannot be cut
 /// there gets a page of its own; for a nested container that is its first
-/// shown child. Other block types that exceed `page_height` get their own
-/// page unchanged.
+/// shown child. Tables are split between their rows; each page continuing a
+/// table repeats its header rows above its rows, unless the header rows with
+/// the first body row do not fit on a page, and a row taller than a page
+/// gets a page of its own. A table inside a container is not split. Other
+/// block types that exceed `page_height` get their own page unchanged.
 ///
 /// Blocks are measured as `ctx` draws them `page_width` wide, `block_spacing`
 /// apart; blocks measuring 0 take no spacing, as the page column leaves them
@@ -2994,16 +3098,39 @@ fn paginate_blocks(
         }
         // Block doesn't fit — try to place its top part on the current page.
         let available = (page_height - accumulated - spacing).max(0.0);
-        let cut = try_split_block(ctx, measurer, block, page_width, available, from)
-            .filter(|cut| *cut > from)
+        let cut = if let ContentBlock::Table { rows } = block {
+            let repeat_header = if from == BlockCut::default() {
+                table_repeats_header(ctx, measurer, rows, page_width, page_height)
+            } else {
+                from.char_offset > 0
+            };
+            split_table(
+                ctx,
+                measurer,
+                rows,
+                from,
+                repeat_header,
+                page_width,
+                available,
+            )
             .or_else(|| {
-                // A container's first shown child (or a nested container's
-                // first shown child) that cannot be split is placed alone, to
-                // overflow the page on its own.
+                // A first shown row too tall for a page is placed alone.
                 is_first_on_page
-                    .then(|| after_first_container_child(ctx, block, from))
+                    .then(|| after_first_table_row(rows, from, repeat_header))
                     .flatten()
-            });
+            })
+        } else {
+            try_split_block(ctx, measurer, block, page_width, available, from)
+                .filter(|cut| *cut > from)
+                .or_else(|| {
+                    // A container's first shown child (or a nested
+                    // container's first shown child) that cannot be split is
+                    // placed alone, to overflow the page on its own.
+                    is_first_on_page
+                        .then(|| after_first_container_child(ctx, block, from))
+                        .flatten()
+                })
+        };
         match cut {
             Some(cut) => {
                 pages.push(PageRange {

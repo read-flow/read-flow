@@ -975,6 +975,13 @@ fn part_text(block: &ContentBlock, from: super::BlockCut, to: Option<super::Bloc
         ContentBlock::Paragraph { text, .. } | ContentBlock::Preformatted { text, .. } => {
             slice(text, from.char_offset, to.map(|to| to.char_offset))
         }
+        // The header rows a continued table repeats are left out: they are
+        // the only text shown twice.
+        ContentBlock::Table { rows } => super::render::table_part_rows(rows, from, to)
+            .iter()
+            .filter(|part| part.index >= from.child)
+            .flat_map(|part| rows[part.index].iter().map(|cell| cell.text.clone()))
+            .collect(),
         _ => String::new(),
     }
 }
@@ -1038,4 +1045,268 @@ async fn paginated_container_goldens() {
             height
         );
     }
+}
+
+/// A paragraph, then a table with a header row whose second cell has
+/// `header_words` words and 80 body rows, then a paragraph. Every 17th body
+/// row has a description of `long_row_words` words.
+fn table_chapter(header_words: usize, long_row_words: usize) -> String {
+    let rows: String = (0..80)
+        .map(|i| {
+            let words = if i % 17 == 16 {
+                long_row_words
+            } else {
+                2 + i % 4
+            };
+            format!("<tr><td>{i}</td><td>{}</td></tr>", prose(i, words))
+        })
+        .collect();
+    format!(
+        "<p>{}</p><table><tr><th>Number</th><th>{}</th></tr>{rows}</table><p>{}</p>",
+        prose(0, 60),
+        prose(99, header_words),
+        prose(1, 60)
+    )
+}
+
+/// Index of the table in the chapters [`table_chapter`] builds.
+const TABLE: usize = 1;
+
+/// The rows of the active chapter's table.
+fn table_rows(viewer: &EpubViewer) -> Vec<Vec<epub::TableCell>> {
+    match &viewer.chapters[viewer.active_chapter].blocks[TABLE] {
+        ContentBlock::Table { rows } => rows.clone(),
+        other => panic!("expected a table, got {other:?}"),
+    }
+}
+
+/// Height of row `index` of table `rows` below a light divider, as a page
+/// of the active chapter draws it.
+fn table_row_height(viewer: &EpubViewer, rows: &[Vec<epub::TableCell>], index: usize) -> f32 {
+    let width = viewer.pagination_cache[&viewer.active_chapter].page_width;
+    viewer.measurer.borrow_mut().height(
+        super::render::render_table_row(
+            &rows[index],
+            super::render::TableDivider::Light,
+            FONT_SIZE,
+            font::Family::Serif,
+        ),
+        width,
+    )
+}
+
+/// The part of the table page `page` of the active chapter shows: where it
+/// starts and ends; `None` when the page shows none of it.
+fn table_part(
+    viewer: &EpubViewer,
+    page: usize,
+) -> Option<(super::BlockCut, Option<super::BlockCut>)> {
+    let range = &viewer.pagination_cache[&viewer.active_chapter].pages[page];
+    (range.start..range.end).contains(&TABLE).then(|| {
+        let from = if range.start == TABLE {
+            range.start_cut
+        } else {
+            super::BlockCut::default()
+        };
+        let to = if range.end == TABLE + 1 {
+            range.end_cut
+        } else {
+            None
+        };
+        (from, to)
+    })
+}
+
+#[tokio::test]
+async fn table_pages_fill_without_overflowing() {
+    let (mut viewer, ..) = paginated_viewer(table_chapter(1, 30)).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    let spacing = cosmic::theme::active().cosmic().spacing.space_xxs as f32;
+    for viewport in VIEWPORTS {
+        let total = paginate(&mut viewer, viewport);
+        assert!(
+            total > 2,
+            "{viewport:?}: expected several pages, got {total}"
+        );
+        assert_shows_all_text(&viewer, viewport);
+        let rows = table_rows(&viewer);
+        let pages = viewer.pagination_cache[&viewer.active_chapter]
+            .pages
+            .clone();
+        assert!(
+            pages
+                .iter()
+                .any(|p| p.end == TABLE + 1 && p.end_cut.is_some()),
+            "{viewport:?}: expected a page break inside the table, got {pages:?}"
+        );
+        // The table's first part: its header row and first body row.
+        let table_start = table_row_height(&viewer, &rows, 0) + table_row_height(&viewer, &rows, 1);
+        let mut page = 0;
+        while page < total {
+            let fits = page_fits(&mut viewer, page, viewport);
+            for (side, fit) in fits.iter().enumerate() {
+                let shown = page + side;
+                let gap = fit.gap();
+                assert!(
+                    gap >= -0.5,
+                    "{viewport:?} page {shown}: text overflows by {:.1}px",
+                    -gap
+                );
+                if shown + 1 == total {
+                    continue;
+                }
+                // The next unit that did not fit: the table row the page is
+                // cut before, or a line or the table's first part.
+                let bound = match pages[shown].end_cut {
+                    Some(cut) if pages[shown].end == TABLE + 1 => {
+                        table_row_height(&viewer, &rows, cut.child)
+                    }
+                    _ => LINE_ADVANCE.max(table_start) + spacing,
+                };
+                assert!(
+                    gap < bound,
+                    "{viewport:?} page {shown}: bottom gap {gap:.1}px leaves room for \
+                     {bound:.1}px"
+                );
+            }
+            page += fits.len();
+        }
+    }
+}
+
+#[tokio::test]
+async fn table_header_repeats_on_continuation_pages() {
+    let (mut viewer, ..) = paginated_viewer(table_chapter(1, 30)).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    for viewport in VIEWPORTS {
+        let total = paginate(&mut viewer, viewport);
+        let rows = table_rows(&viewer);
+        assert!(
+            rows[0].iter().all(|cell| cell.is_header),
+            "the header row's cells are drawn bold"
+        );
+        let mut continued = 0;
+        for page in 1..total {
+            let Some((from, to)) = table_part(&viewer, page) else {
+                continue;
+            };
+            if from == super::BlockCut::default() {
+                continue;
+            }
+            continued += 1;
+            let parts = super::render::table_part_rows(&rows, from, to);
+            assert_eq!(
+                parts[..2],
+                [
+                    super::render::TableRowPart {
+                        index: 0,
+                        divider: super::render::TableDivider::Light,
+                    },
+                    super::render::TableRowPart {
+                        index: from.child,
+                        divider: super::render::TableDivider::Heavy,
+                    },
+                ],
+                "{viewport:?} page {page}: expected the header row, then a heavy divider"
+            );
+        }
+        assert!(
+            continued >= 2,
+            "{viewport:?}: expected the table to continue on several pages"
+        );
+    }
+}
+
+#[tokio::test]
+async fn table_with_a_header_taller_than_a_page_does_not_repeat_it() {
+    let (mut viewer, ..) = paginated_viewer(table_chapter(1500, 30)).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    for viewport in VIEWPORTS {
+        let total = paginate(&mut viewer, viewport);
+        assert_shows_all_text(&viewer, viewport);
+        let rows = table_rows(&viewer);
+        let mut continued = 0;
+        for page in 1..total {
+            let Some((from, to)) = table_part(&viewer, page) else {
+                continue;
+            };
+            if from == super::BlockCut::default() {
+                continue;
+            }
+            continued += 1;
+            let parts = super::render::table_part_rows(&rows, from, to);
+            assert_eq!(
+                parts[0].index, from.child,
+                "{viewport:?} page {page}: expected no repeated header row"
+            );
+        }
+        assert!(
+            continued >= 2,
+            "{viewport:?}: expected the table to continue on several pages"
+        );
+    }
+}
+
+#[tokio::test]
+async fn table_rows_taller_than_a_page_are_placed_alone() {
+    let (mut viewer, ..) = paginated_viewer(table_chapter(1, 1500)).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    for viewport in VIEWPORTS {
+        let total = paginate(&mut viewer, viewport);
+        assert_shows_all_text(&viewer, viewport);
+        // Body row `i` is table row `i + 1`, after the header row.
+        let tall: Vec<usize> = (0..80).filter(|i| i % 17 == 16).map(|i| i + 1).collect();
+        let mut alone = Vec::new();
+        for row in &tall {
+            let page = (0..total)
+                .find(|&page| {
+                    table_part(&viewer, page).is_some_and(|(from, to)| {
+                        from.child == *row && to.map(|to| to.child) == Some(row + 1)
+                    })
+                })
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{viewport:?}: no page holds only row {row}: {:?}",
+                        viewer.pagination_cache[&viewer.active_chapter].pages
+                    )
+                });
+            alone.push(page);
+        }
+        let mut page = 0;
+        while page < total {
+            let fits = page_fits(&mut viewer, page, viewport);
+            for (side, fit) in fits.iter().enumerate() {
+                let shown = page + side;
+                assert!(
+                    fit.gap() >= -0.5 || alone.contains(&shown),
+                    "{viewport:?} page {shown}: text overflows by {:.1}px",
+                    -fit.gap()
+                );
+            }
+            page += fits.len();
+        }
+    }
+}
+
+/// Golden snapshot of a table continued on a page: the header row repeated
+/// above the page's rows, filling the page down to the bottom margin.
+#[tokio::test]
+async fn paginated_table_goldens() {
+    let (mut viewer, ..) = paginated_viewer(table_chapter(1, 30)).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    let viewport = VIEWPORTS[0];
+    let total = paginate(&mut viewer, viewport);
+    let (width, height) = (viewport.0 as u32, viewport.1 as u32);
+    viewer.current_page = total / 2;
+    cosmic_golden::assert_snapshot!(
+        "paginated_table_middle",
+        viewer.view_content_paginated(),
+        width,
+        height
+    );
 }
