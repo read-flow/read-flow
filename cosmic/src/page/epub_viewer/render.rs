@@ -662,15 +662,18 @@ pub(super) struct TableRowPart {
     pub divider: TableDivider,
 }
 
-/// Whether table row `row` is a header row: one with a header cell.
+/// Whether table row `row` is drawn as a header row: one with a header cell.
 fn is_table_header_row(row: &[TableCell]) -> bool {
     row.iter().any(|cell| cell.is_header)
 }
 
-/// Number of header rows at the start of table `rows`.
+/// Number of header rows at the start of table `rows`, the rows a part
+/// continuing the table repeats (see [`BlockCut`]): the leading rows made of
+/// header cells only. A body row starting with a header cell (a row label)
+/// is not one of them, although it is drawn as a header row.
 pub(super) fn table_header_rows(rows: &[Vec<TableCell>]) -> usize {
     rows.iter()
-        .take_while(|row| is_table_header_row(row))
+        .take_while(|row| !row.is_empty() && row.iter().all(|cell| cell.is_header))
         .count()
 }
 

@@ -1110,6 +1110,12 @@ async fn paginated_container_goldens() {
 /// `header_words` words and 80 body rows, then a paragraph. Every 17th body
 /// row has a description of `long_row_words` words.
 fn table_chapter(header_words: usize, long_row_words: usize) -> String {
+    labelled_table_chapter("td", header_words, long_row_words)
+}
+
+/// [`table_chapter`] with the number starting each body row in a
+/// `label_tag` cell: `td`, or `th` for a row label.
+fn labelled_table_chapter(label_tag: &str, header_words: usize, long_row_words: usize) -> String {
     let rows: String = (0..80)
         .map(|i| {
             let words = if i % 17 == 16 {
@@ -1117,7 +1123,10 @@ fn table_chapter(header_words: usize, long_row_words: usize) -> String {
             } else {
                 2 + i % 4
             };
-            format!("<tr><td>{i}</td><td>{}</td></tr>", prose(i, words))
+            format!(
+                "<tr><{label_tag}>{i}</{label_tag}><td>{}</td></tr>",
+                prose(i, words)
+            )
         })
         .collect();
     format!(
@@ -1269,6 +1278,48 @@ async fn table_header_repeats_on_continuation_pages() {
                     },
                 ],
                 "{viewport:?} page {page}: expected the header row, then a heavy divider"
+            );
+        }
+        assert!(
+            continued >= 2,
+            "{viewport:?}: expected the table to continue on several pages"
+        );
+    }
+}
+
+#[tokio::test]
+async fn table_with_row_labels_repeats_its_header_row() {
+    let (mut viewer, ..) = paginated_viewer(labelled_table_chapter("th", 1, 30)).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    for viewport in VIEWPORTS {
+        let total = paginate(&mut viewer, viewport);
+        assert_shows_all_text(&viewer, viewport);
+        let rows = table_rows(&viewer);
+        assert!(
+            rows[1..]
+                .iter()
+                .all(|row| row[0].is_header && !row[1].is_header),
+            "every body row starts with a row label"
+        );
+        let mut continued = 0;
+        for page in 1..total {
+            let Some((from, to)) = table_part(&viewer, page) else {
+                continue;
+            };
+            if from == super::BlockCut::default() {
+                continue;
+            }
+            continued += 1;
+            let shown: Vec<usize> = super::render::table_part_rows(&rows, from, to)
+                .iter()
+                .map(|part| part.index)
+                .take(2)
+                .collect();
+            assert_eq!(
+                shown,
+                [0, from.child],
+                "{viewport:?} page {page}: expected the header row, then the page's rows"
             );
         }
         assert!(
