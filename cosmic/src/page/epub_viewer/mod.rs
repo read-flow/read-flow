@@ -942,7 +942,16 @@ impl EpubViewer {
                                 {
                                     let char_count = text.chars().count();
                                     let s = start_off.min(char_count);
-                                    let e = end_off.min(char_count);
+                                    let mut e = end_off.min(char_count);
+                                    // A part ending at a line boundary leaves out
+                                    // the line ending, which would draw an empty
+                                    // last line.
+                                    if e > s
+                                        && e < char_count
+                                        && text[..char_offset_to_byte(text, e)].ends_with('\n')
+                                    {
+                                        e -= 1;
+                                    }
                                     let full_text_to_copy = (start_off == 0).then(|| text.clone());
                                     render_partial_preformatted(
                                         text[char_offset_to_byte(text, s)
@@ -2513,33 +2522,40 @@ impl ParagraphContent<'_> {
         available_height: f32,
     ) -> Option<usize> {
         let (top, bottom) = render::block_margins(self.style);
-        let available = available_height - top - bottom;
         let layout = self.layout_from(start, content_width, font_size, family);
-        let buffer = layout.buffer();
-        let mut fitting_lines = 0;
-        let first_overflowing = buffer.layout_runs().find(|run| {
-            let fits = run.line_top + run.line_height <= available;
-            fitting_lines += usize::from(fits);
-            !fits
-        })?;
-        if fitting_lines == 0 {
-            return None;
-        }
-        // Character offset of the overflowing line's first glyph, counted over
-        // the laid-out text (buffer lines plus their line endings).
-        let preceding_lines: usize = buffer.lines[..first_overflowing.line_i]
-            .iter()
-            .map(|line| line.text().chars().count() + line.ending().as_str().chars().count())
-            .sum();
-        let line_text = buffer.lines[first_overflowing.line_i].text();
-        let glyph_start = first_overflowing
-            .glyphs
-            .iter()
-            .map(|glyph| glyph.start)
-            .min()
-            .unwrap_or(0);
-        Some(start + preceding_lines + line_text[..glyph_start].chars().count())
+        first_overflowing_char(&layout, available_height - top - bottom)
+            .map(|offset| start + offset)
     }
+}
+
+/// Character offset in the text laid out as `layout` of the start of the first
+/// line that does not fit in `available` pixels. Returns `None` when not even
+/// one line fits, or when all lines fit.
+fn first_overflowing_char(layout: &Paragraph, available: f32) -> Option<usize> {
+    let buffer = layout.buffer();
+    let mut fitting_lines = 0;
+    let first_overflowing = buffer.layout_runs().find(|run| {
+        let fits = run.line_top + run.line_height <= available;
+        fitting_lines += usize::from(fits);
+        !fits
+    })?;
+    if fitting_lines == 0 {
+        return None;
+    }
+    // Character offset of the overflowing line's first glyph, counted over
+    // the laid-out text (buffer lines plus their line endings).
+    let preceding_lines: usize = buffer.lines[..first_overflowing.line_i]
+        .iter()
+        .map(|line| line.text().chars().count() + line.ending().as_str().chars().count())
+        .sum();
+    let line_text = buffer.lines[first_overflowing.line_i].text();
+    let glyph_start = first_overflowing
+        .glyphs
+        .iter()
+        .map(|glyph| glyph.start)
+        .min()
+        .unwrap_or(0);
+    Some(preceding_lines + line_text[..glyph_start].chars().count())
 }
 
 /// Height of `block` drawn by `ctx` `content_width` pixels wide, shown from
@@ -2597,31 +2613,19 @@ fn try_split_block(
                 family,
                 available_height,
             ),
-        ContentBlock::Preformatted { text, .. } => {
-            let line_h = font_size * 1.375;
-            let lines_that_fit = (available_height / line_h).floor() as usize;
-            if lines_that_fit == 0 {
-                return None;
-            }
-            let byte_start = char_offset_to_byte(text, start_char_offset);
-            let suffix = &text[byte_start..];
-            // Walk through lines until we have consumed `lines_that_fit` of them.
-            // The split point is the char offset just after the final fitting newline.
-            let mut lines_seen = 0usize;
-            let mut split_byte: Option<usize> = None;
-            for (byte_idx, ch) in suffix.char_indices() {
-                if ch == '\n' {
-                    lines_seen += 1;
-                    if lines_seen == lines_that_fit {
-                        split_byte = Some(byte_idx + 1); // start of next line
-                        break;
-                    }
-                }
-            }
-            let byte_offset = split_byte?;
-            // Convert to char offset relative to the full text.
-            let rel_char_offset = suffix[..byte_offset].chars().count();
-            Some(start_char_offset + rel_char_offset)
+        ContentBlock::Preformatted { text, spans, .. } => {
+            let start = start_char_offset.min(text.chars().count());
+            let padding = render::preformatted_padding();
+            let spans = render::owned_paragraph_spans(
+                text[char_offset_to_byte(text, start)..].to_string(),
+                slice_spans(spans, start, usize::MAX),
+                cosmic::font::mono().family,
+                font_size,
+            );
+            let layout =
+                render::layout_preformatted(&spans, font_size, content_width - padding.x());
+            first_overflowing_char(&layout, available_height - padding.y())
+                .map(|offset| start + offset)
         }
         _ => None,
     }
@@ -2650,8 +2654,8 @@ fn page_text_size(area: (f32, f32), dual: bool, gap: f32, margin: f32) -> (f32, 
 
 /// Split a chapter's blocks into pages that fit within `page_height` pixels.
 ///
-/// Paragraphs that straddle a page boundary are split at the start of the
-/// first line that does not fit (see [`ParagraphContent::split_from`]).
+/// Paragraphs and code blocks that straddle a page boundary are split at the
+/// start of the first line that does not fit (see [`first_overflowing_char`]).
 /// Other block types that exceed `page_height` get their own page unchanged.
 ///
 /// Blocks are measured as `ctx` draws them `page_width` wide, `block_spacing`

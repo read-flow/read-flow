@@ -194,29 +194,7 @@ async fn pages_fill_to_the_bottom_margin_without_overflowing() {
                 total > 2,
                 "{viewport:?}: expected several pages, got {total}"
             );
-            let spacing = cosmic::theme::active().cosmic().spacing.space_xxs as f32;
-            let mut page = 0;
-            while page < total {
-                let fits = page_fits(&mut viewer, page, viewport);
-                assert!(!fits.is_empty(), "{viewport:?} page {page}: no page shown");
-                for (side, fit) in fits.iter().enumerate() {
-                    let shown = page + side;
-                    let gap = fit.gap();
-                    assert!(
-                        gap >= -0.5,
-                        "styled={styled} {viewport:?} page {shown}: text overflows by {:.1}px",
-                        -gap
-                    );
-                    if shown + 1 < total {
-                        assert!(
-                            gap < LINE_ADVANCE + spacing,
-                            "styled={styled} {viewport:?} page {shown}: bottom gap {gap:.1}px \
-                             leaves room for another line"
-                        );
-                    }
-                }
-                page += fits.len();
-            }
+            assert_pages_fill(&mut viewer, viewport, &format!("styled={styled}"));
         }
     }
 }
@@ -431,4 +409,144 @@ async fn paginating_a_long_chapter_is_fast() {
         elapsed < std::time::Duration::from_millis(500),
         "paginating {total} pages took {elapsed:?}"
     );
+}
+
+/// Check that every page of the active chapter is filled down to its bottom
+/// margin without overflowing: each page but the last leaves less room than
+/// another line.
+fn assert_pages_fill(viewer: &mut EpubViewer, viewport: (f32, f32), what: &str) {
+    let total = viewer.total_pages();
+    let spacing = cosmic::theme::active().cosmic().spacing.space_xxs as f32;
+    let mut page = 0;
+    while page < total {
+        let fits = page_fits(viewer, page, viewport);
+        assert!(
+            !fits.is_empty(),
+            "{what} {viewport:?} page {page}: no page shown"
+        );
+        for (side, fit) in fits.iter().enumerate() {
+            let shown = page + side;
+            let gap = fit.gap();
+            assert!(
+                gap >= -0.5,
+                "{what} {viewport:?} page {shown}: text overflows by {:.1}px",
+                -gap
+            );
+            if shown + 1 < total {
+                assert!(
+                    gap < LINE_ADVANCE + spacing,
+                    "{what} {viewport:?} page {shown}: bottom gap {gap:.1}px leaves room \
+                     for another line"
+                );
+            }
+        }
+        page += fits.len();
+    }
+}
+
+/// A paragraph followed by a code block of `lines` lines, each short enough
+/// to stay on one line.
+fn code_chapter(lines: usize) -> String {
+    let code = (0..lines)
+        .map(|i| format!("let value_{i} = compute({i}, {});", i * 7 % 13))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("<p>{}</p><pre>{code}</pre>", prose(0, 60))
+}
+
+#[tokio::test]
+async fn preformatted_pages_fill_without_overflowing() {
+    let (mut viewer, ..) = paginated_viewer(code_chapter(120)).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    for viewport in VIEWPORTS {
+        let total = paginate(&mut viewer, viewport);
+        assert!(
+            total > 2,
+            "{viewport:?}: expected several pages, got {total}"
+        );
+        assert_pages_fill(&mut viewer, viewport, "code");
+
+        let chapter = &viewer.chapters[viewer.active_chapter];
+        let layout = &viewer.pagination_cache[&viewer.active_chapter];
+        for (page, range) in layout.pages.iter().enumerate() {
+            if range.end_char_offset == 0 {
+                continue;
+            }
+            let ContentBlock::Preformatted { text, .. } = &chapter.blocks[range.end - 1] else {
+                panic!("{viewport:?} page {page}: only the code block is split");
+            };
+            assert!(
+                text[..char_offset_to_byte(text, range.end_char_offset)].ends_with('\n'),
+                "{viewport:?} page {page}: code block split inside a line"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn long_preformatted_line_wraps_within_the_page() {
+    let line: String = (0..400)
+        .map(|i| char::from(b'a' + (i % 26) as u8))
+        .collect();
+    let (mut viewer, ..) = paginated_viewer(format!("<pre>{line}</pre>")).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    for viewport in VIEWPORTS {
+        paginate(&mut viewer, viewport);
+        let fit = &page_fits(&mut viewer, 0, viewport)[0];
+        assert!(
+            fit.gap() >= -0.5,
+            "{viewport:?}: text overflows by {:.1}px",
+            -fit.gap()
+        );
+        // Monospace glyphs are at least half an em wide, so the line takes
+        // at least this many lines when it wraps within the page.
+        let text_width = fit.text.width - 2.0 * PAGE_MARGIN;
+        let min_lines = (line.len() as f32 * FONT_SIZE * 0.5 / text_width).ceil();
+        let text_height = fit.text.height - 2.0 * PAGE_MARGIN;
+        assert!(
+            text_height >= min_lines * LINE_ADVANCE,
+            "{viewport:?}: the line is {text_height:.1}px high, expected at least \
+             {min_lines} wrapped lines"
+        );
+        // The code block is drawn as this layout, and its lines stay within
+        // the page's text column.
+        let padding = super::render::preformatted_padding();
+        let spans =
+            super::render::paragraph_spans(&line, &[], cosmic::font::mono().family, FONT_SIZE);
+        let layout =
+            super::render::layout_preformatted(&spans, FONT_SIZE, text_width - padding.x());
+        assert!(
+            (layout.min_bounds().height + padding.y() - text_height).abs() < 0.5,
+            "{viewport:?}: the code block is {text_height:.1}px high, its layout {:.1}px",
+            layout.min_bounds().height + padding.y()
+        );
+        assert!(
+            layout.min_bounds().width + padding.x() <= text_width,
+            "{viewport:?}: lines {:.1}px wide overflow the {text_width:.1}px text column",
+            layout.min_bounds().width + padding.x()
+        );
+    }
+}
+
+/// Golden snapshots of a code block split across pages: it must fill each
+/// page down to the bottom margin.
+#[tokio::test]
+async fn paginated_preformatted_goldens() {
+    let (mut viewer, ..) = paginated_viewer(code_chapter(120)).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    let viewport = VIEWPORTS[0];
+    let total = paginate(&mut viewer, viewport);
+    let (width, height) = (viewport.0 as u32, viewport.1 as u32);
+    for (suffix, page) in [("first", 0), ("middle", total / 2)] {
+        viewer.current_page = page;
+        cosmic_golden::assert_snapshot!(
+            &format!("paginated_preformatted_{suffix}"),
+            viewer.view_content_paginated(),
+            width,
+            height
+        );
+    }
 }

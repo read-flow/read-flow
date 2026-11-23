@@ -6,6 +6,7 @@ use cosmic::iced::Border;
 use cosmic::iced::Color;
 use cosmic::iced::Font;
 use cosmic::iced::Length;
+use cosmic::iced::Padding;
 use cosmic::iced::Pixels;
 use cosmic::iced::Size;
 use cosmic::iced::advanced::graphics::text::Paragraph;
@@ -182,6 +183,82 @@ pub(super) fn render_partial_paragraph<'a>(
     )
 }
 
+/// Line height of code block text, relative to the reader's font size like
+/// [`PARAGRAPH_LINE_HEIGHT`], so code lines keep the rhythm of the prose
+/// around them. Rendering and pagination both use it.
+const PREFORMATTED_LINE_HEIGHT: LineHeight = LineHeight::Relative(1.4);
+
+/// Padding between a code block's background and its text.
+pub(super) fn preformatted_padding() -> Padding {
+    let cosmic_theme::Spacing {
+        space_xxs, space_s, ..
+    } = theme::active().cosmic().spacing;
+    Padding::from([space_xxs, space_s])
+}
+
+/// Draw code block `spans` in the monospace font at the reader's font `size`,
+/// wrapping lines too long for the page.
+fn preformatted_text<'a>(
+    spans: Vec<Span<'a, EpubViewerMessage>>,
+    size: f32,
+) -> Element<'a, EpubViewerMessage> {
+    rich_text(spans)
+        .on_link_click(|m| m)
+        .size(size)
+        .line_height(PREFORMATTED_LINE_HEIGHT)
+        .font(cosmic::font::mono())
+        .wrapping(Wrapping::WordOrGlyph)
+        .width(Length::Fill)
+        .into()
+}
+
+/// Lay out code block `spans` `width` pixels wide exactly as
+/// [`preformatted_text`] draws them, excluding the padding (see
+/// [`preformatted_padding`]).
+pub(super) fn layout_preformatted(
+    spans: &[Span<'_, EpubViewerMessage>],
+    size: f32,
+    width: f32,
+) -> Paragraph {
+    Paragraph::with_spans(cosmic::iced::advanced::Text {
+        content: spans,
+        bounds: Size::new(width, f32::INFINITY),
+        size: Pixels(size),
+        line_height: PREFORMATTED_LINE_HEIGHT,
+        font: cosmic::font::mono(),
+        align_x: Horizontal::Left.into(),
+        align_y: Vertical::Top,
+        shaping: Shaping::Advanced,
+        wrapping: Wrapping::WordOrGlyph,
+        ellipsize: Default::default(),
+    })
+}
+
+/// A code block showing `spans`; `text_to_copy`, when `Some`, adds a copy
+/// button that copies it.
+fn code_block<'a>(
+    spans: Vec<Span<'a, EpubViewerMessage>>,
+    size: f32,
+    text_to_copy: Option<String>,
+) -> Element<'a, EpubViewerMessage> {
+    let code_block = widget::container(preformatted_text(spans, size))
+        .padding(preformatted_padding())
+        .class(Container::Secondary)
+        .width(Length::Fill);
+    if let Some(text) = text_to_copy {
+        let copy_button = widget::row::with_children(vec![
+            widget::space::horizontal().width(Length::Fill).into(),
+            widget::button::icon(widget::icon::from_name("edit-copy-symbolic").size(ICON_SIZE))
+                .on_press(EpubViewerMessage::CopyCodeBlock(text))
+                .tooltip(fl!("epub-viewer-copy-code"))
+                .into(),
+        ]);
+        cosmic::iced::widget::stack(vec![code_block.into(), copy_button.into()]).into()
+    } else {
+        code_block.into()
+    }
+}
+
 /// Render a partial preformatted block (split at a page boundary) using owned data.
 /// `text` and `spans` must already be sliced to the visible char range by the caller.
 /// `full_text_to_copy`, when `Some`, adds a copy button that copies the entire block content.
@@ -191,38 +268,11 @@ pub(super) fn render_partial_preformatted(
     font_size: f32,
     full_text_to_copy: Option<String>,
 ) -> Element<'static, EpubViewerMessage> {
-    let cosmic_theme::Spacing {
-        space_xxs, space_s, ..
-    } = theme::active().cosmic().spacing;
-    let inner: Element<'static, EpubViewerMessage> = if spans.is_empty() {
-        widget::text::monotext(text).width(Length::Fill).into()
-    } else {
-        let iced_spans: Vec<_> = spans
-            .into_iter()
-            .map(|s| owned_styled_span(s, cosmic::font::mono().family, font_size))
-            .collect();
-        rich_text(iced_spans)
-            .on_link_click(|m| m)
-            .size(font_size)
-            .width(Length::Fill)
-            .into()
-    };
-    let code_block = widget::container(inner)
-        .padding([space_xxs, space_s])
-        .class(Container::Secondary)
-        .width(Length::Fill);
-    if let Some(full_text) = full_text_to_copy {
-        let copy_button = widget::row::with_children(vec![
-            widget::space::horizontal().width(Length::Fill).into(),
-            widget::button::icon(widget::icon::from_name("edit-copy-symbolic").size(ICON_SIZE))
-                .on_press(EpubViewerMessage::CopyCodeBlock(full_text))
-                .tooltip(fl!("epub-viewer-copy-code"))
-                .into(),
-        ]);
-        cosmic::iced::widget::stack(vec![code_block.into(), copy_button.into()]).into()
-    } else {
-        code_block.into()
-    }
+    code_block(
+        owned_paragraph_spans(text, spans, cosmic::font::mono().family, font_size),
+        font_size,
+        full_text_to_copy,
+    )
 }
 
 fn apply_highlight<'a>(
@@ -339,32 +389,11 @@ impl<'a> RenderContext<'a> {
                     size,
                 )
             }
-            ContentBlock::Preformatted { text, spans, .. } => {
-                let inner: Element<'a, EpubViewerMessage> = if spans.is_empty() {
-                    widget::text::monotext(text).width(Length::Fill).into()
-                } else {
-                    render_spans(
-                        spans,
-                        font_size,
-                        cosmic::font::mono().family,
-                        Horizontal::Left,
-                    )
-                };
-                let code_block = widget::container(inner)
-                    .padding([space_xxs, space_s])
-                    .class(Container::Secondary)
-                    .width(Length::Fill);
-                let copy_button = widget::row::with_children(vec![
-                    widget::space::horizontal().width(Length::Fill).into(),
-                    widget::button::icon(
-                        widget::icon::from_name("edit-copy-symbolic").size(ICON_SIZE),
-                    )
-                    .on_press(EpubViewerMessage::CopyCodeBlock(text.clone()))
-                    .tooltip(fl!("epub-viewer-copy-code"))
-                    .into(),
-                ]);
-                cosmic::iced::widget::stack(vec![code_block.into(), copy_button.into()]).into()
-            }
+            ContentBlock::Preformatted { text, spans, .. } => code_block(
+                paragraph_spans(text, spans, cosmic::font::mono().family, font_size),
+                font_size,
+                Some(text.clone()),
+            ),
             ContentBlock::BlockQuote { children } => {
                 let mut col = widget::column::with_capacity(children.len())
                     .spacing(space_xxs)
@@ -797,21 +826,6 @@ fn owned_styled_span(
         ts.font_size_em,
         ts.link,
     )
-}
-
-fn render_spans(
-    spans: &[TextSpan],
-    size: f32,
-    family: font::Family,
-    align: Horizontal,
-) -> Element<'_, EpubViewerMessage> {
-    let iced_spans: Vec<_> = spans.iter().map(|s| styled_span(s, family, size)).collect();
-    rich_text(iced_spans)
-        .on_link_click(|m| m)
-        .size(size)
-        .width(Length::Fill)
-        .align_x(align)
-        .into()
 }
 
 fn render_list_item_spans<'a>(
