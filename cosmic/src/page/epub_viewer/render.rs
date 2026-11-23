@@ -327,10 +327,6 @@ impl<'a> RenderContext<'a> {
         let family = self.family;
         let max_image_height = self.max_image_height;
 
-        let cosmic_theme::Spacing {
-            space_xxs, space_s, ..
-        } = theme::active().cosmic().spacing;
-
         let font = Font {
             family,
             ..Font::default()
@@ -398,29 +394,22 @@ impl<'a> RenderContext<'a> {
                 font_size,
                 Some(text.clone()),
             ),
-            ContentBlock::BlockQuote { children } => {
-                let mut col = widget::column::with_capacity(children.len())
-                    .spacing(space_xxs)
-                    .width(Length::Fill);
-                for child in children {
-                    col = col.push(self.render_block_inner(child));
-                }
-                widget::container(col)
-                    .padding([space_xxs, space_s])
-                    .width(Length::Fill)
-                    .into()
+            ContentBlock::BlockQuote { .. }
+            | ContentBlock::Footnote { .. }
+            | ContentBlock::Figure { .. } => {
+                self.render_partial_container(block, BlockCut::default(), None)
             }
-            ContentBlock::UnorderedList { items } => {
-                render_partial_list(items, None, BlockCut::default(), None, font_size, family)
+            ContentBlock::UnorderedList { .. } | ContentBlock::OrderedList { .. } => {
+                let (items, ordered_start) = super::list_parts(block).unwrap_or_default();
+                render_partial_list(
+                    items,
+                    ordered_start,
+                    BlockCut::default(),
+                    None,
+                    font_size,
+                    family,
+                )
             }
-            ContentBlock::OrderedList { start, items } => render_partial_list(
-                items,
-                Some(*start),
-                BlockCut::default(),
-                None,
-                font_size,
-                family,
-            ),
             ContentBlock::Image { data, .. } if !data.is_empty() => {
                 let key = data.as_ptr() as usize;
                 let handle = self
@@ -475,49 +464,6 @@ impl<'a> RenderContext<'a> {
             }
             ContentBlock::Table { rows } => render_table(rows, font_size, family),
             ContentBlock::HorizontalRule => widget::divider::horizontal::default().into(),
-            ContentBlock::Footnote { id, blocks } => self.render_footnote(id, blocks),
-            ContentBlock::Figure {
-                blocks,
-                caption,
-                caption_text,
-            } => {
-                let caption_size = (font_size * 0.85).max(10.0);
-                let mut col = widget::column::with_capacity(blocks.len() + 1)
-                    .spacing(space_xxs)
-                    .width(Length::Fill);
-                for block in blocks {
-                    col = col.push(self.render_block_inner(block));
-                }
-                if !caption.is_empty() {
-                    let iced_spans: Vec<_> = caption
-                        .iter()
-                        .map(|s| styled_span(s, family, caption_size))
-                        .collect();
-                    let caption_el: Element<'_, EpubViewerMessage> = widget::container(
-                        rich_text(iced_spans)
-                            .on_link_click(|m| m)
-                            .size(caption_size),
-                    )
-                    .width(Length::Fill)
-                    .align_x(Horizontal::Center)
-                    .into();
-                    col = col.push(caption_el);
-                } else if !caption_text.is_empty() {
-                    let caption_el: Element<'_, EpubViewerMessage> =
-                        widget::text::caption(caption_text.as_str())
-                            .size(caption_size)
-                            .font(Font {
-                                family,
-                                style: font::Style::Italic,
-                                ..Font::default()
-                            })
-                            .width(Length::Fill)
-                            .align_x(Horizontal::Center)
-                            .into();
-                    col = col.push(caption_el);
-                }
-                col.into()
-            }
             ContentBlock::Anchor { .. } => widget::Space::new()
                 .width(Length::Fixed(0.0))
                 .height(Length::Fixed(0.0))
@@ -525,70 +471,171 @@ impl<'a> RenderContext<'a> {
         }
     }
 
-    fn render_footnote(
-        &self,
-        id: &str,
-        blocks: &'a [ContentBlock],
-    ) -> Element<'a, EpubViewerMessage> {
-        let cosmic_theme::Spacing {
-            space_xxs, space_s, ..
-        } = theme::active().cosmic().spacing;
-
-        let caption_size = (self.font_size * 0.8).max(10.0);
-        let inner_ctx = RenderContext {
-            font_size: caption_size,
+    /// The context a footnote draws its child blocks with: footnote text
+    /// size, images at their natural height.
+    pub(super) fn footnote_context(&self) -> Self {
+        RenderContext {
+            font_size: footnote_font_size(self.font_size),
             max_image_height: f32::MAX,
             ..*self
-        };
-
-        // Derive a short display label from the footnote id.
-        // Strips any non-digit prefix so "fn1" → "1", "fn-2" → "2", etc.
-        let label: &str = {
-            let start = id
-                .rfind(|c: char| !c.is_ascii_digit())
-                .map(|i| i + 1)
-                .unwrap_or(0);
-            let trailing = &id[start..];
-            if trailing.is_empty() { id } else { trailing }
-        };
-        // "  1. " — the prefix used on the first paragraph (mirrors OrderedList rendering).
-        let list_prefix = format!("  {label}.\u{a0}");
-        // Continuation indent: same number of characters as the prefix so wrapped
-        // lines and extra paragraphs align with the text of the first line.
-        let indent = "\u{a0}".repeat(list_prefix.chars().count());
-
-        let mut col = widget::column::with_capacity(blocks.len())
-            .spacing(space_xxs)
-            .width(Length::Fill);
-
-        for (i, block) in blocks.iter().enumerate() {
-            let prefix = if i == 0 {
-                list_prefix.clone()
-            } else {
-                indent.clone()
-            };
-            let el: Element<_> = match block {
-                ContentBlock::Paragraph { spans, text, .. } => {
-                    if spans.is_empty() {
-                        widget::text::caption(format!("{prefix}{text}"))
-                            .size(caption_size)
-                            .width(Length::Fill)
-                            .into()
-                    } else {
-                        render_list_item_spans(prefix, spans, caption_size, self.family)
-                    }
-                }
-                _ => inner_ctx.render_block_inner(block),
-            };
-            col = col.push(el);
         }
-
-        widget::container(col)
-            .padding([space_xxs, space_s])
-            .class(Container::Secondary)
-            .width(Length::Fill)
-            .into()
     }
+
+    /// Draw container `block` (see [`container_children`]) from `from` up to
+    /// `to` (`None`: to its end). Every part keeps the container's padding and
+    /// background; a figure draws its caption on its last part only.
+    pub(super) fn render_partial_container(
+        &self,
+        block: &'a ContentBlock,
+        from: BlockCut,
+        to: Option<BlockCut>,
+    ) -> Element<'a, EpubViewerMessage> {
+        let children = container_children(block).unwrap_or_default();
+        let end = to
+            .map_or(children.len(), |to| {
+                to.child + usize::from(to.char_offset > 0)
+            })
+            .min(children.len());
+        let mut col = widget::column::with_capacity(end.saturating_sub(from.child) + 1)
+            .spacing(container_child_spacing())
+            .width(Length::Fill);
+        for (index, child) in children.iter().enumerate().take(end).skip(from.child) {
+            let child_from = if index == from.child {
+                super::container_child_cut(child, from.char_offset)
+            } else {
+                BlockCut::default()
+            };
+            let child_to = to
+                .filter(|to| to.child == index)
+                .map(|to| super::container_child_cut(child, to.char_offset));
+            col = col.push(self.render_container_child(block, index, child_from, child_to));
+        }
+        if to.is_none()
+            && let Some(caption) = self.figure_caption(block)
+        {
+            col = col.push(caption);
+        }
+        match block {
+            ContentBlock::BlockQuote { .. } => widget::container(col)
+                .padding(container_padding(block))
+                .width(Length::Fill)
+                .into(),
+            ContentBlock::Footnote { .. } => widget::container(col)
+                .padding(container_padding(block))
+                .class(Container::Secondary)
+                .width(Length::Fill)
+                .into(),
+            _ => col.into(),
+        }
+    }
+
+    /// Draw child `index` of container `container` from `from` up to `to`
+    /// (`None`: to its end). A footnote draws its paragraphs after their
+    /// prefix (see [`footnote_paragraph_spans`]), and its other children in
+    /// its [`footnote_context`](Self::footnote_context).
+    pub(super) fn render_container_child(
+        &self,
+        container: &'a ContentBlock,
+        index: usize,
+        from: BlockCut,
+        to: Option<BlockCut>,
+    ) -> Element<'a, EpubViewerMessage> {
+        let child = &container_children(container).unwrap_or_default()[index];
+        match (container, child) {
+            (ContentBlock::Footnote { id, .. }, ContentBlock::Paragraph { text, spans, .. }) => {
+                paragraph_text(
+                    footnote_paragraph_spans(
+                        id,
+                        index,
+                        text,
+                        spans,
+                        from.char_offset,
+                        to.map_or(usize::MAX, |to| to.char_offset),
+                        self.family,
+                        self.font_size,
+                    ),
+                    &BlockStyle::default(),
+                    self.family,
+                    footnote_font_size(self.font_size),
+                )
+            }
+            (ContentBlock::Footnote { .. }, _) => super::render_block_part(
+                &self.footnote_context(),
+                child,
+                from,
+                to,
+                BlockHighlight::None,
+            ),
+            _ => super::render_block_part(self, child, from, to, BlockHighlight::None),
+        }
+    }
+
+    /// The caption figure `block` draws below its blocks; `None` when it has
+    /// none or is not a figure.
+    pub(super) fn figure_caption(
+        &self,
+        block: &'a ContentBlock,
+    ) -> Option<Element<'a, EpubViewerMessage>> {
+        let ContentBlock::Figure {
+            caption,
+            caption_text,
+            ..
+        } = block
+        else {
+            return None;
+        };
+        let family = self.family;
+        let caption_size = (self.font_size * 0.85).max(10.0);
+        if !caption.is_empty() {
+            let iced_spans: Vec<_> = caption
+                .iter()
+                .map(|s| styled_span(s, family, caption_size))
+                .collect();
+            Some(
+                widget::container(
+                    rich_text(iced_spans)
+                        .on_link_click(|m| m)
+                        .size(caption_size),
+                )
+                .width(Length::Fill)
+                .align_x(Horizontal::Center)
+                .into(),
+            )
+        } else if !caption_text.is_empty() {
+            Some(
+                widget::text::caption(caption_text.as_str())
+                    .size(caption_size)
+                    .font(Font {
+                        family,
+                        style: font::Style::Italic,
+                        ..Font::default()
+                    })
+                    .width(Length::Fill)
+                    .align_x(Horizontal::Center)
+                    .into(),
+            )
+        } else {
+            None
+        }
+    }
+}
+
+/// Padding between the edge of container `block` and its children.
+pub(super) fn container_padding(block: &ContentBlock) -> Padding {
+    match block {
+        ContentBlock::BlockQuote { .. } | ContentBlock::Footnote { .. } => {
+            let cosmic_theme::Spacing {
+                space_xxs, space_s, ..
+            } = theme::active().cosmic().spacing;
+            Padding::from([space_xxs, space_s])
+        }
+        _ => Padding::ZERO,
+    }
+}
+
+/// Space between the children of a container.
+pub(super) fn container_child_spacing() -> f32 {
+    theme::active().cosmic().spacing.space_xxs as f32
 }
 
 fn render_table(
@@ -795,23 +842,6 @@ fn owned_styled_span(
     )
 }
 
-fn render_list_item_spans<'a>(
-    prefix: String,
-    spans: &'a [TextSpan],
-    size: f32,
-    family: font::Family,
-) -> Element<'a, EpubViewerMessage> {
-    let mut iced_spans: Vec<cosmic::iced::widget::text::Span<'a, EpubViewerMessage>> =
-        Vec::with_capacity(spans.len() + 1);
-    iced_spans.push(span(prefix));
-    iced_spans.extend(spans.iter().map(|s| styled_span(s, family, size)));
-    rich_text(iced_spans)
-        .on_link_click(|m| m)
-        .size(size)
-        .width(Length::Fill)
-        .into()
-}
-
 /// What a page shows of one list item: characters `start..end` of item
 /// `index`, after `prefix` when it shows the item from its beginning.
 #[derive(Debug)]
@@ -872,27 +902,104 @@ pub(super) fn list_item_part_spans<'a>(
     family: font::Family,
     size: f32,
 ) -> Vec<Span<'a, EpubViewerMessage>> {
-    let prefix = part.prefix.clone().map(|prefix| {
+    prefixed_spans(
+        part.prefix.clone(),
+        &item.text,
+        &item.spans,
+        part.start,
+        part.end,
+        family,
+        size,
+    )
+}
+
+/// The spans characters `start..end` of a paragraph's `text` (styled by
+/// `spans`) are drawn with, after `prefix`.
+fn prefixed_spans<'a>(
+    prefix: Option<String>,
+    text: &'a str,
+    spans: &'a [TextSpan],
+    start: usize,
+    end: usize,
+    family: font::Family,
+    size: f32,
+) -> Vec<Span<'a, EpubViewerMessage>> {
+    let prefix = prefix.map(|prefix| {
         span(prefix).font(Font {
             family,
             ..Font::default()
         })
     });
-    let text = if part.start == 0 && part.end == usize::MAX {
-        paragraph_spans(&item.text, &item.spans, family, size)
+    let text = if start == 0 && end == usize::MAX {
+        paragraph_spans(text, spans, family, size)
     } else {
-        let char_count = item.text.chars().count();
-        let start = part.start.min(char_count);
-        let end = part.end.min(char_count);
+        let char_count = text.chars().count();
+        let start = start.min(char_count);
+        let end = end.min(char_count);
         owned_paragraph_spans(
-            item.text[char_offset_to_byte(&item.text, start)..char_offset_to_byte(&item.text, end)]
-                .to_string(),
-            slice_spans(&item.spans, start, end),
+            text[char_offset_to_byte(text, start)..char_offset_to_byte(text, end)].to_string(),
+            slice_spans(spans, start, end),
             family,
             size,
         )
     };
     prefix.into_iter().chain(text).collect()
+}
+
+/// Font size of a footnote's text at the reader's `font_size`.
+pub(super) fn footnote_font_size(font_size: f32) -> f32 {
+    (font_size * 0.8).max(10.0)
+}
+
+/// The prefix drawn before characters from `start` on of paragraph `index`
+/// of footnote `id`: the footnote's label before its first paragraph, as an
+/// ordered list numbers an item, and else an indent as wide as the label, so
+/// the paragraphs line up with the text after it.
+fn footnote_prefix(id: &str, index: usize, start: usize) -> String {
+    // Strip any non-digit prefix, so "fn1" gives "1", "fn-2" gives "2".
+    let digits = id.rfind(|c: char| !c.is_ascii_digit()).map_or(0, |i| i + 1);
+    let label = if digits < id.len() { &id[digits..] } else { id };
+    let label = format!("  {label}.\u{a0}");
+    if index == 0 && start == 0 {
+        label
+    } else {
+        "\u{a0}".repeat(label.chars().count())
+    }
+}
+
+/// The spans characters `start..end` of paragraph `index` (`text` styled by
+/// `spans`) of footnote `id` are drawn with, after the paragraph's prefix
+/// (see [`footnote_prefix`]), at the reader's `font_size`.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn footnote_paragraph_spans<'a>(
+    id: &str,
+    index: usize,
+    text: &'a str,
+    spans: &'a [TextSpan],
+    start: usize,
+    end: usize,
+    family: font::Family,
+    font_size: f32,
+) -> Vec<Span<'a, EpubViewerMessage>> {
+    prefixed_spans(
+        Some(footnote_prefix(id, index, start)),
+        text,
+        spans,
+        start,
+        end,
+        family,
+        footnote_font_size(font_size),
+    )
+}
+
+/// The child blocks of a block quote, footnote or figure, which draw them in
+/// a column; `None` for other blocks.
+pub(super) fn container_children(block: &ContentBlock) -> Option<&[ContentBlock]> {
+    match block {
+        ContentBlock::BlockQuote { children } => Some(children),
+        ContentBlock::Footnote { blocks, .. } | ContentBlock::Figure { blocks, .. } => Some(blocks),
+        _ => None,
+    }
 }
 
 /// Space between the items of a list.

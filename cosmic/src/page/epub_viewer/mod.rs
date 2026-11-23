@@ -225,8 +225,18 @@ pub(crate) enum ViewMode {
 }
 
 /// A position inside a block where a page starts or ends: before character
-/// `char_offset` of the block's child `child`. A paragraph or code block has
-/// one child (0), its text.
+/// `char_offset` of the block's child `child`, `char_offset` 0 being before
+/// the child. What the child is depends on the block:
+///
+/// - paragraph or code block: its text, child 0;
+/// - list: item `child`;
+/// - block quote, footnote or figure: child block `child`, and `char_offset`
+///   is a cut in that block as one number (see [`container_child_cut`]): a
+///   character of a paragraph or code block, a character counted over the
+///   items of a list, each item one more than its length, or the child
+///   before which a nested container is cut, which is only cut between its
+///   children. Child `len` of a figure is its caption;
+/// - table: row `child`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 struct BlockCut {
     child: usize,
@@ -2557,6 +2567,15 @@ fn render_block_part<'a>(
     if from == BlockCut::default() && to.is_none() {
         return ctx.render_block(block, highlight);
     }
+    if let Some((items, ordered_start)) = list_parts(block) {
+        return render::apply_highlight(
+            render_partial_list(items, ordered_start, from, to, ctx.font_size, ctx.family),
+            highlight,
+        );
+    }
+    if render::container_children(block).is_some() {
+        return render::apply_highlight(ctx.render_partial_container(block, from, to), highlight);
+    }
     let end = to.map_or(usize::MAX, |cut| cut.char_offset);
     match block {
         ContentBlock::Paragraph { text, spans, style } => {
@@ -2582,16 +2601,67 @@ fn render_block_part<'a>(
                 (s == 0).then(|| text.clone()),
             )
         }
-        ContentBlock::UnorderedList { items } => render::apply_highlight(
-            render_partial_list(items, None, from, to, ctx.font_size, ctx.family),
-            highlight,
-        ),
-        ContentBlock::OrderedList { start, items } => render::apply_highlight(
-            render_partial_list(items, Some(*start), from, to, ctx.font_size, ctx.family),
-            highlight,
-        ),
         _ => ctx.render_block(block, highlight),
     }
+}
+
+/// The items of list `block`, and the number of its first item when it is
+/// ordered; `None` when `block` is not a list.
+fn list_parts(block: &ContentBlock) -> Option<(&[ListItem], Option<u32>)> {
+    match block {
+        ContentBlock::UnorderedList { items } => Some((items, None)),
+        ContentBlock::OrderedList { start, items } => Some((items, Some(*start))),
+        _ => None,
+    }
+}
+
+/// The cut in container child `child` that a container's cut at
+/// `char_offset` in that child stands for (see [`BlockCut`]).
+fn container_child_cut(child: &ContentBlock, char_offset: usize) -> BlockCut {
+    if let Some((items, _)) = list_parts(child) {
+        let mut item_start = 0;
+        for (index, item) in items.iter().enumerate() {
+            let len = item.text.chars().count();
+            if char_offset <= item_start + len {
+                return BlockCut {
+                    child: index,
+                    char_offset: char_offset - item_start,
+                };
+            }
+            item_start += len + 1;
+        }
+        return BlockCut {
+            child: items.len(),
+            char_offset: 0,
+        };
+    }
+    if render::container_children(child).is_some() {
+        return BlockCut {
+            child: char_offset,
+            char_offset: 0,
+        };
+    }
+    BlockCut {
+        child: 0,
+        char_offset,
+    }
+}
+
+/// The container cut's `char_offset` standing for cut `cut` in container
+/// child `child`; the inverse of [`container_child_cut`]. A cut inside a
+/// nested container's child is rounded back to the start of that child.
+fn container_child_offset(child: &ContentBlock, cut: BlockCut) -> usize {
+    if let Some((items, _)) = list_parts(child) {
+        let preceding: usize = items[..cut.child.min(items.len())]
+            .iter()
+            .map(|item| item.text.chars().count() + 1)
+            .sum();
+        return preceding + cut.char_offset;
+    }
+    if render::container_children(child).is_some() {
+        return cut.child;
+    }
+    cut.char_offset
 }
 
 /// Where to cut list `items` (numbered from `ordered_start` when ordered),
@@ -2659,18 +2729,148 @@ fn preformatted_part_end(text: &str, start: usize, end: usize) -> usize {
     (end - ending).max(start)
 }
 
-/// Where to cut `block`, shown from `from` on, so that the part before the cut
-/// fits in `available_height` pixels: the start of the first line that does
-/// not fit. Returns `None` when the block cannot be cut there: it is not
-/// splittable, not even one line fits, or all of it fits.
+/// Where to cut container `block` (see [`render::container_children`]),
+/// drawn by `ctx` and shown from `from` on, so that the part before the cut
+/// fits in `available_height` pixels: between its children, or inside the
+/// first child that does not fit, the way [`try_split_block`] cuts that
+/// child. Returns `None` when all of it fits.
+fn split_container(
+    ctx: &RenderContext<'_>,
+    measurer: &mut BlockMeasurer,
+    block: &ContentBlock,
+    from: BlockCut,
+    content_width: f32,
+    available_height: f32,
+) -> Option<BlockCut> {
+    let children = render::container_children(block)?;
+    let padding = render::container_padding(block);
+    let width = content_width - padding.x();
+    let available = available_height - padding.y();
+    let spacing = render::container_child_spacing();
+    let mut used = 0.0;
+    for (index, child) in children.iter().enumerate().skip(from.child) {
+        let child_from = if index == from.child {
+            container_child_cut(child, from.char_offset)
+        } else {
+            BlockCut::default()
+        };
+        let height = measurer.height(
+            ctx.render_container_child(block, index, child_from, None),
+            width,
+        );
+        let gap = if used > 0.0 && height > 0.0 {
+            spacing
+        } else {
+            0.0
+        };
+        if used + gap + height <= available {
+            used += gap + height;
+            continue;
+        }
+        let child_ctx = match block {
+            ContentBlock::Footnote { .. } => ctx.footnote_context(),
+            _ => *ctx,
+        };
+        let child_cut = match (block, child) {
+            (ContentBlock::Footnote { id, .. }, ContentBlock::Paragraph { text, spans, .. }) => {
+                let start = child_from.char_offset;
+                let spans = render::footnote_paragraph_spans(
+                    id,
+                    index,
+                    text,
+                    spans,
+                    start,
+                    usize::MAX,
+                    ctx.family,
+                    ctx.font_size,
+                );
+                // The prefix is laid out before the text, on its first line.
+                let prefix_len = spans[0].text.chars().count();
+                let layout =
+                    render::layout_list_item(&spans, ctx.family, child_ctx.font_size, width);
+                first_overflowing_char(&layout, available - used - gap).map(|offset| BlockCut {
+                    child: 0,
+                    char_offset: start + offset.saturating_sub(prefix_len),
+                })
+            }
+            _ => try_split_block(
+                &child_ctx,
+                measurer,
+                child,
+                width,
+                available - used - gap,
+                child_from,
+            ),
+        };
+        let char_offset = child_cut
+            .map(|cut| container_child_offset(child, cut))
+            .filter(|&offset| offset > container_child_offset(child, child_from))
+            .unwrap_or(0);
+        return Some(BlockCut {
+            child: index,
+            char_offset,
+        });
+    }
+    let caption = ctx.figure_caption(block)?;
+    let height = measurer.height(caption, width);
+    let gap = if used > 0.0 && height > 0.0 {
+        spacing
+    } else {
+        0.0
+    };
+    (used + gap + height > available).then_some(BlockCut {
+        child: children.len(),
+        char_offset: 0,
+    })
+}
+
+/// Where a page holding only the first child of container `block`, shown
+/// from `from` on, ends when more of the block follows; `None` otherwise.
+/// A child too tall for a page, which cannot be split, is placed alone.
+fn after_first_container_child(
+    ctx: &RenderContext<'_>,
+    block: &ContentBlock,
+    from: BlockCut,
+) -> Option<BlockCut> {
+    let children = render::container_children(block)?;
+    let parts = children.len() + usize::from(ctx.figure_caption(block).is_some());
+    (from.child + 1 < parts).then_some(BlockCut {
+        child: from.child + 1,
+        char_offset: 0,
+    })
+}
+
+/// Where to cut `block`, drawn by `ctx` and shown from `from` on, so that the
+/// part before the cut fits in `available_height` pixels: at the start of the
+/// first line that does not fit, or between the block's children (see
+/// [`BlockCut`]). Returns `None` when the block cannot be cut there: it is
+/// not splittable, not even one line fits, or all of it fits.
 fn try_split_block(
+    ctx: &RenderContext<'_>,
+    measurer: &mut BlockMeasurer,
     block: &ContentBlock,
     content_width: f32,
-    font_size: f32,
     available_height: f32,
     from: BlockCut,
-    family: font::Family,
 ) -> Option<BlockCut> {
+    let font_size = ctx.font_size;
+    let family = ctx.family;
+    if let Some((items, ordered_start)) = list_parts(block) {
+        return split_list(
+            items,
+            ordered_start,
+            from,
+            content_width,
+            font_size,
+            family,
+            available_height,
+        )
+        .filter(|cut| *cut > from);
+    }
+    if render::container_children(block).is_some() {
+        return split_container(ctx, measurer, block, from, content_width, available_height)
+            .filter(|cut| *cut > from);
+    }
     let char_offset = match block {
         ContentBlock::Paragraph { text, spans, style } => ParagraphContent { text, spans, style }
             .split_from(
@@ -2693,30 +2893,6 @@ fn try_split_block(
                 render::layout_preformatted(&spans, font_size, content_width - padding.x());
             first_overflowing_char(&layout, available_height - padding.y())
                 .map(|offset| start + offset)
-        }
-        ContentBlock::UnorderedList { items } => {
-            return split_list(
-                items,
-                None,
-                from,
-                content_width,
-                font_size,
-                family,
-                available_height,
-            )
-            .filter(|cut| *cut > from);
-        }
-        ContentBlock::OrderedList { start, items } => {
-            return split_list(
-                items,
-                Some(*start),
-                from,
-                content_width,
-                font_size,
-                family,
-                available_height,
-            )
-            .filter(|cut| *cut > from);
         }
         _ => None,
     };
@@ -2752,7 +2928,10 @@ fn page_text_size(area: (f32, f32), dual: bool, gap: f32, margin: f32) -> (f32, 
 /// Paragraphs and code blocks that straddle a page boundary are split at the
 /// start of the first line that does not fit (see [`first_overflowing_char`]).
 /// Lists are split between items, or inside the first item that does not fit
-/// at the start of its first line that does not fit. Other block types that
+/// at the start of its first line that does not fit. Block quotes, footnotes
+/// and figures are split between their children, or inside the first child
+/// that does not fit as that child splits; a child that cannot be split and
+/// does not fit on a page gets a page of its own. Other block types that
 /// exceed `page_height` get their own page unchanged.
 ///
 /// Blocks are measured as `ctx` draws them `page_width` wide, `block_spacing`
@@ -2767,8 +2946,6 @@ fn paginate_blocks(
     measurer: &mut BlockMeasurer,
 ) -> PaginationLayout {
     let block_spacing = block_spacing.max(0.0);
-    let font_size = ctx.font_size;
-    let family = ctx.family;
 
     let mut pages: Vec<PageRange> = Vec::new();
     let mut page_start = 0usize;
@@ -2799,8 +2976,17 @@ fn paginate_blocks(
         }
         // Block doesn't fit — try to place its top part on the current page.
         let available = (page_height - accumulated - spacing).max(0.0);
-        match try_split_block(block, page_width, font_size, available, from, family) {
-            Some(cut) if cut > from => {
+        let cut = try_split_block(ctx, measurer, block, page_width, available, from)
+            .filter(|cut| *cut > from)
+            .or_else(|| {
+                // A container's first child that cannot be split is placed
+                // alone, to overflow the page on its own.
+                is_first_on_page
+                    .then(|| after_first_container_child(ctx, block, from))
+                    .flatten()
+            });
+        match cut {
+            Some(cut) => {
                 pages.push(PageRange {
                     start: page_start,
                     start_cut: page_start_cut,
@@ -3957,6 +4143,8 @@ mod split_tests {
     use rstest::rstest;
 
     use super::BlockCut;
+    use super::BlockMeasurer;
+    use super::RenderContext;
     use super::try_split_block;
 
     const WIDTH: f32 = 600.0;
@@ -3970,13 +4158,20 @@ mod split_tests {
             spans: vec![],
             style: BlockStyle::default(),
         };
+        let image_handles = std::collections::HashMap::new();
+        let ctx = RenderContext {
+            font_size: FONT_SIZE,
+            family: font::Family::Serif,
+            max_image_height: 400.0,
+            image_handles: &image_handles,
+        };
         try_split_block(
+            &ctx,
+            &mut BlockMeasurer::default(),
             &block,
             width,
-            FONT_SIZE,
             available_height,
             BlockCut::default(),
-            font::Family::Serif,
         )
         .map(|cut| cut.char_offset)
     }

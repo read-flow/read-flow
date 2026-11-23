@@ -676,3 +676,296 @@ async fn ordered_list_numbering_continues_on_the_next_page() {
         );
     }
 }
+
+/// A paragraph followed by a block quote of paragraphs, mostly short, every
+/// tenth one longer than a page.
+fn block_quote_chapter() -> String {
+    let paragraphs: String = (0..30)
+        .map(|i| {
+            let words = if i % 10 == 9 { 600 } else { 20 + i * 7 % 50 };
+            format!("<p>{}</p>", prose(i, words))
+        })
+        .collect();
+    format!(
+        "<p>{}</p><blockquote>{paragraphs}</blockquote>",
+        prose(0, 60)
+    )
+}
+
+#[tokio::test]
+async fn block_quote_pages_fill_without_overflowing() {
+    let (mut viewer, ..) = paginated_viewer(block_quote_chapter()).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    for viewport in VIEWPORTS {
+        let total = paginate(&mut viewer, viewport);
+        assert!(
+            total > 2,
+            "{viewport:?}: expected several pages, got {total}"
+        );
+        assert_pages_fill(&mut viewer, viewport, "block quote");
+
+        let chapter = &viewer.chapters[viewer.active_chapter];
+        let layout = &viewer.pagination_cache[&viewer.active_chapter];
+        let cuts: Vec<_> = layout
+            .pages
+            .iter()
+            .filter(|p| matches!(chapter.blocks[p.end - 1], ContentBlock::BlockQuote { .. }))
+            .filter_map(|p| p.end_cut)
+            .collect();
+        assert!(
+            cuts.iter().any(|cut| cut.char_offset > 0),
+            "{viewport:?}: expected a page break inside a quoted paragraph, got {cuts:?}"
+        );
+        assert_shows_all_text(&viewer, viewport);
+    }
+}
+
+/// A paragraph referencing a footnote of several paragraphs, the first one
+/// longer than a page.
+fn footnote_chapter() -> String {
+    let paragraphs: String = (0..8)
+        .map(|i| {
+            let words = if i == 0 { 900 } else { 40 + i * 11 % 60 };
+            format!("<p>{}</p>", prose(i, words))
+        })
+        .collect();
+    format!(
+        "<p>{}<sup><a href=\"#fn1\">1</a></sup>.</p>\
+         <aside epub:type=\"footnote\" id=\"fn1\">{paragraphs}</aside>",
+        prose(0, 60)
+    )
+}
+
+/// The text of the spans drawing paragraph `child` of footnote `footnote`
+/// from character `from` on.
+fn footnote_paragraph_text(footnote: &ContentBlock, child: usize, from: usize) -> Vec<String> {
+    let ContentBlock::Footnote { id, blocks } = footnote else {
+        panic!("expected a footnote, got {footnote:?}");
+    };
+    let ContentBlock::Paragraph { text, spans, .. } = &blocks[child] else {
+        panic!("expected a paragraph, got {:?}", blocks[child]);
+    };
+    super::render::footnote_paragraph_spans(
+        id,
+        child,
+        text,
+        spans,
+        from,
+        usize::MAX,
+        font::Family::Serif,
+        FONT_SIZE,
+    )
+    .into_iter()
+    .map(|span| span.text.to_string())
+    .collect()
+}
+
+#[tokio::test]
+async fn footnote_continues_with_indent_not_label() {
+    let (mut viewer, ..) = paginated_viewer(footnote_chapter()).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    for viewport in VIEWPORTS {
+        let total = paginate(&mut viewer, viewport);
+        assert!(
+            total > 2,
+            "{viewport:?}: expected several pages, got {total}"
+        );
+        assert_pages_fill(&mut viewer, viewport, "footnote");
+        assert_shows_all_text(&viewer, viewport);
+
+        let chapter = &viewer.chapters[viewer.active_chapter];
+        let footnote = &chapter.blocks[1];
+        assert_eq!(
+            footnote_paragraph_text(footnote, 0, 0)[0],
+            "  1.\u{a0}",
+            "{viewport:?}: the footnote starts with its label"
+        );
+
+        let layout = &viewer.pagination_cache[&viewer.active_chapter];
+        let continued = layout
+            .pages
+            .iter()
+            .find(|p| p.start == 1 && p.start_cut.child == 0 && p.start_cut.char_offset > 0)
+            .expect("a page continues the footnote's first paragraph");
+        let shown = footnote_paragraph_text(footnote, 0, continued.start_cut.char_offset);
+        assert_eq!(
+            shown[0],
+            "\u{a0}".repeat(5),
+            "{viewport:?}: the continued footnote starts with the indent"
+        );
+        let whole = footnote_paragraph_text(footnote, 0, 0).concat();
+        assert!(
+            whole.ends_with(&shown[1..].concat()),
+            "{viewport:?}: the continued footnote shows {:?}, expected the rest of its \
+             paragraph",
+            shown[1]
+        );
+    }
+}
+
+/// A footnote holding a block quote that holds lists, each child shorter
+/// than a page, the block quote longer than one.
+fn nested_container_chapter() -> String {
+    let quoted: String = (0..6)
+        .map(|i| {
+            if i % 2 == 1 {
+                let items: String = (0..8)
+                    .map(|j| format!("<li>{}</li>", prose(i * 10 + j, 6 + j % 4 * 4)))
+                    .collect();
+                format!("<ul>{items}</ul>")
+            } else {
+                format!("<p>{}</p>", prose(i, 50))
+            }
+        })
+        .collect();
+    format!(
+        "<p>{}<sup><a href=\"#fn1\">1</a></sup>.</p>\
+         <aside epub:type=\"footnote\" id=\"fn1\"><p>{}</p>\
+         <blockquote>{quoted}</blockquote><p>{}</p></aside>",
+        prose(0, 200),
+        prose(1, 80),
+        prose(2, 80)
+    )
+}
+
+#[tokio::test]
+async fn nested_containers_split_without_losing_text() {
+    let (mut viewer, ..) = paginated_viewer(nested_container_chapter()).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    let chapter = &viewer.chapters[viewer.active_chapter];
+    let ContentBlock::Footnote { blocks, .. } = &chapter.blocks[1] else {
+        panic!("the second block is the footnote");
+    };
+    let ContentBlock::BlockQuote { children } = &blocks[1] else {
+        panic!("the footnote holds a block quote");
+    };
+    assert!(
+        matches!(children[1], ContentBlock::UnorderedList { .. }),
+        "the block quote holds a list"
+    );
+    for viewport in VIEWPORTS {
+        let total = paginate(&mut viewer, viewport);
+        assert!(
+            total > 2,
+            "{viewport:?}: expected several pages, got {total}"
+        );
+        page_text_heights(&mut viewer, viewport);
+        let layout = &viewer.pagination_cache[&viewer.active_chapter];
+        assert!(
+            layout
+                .pages
+                .iter()
+                .any(|p| p.start == 1 && p.start_cut.child == 1 && p.start_cut.char_offset > 0),
+            "{viewport:?}: expected a page to start inside the block quote, got {:?}",
+            layout.pages
+        );
+        assert_shows_all_text(&viewer, viewport);
+    }
+}
+
+/// The text of `block` shown from `from` up to `to` (`None`: to its end).
+fn part_text(block: &ContentBlock, from: super::BlockCut, to: Option<super::BlockCut>) -> String {
+    let slice = |text: &str, start: usize, end: Option<usize>| {
+        let count = text.chars().count();
+        let end = end.unwrap_or(count).min(count);
+        text[char_offset_to_byte(text, start.min(end))..char_offset_to_byte(text, end)].to_string()
+    };
+    if let Some((items, start)) = super::list_parts(block) {
+        return super::render::list_item_parts(items, start, from, to)
+            .iter()
+            .map(|part| {
+                let end = (part.end != usize::MAX).then_some(part.end);
+                slice(&items[part.index].text, part.start, end)
+            })
+            .collect();
+    }
+    if let Some(children) = super::render::container_children(block) {
+        let end = to.map_or(children.len(), |to| {
+            to.child + usize::from(to.char_offset > 0)
+        });
+        return (from.child..end.min(children.len()))
+            .map(|index| {
+                let child = &children[index];
+                let child_from = if index == from.child {
+                    super::container_child_cut(child, from.char_offset)
+                } else {
+                    super::BlockCut::default()
+                };
+                let child_to = to
+                    .filter(|to| to.child == index)
+                    .map(|to| super::container_child_cut(child, to.char_offset));
+                part_text(child, child_from, child_to)
+            })
+            .collect();
+    }
+    match block {
+        ContentBlock::Paragraph { text, .. } | ContentBlock::Preformatted { text, .. } => {
+            slice(text, from.char_offset, to.map(|to| to.char_offset))
+        }
+        _ => String::new(),
+    }
+}
+
+/// Check that the pages of the active chapter together show all of its text,
+/// each part once.
+fn assert_shows_all_text(viewer: &EpubViewer, viewport: (f32, f32)) {
+    let chapter = &viewer.chapters[viewer.active_chapter];
+    let layout = &viewer.pagination_cache[&viewer.active_chapter];
+    let whole: String = chapter
+        .blocks
+        .iter()
+        .map(|block| part_text(block, super::BlockCut::default(), None))
+        .collect();
+    let paged: String = layout
+        .pages
+        .iter()
+        .flat_map(|page| {
+            (page.start..page.end).map(move |index| {
+                let from = if index == page.start {
+                    page.start_cut
+                } else {
+                    super::BlockCut::default()
+                };
+                let to = if index + 1 == page.end {
+                    page.end_cut
+                } else {
+                    None
+                };
+                part_text(&chapter.blocks[index], from, to)
+            })
+        })
+        .collect();
+    assert!(
+        paged == whole,
+        "{viewport:?}: the pages show {} characters of the chapter's {}",
+        paged.chars().count(),
+        whole.chars().count()
+    );
+}
+
+/// Golden snapshots of a block quote and of a footnote split across pages:
+/// they must fill each page down to the bottom margin.
+#[tokio::test]
+async fn paginated_container_goldens() {
+    for (name, body) in [
+        ("paginated_blockquote", block_quote_chapter()),
+        ("paginated_footnote", footnote_chapter()),
+    ] {
+        let (mut viewer, ..) = paginated_viewer(body).await;
+        let _guard = crate::test_support::cosmic_tk_lock();
+        cosmic_golden::init();
+        let viewport = VIEWPORTS[0];
+        let total = paginate(&mut viewer, viewport);
+        let (width, height) = (viewport.0 as u32, viewport.1 as u32);
+        viewer.current_page = total / 2;
+        cosmic_golden::assert_snapshot!(
+            &format!("{name}_middle"),
+            viewer.view_content_paginated(),
+            width,
+            height
+        );
+    }
+}
