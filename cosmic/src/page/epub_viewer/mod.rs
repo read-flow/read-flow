@@ -2557,6 +2557,58 @@ fn effective_block_height(
     }
 }
 
+/// Height of `block` drawn by `ctx` `content_width` pixels wide, shown from
+/// `from` on, as [`effective_block_height`] measures it when that is at most
+/// `limit` pixels; otherwise a height above `limit`.
+///
+/// A table, list, code block or container continued from the previous page
+/// is measured only up to where it is cut to fit twice `limit`, when that
+/// part is already taller than `limit`, so a block spanning many pages is
+/// not measured to its end on each of them.
+fn block_height_up_to(
+    measurer: &mut BlockMeasurer,
+    ctx: &RenderContext<'_>,
+    block: &ContentBlock,
+    from: BlockCut,
+    content_width: f32,
+    limit: f32,
+) -> f32 {
+    let bounded = from != BlockCut::default() && !matches!(block, ContentBlock::Paragraph { .. });
+    if bounded {
+        let twice = 2.0 * limit;
+        let end = match block {
+            ContentBlock::Table { rows } => split_table(
+                ctx,
+                measurer,
+                rows,
+                from,
+                from.char_offset > 0,
+                content_width,
+                twice,
+            ),
+            _ => try_split_block(ctx, measurer, block, content_width, twice, from)
+                .filter(|cut| *cut > from),
+        };
+        if let Some(end) = end {
+            // The part before `end` is drawn as the start of the rest of the
+            // block, so the rest is at least as tall.
+            let height = measurer.height(
+                render_block_part(ctx, block, from, Some(end), BlockHighlight::None),
+                content_width,
+            );
+            if height > limit {
+                #[cfg(test)]
+                debug_assert!(
+                    effective_block_height(measurer, ctx, block, from, content_width) >= height,
+                    "the start of a block is taller than the block"
+                );
+                return height;
+            }
+        }
+    }
+    effective_block_height(measurer, ctx, block, from, content_width)
+}
+
 /// The part of `block` from `from` up to `to` (`None`: to its end), as `ctx`
 /// draws it on a page.
 fn render_block_part<'a>(
@@ -2717,6 +2769,75 @@ fn split_list(
         });
     }
     None
+}
+
+/// Character offset at which code block `text` (styled by `spans`), shown
+/// from character `start` on `content_width` pixels wide, must continue on
+/// the next page, so that the lines before it fit in `available_height`
+/// pixels: the start of the first line that does not fit. Returns `None`
+/// when not even one line fits, or when all lines fit.
+///
+/// Only the first lines of the rest are laid out, more of them until one
+/// does not fit: each line is laid out on its own, so they are laid out as
+/// in the whole rest.
+fn split_preformatted(
+    text: &str,
+    spans: &[TextSpan],
+    start: usize,
+    content_width: f32,
+    font_size: f32,
+    available_height: f32,
+) -> Option<usize> {
+    let start = start.min(text.chars().count());
+    let padding = render::preformatted_padding();
+    let available = available_height - padding.y();
+    let rest = &text[char_offset_to_byte(text, start)..];
+    let split = |shown: &str| {
+        let spans = render::owned_paragraph_spans(
+            shown.to_string(),
+            slice_spans(spans, start, start + shown.chars().count()),
+            cosmic::font::mono().family,
+            font_size,
+        );
+        let layout = render::layout_preformatted(&spans, font_size, content_width - padding.x());
+        let overflows = layout
+            .buffer()
+            .layout_runs()
+            .any(|run| run.line_top + run.line_height > available);
+        (
+            overflows,
+            first_overflowing_char(&layout, available).map(|offset| start + offset),
+        )
+    };
+    let mut lines = PREFORMATTED_SPLIT_LINES;
+    let offset = loop {
+        let shown = preformatted_first_lines(rest, lines);
+        let (overflows, offset) = split(shown);
+        if overflows || shown.len() == rest.len() {
+            break offset;
+        }
+        lines *= 2;
+    };
+    #[cfg(test)]
+    debug_assert_eq!(
+        offset,
+        split(rest).1,
+        "the first lines of a code block split as the whole block"
+    );
+    offset
+}
+
+/// Number of lines of a code block [`split_preformatted`] lays out first.
+const PREFORMATTED_SPLIT_LINES: usize = 64;
+
+/// The first `lines` lines of code block text `text`, without the line
+/// ending after the last of them; all of `text` when it has no more lines.
+fn preformatted_first_lines(text: &str, lines: usize) -> &str {
+    let Some((end, _)) = text.match_indices('\n').nth(lines.saturating_sub(1)) else {
+        return text;
+    };
+    let shown = &text[..end];
+    shown.strip_suffix('\r').unwrap_or(shown)
 }
 
 /// End of the part of code block `text` shown from character `start` up to
@@ -2994,20 +3115,14 @@ fn try_split_block(
                 family,
                 available_height,
             ),
-        ContentBlock::Preformatted { text, spans, .. } => {
-            let start = from.char_offset.min(text.chars().count());
-            let padding = render::preformatted_padding();
-            let spans = render::owned_paragraph_spans(
-                text[char_offset_to_byte(text, start)..].to_string(),
-                slice_spans(spans, start, usize::MAX),
-                cosmic::font::mono().family,
-                font_size,
-            );
-            let layout =
-                render::layout_preformatted(&spans, font_size, content_width - padding.x());
-            first_overflowing_char(&layout, available_height - padding.y())
-                .map(|offset| start + offset)
-        }
+        ContentBlock::Preformatted { text, spans, .. } => split_preformatted(
+            text,
+            spans,
+            from.char_offset,
+            content_width,
+            font_size,
+            available_height,
+        ),
         _ => None,
     };
     char_offset.map(|char_offset| BlockCut {
@@ -3092,7 +3207,7 @@ fn paginate_blocks(
         } else {
             BlockCut::default()
         };
-        let block_h = effective_block_height(measurer, ctx, block, from, page_width);
+        let block_h = block_height_up_to(measurer, ctx, block, from, page_width, page_height);
         let spacing = if accumulated > 0.0 && block_h > 0.0 {
             block_spacing
         } else {

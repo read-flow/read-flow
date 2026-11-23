@@ -429,6 +429,40 @@ async fn paginating_a_long_chapter_is_fast() {
     );
 }
 
+/// A paragraph, then a table with a header row and `rows` body rows.
+fn long_table_chapter(rows: usize) -> String {
+    let rows: String = (0..rows)
+        .map(|i| format!("<tr><td>{i}</td><td>{}</td></tr>", prose(i, 2 + i % 4)))
+        .collect();
+    format!(
+        "<p>{}</p><table><tr><th>Number</th><th>Description</th></tr>{rows}</table>",
+        prose(0, 60)
+    )
+}
+
+#[rstest::rstest]
+#[case::table(long_table_chapter(2000))]
+#[case::code_block(code_chapter(2000))]
+#[tokio::test]
+#[cfg_attr(debug_assertions, ignore = "timing needs a release build")]
+async fn paginating_a_long_block_is_fast(#[case] chapter: String) {
+    let (mut viewer, ..) = paginated_viewer(chapter).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    // Learn the page area, then time the pagination alone.
+    paginate(&mut viewer, VIEWPORTS[1]);
+    viewer.pagination_cache.clear();
+    let started = std::time::Instant::now();
+    viewer.maybe_repaginate();
+    let elapsed = started.elapsed();
+    let total = viewer.total_pages();
+    assert!(total > 20, "expected many pages, got {total}");
+    assert!(
+        elapsed < std::time::Duration::from_millis(500),
+        "paginating {total} pages took {elapsed:?}"
+    );
+}
+
 /// Check that every page of the active chapter is filled down to its bottom
 /// margin without overflowing: each page but the last leaves less room than
 /// another line.
