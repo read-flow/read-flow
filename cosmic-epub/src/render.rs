@@ -31,18 +31,48 @@ use epub::TableCell;
 use epub::TextAlign;
 use epub::TextSpan;
 
-use crate::ICON_SIZE;
-use crate::fl;
-use crate::page::epub_viewer::BlockCut;
-use crate::page::epub_viewer::BlockHighlight;
-use crate::page::epub_viewer::EpubViewerMessage;
-use crate::page::epub_viewer::char_offset_to_byte;
-use crate::page::epub_viewer::slice_spans;
-use crate::page::image_viewer::ViewerImage;
+use crate::pagination::BlockCut;
+use crate::pagination::char_offset_to_byte;
+use crate::pagination::slice_spans;
+use crate::pagination::{
+    self,
+};
+
+const ICON_SIZE: u16 = 16;
+
+/// How a block should be visually highlighted.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BlockHighlight {
+    /// No highlight.
+    None,
+    /// Subtle tint — a search match that is not the current one.
+    SearchMatch,
+    /// Strong accent — the current search match or a nav-target flash.
+    Current,
+}
+
+/// User interactions emitted by a rendered block.
+#[derive(Clone, Debug)]
+pub enum RenderMessage {
+    FollowLink(String),
+    CopyCodeBlock(String),
+    OpenImageViewer(BookImage),
+}
+
+#[derive(Clone, Debug)]
+pub enum BookImage {
+    Raster {
+        handle: widget::image::Handle,
+        natural_width: u32,
+        natural_height: u32,
+    },
+    Svg(widget::svg::Handle),
+}
 
 #[derive(Clone, Copy)]
-pub(super) struct RenderContext<'a> {
+pub struct RenderContext<'a> {
     pub font_size: f32,
+    pub copy_code_label: fn() -> String,
     pub family: font::Family,
     pub max_image_height: f32,
     /// Stable image handles keyed by data pointer, to avoid re-creating handles
@@ -55,7 +85,7 @@ pub(super) struct RenderContext<'a> {
 const PARAGRAPH_LINE_HEIGHT: LineHeight = LineHeight::Relative(1.4);
 
 /// Font size of a paragraph with `style` at the reader's `font_size`.
-pub(super) fn paragraph_font_size(style: &BlockStyle, font_size: f32) -> f32 {
+pub fn paragraph_font_size(style: &BlockStyle, font_size: f32) -> f32 {
     style
         .font_size_em
         .map(|em| em * font_size)
@@ -64,7 +94,7 @@ pub(super) fn paragraph_font_size(style: &BlockStyle, font_size: f32) -> f32 {
 
 /// Font size of a styled heading of `level` with `style` at the reader's
 /// `font_size`.
-pub(super) fn heading_font_size(level: u8, style: &BlockStyle, font_size: f32) -> f32 {
+pub fn heading_font_size(level: u8, style: &BlockStyle, font_size: f32) -> f32 {
     let base_size = match level {
         1 => font_size * 2.0,
         2 => font_size * 1.75,
@@ -80,12 +110,12 @@ pub(super) fn heading_font_size(level: u8, style: &BlockStyle, font_size: f32) -
 
 /// The spans a paragraph is drawn with: its styled spans, or its plain `text`
 /// as a single span in the reader's font.
-pub(super) fn paragraph_spans<'a>(
+pub fn paragraph_spans<'a>(
     text: &'a str,
     spans: &'a [TextSpan],
     family: font::Family,
     size: f32,
-) -> Vec<Span<'a, EpubViewerMessage>> {
+) -> Vec<Span<'a, RenderMessage>> {
     if spans.is_empty() {
         vec![span(text).font(Font {
             family,
@@ -97,12 +127,12 @@ pub(super) fn paragraph_spans<'a>(
 }
 
 /// Owned variant of [`paragraph_spans`], for paragraphs split across pages.
-pub(super) fn owned_paragraph_spans(
+pub fn owned_paragraph_spans(
     text: String,
     spans: Vec<TextSpan>,
     family: font::Family,
     size: f32,
-) -> Vec<Span<'static, EpubViewerMessage>> {
+) -> Vec<Span<'static, RenderMessage>> {
     if spans.is_empty() {
         vec![span(text).font(Font {
             family,
@@ -118,11 +148,11 @@ pub(super) fn owned_paragraph_spans(
 
 /// Draw paragraph `spans`.
 fn paragraph_text<'a>(
-    spans: Vec<Span<'a, EpubViewerMessage>>,
+    spans: Vec<Span<'a, RenderMessage>>,
     style: &BlockStyle,
     family: font::Family,
     size: f32,
-) -> Element<'a, EpubViewerMessage> {
+) -> Element<'a, RenderMessage> {
     apply_text_align(
         rich_text(spans)
             .on_link_click(|m| m)
@@ -141,8 +171,8 @@ fn paragraph_text<'a>(
 
 /// Lay out paragraph `spans` `width` pixels wide exactly as [`paragraph_text`]
 /// draws them, excluding the block margins (see [`block_margins`]).
-pub(super) fn layout_paragraph(
-    spans: &[Span<'_, EpubViewerMessage>],
+pub fn layout_paragraph(
+    spans: &[Span<'_, RenderMessage>],
     style: &BlockStyle,
     family: font::Family,
     size: f32,
@@ -167,14 +197,14 @@ pub(super) fn layout_paragraph(
 
 /// Render a partial paragraph (split at page boundary) using owned text and span data.
 /// The returned element is self-contained — it does not borrow from any local variables.
-pub(super) fn render_partial_paragraph<'a>(
+pub fn render_partial_paragraph<'a>(
     text: String,
     spans: Vec<TextSpan>,
     style: &'a BlockStyle,
     highlight: BlockHighlight,
     font_size: f32,
     family: font::Family,
-) -> Element<'a, EpubViewerMessage> {
+) -> Element<'a, RenderMessage> {
     let size = paragraph_font_size(style, font_size);
     apply_highlight(
         paragraph_text(
@@ -193,7 +223,7 @@ pub(super) fn render_partial_paragraph<'a>(
 const PREFORMATTED_LINE_HEIGHT: LineHeight = LineHeight::Relative(1.4);
 
 /// Padding between a code block's background and its text.
-pub(super) fn preformatted_padding() -> Padding {
+pub fn preformatted_padding() -> Padding {
     let cosmic_theme::Spacing {
         space_xxs, space_s, ..
     } = theme::active().cosmic().spacing;
@@ -203,9 +233,9 @@ pub(super) fn preformatted_padding() -> Padding {
 /// Draw code block `spans` in the monospace font at the reader's font `size`,
 /// wrapping lines too long for the page.
 fn preformatted_text<'a>(
-    spans: Vec<Span<'a, EpubViewerMessage>>,
+    spans: Vec<Span<'a, RenderMessage>>,
     size: f32,
-) -> Element<'a, EpubViewerMessage> {
+) -> Element<'a, RenderMessage> {
     rich_text(spans)
         .on_link_click(|m| m)
         .size(size)
@@ -219,11 +249,7 @@ fn preformatted_text<'a>(
 /// Lay out code block `spans` `width` pixels wide exactly as
 /// [`preformatted_text`] draws them, excluding the padding (see
 /// [`preformatted_padding`]).
-pub(super) fn layout_preformatted(
-    spans: &[Span<'_, EpubViewerMessage>],
-    size: f32,
-    width: f32,
-) -> Paragraph {
+pub fn layout_preformatted(spans: &[Span<'_, RenderMessage>], size: f32, width: f32) -> Paragraph {
     Paragraph::with_spans(cosmic::iced::advanced::Text {
         content: spans,
         bounds: Size::new(width, f32::INFINITY),
@@ -241,10 +267,11 @@ pub(super) fn layout_preformatted(
 /// A code block showing `spans`; `text_to_copy`, when `Some`, adds a copy
 /// button that copies it.
 fn code_block<'a>(
-    spans: Vec<Span<'a, EpubViewerMessage>>,
+    spans: Vec<Span<'a, RenderMessage>>,
     size: f32,
     text_to_copy: Option<String>,
-) -> Element<'a, EpubViewerMessage> {
+    copy_code_label: String,
+) -> Element<'a, RenderMessage> {
     let code_block = widget::container(preformatted_text(spans, size))
         .padding(preformatted_padding())
         .class(Container::Secondary)
@@ -253,8 +280,8 @@ fn code_block<'a>(
         let copy_button = widget::row::with_children(vec![
             widget::space::horizontal().width(Length::Fill).into(),
             widget::button::icon(widget::icon::from_name("edit-copy-symbolic").size(ICON_SIZE))
-                .on_press(EpubViewerMessage::CopyCodeBlock(text))
-                .tooltip(fl!("epub-viewer-copy-code"))
+                .on_press(RenderMessage::CopyCodeBlock(text))
+                .tooltip(copy_code_label)
                 .into(),
         ]);
         cosmic::iced::widget::stack(vec![code_block.into(), copy_button.into()]).into()
@@ -266,23 +293,25 @@ fn code_block<'a>(
 /// Render a partial preformatted block (split at a page boundary) using owned data.
 /// `text` and `spans` must already be sliced to the visible char range by the caller.
 /// `full_text_to_copy`, when `Some`, adds a copy button that copies the entire block content.
-pub(super) fn render_partial_preformatted(
+pub fn render_partial_preformatted(
     text: String,
     spans: Vec<TextSpan>,
     font_size: f32,
     full_text_to_copy: Option<String>,
-) -> Element<'static, EpubViewerMessage> {
+    copy_code_label: String,
+) -> Element<'static, RenderMessage> {
     code_block(
         owned_paragraph_spans(text, spans, cosmic::font::mono().family, font_size),
         font_size,
         full_text_to_copy,
+        copy_code_label,
     )
 }
 
-pub(super) fn apply_highlight<'a>(
-    inner: Element<'a, EpubViewerMessage>,
+pub fn apply_highlight<'a>(
+    inner: Element<'a, RenderMessage>,
     highlight: BlockHighlight,
-) -> Element<'a, EpubViewerMessage> {
+) -> Element<'a, RenderMessage> {
     match highlight {
         BlockHighlight::None => inner,
         BlockHighlight::Current => widget::container(inner)
@@ -314,15 +343,15 @@ pub(super) fn apply_highlight<'a>(
 }
 
 impl<'a> RenderContext<'a> {
-    pub(super) fn render_block(
+    pub fn render_block(
         &self,
         block: &'a ContentBlock,
         highlight: BlockHighlight,
-    ) -> Element<'a, EpubViewerMessage> {
+    ) -> Element<'a, RenderMessage> {
         apply_highlight(self.render_block_inner(block), highlight)
     }
 
-    fn render_block_inner(&self, block: &'a ContentBlock) -> Element<'a, EpubViewerMessage> {
+    fn render_block_inner(&self, block: &'a ContentBlock) -> Element<'a, RenderMessage> {
         let font_size = self.font_size;
         let family = self.family;
         let max_image_height = self.max_image_height;
@@ -393,6 +422,7 @@ impl<'a> RenderContext<'a> {
                 paragraph_spans(text, spans, cosmic::font::mono().family, font_size),
                 font_size,
                 Some(text.clone()),
+                (self.copy_code_label)(),
             ),
             ContentBlock::BlockQuote { .. }
             | ContentBlock::Footnote { .. }
@@ -400,7 +430,7 @@ impl<'a> RenderContext<'a> {
                 self.render_partial_container(block, BlockCut::default(), None)
             }
             ContentBlock::UnorderedList { .. } | ContentBlock::OrderedList { .. } => {
-                let (items, ordered_start) = super::list_parts(block).unwrap_or_default();
+                let (items, ordered_start) = pagination::list_parts(block).unwrap_or_default();
                 render_partial_list(
                     items,
                     ordered_start,
@@ -431,7 +461,7 @@ impl<'a> RenderContext<'a> {
                         .and_then(|r| r.into_dimensions().ok())
                         .unwrap_or((0u32, 0u32));
                 widget::mouse_area(container)
-                    .on_press(EpubViewerMessage::OpenImageViewer(ViewerImage::Raster {
+                    .on_press(RenderMessage::OpenImageViewer(BookImage::Raster {
                         handle,
                         natural_width,
                         natural_height,
@@ -459,7 +489,7 @@ impl<'a> RenderContext<'a> {
                     .max_height(max_image_height)
                     .align_x(Horizontal::Center);
                 widget::mouse_area(container)
-                    .on_press(EpubViewerMessage::OpenImageViewer(ViewerImage::Svg(handle)))
+                    .on_press(RenderMessage::OpenImageViewer(BookImage::Svg(handle)))
                     .into()
             }
             ContentBlock::Table { rows } => {
@@ -476,7 +506,7 @@ impl<'a> RenderContext<'a> {
     /// The context container `container` draws its child blocks with: images
     /// no taller than fit inside the container's padding, and in a footnote,
     /// footnote text size.
-    pub(super) fn child_context(&self, container: &ContentBlock) -> Self {
+    pub fn child_context(&self, container: &ContentBlock) -> Self {
         let max_image_height = (self.max_image_height - container_padding(container).y()).max(0.0);
         let font_size = match container {
             ContentBlock::Footnote { .. } => footnote_font_size(self.font_size),
@@ -492,12 +522,12 @@ impl<'a> RenderContext<'a> {
     /// Draw container `block` (see [`container_children`]) from `from` up to
     /// `to` (`None`: to its end). Every part keeps the container's padding and
     /// background; a figure draws its caption on its last part only.
-    pub(super) fn render_partial_container(
+    pub fn render_partial_container(
         &self,
         block: &'a ContentBlock,
         from: BlockCut,
         to: Option<BlockCut>,
-    ) -> Element<'a, EpubViewerMessage> {
+    ) -> Element<'a, RenderMessage> {
         let children = container_children(block).unwrap_or_default();
         let end = to
             .map_or(children.len(), |to| {
@@ -509,13 +539,13 @@ impl<'a> RenderContext<'a> {
             .width(Length::Fill);
         for (index, child) in children.iter().enumerate().take(end).skip(from.child) {
             let child_from = if index == from.child {
-                super::container_child_cut(child, from.char_offset)
+                pagination::container_child_cut(child, from.char_offset)
             } else {
                 BlockCut::default()
             };
             let child_to = to
                 .filter(|to| to.child == index)
-                .map(|to| super::container_child_cut(child, to.char_offset));
+                .map(|to| pagination::container_child_cut(child, to.char_offset));
             col = col.push(self.render_container_child(block, index, child_from, child_to));
         }
         if to.is_none()
@@ -541,13 +571,13 @@ impl<'a> RenderContext<'a> {
     /// (`None`: to its end). A footnote draws its paragraphs after their
     /// prefix (see [`footnote_paragraph_spans`]), and its other children in
     /// the container's [`child_context`](Self::child_context).
-    pub(super) fn render_container_child(
+    pub fn render_container_child(
         &self,
         container: &'a ContentBlock,
         index: usize,
         from: BlockCut,
         to: Option<BlockCut>,
-    ) -> Element<'a, EpubViewerMessage> {
+    ) -> Element<'a, RenderMessage> {
         let child = &container_children(container).unwrap_or_default()[index];
         match (container, child) {
             (ContentBlock::Footnote { id, .. }, ContentBlock::Paragraph { text, spans, .. }) => {
@@ -567,7 +597,7 @@ impl<'a> RenderContext<'a> {
                     footnote_font_size(self.font_size),
                 )
             }
-            _ => super::render_block_part(
+            _ => pagination::render_block_part(
                 &self.child_context(container),
                 child,
                 from,
@@ -579,10 +609,7 @@ impl<'a> RenderContext<'a> {
 
     /// The caption figure `block` draws below its blocks; `None` when it has
     /// none or is not a figure.
-    pub(super) fn figure_caption(
-        &self,
-        block: &'a ContentBlock,
-    ) -> Option<Element<'a, EpubViewerMessage>> {
+    pub fn figure_caption(&self, block: &'a ContentBlock) -> Option<Element<'a, RenderMessage>> {
         let ContentBlock::Figure {
             caption,
             caption_text,
@@ -628,7 +655,7 @@ impl<'a> RenderContext<'a> {
 }
 
 /// Padding between the edge of container `block` and its children.
-pub(super) fn container_padding(block: &ContentBlock) -> Padding {
+pub fn container_padding(block: &ContentBlock) -> Padding {
     match block {
         ContentBlock::BlockQuote { .. } | ContentBlock::Footnote { .. } => {
             let cosmic_theme::Spacing {
@@ -641,13 +668,13 @@ pub(super) fn container_padding(block: &ContentBlock) -> Padding {
 }
 
 /// Space between the children of a container.
-pub(super) fn container_child_spacing() -> f32 {
+pub fn container_child_spacing() -> f32 {
     theme::active().cosmic().spacing.space_xxs as f32
 }
 
 /// The divider a table draws above a row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum TableDivider {
+pub enum TableDivider {
     Light,
     /// Above the first body row after a header row.
     Heavy,
@@ -655,7 +682,7 @@ pub(super) enum TableDivider {
 
 /// A row a part of a table draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct TableRowPart {
+pub struct TableRowPart {
     /// Index of the row in the table.
     pub index: usize,
     /// The divider drawn above the row.
@@ -672,7 +699,7 @@ fn is_table_header_row(row: &[TableCell]) -> bool {
 /// header cell whose other cells are empty, such as a corner cell. A body row
 /// starting with a header cell (a row label) is not one of them, although it
 /// is drawn as a header row.
-pub(super) fn table_header_rows(rows: &[Vec<TableCell>]) -> usize {
+pub fn table_header_rows(rows: &[Vec<TableCell>]) -> usize {
     rows.iter()
         .take_while(|row| {
             is_table_header_row(row)
@@ -688,7 +715,7 @@ pub(super) fn table_header_rows(rows: &[Vec<TableCell>]) -> usize {
 /// (see [`BlockCut`]), then rows `from.child` up to `to.child`. Each row has a
 /// light divider above it, except the first body row after a header row,
 /// which has a heavy one.
-pub(super) fn table_part_rows(
+pub fn table_part_rows(
     rows: &[Vec<TableCell>],
     from: BlockCut,
     to: Option<BlockCut>,
@@ -720,13 +747,13 @@ pub(super) fn table_part_rows(
 
 /// Draw the part of table `rows` from `from` up to `to` (`None`: to its end):
 /// the rows [`table_part_rows`] lists, one below the other.
-pub(super) fn render_table_rows(
+pub fn render_table_rows(
     rows: &[Vec<TableCell>],
     from: BlockCut,
     to: Option<BlockCut>,
     font_size: f32,
     family: font::Family,
-) -> Element<'_, EpubViewerMessage> {
+) -> Element<'_, RenderMessage> {
     let parts = table_part_rows(rows, from, to);
     let mut col = widget::column::with_capacity(parts.len())
         .spacing(0)
@@ -743,12 +770,12 @@ pub(super) fn render_table_rows(
 }
 
 /// Draw table row `row` below `divider`, its header cells in bold.
-pub(super) fn render_table_row(
+pub fn render_table_row(
     row: &[TableCell],
     divider: TableDivider,
     font_size: f32,
     family: font::Family,
-) -> Element<'_, EpubViewerMessage> {
+) -> Element<'_, RenderMessage> {
     let cosmic_theme::Spacing {
         space_xxs, space_s, ..
     } = theme::active().cosmic().spacing;
@@ -756,7 +783,7 @@ pub(super) fn render_table_row(
     let mut row_widget = widget::Row::new().width(Length::Fill);
 
     for cell in row {
-        let cell_spans: Vec<cosmic::iced::widget::text::Span<'_, EpubViewerMessage>> =
+        let cell_spans: Vec<cosmic::iced::widget::text::Span<'_, RenderMessage>> =
             if !cell.spans.is_empty() {
                 cell.spans
                     .iter()
@@ -792,7 +819,7 @@ pub(super) fn render_table_row(
                 vec![]
             };
 
-        let cell_content: Element<'_, EpubViewerMessage> = if !cell_spans.is_empty() {
+        let cell_content: Element<'_, RenderMessage> = if !cell_spans.is_empty() {
             rich_text(cell_spans)
                 .on_link_click(|m| m)
                 .size(font_size)
@@ -809,7 +836,7 @@ pub(super) fn render_table_row(
         );
     }
 
-    let divider: Element<'_, EpubViewerMessage> = match divider {
+    let divider: Element<'_, RenderMessage> = match divider {
         TableDivider::Light => widget::divider::horizontal::light().into(),
         TableDivider::Heavy => widget::divider::horizontal::heavy().into(),
     };
@@ -830,7 +857,7 @@ fn text_align_horizontal(style: &BlockStyle) -> cosmic::iced::alignment::Horizon
 }
 
 /// Top and bottom margin in pixels from `style` (em converted at a 16px base).
-pub(super) fn block_margins(style: &BlockStyle) -> (f32, f32) {
+pub fn block_margins(style: &BlockStyle) -> (f32, f32) {
     (
         style.margin_top_em.unwrap_or(0.0) * 16.0,
         style.margin_bottom_em.unwrap_or(0.0) * 16.0,
@@ -840,9 +867,9 @@ pub(super) fn block_margins(style: &BlockStyle) -> (f32, f32) {
 /// Wrap `el` in a container that applies margin-top / margin-bottom from `style`.
 /// If no margins are set the element is returned as-is.
 fn apply_text_align<'a>(
-    el: Element<'a, EpubViewerMessage>,
+    el: Element<'a, RenderMessage>,
     style: &BlockStyle,
-) -> Element<'a, EpubViewerMessage> {
+) -> Element<'a, RenderMessage> {
     use cosmic::iced::widget::container;
     let has_margin = style.margin_top_em.is_some() || style.margin_bottom_em.is_some();
     if !has_margin {
@@ -861,14 +888,14 @@ fn apply_text_align<'a>(
 }
 
 fn style_span<'a>(
-    mut s: cosmic::iced::widget::text::Span<'a, EpubViewerMessage>,
+    mut s: cosmic::iced::widget::text::Span<'a, RenderMessage>,
     family: font::Family,
     font_size: f32,
     inline: &InlineStyle,
     color: Option<[u8; 3]>,
     font_size_em: Option<f32>,
     link: Option<String>,
-) -> cosmic::iced::widget::text::Span<'a, EpubViewerMessage> {
+) -> cosmic::iced::widget::text::Span<'a, RenderMessage> {
     let weight = if inline.bold {
         font::Weight::Bold
     } else {
@@ -908,7 +935,7 @@ fn style_span<'a>(
         s = s.size(em * font_size);
     }
     if let Some(href) = link {
-        s = s.link(EpubViewerMessage::FollowLink(href));
+        s = s.link(RenderMessage::FollowLink(href));
         if color.is_none() {
             s = s.color(theme::active().cosmic().accent_color());
         }
@@ -920,7 +947,7 @@ fn owned_styled_span(
     ts: TextSpan,
     family: font::Family,
     font_size: f32,
-) -> cosmic::iced::widget::text::Span<'static, EpubViewerMessage> {
+) -> cosmic::iced::widget::text::Span<'static, RenderMessage> {
     style_span(
         span(ts.text),
         family,
@@ -935,7 +962,7 @@ fn owned_styled_span(
 /// What a page shows of one list item: characters `start..end` of item
 /// `index`, after `prefix` when it shows the item from its beginning.
 #[derive(Debug)]
-pub(super) struct ListItemPart {
+pub struct ListItemPart {
     pub index: usize,
     pub prefix: Option<String>,
     pub start: usize,
@@ -954,7 +981,7 @@ fn list_item_prefix(ordered_start: Option<u32>, index: usize) -> String {
 /// The parts of list `items` (numbered from `ordered_start` when ordered)
 /// shown from `from` up to `to` (`None`: to the end of the list). A cut at
 /// character 0 of an item falls between items.
-pub(super) fn list_item_parts(
+pub fn list_item_parts(
     items: &[ListItem],
     ordered_start: Option<u32>,
     from: BlockCut,
@@ -986,12 +1013,12 @@ pub(super) fn list_item_parts(
 
 /// The spans list item `part` of `item` is drawn with: its prefix, then the
 /// item's text as a paragraph's.
-pub(super) fn list_item_part_spans<'a>(
+pub fn list_item_part_spans<'a>(
     item: &'a ListItem,
     part: &ListItemPart,
     family: font::Family,
     size: f32,
-) -> Vec<Span<'a, EpubViewerMessage>> {
+) -> Vec<Span<'a, RenderMessage>> {
     prefixed_spans(
         part.prefix.clone(),
         &item.text,
@@ -1013,7 +1040,7 @@ fn prefixed_spans<'a>(
     end: usize,
     family: font::Family,
     size: f32,
-) -> Vec<Span<'a, EpubViewerMessage>> {
+) -> Vec<Span<'a, RenderMessage>> {
     let prefix = prefix.map(|prefix| {
         span(prefix).font(Font {
             family,
@@ -1037,7 +1064,7 @@ fn prefixed_spans<'a>(
 }
 
 /// Font size of a footnote's text at the reader's `font_size`.
-pub(super) fn footnote_font_size(font_size: f32) -> f32 {
+pub fn footnote_font_size(font_size: f32) -> f32 {
     (font_size * 0.8).max(10.0)
 }
 
@@ -1061,7 +1088,7 @@ fn footnote_prefix(id: &str, index: usize, start: usize) -> String {
 /// `spans`) of footnote `id` are drawn with, after the paragraph's prefix
 /// (see [`footnote_prefix`]), at the reader's `font_size`.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn footnote_paragraph_spans<'a>(
+pub fn footnote_paragraph_spans<'a>(
     id: &str,
     index: usize,
     text: &'a str,
@@ -1070,7 +1097,7 @@ pub(super) fn footnote_paragraph_spans<'a>(
     end: usize,
     family: font::Family,
     font_size: f32,
-) -> Vec<Span<'a, EpubViewerMessage>> {
+) -> Vec<Span<'a, RenderMessage>> {
     prefixed_spans(
         Some(footnote_prefix(id, index, start)),
         text,
@@ -1084,7 +1111,7 @@ pub(super) fn footnote_paragraph_spans<'a>(
 
 /// The child blocks of a block quote, footnote or figure, which draw them in
 /// a column; `None` for other blocks.
-pub(super) fn container_children(block: &ContentBlock) -> Option<&[ContentBlock]> {
+pub fn container_children(block: &ContentBlock) -> Option<&[ContentBlock]> {
     match block {
         ContentBlock::BlockQuote { children } => Some(children),
         ContentBlock::Footnote { blocks, .. } | ContentBlock::Figure { blocks, .. } => Some(blocks),
@@ -1093,14 +1120,14 @@ pub(super) fn container_children(block: &ContentBlock) -> Option<&[ContentBlock]
 }
 
 /// Space between the items of a list.
-pub(super) fn list_item_spacing() -> f32 {
+pub fn list_item_spacing() -> f32 {
     theme::active().cosmic().spacing.space_xxs as f32
 }
 
 /// Lay out list item `spans` `width` pixels wide exactly as
 /// [`render_partial_list`] draws them.
-pub(super) fn layout_list_item(
-    spans: &[Span<'_, EpubViewerMessage>],
+pub fn layout_list_item(
+    spans: &[Span<'_, RenderMessage>],
     family: font::Family,
     size: f32,
     width: f32,
@@ -1111,14 +1138,14 @@ pub(super) fn layout_list_item(
 /// Draw list `items` (numbered from `ordered_start` when ordered) from `from`
 /// up to `to` (`None`: to the end of the list), each item as a paragraph at
 /// the reader's `font_size`.
-pub(super) fn render_partial_list<'a>(
+pub fn render_partial_list<'a>(
     items: &'a [ListItem],
     ordered_start: Option<u32>,
     from: BlockCut,
     to: Option<BlockCut>,
     font_size: f32,
     family: font::Family,
-) -> Element<'a, EpubViewerMessage> {
+) -> Element<'a, RenderMessage> {
     let parts = list_item_parts(items, ordered_start, from, to);
     let mut col = widget::column::with_capacity(parts.len())
         .spacing(list_item_spacing())
@@ -1138,7 +1165,7 @@ fn styled_span<'a>(
     ts: &'a TextSpan,
     family: font::Family,
     font_size: f32,
-) -> cosmic::iced::widget::text::Span<'a, EpubViewerMessage> {
+) -> cosmic::iced::widget::text::Span<'a, RenderMessage> {
     style_span(
         span(ts.text.as_str()),
         family,

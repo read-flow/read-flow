@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=EPUB Reader
+Comment=Read EPUB books
+Exec=cosmic-epub-reader %f
+Icon=io.github.read_flow.CosmicEpubReader
+Terminal=false
+StartupNotify=true
+Categories=Office;Viewer;
+MimeType=application/epub+zip;
+Keywords=Book;Ebook;EPUB;

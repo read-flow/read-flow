@@ -12,12 +12,12 @@ use cosmic::iced::runtime::user_interface::UserInterface;
 use cosmic::widget;
 use epub::ContentBlock;
 
-use crate::page::epub_viewer::BlockHighlight;
-use crate::page::epub_viewer::EpubViewerMessage;
-use crate::page::epub_viewer::render::RenderContext;
+use crate::render::BlockHighlight;
+use crate::render::RenderContext;
+use crate::render::RenderMessage;
 
 /// A renderer that lays out elements without a window.
-pub(crate) fn headless_renderer() -> cosmic::Renderer {
+pub fn headless_renderer() -> cosmic::Renderer {
     futures::executor::block_on(<cosmic::Renderer as Headless>::new(
         cosmic::font::default(),
         cosmic::iced::Pixels(16.0),
@@ -28,7 +28,7 @@ pub(crate) fn headless_renderer() -> cosmic::Renderer {
 
 /// Lay out `element` in `bounds` with `renderer` and run `operation` over the
 /// laid-out widgets.
-pub(crate) fn lay_out<Message>(
+pub fn lay_out<Message>(
     renderer: &mut cosmic::Renderer,
     element: Element<'_, Message>,
     bounds: Size,
@@ -40,7 +40,7 @@ pub(crate) fn lay_out<Message>(
 
 /// Measures the height elements are laid out with.
 #[derive(Default)]
-pub(super) struct BlockMeasurer {
+pub struct BlockMeasurer {
     /// Created on first use, so a viewer that never measures needs none.
     renderer: Option<cosmic::Renderer>,
 }
@@ -51,7 +51,7 @@ impl BlockMeasurer {
     ///
     /// An element with a zero fixed width or height measures 0: a column
     /// leaves it out entirely, without spacing around it.
-    pub(super) fn height(&mut self, element: Element<'_, EpubViewerMessage>, width: f32) -> f32 {
+    pub fn height(&mut self, element: Element<'_, RenderMessage>, width: f32) -> f32 {
         if element.as_widget().size_hint().is_void() {
             return 0.0;
         }
@@ -83,7 +83,7 @@ impl BlockMeasurer {
 }
 
 /// Height of `block` drawn by `ctx` `width` pixels wide.
-pub(super) fn block_height(
+pub fn block_height(
     measurer: &mut BlockMeasurer,
     ctx: &RenderContext<'_>,
     block: &ContentBlock,

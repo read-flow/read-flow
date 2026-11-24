@@ -475,6 +475,12 @@ COSMIC-only setting to choose which EPUB viewer backend opens a document:
 the native =cosmic_text= renderer, MuPDF, or the system's external
 default application.
 
+*** DONE Standalone COSMIC EPUB reader
+Open local EPUB files from COSMIC Files or a file picker, with a window
+per book. Restore the reading position, show the table of contents,
+adjust text size, and select one page, two pages, or automatic layout.
+The reader uses the shared =cosmic-epub= rendering and pagination crate.
+
 *** TODO Per-extension viewer configuration
 Generalize the EPUB-only viewer-backend choice into a per-extension →
 viewer-backend mapping (config schema + Preferences UI), so any

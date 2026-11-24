@@ -1,4 +1,14 @@
-//! EPUB chapter loading and COSMIC image resources for reader applications.
+//! EPUB chapter loading and a reusable libcosmic reading surface.
+//!
+//! Use [`reader::Reader`] for a paginated book with chapter navigation and a
+//! restorable position, or [`page_view::PageView`] in a host that manages its
+//! own reader state. Hosts supply persistence and handle view messages.
+
+pub mod measure;
+pub mod page_view;
+pub mod pagination;
+pub mod reader;
+pub mod render;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -34,6 +44,13 @@ pub struct EpubChapter {
 impl EpubChapter {
     pub fn blocks(&self) -> &[ContentBlock] {
         &self.blocks
+    }
+
+    /// Locate a top-level target, including footnotes represented as blocks.
+    pub fn block_for_fragment(&self, fragment: &str) -> Option<usize> {
+        self.blocks.iter().position(|block| {
+            matches!(block, ContentBlock::Anchor { id } | ContentBlock::Footnote { id, .. } if id == fragment)
+        })
     }
 
     /// Build a locator for a top-level block in the reading order.

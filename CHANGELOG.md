@@ -12,6 +12,8 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+- Standalone EPUB Reader for COSMIC Desktop. Open local EPUBs in separate windows from COSMIC Files or the app’s file picker, resume reading, and choose the text size and page layout.
+
 ### Changed
 
 - Updated to the latest libcosmic. The custom interface and monospace fonts are now part of the app theme, so they apply together with the other theme overrides and survive system toolkit setting changes.

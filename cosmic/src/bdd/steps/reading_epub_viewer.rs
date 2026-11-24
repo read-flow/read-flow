@@ -24,3 +24,21 @@ async fn epub_content_displayed(world: &mut BddWorld) {
         "EPUB could not be opened for document {doc_api_guid}"
     );
 }
+
+#[then("the standalone reader can open and resume a local EPUB")]
+async fn standalone_epub_reopens_at_reading_position(_world: &mut BddWorld) {
+    use std::path::Path;
+
+    use cosmic_epub::reader::Reader;
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../features/fixtures/sample.epub");
+    let mut reader = Reader::open(&path, None).expect("open a local EPUB");
+    assert!(!reader.toc().is_empty());
+    reader.select_nav(0);
+    let saved = reader.position().expect("the book has a reading position");
+    let reopened = Reader::open(&path, Some(saved.clone())).expect("reopen the EPUB");
+    let restored = reopened.position().expect("restore the reading position");
+    assert_eq!(restored.chapter_href, saved.chapter_href);
+    assert_eq!(restored.cfi, saved.cfi);
+    assert_eq!(restored.cut, saved.cut);
+}

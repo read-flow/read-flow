@@ -6,6 +6,8 @@ rust-version.workspace = true
 license = "AGPL-3.0-or-later"
 
 [dependencies]
+futures.workspace = true
+image = { workspace = true, features = ["png", "jpeg", "gif", "webp"] }
 epub = { path = "../epub" }
 libcosmic = { workspace = true }
 tracing = { workspace = true }

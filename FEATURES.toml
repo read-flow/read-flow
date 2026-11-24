@@ -166,6 +166,11 @@ description = "Read EPUB documents"
 surfaces = ["cosmic", "pwa"]
 
 [[feature]]
+id = "reading.standalone_epub"
+description = "Open a local EPUB in the standalone COSMIC reader and restore its reading position"
+surfaces = ["cosmic"]
+
+[[feature]]
 id = "reading.pdf_viewer"
 description = "Read PDF documents"
 surfaces = ["cosmic", "pwa"]

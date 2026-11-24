@@ -1379,8 +1379,22 @@ name = "cosmic-epub"
 version = "0.6.0"
 dependencies = [
  "epub",
+ "futures",
+ "image",
  "libcosmic",
  "tracing",
+]
+
+[[package]]
+name = "cosmic-epub-reader"
+version = "0.6.0"
+dependencies = [
+ "cosmic-epub",
+ "libcosmic",
+ "rfd",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

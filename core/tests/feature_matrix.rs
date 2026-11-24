@@ -10,7 +10,7 @@
 //!   - TS/Svelte: `// @feature: documents.select_cover`
 //!
 //! Surface → scanned tree:
-//!   - `cosmic` → `cosmic/src`, `widgets/src`
+//!   - `cosmic` → `cosmic/src`, `widgets/src`, `epub-reader/src`
 //!   - `pwa`    → `pwa/src`
 //!   - `rest`   → `core/src`
 //!
@@ -57,7 +57,7 @@ fn workspace_root() -> PathBuf {
 
 fn surface_dirs(surface: &str) -> Vec<&'static str> {
     match surface {
-        "cosmic" => vec!["cosmic/src", "widgets/src"],
+        "cosmic" => vec!["cosmic/src", "widgets/src", "epub-reader/src"],
         "pwa" => vec!["pwa/src"],
         "rest" => vec!["core/src"],
         other => panic!("unknown surface {other}"),

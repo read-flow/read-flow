@@ -1,0 +1,16 @@
+[package]
+name = "cosmic-epub-reader"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+cosmic-epub = { path = "../cosmic-epub" }
+libcosmic = { workspace = true, features = ["wgpu"] }
+rfd.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["rt"] }
+
+[dev-dependencies]
+tempfile.workspace = true

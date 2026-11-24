@@ -4,6 +4,7 @@ members = [
     "cosmic",
     "cosmic-epub",
     "epub",
+    "epub-reader",
     "provider",
     "widgets",
 ]

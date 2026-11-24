@@ -33,6 +33,7 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `reading.status` | ✅ | ✅ | ✅ | Set a document's reading status (unread/reading/read) |
 | `reading.progress` | ✅ | ✅ | ✅ | Save and restore reading position |
 | `reading.epub_viewer` | ✅ | ✅ |  | Read EPUB documents |
+| `reading.standalone_epub` | ✅ |  |  | Open a local EPUB in the standalone COSMIC reader and restore its reading position |
 | `reading.pdf_viewer` | ✅ | ✅ |  | Read PDF documents |
 | `reading.image_viewer` | ✅ |  |  | View raster/SVG images |
 | `remotes.manage` | ✅ | ✅ |  | Add/edit/delete/reorder remote servers |
@@ -53,4 +54,4 @@ Legend: ✅ implemented · 🟡 planned (acknowledged gap) · ❌ missing · ⚠
 | `app.epub_viewer_choice` | ✅ |  |  | Open the current EPUB in the MuPDF viewer or an external application, from the viewer's context pane |
 | `app.theme_overrides` | ✅ |  |  | Per-app theme overrides (dark/light, accent, density, roundness, frosted glass, interface font, monospace font) without changing global COSMIC settings |
 
-_46 features tracked._
+_47 features tracked._

@@ -10,3 +10,7 @@ Feature: EPUB viewer
     And a document has been added to the library
     When I open the document for reading
     Then the EPUB content is displayed
+
+  @cosmic
+  Scenario: Reopening a local EPUB restores the reading position
+    Then the standalone reader can open and resume a local EPUB

@@ -75,6 +75,8 @@ Verify a download against `SHA256SUMS` from the release: `shasum -a 256 -c SHA25
 
 ## Build from source
 
+To install the standalone reader on COSMIC Desktop, see [EPUB Reader](epub-reader/README.md).
+
 You'll need the [Rust toolchain](https://rustup.rs/) and, for the web app, [Node.js](https://nodejs.org/) ≥ 20.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full list of prerequisites (including the Linux system
 libraries the desktop app needs).
