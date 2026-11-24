@@ -20,6 +20,19 @@ use crate::client::Client;
 use crate::client::ClientSelector;
 use crate::client::FilesClientError;
 
+#[derive(Debug, Clone)]
+pub struct MergeOutcome {
+    pub source: ClientSelector,
+    pub status: MergeStatus,
+}
+
+#[derive(Debug, Clone)]
+pub enum MergeStatus {
+    Merged,
+    Skipped,
+    Failed(String),
+}
+
 pub struct Aggregator {
     clients: HashMap<ClientSelector, Client>,
     application_module: Arc<ApplicationModule>,
@@ -233,72 +246,33 @@ impl Aggregator {
         &self,
         winner: &Document,
         losers: &[Document],
-    ) -> Result<(), FilesClientError> {
-        let local_client = self
+        retry_sources: Option<&[ClientSelector]>,
+    ) -> Vec<MergeOutcome> {
+        let sources = self
             .clients
-            .get(&ClientSelector::Local)
-            .ok_or(FilesClientError::NoSourcesAvailable)?;
-
-        let winner_guid = if winner
-            .contents
             .iter()
-            .any(|c| c.fingerprint == winner.document_guid)
-        {
-            let file_guid = winner
-                .contents
+            .filter(|(source, _)| retry_sources.is_none_or(|retry| retry.contains(source)));
+        futures_util::future::join_all(sources.map(|(source, client)| async move {
+            let winner_file = merge_files_on_source(winner, source).next();
+            let loser_files: Vec<_> = losers
                 .iter()
-                .flat_map(|c| c.sources.iter())
-                .next()
-                .ok_or(FilesClientError::NoSourcesAvailable)?
-                .guid
-                .clone();
-            local_client
-                .ensure_document_for_file(&file_guid)
-                .await?
-                .guid
-        } else {
-            winner.document_guid.clone()
-        };
-
-        let mut loser_guids = Vec::with_capacity(losers.len());
-        for loser in losers {
-            let guid = if loser
-                .contents
-                .iter()
-                .any(|c| c.fingerprint == loser.document_guid)
-            {
-                let file_guid = loser
-                    .contents
-                    .iter()
-                    .flat_map(|c| c.sources.iter())
-                    .next()
-                    .ok_or(FilesClientError::NoSourcesAvailable)?
-                    .guid
-                    .clone();
-                local_client
-                    .ensure_document_for_file(&file_guid)
-                    .await?
-                    .guid
-            } else {
-                loser.document_guid.clone()
+                .flat_map(|loser| merge_files_on_source(loser, source))
+                .collect();
+            let status = match winner_file {
+                Some(file) if !loser_files.is_empty() => {
+                    match merge_on_client(client, file, loser_files).await {
+                        Ok(()) => MergeStatus::Merged,
+                        Err(error) => MergeStatus::Failed(error.to_string()),
+                    }
+                }
+                _ => MergeStatus::Skipped,
             };
-            loser_guids.push(guid);
-        }
-
-        local_client
-            .merge_documents(&winner_guid, &loser_guids)
-            .await?;
-
-        for (selector, client) in &self.clients {
-            if selector.is_local() {
-                continue;
+            MergeOutcome {
+                source: source.clone(),
+                status,
             }
-            if let Err(e) = client.merge_documents(&winner_guid, &loser_guids).await {
-                tracing::warn!("error merging documents on {selector}: {e}");
-            }
-        }
-
-        Ok(())
+        }))
+        .await
     }
 
     /// @feature: documents.remove_format
@@ -825,6 +799,38 @@ pub struct DocumentContent {
     pub sources: Vec<DocumentSource>,
 }
 
+fn merge_files_on_source<'a>(
+    document: &'a Document,
+    source: &'a ClientSelector,
+) -> impl Iterator<Item = &'a str> {
+    document
+        .contents
+        .iter()
+        .flat_map(|content| &content.sources)
+        .filter(move |file| &file.client == source)
+        .map(|file| file.guid.as_str())
+}
+
+async fn merge_on_client(
+    client: &Client,
+    winner_file: &str,
+    loser_files: Vec<&str>,
+) -> Result<(), FilesClientError> {
+    let winner = client.ensure_document_for_file(winner_file).await?.guid;
+    let mut losers = Vec::new();
+    let mut seen = HashSet::new();
+    for file in loser_files.into_iter().filter(|file| seen.insert(*file)) {
+        let guid = client.ensure_document_for_file(file).await?.guid;
+        if guid != winner && !losers.contains(&guid) {
+            losers.push(guid);
+        }
+    }
+    if losers.is_empty() {
+        return Ok(());
+    }
+    client.merge_documents(&winner, &losers).await
+}
+
 #[derive(Clone)]
 pub struct Document {
     /// Primary identity — corresponds to a `documents.guid` row (or a synthetic
@@ -1097,5 +1103,82 @@ fn content_source_to_file(content: DocumentContent, source: DocumentSource) -> F
         archive_path: source.archive_path,
         archive_inner_path: source.archive_inner_path,
         imported_at: source.imported_at,
+    }
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use read_flow_core::client::FilesClient;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn merge_reports_independent_sources_and_retries_only_failures() {
+        let (module, provider, _db) = crate::test_support::document_provider().await;
+        let fixtures =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../features/fixtures");
+        let (mut winner, _winner_dir) = crate::test_support::scan_and_fetch_document(
+            &module,
+            &provider,
+            fixtures.join("sample.epub"),
+            "winner.epub",
+        )
+        .await;
+        let (mut loser, _loser_dir) = crate::test_support::scan_and_fetch_document(
+            &module,
+            &provider,
+            fixtures.join("sample2.epub"),
+            "loser.epub",
+        )
+        .await;
+
+        let remote = |port| {
+            Client::from(
+                FilesClient::new(
+                    format!("http://127.0.0.1:{port}")
+                        .parse::<url::Url>()
+                        .unwrap(),
+                    String::new(),
+                    String::new(),
+                    false,
+                )
+                .unwrap(),
+            )
+        };
+        let offline = remote(1);
+        let absent = remote(2);
+        let offline_id = offline.selector();
+        let absent_id = absent.selector();
+        for book in [&mut winner, &mut loser] {
+            let files = &mut book.contents[0].sources;
+            let mut copy = files[0].clone();
+            copy.client = offline_id.clone();
+            files.push(copy);
+        }
+
+        let aggregator = Aggregator::new(vec![module.clone().into(), offline, absent], module);
+        let outcomes = aggregator
+            .merge_documents(&winner, &[loser.clone()], None)
+            .await;
+        let outcome = |source: &ClientSelector| {
+            &outcomes
+                .iter()
+                .find(|outcome| &outcome.source == source)
+                .unwrap()
+                .status
+        };
+        assert!(matches!(
+            outcome(&ClientSelector::Local),
+            MergeStatus::Merged
+        ));
+        assert!(matches!(outcome(&offline_id), MergeStatus::Failed(_)));
+        assert!(matches!(outcome(&absent_id), MergeStatus::Skipped));
+
+        let retry = aggregator
+            .merge_documents(&winner, &[loser], Some(std::slice::from_ref(&offline_id)))
+            .await;
+        assert_eq!(retry.len(), 1);
+        assert_eq!(retry[0].source, offline_id);
+        assert!(matches!(retry[0].status, MergeStatus::Failed(_)));
     }
 }

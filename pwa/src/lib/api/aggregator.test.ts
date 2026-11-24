@@ -33,6 +33,7 @@ vi.mock('./client', () => ({
 
 import {
 	fetchAllFiles,
+	mergeDocuments,
 	fetchAllTags,
 	addTagsToFile,
 	removeTagsFromFile,
@@ -491,5 +492,41 @@ describe('fetchDocumentActivity', () => {
 			}));
 		const result = await fetchDocumentActivity('guid-abc');
 		expect(result.map((d) => d.id)).toEqual(['op-1', 'op-2']);
+	});
+});
+
+describe('mergeDocuments', () => {
+	it('resolves IDs per source and retries only the failed source', async () => {
+		mocks.sourcesToArray.mockResolvedValue([makeSource(1), makeSource(2), makeSource(3)]);
+		const mergeLocal = vi.fn().mockResolvedValue(undefined);
+		const mergeRemote = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined);
+		const resolve = vi.fn(async (guid: string) => ({ guid: `document-of-${guid}` }));
+		mocks.MockReadFlowClient.mockImplementation((source: Source) => ({
+			ensureDocumentForFile: resolve,
+			mergeDocuments: source.id === 1 ? mergeLocal : mergeRemote,
+		}));
+		const winner = {
+			...makeRemoteFile({ document_guid: 'other-sources-id' }),
+			sourceGuids: { 1: 'winner-1', 2: 'winner-2', 3: 'winner-3' },
+			sourcePaths: {},
+			otherFormats: [],
+		};
+		const loser = {
+			...makeRemoteFile(),
+			sourceGuids: { 1: 'loser-1', 2: 'loser-2' },
+			sourcePaths: {},
+			otherFormats: [],
+		};
+		const outcomes = await mergeDocuments(winner, [loser]);
+		expect(outcomes.map((item) => item.status)).toEqual(['merged', 'failed', 'skipped']);
+		expect(resolve).not.toHaveBeenCalledWith('winner-3');
+		expect(mergeLocal).toHaveBeenCalledWith('document-of-winner-1', ['document-of-loser-1']);
+		expect(mergeRemote).toHaveBeenCalledWith('document-of-winner-2', ['document-of-loser-2']);
+		const retry = outcomes.filter((item) => item.status === 'failed').map((item) => item.sourceId);
+		expect(await mergeDocuments(winner, [loser], retry)).toEqual([
+			{ sourceId: 2, sourceName: 'Source 2', status: 'merged' },
+		]);
+		expect(mergeLocal).toHaveBeenCalledTimes(1);
+		expect(mergeRemote).toHaveBeenCalledTimes(2);
 	});
 });

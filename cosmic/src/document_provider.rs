@@ -20,6 +20,7 @@ use crate::aggregator::DocumentContent;
 use crate::aggregator::DocumentMeta;
 use crate::aggregator::DocumentSource;
 use crate::aggregator::Documents;
+use crate::aggregator::MergeOutcome;
 use crate::client::Client;
 use crate::client::ClientSelector;
 use crate::client::FilesClientError;
@@ -409,12 +410,13 @@ impl DocumentProvider {
         &self,
         winner: &Document,
         losers: &[Document],
-    ) -> Result<(), FilesClientError> {
+        retry_sources: Option<&[ClientSelector]>,
+    ) -> Vec<MergeOutcome> {
         let result = self
             .aggregator
             .read()
             .await
-            .merge_documents(winner, losers)
+            .merge_documents(winner, losers, retry_sources)
             .await;
         self.set_expired().await;
         result

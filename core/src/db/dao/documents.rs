@@ -463,6 +463,7 @@ async fn merge_documents_impl(
             )
             .await?;
         }
+        tx.commit().await?;
         return Ok(());
     };
 
@@ -525,11 +526,9 @@ async fn merge_documents_impl(
         .await?;
     }
 
-    tx.commit().await?;
-
     if let Some(context) = context {
-        finish_audit_operation(
-            pool,
+        finish_audit_operation_on_connection(
+            &mut tx,
             &context.operation_id,
             OperationStatus::Completed,
             &crate::audit::now_timestamp(),
@@ -540,6 +539,7 @@ async fn merge_documents_impl(
         )
         .await?;
     }
+    tx.commit().await?;
     Ok(())
 }
 

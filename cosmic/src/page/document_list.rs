@@ -29,6 +29,8 @@ use regex::Regex;
 
 use crate::aggregator::Document;
 use crate::aggregator::Documents;
+use crate::aggregator::MergeOutcome;
+use crate::aggregator::MergeStatus;
 use crate::app::ContextView;
 use crate::app::ReadFlow;
 use crate::client::ClientSelector;
@@ -201,6 +203,9 @@ struct MergeDialogState {
     candidates: Vec<Document>,
     /// Index into `candidates` for the chosen winner.
     winner_index: Option<usize>,
+    outcomes: Vec<MergeOutcome>,
+    no_sources: bool,
+    busy: bool,
 }
 
 pub struct DocumentList {
@@ -273,7 +278,7 @@ pub enum DocumentListMessage {
     MergeWinnerSelected(usize),
     ConfirmMerge,
     CancelMerge,
-    MergeCompleted(Result<(), String>),
+    MergeCompleted(Vec<MergeOutcome>),
     Out(DocumentListOutput),
     CoversLoaded(std::collections::HashMap<String, Vec<u8>>),
 }
@@ -504,46 +509,91 @@ impl DocumentList {
             })
             .collect();
 
-        let controls = widget::column::with_children(candidate_rows)
+        let mut controls = widget::column::with_children(candidate_rows);
+        for outcome in &dialog.outcomes {
+            let source = outcome.source.to_string();
+            let status = match &outcome.status {
+                MergeStatus::Merged => fl!("document-list-merge-source-merged", source = source),
+                MergeStatus::Skipped => fl!("document-list-merge-source-skipped", source = source),
+                MergeStatus::Failed(error) => fl!(
+                    "document-list-merge-source-failed",
+                    source = source,
+                    error = error.clone()
+                ),
+            };
+            controls = controls.push(widget::text::body(status));
+        }
+        let controls = controls
             .spacing(space_s)
             .apply(widget::container)
             .class(theme::Container::Card)
             .padding(space_s)
             .width(iced::Length::Fill);
 
-        let body = match dialog
-            .winner_index
-            .and_then(|idx| dialog.candidates.get(idx))
-        {
-            Some(winner) => {
-                let loser_titles: Vec<String> = dialog
-                    .candidates
-                    .iter()
-                    .filter(|d| d.document_guid != winner.document_guid)
-                    .map(merge_candidate_title)
-                    .collect();
-                fl!(
-                    "document-list-merge-confirm-body",
-                    winner = merge_candidate_title(winner),
-                    losers = loser_titles.join(", "),
-                    count = (loser_titles.len() as i32)
-                )
+        let all_skipped = !dialog.outcomes.is_empty()
+            && dialog
+                .outcomes
+                .iter()
+                .all(|item| matches!(item.status, MergeStatus::Skipped));
+        let body = if dialog.no_sources {
+            fl!("document-list-merge-no-sources")
+        } else if all_skipped {
+            fl!("document-list-merge-no-overlap")
+        } else {
+            match dialog
+                .winner_index
+                .and_then(|idx| dialog.candidates.get(idx))
+            {
+                Some(winner) => {
+                    let loser_titles: Vec<String> = dialog
+                        .candidates
+                        .iter()
+                        .filter(|d| d.document_guid != winner.document_guid)
+                        .map(merge_candidate_title)
+                        .collect();
+                    fl!(
+                        "document-list-merge-confirm-body",
+                        winner = merge_candidate_title(winner),
+                        losers = loser_titles.join(", "),
+                        count = (loser_titles.len() as i32)
+                    )
+                }
+                None => fl!("document-list-merge-body"),
             }
-            None => fl!("document-list-merge-body"),
         };
 
-        let merge_btn = cosmic::widget::button::destructive(fl!("document-list-merge-confirm"))
-            .apply_maybe(dialog.winner_index.is_some().then_some(()), |btn, _| {
+        let retry = !dialog.outcomes.is_empty();
+        let can_merge = !dialog.busy
+            && dialog.winner_index.is_some()
+            && (!retry
+                || dialog
+                    .outcomes
+                    .iter()
+                    .any(|item| matches!(item.status, MergeStatus::Failed(_))));
+        let label = if dialog.busy {
+            fl!("document-list-merge-running")
+        } else if retry {
+            fl!("document-list-merge-retry")
+        } else {
+            fl!("document-list-merge-confirm")
+        };
+        let merge_btn = cosmic::widget::button::destructive(label)
+            .apply_maybe(can_merge.then_some(()), |btn, _| {
                 btn.on_press(DocumentListMessage::ConfirmMerge)
             });
 
+        let dismiss = if retry {
+            fl!("document-list-merge-close")
+        } else {
+            fl!("document-list-merge-cancel")
+        };
         cosmic::widget::dialog()
             .title(fl!("document-list-merge-title"))
             .body(body)
             .control(controls)
             .primary_action(merge_btn)
             .secondary_action(
-                cosmic::widget::button::standard(fl!("document-list-merge-cancel"))
+                cosmic::widget::button::standard(dismiss)
                     .on_press(DocumentListMessage::CancelMerge),
             )
             .into()
@@ -1431,45 +1481,79 @@ impl Page for DocumentList {
                     self.merge_dialog = Some(MergeDialogState {
                         candidates,
                         winner_index: None,
+                        outcomes: Vec::new(),
+                        no_sources: false,
+                        busy: false,
                     });
                 }
                 Task::none()
             }
             DocumentListMessage::MergeWinnerSelected(index) => {
-                if let Some(ref mut dialog) = self.merge_dialog {
+                if let Some(ref mut dialog) = self.merge_dialog
+                    && !dialog.busy
+                    && dialog.outcomes.is_empty()
+                {
                     dialog.winner_index = Some(index);
                 }
                 Task::none()
             }
             DocumentListMessage::ConfirmMerge => {
-                let Some(dialog) = self.merge_dialog.take() else {
+                let Some(dialog) = self.merge_dialog.as_mut().filter(|dialog| !dialog.busy) else {
                     return Task::none();
                 };
-                let Some(winner_idx) = dialog.winner_index else {
+                let Some(winner) = dialog
+                    .winner_index
+                    .and_then(|index| dialog.candidates.get(index))
+                    .cloned()
+                else {
                     return Task::none();
                 };
-                let Some(winner) = dialog.candidates.get(winner_idx).cloned() else {
-                    return Task::none();
-                };
-                let winner_guid = winner.document_guid.clone();
-                let losers: Vec<Document> = dialog
+                let losers: Vec<_> = dialog
                     .candidates
-                    .into_iter()
-                    .filter(|d| d.document_guid != winner_guid)
+                    .iter()
+                    .filter(|candidate| candidate.document_guid != winner.document_guid)
+                    .cloned()
                     .collect();
+                let retry: Option<Vec<_>> = (!dialog.outcomes.is_empty()).then(|| {
+                    dialog
+                        .outcomes
+                        .iter()
+                        .filter(|outcome| matches!(outcome.status, MergeStatus::Failed(_)))
+                        .map(|outcome| outcome.source.clone())
+                        .collect()
+                });
+                dialog.busy = true;
+                dialog.no_sources = false;
                 let provider = self.document_provider.clone();
                 task::future(async move {
-                    let result = provider.merge_documents(&winner, &losers).await;
-                    DocumentListMessage::MergeCompleted(result.map_err(|e| e.to_string()))
+                    let result = provider
+                        .merge_documents(&winner, &losers, retry.as_deref())
+                        .await;
+                    DocumentListMessage::MergeCompleted(result)
                 })
             }
             DocumentListMessage::CancelMerge => {
-                self.merge_dialog = None;
+                if self.merge_dialog.as_ref().is_none_or(|dialog| !dialog.busy) {
+                    self.merge_dialog = None;
+                }
                 Task::none()
             }
             DocumentListMessage::MergeCompleted(result) => {
-                if let Err(ref e) = result {
-                    tracing::warn!("merge documents failed: {e}");
+                if let Some(dialog) = &mut self.merge_dialog {
+                    dialog.busy = false;
+                    dialog.outcomes.retain(|previous| {
+                        !result.iter().any(|item| item.source == previous.source)
+                    });
+                    dialog.outcomes.extend(result);
+                    dialog.no_sources = dialog.outcomes.is_empty();
+                    if !dialog.outcomes.is_empty()
+                        && dialog
+                            .outcomes
+                            .iter()
+                            .all(|item| matches!(item.status, MergeStatus::Merged))
+                    {
+                        self.merge_dialog = None;
+                    }
                 }
                 task::message(DocumentListMessage::LoadArchive)
             }

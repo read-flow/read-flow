@@ -236,39 +236,45 @@ export async function updateDocumentMetadata(
  * - Resolves each loser's document GUID (creating if needed).
  * - Calls POST /documents/merge on that source.
  */
+export type MergeOutcome = {
+	sourceId: number;
+	sourceName: string;
+} & ({ status: 'merged' | 'skipped' } | { status: 'failed'; error: string });
+
+function mergeFileGuids(file: AggregatedFile, sourceId: number): string[] {
+	return [file, ...file.otherFormats]
+		.flatMap((format) => format.sourceGuids[sourceId] ? [format.sourceGuids[sourceId]] : []);
+}
+
 export async function mergeDocuments(
 	winner: AggregatedFile,
 	losers: AggregatedFile[],
-): Promise<void> {
+	retrySources?: readonly number[],
+): Promise<MergeOutcome[]> {
 	const sources = await db.sources.orderBy('order').toArray();
-	await Promise.allSettled(
-		sources.map(async (s) => {
-			if (s.id === undefined) return;
-			const sid = s.id as number;
-			const client = new ReadFlowClient(s);
-
-			let winnerGuid = winner.document_guid;
-			if (!winnerGuid) {
-				const fg = winner.sourceGuids[sid];
-				if (!fg) return;
-				winnerGuid = await ensureDocumentOnSource(client, fg);
-			}
-
-			const loserGuids: string[] = [];
-			for (const loser of losers) {
-				let loserGuid = loser.document_guid;
-				if (!loserGuid) {
-					const fg = loser.sourceGuids[sid];
-					if (fg) loserGuid = await ensureDocumentOnSource(client, fg);
+	return Promise.all(sources.flatMap((source) => {
+		const sourceId = source.id;
+		if (sourceId === undefined || (retrySources && !retrySources.includes(sourceId))) return [];
+		const target = { sourceId, sourceName: source.name };
+		return [(async (): Promise<MergeOutcome> => {
+			const [winnerFile] = mergeFileGuids(winner, sourceId);
+			const loserFiles = [...new Set(losers.flatMap((loser) => mergeFileGuids(loser, sourceId)))];
+			if (!winnerFile || loserFiles.length === 0) return { ...target, status: 'skipped' };
+			try {
+				const client = new ReadFlowClient(source);
+				const winnerGuid = await ensureDocumentOnSource(client, winnerFile);
+				const loserGuids = new Set<string>();
+				for (const fileGuid of loserFiles) {
+					const guid = await ensureDocumentOnSource(client, fileGuid);
+					if (guid !== winnerGuid) loserGuids.add(guid);
 				}
-				if (loserGuid) loserGuids.push(loserGuid);
+				if (loserGuids.size > 0) await client.mergeDocuments(winnerGuid, [...loserGuids]);
+				return { ...target, status: 'merged' };
+			} catch (error) {
+				return { ...target, status: 'failed', error: error instanceof Error ? error.message : String(error) };
 			}
-
-			if (loserGuids.length > 0) {
-				await client.mergeDocuments(winnerGuid, loserGuids);
-			}
-		}),
-	);
+		})()];
+	}));
 }
 
 /**
