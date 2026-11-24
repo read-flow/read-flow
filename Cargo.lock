@@ -1375,6 +1375,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cosmic-epub"
+version = "0.6.0"
+dependencies = [
+ "epub",
+ "libcosmic",
+ "tracing",
+]
+
+[[package]]
 name = "cosmic-freedesktop-icons"
 version = "0.4.0"
 source = "git+https://github.com/pop-os/freedesktop-icons#ab4c57b8e416c6af9297cb04d101889896fd9a92"
@@ -6277,6 +6286,7 @@ dependencies = [
  "async-trait",
  "axum",
  "clap",
+ "cosmic-epub",
  "cosmic-golden",
  "cosmic-text",
  "cucumber",

@@ -38,6 +38,7 @@ embed-pwa = ["read-flow-core/embed-pwa"]
 screenshot-tool = ["dep:cosmic-golden", "dep:tempfile"]
 
 [dependencies]
+cosmic-epub = { path = "../cosmic-epub" }
 anyhow.workspace = true
 async-trait.workspace = true
 clap = { workspace = true, features = ["derive"] }

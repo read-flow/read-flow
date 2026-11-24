@@ -2,6 +2,7 @@
 members = [
     "core",
     "cosmic",
+    "cosmic-epub",
     "epub",
     "provider",
     "widgets",

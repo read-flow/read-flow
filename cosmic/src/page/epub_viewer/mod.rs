@@ -38,16 +38,16 @@ use cosmic::task;
 use cosmic::theme;
 use cosmic::theme::Container;
 use cosmic::widget;
+use cosmic_epub::EpubChapter;
+use cosmic_epub::load_epub_chapters;
+use cosmic_epub::load_linked_chapter;
 use epub::BlockStyle;
 use epub::ContentBlock;
-use epub::Document as EpubDocumentTrait;
 use epub::EpubDocument;
 use epub::ListItem;
 use epub::NavEntry;
-use epub::StyleSheet;
 use epub::TableCell;
 use epub::TextSpan;
-use read_flow_core::Builder;
 use read_flow_widgets::FontPicker;
 
 use crate::ICON_SIZE;
@@ -326,27 +326,6 @@ impl FontFamily {
 }
 
 // --- Core types ---
-
-#[derive(Clone, Debug)]
-pub(crate) struct EpubChapter {
-    label: String,
-    /// Resolved zip path for this spine item (e.g. `OEBPS/Text/ch1.xhtml`).
-    href: String,
-    blocks: Vec<ContentBlock>,
-    /// DOM node paths parallel to `blocks`, one per top-level block.
-    /// Each path is a sequence of 0-based element-child indices starting from
-    /// within `<html>` (body index first, then block index within body).
-    block_paths: Vec<Vec<u32>>,
-    /// Stable image handles keyed by the raw pointer of each image's data `Vec`.
-    /// Created once so the handle ID is stable across frames; required because
-    /// the wgpu renderer decodes images asynchronously keyed by handle ID —
-    /// a fresh `Handle::from_bytes` call per frame would produce a new ID each
-    /// time, preventing the decoded texture from ever being found in the cache.
-    /// The pointer is valid for the lifetime of this chapter (data lives in `blocks`).
-    image_handles: HashMap<usize, widget::image::Handle>,
-    /// Raw XHTML source for debug display.
-    raw_html: String,
-}
 
 // Cloneable wrapper for EpubDocument
 #[derive(Clone)]
@@ -774,7 +753,7 @@ impl EpubViewer {
         } = theme::active().cosmic().spacing;
 
         if let Some(chapter) = self.chapters.get(self.active_chapter) {
-            let mut column = widget::column::with_capacity(chapter.blocks.len())
+            let mut column = widget::column::with_capacity(chapter.blocks().len())
                 .spacing(space_xxs)
                 .width(Length::Fill);
 
@@ -788,7 +767,7 @@ impl EpubViewer {
                 );
             } else {
                 let ctx = self.scroll_render_context(chapter);
-                for (idx, block) in chapter.blocks.iter().enumerate() {
+                for (idx, block) in chapter.blocks().iter().enumerate() {
                     let highlight = if self.highlighted_block == Some(idx) {
                         BlockHighlight::Current
                     } else if !self.search_matches.is_empty() && self.search_matches.contains(&idx)
@@ -886,7 +865,7 @@ impl EpubViewer {
                             page_margin,
                         );
                         computed_layout = paginate_blocks(
-                            &chapter.blocks,
+                            chapter.blocks(),
                             ch,
                             cw,
                             space_xxs as f32,
@@ -920,7 +899,8 @@ impl EpubViewer {
                     let mut column = widget::Column::new().spacing(space_xxs).width(Length::Fill);
                     if let Some(range) = page_range {
                         let block_count = range.end - range.start;
-                        for (i, block) in chapter.blocks[range.start..range.end].iter().enumerate()
+                        for (i, block) in
+                            chapter.blocks()[range.start..range.end].iter().enumerate()
                         {
                             let abs_idx = range.start + i;
                             let highlight = if self.highlighted_block == Some(abs_idx) {
@@ -1416,7 +1396,7 @@ impl EpubViewer {
                         let block_idx = self
                             .chapters
                             .get(c)
-                            .map(|ch| block_index_for_path(ch, &node_path))
+                            .map(|ch| ch.block_index_for_path(&node_path))
                             .unwrap_or(0);
                         self.pending_block_index = Some(block_idx);
                     }
@@ -1465,7 +1445,7 @@ impl EpubViewer {
                     let block_idx = self
                         .chapters
                         .get(c)
-                        .map(|ch| block_index_for_path(ch, &pos.node_path))
+                        .map(|ch| ch.block_index_for_path(&pos.node_path))
                         .unwrap_or(0);
                     self.pending_block_index = Some(block_idx);
                     if self.view_mode == ViewMode::Scroll {
@@ -1524,10 +1504,10 @@ impl EpubViewer {
                             // ensure_block_heights (which needs &mut self).
                             let (block_idx, chapter_block_count) = {
                                 let chapter = &self.chapters[idx];
-                                let bidx = chapter.blocks.iter().position(
+                                let bidx = chapter.blocks().iter().position(
                                     |b| matches!(b, ContentBlock::Anchor { id } if id == &frag),
                                 );
-                                (bidx, chapter.blocks.len())
+                                (bidx, chapter.blocks().len())
                             };
 
                             let mut nav_task = Task::none();
@@ -1540,7 +1520,7 @@ impl EpubViewer {
                                         self.block_heights_cache.get(&idx)
                                     {
                                         anchor_y_from_heights(
-                                            &self.chapters[idx].blocks,
+                                            self.chapters[idx].blocks(),
                                             heights,
                                             &frag,
                                         )
@@ -1634,7 +1614,7 @@ impl EpubViewer {
                             );
                             let target_y = self.block_heights_cache.get(&chapter_idx).and_then(
                                 |(_, _, heights)| {
-                                    anchor_y_from_heights(&chapter.blocks, heights, frag)
+                                    anchor_y_from_heights(chapter.blocks(), heights, frag)
                                 },
                             );
                             if target_y.is_none() {
@@ -1648,7 +1628,7 @@ impl EpubViewer {
                                     // Find the page containing the target block.
                                     // Works for both Footnote and Anchor targets.
                                     if let Some(block_idx) =
-                                        chapter.blocks.iter().position(|b| match b {
+                                        chapter.blocks().iter().position(|b| match b {
                                             ContentBlock::Anchor { id } => id.as_str() == frag,
                                             ContentBlock::Footnote { id, .. } => {
                                                 id.as_str() == frag
@@ -1701,32 +1681,8 @@ impl EpubViewer {
                         // Target is not in the spine (e.g. linear="no" item).
                         // Try to load it on-demand from the archive.
                         let doc = epub_doc.as_ref();
-                        if let Ok(data) = doc.resolve_resource(&resolved) {
-                            let raw_html = String::from_utf8_lossy(&data).into_owned();
-                            let stylesheet = load_chapter_stylesheets(&raw_html, &resolved, doc);
-                            let (mut blocks, block_paths) = epub::content::parse_xhtml_with_paths(
-                                &data,
-                                &resolved,
-                                &stylesheet,
-                                &mut |img_path| match doc.resolve_resource(img_path) {
-                                    Ok(img_data) => {
-                                        let media_type = epub::content::guess_media_type(img_path);
-                                        Some((img_data, media_type))
-                                    }
-                                    Err(_) => None,
-                                },
-                            );
-                            resolve_svg_blocks(&mut blocks, &resolved, doc);
-                            let mut image_handles = HashMap::new();
-                            collect_image_handles(&blocks, &mut image_handles);
-                            self.chapters.push(EpubChapter {
-                                label: resolved.clone(),
-                                href: resolved.clone(),
-                                blocks,
-                                block_paths,
-                                image_handles,
-                                raw_html,
-                            });
+                        if let Ok(chapter) = load_linked_chapter(doc, &resolved) {
+                            self.chapters.push(chapter);
                             self.active_chapter = self.chapters.len() - 1;
                             self.scroll_y = 0.0;
                             self.current_page = 0;
@@ -1922,7 +1878,7 @@ impl EpubViewer {
                 let lower = self.search_query.to_lowercase();
                 if let Some(chapter) = self.chapters.get(self.active_chapter) {
                     self.search_matches = chapter
-                        .blocks
+                        .blocks()
                         .iter()
                         .enumerate()
                         .filter(|(_, b)| block_contains(b, &lower))
@@ -2083,50 +2039,15 @@ fn shortcut_item<'a>(key: &'a str, description: String) -> Element<'a, EpubViewe
         .into()
 }
 
-/// Serialize reading progress to a JSON string.
-/// Includes scroll offset, block index, view mode, and font size so that
-/// the position can be accurately restored.  The format is backward-compatible:
-/// older readers silently ignore unknown fields.
-/// Build a CFI string for the given block in the given chapter.
-fn cfi_for_block(chapters: &[EpubChapter], chapter_idx: usize, block_idx: usize) -> Option<String> {
-    let chapter = chapters.get(chapter_idx)?;
-    let node_path = chapter
-        .block_paths
-        .get(block_idx)
-        .cloned()
-        .unwrap_or_default();
-    let locator = epub::Locator {
-        spine_index: chapter_idx as u32,
-        node_path,
-        char_offset: 0,
-    };
-    Some(locator.to_cfi(None))
-}
-
-/// Find the flat block index in `chapter` whose stored node path best matches `target`.
-/// "Best match" means the stored path is the longest prefix of `target`, giving
-/// paragraph-level granularity for any CFI including text-node sub-offsets.
-fn block_index_for_path(chapter: &EpubChapter, target: &[u32]) -> usize {
-    if target.is_empty() {
-        return 0;
-    }
-    chapter
-        .block_paths
-        .iter()
-        .enumerate()
-        .filter(|(_, p)| !p.is_empty() && target.starts_with(p.as_slice()))
-        .max_by_key(|(_, p)| p.len())
-        .map(|(i, _)| i)
-        .unwrap_or(0)
-}
-
 /// Serialize reading progress as an EPUB CFI position.
 fn serialize_progress(
     chapters: &[EpubChapter],
     chapter_idx: usize,
     first_block: usize,
 ) -> (ViewerPosition, f64) {
-    let cfi = cfi_for_block(chapters, chapter_idx, first_block)
+    let cfi = chapters
+        .get(chapter_idx)
+        .map(|chapter| chapter.locator(chapter_idx, first_block).to_cfi(None))
         .unwrap_or_else(|| format!("epubcfi(/6/{}!:0)", (chapter_idx as u32 + 1) * 2));
     let position = ViewerPosition::Cfi(cfi);
     let total = chapters.len();
@@ -2181,203 +2102,6 @@ mod resolve_reading_position_tests {
         let pos = resolve_reading_position(ViewerPosition::Cfi("not a cfi".to_string()));
         assert!(pos.chapter.is_none());
         assert!(pos.node_path.is_empty());
-    }
-}
-
-/// Resolve embedded SVG image references in-place at chapter load time, so that
-/// rendering doesn't need to read from the zip archive on every frame.
-fn resolve_svg_blocks(blocks: &mut Vec<ContentBlock>, chapter_href: &str, doc: &EpubDocument) {
-    for block in blocks {
-        match block {
-            ContentBlock::Svg { content, .. } => {
-                *content =
-                    epub::content::resolve_svg_images(content, chapter_href, &mut |img_path| {
-                        match doc.resolve_resource(img_path) {
-                            Ok(img_data) => {
-                                let media_type = epub::content::guess_media_type(img_path);
-                                Some((img_data, media_type))
-                            }
-                            Err(e) => {
-                                tracing::info!(
-                                    "SVG image resource not found in chapter \
-                                 {chapter_href}: {img_path} ({e})"
-                                );
-                                None
-                            }
-                        }
-                    });
-            }
-            ContentBlock::Figure { blocks, .. } => resolve_svg_blocks(blocks, chapter_href, doc),
-            ContentBlock::BlockQuote { children } => {
-                resolve_svg_blocks(children, chapter_href, doc)
-            }
-            ContentBlock::Footnote { blocks, .. } => resolve_svg_blocks(blocks, chapter_href, doc),
-            _ => {}
-        }
-    }
-}
-
-/// Collect stable image handles keyed by data pointer, recursing into nested blocks.
-fn collect_image_handles(blocks: &[ContentBlock], map: &mut HashMap<usize, widget::image::Handle>) {
-    for block in blocks {
-        match block {
-            ContentBlock::Image { data, .. } if !data.is_empty() => {
-                map.insert(
-                    data.as_ptr() as usize,
-                    widget::image::Handle::from_bytes(data.clone()),
-                );
-            }
-            ContentBlock::Figure { blocks, .. } => collect_image_handles(blocks, map),
-            ContentBlock::BlockQuote { children } => collect_image_handles(children, map),
-            ContentBlock::Footnote { blocks, .. } => collect_image_handles(blocks, map),
-            _ => {}
-        }
-    }
-}
-
-/// Load EPUB chapters from a file path. Runs on a blocking thread.
-fn load_epub_chapters(
-    path: &Path,
-) -> Result<(String, Vec<EpubChapter>, EpubDocument), epub::EpubError> {
-    let epub_doc = EpubDocument::open(path)?;
-
-    let title = epub_doc.metadata().title.clone().unwrap_or_default();
-
-    let spine = epub_doc.spine().to_vec();
-    let mut chapters = Vec::with_capacity(spine.len());
-
-    for (idx, item) in spine.iter().filter(|item| item.linear).enumerate() {
-        let label = item
-            .label
-            .clone()
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| item.id.clone())
-            .apply_when(String::is_empty, |_| format!("Chapter {}", idx + 1));
-
-        let (blocks, block_paths, raw_html) = match epub_doc.resolve_resource(&item.href) {
-            Ok(data) => {
-                let href = &item.href;
-                let raw = String::from_utf8_lossy(&data).into_owned();
-                let stylesheet = load_chapter_stylesheets(&raw, href, &epub_doc);
-                let (mut blocks, block_paths) = epub::content::parse_xhtml_with_paths(
-                    &data,
-                    href,
-                    &stylesheet,
-                    &mut |img_path| match epub_doc.resolve_resource(img_path) {
-                        Ok(img_data) => {
-                            let media_type = epub::content::guess_media_type(img_path);
-                            Some((img_data, media_type))
-                        }
-                        Err(e) => {
-                            tracing::info!(
-                                "image resource not found in chapter {href}: {img_path} ({e})"
-                            );
-                            None
-                        }
-                    },
-                );
-                resolve_svg_blocks(&mut blocks, href, &epub_doc);
-                (blocks, block_paths, raw)
-            }
-            Err(e) => {
-                tracing::warn!("failed to resolve spine item {}: {e}", item.href);
-                (Vec::new(), Vec::new(), String::new())
-            }
-        };
-
-        let mut image_handles = HashMap::new();
-        collect_image_handles(&blocks, &mut image_handles);
-        chapters.push(EpubChapter {
-            label,
-            href: item.href.clone(),
-            blocks,
-            block_paths,
-            image_handles,
-            raw_html,
-        });
-    }
-
-    Ok((title, chapters, epub_doc))
-}
-
-/// Extract `<link rel="stylesheet" href="...">` references and inline `<style>` blocks
-/// from XHTML and load/parse them into a merged `StyleSheet`.
-fn load_chapter_stylesheets(xhtml: &str, chapter_href: &str, doc: &EpubDocument) -> StyleSheet {
-    let mut stylesheet = StyleSheet::empty();
-    let base = epub::content::base_dir(chapter_href);
-
-    // Extract linked external stylesheets: <link rel="stylesheet" href="..." />
-    for segment in xhtml.split("<link") {
-        let Some(end) = segment.find('>') else {
-            continue;
-        };
-        let tag_content = &segment[..end];
-        let lower = tag_content.to_ascii_lowercase();
-        if !lower.contains("stylesheet") {
-            continue;
-        }
-        let href = extract_attr_value(tag_content, "href");
-        let Some(href) = href else { continue };
-
-        let resolved = epub::content::resolve_href(base, href);
-        match doc.resolve_resource(&resolved) {
-            Ok(css_data) => {
-                let css_text = String::from_utf8_lossy(&css_data);
-                let sheet = epub::content::parse_css(&css_text);
-                stylesheet.merge(sheet);
-            }
-            Err(e) => {
-                tracing::debug!("failed to load stylesheet {resolved}: {e}");
-            }
-        }
-    }
-
-    // Extract inline <style> blocks from the <head>.
-    let lower_xhtml = xhtml.to_ascii_lowercase();
-    let mut search_start = 0;
-    while let Some(tag_start) = lower_xhtml[search_start..].find("<style") {
-        let abs_tag_start = search_start + tag_start;
-        // Find the closing '>' of the opening tag (may have attributes like type="text/css")
-        let Some(tag_end) = lower_xhtml[abs_tag_start..].find('>') else {
-            break;
-        };
-        let content_start = abs_tag_start + tag_end + 1;
-        let Some(close_pos) = lower_xhtml[content_start..].find("</style") else {
-            break;
-        };
-        let css_text = &xhtml[content_start..content_start + close_pos];
-        let sheet = epub::content::parse_css(css_text);
-        stylesheet.merge(sheet);
-        search_start = content_start + close_pos + "</style".len();
-    }
-
-    stylesheet
-}
-
-/// Extract the value of an HTML attribute from a tag fragment.
-/// Handles both single and double-quoted values.
-fn extract_attr_value<'a>(tag_content: &'a str, attr_name: &str) -> Option<&'a str> {
-    // Find the attribute name (case-insensitive)
-    let lower = tag_content.to_ascii_lowercase();
-    let attr_pos = lower.find(attr_name)?;
-    let rest = &tag_content[attr_pos + attr_name.len()..];
-    // Skip whitespace and '='
-    let rest = rest.trim_start();
-    let rest = rest.strip_prefix('=')?;
-    let rest = rest.trim_start();
-    // Extract quoted value
-    if let Some(rest) = rest.strip_prefix('"') {
-        let end = rest.find('"')?;
-        Some(&rest[..end])
-    } else if let Some(rest) = rest.strip_prefix('\'') {
-        let end = rest.find('\'')?;
-        Some(&rest[..end])
-    } else {
-        // Unquoted value (up to whitespace or >)
-        let end = rest
-            .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
-            .unwrap_or(rest.len());
-        if end > 0 { Some(&rest[..end]) } else { None }
     }
 }
 
@@ -3558,7 +3282,7 @@ impl EpubViewer {
             font_size: self.base_font_size,
             family: self.font_family.to_family(),
             max_image_height: f32::MAX,
-            image_handles: &chapter.image_handles,
+            image_handles: chapter.image_handles(),
         }
     }
 
@@ -3574,7 +3298,7 @@ impl EpubViewer {
             font_size: self.base_font_size,
             family: self.font_family.to_family(),
             max_image_height: page_height,
-            image_handles: &chapter.image_handles,
+            image_handles: chapter.image_handles(),
         }
     }
 
@@ -3603,7 +3327,7 @@ impl EpubViewer {
         }
         let heights = match self.chapters.get(chapter_idx) {
             Some(ch) => ch
-                .blocks
+                .blocks()
                 .iter()
                 .map(|block| self.scroll_block_height(ch, block, content_width))
                 .collect(),
@@ -3649,7 +3373,7 @@ impl EpubViewer {
 
         if needs_recompute && let Some(chapter) = self.chapters.get(self.active_chapter) {
             let layout = paginate_blocks(
-                &chapter.blocks,
+                chapter.blocks(),
                 content_height,
                 content_width,
                 space_xxs,
@@ -3826,12 +3550,12 @@ fn render_chapter_blocks(
         font_size,
         family: font::Family::Serif,
         max_image_height: 400.0,
-        image_handles: &chapter.image_handles,
+        image_handles: chapter.image_handles(),
     };
-    let mut col = cosmic::widget::column::with_capacity(chapter.blocks.len())
+    let mut col = cosmic::widget::column::with_capacity(chapter.blocks().len())
         .spacing(8)
         .width(Length::Fill);
-    for block in &chapter.blocks {
+    for block in chapter.blocks() {
         col = col.push(ctx.render_block(block, BlockHighlight::None));
     }
     cosmic::widget::container(col)
@@ -3890,7 +3614,7 @@ mod tests {
         let chapter = viewer.active_chapter;
         assert_eq!(
             viewer.block_heights_cache[&chapter].2.len(),
-            viewer.chapters[chapter].blocks.len(),
+            viewer.chapters[chapter].blocks().len(),
             "update() measures the active chapter"
         );
 
@@ -3899,7 +3623,7 @@ mod tests {
             .block_heights_cache
             .get_mut(&chapter)
             .expect("cached")
-            .2 = vec![1000.0; viewer.chapters[chapter].blocks.len()];
+            .2 = vec![1000.0; viewer.chapters[chapter].blocks().len()];
         viewer.scroll_y = 2500.0;
         assert_eq!(
             viewer.approximate_block_at_scroll_y(viewer.scroll_y),
@@ -4464,18 +4188,18 @@ mod height_tests {
         cosmic_golden::init();
         assert!(
             chapter
-                .blocks
+                .blocks()
                 .iter()
                 .any(|block| format!("{block:?}").starts_with(kind)),
             "fixture has no {kind} block: {:?}",
-            chapter.blocks
+            chapter.blocks()
         );
-        let ctx = render_context(&chapter.image_handles);
+        let ctx = render_context(chapter.image_handles());
         let spacing = cosmic::theme::active().cosmic().spacing.space_xxs as f32;
 
         let mut measurer = BlockMeasurer::default();
         let heights: Vec<f32> = chapter
-            .blocks
+            .blocks()
             .iter()
             .map(|block| block_height(&mut measurer, &ctx, block, width))
             .collect();
@@ -4484,7 +4208,7 @@ mod height_tests {
         let measured = heights.iter().sum::<f32>() + spacing * shown.saturating_sub(1) as f32;
 
         let column_id = cosmic::widget::Id::new("measured-column");
-        let column = chapter.blocks.iter().fold(
+        let column = chapter.blocks().iter().fold(
             cosmic::widget::Column::new()
                 .spacing(spacing)
                 .width(Length::Fill),

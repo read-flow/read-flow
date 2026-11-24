@@ -20,6 +20,7 @@ use epub::ContentBlock;
 
 use super::DualPageMode;
 use super::EpubViewer;
+use super::EpubViewerMessage;
 use super::FontFamily;
 use super::Page as _;
 use super::ViewMode;
@@ -253,7 +254,7 @@ async fn page_breaks_leave_no_room_on_the_last_line() {
             let Some(end_cut) = range.end_cut else {
                 continue;
             };
-            let ContentBlock::Paragraph { text, .. } = &chapter.blocks[range.end - 1] else {
+            let ContentBlock::Paragraph { text, .. } = &chapter.blocks()[range.end - 1] else {
                 continue;
             };
             breaks += 1;
@@ -310,6 +311,48 @@ async fn paginated_page_goldens() {
                 height
             );
         }
+    }
+}
+
+#[tokio::test]
+async fn epub_read_flow_chrome_goldens() {
+    let (mut viewer, ..) = paginated_viewer(book_chapter()).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+
+    let header = viewer.view_header_start().into_iter().fold(
+        cosmic::widget::header_bar().focused(true),
+        |header, element| header.start(element),
+    );
+    let header = viewer
+        .view_header_center()
+        .into_iter()
+        .fold(header, |header, element| header.center(element));
+    let header = viewer
+        .view_header_end()
+        .into_iter()
+        .fold(header, |header, element| header.end(element));
+    let header: cosmic::Element<'_, EpubViewerMessage> = header.into();
+    cosmic_golden::assert_snapshot!("epub_read_flow_header", header, 960, 64);
+
+    for (name, mode) in [
+        ("epub_read_flow_context_paginated", ViewMode::Paginated),
+        ("epub_read_flow_context_scroll", ViewMode::Scroll),
+    ] {
+        viewer.view_mode = mode;
+        let context = viewer.view_context();
+        let drawer: cosmic::Element<'_, EpubViewerMessage> =
+            cosmic::widget::ContextDrawer::new_inner(
+                Some(context.title.into()),
+                None,
+                None,
+                None,
+                context.content,
+                EpubViewerMessage::RequestClose,
+                420.0,
+            )
+            .into();
+        cosmic_golden::assert_snapshot!(name, drawer, 420, 900);
     }
 }
 
@@ -440,7 +483,7 @@ async fn paginating_a_long_chapter_is_fast() {
     let (mut viewer, ..) = paginated_viewer(mixed_chapter(1000)).await;
     let _guard = crate::test_support::cosmic_tk_lock();
     cosmic_golden::init();
-    assert!(viewer.chapters[viewer.active_chapter].blocks.len() >= 1000);
+    assert!(viewer.chapters[viewer.active_chapter].blocks().len() >= 1000);
     // Learn the page area, then time the pagination alone.
     paginate(&mut viewer, VIEWPORTS[1]);
     viewer.pagination_cache.clear();
@@ -548,7 +591,7 @@ fn leading_headings(viewer: &EpubViewer, page: usize) -> Vec<f32> {
         return Vec::new();
     }
     let ctx = viewer.page_render_context(chapter, layout.page_height);
-    chapter.blocks[range.start..]
+    chapter.blocks()[range.start..]
         .iter()
         .take_while(|block| super::is_heading(block) || super::is_anchor(block))
         .filter(|block| super::is_heading(block))
@@ -592,7 +635,7 @@ async fn preformatted_pages_fill_without_overflowing() {
             let Some(end_cut) = range.end_cut else {
                 continue;
             };
-            let ContentBlock::Preformatted { text, .. } = &chapter.blocks[range.end - 1] else {
+            let ContentBlock::Preformatted { text, .. } = &chapter.blocks()[range.end - 1] else {
                 panic!("{viewport:?} page {page}: only the code block is split");
             };
             assert!(
@@ -745,7 +788,7 @@ async fn ordered_list_numbering_continues_on_the_next_page() {
         let chapter = &viewer.chapters[viewer.active_chapter];
         let layout = &viewer.pagination_cache[&viewer.active_chapter];
         let first_part = |range: &super::PageRange| {
-            let ContentBlock::OrderedList { start, items } = &chapter.blocks[range.start] else {
+            let ContentBlock::OrderedList { start, items } = &chapter.blocks()[range.start] else {
                 panic!("{viewport:?}: the page starts inside the list");
             };
             let to = if range.end - 1 == range.start {
@@ -783,7 +826,7 @@ async fn ordered_list_numbering_continues_on_the_next_page() {
             .iter()
             .find(|p| p.start_cut.char_offset > 0)
             .expect("a page starts inside an item");
-        let ContentBlock::OrderedList { items, .. } = &chapter.blocks[inside.start] else {
+        let ContentBlock::OrderedList { items, .. } = &chapter.blocks()[inside.start] else {
             panic!("{viewport:?}: the page starts inside the list");
         };
         let (index, first_text) = first_part(inside);
@@ -829,7 +872,7 @@ async fn block_quote_pages_fill_without_overflowing() {
         let cuts: Vec<_> = layout
             .pages
             .iter()
-            .filter(|p| matches!(chapter.blocks[p.end - 1], ContentBlock::BlockQuote { .. }))
+            .filter(|p| matches!(chapter.blocks()[p.end - 1], ContentBlock::BlockQuote { .. }))
             .filter_map(|p| p.end_cut)
             .collect();
         assert!(
@@ -895,7 +938,7 @@ async fn footnote_continues_with_indent_not_label() {
         assert_shows_all_text(&viewer, viewport);
 
         let chapter = &viewer.chapters[viewer.active_chapter];
-        let footnote = &chapter.blocks[1];
+        let footnote = &chapter.blocks()[1];
         assert_eq!(
             footnote_paragraph_text(footnote, 0, 0)[0],
             "  1.\u{a0}",
@@ -955,7 +998,7 @@ async fn nested_containers_split_without_losing_text() {
     let _guard = crate::test_support::cosmic_tk_lock();
     cosmic_golden::init();
     let chapter = &viewer.chapters[viewer.active_chapter];
-    let ContentBlock::Footnote { blocks, .. } = &chapter.blocks[1] else {
+    let ContentBlock::Footnote { blocks, .. } = &chapter.blocks()[1] else {
         panic!("the second block is the footnote");
     };
     let ContentBlock::BlockQuote { children } = &blocks[1] else {
@@ -1111,7 +1154,7 @@ fn assert_shows_all_text(viewer: &EpubViewer, viewport: (f32, f32)) {
     let chapter = &viewer.chapters[viewer.active_chapter];
     let layout = &viewer.pagination_cache[&viewer.active_chapter];
     let whole: String = chapter
-        .blocks
+        .blocks()
         .iter()
         .map(|block| part_text(block, super::BlockCut::default(), None))
         .collect();
@@ -1130,7 +1173,7 @@ fn assert_shows_all_text(viewer: &EpubViewer, viewport: (f32, f32)) {
                 } else {
                     None
                 };
-                part_text(&chapter.blocks[index], from, to)
+                part_text(&chapter.blocks()[index], from, to)
             })
         })
         .collect();
@@ -1202,7 +1245,7 @@ const TABLE: usize = 1;
 
 /// The rows of the active chapter's table.
 fn table_rows(viewer: &EpubViewer) -> Vec<Vec<epub::TableCell>> {
-    match &viewer.chapters[viewer.active_chapter].blocks[TABLE] {
+    match &viewer.chapters[viewer.active_chapter].blocks()[TABLE] {
         ContentBlock::Table { rows } => rows.clone(),
         other => panic!("expected a table, got {other:?}"),
     }
@@ -1600,7 +1643,7 @@ fn holds_image(block: &ContentBlock) -> bool {
 /// one.
 fn image_block(viewer: &EpubViewer) -> usize {
     viewer.chapters[viewer.active_chapter]
-        .blocks
+        .blocks()
         .iter()
         .position(holds_image)
         .expect("an image block")
@@ -1750,12 +1793,12 @@ async fn heading_is_not_left_alone_at_the_bottom_of_a_page(#[case] ids: bool) {
         let chapter = &viewer.chapters[viewer.active_chapter];
         let layout = &viewer.pagination_cache[&viewer.active_chapter];
         assert_eq!(
-            chapter.blocks.iter().any(super::is_anchor),
+            chapter.blocks().iter().any(super::is_anchor),
             ids,
             "anchors only with ids"
         );
         for (page, range) in layout.pages.iter().enumerate().take(total - 1) {
-            let last_shown = chapter.blocks[range.start..range.end]
+            let last_shown = chapter.blocks()[range.start..range.end]
                 .iter()
                 .rev()
                 .find(|block| !super::is_anchor(block))
@@ -1773,7 +1816,7 @@ async fn heading_is_not_left_alone_at_the_bottom_of_a_page(#[case] ids: bool) {
                 .position(|page| page.start <= block && block < page.end)
                 .expect("every block is on a page")
         };
-        for (anchor, block) in chapter.blocks.iter().enumerate() {
+        for (anchor, block) in chapter.blocks().iter().enumerate() {
             if let ContentBlock::Anchor { id } = block {
                 assert_eq!(
                     page_of(anchor),
