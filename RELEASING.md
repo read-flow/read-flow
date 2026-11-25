@@ -13,7 +13,8 @@ marked _(decide)_ are open for discussion; refine this file as the process settl
   `[workspace.package] version` in the root `Cargo.toml`; each crate sets
   `version.workspace = true`. Bump the version in **one place** (root `Cargo.toml`).
 - Two values are **not** workspace-inheritable and must be bumped by hand to match:
-  - `pwa/package.json` `version`.
+  - `pwa/package.json` `version`, and `pwa/package-lock.json` (its top-level `version` and the
+    `""` root package's `version`).
   - `cosmic/Cargo.toml` `[package.metadata.bundle] version` and the `CFBundleVersion` /
     `CFBundleShortVersionString` strings in the `justfile` macOS bundle recipe.
 
@@ -55,7 +56,8 @@ Not built by the workflow (bumped by hand instead — see "Application stores"):
 2. Decide the new version `X.Y.Z`.
 3. Bump versions:
    - `[workspace.package] version` in the root `Cargo.toml` (covers all crates).
-   - `pwa/package.json` `version`.
+   - `pwa/package.json` `version`, and `pwa/package-lock.json` (top-level and root package
+     `version`). `npm install --package-lock-only` can refresh the lock file instead.
    - `cosmic/Cargo.toml` `[package.metadata.bundle] version` and the `CFBundle*` strings in the
      `justfile` macOS bundle recipe.
 4. Update **[CHANGELOG.md](CHANGELOG.md)**:
