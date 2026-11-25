@@ -39,7 +39,7 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets
       - name: Tests
-        run: cargo nextest run --workspace
+        run: cargo nextest run --workspace --no-fail-fast
       - name: Collect golden test failures
         if: failure()
         run: |
