@@ -63,3 +63,34 @@ macro_rules! fl {
         i18n_embed_fl::fl!($crate::i18n::LANGUAGE_LOADER, $message_id, $($args), *)
     }};
 }
+
+#[cfg(test)]
+mod tests {
+    use i18n_embed::LanguageLoader;
+    use i18n_embed::fluent::fluent_language_loader;
+    use i18n_embed::unic_langid::LanguageIdentifier;
+    use rstest::rstest;
+
+    use super::Localizations;
+
+    /// The catalog search-URL placeholder must show the `{searchTerms}` token,
+    /// because that is the only token `build_search_url` replaces.
+    #[rstest]
+    #[case("en")]
+    #[case("fr")]
+    #[case("nl")]
+    fn catalog_search_url_placeholder_shows_search_terms_token(#[case] code: &str) {
+        let language: LanguageIdentifier = code.parse().expect("valid language identifier");
+        let loader = fluent_language_loader!();
+        loader
+            .load_languages(&Localizations, &[language])
+            .expect("load language");
+
+        let placeholder = loader.get("settings-online-library-catalog-search-url-placeholder");
+
+        assert!(
+            placeholder.contains("{searchTerms}"),
+            "placeholder for {code} was {placeholder:?}"
+        );
+    }
+}

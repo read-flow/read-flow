@@ -272,7 +272,7 @@ settings-online-library-builtin-catalogs = Built-in Catalogs
 settings-online-library-catalog-name = Name
 settings-online-library-catalog-name-placeholder = Enter catalog name...
 settings-online-library-catalog-search-url = Search URL
-settings-online-library-catalog-search-url-placeholder = https://example.com/opds/search?q=<search terms>
+settings-online-library-catalog-search-url-placeholder = https://example.com/opds/search?q={ "{" }searchTerms{ "}" }
 settings-online-library-custom-catalogs = Custom Catalogs
 settings-online-library-custom-catalogs-description = Add your own OPDS catalogs to search alongside the built-in ones.
 settings-online-library-edit-catalog = Edit Catalog
