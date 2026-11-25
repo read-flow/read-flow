@@ -270,7 +270,7 @@ settings-online-library-builtin-catalogs = Ingebouwde Catalogi
 settings-online-library-catalog-name = Naam
 settings-online-library-catalog-name-placeholder = Voer catalogusnaam in...
 settings-online-library-catalog-search-url = Zoek-URL
-settings-online-library-catalog-search-url-placeholder = https://voorbeeld.nl/opds/search?q=<zoektermen>
+settings-online-library-catalog-search-url-placeholder = https://voorbeeld.nl/opds/search?q={ "{" }searchTerms{ "}" }
 settings-online-library-custom-catalogs = Aangepaste Catalogi
 settings-online-library-custom-catalogs-description = Voeg je eigen OPDS-catalogi toe om samen met de ingebouwde catalogi te doorzoeken.
 settings-online-library-edit-catalog = Catalogus Bewerken
