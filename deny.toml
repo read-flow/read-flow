@@ -23,6 +23,9 @@ allow = [
     "CC0-1.0",
     "BSL-1.0",
     "Unlicense",
+    # bzip2 and libbzip2 License v1.0.6 (BSD-style, permissive), via libbz2-rs-sys
+    # in the bzip2 crate used by read-flow-core.
+    "bzip2-1.0.6",
     # Data license covering the bundled Mozilla root certificate list
     # (webpki-root-certs); not source code, no copyleft obligations.
     "CDLA-Permissive-2.0",

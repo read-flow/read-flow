@@ -100,7 +100,8 @@ or a permissive OR-choice). No copyleft, nothing unlicensed.
 
 Rust workspace: the large majority of third-party crates are permissive
 (MIT/Apache-2.0/BSD/ISC/Zlib/Unicode-3.0/MPL-2.0/CC0-1.0/Unlicense), plus
-one data license (CDLA-Permissive-2.0, covering the bundled Mozilla root
+the bzip2 license (bzip2-1.0.6, BSD-style, via `libbz2-rs-sys`), plus one
+data license (CDLA-Permissive-2.0, covering the bundled Mozilla root
 certificate list in `webpki-root-certs` — not source code, no copyleft
 obligations). Copyleft dependencies present, all intentional and all
 flowing only into the AGPL-3.0-or-later `read-flow` and `read-flow-core`
