@@ -33,9 +33,8 @@ confidence-threshold = 0.8
 # listed here that turns out to be GPL/AGPL will still fail the check —
 # these exceptions are scoped per-crate on purpose, not blanket-allowed.
 exceptions = [
-    # This workspace's own AGPL-3.0-or-later crates (cosmic/, widgets/, core/).
+    # This workspace's own AGPL-3.0-or-later crates (cosmic/, core/).
     { allow = ["AGPL-3.0-or-later"], crate = "read-flow" },
-    { allow = ["AGPL-3.0-or-later"], crate = "read-flow-widgets" },
     { allow = ["AGPL-3.0-or-later"], crate = "read-flow-core" },
     # pop-os Wayland protocol bindings, GPL-3.0-only, pulled in transitively
     # for the desktop app only. Compatible with AGPL-3.0 (GPLv3 §13 permits

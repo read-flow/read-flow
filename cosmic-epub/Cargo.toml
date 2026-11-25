@@ -3,7 +3,7 @@ name = "cosmic-epub"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license = "AGPL-3.0-or-later"
+license = "MIT"
 
 [dependencies]
 futures.workspace = true

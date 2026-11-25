@@ -45,11 +45,13 @@ For faster iteration, disable LTO in the release profile, install the
 
 | Path         | Package             | What it is                                                    |
 | ------------ | ------------------- | ------------------------------------------------------------- |
-| `cosmic/`    | `read-flow`         | Desktop app + headless server. PDF/EPUB readers. **GPLv3**.   |
-| `core/`      | `read-flow-core`    | Core library: SQLite, scanning, tagging, Axum REST API. MIT.  |
+| `cosmic/`    | `read-flow`         | Desktop app + headless server. PDF/EPUB readers. **AGPL-3.0-or-later**. |
+| `core/`      | `read-flow-core`    | Core library: SQLite, scanning, tagging, Axum REST API. **AGPL-3.0-or-later**. |
 | `provider/`  | `provider`          | Dependency-injection / observable-cache library. MIT.         |
 | `epub/`      | `epub`              | EPUB3 parsing and rendering. MIT.                             |
-| `widgets/`   | `read-flow-widgets` | Shared desktop UI widgets. **GPLv3**.                         |
+| `cosmic-epub/` | `cosmic-epub`     | EPUB chapter loading, pagination and rendering for the COSMIC readers. MIT. |
+| `epub-reader/` | `cosmic-epub-reader` | Standalone COSMIC EPUB reader. MIT.                         |
+| `widgets/`   | `read-flow-widgets` | Shared desktop UI widgets. MIT.                               |
 | `pwa/`       | `read-flow-pwa`     | SvelteKit + TypeScript web app. MIT.                          |
 
 See [`NOTICE`](NOTICE) for the full licensing breakdown and third-party attribution.
@@ -137,6 +139,10 @@ The desktop app is localized with [Fluent](https://projectfluent.org/); translat
 rename the directory to the desired [ISO 639-1 language code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes),
 and translate each [message identifier](https://projectfluent.org/fluent/guide/hello.html). Messages
 that need no translation may be omitted. New settings and UI strings must ship with en/fr/nl entries.
+
+The standalone EPUB reader has its own translation files in
+[`epub-reader/i18n/`](epub-reader/i18n), with the same layout and the same en/fr/nl requirement.
+Its language follows the system locale.
 
 ## Packaging
 

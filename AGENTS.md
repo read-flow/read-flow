@@ -29,6 +29,9 @@ cargo nextest run -p read-flow-core feature_matrix
 # Run the COSMIC desktop app
 cargo run -p read-flow
 
+# Run the standalone COSMIC EPUB reader
+cargo run -p cosmic-epub-reader
+
 # Run the headless server (no UI) — this is the user-facing server
 cargo run -p read-flow -- --headless --address 0.0.0.0 --port 8000
 
@@ -53,7 +56,9 @@ Rust workspace (edition 2024, resolver 3), multiple crates + JS PWA:
 - **`read-flow`** (AGPL-3.0-or-later; PDF viewer derived from pop-os/cosmic-reader) — COSMIC desktop GUI **and** the headless HTTP server (`--headless`). `libcosmic` (git, pop-os). Async tokio, i18n (en/fr/nl via Fluent), observable `provider` pattern. Entry: `src/main.rs`. Package name `read-flow`, in `cosmic/` (use `cargo run -p read-flow`, not `-p cosmic`).
 - **`provider`** (MIT) — DI library (edition 2021). `Provider<T>` trait with combinators (`map`, `and_then`, `cache`, etc.), `ObservableCache` with `tokio::sync::broadcast` invalidation.
 - **`epub/`** (MIT) — EPUB3 parsing: container, package doc, nav, resource resolution, HTML→content, CSS, images.
-- **`widgets/`** (AGPL-3.0-or-later) — Shared UI widgets for COSMIC app.
+- **`widgets/`** (MIT) — Shared UI widgets for COSMIC app.
+- **`cosmic-epub/`** (MIT) — EPUB chapter loading, pagination, page view and rendering shared by the COSMIC readers. Depends on `epub/`.
+- **`epub-reader/`** (MIT; package `cosmic-epub-reader`) — Standalone COSMIC EPUB reader, one window per book. Menus, About panel, collapsible contents sidebar (`read-flow-widgets`). i18n en/fr/nl via Fluent in `epub-reader/i18n/`, language from the system locale; logs through `tracing`. Entry: `epub-reader/src/main.rs`.
 - **`pwa/`** — SvelteKit + TypeScript PWA. Fuse.js fuzzy search, PDF.js + epub.js rendering, IndexedDB via Dexie.
 
 ### Dependency flow

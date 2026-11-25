@@ -1,12 +1,35 @@
 # EPUB Reader for COSMIC Desktop
 
 Open a local EPUB from COSMIC Files or launch **EPUB Reader** and choose
-**Open File**. Each book opens in its own window. Positions are saved locally
-per file as you turn pages and follow the table of contents.
+**File → Open File…** (Ctrl+O). Each book opens in its own window. Positions are
+saved locally per file as you turn pages and follow the table of contents.
 
 Use the page arrows, Left and Right, or Page Up and Page Down to turn pages.
-The header bar has text size controls and a choice of **Single**,
+The header bar has text size controls (−/+) and a choice of **Single**,
 **Two pages**, and **Automatic** page layouts.
+
+### Contents
+
+Books with a table of contents show a contents sidebar. Use the toggle button in
+the header bar, or **View → Contents**, to show or hide it. Select an entry to
+jump to it. Entries with sub-sections can be expanded and collapsed. In a narrow
+window the contents take the place of the page, and you return to the book by
+selecting an entry or toggling the sidebar again.
+
+### About
+
+**View → About** shows the version, license, and a link to the project
+repository.
+
+### Language
+
+The interface is available in English, French, and Dutch. It follows your
+system language; there is no separate language setting in the reader.
+
+### Troubleshooting
+
+Warnings are written to standard error as JSON lines. Set `RUST_LOG` (for
+example `RUST_LOG=debug`) to change how much is logged.
 
 ## Local installation
 

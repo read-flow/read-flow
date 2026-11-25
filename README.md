@@ -130,7 +130,9 @@ Read Flow is a Rust [workspace](https://doc.rust-lang.org/cargo/reference/worksp
 | `core/` (`read-flow-core`) | Core library: async SQLite (sqlx), file scanning, tagging, Axum REST API.   | AGPL-3.0-or-later  |
 | `provider/`          | Small dependency-injection / observable-cache library used across the app.       | MIT                |
 | `epub/`              | EPUB3 parsing and rendering (container, nav, HTML→content, CSS, images).         | MIT                |
-| `widgets/` (`read-flow-widgets`) | Shared desktop UI widgets.                                            | AGPL-3.0-or-later  |
+| `widgets/` (`read-flow-widgets`) | Shared desktop UI widgets.                                            | MIT                |
+| `cosmic-epub/` (`cosmic-epub`) | EPUB chapter loading, pagination, page view and rendering shared by the COSMIC readers. | MIT                |
+| `epub-reader/` (`cosmic-epub-reader`) | Standalone COSMIC EPUB reader, installed separately from the desktop app. | MIT                |
 | `pwa/` (`read-flow-pwa`) | SvelteKit + TypeScript web app; talks to servers over REST.                  | MIT                |
 
 Dependency flow:

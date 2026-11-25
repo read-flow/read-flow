@@ -18,6 +18,7 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 - The standalone COSMIC EPUB Reader uses native menus and an About panel, with a collapsible table of contents in the COSMIC sidebar.
 - The standalone COSMIC EPUB Reader is available in English, French and Dutch. Its About panel links to the project repository.
+- The shared widgets, the EPUB rendering crate and the standalone EPUB reader are MIT-licensed. The desktop app and the core library remain AGPL-3.0-or-later.
 - Updated to the latest libcosmic. The custom interface and monospace fonts are now part of the app theme, so they apply together with the other theme overrides and survive system toolkit setting changes.
 - Building Read Flow now requires Rust 1.100; the Flatpak and release builds use it.
 - EPUB paginated mode: a heading is no longer left alone at the bottom of a page. When not even the first line of the text after it fits below it, the heading moves to the next page with that text, and consecutive headings (such as a part heading above a section heading) move together.

@@ -7,7 +7,6 @@ license applies depends on the component:
 AGPL-3.0-or-later
 -----------------
   - read-flow          (cosmic/  — the desktop application and headless server)
-  - read-flow-widgets  (widgets/ — shared desktop UI widgets)
   - read-flow-core     (core/    — async SQLite backend, REST API, file scanning)
 
   The full text is in LICENSE-AGPL.
@@ -30,6 +29,9 @@ MIT
 ---
   - provider           (provider/)
   - epub               (epub/)
+  - cosmic-epub        (cosmic-epub/ — EPUB rendering and pagination for COSMIC)
+  - read-flow-widgets  (widgets/ — shared desktop UI widgets)
+  - cosmic-epub-reader (epub-reader/ — standalone COSMIC EPUB reader)
   - read-flow-pwa      (pwa/)
 
   The full text is in LICENSE-MIT.
@@ -55,16 +57,19 @@ Because `read-flow` (the desktop app / `--headless` server) links
 read-flow-core and serves a REST API over a network, AGPL-3.0 §13's
 source-offer requirement applies to users of a running instance, not just
 to people who receive a copy of the binary. Rather than leave that
-mismatched with the crate metadata, all three previously
-GPL-3.0-or-later/MIT components that participate in that binary
-(`read-flow`, `read-flow-widgets`, `read-flow-core`) are now licensed
-AGPL-3.0-or-later, matching the obligation that already existed in
+mismatched with the crate metadata, `read-flow` and `read-flow-core` are
+licensed AGPL-3.0-or-later, matching the obligation that already existed in
 practice. Since the source has always been public on GitHub, complying
 with §13 is mostly a matter of pointing users at it — see the source-code
 link surfaced in the app / server (about page / footer).
 
-Components that don't touch mupdf (`provider`, `epub`, `pwa`) have no
-AGPL exposure and stay MIT.
+`read-flow-widgets` is MIT. It is a UI library with no mupdf dependency, so
+it does not carry the AGPL obligations, and it can be reused on its own.
+The AGPL components may include it without restriction.
+
+Components that don't touch mupdf (`provider`, `epub`, `cosmic-epub`,
+`read-flow-widgets`, `cosmic-epub-reader`, `pwa`) have no AGPL exposure and
+stay MIT.
 
 
 Third-party attribution
@@ -98,8 +103,8 @@ Rust workspace: the large majority of third-party crates are permissive
 one data license (CDLA-Permissive-2.0, covering the bundled Mozilla root
 certificate list in `webpki-root-certs` — not source code, no copyleft
 obligations). Copyleft dependencies present, all intentional and all
-flowing only into the AGPL-3.0-or-later `read-flow`/`read-flow-widgets`/
-`read-flow-core` targets:
+flowing only into the AGPL-3.0-or-later `read-flow` and `read-flow-core`
+targets:
   - `mupdf` / `mupdf-sys` (Artifex) — AGPL-3.0-only. See "Why AGPL" above.
   - `cosmic-protocols` / `cosmic-client-toolkit` (pop-os) — GPL-3.0-only,
     Wayland protocol bindings pulled in transitively via libcosmic.
