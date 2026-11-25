@@ -4,9 +4,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use sqlx::Row;
-use sqlx::SqliteConnection;
-
 use super::ConnectionPool;
 use super::dao;
 use super::dao::Error;
@@ -17,6 +14,9 @@ use crate::api::FileDataSource;
 use crate::api::ReadingState;
 use crate::api::ReadingStatus;
 use crate::api::Status;
+use crate::application::files;
+use crate::application::reading;
+use crate::application::reading::ReadingScope;
 use crate::audit::AuditActor;
 use crate::audit::AuditChannel;
 use crate::audit::AuditContext;
@@ -231,8 +231,16 @@ impl FileDataSource for DbClient {
     }
 
     async fn upsert_reading_state(&self, state: ReadingState) -> Result<ReadingState, Self::Error> {
-        let mut conn = self.connection_pool.acquire().await?;
-        dao::upsert_reading_state(&mut conn, &self.user_id, state).await
+        reading::save_position(
+            &self.connection_pool,
+            ReadingScope {
+                user_id: &self.user_id,
+                hidden_tags: &[],
+            },
+            state,
+        )
+        .await?
+        .ok_or_else(|| sqlx::Error::RowNotFound.into())
     }
 
     async fn update_reading_status(
@@ -354,30 +362,6 @@ impl DbClient {
             AuditActor::local_identity(self.user_id.clone()),
             AuditChannel::Cosmic,
         )
-    }
-
-    async fn document_target(
-        &self,
-        conn: &mut SqliteConnection,
-        fingerprint: &str,
-    ) -> Option<dao::AuditTargetSnapshot> {
-        let row = sqlx::query(
-            "SELECT d.guid, COALESCE(NULLIF(m.title, ''), '') AS title
-             FROM contents c
-             JOIN documents d ON d.id = c.document_id
-             LEFT JOIN document_metadata m ON m.document_id = d.id
-             WHERE c.fingerprint = ?
-             LIMIT 1",
-        )
-        .bind(fingerprint)
-        .fetch_optional(&mut *conn)
-        .await
-        .ok()?;
-        row.map(|r| {
-            let guid: String = r.get("guid");
-            let title: String = r.get("title");
-            dao::AuditTargetSnapshot::document(guid, title)
-        })
     }
 
     /// [`FileDataSource::add_file_tags`] with an explicit audit context. The
@@ -506,141 +490,16 @@ impl DbClient {
         Ok(())
     }
 
-    /// [`FileDataSource::delete_file`] with an explicit audit context and
-    /// truthful filesystem outcomes:
-    /// * a real deletion records `file.deleted` (Success);
-    /// * a file already missing on disk records `file.record_removed_missing`
-    ///   with `reason: already_missing` (ReadFlow removed the record, not the
-    ///   file — the observation is not attributed as the user's mutation);
-    /// * an archive member removal records `file.record_removed_missing` with
-    ///   `reason: archive_member`;
-    /// * a filesystem error records `file.delete_failed` (Failed).
+    /// Remove a file and reconcile its library record with the supplied audit context.
     pub async fn delete_file_with_audit(
         &self,
         context: &AuditContext,
         file: &File,
     ) -> Result<(), Error> {
-        if let Err(error) = dao::create_audit_operation(
-            &self.connection_pool,
-            context,
-            OperationType::FileDelete,
-            false,
-            &crate::audit::now_timestamp(),
-        )
-        .await
-        {
-            tracing::warn!("could not start delete audit operation: {error}");
-        }
-
-        let (event_type, outcome, params, op_status, error_code) = if file.archive_path.is_some() {
-            (
-                AuditEventType::FileRecordRemovedMissing,
-                AuditOutcome::Observed,
-                serde_json::json!({ "reason": "archive_member" }),
-                OperationStatus::Completed,
-                Some("archive_member"),
-            )
-        } else {
-            match tokio::fs::remove_file(&file.path).await {
-                Ok(()) => (
-                    AuditEventType::FileDeleted,
-                    AuditOutcome::Success,
-                    serde_json::json!({}),
-                    OperationStatus::Completed,
-                    None,
-                ),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (
-                    AuditEventType::FileRecordRemovedMissing,
-                    AuditOutcome::Observed,
-                    serde_json::json!({ "reason": "already_missing" }),
-                    OperationStatus::Completed,
-                    Some("already_missing"),
-                ),
-                Err(e) => {
-                    let mut err_conn = self
-                        .connection_pool
-                        .acquire()
-                        .await
-                        .unwrap_or_else(|_| panic!("database available"));
-                    let _ = dao::append_audit_event(
-                        &mut err_conn,
-                        &context.operation_id,
-                        AuditEventType::FileDeleteFailed,
-                        AuditOutcome::Failed,
-                        &crate::audit::now_timestamp(),
-                        serde_json::json!({ "reason": e.kind().to_string() }),
-                        vec![dao::AuditTargetSnapshot::file(
-                            file.guid.clone(),
-                            file.path.clone(),
-                            file.path.clone(),
-                        )],
-                    )
-                    .await;
-                    if let Err(finish_err) = dao::finish_audit_operation(
-                        &self.connection_pool,
-                        &context.operation_id,
-                        OperationStatus::Failed,
-                        &crate::audit::now_timestamp(),
-                        Some("filesystem_error"),
-                        serde_json::json!({}),
-                    )
-                    .await
-                    {
-                        tracing::warn!("could not finish delete audit operation: {finish_err}");
-                    }
-                    tracing::warn!("Failed to delete file from filesystem: {}", e);
-                    return Err(Error::IO(Arc::new(e)));
-                }
-            }
-        };
-
-        let mut tx = self.connection_pool.begin().await?;
-        let mut error = None;
-        if let Some(db_file) = dao::select_file_by_guid(&mut tx, &self.user_id, &file.guid).await? {
-            if let Err(e) = dao::delete_file_record(&mut tx, db_file.id).await {
-                error = Some(e);
-            }
-        }
-        if error.is_none() {
-            let _ = dao::append_audit_event(
-                &mut tx,
-                &context.operation_id,
-                event_type,
-                outcome,
-                &crate::audit::now_timestamp(),
-                params,
-                vec![dao::AuditTargetSnapshot::file(
-                    file.guid.clone(),
-                    file.path.clone(),
-                    file.path.clone(),
-                )],
-            )
-            .await;
-        }
-        if let Err(finish_error) = dao::finish_audit_operation_on_connection(
-            &mut tx,
-            &context.operation_id,
-            op_status,
-            &crate::audit::now_timestamp(),
-            error_code,
-            serde_json::json!({}),
-        )
-        .await
-        {
-            tracing::warn!("could not finish delete audit operation: {finish_error}");
-        }
-        tx.commit().await?;
-        match error {
-            Some(e) => Err(e),
-            None => Ok(()),
-        }
+        files::delete_file(&self.connection_pool, &self.user_id, context, file).await
     }
 
-    /// [`Self::update_reading_status`] with an explicit audit context, targeted
-    /// at the document (or the file's path when no document is linked yet).
-    /// The reading state is updated for this client's [`Self::user_id`] — pass
-    /// [`Self::update_reading_status_for_user_with_audit`] to target another
-    /// user's state instead (e.g. the authenticated owner of a REST request).
+    /// Change a local reader's status with an explicit audit context.
     pub async fn update_reading_status_with_audit(
         &self,
         context: &AuditContext,
@@ -651,9 +510,7 @@ impl DbClient {
             .await
     }
 
-    /// [`Self::update_reading_status_with_audit`] but updates the reading
-    /// state of `user_id` (the REST request owner, say) instead of this
-    /// client's local user. The audit event still records `context`'s actor.
+    /// Change an explicit reader's status with the supplied audit context.
     pub async fn update_reading_status_for_user_with_audit(
         &self,
         context: &AuditContext,
@@ -661,50 +518,18 @@ impl DbClient {
         fingerprint: &str,
         status: ReadingStatus,
     ) -> Result<(), Error> {
-        if let Err(error) = dao::create_audit_operation(
+        reading::set_status(
             &self.connection_pool,
+            ReadingScope {
+                user_id,
+                hidden_tags: &[],
+            },
             context,
-            OperationType::StatusEdit,
-            false,
-            &crate::audit::now_timestamp(),
+            fingerprint,
+            status,
         )
-        .await
-        {
-            tracing::warn!("could not start status audit operation: {error}");
-        }
-        let mut tx = self.connection_pool.begin().await?;
-        let event =
-            dao::update_reading_status_only(&mut tx, user_id, fingerprint, status.into()).await;
-        let target = self
-            .document_target(&mut tx, fingerprint)
-            .await
-            .unwrap_or_else(|| dao::AuditTargetSnapshot::path(fingerprint.to_string()));
-        if let Ok(()) = event {
-            let _ = dao::append_audit_event(
-                &mut tx,
-                &context.operation_id,
-                AuditEventType::DocumentStatusChanged,
-                AuditOutcome::Success,
-                &crate::audit::now_timestamp(),
-                serde_json::json!({ "status": status_str(status) }),
-                vec![target],
-            )
-            .await;
-        }
-        let finish = dao::finish_audit_operation_on_connection(
-            &mut tx,
-            &context.operation_id,
-            OperationStatus::Completed,
-            &crate::audit::now_timestamp(),
-            None,
-            serde_json::json!({ "status": status_str(status) }),
-        )
-        .await;
-        tx.commit().await?;
-        if let Err(e) = finish {
-            tracing::warn!("could not finish status audit operation: {e}");
-        }
-        event
+        .await?;
+        Ok(())
     }
 
     /// [`Self::update_document_metadata`] with an explicit audit context. Also
@@ -843,8 +668,7 @@ impl DbClient {
             tracing::warn!("could not start cover audit operation: {error}");
         }
         let mut tx = self.connection_pool.begin().await?;
-        let target = self
-            .document_target(&mut tx, fingerprint)
+        let target = dao::document_target(&mut tx, fingerprint)
             .await
             .unwrap_or_else(|| dao::AuditTargetSnapshot::path(fingerprint.to_string()));
         let result = dao::upsert_cover(&mut tx, fingerprint, data, mime).await;
@@ -1286,14 +1110,5 @@ impl FileDataSource for FilteredDbClient {
         status: ReadingStatus,
     ) -> Result<(), Self::Error> {
         self.inner.update_reading_status(fingerprint, status).await
-    }
-}
-
-/// Stable lowercase wire value for a reading status (used in audit parameters).
-fn status_str(status: ReadingStatus) -> &'static str {
-    match status {
-        ReadingStatus::Unread => "unread",
-        ReadingStatus::Reading => "reading",
-        ReadingStatus::Read => "read",
     }
 }

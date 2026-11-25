@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use sqlx::Row;
 use sqlx::SqliteConnection;
 use sqlx::SqlitePool;
 
@@ -26,6 +27,29 @@ use crate::audit::OperationType;
 use crate::db::models::Document;
 use crate::db::models::DocumentUserMetadata;
 use crate::scan::metadata::ExtractedMetadata;
+
+pub(crate) async fn document_target(
+    conn: &mut SqliteConnection,
+    fingerprint: &str,
+) -> Option<AuditTargetSnapshot> {
+    let row = sqlx::query(
+        "SELECT d.guid, COALESCE(NULLIF(m.title, ''), '') AS title
+         FROM contents c
+         JOIN documents d ON d.id = c.document_id
+         LEFT JOIN document_metadata m ON m.document_id = d.id
+         WHERE c.fingerprint = ?
+         LIMIT 1",
+    )
+    .bind(fingerprint)
+    .fetch_optional(&mut *conn)
+    .await
+    .ok()?;
+    row.map(|r| {
+        let guid: String = r.get("guid");
+        let title: String = r.get("title");
+        AuditTargetSnapshot::document(guid, title)
+    })
+}
 
 // ─── Document queries ────────────────────────────────────────────────────────
 

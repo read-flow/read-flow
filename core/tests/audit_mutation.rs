@@ -447,3 +447,126 @@ async fn missing_file_purge_records_maintenance_event() {
     assert!(remaining.is_empty());
     assert!(!missing.exists());
 }
+
+#[tokio::test]
+async fn file_delete_retry_reconciles_record_after_database_failure() {
+    let temp = TempDir::new().unwrap();
+    let (client, pool) = new_client().await;
+    let file = import(&client, &temp, "retry.pdf", b"file content").await;
+    sqlx::query(
+        "CREATE TRIGGER reject_file_delete BEFORE DELETE ON files
+         BEGIN SELECT RAISE(ABORT, 'test database failure'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    assert!(
+        client
+            .delete_file_with_audit(&context("delete-blocked"), &file)
+            .await
+            .is_err()
+    );
+    assert!(!temp.path().join("retry.pdf").exists());
+    assert!(client.get_file(&file.guid).await.unwrap().is_some());
+    let failed = dao::select_audit_operation(&pool, "delete-blocked")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(failed.status, OperationStatus::Failed);
+    assert_eq!(failed.error_code.as_deref(), Some("database_error"));
+    let events = dao::select_audit_events(&pool, "delete-blocked")
+        .await
+        .unwrap();
+    assert_eq!(events[0].event_type.as_str(), "file.delete_failed");
+    assert_eq!(events[0].parameters["removed_from_disk"], true);
+
+    sqlx::query("DROP TRIGGER reject_file_delete")
+        .execute(&pool)
+        .await
+        .unwrap();
+    client
+        .delete_file_with_audit(&context("delete-retry"), &file)
+        .await
+        .unwrap();
+    assert!(client.get_file(&file.guid).await.unwrap().is_none());
+    let events = dao::select_audit_events(&pool, "delete-retry")
+        .await
+        .unwrap();
+    assert_eq!(events[0].parameters["reason"], "already_missing");
+}
+
+#[tokio::test]
+async fn reading_status_rolls_back_when_audit_event_cannot_be_written() {
+    let temp = TempDir::new().unwrap();
+    let (client, pool) = new_client().await;
+    let file = import(&client, &temp, "status.epub", b"file content").await;
+    sqlx::query(
+        "CREATE TRIGGER reject_status_event BEFORE INSERT ON audit_events
+         WHEN NEW.event_type = 'document.status_changed'
+         BEGIN SELECT RAISE(ABORT, 'test audit failure'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let before = client.get_reading_state(&file.fingerprint).await.unwrap();
+    let result = client
+        .update_reading_status_with_audit(
+            &context("status-blocked"),
+            &file.fingerprint,
+            ReadingStatus::Read,
+        )
+        .await;
+    assert!(result.is_err());
+    let after = client.get_reading_state(&file.fingerprint).await.unwrap();
+    assert_eq!(
+        after.map(|state| state.status),
+        before.map(|state| state.status)
+    );
+    assert!(
+        dao::select_audit_operation(&pool, "status-blocked")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[rstest::rstest]
+#[case(
+    "CREATE TRIGGER reject_delete_audit BEFORE INSERT ON audit_events WHEN NEW.event_type = 'file.deleted' BEGIN SELECT RAISE(ABORT, 'test audit failure'); END"
+)]
+#[case(
+    "CREATE TRIGGER reject_delete_audit BEFORE UPDATE ON audit_operations WHEN NEW.status = 'completed' BEGIN SELECT RAISE(ABORT, 'test audit failure'); END"
+)]
+#[tokio::test]
+async fn file_delete_retains_record_when_audit_fails(#[case] trigger: &'static str) {
+    let temp = TempDir::new().unwrap();
+    let (client, pool) = new_client().await;
+    let file = import(&client, &temp, "audit-retry.pdf", b"file content").await;
+    sqlx::query(trigger).execute(&pool).await.unwrap();
+
+    assert!(
+        client
+            .delete_file_with_audit(&context("audit-blocked"), &file)
+            .await
+            .is_err()
+    );
+    assert!(!temp.path().join("audit-retry.pdf").exists());
+    assert!(client.get_file(&file.guid).await.unwrap().is_some());
+    let events = dao::select_audit_events(&pool, "audit-blocked")
+        .await
+        .unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type.as_str(), "file.delete_failed");
+
+    sqlx::query("DROP TRIGGER reject_delete_audit")
+        .execute(&pool)
+        .await
+        .unwrap();
+    client
+        .delete_file_with_audit(&context("audit-retry"), &file)
+        .await
+        .unwrap();
+    assert!(client.get_file(&file.guid).await.unwrap().is_none());
+}

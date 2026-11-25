@@ -65,6 +65,10 @@ use crate::api::MergeDocumentsRequest;
 use crate::api::ReadingState;
 use crate::api::ReadingStatus;
 use crate::api::Status;
+use crate::application::reading::ReadingScope;
+use crate::application::reading::{
+    self,
+};
 use crate::audit::AuditActor;
 use crate::audit::AuditChannel;
 use crate::audit::AuditContext;
@@ -1415,12 +1419,15 @@ async fn put_reading_state(
     vis: Visibility,
     Json(state): Json<ReadingState>,
 ) -> Result<Json<ReadingState>> {
+    let fingerprint = state.fingerprint.clone();
     let pool = application_module.connection_pool().await;
-    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    if !fingerprint_visible(&mut conn, &vis, &state.fingerprint).await? {
-        return Err(Error::FileNotFound(state.fingerprint.clone()));
-    }
-    let result = dao::upsert_reading_state(&mut conn, vis.user_id(), state).await?;
+    let scope = ReadingScope {
+        user_id: vis.user_id(),
+        hidden_tags: vis.hidden_tags(),
+    };
+    let result = reading::save_position(&pool, scope, state)
+        .await?
+        .ok_or(Error::FileNotFound(fingerprint))?;
     Ok(Json(result))
 }
 
@@ -1438,21 +1445,14 @@ async fn put_reading_status(
     Json(req): Json<ReadingStatusRequest>,
 ) -> Result<()> {
     let pool = application_module.connection_pool().await;
-    let mut conn = pool.acquire().await.map_err(dao::Error::from)?;
-    if !fingerprint_visible(&mut conn, &vis, &fingerprint).await? {
-        return Err(Error::FileNotFound(fingerprint.clone()));
-    }
-    drop(conn);
+    let scope = ReadingScope {
+        user_id: vis.user_id(),
+        hidden_tags: vis.hidden_tags(),
+    };
     let context = audit_context_for(vis.user_id());
-    let db_client = application_module.db_client().await;
-    db_client
-        .update_reading_status_for_user_with_audit(
-            &context,
-            vis.user_id(),
-            &fingerprint,
-            req.status,
-        )
-        .await?;
+    if !reading::set_status(&pool, scope, &context, &fingerprint, req.status).await? {
+        return Err(Error::FileNotFound(fingerprint));
+    }
     Ok(())
 }
 

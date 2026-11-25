@@ -99,8 +99,8 @@ pub struct AuditOperationPage {
     pub next_cursor: Option<AuditCursor>,
 }
 
-pub async fn create_audit_operation(
-    pool: &SqlitePool,
+pub async fn create_audit_operation<'a>(
+    executor: impl sqlx::Executor<'a, Database = sqlx::Sqlite>,
     context: &AuditContext,
     operation_type: OperationType,
     dry_run: bool,
@@ -119,7 +119,7 @@ pub async fn create_audit_operation(
     .bind(status_as_str(OperationStatus::Started))
     .bind(dry_run)
     .bind(started_at)
-    .execute(pool)
+    .execute(executor)
     .await?;
     Ok(())
 }

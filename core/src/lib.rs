@@ -2,6 +2,7 @@
 
 pub mod activity;
 pub mod api;
+mod application;
 pub mod audit;
 pub mod client;
 pub mod db;
