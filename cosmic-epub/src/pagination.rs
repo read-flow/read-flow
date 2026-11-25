@@ -273,8 +273,12 @@ fn effective_block_height(
 ) -> f32 {
     match block {
         _ if from == BlockCut::default() => block_height(measurer, ctx, block, content_width),
-        ContentBlock::Paragraph { text, spans, style } => ParagraphContent { text, spans, style }
-            .height_from(from.char_offset, content_width, ctx.font_size, ctx.family),
+        ContentBlock::Paragraph { text, spans, style } => ParagraphContent {
+            text,
+            spans,
+            style: &ctx.paragraph_style(style),
+        }
+        .height_from(from.char_offset, content_width, ctx.font_size, ctx.family),
         _ => measurer.height(
             render_block_part(ctx, block, from, None, BlockHighlight::None),
             content_width,
@@ -370,7 +374,7 @@ pub fn render_block_part<'a>(
             render_partial_paragraph(
                 text[char_offset_to_byte(text, s)..char_offset_to_byte(text, e)].to_string(),
                 slice_spans(spans, s, e),
-                style,
+                &ctx.paragraph_style(style),
                 highlight,
                 ctx.font_size,
                 ctx.family,
@@ -638,8 +642,13 @@ fn split_container(
                 );
                 // The prefix is laid out before the text, on its first line.
                 let prefix_len = spans[0].text.chars().count();
-                let layout =
-                    render::layout_list_item(&spans, ctx.family, child_ctx.font_size, width);
+                let layout = render::layout_paragraph(
+                    &spans,
+                    &ctx.paragraph_style(&BlockStyle::default()),
+                    ctx.family,
+                    child_ctx.font_size,
+                    width,
+                );
                 first_overflowing_char(&layout, available - used - gap).map(|offset| BlockCut {
                     child: 0,
                     char_offset: start + offset.saturating_sub(prefix_len),
@@ -833,14 +842,18 @@ pub fn try_split_block(
             .filter(|cut| *cut > from);
     }
     let char_offset = match block {
-        ContentBlock::Paragraph { text, spans, style } => ParagraphContent { text, spans, style }
-            .split_from(
-                from.char_offset,
-                content_width,
-                font_size,
-                family,
-                available_height,
-            ),
+        ContentBlock::Paragraph { text, spans, style } => ParagraphContent {
+            text,
+            spans,
+            style: &ctx.paragraph_style(style),
+        }
+        .split_from(
+            from.char_offset,
+            content_width,
+            font_size,
+            family,
+            available_height,
+        ),
         ContentBlock::Preformatted { text, spans, .. } => split_preformatted(
             text,
             spans,
@@ -1135,6 +1148,93 @@ fn first_part_fits(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn justified_paragraph_keeps_page_cuts_and_fits_each_fragment() {
+        let width = 240.0;
+        let height = 75.0;
+        let ctx = RenderContext {
+            justify_paragraphs: false,
+            font_size: 16.0,
+            family: font::Family::SansSerif,
+            max_image_height: height,
+            copy_code_label: String::new,
+            image_handles: &Default::default(),
+        };
+        let text =
+            "The reader can justify prose without changing where the lines wrap. ".repeat(12);
+        let split = 40;
+        let spans = [
+            TextSpan {
+                text: text[..split].to_owned(),
+                style: epub::InlineStyle {
+                    bold: true,
+                    ..Default::default()
+                },
+                link: None,
+                color: None,
+                font_size_em: None,
+            },
+            TextSpan {
+                text: text[split..].to_owned(),
+                style: epub::InlineStyle {
+                    italic: true,
+                    ..Default::default()
+                },
+                link: Some("#note".into()),
+                color: None,
+                font_size_em: None,
+            },
+        ];
+        let paragraph = |text_align| ContentBlock::Paragraph {
+            text: text.clone(),
+            spans: spans.to_vec(),
+            style: BlockStyle {
+                text_align,
+                ..BlockStyle::default()
+            },
+        };
+        let left = [paragraph(None)];
+        let mut bold_text = String::new();
+        let mut linked_text = String::new();
+        let justified = [paragraph(Some(epub::TextAlign::Justify))];
+        let mut measurer = BlockMeasurer::default();
+        let left_layout = paginate_blocks(&left, height, width, 0.0, &ctx, &mut measurer);
+        let justified_layout = paginate_blocks(&justified, height, width, 0.0, &ctx, &mut measurer);
+
+        assert!(justified_layout.pages.len() > 1);
+        assert_eq!(justified_layout.pages.len(), left_layout.pages.len());
+        for (left_page, page) in left_layout.pages.iter().zip(&justified_layout.pages) {
+            assert_eq!(page.start_cut, left_page.start_cut);
+            assert_eq!(page.end_cut, left_page.end_cut);
+            let start = page.start_cut.char_offset;
+            let end = page
+                .end_cut
+                .map_or(text.chars().count(), |cut| cut.char_offset);
+            let fragments = slice_spans(&spans, start, end);
+            for span in fragments {
+                if span.style.bold {
+                    assert!(!span.style.italic);
+                    assert_eq!(span.link, None);
+                    bold_text.push_str(&span.text);
+                } else {
+                    assert!(span.style.italic);
+                    assert_eq!(span.link.as_deref(), Some("#note"));
+                    linked_text.push_str(&span.text);
+                }
+            }
+            let element = render_block_part(
+                &ctx,
+                &justified[0],
+                page.start_cut,
+                page.end_cut,
+                BlockHighlight::None,
+            );
+            assert!(measurer.height(element, width) <= height);
+        }
+        assert_eq!(bold_text, spans[0].text);
+        assert_eq!(linked_text, spans[1].text);
+    }
 
     #[test]
     fn a_position_inside_a_split_block_resolves_to_its_page() {

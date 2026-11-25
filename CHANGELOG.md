@@ -12,6 +12,9 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+- Read Flow’s EPUB context pane can justify left-aligned paragraphs in the open book.
+- Read Flow and the standalone EPUB Reader honor justification specified directly on EPUB paragraphs.
+
 ### Changed
 
 ### Fixed
@@ -20,6 +23,7 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
   `{searchTerms}`, the token Read Flow replaces with the search text. It showed
   `<search terms>` instead, which Read Flow doesn't replace, so searches sent that
   literal text to the catalog.
+- EPUB text alignment declarations with `!important` are recognized using the existing CSS rule order.
 
 ## [0.7.0] - 2026-11-25
 

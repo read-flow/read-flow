@@ -218,6 +218,61 @@ async fn pages_fill_to_the_bottom_margin_without_overflowing() {
     }
 }
 
+#[tokio::test]
+async fn justify_toggle_updates_both_render_modes_and_keeps_the_page() {
+    let (mut viewer, ..) = paginated_viewer(long_chapter(false)).await;
+    let _guard = crate::test_support::cosmic_tk_lock();
+    cosmic_golden::init();
+    let viewport = VIEWPORTS[0];
+    let total = paginate(&mut viewer, viewport);
+    assert!(total > 1);
+    viewer.current_page = 1;
+    let chapter_index = viewer.active_chapter;
+    let cuts = |viewer: &EpubViewer| {
+        viewer.pagination_cache[&chapter_index]
+            .pages
+            .iter()
+            .map(|page| (page.start, page.start_cut, page.end, page.end_cut))
+            .collect::<Vec<_>>()
+    };
+    let original_cuts = cuts(&viewer);
+
+    let _ = viewer.update(EpubViewerMessage::SetJustifyParagraphs(true));
+    let chapter = &viewer.chapters[viewer.active_chapter];
+    assert!(viewer.scroll_render_context(chapter).justify_paragraphs);
+    assert!(
+        viewer
+            .page_render_context(chapter, viewport.1)
+            .justify_paragraphs
+    );
+    assert_eq!(viewer.current_page, 1);
+    assert_eq!(viewer.total_pages(), total);
+    assert_eq!(cuts(&viewer), original_cuts);
+
+    viewer.view_mode = ViewMode::Scroll;
+    viewer.scroll_y = 120.0;
+    let expected_heights = viewer.active_scroll_heights().unwrap().to_vec();
+    // Empty the cached heights so the assertion below requires a rebuild.
+    viewer
+        .block_heights_cache
+        .get_mut(&chapter_index)
+        .unwrap()
+        .2
+        .clear();
+
+    let _ = viewer.update(EpubViewerMessage::SetJustifyParagraphs(false));
+    let chapter = &viewer.chapters[viewer.active_chapter];
+    assert!(!viewer.scroll_render_context(chapter).justify_paragraphs);
+    assert!(
+        !viewer
+            .page_render_context(chapter, viewport.1)
+            .justify_paragraphs
+    );
+    assert_eq!(viewer.scroll_y, 120.0);
+    // Matching heights keep the same scroll offset anchored in the same text.
+    assert_eq!(viewer.active_scroll_heights().unwrap(), expected_heights);
+    assert_eq!(viewer.current_page, 1);
+}
 /// Number of lines `text` takes when rendered as body text `width` wide.
 fn line_count(text: &str, width: f32) -> usize {
     let spans = [Span::<'_, (), Font>::new(text).font(Font {

@@ -1221,6 +1221,14 @@ mod tests {
     // --- parse_inline_style unit tests ---
 
     #[test]
+    fn inline_style_text_align_justify() {
+        for css in ["text-align: justify", "text-align: justify ! IMPORTANT"] {
+            let inline = parse_inline_style(css);
+            assert_eq!(inline.block.text_align, Some(TextAlign::Justify));
+        }
+    }
+
+    #[test]
     fn inline_style_text_align_center() {
         let s = parse_inline_style("text-align: center");
         Assert::that(s.block.text_align).is_some(TextAlign::Center);
@@ -1524,12 +1532,12 @@ mod tests {
     }
 
     #[test]
-    fn stylesheet_justify_falls_back_to_left() {
+    fn stylesheet_preserves_justification() {
         let blocks = parse_with_css("<p>text</p>", "p { text-align: justify; }");
         Assert::that(&blocks).has_length(1);
         match &blocks[0] {
             ContentBlock::Paragraph { style, .. } => {
-                Assert::that(style.text_align.clone()).is_some(TextAlign::Left);
+                Assert::that(style.text_align.clone()).is_some(TextAlign::Justify);
             }
             other => panic!("expected Paragraph, got {other:?}"),
         };

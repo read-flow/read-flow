@@ -26,6 +26,7 @@ pub enum TextAlign {
     Left,
     Center,
     Right,
+    Justify,
 }
 
 /// Block-level style properties extracted from a `style="..."` attribute or CSS stylesheet.

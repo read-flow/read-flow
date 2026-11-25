@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use cosmic::Apply;
 use cosmic::Element;
 use cosmic::cosmic_theme;
@@ -16,6 +18,7 @@ use cosmic::iced::alignment::Vertical;
 use cosmic::iced::font;
 use cosmic::iced::widget::rich_text;
 use cosmic::iced::widget::span;
+use cosmic::iced::widget::text::Alignment as TextAlignment;
 use cosmic::iced::widget::text::LineHeight;
 use cosmic::iced::widget::text::Shaping;
 use cosmic::iced::widget::text::Span;
@@ -71,6 +74,7 @@ pub enum BookImage {
 
 #[derive(Clone, Copy)]
 pub struct RenderContext<'a> {
+    pub justify_paragraphs: bool,
     pub font_size: f32,
     pub copy_code_label: fn() -> String,
     pub family: font::Family,
@@ -78,6 +82,19 @@ pub struct RenderContext<'a> {
     /// Stable image handles keyed by data pointer, to avoid re-creating handles
     /// each frame (which would produce a new ID and prevent async texture reuse).
     pub image_handles: &'a std::collections::HashMap<usize, widget::image::Handle>,
+}
+
+impl RenderContext<'_> {
+    pub(crate) fn paragraph_style<'a>(&self, style: &'a BlockStyle) -> Cow<'a, BlockStyle> {
+        if self.justify_paragraphs && matches!(style.text_align, None | Some(TextAlign::Left)) {
+            Cow::Owned(BlockStyle {
+                text_align: Some(TextAlign::Justify),
+                ..style.clone()
+            })
+        } else {
+            Cow::Borrowed(style)
+        }
+    }
 }
 
 /// Line height of paragraph text. Rendering and pagination both use it, so
@@ -163,7 +180,7 @@ fn paragraph_text<'a>(
                 ..Font::default()
             })
             .width(Length::Fill)
-            .align_x(text_align_horizontal(style))
+            .align_x(text_alignment(style))
             .into(),
         style,
     )
@@ -187,7 +204,7 @@ pub fn layout_paragraph(
             family,
             ..Font::default()
         },
-        align_x: text_align_horizontal(style).into(),
+        align_x: text_alignment(style),
         align_y: Vertical::Top,
         shaping: Shaping::Advanced,
         wrapping: Wrapping::default(),
@@ -200,7 +217,7 @@ pub fn layout_paragraph(
 pub fn render_partial_paragraph<'a>(
     text: String,
     spans: Vec<TextSpan>,
-    style: &'a BlockStyle,
+    style: &BlockStyle,
     highlight: BlockHighlight,
     font_size: f32,
     family: font::Family,
@@ -368,7 +385,17 @@ impl<'a> RenderContext<'a> {
                 text,
                 style,
             } => {
-                let align = text_align_horizontal(style);
+                let left_aligned;
+                let style = if style.text_align == Some(TextAlign::Justify) {
+                    left_aligned = BlockStyle {
+                        text_align: Some(TextAlign::Left),
+                        ..style.clone()
+                    };
+                    &left_aligned
+                } else {
+                    style
+                };
+                let align = text_alignment(style);
                 if spans.is_empty() {
                     return apply_text_align(
                         match level {
@@ -410,10 +437,11 @@ impl<'a> RenderContext<'a> {
                 )
             }
             ContentBlock::Paragraph { spans, text, style } => {
-                let size = paragraph_font_size(style, font_size);
+                let style = self.paragraph_style(style);
+                let size = paragraph_font_size(&style, font_size);
                 paragraph_text(
                     paragraph_spans(text, spans, family, size),
-                    style,
+                    &style,
                     family,
                     size,
                 )
@@ -592,7 +620,7 @@ impl<'a> RenderContext<'a> {
                         self.family,
                         self.font_size,
                     ),
-                    &BlockStyle::default(),
+                    &self.paragraph_style(&BlockStyle::default()),
                     self.family,
                     footnote_font_size(self.font_size),
                 )
@@ -847,12 +875,13 @@ pub fn render_table_row(
         .into()
 }
 
-/// Map `BlockStyle.text_align` to an iced `Horizontal` alignment.
-fn text_align_horizontal(style: &BlockStyle) -> cosmic::iced::alignment::Horizontal {
+/// Alignment shared by paragraph layout and drawing.
+fn text_alignment(style: &BlockStyle) -> TextAlignment {
     match style.text_align {
-        Some(TextAlign::Center) => cosmic::iced::alignment::Horizontal::Center,
-        Some(TextAlign::Right) => cosmic::iced::alignment::Horizontal::Right,
-        _ => cosmic::iced::alignment::Horizontal::Left,
+        Some(TextAlign::Center) => TextAlignment::Center,
+        Some(TextAlign::Right) => TextAlignment::Right,
+        Some(TextAlign::Justify) => TextAlignment::Justified,
+        _ => TextAlignment::Left,
     }
 }
 
@@ -1200,4 +1229,71 @@ fn highlight_text_color(theme: &cosmic::Theme) -> cosmic::iced::Color {
 fn search_match_background(theme: &cosmic::Theme) -> cosmic::iced::Color {
     let accent = theme.cosmic().accent.base;
     cosmic::iced::Color::from_rgba(accent.color.red, accent.color.green, accent.color.blue, 0.2)
+}
+
+#[cfg(test)]
+mod justification_tests {
+    use super::*;
+
+    #[test]
+    fn justification_override_preserves_explicit_center_and_right_alignment() {
+        let ctx = RenderContext {
+            justify_paragraphs: true,
+            font_size: 16.0,
+            copy_code_label: String::new,
+            family: font::Family::SansSerif,
+            max_image_height: 400.0,
+            image_handles: &Default::default(),
+        };
+        for (input, expected) in [
+            (None, TextAlign::Justify),
+            (Some(TextAlign::Left), TextAlign::Justify),
+            (Some(TextAlign::Center), TextAlign::Center),
+            (Some(TextAlign::Right), TextAlign::Right),
+        ] {
+            let style = BlockStyle {
+                text_align: input,
+                ..BlockStyle::default()
+            };
+            assert_eq!(ctx.paragraph_style(&style).text_align, Some(expected));
+        }
+    }
+
+    #[test]
+    fn justification_fills_wrapped_lines_and_leaves_the_last_line_ragged() {
+        let width = 240.0;
+        let size = 16.0;
+        let family = font::Family::SansSerif;
+        let spans = vec![
+            span("The first sentence has several words and "),
+            span("a link").link(RenderMessage::FollowLink("#note".into())),
+            span(" with more words. The last line is short."),
+        ];
+        let left = BlockStyle::default();
+        let justified = BlockStyle {
+            text_align: Some(TextAlign::Justify),
+            ..BlockStyle::default()
+        };
+        let left_layout = layout_paragraph(&spans, &left, family, size, width);
+        let justified_layout = layout_paragraph(&spans, &justified, family, size, width);
+        let left_widths: Vec<_> = left_layout
+            .buffer()
+            .layout_runs()
+            .map(|run| run.line_w)
+            .collect();
+        let justified_widths: Vec<_> = justified_layout
+            .buffer()
+            .layout_runs()
+            .map(|run| run.line_w)
+            .collect();
+        assert!(justified_widths.len() > 1);
+        assert_eq!(justified_widths.len(), left_widths.len());
+        let (last, wrapped) = justified_widths.split_last().unwrap();
+        assert!(
+            wrapped.iter().all(|line| (line - width).abs() < 1.0),
+            "{justified_widths:?}"
+        );
+        assert!((*last - left_widths.last().unwrap()).abs() < 1.0);
+        assert!(*last < width - 1.0);
+    }
 }

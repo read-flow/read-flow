@@ -358,6 +358,7 @@ pub enum EpubViewerMessage {
     SetFontFamily(FontFamily),
     /// Set the base body font size in pixels (12–24).
     SetBaseFontSize(f32),
+    SetJustifyParagraphs(bool),
     /// Toggle the top-level EPUB node's collapsed state in the nav sidebar.
     ToggleTopLevelNav,
     /// Toggle a specific nav-entry's collapsed state (by its index in `nav_entries`).
@@ -484,6 +485,7 @@ pub struct EpubViewer {
     collapsed_nav_entries: std::collections::HashSet<usize>,
     /// Base body font size in pixels (12–24, default 16).
     base_font_size: f32,
+    justify_paragraphs: bool,
     /// Block index of the navigation target to highlight briefly after fragment navigation.
     /// Set to `Some(idx)` on arrival; cleared by the deferred `ClearHighlight` message.
     highlighted_block: Option<usize>,
@@ -564,6 +566,7 @@ impl EpubViewer {
             top_level_nav_collapsed: false,
             collapsed_nav_entries: std::collections::HashSet::new(),
             base_font_size: saved_prefs.base_font_size,
+            justify_paragraphs: false,
             highlighted_block: None,
             search_visible: false,
             search_query: String::new(),
@@ -983,6 +986,13 @@ impl Page for EpubViewer {
                         ViewMode::Scroll
                     })
                 },
+            ),
+        );
+
+        display_section = display_section.add(
+            widget::settings::item::builder(fl!("epub-viewer-justify-paragraphs")).toggler(
+                self.justify_paragraphs,
+                EpubViewerMessage::SetJustifyParagraphs,
             ),
         );
 
@@ -1616,6 +1626,12 @@ impl EpubViewer {
                 self.font_picker_query = q;
                 Task::none()
             }
+            EpubViewerMessage::SetJustifyParagraphs(enabled) => {
+                self.justify_paragraphs = enabled;
+                self.pagination_cache.clear();
+                self.block_heights_cache.clear();
+                Task::none()
+            }
             EpubViewerMessage::SetBaseFontSize(size) => {
                 self.base_font_size = size.clamp(12.0, 24.0);
                 self.pagination_cache.clear();
@@ -1950,6 +1966,7 @@ impl EpubViewer {
     /// How scroll mode draws `chapter`'s blocks.
     fn scroll_render_context<'a>(&self, chapter: &'a EpubChapter) -> RenderContext<'a> {
         RenderContext {
+            justify_paragraphs: self.justify_paragraphs,
             copy_code_label: || crate::fl!("epub-viewer-copy-code"),
             font_size: self.base_font_size,
             family: self.font_family.to_family(),
@@ -1967,6 +1984,7 @@ impl EpubViewer {
         page_height: f32,
     ) -> RenderContext<'a> {
         RenderContext {
+            justify_paragraphs: self.justify_paragraphs,
             copy_code_label: || crate::fl!("epub-viewer-copy-code"),
             font_size: self.base_font_size,
             family: self.font_family.to_family(),
@@ -2216,6 +2234,7 @@ fn render_chapter_blocks(
 ) -> cosmic::Element<'_, EpubViewerMessage> {
     let chapter = &chapters[chapter_index];
     let ctx = render::RenderContext {
+        justify_paragraphs: false,
         copy_code_label: || crate::fl!("epub-viewer-copy-code"),
         font_size,
         family: font::Family::Serif,
@@ -2687,6 +2706,7 @@ mod height_tests {
         image_handles: &std::collections::HashMap<usize, cosmic::widget::image::Handle>,
     ) -> RenderContext<'_> {
         RenderContext {
+            justify_paragraphs: false,
             copy_code_label: || crate::fl!("epub-viewer-copy-code"),
             font_size: BASE_FONT_SIZE,
             family: FAMILY,
@@ -2938,6 +2958,7 @@ mod split_tests {
         };
         let image_handles = std::collections::HashMap::new();
         let ctx = RenderContext {
+            justify_paragraphs: false,
             copy_code_label: || crate::fl!("epub-viewer-copy-code"),
             font_size: FONT_SIZE,
             family: font::Family::Serif,

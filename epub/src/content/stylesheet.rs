@@ -1,6 +1,5 @@
 use super::block::BlockStyle;
 use super::block::InlineStyle;
-use super::block::TextAlign;
 use super::parser::parse_css_declarations;
 
 /// A simple CSS selector — tag, class, tag.class, and ID-scoped descendants.
@@ -147,20 +146,12 @@ fn parse_rules(text: &str) -> StyleSheet {
         };
 
         let parsed = parse_css_declarations(declarations_str.trim());
-        let mut style = ResolvedStyle {
+        let style = ResolvedStyle {
             block: parsed.block,
             inline: parsed.inline,
             color: parsed.color,
             font_size_em: parsed.font_size_em,
         };
-
-        // Handle justify -> Left fallback (iced doesn't support justify)
-        if style.block.text_align.is_none() {
-            let lower = declarations_str.to_ascii_lowercase();
-            if lower.contains("text-align") && lower.contains("justify") {
-                style.block.text_align = Some(TextAlign::Left);
-            }
-        }
 
         for selector_text in selectors_str.split(',') {
             let selector_text = selector_text.trim();
@@ -301,6 +292,7 @@ mod tests {
     use assert4rs::Assert;
 
     use super::*;
+    use crate::content::block::TextAlign;
 
     #[test]
     fn parse_tag_selector() {
@@ -328,10 +320,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_justify_fallback_to_left() {
+    fn parse_justify_alignment() {
         let sheet = parse_css("p { text-align: justify; }");
         Assert::that(&sheet.rules).has_length(1);
-        Assert::that(sheet.rules[0].1.block.text_align.clone()).is_some(TextAlign::Left);
+        Assert::that(sheet.rules[0].1.block.text_align.clone()).is_some(TextAlign::Justify);
     }
 
     #[test]

@@ -74,7 +74,7 @@ Parse inline =style== attributes, =<style>= blocks, and linked stylesheets.
 Resolve class and tag selectors; later rules win. Supports: =color=,
 =background-color=, =font-size= (px/em/%),
 =font-weight= (bold/numeric), =font-style=, =text-decoration=,
-=text-align= (left/right/center; justify falls back to left),
+=text-align= (left/right/center/justify),
 =font-family= (monospace recognised), margin, padding.
 
 ** DONE Image handling

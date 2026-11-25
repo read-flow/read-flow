@@ -423,6 +423,7 @@ epub-viewer-dual-page-auto = Auto
 epub-viewer-dual-page-off = Uit
 epub-viewer-dual-page-on = Aan
 epub-viewer-font = Lettertype
+epub-viewer-justify-paragraphs = Alinea’s uitvullen
 epub-viewer-font-size = Lettergrootte
 epub-viewer-image-viewer-title = Afbeelding
 epub-viewer-image-zoom = Zoom

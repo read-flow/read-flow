@@ -244,6 +244,7 @@ impl Reader {
 
     fn context(chapter: &EpubChapter, font_size: f32, max_image_height: f32) -> RenderContext<'_> {
         RenderContext {
+            justify_paragraphs: false,
             font_size,
             copy_code_label: || "Copy code".into(),
             family: font::Family::Serif,

@@ -161,10 +161,16 @@ pub(super) fn parse_inline_style(style_attr: &str) -> ParsedStyle {
         let value = value.trim();
         match prop.as_str() {
             "text-align" => {
+                // Accept the priority suffix without changing this parser's cascade.
+                let value = value
+                    .rsplit_once('!')
+                    .filter(|(_, priority)| priority.trim().eq_ignore_ascii_case("important"))
+                    .map_or(value, |(alignment, _)| alignment.trim_end());
                 result.block.text_align = match value.to_ascii_lowercase().as_str() {
                     "center" => Some(TextAlign::Center),
                     "right" => Some(TextAlign::Right),
                     "left" => Some(TextAlign::Left),
+                    "justify" => Some(TextAlign::Justify),
                     _ => None,
                 };
             }

@@ -422,6 +422,7 @@ epub-viewer-dual-page-auto = Auto
 epub-viewer-dual-page-off = Désactivé
 epub-viewer-dual-page-on = Activé
 epub-viewer-font = Police
+epub-viewer-justify-paragraphs = Justifier les paragraphes
 epub-viewer-font-size = Taille de police
 epub-viewer-image-viewer-title = Image
 epub-viewer-image-zoom = Zoom
