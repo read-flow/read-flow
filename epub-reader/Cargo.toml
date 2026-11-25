@@ -4,14 +4,21 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license = "AGPL-3.0-or-later"
+repository = "https://github.com/read-flow/read-flow"
 
 [dependencies]
 cosmic-epub = { path = "../cosmic-epub" }
+i18n-embed = { workspace = true, features = ["fluent-system", "desktop-requester"] }
+i18n-embed-fl.workspace = true
 libcosmic = { workspace = true, features = ["about", "wgpu"] }
+open.workspace = true
 read-flow-widgets = { path = "../widgets" }
 rfd.workspace = true
+rust-embed.workspace = true
 sha2.workspace = true
 tokio = { workspace = true, features = ["rt"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["std", "fmt", "json", "env-filter", "ansi"] }
 
 [dev-dependencies]
 tempfile.workspace = true

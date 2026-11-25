@@ -1,3 +1,6 @@
+#[macro_use]
+mod i18n;
+
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
@@ -50,6 +53,7 @@ enum Message {
     ToggleContents,
     ToggleContentsBranch(usize),
     ToggleAbout,
+    LaunchUrl(String),
     SelectContents(usize),
     CloseImage,
 }
@@ -120,7 +124,7 @@ impl App {
             return;
         };
         if let Err(error) = save_position(path, position) {
-            eprintln!("Could not save reading position: {error}");
+            tracing::warn!("could not save reading position: {error}");
         }
     }
 
@@ -165,18 +169,20 @@ impl Application for App {
                 MenuAction::Open,
             )]),
             about: About::default()
-                .name("EPUB Reader")
+                .name(fl!("app-title"))
                 .icon(widget::icon::from_svg_bytes(include_bytes!(
                     "../resources/io.github.read_flow.CosmicEpubReader.svg"
                 )))
                 .version(env!("CARGO_PKG_VERSION"))
+                .links([(fl!("about-repository"), env!("CARGO_PKG_REPOSITORY"))])
                 .license(env!("CARGO_PKG_LICENSE")),
             image: None,
             error: None,
         };
-        let title = app.core.main_window_id().map_or_else(Task::none, |id| {
-            app.set_window_title("EPUB Reader".into(), id)
-        });
+        let title = app
+            .core
+            .main_window_id()
+            .map_or_else(Task::none, |id| app.set_window_title(fl!("app-title"), id));
         let open = path.map_or_else(Task::none, |path| app.open(path));
         (app, Task::batch([title, open]))
     }
@@ -188,22 +194,30 @@ impl Application for App {
             .is_some_and(|reader| !reader.toc().is_empty())
         {
             vec![
-                menu::Item::Button("Contents", None, MenuAction::Contents),
-                menu::Item::Button("About", None, MenuAction::About),
+                menu::Item::Button(fl!("menu-contents"), None, MenuAction::Contents),
+                menu::Item::Button(fl!("menu-about"), None, MenuAction::About),
             ]
         } else {
-            vec![menu::Item::Button("About", None, MenuAction::About)]
+            vec![menu::Item::Button(
+                fl!("menu-about"),
+                None,
+                MenuAction::About,
+            )]
         };
         let menus = menu::bar(vec![
             menu::Tree::with_children(
-                Element::from(menu::root("File")),
+                Element::from(menu::root(fl!("menu-file"))),
                 menu::items(
                     &self.key_binds,
-                    vec![menu::Item::Button("Open File…", None, MenuAction::Open)],
+                    vec![menu::Item::Button(
+                        fl!("menu-open-file"),
+                        None,
+                        MenuAction::Open,
+                    )],
                 ),
             ),
             menu::Tree::with_children(
-                Element::from(menu::root("View")),
+                Element::from(menu::root(fl!("menu-view"))),
                 menu::items(&self.key_binds, view),
             ),
         ]);
@@ -226,7 +240,7 @@ impl Application for App {
             controls.insert(
                 0,
                 widget::button::icon(widget::icon::from_name(icon).size(16))
-                    .tooltip("Toggle contents")
+                    .tooltip(fl!("toggle-contents"))
                     .on_press(Message::ToggleContents)
                     .into(),
             );
@@ -280,12 +294,19 @@ impl Application for App {
 
     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Message>> {
         self.core.window.show_context.then(|| {
-            context_drawer::about(&self.about, |_| Message::ToggleAbout, Message::ToggleAbout)
+            context_drawer::about(
+                &self.about,
+                |url| Message::LaunchUrl(url.to_owned()),
+                Message::ToggleAbout,
+            )
         })
     }
 
     fn header_center(&self) -> Vec<Element<'_, Message>> {
-        let title = self.reader.as_ref().map_or("EPUB Reader", Reader::title);
+        let title = self
+            .reader
+            .as_ref()
+            .map_or_else(|| fl!("app-title"), |reader| reader.title().to_owned());
         vec![
             widget::text::heading(title)
                 .wrapping(cosmic::iced::widget::text::Wrapping::None)
@@ -301,15 +322,19 @@ impl Application for App {
         let spread = reader.spread();
         vec![
             widget::button::standard("−")
-                .tooltip("Decrease text size")
+                .tooltip(fl!("decrease-text-size"))
                 .on_press_maybe((size > 12.0).then_some(Message::TextSize(size - 1.0)))
                 .into(),
             widget::button::standard("+")
-                .tooltip("Increase text size")
+                .tooltip(fl!("increase-text-size"))
                 .on_press_maybe((size < 24.0).then_some(Message::TextSize(size + 1.0)))
                 .into(),
             widget::dropdown(
-                &["Single", "Two pages", "Automatic"],
+                vec![
+                    fl!("spread-single"),
+                    fl!("spread-two-pages"),
+                    fl!("spread-automatic"),
+                ],
                 Some(match spread {
                     DualPageMode::Off => 0,
                     DualPageMode::On => 1,
@@ -362,7 +387,7 @@ impl Application for App {
                     .into(),
             };
             return widget::column::with_children(vec![
-                widget::button::standard("Back to book")
+                widget::button::standard(fl!("back-to-book"))
                     .on_press(Message::CloseImage)
                     .into(),
                 preview,
@@ -385,10 +410,10 @@ impl Application for App {
             return column.push(reader.view().map(Message::Reader)).into();
         }
         if self.opening {
-            column = column.push(widget::text::body("Opening EPUB…"));
+            column = column.push(widget::text::body(fl!("opening-book")));
         } else {
-            column =
-                column.push(widget::button::suggested("Open EPUB…").on_press(Message::OpenFile));
+            column = column
+                .push(widget::button::suggested(fl!("open-book")).on_press(Message::OpenFile));
         }
         widget::container(
             column
@@ -418,7 +443,7 @@ impl Application for App {
             Message::FileSelected(Some(path)) if self.reader.is_some() => {
                 self.picking_file = false;
                 if let Err(error) = spawn_reader(&path) {
-                    self.report_error(format!("Could not open a new window: {error}"));
+                    self.report_error(fl!("error-new-window", error = error.to_string()));
                 }
             }
             Message::FileSelected(Some(path)) => {
@@ -440,7 +465,7 @@ impl Application for App {
                             return self.set_window_title(title, id);
                         }
                     }
-                    Err(error) => self.report_error(format!("Could not open EPUB: {error}")),
+                    Err(error) => self.report_error(fl!("error-open-book", error = error)),
                 }
             }
             Message::Reader(PageViewMessage::NextPage) | Message::TurnPage(true) => {
@@ -474,6 +499,11 @@ impl Application for App {
             Message::ToggleAbout => {
                 self.show_condensed_contents = false;
                 self.set_show_context(!self.core.window.show_context);
+            }
+            Message::LaunchUrl(url) => {
+                if let Err(error) = open::that_detached(&url) {
+                    self.report_error(fl!("error-open-link", error = error.to_string()));
+                }
             }
             Message::SelectContents(index) => {
                 if let Some(reader) = &mut self.reader {
@@ -577,12 +607,25 @@ fn spawn_reader(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Structured JSON logs on stderr, as in the COSMIC app.
+fn init_logging() {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+    tracing_subscriber::fmt()
+        .json()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .init();
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_logging();
     let mut paths = std::env::args_os().skip(1).map(PathBuf::from);
     let path = paths.next();
     for additional in paths {
         spawn_reader(&additional)?;
     }
+    i18n::init(&i18n_embed::DesktopLanguageRequester::requested_languages());
     cosmic::app::run::<App>(cosmic::app::Settings::default(), path)?;
     Ok(())
 }
