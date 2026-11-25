@@ -12,10 +12,19 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.7.0] - 2026-11-25
+
+### Added
+
 - Standalone EPUB Reader for COSMIC Desktop. Open local EPUBs in separate windows from COSMIC Files or the app’s file picker, resume reading, and choose the text size and page layout.
 
 ### Changed
 
+- Authorized user passwords must be at least 8 characters and contain at least one letter and one non-letter. The requirement is shown under the passphrase field.
 - The standalone COSMIC EPUB Reader uses native menus and an About panel, with a collapsible table of contents in the COSMIC sidebar.
 - The standalone COSMIC EPUB Reader is available in English, French and Dutch. Its About panel links to the project repository.
 - The shared widgets, the EPUB rendering crate and the standalone EPUB reader are MIT-licensed. The desktop app and the core library remain AGPL-3.0-or-later.
@@ -363,7 +372,8 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/read-flow/read-flow/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/read-flow/read-flow/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/read-flow/read-flow/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/read-flow/read-flow/compare/v0.4.1...v0.5.0
