@@ -73,11 +73,15 @@ impl<Message: Clone> NavItem<Message> {
 #[derive(Default)]
 pub struct NavTree<Message> {
     items: Vec<NavItem<Message>>,
+    omit_icon_placeholders: bool,
 }
 
 impl<Message: Clone + 'static> NavTree<Message> {
     pub fn new() -> Self {
-        Self { items: Vec::new() }
+        Self {
+            items: Vec::new(),
+            omit_icon_placeholders: false,
+        }
     }
 
     pub fn push(mut self, item: NavItem<Message>) -> Self {
@@ -85,9 +89,16 @@ impl<Message: Clone + 'static> NavTree<Message> {
         self
     }
 
+    /// Let entries without an icon start at their nesting indentation.
+    pub fn without_icon_placeholders(mut self) -> Self {
+        self.omit_icon_placeholders = true;
+        self
+    }
+
     pub fn map<N: Clone + 'static, F: Fn(Message) -> N>(self, f: F) -> NavTree<N> {
         NavTree {
             items: self.items.into_iter().map(|item| item.map(&f)).collect(),
+            omit_icon_placeholders: self.omit_icon_placeholders,
         }
     }
 
@@ -97,6 +108,15 @@ impl<Message: Clone + 'static> NavTree<Message> {
     /// internally, so the element carries no borrows from the tree.  The
     /// `'static` bound is coercible to any shorter lifetime at the call site.
     pub fn view(self) -> Element<'static, Message> {
+        self.view_with_spacing(cosmic::theme::spacing().space_xxs, INDENT_WIDTH)
+    }
+
+    /// Render with custom row spacing and per-level indentation in logical pixels.
+    pub fn view_with_spacing(
+        self,
+        row_spacing: u16,
+        indent_width: f32,
+    ) -> Element<'static, Message> {
         let theme = cosmic::theme::active();
         let cosmic = theme.cosmic();
         let space_xxs = cosmic.space_xxs();
@@ -105,11 +125,13 @@ impl<Message: Clone + 'static> NavTree<Message> {
         let items: Vec<Element<'static, Message>> = self
             .items
             .into_iter()
-            .flat_map(|item| render_item(item, 0, space_s, space_xxs))
+            .flat_map(|item| {
+                render_item(item, 0, space_s, indent_width, self.omit_icon_placeholders)
+            })
             .collect();
 
         widget::Column::with_children(items)
-            .spacing(space_xxs)
+            .spacing(row_spacing)
             .apply(widget::container)
             .padding(space_xxs)
             .apply(widget::scrollable)
@@ -124,15 +146,91 @@ impl<Message: Clone + 'static> NavTree<Message> {
     }
 }
 
+/// Build navigation items from preorder (depth, label) pairs.
+/// A depth jump nests under the preceding entry without inserting empty levels.
+pub fn nav_items_from_depths<Message>(
+    entries: &[(usize, &str)],
+    collapsed: &std::collections::HashSet<usize>,
+    active: Option<usize>,
+    activate: fn(usize) -> Message,
+    toggle: fn(usize) -> Message,
+) -> Vec<NavItem<Message>> {
+    fn build<Message>(
+        entries: &[(usize, &str)],
+        offset: usize,
+        collapsed: &std::collections::HashSet<usize>,
+        active: Option<usize>,
+        activate: fn(usize) -> Message,
+        toggle: fn(usize) -> Message,
+    ) -> Vec<NavItem<Message>> {
+        let mut result = Vec::new();
+        let mut i = 0;
+        while let Some(&(entry_depth, label)) = entries.get(i) {
+            let next = i + 1;
+            let end = next
+                + entries[next..]
+                    .iter()
+                    .take_while(|(child_depth, _)| *child_depth > entry_depth)
+                    .count();
+            let index = offset + i;
+            let children = build(
+                &entries[next..end],
+                offset + next,
+                collapsed,
+                active,
+                activate,
+                toggle,
+            );
+            let label = label.to_owned();
+            let active = active == Some(index);
+            let on_activate = activate(index);
+            result.push(if children.is_empty() {
+                NavItem::Leaf(NavLeaf {
+                    icon: None,
+                    label,
+                    active,
+                    on_activate,
+                    on_close: None,
+                })
+            } else {
+                NavItem::Node(NavNode {
+                    icon: None,
+                    label,
+                    active,
+                    collapsed: collapsed.contains(&index),
+                    on_activate,
+                    on_toggle: toggle(index),
+                    children,
+                    on_expand_all: None,
+                    on_collapse_all: None,
+                    on_close: None,
+                })
+            });
+            i = end;
+        }
+        result
+    }
+    build(entries, 0, collapsed, active, activate, toggle)
+}
+
 fn render_item<Message: Clone + 'static>(
     item: NavItem<Message>,
     depth: u16,
     space_s: u16,
-    space_xxs: u16,
+    indent_width: f32,
+    omit_icon_placeholders: bool,
 ) -> Vec<Element<'static, Message>> {
     match item {
-        NavItem::Leaf(leaf) => vec![render_leaf(leaf, depth, space_s)],
-        NavItem::Node(node) => render_node(node, depth, space_s, space_xxs),
+        NavItem::Leaf(leaf) => vec![render_leaf(
+            leaf,
+            depth,
+            space_s,
+            indent_width,
+            omit_icon_placeholders,
+        )],
+        NavItem::Node(node) => {
+            render_node(node, depth, space_s, indent_width, omit_icon_placeholders)
+        }
         NavItem::SectionLabel(text) => vec![render_section_label(text)],
     }
 }
@@ -141,20 +239,23 @@ fn render_leaf<Message: Clone + 'static>(
     leaf: NavLeaf<Message>,
     depth: u16,
     space_s: u16,
+    indent_width: f32,
+    omit_icon_placeholders: bool,
 ) -> Element<'static, Message> {
     let mut row = widget::Row::new()
         .spacing(space_s)
         .align_y(Alignment::Center);
 
     if depth > 0 {
-        row = row.push(widget::Space::new().width(Length::Fixed(f32::from(depth) * INDENT_WIDTH)));
+        row = row.push(widget::Space::new().width(Length::Fixed(f32::from(depth) * indent_width)));
     }
 
     match leaf.icon {
         Some(icon) => row = row.push(icon),
-        None => {
+        None if !omit_icon_placeholders => {
             row = row.push(widget::Space::new().width(Length::Fixed(ICON_SIZE)));
         }
+        None => {}
     }
 
     row = row.push(widget::text(leaf.label));
@@ -191,7 +292,8 @@ fn render_node<Message: Clone + 'static>(
     node: NavNode<Message>,
     depth: u16,
     space_s: u16,
-    space_xxs: u16,
+    indent_width: f32,
+    omit_icon_placeholders: bool,
 ) -> Vec<Element<'static, Message>> {
     let chevron_name = if node.collapsed {
         "go-next-symbolic"
@@ -205,14 +307,15 @@ fn render_node<Message: Clone + 'static>(
 
     if depth > 0 {
         body_row = body_row
-            .push(widget::Space::new().width(Length::Fixed(f32::from(depth) * INDENT_WIDTH)));
+            .push(widget::Space::new().width(Length::Fixed(f32::from(depth) * indent_width)));
     }
 
     match node.icon {
         Some(icon) => body_row = body_row.push(icon),
-        None => {
+        None if !omit_icon_placeholders => {
             body_row = body_row.push(widget::Space::new().width(Length::Fixed(ICON_SIZE)));
         }
+        None => {}
     }
 
     body_row = body_row.push(widget::text(node.label));
@@ -249,7 +352,13 @@ fn render_node<Message: Clone + 'static>(
 
     if !node.collapsed {
         for child in node.children {
-            result.extend(render_item(child, depth + 1, space_s, space_xxs));
+            result.extend(render_item(
+                child,
+                depth + 1,
+                space_s,
+                indent_width,
+                omit_icon_placeholders,
+            ));
         }
     }
 
@@ -405,4 +514,60 @@ mod tests {
             }))
             .view()
     }
+}
+
+#[cfg(test)]
+mod depth_tests {
+    use super::*;
+
+    #[test]
+    fn nested_entries_keep_their_selection_and_toggle_indices() {
+        let entries = [(0, "Part"), (1, "Chapter"), (2, "Section"), (0, "Appendix")];
+        let items = nav_items_from_depths(
+            &entries,
+            &[0].into(),
+            Some(2),
+            |i| (true, i),
+            |i| (false, i),
+        );
+        let [NavItem::Node(part), NavItem::Leaf(appendix)] = items.as_slice() else {
+            panic!("expected a part and appendix");
+        };
+        assert!(part.collapsed);
+        assert_eq!(part.on_toggle, (false, 0));
+        let [NavItem::Node(chapter)] = part.children.as_slice() else {
+            panic!("expected a nested chapter");
+        };
+        let [NavItem::Leaf(section)] = chapter.children.as_slice() else {
+            panic!("expected a nested section");
+        };
+        assert!(section.active);
+        assert_eq!(section.on_activate, (true, 2));
+        assert_eq!(appendix.on_activate, (true, 3));
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn skipped_depth_levels_keep_entries_in_the_tree() {
+    use NavItem::Leaf;
+    use NavItem::Node;
+
+    let entries = [(0, "Part"), (2, "Section"), (1, "Chapter"), (0, "Appendix")];
+    let items = nav_items_from_depths(&entries, &Default::default(), Some(1), |i| i, |i| i);
+    let [Node(part), Leaf(appendix)] = items.as_slice() else {
+        panic!("expected a part and appendix");
+    };
+    let [Leaf(section), Leaf(chapter)] = part.children.as_slice() else {
+        panic!("expected both entries under the part");
+    };
+    assert!(section.active);
+    assert_eq!(
+        (
+            section.on_activate,
+            chapter.on_activate,
+            appendix.on_activate
+        ),
+        (1, 2, 3)
+    );
 }

@@ -1898,84 +1898,6 @@ fn anchor_y_from_heights(blocks: &[ContentBlock], heights: &[f32], anchor_id: &s
     None
 }
 
-/// Recursively convert a depth-annotated flat slice of nav entries into a
-/// properly nested `NavItem` tree.
-///
-/// `entries` is a slice of `(original_index, &NavEntry)` pairs, all at depth
-/// >= `depth`.  Entries at `depth` become top-level items; deeper entries
-/// > become their children.
-fn build_nav_items_at_depth(
-    entries: &[(usize, &NavEntry)],
-    depth: usize,
-    collapsed: &std::collections::HashSet<usize>,
-    active: Option<usize>,
-) -> Vec<read_flow_widgets::NavItem<EpubViewerMessage>> {
-    use read_flow_widgets::NavItem;
-    use read_flow_widgets::NavLeaf;
-    use read_flow_widgets::NavNode;
-
-    let mut result = Vec::new();
-    let mut i = 0;
-
-    while i < entries.len() {
-        let (orig_idx, entry) = entries[i];
-
-        if entry.depth < depth {
-            break;
-        }
-        if entry.depth > depth {
-            i += 1;
-            continue;
-        }
-
-        // Count how many subsequent entries belong to this item as children
-        // (all entries with depth > current depth, before the next entry at
-        // the same depth or shallower).
-        let children_start = i + 1;
-        let children_count = entries[children_start..]
-            .iter()
-            .take_while(|(_, e)| e.depth > depth)
-            .count();
-        let children_end = children_start + children_count;
-
-        let children_slice = &entries[children_start..children_end];
-        let children = if children_slice.is_empty() {
-            vec![]
-        } else {
-            build_nav_items_at_depth(children_slice, depth + 1, collapsed, active)
-        };
-
-        let is_active = active == Some(orig_idx);
-
-        if children.is_empty() {
-            result.push(NavItem::Leaf(NavLeaf {
-                icon: None,
-                label: entry.label.clone(),
-                active: is_active,
-                on_activate: EpubViewerMessage::SelectNavEntry(orig_idx),
-                on_close: None,
-            }));
-        } else {
-            result.push(NavItem::Node(NavNode {
-                icon: None,
-                label: entry.label.clone(),
-                active: is_active,
-                collapsed: collapsed.contains(&orig_idx),
-                on_activate: EpubViewerMessage::SelectNavEntry(orig_idx),
-                on_toggle: EpubViewerMessage::ToggleNavEntry(orig_idx),
-                children,
-                on_expand_all: None,
-                on_collapse_all: None,
-                on_close: None,
-            }));
-        }
-
-        i = children_end;
-    }
-
-    result
-}
-
 impl EpubViewer {
     /// Returns the indices of all nav entries that have at least one child entry,
     /// i.e. entries that can be collapsed.
@@ -1996,12 +1918,17 @@ impl EpubViewer {
     /// back to the chapter spine when there are no nav entries).
     fn build_nav_items(&self) -> Vec<read_flow_widgets::NavItem<EpubViewerMessage>> {
         if !self.nav_entries.is_empty() {
-            let indexed: Vec<(usize, &NavEntry)> = self.nav_entries.iter().enumerate().collect();
-            build_nav_items_at_depth(
-                &indexed,
-                0,
+            let entries: Vec<_> = self
+                .nav_entries
+                .iter()
+                .map(|entry| (entry.depth, entry.label.as_str()))
+                .collect();
+            read_flow_widgets::nav_items_from_depths(
+                &entries,
                 &self.collapsed_nav_entries,
                 self.active_nav_entry,
+                EpubViewerMessage::SelectNavEntry,
+                EpubViewerMessage::ToggleNavEntry,
             )
         } else {
             self.chapters

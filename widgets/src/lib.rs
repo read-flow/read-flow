@@ -10,3 +10,4 @@ pub use nav_tree::NavItem;
 pub use nav_tree::NavLeaf;
 pub use nav_tree::NavNode;
 pub use nav_tree::NavTree;
+pub use nav_tree::nav_items_from_depths;

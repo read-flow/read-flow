@@ -156,6 +156,12 @@ impl Reader {
         &self.toc
     }
 
+    pub fn chapter_href(&self) -> Option<&str> {
+        self.chapters
+            .get(self.chapter)
+            .map(|chapter| chapter.href.as_str())
+    }
+
     pub fn position(&self) -> Option<Position> {
         let chapter = self.chapters.get(self.chapter)?;
         Some(Position {

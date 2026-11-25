@@ -7,7 +7,8 @@ license = "AGPL-3.0-or-later"
 
 [dependencies]
 cosmic-epub = { path = "../cosmic-epub" }
-libcosmic = { workspace = true, features = ["wgpu"] }
+libcosmic = { workspace = true, features = ["about", "wgpu"] }
+read-flow-widgets = { path = "../widgets" }
 rfd.workspace = true
 sha2.workspace = true
 tokio = { workspace = true, features = ["rt"] }

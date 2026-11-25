@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
@@ -8,6 +10,7 @@ use cosmic::ApplicationExt;
 use cosmic::Element;
 use cosmic::Task;
 use cosmic::app::Core;
+use cosmic::app::context_drawer;
 use cosmic::cosmic_config::Config;
 use cosmic::cosmic_config::ConfigGet;
 use cosmic::cosmic_config::ConfigSet;
@@ -20,6 +23,8 @@ use cosmic::iced::keyboard::Event as KeyEvent;
 use cosmic::iced::keyboard::Key;
 use cosmic::iced::keyboard::key::Named;
 use cosmic::widget;
+use cosmic::widget::about::About;
+use cosmic::widget::menu;
 use cosmic_epub::page_view::DualPageMode;
 use cosmic_epub::page_view::PageViewMessage;
 use cosmic_epub::pagination::BlockCut;
@@ -28,6 +33,8 @@ use cosmic_epub::reader::Position;
 use cosmic_epub::reader::Reader;
 use cosmic_epub::render::BookImage;
 use cosmic_epub::render::RenderMessage;
+use read_flow_widgets::NavTree;
+use read_flow_widgets::nav_items_from_depths;
 use sha2::Digest;
 use sha2::Sha256;
 
@@ -41,8 +48,29 @@ enum Message {
     TextSize(f32),
     Spread(DualPageMode),
     ToggleContents,
+    ToggleContentsBranch(usize),
+    ToggleAbout,
     SelectContents(usize),
     CloseImage,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MenuAction {
+    Open,
+    Contents,
+    About,
+}
+
+impl menu::action::MenuAction for MenuAction {
+    type Message = Message;
+
+    fn message(&self) -> Message {
+        match self {
+            Self::Open => Message::OpenFile,
+            Self::Contents => Message::ToggleContents,
+            Self::About => Message::ToggleAbout,
+        }
+    }
 }
 
 struct App {
@@ -52,6 +80,11 @@ struct App {
     opening: bool,
     picking_file: bool,
     show_contents: bool,
+    show_condensed_contents: bool,
+    collapsed_contents: HashSet<usize>,
+    selected_contents: Option<usize>,
+    about: About,
+    key_binds: HashMap<menu::KeyBind, MenuAction>,
     image: Option<BookImage>,
     error: Option<String>,
 }
@@ -119,28 +152,136 @@ impl Application for App {
             path: None,
             opening: false,
             picking_file: false,
-            show_contents: false,
+            show_contents: true,
+            show_condensed_contents: false,
+            collapsed_contents: HashSet::new(),
+            selected_contents: None,
+            // Libcosmic displays this binding in the menu. The subscription handles the key event.
+            key_binds: HashMap::from([(
+                menu::KeyBind {
+                    modifiers: vec![menu::key_bind::Modifier::Ctrl],
+                    key: Key::Character("o".into()),
+                },
+                MenuAction::Open,
+            )]),
+            about: About::default()
+                .name("EPUB Reader")
+                .icon(widget::icon::from_svg_bytes(include_bytes!(
+                    "../resources/io.github.read_flow.CosmicEpubReader.svg"
+                )))
+                .version(env!("CARGO_PKG_VERSION"))
+                .license(env!("CARGO_PKG_LICENSE")),
             image: None,
             error: None,
         };
-        let task = path.map_or_else(Task::none, |path| app.open(path));
-        (app, task)
+        let title = app.core.main_window_id().map_or_else(Task::none, |id| {
+            app.set_window_title("EPUB Reader".into(), id)
+        });
+        let open = path.map_or_else(Task::none, |path| app.open(path));
+        (app, Task::batch([title, open]))
     }
 
     fn header_start(&self) -> Vec<Element<'_, Message>> {
-        let mut controls = vec![
-            widget::button::standard("Open File…")
-                .on_press_maybe((!self.opening && !self.picking_file).then_some(Message::OpenFile))
-                .into(),
-        ];
-        if self.reader.is_some() {
-            controls.push(
-                widget::button::standard("Contents")
+        let view = if self
+            .reader
+            .as_ref()
+            .is_some_and(|reader| !reader.toc().is_empty())
+        {
+            vec![
+                menu::Item::Button("Contents", None, MenuAction::Contents),
+                menu::Item::Button("About", None, MenuAction::About),
+            ]
+        } else {
+            vec![menu::Item::Button("About", None, MenuAction::About)]
+        };
+        let menus = menu::bar(vec![
+            menu::Tree::with_children(
+                Element::from(menu::root("File")),
+                menu::items(
+                    &self.key_binds,
+                    vec![menu::Item::Button("Open File…", None, MenuAction::Open)],
+                ),
+            ),
+            menu::Tree::with_children(
+                Element::from(menu::root("View")),
+                menu::items(&self.key_binds, view),
+            ),
+        ]);
+        let mut controls = vec![menus.into()];
+        if self
+            .reader
+            .as_ref()
+            .is_some_and(|reader| !reader.toc().is_empty())
+        {
+            let shown = if self.core.is_condensed() {
+                self.show_condensed_contents
+            } else {
+                self.show_contents
+            };
+            let icon = if shown {
+                "navbar-open-symbolic"
+            } else {
+                "navbar-closed-symbolic"
+            };
+            controls.insert(
+                0,
+                widget::button::icon(widget::icon::from_name(icon).size(16))
+                    .tooltip("Toggle contents")
                     .on_press(Message::ToggleContents)
                     .into(),
             );
         }
         controls
+    }
+
+    fn nav_bar(&self) -> Option<Element<'_, Action<Message>>> {
+        let condensed = self.core.is_condensed();
+        let visible = if condensed {
+            self.show_condensed_contents
+        } else {
+            self.show_contents
+        };
+        let reader = self
+            .reader
+            .as_ref()
+            .filter(|reader| visible && !reader.toc().is_empty() && self.image.is_none())?;
+        let toc = reader.toc();
+        let entries: Vec<_> = toc
+            .iter()
+            .map(|entry| (entry.depth, entry.label.as_str()))
+            .collect();
+        let chapter_href = reader.chapter_href()?;
+        let same_chapter = |index: usize| toc[index].href.split('#').next() == Some(chapter_href);
+        let active = self
+            .selected_contents
+            .filter(|&index| same_chapter(index))
+            .or_else(|| (0..toc.len()).find(|&index| same_chapter(index)));
+        let items = nav_items_from_depths(
+            &entries,
+            &self.collapsed_contents,
+            active,
+            Message::SelectContents,
+            Message::ToggleContentsBranch,
+        );
+        let tree = items
+            .into_iter()
+            .fold(NavTree::new().without_icon_placeholders(), NavTree::push);
+        Some(
+            widget::container(tree.view_with_spacing(0, 16.0).map(Action::App))
+                .width(if condensed {
+                    Length::Fill
+                } else {
+                    Length::Fixed(280.0)
+                })
+                .height(Length::Fill)
+                .into(),
+        )
+    }
+
+    fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Message>> {
+        self.core.window.show_context.then(|| {
+            context_drawer::about(&self.about, |_| Message::ToggleAbout, Message::ToggleAbout)
+        })
     }
 
     fn header_center(&self) -> Vec<Element<'_, Message>> {
@@ -237,34 +378,11 @@ impl Application for App {
         if let Some(error) = &self.error {
             column = column.push(widget::container(widget::text::body(error)).padding(12));
         }
+        if self.core.is_condensed() && self.show_condensed_contents {
+            return widget::Space::new().into();
+        }
         if let Some(reader) = &self.reader {
-            let content = reader.view().map(Message::Reader);
-            if !self.show_contents {
-                return column.push(content).into();
-            }
-            let entries = reader
-                .toc()
-                .iter()
-                .enumerate()
-                .fold(
-                    widget::column::with_capacity(reader.toc().len()),
-                    |column, (index, entry)| {
-                        column.push(
-                            widget::button::standard(entry.label.as_str())
-                                .on_press(Message::SelectContents(index)),
-                        )
-                    },
-                )
-                .spacing(4);
-            return column
-                .push(widget::row::with_children(vec![
-                    widget::scrollable(entries)
-                        .width(Length::Fixed(220.0))
-                        .height(Length::Fill)
-                        .into(),
-                    content,
-                ]))
-                .into();
+            return column.push(reader.view().map(Message::Reader)).into();
         }
         if self.opening {
             column = column.push(widget::text::body("Opening EPUB…"));
@@ -272,7 +390,14 @@ impl Application for App {
             column =
                 column.push(widget::button::suggested("Open EPUB…").on_press(Message::OpenFile));
         }
-        widget::container(column.padding(16)).into()
+        widget::container(
+            column
+                .padding(cosmic::theme::spacing().space_l)
+                .width(Length::Shrink)
+                .height(Length::Shrink),
+        )
+        .center(Length::Fill)
+        .into()
     }
 
     fn update(&mut self, message: Message) -> Task<Action<Message>> {
@@ -306,6 +431,9 @@ impl Application for App {
                     Ok(book) => {
                         let reader = Reader::from_loaded(&path, book, load_position(&path));
                         let title = reader.title().to_owned();
+                        self.collapsed_contents =
+                            collapsed_branches(reader.toc().iter().map(|entry| entry.depth));
+                        self.selected_contents = None;
                         self.reader = Some(reader);
                         self.path = Some(path);
                         if let Some(id) = self.core.main_window_id() {
@@ -331,10 +459,27 @@ impl Application for App {
                     reader.set_spread(spread);
                 }
             }
-            Message::ToggleContents => self.show_contents = !self.show_contents,
+            Message::ToggleContents => {
+                if self.core.is_condensed() {
+                    self.show_condensed_contents = !self.show_condensed_contents;
+                } else {
+                    self.show_contents = !self.show_contents;
+                }
+            }
+            Message::ToggleContentsBranch(index) => {
+                if !self.collapsed_contents.remove(&index) {
+                    self.collapsed_contents.insert(index);
+                }
+            }
+            Message::ToggleAbout => {
+                self.show_condensed_contents = false;
+                self.set_show_context(!self.core.window.show_context);
+            }
             Message::SelectContents(index) => {
                 if let Some(reader) = &mut self.reader {
                     reader.select_nav(index);
+                    self.selected_contents = Some(index);
+                    self.show_condensed_contents = false;
                 }
                 self.save_position();
             }
@@ -415,6 +560,15 @@ fn write_position(
     )
 }
 
+fn collapsed_branches(depths: impl Iterator<Item = usize> + Clone) -> HashSet<usize> {
+    depths
+        .clone()
+        .zip(depths.skip(1))
+        .enumerate()
+        .filter_map(|(index, (depth, next_depth))| (next_depth > depth).then_some(index))
+        .collect()
+}
+
 fn spawn_reader(path: &Path) -> std::io::Result<()> {
     let mut child = Command::new(std::env::current_exe()?).arg(path).spawn()?;
     std::thread::spawn(move || {
@@ -436,6 +590,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_expandable_contents_entries_start_collapsed() {
+        let depths = [0, 2, 3, 0, 0, 1];
+        assert_eq!(
+            collapsed_branches(depths.into_iter()),
+            HashSet::from([0, 1, 4])
+        );
+    }
 
     #[test]
     fn book_positions_survive_reopen_and_are_stored_separately() {
