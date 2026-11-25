@@ -61,7 +61,7 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04
           - arch: arm64
             runs-on: ubuntu-24.04-arm
     runs-on: ${{ matrix.runs-on }}
@@ -144,7 +144,7 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04
           - arch: aarch64
             runs-on: ubuntu-24.04-arm
     runs-on: ${{ matrix.runs-on }}
