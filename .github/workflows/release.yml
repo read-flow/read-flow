@@ -151,8 +151,11 @@ jobs:
     container:
       # docker.io/bilelmoussaoui/flatpak-github-actions is deprecated and
       # stopped publishing past freedesktop-24.08; ghcr.io/flathub-infra is
-      # the maintained successor.
-      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      # the maintained successor. Pinned by digest: the moving freedesktop-25.08
+      # tag now pulls an image where flatpak-builder fails with "Invalid
+      # cross-device link" while updating the runtime. This digest is the one
+      # the v0.6.0 release built with. Update it deliberately, after a dry run.
+      image: ghcr.io/flathub-infra/flatpak-github-actions@sha256:a49af704520abaa8bd8bed0115acc5cffffe1009e0c06a0bc57911a9fe0efac4
       options: --privileged
     steps:
       - uses: actions/checkout@v4

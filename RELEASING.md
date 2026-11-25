@@ -27,10 +27,8 @@ Git tag (`vX.Y.Z`) and attaches them to a **draft** GitHub Release:
   README/LICENSE/NOTICE) **and** a `.deb` package (`cargo-deb`) for each arch. The arm64 build
   runs natively on GitHub's `ubuntu-24.04-arm` runner (no cross-compilation) and targets e.g.
   Raspberry Pi 5. Both Linux architectures are pinned to explicit labels (`ubuntu-24.04` for
-  x86_64, `ubuntu-24.04-arm` for arm64) rather than `ubuntu-latest`: `ubuntu-latest` moved to
-  Ubuntu 26.04, where the Flatpak build fails (`flatpak-builder` reports `Invalid cross-device
-  link`, then `xvfb-run` segfaults). Bump both labels together, and only after a release dry run
-  shows the Flatpak build passes on the new image.
+  x86_64, `ubuntu-24.04-arm` for arm64) rather than `ubuntu-latest`, which now resolves to
+  Ubuntu 26.04. Bump both labels together, and only after a release dry run passes.
 - **macOS arm64** (Apple Silicon): a zipped `.app` bundle. **Unsigned** — users bypass Gatekeeper on
   first launch (documented in the README). _(decide: signing + notarization — see open questions.)_
 - **Flatpak**: single-file `.flatpak` bundles for x86_64 and aarch64, built from
