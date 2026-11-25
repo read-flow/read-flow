@@ -1376,7 +1376,7 @@ dependencies = [
 
 [[package]]
 name = "cosmic-epub"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "epub",
  "futures",
@@ -1387,7 +1387,7 @@ dependencies = [
 
 [[package]]
 name = "cosmic-epub-reader"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "cosmic-epub",
  "i18n-embed",
@@ -2332,7 +2332,7 @@ dependencies = [
 
 [[package]]
 name = "epub"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "assert4rs",
  "base64 0.23.1",
@@ -6041,7 +6041,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "provider"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "assert4rs",
  "tokio",
@@ -6300,7 +6300,7 @@ dependencies = [
 
 [[package]]
 name = "read-flow"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "assert4rs",
@@ -6346,7 +6346,7 @@ dependencies = [
 
 [[package]]
 name = "read-flow-core"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "argon2",
@@ -6407,7 +6407,7 @@ dependencies = [
 
 [[package]]
 name = "read-flow-widgets"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "cosmic-golden",
  "libcosmic",

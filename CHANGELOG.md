@@ -12,6 +12,14 @@ workspace crates may carry their own versions; see [RELEASING.md](RELEASING.md).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.7.1] - 2026-11-25
+
+### Added
+
 - Read Flow’s EPUB context pane can justify left-aligned paragraphs in the open book.
 - Read Flow and the standalone EPUB Reader honor justification specified directly on EPUB paragraphs.
 
@@ -381,7 +389,8 @@ First public release.
 - Supported formats: PDF, EPUB, MOBI, FB2, CBZ/CBT, DOCX/XLSX/PPTX/XPS, and documents in archives.
 
 <!-- Link references. Update the compare URLs when the repo is on GitHub. -->
-[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/read-flow/read-flow/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/read-flow/read-flow/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/read-flow/read-flow/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/read-flow/read-flow/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/read-flow/read-flow/compare/v0.5.0...v0.5.1
