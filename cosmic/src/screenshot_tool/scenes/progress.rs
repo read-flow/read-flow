@@ -11,13 +11,17 @@ use crate::screenshot_tool::app_harness::AppHarness;
 pub(in crate::screenshot_tool) async fn render(sample_library: &Path) -> anyhow::Result<Vec<u8>> {
     let mut harness = AppHarness::new().await;
 
-    // All 4 marked Reading so the dashboard's "Continue Reading" row shows
-    // 4 real cards instead of padding out with invisible placeholders.
+    // Mix of Unread / Reading / Read so the marketing shot shows all three
+    // states: four Reading documents fill "Continue Reading", the Read one
+    // counts as Completed, and the Unread one appears only in the document
+    // count.
     let seeds = [
         ("leaves-of-grass.epub", ReadingStatus::Reading),
         ("the-time-machine.epub", ReadingStatus::Reading),
         ("twenty-thousand-leagues.epub", ReadingStatus::Reading),
         ("meditations.epub", ReadingStatus::Reading),
+        ("jekyll-and-hyde.epub", ReadingStatus::Read),
+        ("pride-and-prejudice.epub", ReadingStatus::Unread),
     ];
     let mut fixture_dirs = Vec::new();
     for (filename, status) in seeds {
