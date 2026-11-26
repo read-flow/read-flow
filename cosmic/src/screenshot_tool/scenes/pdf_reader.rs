@@ -34,11 +34,14 @@ pub(in crate::screenshot_tool) async fn render(sample_library: &Path) -> anyhow:
     // pages are actually visible at that width (e.g. both pages of a
     // dual-page spread), which we drain and replay before the real, final
     // render.
+    //
+    // Page index 2 is the first text page (Chapter One). Page 0 is the
+    // cover, which has no readable body text for the marketing shot.
     let _ = harness.render_rgba(&mut renderer);
     harness
         .send(Message::Page(Box::new(PageMessage::MuPdfViewer(
             fingerprint,
-            MuPdfViewerMessage::SelectPage(0),
+            MuPdfViewerMessage::SelectPage(2),
         ))))
         .await;
 

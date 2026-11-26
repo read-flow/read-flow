@@ -25,6 +25,20 @@ pub(in crate::screenshot_tool) async fn render(sample_library: &Path) -> anyhow:
         .send(Message::Page(Box::new(PageMessage::OpenDocument(document))))
         .await;
 
+    // Reading-comfort settings for the marketing shot: a slightly larger
+    // base font (default 16px) and justified paragraphs (default off).
+    for message in [
+        EpubViewerMessage::SetBaseFontSize(18.0),
+        EpubViewerMessage::SetJustifyParagraphs(true),
+    ] {
+        harness
+            .send(Message::Page(Box::new(PageMessage::EpubViewer(
+                fingerprint.clone(),
+                message,
+            ))))
+            .await;
+    }
+
     // Chapter 0 is this book's table of contents; jump to the first real
     // chapter so the screenshot shows readable prose, per the spec.
     harness
